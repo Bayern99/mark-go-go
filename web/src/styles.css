@@ -141,6 +141,20 @@ body {
   min-height: 100%;
 }
 
+.mgo-wysiwyg-root,
+.mgo-source-root {
+  min-height: 100%;
+}
+
+.mgo-wysiwyg-root[hidden],
+.mgo-source-root[hidden] {
+  display: none;
+}
+
+.mgo-source-root .cm-editor {
+  min-height: 100%;
+}
+
 .mgo-locked-block {
   margin: 12px 0;
   padding: 10px 12px;

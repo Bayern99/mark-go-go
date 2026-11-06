@@ -1,3 +1,8 @@
+import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
+import { markdown } from '@codemirror/lang-markdown'
+import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { Compartment, EditorState as CodeMirrorState } from '@codemirror/state'
+import { EditorView as CodeMirrorView, keymap } from '@codemirror/view'
 import { CrepeBuilder } from '@milkdown/crepe/builder'
 import { blockEdit } from '@milkdown/crepe/feature/block-edit'
 import { codeMirror } from '@milkdown/crepe/feature/code-mirror'
@@ -26,11 +31,11 @@ import {
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { listenerCtx } from '@milkdown/kit/plugin/listener'
 import type { Disposable } from '../host/types'
-import { buildDocument } from './blocks/build'
+import { buildDocument, type BuiltDocument } from './blocks/build'
 import {
   blockAtOffset,
-  composeDocument,
   composeWithRanges,
+  type ComposedDocument,
   type ComposeContext,
 } from './blocks/compose'
 import { LOCKED_NODE, lockedBlockSchema } from './blocks/locked'
@@ -47,8 +52,18 @@ const IDENTITY_BREAKING_PLUGIN_KEYS: Record<string, true> = {
   MILKDOWN_TRAILING: true,
 }
 
+export type EditorMode = 'wysiwyg' | 'source'
+
 export interface MarkdownEditor {
-  /** Composed Markdown for the whole document. */
+  /** Current editor surface: rich text or raw Markdown source. */
+  getMode(): EditorMode
+  /** Switch mode; a no-op when the mode is already active. */
+  setMode(mode: EditorMode): void
+  /** Switch between rich text and source. */
+  toggleMode(): void
+  /** Fires after the active mode changes. */
+  onModeChange(fn: (mode: EditorMode) => void): Disposable
+  /** Composed Markdown in rich text mode, the exact CodeMirror text in source. */
   getMarkdown(): string
   /** Replace the editor content (external reload). Undo history is reset. */
   setMarkdown(text: string): void
@@ -82,7 +97,14 @@ export async function createMarkdownEditor(
   root: HTMLElement,
   options: CreateEditorOptions = {},
 ): Promise<MarkdownEditor> {
-  const builder = new CrepeBuilder({ root, defaultValue: '' })
+  const wysiwygRoot = document.createElement('div')
+  wysiwygRoot.className = 'mgo-wysiwyg-root'
+  const sourceRoot = document.createElement('div')
+  sourceRoot.className = 'mgo-source-root'
+  sourceRoot.hidden = true
+  root.append(wysiwygRoot, sourceRoot)
+
+  const builder = new CrepeBuilder({ root: wysiwygRoot, defaultValue: '' })
     .addFeature(cursor)
     .addFeature(listItem)
     .addFeature(placeholder, { text: 'Start writing…', mode: 'doc' })
@@ -106,7 +128,13 @@ export async function createMarkdownEditor(
   let readonly = false
   const listeners = new Set<(markdown: string) => void>()
   const selectionListeners = new Set<(offset: number) => void>()
+  const modeListeners = new Set<(mode: EditorMode) => void>()
   let lastReportedOffset: number | undefined
+  let mode: EditorMode = 'wysiwyg'
+  let sourceView: CodeMirrorView | undefined
+  /** Text the rich-text editor represented when source mode was entered. */
+  let sourceBaseText: string | undefined
+  const readonlyCompartment = new Compartment()
 
   const composeContext = (current: typeof built): ComposeContext => ({
     schema,
@@ -117,11 +145,29 @@ export async function createMarkdownEditor(
     trailing: current.trailing,
   })
 
-  const compose = (doc: PMNode): string => composeDocument(doc, composeContext(built))
+  /**
+   * Composing re-serializes every edited block, so keep the last result while
+   * the ProseMirror document (and load baseline) is unchanged. Selection-only
+   * transactions reuse it, which keeps cursor movement O(1).
+   */
+  let composedCache:
+    | { built: BuiltDocument; doc: PMNode; composed: ComposedDocument }
+    | undefined
+
+  const composed = (doc: PMNode): ComposedDocument => {
+    if (composedCache && composedCache.built === built && composedCache.doc === doc) {
+      return composedCache.composed
+    }
+    const result = composeWithRanges(doc, composeContext(built))
+    composedCache = { built, doc, composed: result }
+    return result
+  }
+
+  const compose = (doc: PMNode): string => composed(doc).text
 
   /** Source start offset of the top-level block holding the current selection. */
   const selectionOffset = (state: EditorState): number | undefined => {
-    const { blocks } = composeWithRanges(state.doc, composeContext(built))
+    const { blocks } = composed(state.doc)
     if (blocks.length === 0 || state.doc.childCount === 0) return undefined
 
     const { $from } = state.selection
@@ -147,6 +193,87 @@ export async function createMarkdownEditor(
     emitSelection(offset)
   }
 
+  const readonlyExtensions = (value: boolean) => [
+    CodeMirrorState.readOnly.of(value),
+    CodeMirrorView.editable.of(!value),
+  ]
+
+  const sourceTheme = CodeMirrorView.theme({
+    '&': {
+      minHeight: '100%',
+      backgroundColor: 'transparent',
+      fontSize: '14px',
+    },
+    '.cm-scroller': {
+      fontFamily: "ui-monospace, 'SFMono-Regular', Menlo, monospace",
+      lineHeight: '1.65',
+    },
+    '.cm-content': {
+      padding: '24px 32px 64px',
+    },
+    '&.cm-focused': {
+      outline: 'none',
+    },
+  })
+
+  const reportSourceSelection = (offset: number) => {
+    if (selectionListeners.size === 0 || offset === lastReportedOffset) return
+    emitSelection(offset)
+  }
+
+  const createSourceState = (text: string): CodeMirrorState =>
+    CodeMirrorState.create({
+      doc: text,
+      extensions: [
+        // Keep every line break exactly as it appears in the file: only LF
+        // splits lines, so CR stays part of the preceding line's text.
+        CodeMirrorState.lineSeparator.of('\n'),
+        markdown(),
+        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        history(),
+        keymap.of([...defaultKeymap, ...historyKeymap]),
+        CodeMirrorView.lineWrapping,
+        readonlyCompartment.of(readonlyExtensions(readonly)),
+        sourceTheme,
+        CodeMirrorView.updateListener.of((update) => {
+          if (update.docChanged && !suppressChange) {
+            const text = update.state.doc.toString()
+            for (const fn of listeners) fn(text)
+          }
+          if (update.docChanged || update.selectionSet) {
+            reportSourceSelection(update.state.selection.main.head)
+          }
+        }),
+      ],
+    })
+
+  /** Fresh state each time: entering source starts an empty undo history. */
+  const ensureSourceView = (text: string): CodeMirrorView => {
+    if (!sourceView) {
+      sourceView = new CodeMirrorView({ state: createSourceState(text), parent: sourceRoot })
+    } else {
+      sourceView.setState(createSourceState(text))
+    }
+    return sourceView
+  }
+
+  const revealSource = (offset: number, alwaysReport: boolean): boolean => {
+    if (!sourceView || !Number.isFinite(offset)) return false
+    const length = sourceView.state.doc.length
+    if (offset < 0 || offset > length) return false
+
+    lastReportedOffset = undefined
+    sourceView.dispatch({
+      selection: { anchor: offset },
+      scrollIntoView: true,
+    })
+    sourceView.focus()
+    // The dispatch reports through the update listener unless the selection
+    // was already exactly there; a switch must still emit the current offset.
+    if (alwaysReport && lastReportedOffset !== offset) emitSelection(offset)
+    return true
+  }
+
   const selectionPlugin = new Plugin({
     view: () => ({
       update(currentView, prevState) {
@@ -164,6 +291,7 @@ export async function createMarkdownEditor(
     suppressChange = true
     try {
       built = buildDocument(text, schema, parser)
+      composedCache = undefined
       const state = EditorState.create({
         schema,
         doc: built.doc,
@@ -196,8 +324,9 @@ export async function createMarkdownEditor(
    * alerts, ...) get a node selection; everything else a text cursor.
    */
   const reveal = (offset: number): boolean => {
+    if (mode === 'source') return revealSource(offset, true)
     if (!Number.isFinite(offset)) return false
-    const { text, blocks } = composeWithRanges(view.state.doc, composeContext(built))
+    const { text, blocks } = composed(view.state.doc)
     if (offset < 0 || offset > text.length) return false
 
     const block = blockAtOffset(blocks, offset)
@@ -224,15 +353,65 @@ export async function createMarkdownEditor(
     return true
   }
 
+  const setMode = (next: EditorMode) => {
+    if (next === mode) return
+
+    if (next === 'source') {
+      const text = compose(view.state.doc)
+      const offset = selectionOffset(view.state) ?? 0
+      mode = 'source'
+      sourceBaseText = text
+      wysiwygRoot.hidden = true
+      sourceRoot.hidden = false
+      ensureSourceView(text)
+      revealSource(offset, true)
+    } else {
+      const text = sourceView?.state.doc.toString() ?? ''
+      const offset = sourceView?.state.selection.main.head ?? 0
+      mode = 'wysiwyg'
+      sourceRoot.hidden = true
+      wysiwygRoot.hidden = false
+      // Untouched source keeps the existing ProseMirror state (and its undo
+      // history); edits rebuild through the normal load pipeline.
+      if (sourceBaseText === undefined || text !== sourceBaseText) load(text)
+      sourceBaseText = undefined
+      if (!reveal(offset)) reveal(0)
+    }
+
+    for (const fn of modeListeners) fn(mode)
+  }
+
   const setReadonly = (value: boolean) => {
     if (readonly === value) return
     readonly = value
     builder.setReadonly(value)
+    sourceView?.dispatch({
+      effects: readonlyCompartment.reconfigure(readonlyExtensions(value)),
+    })
   }
 
   return {
-    getMarkdown: () => compose(view.state.doc),
+    getMode: () => mode,
+    setMode,
+    toggleMode: () => setMode(mode === 'wysiwyg' ? 'source' : 'wysiwyg'),
+    onModeChange(fn) {
+      modeListeners.add(fn)
+      return {
+        dispose() {
+          modeListeners.delete(fn)
+        },
+      }
+    },
+    getMarkdown: () =>
+      mode === 'source' ? (sourceView?.state.doc.toString() ?? '') : compose(view.state.doc),
     setMarkdown(text) {
+      if (mode === 'source') {
+        // The rich-text copy may no longer match; leaving source rebuilds it
+        // unless the reload happens to be identical to what ProseMirror holds.
+        sourceBaseText = compose(view.state.doc)
+        ensureSourceView(text)
+        return
+      }
       load(text)
     },
     onChange(fn) {
@@ -246,11 +425,14 @@ export async function createMarkdownEditor(
     reveal,
     onSelectionChange(fn) {
       selectionListeners.add(fn)
-      const offset = selectionOffset(view.state)
-      if (offset !== undefined) {
-        lastReportedOffset = offset
-        fn(offset)
-      }
+      // Emit the current offset to the new listener only. Mutating the shared
+      // dedupe would make listeners registered at different moments suppress
+      // each other's next real selection event.
+      const offset =
+        mode === 'source'
+          ? sourceView?.state.selection.main.head
+          : selectionOffset(view.state)
+      if (offset !== undefined) fn(offset)
       return {
         dispose() {
           selectionListeners.delete(fn)
@@ -262,6 +444,9 @@ export async function createMarkdownEditor(
     async destroy() {
       listeners.clear()
       selectionListeners.clear()
+      modeListeners.clear()
+      sourceView?.destroy()
+      sourceView = undefined
       await builder.destroy()
     },
   }

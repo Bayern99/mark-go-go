@@ -5,7 +5,7 @@ import { DocumentService } from './core/DocumentService'
 import { PluginRegistry } from './core/PluginRegistry'
 import { ViewRegistry } from './core/ViewRegistry'
 import type { Disposable, DocState, HostAdapter } from './host/types'
-import { createMarkdownEditor, type MarkdownEditor } from './editor/createEditor'
+import { createMarkdownEditor, type EditorMode, type MarkdownEditor } from './editor/createEditor'
 import { createGenUIPlugin } from './plugins/genui'
 
 const EDIT_DEBOUNCE_MS = 250
@@ -15,6 +15,7 @@ export function App({ host }: { host: HostAdapter }): React.ReactElement {
   const editorRef = useRef<MarkdownEditor | null>(null)
   const [docState, setDocState] = useState<DocState | null>(null)
   const [version, setVersion] = useState(0)
+  const [editorMode, setEditorMode] = useState<EditorMode>('wysiwyg')
   const [ready, setReady] = useState(false)
   const [, refreshPlugins] = useReducer((value: number) => value + 1, 0)
 
@@ -30,6 +31,23 @@ export function App({ host }: { host: HostAdapter }): React.ReactElement {
     let disposed = false
     const cleanups: Disposable[] = []
     let debounceTimer: number | undefined
+
+    const handleModeShortcut = (event: KeyboardEvent) => {
+      if (event.repeat) return
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.key !== '/') return
+      const editor = editorRef.current
+      if (!editor) return
+      event.preventDefault()
+      event.stopPropagation()
+      editor.toggleMode()
+    }
+
+    window.addEventListener('keydown', handleModeShortcut, true)
+    cleanups.push({
+      dispose() {
+        window.removeEventListener('keydown', handleModeShortcut, true)
+      },
+    })
 
     const applyDocumentState = (state: DocState) => {
       if (disposed) return
@@ -61,6 +79,15 @@ export function App({ host }: { host: HostAdapter }): React.ReactElement {
           return Number.isFinite(value) ? editor.reveal(value) : false
         }),
       )
+
+      cleanups.push(
+        services.commands.register('editor.toggleSourceMode', () => {
+          editor.toggleMode()
+          return editor.getMode()
+        }),
+      )
+
+      cleanups.push(editor.onModeChange(setEditorMode))
 
       cleanups.push(
         editor.onChange((markdown) => {
@@ -127,6 +154,18 @@ export function App({ host }: { host: HostAdapter }): React.ReactElement {
         </div>
         <div className="header-actions">
           <span className="version-chip">v{version}</span>
+          <button
+            type="button"
+            className="toggle-button"
+            data-testid="mode-toggle"
+            data-mode={editorMode}
+            aria-pressed={editorMode === 'source'}
+            title="Toggle source mode (⌘/)"
+            onClick={() => editorRef.current?.toggleMode()}
+            disabled={!ready}
+          >
+            {editorMode === 'source' ? 'Source' : 'Rich text'}
+          </button>
           <button
             type="button"
             className="toggle-button"

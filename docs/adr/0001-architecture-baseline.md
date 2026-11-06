@@ -25,7 +25,9 @@
 
 启用：`listItem, cursor, placeholder, linkTooltip, blockEdit, table, imageBlock, toolbar, codeMirror`（显式小语言列表，不引入 `language-data`）。
 不启用：`topBar`（应用自有外框）、`latex`（`$` 误转义、强依赖 CodeMirror）、`ai`（第一阶段无 Agent）。
-自行实现：源码模式（CodeMirror + `replaceAll`）、大纲、搜索替换、frontmatter 处理。
+自行实现：源码模式、大纲、搜索替换、frontmatter 处理。
+
+源码模式（2026-11-06 修订，#3）：独立装配的 CodeMirror 6，`EditorState.lineSeparator.of('\n')` 保证逐字节；不使用 `replaceAll`。切回 WYSIWYG 时，若源码未改动且期间无外部重载则保留原 ProseMirror 状态，否则经同一 `buildDocument` / `segmentMarkdown` 管线重建，新文本即新的字节基线。
 
 代价：放弃 Crepe 默认的 LaTeX；Vue 运行时仍随 Crepe 组件打包。
 
@@ -74,6 +76,5 @@ GenUI 使用内部小型判别联合 schema + 组件白名单（借鉴 A2UI cata
 
 ## 未决
 
-- 源码模式与 WYSIWYG 共享同一 compose 基线的方式。
 - 打字延迟与超长文档（>1MB）的增量策略。
 - 多窗口/标签页模型。

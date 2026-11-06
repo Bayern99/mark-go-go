@@ -8,6 +8,11 @@
   --mgo-accent: #2f6f62;
   --mgo-accent-soft: #e7f0ed;
   --mgo-danger: #a54141;
+  /* The scheme `light-dark()` tokens resolve against (GenUI). The build
+     lowers `light-dark()` for older WebKit into variables that only rules
+     in this source declaring `color-scheme` set, so a theme switches here
+     and never through an inline style. */
+  color-scheme: light;
   font-family: ui-sans-serif, -apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif;
   color: var(--mgo-text);
   background: var(--mgo-bg);

@@ -62,33 +62,77 @@ messages replace components by id. Other message types are not allowed.
 A component the catalog does not have is shown as an error where it is; the
 rest of the view still renders. Anything else that is wrong (a message that is
 not A2UI 1.0, a property of the wrong type, a missing or extra property, a
-reference to no component, a missing `root`) makes the whole view one error.
+reference to no component, a missing `root`, a component placed where the
+nesting rules below do not allow it) makes the whole view one error, which
+names the component and the reason.
 
 ## Components
 
+The catalog has ten components. The definition of each, with its JSON Schema
+and nesting rules, is in the catalog definition Mark Go Go gives with this
+document.
+
+### Layout
+
 Layout and text come from the A2UI basic catalog, with its properties:
 
-- `Column`, `Row`: `children` (list of component ids), optional `justify`,
-  `align`, `weight`.
-- `Tabs`: `tabs`, a list of `{ "title": string, "child": id }`.
-- `Card`: `child` (one component id).
+- `Column`: `children` (list of component ids), optional `justify`, `align`,
+  `weight`. Stacks its children.
+- `Row`: the same properties. Places its children side by side while each
+  still has room, and wraps them otherwise. Allowed at the top, in a
+  `Column` or in a tab, not in a `Row` or a `Card`.
+- `Tabs`: `tabs`, a list of `{ "title": string, "child": id }`. Allowed at the
+  top or in a `Column` only.
+- `Card`: `child` (one component id): a `Column`, a `Text` or a content
+  component.
 - `Text`: `text`, optional `variant` (`h1`–`h5`, `caption`, `body`). Body
   text is Markdown: bold, italic, code, lists and quotes are shown; links show
   as their text only, images and HTML are not shown.
 
-Mark Go Go's own components hold content. Each takes optional `sources` (list
-of source ids) and `weight` (share of a `Row`'s width) and has no children.
+### Content
 
-### `KeyPoints`
+Mark Go Go's own components hold the content and lay it out themselves. Each
+takes an optional `title` (string), `sources` (list of source ids) and
+`weight` (share of a `Row`'s width), and contains no other component. Text in
+them is plain text, not Markdown.
 
-The few points a reader should take away.
+**`KeyPoints`**: the few points a reader should take away.
 
-- `title` (string, optional).
-- `items` (list of strings, at least one): the points, as plain text.
+- `items` (list of strings, at least one).
+
+**`MetricGrid`**: headline figures in a grid.
+
+- `metrics` (list, at least one) of objects with `label` (string), `value`
+  (string, the figure as it should read), and optional `unit` (string),
+  `change` (string, such as `"+4%"`) and `trend` (`"up"`, `"down"` or
+  `"flat"`, which only colours the change).
+
+**`ComparisonTable`**: items compared side by side. The reader can sort by
+any column; sorting changes only the display. Cells that read as numbers sort
+by value.
+
+- `columns` (list of at least two strings): the headings; the first names
+  what each row compares.
+- `rows` (list, at least one) of lists of strings, one cell per column.
+
+**`Timeline`**: events or phases in order.
+
+- `events` (list, at least one) of objects with `when` (string, such as
+  `"2002"` or `"Phase 2"`), `title` (string) and optional `detail` (string).
+
+**`Checklist`**: items and their state in the document. It is read-only:
+clicking an item selects it in the document and never changes it.
+
+- `items` (list, at least one) of objects with `text` (string), optional
+  `done` (boolean, default `false`) and optional `quote` (string): text
+  copied exactly from the source section that clicking the item selects;
+  without it the item's `text` is looked for, and failing that the whole
+  section is selected.
 
 ## Example
 
-For a document with the headings `Overview`, `Metrics` and `Next steps`:
+For a document with the headings `Overview`, `Metrics`, `Options`, `History`
+and `Next steps`, a view that uses every component:
 
 ```json
 {
@@ -98,6 +142,8 @@ For a document with the headings `Overview`, `Metrics` and `Next steps`:
   "sources": {
     "overview": { "heading": "Overview" },
     "metrics": { "heading": "Metrics" },
+    "options": { "heading": "Options" },
+    "history": { "heading": "History" },
     "next": { "heading": "Next steps" }
   },
   "a2ui": [
@@ -111,18 +157,37 @@ For a document with the headings `Overview`, `Metrics` and `Next steps`:
             { "title": "Summary", "child": "summary" },
             { "title": "Details", "child": "details" }
           ] },
-          { "id": "summary", "component": "Column", "children": ["lead", "points"] },
+          { "id": "summary", "component": "Column", "children": ["lead", "points", "figures"] },
           { "id": "lead", "component": "Text", "text": "Edits keep **untouched blocks** byte for byte." },
           { "id": "points", "component": "Row", "children": ["overviewCard", "nextCard"] },
-          { "id": "overviewCard", "component": "Card", "child": "overviewPoints" },
+          { "id": "overviewCard", "component": "Card", "child": "overviewPoints", "weight": 1 },
           { "id": "overviewPoints", "component": "KeyPoints", "title": "In short",
             "items": ["Untouched blocks keep their original Markdown bytes.", "Only the edited block is written again."],
-            "sources": ["overview"], "weight": 1 },
-          { "id": "nextCard", "component": "Card", "child": "nextPoints" },
-          { "id": "nextPoints", "component": "KeyPoints", "title": "Next",
-            "items": ["Open a real file through the host."], "sources": ["next"], "weight": 1 },
-          { "id": "details", "component": "KeyPoints", "title": "Figures",
-            "items": ["12 documents edited", "100% round trips"], "sources": ["metrics"] }
+            "sources": ["overview"] },
+          { "id": "nextCard", "component": "Card", "child": "nextSteps", "weight": 1 },
+          { "id": "nextSteps", "component": "Checklist", "title": "Next",
+            "items": [
+              { "text": "Open a real file through the host.", "done": true },
+              { "text": "Generate views with an agent." }
+            ],
+            "sources": ["next"] },
+          { "id": "figures", "component": "MetricGrid", "title": "Figures",
+            "metrics": [
+              { "label": "Documents edited", "value": "12" },
+              { "label": "Round trips", "value": "100", "unit": "%", "change": "+4%", "trend": "up" }
+            ],
+            "sources": ["metrics"] },
+          { "id": "details", "component": "Column", "children": ["compare", "history"] },
+          { "id": "compare", "component": "ComparisonTable", "title": "Options",
+            "columns": ["Option", "Size (MB)", "Native"],
+            "rows": [["MyGo", "12", "Yes"], ["Electron", "180", "No"], ["Tauri", "9", "Yes"]],
+            "sources": ["options"] },
+          { "id": "history", "component": "Timeline", "title": "History",
+            "events": [
+              { "when": "March", "title": "First prototype", "detail": "Rich text editing only." },
+              { "when": "November", "title": "GenUI view mode" }
+            ],
+            "sources": ["history"] }
         ]
       }
     }

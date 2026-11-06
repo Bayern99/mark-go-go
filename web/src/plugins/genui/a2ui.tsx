@@ -1,8 +1,9 @@
 /**
  * The only module that knows A2UI. It owns the component catalog, turns a
  * view file's messages into one rendered surface, and reports what went
- * wrong. Everything else in GenUI talks to it through `loadSurface` and
- * `ViewSurface`, so the renderer can be replaced without touching them.
+ * wrong. Everything else in GenUI talks to it through `loadSurface`,
+ * `ViewSurface` and `catalogDefinition`, so the renderer can be replaced
+ * without touching them.
  */
 import { useEffect, useState } from 'react'
 import { z } from 'zod'
@@ -16,51 +17,18 @@ import { Catalog, MessageProcessor, type SurfaceModel } from '@a2ui/web_core/v1_
 import { basicCatalog } from '@a2ui/web_core/catalogs/basic/v1'
 import { STRICT_VALIDATION } from '@a2ui/web_core/validation'
 import { isRecord } from '../../lib/guards'
+import { CONTENT_COMPONENTS } from './components'
 import { SafeMarkdown } from './SafeMarkdown'
-import { SourceContext, SourceFrame, type SourceActions } from './SourceFrame'
+import { SourceContext, type SourceActions } from './SourceFrame'
 
 /** The catalog id a view file's surface must name. */
 export const CATALOG_ID = 'markgogo.dev:genui/v1'
 
-/** Layout components taken as they are from the A2UI basic catalog. */
-const LAYOUT = ['Column', 'Row', 'Tabs', 'Card', 'Text'] as const
-
-/** Props every one of our components accepts besides its own. */
-const common = {
-  /** Source references: ids in the view file's `sources` table. */
-  sources: z.array(z.string()).optional(),
-  /** Share of a Row's width, as for the basic layout components. */
-  weight: z.number().optional(),
-}
-
-const KeyPoints = createComponentImplementation(
-  {
-    name: 'KeyPoints',
-    schema: z
-      .object({
-        title: z.string().optional(),
-        items: z.array(z.string()).min(1),
-        ...common,
-      })
-      .strict(),
-    allowedChildren: [],
-  },
-  ({ props }) => (
-    <SourceFrame sources={props.sources} className="genui-keypoints" style={flex(props.weight)}>
-      {props.title ? <h4>{props.title}</h4> : null}
-      <ul>
-        {props.items.map((item, index) => (
-          <li key={index}>{item}</li>
-        ))}
-      </ul>
-    </SourceFrame>
-  ),
-)
-
 /**
  * Stands in for a component the catalog does not have, so that one
  * unknown component shows an error where it was and the rest still renders.
- * The view file never names it: `loadSurface` puts it there.
+ * The view file never names it: `loadSurface` puts it there, and every
+ * nesting rule admits it so that it is never refused for where it stands.
  */
 const UNKNOWN = 'MgoUnknown'
 const Unknown = createComponentImplementation(
@@ -76,23 +44,50 @@ const Unknown = createComponentImplementation(
   ),
 )
 
+const CONTENT = CONTENT_COMPONENTS.map((component) => component.name)
+
+/**
+ * The A2UI basic layout components, with the nesting rules that keep a view
+ * readable in one editor-wide pane: tabs only at the top, rows side by side
+ * but never inside a row or a card, a card around one piece of content.
+ * Content components hold no other component.
+ */
+function layout(unknown: string[]): ReactCatalogComponent[] {
+  const basic = (name: string) => required(basicCatalog.components.get(name), name)
+  return [
+    basic('Column'),
+    { ...basic('Row'), allowedParents: ['Surface', 'Column', 'Tabs', ...unknown] },
+    { ...basic('Tabs'), allowedParents: ['Surface', 'Column', ...unknown] },
+    { ...basic('Card'), allowedChildren: ['Column', 'Text', ...CONTENT, ...unknown] },
+    basic('Text'),
+  ]
+}
+
 const catalog = new Catalog<ReactCatalogComponent>(
   CATALOG_ID,
   '1.0',
-  [...LAYOUT.map((name) => required(basicCatalog.components.get(name), name)), KeyPoints, Unknown],
+  [...layout([UNKNOWN]), ...CONTENT_COMPONENTS, Unknown],
   Array.from(basicCatalog.functions.values()),
 )
 
-/** Names a view file may use. */
-const KNOWN = new Set([...catalog.components.keys()].filter((name) => name !== UNKNOWN))
+/** Names a view file may use, in the order the format document lists them. */
+export const CATALOG_COMPONENTS: readonly string[] = [...catalog.components.keys()].filter(
+  (name) => name !== UNKNOWN,
+)
+const KNOWN = new Set(CATALOG_COMPONENTS)
+
+/**
+ * The catalog as an A2UI 1.0 catalog document, for an agent writing a view:
+ * every component a view may use with its JSON Schema and nesting rules.
+ * Functions are left out because views are static.
+ */
+export function catalogDefinition(): Record<string, unknown> {
+  return new Catalog<ReactCatalogComponent>(CATALOG_ID, '1.0', [...layout([]), ...CONTENT_COMPONENTS], []).toJson()
+}
 
 function required<T>(value: T | undefined, name: string): T {
   if (value === undefined) throw new Error(`A2UI basic catalog has no ${name}`)
   return value
-}
-
-function flex(weight: number | undefined): React.CSSProperties | undefined {
-  return weight === undefined ? undefined : { flex: weight }
 }
 
 export type LoadedSurface =
@@ -148,9 +143,16 @@ function replaceComponent(component: unknown): unknown {
   return { id: component.id, component: UNKNOWN, type: component.component }
 }
 
+/**
+ * Nesting violations keep their A2UI code, so the reason names the rule
+ * broken; the placeholder for unknown components is ours, not the reader's.
+ */
 function describe(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error)
-  return message.replace(/^\w*Error: /, '')
+  const message = (error instanceof Error ? error.message : String(error))
+    .replace(/^\w*Error: /, '')
+    .replaceAll(`,"${UNKNOWN}"`, '')
+  const code = isRecord(error) ? error.code : undefined
+  return code === 'UNALLOWED_PARENT' || code === 'UNALLOWED_CHILD' ? `${code}: ${message}` : message
 }
 
 /**

@@ -14,7 +14,7 @@ export const SOURCE_DEBOUNCE_MS = 300
  */
 export type SourceStatus = 'fresh' | 'changed' | 'missing' | 'unknown'
 
-/** Where a component's first source currently is in the document. */
+/** Where a component's source currently is in the document. */
 export interface SourceTarget {
   start: number
   end: number
@@ -86,19 +86,30 @@ export class SourceStore {
     })
   }
 
-  /** The current range of the first source that is in the document. */
-  target(ids: readonly string[] | undefined): SourceTarget | undefined {
+  /**
+   * The current range of `text` in the first of the sources that holds it
+   * exactly, or else of the first source that is in the document.
+   */
+  target(ids: readonly string[] | undefined, text?: string): SourceTarget | undefined {
     if (this.timer !== undefined) {
       window.clearTimeout(this.timer)
       this.timer = undefined
       this.refresh()
     }
-    for (const id of ids ?? []) {
+    const found = (ids ?? []).flatMap((id) => {
       const ref = this.table[id]
       const section = ref && findSection(this.sections, ref.heading, ref.occurrence)
-      if (section) return { start: section.start, end: section.end }
+      return section ? [section] : []
+    })
+    const needle = text?.trim()
+    if (needle) {
+      for (const section of found) {
+        const at = this.text.slice(section.start, section.end).indexOf(needle)
+        if (at >= 0) return { start: section.start + at, end: section.start + at + needle.length }
+      }
     }
-    return undefined
+    const first = found[0]
+    return first && { start: first.start, end: first.end }
   }
 
   private refresh(): void {

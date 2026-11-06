@@ -154,8 +154,8 @@ function GenUIView({
     () =>
       sources && {
         store: sources,
-        edit(ids) {
-          const target = sources.target(ids)
+        edit(ids, text) {
+          const target = sources.target(ids, text)
           if (!target) return
           // A scroll the reader just made may not have reported its event yet.
           memory.top = scroller.scrollTop

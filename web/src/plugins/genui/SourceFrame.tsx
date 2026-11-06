@@ -3,8 +3,11 @@ import type { SourceStatus, SourceStore } from './sources'
 
 export interface SourceActions {
   store: SourceStore
-  /** Show the first source of a component in rich text, selected. */
-  edit(ids: readonly string[]): void
+  /**
+   * Show a component's source in rich text, selected: where `text` is in its
+   * source sections when given and found, otherwise its first source section.
+   */
+  edit(ids: readonly string[], text?: string): void
 }
 
 export const SourceContext = createContext<SourceActions | null>(null)
@@ -22,49 +25,69 @@ const STATUS_HINT: Partial<Record<SourceStatus, string>> = {
 const noSubscription = () => () => {}
 const noRevision = () => 0
 
+export interface ComponentSource {
+  status: SourceStatus
+  headings: string[]
+  /** Opens the source in the editor; absent when there is nowhere to go. */
+  edit: ((text?: string) => void) | undefined
+}
+
+/**
+ * What a component's `sources` say now, re-read whenever the document's
+ * sections are; `edit` is absent without sources or when one is missing.
+ */
+export function useComponentSource(sources: readonly string[] | undefined): ComponentSource {
+  const actions = useContext(SourceContext)
+  useSyncExternalStore(
+    actions?.store.subscribe ?? noSubscription,
+    actions?.store.getRevision ?? noRevision,
+  )
+  const ids = sources ?? []
+  if (!actions || ids.length === 0) return { status: 'unknown', headings: [], edit: undefined }
+  const status = actions.store.status(ids)
+  return {
+    status,
+    headings: actions.store.headings(ids),
+    edit: status === 'missing' ? undefined : (text) => actions.edit(ids, text),
+  }
+}
+
 /**
  * The frame every content component of the catalog draws in: where its
  * content came from, whether that source changed since the view was made,
  * and the way to edit it in the document.
  */
 export function SourceFrame({
-  sources,
+  source,
   className,
   style,
+  title,
   children,
 }: {
-  sources: readonly string[] | undefined
+  source: ComponentSource
   className: string
   style?: React.CSSProperties
+  title?: string
   children: ReactNode
 }): React.ReactElement {
-  const actions = useContext(SourceContext)
-  // Re-render when the document's sections are re-read.
-  useSyncExternalStore(
-    actions?.store.subscribe ?? noSubscription,
-    actions?.store.getRevision ?? noRevision,
-  )
-  const ids = sources ?? []
-  const status = actions && ids.length > 0 ? actions.store.status(ids) : 'unknown'
-  const headings = actions ? actions.store.headings(ids) : []
-  const label = STATUS_LABEL[status]
-
+  const label = STATUS_LABEL[source.status]
   return (
-    <article className={`genui-block ${className}`} style={style} data-source-status={status}>
+    <article className={`genui-block ${className}`} style={style} data-source-status={source.status}>
+      {title ? <h4>{title}</h4> : null}
       {children}
-      {actions && ids.length > 0 ? (
+      {source.headings.length > 0 ? (
         <footer className="genui-source">
-          <span className="genui-source-from">From {headings.join(', ')}</span>
+          <span className="genui-source-from">From {source.headings.join(', ')}</span>
           {label ? (
-            <span className="genui-source-status" title={STATUS_HINT[status]}>
+            <span className="genui-source-status" title={STATUS_HINT[source.status]}>
               {label}
             </span>
           ) : null}
           <button
             type="button"
             className="genui-source-edit"
-            disabled={status === 'missing'}
-            onClick={() => actions.edit(ids)}
+            disabled={!source.edit}
+            onClick={() => source.edit?.()}
           >
             Edit in source
           </button>

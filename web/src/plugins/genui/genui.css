@@ -1,16 +1,48 @@
+/*
+ * GenUI colours are tokens with a light and a dark value; which one shows
+ * follows the inherited `color-scheme`, so the view matches whatever theme
+ * the app is in. A2UI's layout components read the same tokens.
+ */
 .genui-view {
+  --genui-text: light-dark(#1c1c1c, #e8e6e3);
+  --genui-muted: light-dark(#6b6b6b, #a39f99);
+  --genui-surface: light-dark(#ffffff, #23272a);
+  --genui-surface-soft: light-dark(#faf8f5, #1c1f22);
+  --genui-border: light-dark(#e2ded7, #3a3f44);
+  --genui-accent: light-dark(#2f6f62, #7cc4b2);
+  --genui-accent-soft: light-dark(#e7f0ed, #20372f);
+  --genui-warning: light-dark(#8a5a12, #e0b36a);
+  --genui-warning-soft: light-dark(#fbf1dc, #3a2f1a);
+  --genui-danger: light-dark(#9a3b3b, #e89a9a);
+  --genui-danger-soft: light-dark(#fdf4f4, #3a2222);
+  --genui-up: light-dark(#2f7a45, #79c98f);
+  --genui-down: light-dark(#a54141, #e89a9a);
+
+  --a2ui-color-surface: var(--genui-surface);
+  --a2ui-color-on-surface: var(--genui-text);
+  --a2ui-color-on-background: var(--genui-text);
+  --a2ui-text-color-text: var(--genui-text);
+  --a2ui-color-border: var(--genui-border);
+  --a2ui-color-primary: var(--genui-accent);
+  --a2ui-text-caption-color: var(--genui-muted);
+  --a2ui-tabs-header-color: var(--genui-muted);
+  --a2ui-tabs-header-color-active: var(--genui-accent);
+  --a2ui-card-box-shadow: none;
+  --a2ui-card-margin: 0;
+
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-height: 100%;
   font-size: 14px;
   line-height: 1.5;
-  color: var(--mgo-text, #1c1c1c);
+  color: var(--genui-text);
 }
 
 .genui-meta,
 .genui-note {
   margin: 0;
-  color: var(--mgo-muted, #6b6b6b);
+  color: var(--genui-muted);
   font-size: 11px;
 }
 
@@ -26,15 +58,16 @@
 }
 
 .genui-generate {
-  border: 1px solid var(--mgo-border, #e2ded7);
+  border: 1px solid var(--genui-border);
   border-radius: 6px;
   padding: 4px 12px;
-  background: #fff;
+  background: var(--genui-surface);
+  color: var(--genui-text);
   font: inherit;
 }
 
 .genui-generate:disabled {
-  color: var(--mgo-muted, #6b6b6b);
+  color: var(--genui-muted);
   cursor: not-allowed;
 }
 
@@ -42,23 +75,47 @@
 .genui-problems,
 .genui-unknown {
   margin: 0;
-  border: 1px solid #d9a7a7;
+  border: 1px solid var(--genui-danger);
   border-radius: 8px;
   padding: 10px 12px;
-  background: #fdf4f4;
-  color: #9a3b3b;
+  background: var(--genui-danger-soft);
+  color: var(--genui-danger);
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .genui-problems {
   padding-left: 28px;
 }
 
+/* Rows hold their items side by side only while each still has room. */
+.genui-surface a2ui-basic-row {
+  flex-wrap: wrap;
+}
+
+.genui-surface a2ui-basic-row > * {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.genui-surface a2ui-basic-column > *,
+.genui-surface a2ui-card {
+  min-width: 0;
+}
+
 .genui-block {
-  border: 1px solid var(--mgo-border, #e2ded7);
+  min-width: 0;
+  border: 1px solid var(--genui-border);
   border-radius: 8px;
   padding: 12px;
-  background: #fff;
+  background: var(--genui-surface);
+  overflow-wrap: anywhere;
+}
+
+/* A card already frames its content. */
+.genui-surface a2ui-card .genui-block {
+  border: 0;
+  padding: 0;
 }
 
 .genui-block h4 {
@@ -67,15 +124,221 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--mgo-muted, #6b6b6b);
+  color: var(--genui-muted);
+}
+
+.genui-block ul,
+.genui-block ol {
+  margin: 0;
 }
 
 .genui-keypoints ul {
-  margin: 0;
   padding-left: 18px;
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.genui-metrics dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(140px, 100%), 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.genui-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  border-radius: 6px;
+  padding: 10px;
+  background: var(--genui-surface-soft);
+}
+
+.genui-metric dt {
+  font-size: 12px;
+  color: var(--genui-muted);
+}
+
+.genui-metric dd {
+  margin: 0;
+}
+
+.genui-metric-value {
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.genui-metric-unit {
+  margin-left: 3px;
+  font-size: 13px;
+  color: var(--genui-muted);
+}
+
+.genui-metric-change {
+  font-size: 12px;
+  color: var(--genui-muted);
+}
+
+.genui-metric-change[data-trend='up'] {
+  color: var(--genui-up);
+}
+
+.genui-metric-change[data-trend='down'] {
+  color: var(--genui-down);
+}
+
+.genui-table-scroll {
+  overflow-x: auto;
+}
+
+.genui-comparison table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.genui-comparison th,
+.genui-comparison td {
+  min-width: 7em;
+  border-bottom: 1px solid var(--genui-border);
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.genui-comparison tbody th {
+  font-weight: 600;
+}
+
+.genui-comparison thead th {
+  padding: 0;
+}
+
+.genui-comparison thead button {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  width: 100%;
+  border: 0;
+  padding: 6px 8px;
+  background: none;
+  color: var(--genui-muted);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.genui-comparison thead th[aria-sort='ascending'] button,
+.genui-comparison thead th[aria-sort='descending'] button {
+  color: var(--genui-accent);
+}
+
+.genui-sort-mark {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.genui-timeline ol {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.genui-timeline li {
+  display: grid;
+  grid-template-columns: minmax(4.5em, max-content) minmax(0, 1fr);
+  gap: 12px;
+  padding-bottom: 12px;
+}
+
+.genui-timeline li:last-child {
+  padding-bottom: 0;
+}
+
+.genui-timeline-when {
+  max-width: 12em;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--genui-accent);
+}
+
+.genui-timeline-body {
+  border-left: 2px solid var(--genui-border);
+  padding-left: 12px;
+}
+
+.genui-timeline-title,
+.genui-timeline-detail {
+  margin: 0;
+}
+
+.genui-timeline-title {
+  font-weight: 600;
+}
+
+.genui-timeline-detail {
+  color: var(--genui-muted);
+}
+
+.genui-checklist ul {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.genui-checklist li > button {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 6px;
+  background: none;
+  color: var(--genui-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.genui-checklist li > button:hover:not(:disabled) {
+  background: var(--genui-accent-soft);
+}
+
+.genui-checklist li > button:disabled {
+  cursor: default;
+}
+
+.genui-check {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border: 1px solid var(--genui-muted);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--genui-surface);
+}
+
+[data-done='true'] .genui-check {
+  border-color: var(--genui-accent);
+  background: var(--genui-accent);
+}
+
+[data-done='true'] .genui-check-text {
+  color: var(--genui-muted);
 }
 
 .genui-markdown-heading {
@@ -84,7 +347,7 @@
 
 .genui-link {
   text-decoration: underline;
-  text-decoration-color: var(--mgo-border, #e2ded7);
+  text-decoration-color: var(--genui-border);
 }
 
 .genui-source {
@@ -94,40 +357,39 @@
   gap: 6px 10px;
   margin-top: 10px;
   padding-top: 8px;
-  border-top: 1px solid var(--mgo-border, #e2ded7);
+  border-top: 1px solid var(--genui-border);
   font-size: 11px;
-  color: var(--mgo-muted, #6b6b6b);
+  color: var(--genui-muted);
 }
 
 .genui-source-from {
   flex: 1;
   min-width: 0;
-  overflow-wrap: anywhere;
 }
 
 .genui-source-status {
   border-radius: 999px;
   padding: 1px 8px;
-  background: #fbf1dc;
-  color: #8a5a12;
+  background: var(--genui-warning-soft);
+  color: var(--genui-warning);
 }
 
 [data-source-status='missing'] .genui-source-status {
-  background: #f3eded;
-  color: #9a3b3b;
+  background: var(--genui-danger-soft);
+  color: var(--genui-danger);
 }
 
 .genui-source-edit {
   font: inherit;
-  border: 1px solid var(--mgo-border, #e2ded7);
+  border: 1px solid var(--genui-border);
   border-radius: 6px;
   padding: 2px 8px;
-  background: #fff;
-  color: var(--mgo-accent, #2f6f62);
+  background: var(--genui-surface);
+  color: var(--genui-accent);
   cursor: pointer;
 }
 
 .genui-source-edit:disabled {
-  color: var(--mgo-muted, #6b6b6b);
+  color: var(--genui-muted);
   cursor: not-allowed;
 }

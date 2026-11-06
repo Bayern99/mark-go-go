@@ -88,7 +88,7 @@ interface PluginContext {
 - 按需：插件注册中央视图 `genui`；`mount` 时才 `import('./GenUIView')`（独立代码块，含 A2UI 与 zod）并开始 `ctx.viewFile.watch`，卸载时停止跟随。未进入 GenUI 时不加载该代码块，也没有 `WatchView` 调用。
 - 格式唯一说明：`web/src/plugins/genui/view-format.md`（`version: 2`；`generatedAt?`、`model?`、`request?`、`sources{ id: { heading, occurrence?, hash? } }`、`a2ui[]` A2UI 1.0 消息）。测试直接渲染其中的 JSON 示例，文档与实现不会分叉。
 - 外层解析（`viewFile.ts` 的 `parseViewFile`）：非 JSON、非对象、版本不是 2、缺 `a2ui` 数组、`sources` 条目不合法 → 一条 `role="alert"` 消息；`version: 1` → `This view was made by an older version of Mark Go Go. Generate it again.`（不迁移）。
-- A2UI 适配（`a2ui.tsx`，唯一 import `@a2ui/*` 的模块，版本精确锁定 0.15.0）：组件目录 `markgogo.dev:genui/v1` = 基础目录的 `Column` / `Row` / `Tabs` / `Card` / `Text` + 我们的 `KeyPoints`。`MessageProcessor` 以严格校验运行（必须有 `root`、引用必须存在、属性按 zod schema 严格校验、只允许 `createSurface` / `updateComponents`、只能一个 surface）；任一失败 → 整个视图一条错误。目录外的组件名在加载前替换为占位组件，只在该处显示 `“<名字>” is not a component this app can show.`，其余照常。
+- A2UI 适配（`a2ui.tsx`，唯一 import `@a2ui/*` 的模块，版本精确锁定 0.15.0）：组件目录 `markgogo.dev:genui/v1` = 基础目录的 `Column` / `Row` / `Tabs` / `Card` / `Text` + 内容组件（见 #11）。`MessageProcessor` 以严格校验运行（必须有 `root`、引用必须存在、属性按 zod schema 严格校验、嵌套约束、只允许 `createSurface` / `updateComponents`、只能一个 surface）；任一失败 → 整个视图一条错误，写明组件和原因（嵌套违规以 `UNALLOWED_PARENT:` / `UNALLOWED_CHILD:` 开头）。目录外的组件名在加载前替换为占位组件，只在该处显示 `“<名字>” is not a component this app can show.`，其余照常。
 - `Text` 的 Markdown 由 `SafeMarkdown.tsx` 用应用自己的 mdast 解析器渲染为 React 元素：粗体、斜体、删除线、行内代码、代码块、列表、引用；链接只显示文字（`.genui-link`），图片和原始 HTML 不显示。没有 `innerHTML`。（`@a2ui/markdown-it` 0.2.2 的 peer 依赖是 web_core ^0.14，与 0.15 冲突，未采用。）
 - 视图里的交互（切换标签页等）只改变显示，不调用 `host.update`。
 - 章节（`sections.ts`）与 `fnv1a32` 哈希不变。
@@ -97,10 +97,19 @@ interface PluginContext {
 ## GenUI 来源状态与“去原文修改”（#10）
 
 - `sources.ts` 的 `SourceStore`：视图文件的来源表对照当前文档。文档变化后防抖 300ms（与大纲相同）重新提取章节；状态 `fresh` / `changed`（哈希不同）/ `missing`（找不到 heading + occurrence，优先于 changed）/ `unknown`（无记录哈希的手写视图，或组件没有来源）。
-- `SourceFrame.tsx`：目录内容组件（目前 `KeyPoints`）都画在同一个框里：底部 `From <标题…>`、状态标记 `Source changed` / `Source not found`（只在这两种状态显示）、`Edit in source` 按钮（`missing` 时禁用）。状态写在 `data-source-status`。
-- `Edit in source`：取组件第一个仍在文档里的来源，先立即刷新章节（不用防抖中的旧偏移），再执行命令 `editor.select(start, end)`。App 切到 Rich text、整段选中，并在编辑器区显示 `← Back to GenUI`（`data-testid="return-to-view"`）。点它回到 GenUI；在头部选任一模式后这个按钮消失。
+- `SourceFrame.tsx`：所有内容组件都画在同一个框里：底部 `From <标题…>`、状态标记 `Source changed` / `Source not found`（只在这两种状态显示）、`Edit in source` 按钮（`missing` 时禁用）。状态写在 `data-source-status`。组件经 `useComponentSource(sources)` 取状态与 `edit(text?)`。
+- `Edit in source`：取组件第一个仍在文档里的来源，先立即刷新章节（不用防抖中的旧偏移），再执行命令 `editor.select(start, end)`。带 `text` 时（Checklist 项）在各来源节里找这段原文，找到就只选它，否则选第一个来源整节。App 切到 Rich text、选中，并在编辑器区显示 `← Back to GenUI`（`data-testid="return-to-view"`）。点它回到 GenUI；在头部选任一模式后这个按钮消失。
 - 滚动位置：GenUI 视图的挂载元素 `.center-view` 就是滚动区。位置按视图文件文本记在插件里（`ScrollMemory`），跨挂载保留；同一份视图文件回来时恢复，换了视图文件从顶部开始。A2UI 首次提交后才渲染组件树，所以恢复时跟随内容增高（`ResizeObserver`，最多 1s）。
 - 生成器写入 `hash` 尚未实现（#7）；现在只有带 `hash` 的视图文件才会显示状态。
+
+## GenUI 组件目录（#11）
+
+- 内容组件（`components.tsx`，共用 `common` 属性 `sources?` / `weight?` 与 `title?`，`.strict()`，不含子组件）：`KeyPoints`（`items`）、`MetricGrid`（`metrics[{label, value, unit?, change?, trend?: up|down|flat}]`）、`ComparisonTable`（`columns` ≥ 2、`rows` 每行与列数相同；点列头升序 → 降序 → 原顺序，数字按值比较；只改显示）、`Timeline`（`events[{when, title, detail?}]`）、`Checklist`（`items[{text, done?, quote?}]`；`role="checkbox"` + `aria-readonly`，点一项经 `edit(quote ?? text)` 选中原文，从不改原文；来源缺失时禁用）。
+- 嵌套约束（布局组件上声明）：`Row` 只能在顶层、`Column`、`Tabs` 里；`Tabs` 只能在顶层或 `Column` 里；`Card` 只能装 `Column`、`Text` 或内容组件。占位组件 `MgoUnknown` 被所有约束接纳，并从错误信息里去掉。
+- `catalogDefinition()`：A2UI 1.0 目录文档（`Catalog.toJson()`），列出 10 个组件的 JSON Schema（含字段说明）与 `allowedParents` / `allowedChildren`，不含占位组件和函数；约 9 KB。#7 把它和格式文档一起交给 Agent。
+- 排版：`Row` 在 GenUI 里换行，每项至少 260px；`.genui-block` `min-width: 0` 与 `overflow-wrap: anywhere`；宽表在自己的框里横向滚动。
+- 主题：颜色是 `light-dark()` 令牌（`genui.css` 的 `--genui-*`，并映射到 `--a2ui-*`），跟随继承的 `color-scheme`。构建会把 `light-dark()` 降级成只有源码里声明了 `color-scheme` 的规则才设置的变量，所以 `:root` 声明 `color-scheme: light`；以后的主题切换要改这条规则，不能用内联样式。
+- 格式文档 `view-format.md`：每个组件一节，示例用到全部 10 个组件（合约测试：示例无错误渲染，且组件集合等于目录）。
 
 ## Editor Adapter（`web/src/editor/createEditor.ts`）
 

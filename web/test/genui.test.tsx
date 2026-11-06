@@ -5,6 +5,7 @@ import { createBrowserHost } from '../src/host/browserHost'
 import type { HostAdapter } from '../src/host/types'
 import { isRecord } from '../src/lib/guards'
 import { extractSections } from '../src/markdown/sections'
+import { CATALOG_COMPONENTS } from '../src/plugins/genui/a2ui'
 import { SOURCE_DEBOUNCE_MS } from '../src/plugins/genui/sources'
 import formatDoc from '../src/plugins/genui/view-format.md?raw'
 import { mountApp } from './helpers/app'
@@ -88,7 +89,14 @@ describe('GenUI view mode', () => {
     }
   })
 
-  it('renders the format document example in place of the editor', async () => {
+  it('renders the format document example, which uses every catalog component', async () => {
+    const used = new Set<string>()
+    exampleWith((components) => {
+      for (const component of components) used.add(String(component.component))
+      return components
+    })
+    expect([...used].sort()).toEqual([...CATALOG_COMPONENTS].sort())
+
     const app = await mountApp(DOCUMENT, reportHost(formatExample()))
     try {
       await showMode('genui')
@@ -99,12 +107,14 @@ describe('GenUI view mode', () => {
 
       await expect.element(genui().getByText('In short')).toBeVisible()
       await expect.element(genui().getByText('Only the edited block is written again.')).toBeVisible()
-      await expect.element(genui().getByText('Open a real file through the host.')).toBeVisible()
+      await expect.element(genui().getByRole('checkbox', { name: 'Open a real file through the host.' })).toBeVisible()
+      await expect.element(genui().getByText('Documents edited')).toBeVisible()
       const bold = surface(app.container).querySelector('strong')
       expect(bold?.textContent).toBe('untouched blocks')
 
       await genui().getByText('Details').click()
-      await expect.element(genui().getByText('100% round trips')).toBeVisible()
+      await expect.element(genui().getByRole('columnheader', { name: /Size \(MB\)/ })).toBeVisible()
+      await expect.element(genui().getByText('First prototype')).toBeVisible()
     } finally {
       await app.unmount()
     }
@@ -117,7 +127,8 @@ describe('GenUI view mode', () => {
     try {
       await showMode('genui')
       await genui().getByText('Details').click()
-      await expect.element(genui().getByText('Figures')).toBeVisible()
+      await genui().getByRole('button', { name: /Size \(MB\)/ }).click()
+      await expect.element(genui().getByText('History')).toBeVisible()
       await genui().getByText('Summary').click()
       await expect.element(genui().getByText('In short')).toBeVisible()
 
@@ -131,7 +142,7 @@ describe('GenUI view mode', () => {
 
   it('shows an unknown component as an error where it is and renders the rest', async () => {
     const view = exampleWith(
-      replaceComponent('nextPoints', { id: 'nextPoints', component: 'Chart', series: [1, 2] }),
+      replaceComponent('nextSteps', { id: 'nextSteps', component: 'Chart', series: [1, 2] }),
     )
     const app = await mountApp(DOCUMENT, reportHost(view))
     try {

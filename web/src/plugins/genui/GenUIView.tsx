@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { PluginContext } from '../../core/types'
-import type { Disposable, GenerationSettings, ViewSnapshot } from '../../host/types'
+import type { Disposable, GenerateFailure, GenerateFailureKind, GenerationSettings, ViewSnapshot } from '../../host/types'
 import { loadSurface, ViewSurface, type LoadedSurface } from './a2ui'
 import { GenerationController, type GenerationState } from './generation'
 import type { SourceActions } from './SourceFrame'
@@ -297,15 +297,62 @@ function GeneratePanel({
       </div>
       {untitled ? <p className="genui-note">Save the document first: the view is stored next to it.</p> : null}
       {run.kind === 'failed' ? (
-        <div className="genui-file-error genui-run-error" role="alert">
-          <p>{run.error}</p>
-          <button type="button" onClick={() => generation.dismissError()}>
-            Dismiss
-          </button>
-        </div>
+        <GenerationFailure failure={run.failure} generation={generation} openSettings={() => setSettingsOpen(true)} />
       ) : null}
       {settingsOpen && !running ? <SettingsForm generation={generation} onDone={() => setSettingsOpen(false)} /> : null}
     </section>
+  )
+}
+
+/** The kinds whose fix is in the agent settings. */
+const SETTINGS_FIXES: Partial<Record<GenerateFailureKind, true>> = { 'agent-not-found': true, 'model-invalid': true }
+
+/** Why the last run failed, what to do about it, and the agent's own words. */
+function GenerationFailure({
+  failure,
+  generation,
+  openSettings,
+}: {
+  failure: GenerateFailure
+  generation: GenerationController
+  openSettings: () => void
+}): React.ReactElement {
+  return (
+    <div className="genui-file-error genui-run-error" role="alert">
+      <p>{failure.message}</p>
+      {failure.hint ? <p className="genui-run-hint">{failure.hint}</p> : null}
+      {failure.models?.length ? (
+        <>
+          <p>Models it offers:</p>
+          <ul className="genui-run-models">
+            {failure.models.map((model) => (
+              <li key={model}>
+                <code>{model}</code>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      {failure.detail ? (
+        <figure className="genui-run-detail">
+          <figcaption>The agent said:</figcaption>
+          <pre>{failure.detail}</pre>
+        </figure>
+      ) : null}
+      <div className="genui-generate-actions">
+        <button type="button" onClick={() => void generation.retry()}>
+          Retry
+        </button>
+        {SETTINGS_FIXES[failure.kind] ? (
+          <button type="button" onClick={openSettings}>
+            Open agent settings
+          </button>
+        ) : null}
+        <button type="button" onClick={() => generation.dismissError()}>
+          Dismiss
+        </button>
+      </div>
+    </div>
   )
 }
 

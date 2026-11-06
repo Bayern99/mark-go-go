@@ -12,6 +12,7 @@ package main
 import (
 	"io"
 	"log"
+	"time"
 
 	"github.com/egoist/mygo"
 )
@@ -52,7 +53,12 @@ func main() {
 		}))
 	})
 
-	if err := mygo.App.Run(); err != nil {
+	err := mygo.App.Run()
+	// Quitting closed every window, which cancelled their generations;
+	// let them stop their agents and remove their folders before the
+	// process exits, which would otherwise orphan the agents.
+	host.waitForGenerations(5 * time.Second)
+	if err != nil {
 		log.Fatal(err)
 	}
 }

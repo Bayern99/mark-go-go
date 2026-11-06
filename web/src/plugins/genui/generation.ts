@@ -1,5 +1,6 @@
 import type { PluginContext } from '../../core/types'
-import type { GenerateProgress, GenerationSettings } from '../../host/types'
+import { failureOf } from '../../host/generationError'
+import type { GenerateFailure, GenerateProgress, GenerationSettings } from '../../host/types'
 import { extractSections } from '../../markdown/sections'
 import { catalogDefinition } from './a2ui'
 import formatDocument from './view-format.md?raw'
@@ -15,7 +16,8 @@ export function agentFormat(): string {
 export type GenerationState =
   | { kind: 'idle' }
   | { kind: 'running'; progress: GenerateProgress[] }
-  | { kind: 'failed'; error: string }
+  /** The last run failed; `request` is what it asked for, so it can be retried. */
+  | { kind: 'failed'; failure: GenerateFailure; request: string }
 
 /**
  * One window's generation: at most one run at a time, its progress, and the
@@ -69,7 +71,8 @@ export class GenerationController {
     } catch (error) {
       if (this.abort !== abort) return
       // Cancelling is the reader's choice, not a failure to report.
-      this.set(abort.signal.aborted ? { kind: 'idle' } : { kind: 'failed', error: describe(error) })
+      const failure = failureOf(error)
+      this.set(abort.signal.aborted || failure.kind === 'cancelled' ? { kind: 'idle' } : { kind: 'failed', failure, request })
     } finally {
       if (this.abort === abort) this.abort = undefined
     }
@@ -77,6 +80,11 @@ export class GenerationController {
 
   cancel(): void {
     this.abort?.abort()
+  }
+
+  /** Runs the failed run's request again. */
+  retry(): Promise<void> {
+    return this.state.kind === 'failed' ? this.generate(this.state.request) : Promise.resolve()
   }
 
   dismissError(): void {
@@ -100,9 +108,4 @@ export class GenerationController {
     this.state = state
     for (const listener of this.listeners) listener()
   }
-}
-
-function describe(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error)
-  return message.replace(/^\w*Error: /, '')
 }

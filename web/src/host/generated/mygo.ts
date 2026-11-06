@@ -15,17 +15,37 @@ export interface DocState {
 }
 
 /**
+ * GenerateFailure is why a generation ended without a new view, sent
+ * to the page as the last step of the run, so that the page tells the
+ * reader what happened and what to do.
+ */
+export interface GenerateFailure {
+  /** Kind is one of the failure kinds below. */
+  kind: string;
+  /** Message says what happened, in a sentence or two. */
+  message: string;
+  /** Hint says what the reader can do about it. */
+  hint?: string;
+  /** Detail is the agent's own words, verbatim. */
+  detail?: string;
+  /** Models are the models the agent offers, for model-invalid. */
+  models?: string[];
+}
+
+/**
  * GenerateProgress is one step of a running generation, sent to the
  * page while the generation runs.
  */
 export interface GenerateProgress {
   /**
    * Phase is "starting", "thinking", "reading", "writing" or
-   * "checking".
+   * "checking"; "failed" is the last step of a run that failed.
    */
   phase: string;
   /** Text is a short, human-readable description of the step. */
   text: string;
+  /** Failure is why the run failed, on the "failed" step only. */
+  failure?: GenerateFailure;
 }
 
 /**
@@ -121,7 +141,8 @@ export const DocumentHost = {
    * document's view file atomically. The page follows the progress on
    * the channel and sees the new view through the view watch, so
    * Generate only returns an error. The document itself is never
-   * written.
+   * written. A failed run sends the page its failure as the last step,
+   * then returns it as the error.
    */
   generate(req: GenerateRequest, progress: Channel<GenerateProgress>): Promise<void> {
     return call("DocumentHost.Generate", req, progress);

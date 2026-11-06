@@ -81,6 +81,15 @@ type fakeSpec struct {
 	Hang bool `json:"hang"`
 	// Crash writes the text to stderr and exits 1 right away.
 	Crash string `json:"crash"`
+	// Errors answers the requests of these methods with these
+	// JSON-RPC errors instead.
+	Errors map[string]fakeRPCError `json:"errors"`
+}
+
+// fakeRPCError is a JSON-RPC error the fake answers with.
+type fakeRPCError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
 }
 
 // runFakeAgent plays the agent until the client goes away.
@@ -141,6 +150,10 @@ func runFakeAgent() {
 		}
 		if msg.Method != "" {
 			logf(map[string]any{"type": "recv", "method": msg.Method, "params": msg.Params})
+		}
+		if e, ok := spec.Errors[msg.Method]; ok && msg.ID != nil {
+			send(map[string]any{"jsonrpc": "2.0", "id": *msg.ID, "error": e})
+			continue
 		}
 		switch {
 		case msg.ID != nil && msg.Method == "initialize":
@@ -693,12 +706,12 @@ func TestGenerateHappyPath(t *testing.T) {
 
 	// The page got one progress step per phase change.
 	wantProgress := []GenerateProgress{
-		{"starting", "Starting the agent"},
-		{"starting", "Agent ready"},
-		{"thinking", "Thinking"},
-		{"reading", "File source.md"},
-		{"writing", "File out.json"},
-		{"checking", "Checking the view"},
+		{Phase: "starting", Text: "Starting the agent"},
+		{Phase: "starting", Text: "Agent ready"},
+		{Phase: "thinking", Text: "Thinking"},
+		{Phase: "reading", Text: "File source.md"},
+		{Phase: "writing", Text: "File out.json"},
+		{Phase: "checking", Text: "Checking the view"},
 	}
 	gotProgress := progress.got()
 	if len(gotProgress) != len(wantProgress) {
@@ -812,11 +825,80 @@ func TestGenerateModel(t *testing.T) {
 		t.Errorf("set_config_option = %v, want none", sets)
 	}
 
-	// An unknown model is an error that names the models offered.
+	// An unknown model is model-invalid, with the models offered.
 	err, _, _ = driveGeneration(t, fakeSpec{Out: minimalOut}, nil, func(job *generationJob) { job.Model = "no-such-model" })
-	want := `The agent does not know the model "no-such-model". Models it offers: gemini-4-argon, gemini-3.8-flash, claude-opus-5-5.`
-	if err == nil || err.Error() != want {
-		t.Errorf("error = %v, want %q", err, want)
+	f := failureFrom(t, err)
+	wantModels := []string{"gemini-4-argon", "gemini-3.8-flash", "claude-opus-5-5"}
+	if f.Kind != failModelInvalid || f.Message != `The agent does not know the model "no-such-model".` || f.Hint != hintModelInvalid || strings.Join(f.Models, ",") != strings.Join(wantModels, ",") {
+		t.Errorf("failure = %+v, want model-invalid with %v", f, wantModels)
+	}
+}
+
+// failureFrom returns the failure of a run's error, which must be one.
+func failureFrom(t *testing.T, err error) GenerateFailure {
+	t.Helper()
+	var ge *genError
+	if !errors.As(err, &ge) {
+		t.Fatalf("error = %v (%T), want a generation failure", err, err)
+	}
+	return ge.GenerateFailure
+}
+
+// writeSentinelView writes a view file the failing runs must leave as
+// it is, and returns its path and bytes.
+func writeSentinelView(t *testing.T) (string, []byte) {
+	t.Helper()
+	viewPath := filepath.Join(t.TempDir(), ".notes.md.genui.json")
+	sentinel := []byte("the view that was")
+	if err := os.WriteFile(viewPath, sentinel, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return viewPath, sentinel
+}
+
+// sentinelKept asserts the view file still has the sentinel's bytes.
+func sentinelKept(t *testing.T, viewPath string, sentinel []byte) {
+	t.Helper()
+	if got, err := os.ReadFile(viewPath); err != nil || string(got) != string(sentinel) {
+		t.Errorf("view file = %q, %v; want the sentinel untouched", got, err)
+	}
+}
+
+func TestGenerateAgentWords(t *testing.T) {
+	// What the agent says when it fails reaches the reader verbatim:
+	// as its last reply when the turn ends without out.json, or as its
+	// error answer to the prompt. An agent that is not signed in gets
+	// the login hint, whichever call it fails.
+	const quota = "Individual quota reached.\nResets in 3h 12m."
+	loginHint := fmt.Sprintf("Run `%s acp --login` in Terminal, then retry.", os.Args[0])
+	cases := []struct {
+		name                  string
+		spec                  fakeSpec
+		kind, message, detail string
+		hint                  string
+	}{
+		{"reply without out.json", fakeSpec{Messages: []string{"Individual quota reached.\n", "Resets in 3h 12m."}},
+			failAgentMessage, "The agent finished without writing a view.", quota, hintAgentMessage},
+		{"prompt error", fakeSpec{Errors: map[string]fakeRPCError{"session/prompt": {Code: -32603, Message: quota}}},
+			failAgentMessage, "The agent stopped with an error.", quota, hintAgentMessage},
+		{"auth code on session/new", fakeSpec{Errors: map[string]fakeRPCError{"session/new": {Code: -32000, Message: "Authentication required"}}},
+			failAuthRequired, "The agent is not signed in.", "Authentication required", loginHint},
+		{"auth words on the prompt", fakeSpec{Errors: map[string]fakeRPCError{"session/prompt": {Code: -32603, Message: "Error: authentication required. Run 'agy acp --login' to log in."}}},
+			failAuthRequired, "The agent is not signed in.", "Error: authentication required. Run 'agy acp --login' to log in.", loginHint},
+		{"auth on its error output", fakeSpec{Crash: "Error: authentication required. Run 'agy acp --login' to log in."},
+			failAuthRequired, "The agent is not signed in.", "The agent exited before answering initialize. Its error output: Error: authentication required. Run 'agy acp --login' to log in.", loginHint},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			viewPath, sentinel := writeSentinelView(t)
+			err, _, log := driveGeneration(t, tc.spec, nil, func(job *generationJob) { job.ViewPath = viewPath })
+			f := failureFrom(t, err)
+			if f.Kind != tc.kind || f.Message != tc.message || f.Detail != tc.detail || f.Hint != tc.hint {
+				t.Errorf("failure = %+v, want %s %q, detail %q, hint %q", f, tc.kind, tc.message, tc.detail, tc.hint)
+			}
+			sentinelKept(t, viewPath, sentinel)
+			tempDirGone(t, log)
+		})
 	}
 }
 
@@ -861,54 +943,56 @@ func TestGenerateInvalidOutputs(t *testing.T) {
 		name string
 		spec fakeSpec
 		want string
-		also string
 	}{
-		{"missing out.json", fakeSpec{Messages: []string{"I could not."}}, "The agent did not write out.json.", `Its last reply: "I could not."`},
-		{"not json", fakeSpec{Out: "not json"}, "The agent's out.json is not valid JSON.", ""},
-		{"too large", fakeSpec{OutSize: maxViewBytes + 1}, "more than the", ""},
-		{"symlink", fakeSpec{OutSymlink: "/etc/hosts"}, "symbolic link", ""},
-		{"no a2ui", fakeSpec{Out: `{"sources":{}}`}, `no "a2ui"`, ""},
-		{"empty a2ui", fakeSpec{Out: `{"a2ui":[],"sources":{}}`}, `non-empty "a2ui" array`, ""},
-		{"sources not object", fakeSpec{Out: `{"a2ui":[{"x":1}],"sources":[]}`}, `"sources" as an object`, ""},
-		{"source without heading", fakeSpec{Out: `{"a2ui":[{"x":1}],"sources":{"s1":{"occurrence":1}}}`}, "need a heading", ""},
-		{"occurrence zero", fakeSpec{Out: `{"a2ui":[{"x":1}],"sources":{"s1":{"heading":"Report","occurrence":0}}}`}, "at least one", ""},
+		{"missing out.json", fakeSpec{}, "The agent did not write out.json."},
+		{"not json", fakeSpec{Out: "not json"}, "The agent's out.json is not valid JSON."},
+		{"too large", fakeSpec{OutSize: maxViewBytes + 1}, "more than the"},
+		{"symlink", fakeSpec{OutSymlink: "/etc/hosts"}, "symbolic link"},
+		{"no a2ui", fakeSpec{Out: `{"sources":{}}`}, `no "a2ui"`},
+		{"empty a2ui", fakeSpec{Out: `{"a2ui":[],"sources":{}}`}, `non-empty "a2ui" array`},
+		{"sources not object", fakeSpec{Out: `{"a2ui":[{"x":1}],"sources":[]}`}, `"sources" as an object`},
+		{"source without heading", fakeSpec{Out: `{"a2ui":[{"x":1}],"sources":{"s1":{"occurrence":1}}}`}, "need a heading"},
+		{"occurrence zero", fakeSpec{Out: `{"a2ui":[{"x":1}],"sources":{"s1":{"heading":"Report","occurrence":0}}}`}, "at least one"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			viewPath := filepath.Join(dir, ".notes.md.genui.json")
-			sentinel := []byte("the view that was")
-			if err := os.WriteFile(viewPath, sentinel, 0o644); err != nil {
-				t.Fatal(err)
-			}
+			viewPath, sentinel := writeSentinelView(t)
 			err, _, log := driveGeneration(t, tc.spec, nil, func(job *generationJob) { job.ViewPath = viewPath })
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("error = %v, want it to contain %q", err, tc.want)
+			f := failureFrom(t, err)
+			if f.Kind != failInvalidOutput || !strings.Contains(f.Message, tc.want) || f.Hint != hintInvalidOutput {
+				t.Fatalf("failure = %+v, want invalid-output containing %q", f, tc.want)
 			}
-			if tc.also != "" && !strings.Contains(err.Error(), tc.also) {
-				t.Errorf("error = %v, want it to contain %q", err, tc.also)
-			}
-			got, err := os.ReadFile(viewPath)
-			if err != nil || string(got) != string(sentinel) {
-				t.Errorf("view file changed: %q, %v", got, err)
-			}
+			sentinelKept(t, viewPath, sentinel)
 			tempDirGone(t, log)
 		})
 	}
+
+	// The agent's reply, when it gave one with a bad out.json, is the
+	// failure's detail.
+	err, _, _ := driveGeneration(t, fakeSpec{Out: "not json", Messages: []string{"Done."}}, nil, nil)
+	if f := failureFrom(t, err); f.Kind != failInvalidOutput || f.Detail != "Done." {
+		t.Errorf("failure = %+v, want invalid-output with the reply as detail", f)
+	}
 }
 
-func TestGenerateCancel(t *testing.T) {
+// hangingRun starts a run whose agent never answers the prompt, waits
+// until it got the prompt, lets interrupt end the run, and returns the
+// run's error with the fake's log and the view file's state.
+func hangingRun(t *testing.T, timeout time.Duration, interrupt func(cancel context.CancelFunc)) (error, []map[string]any) {
+	t.Helper()
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "fake.log")
 	specData, err := json.Marshal(fakeSpec{Hang: true})
 	if err != nil {
 		t.Fatal(err)
 	}
+	viewPath, sentinel := writeSentinelView(t)
 	job := generationJob{
 		Req:          GenerateRequest{Text: "hello", Mode: "full", Format: "{}"},
 		AgentCommand: os.Args[0],
 		Model:        "gemini-3.8-flash",
-		ViewPath:     filepath.Join(dir, ".notes.md.genui.json"),
+		ViewPath:     viewPath,
+		Timeout:      timeout,
 		Env: append(os.Environ(),
 			fakeAgentEnv+"=1",
 			fakeSpecEnv+"="+string(specData),
@@ -920,23 +1004,68 @@ func TestGenerateCancel(t *testing.T) {
 	errCh := make(chan error, 1)
 	go func() { errCh <- runGeneration(ctx, job, func(GenerateProgress) error { return nil }) }()
 	waitForLog(t, logPath, "session/prompt")
-	cancel()
+	interrupt(cancel)
 
 	select {
-	case err := <-errCh:
-		if err == nil || err.Error() != "Generation was cancelled." {
-			t.Fatalf("error = %v, want the cancellation", err)
-		}
+	case err = <-errCh:
 	case <-time.After(10 * time.Second):
 		t.Fatal("runGeneration never returned")
 	}
 
 	log := readFakeLog(t, logPath)
+	if len(logEntries(log, "cancelled")) != 1 {
+		t.Errorf("the agent never got session/cancel")
+	}
 	pid := int(logEntries(log, "pid")[0]["pid"].(float64))
 	if syscall.Kill(pid, 0) == nil {
 		t.Errorf("the agent process %d is still running", pid)
 	}
 	tempDirGone(t, log)
+	sentinelKept(t, viewPath, sentinel)
+	return err, log
+}
+
+func TestGenerateCancel(t *testing.T) {
+	// The page closing the channel, its window closing and the app
+	// quitting all cancel the call's context.
+	err, _ := hangingRun(t, 0, func(cancel context.CancelFunc) { cancel() })
+	if f := failureFrom(t, err); f.Kind != failCancelled || f.Message != "Generation was cancelled." {
+		t.Errorf("failure = %+v, want the cancellation", f)
+	}
+}
+
+func TestGenerateTimeout(t *testing.T) {
+	err, _ := hangingRun(t, 300*time.Millisecond, func(context.CancelFunc) {})
+	f := failureFrom(t, err)
+	if f.Kind != failTimeout || f.Message != "Generation timed out after 300ms." || f.Hint != hintTimeout {
+		t.Errorf("failure = %+v, want the timeout", f)
+	}
+	if got := timedOut(defaultGenerationTimeout).Message; got != "Generation timed out after 5 minutes." {
+		t.Errorf("default timeout message = %q", got)
+	}
+}
+
+func TestReportFailure(t *testing.T) {
+	// A failed run's last step carries the failure, and the error the
+	// promise rejects with is the message and the hint; an error that
+	// is not a failure becomes an agent-error.
+	var steps []GenerateProgress
+	collect := func(p GenerateProgress) error {
+		steps = append(steps, p)
+		return errors.New("the page is gone")
+	}
+	err := reportFailure(newFailure(failBusy, "A view is already being generated.", hintBusy), collect)
+	if err.Error() != "A view is already being generated. Wait for it to finish, or cancel it." {
+		t.Errorf("error = %q", err)
+	}
+	err = reportFailure(errors.New("no window"), collect)
+	if err.Error() != "no window "+hintAgentError {
+		t.Errorf("error = %q", err)
+	}
+	if len(steps) != 2 || steps[0].Phase != "failed" || steps[0].Text != "A view is already being generated." ||
+		steps[0].Failure == nil || steps[0].Failure.Kind != failBusy || steps[1].Failure == nil || steps[1].Failure.Kind != failAgentError {
+		t.Errorf("steps = %+v", steps)
+	}
 }
 
 func TestSettingsStore(t *testing.T) {
@@ -1015,22 +1144,29 @@ func TestGenerateCommandNotFound(t *testing.T) {
 	err, _, _ := driveGeneration(t, fakeSpec{}, nil, func(job *generationJob) {
 		job.AgentCommand = "definitely-not-an-agent-cmd"
 	})
-	want := `Could not find the agent command "definitely-not-an-agent-cmd". Install Antigravity, or set the agent command to its full path.`
-	if err == nil || err.Error() != want {
-		t.Errorf("error = %v, want %q", err, want)
+	if f := failureFrom(t, err); f.Kind != failAgentNotFound || f.Message != `Could not find the agent command "definitely-not-an-agent-cmd".` || f.Hint != hintAgentNotFound {
+		t.Errorf("failure = %+v, want agent-not-found", f)
+	}
+
+	// A full path is run as it is: one that is not there cannot start.
+	missing := filepath.Join(t.TempDir(), "agy")
+	err, _, _ = driveGeneration(t, fakeSpec{}, nil, func(job *generationJob) { job.AgentCommand = missing })
+	if f := failureFrom(t, err); f.Kind != failAgentNotFound || !strings.HasPrefix(f.Message, fmt.Sprintf("Could not start the agent command %q:", missing)) {
+		t.Errorf("failure = %+v, want agent-not-found for the full path", f)
 	}
 }
 
 func TestGenerateBadMode(t *testing.T) {
 	err, _, _ := driveGeneration(t, fakeSpec{}, nil, func(job *generationJob) { job.Req.Mode = "sections" })
-	if err == nil || !strings.Contains(err.Error(), `only "full" is supported`) {
-		t.Errorf("error = %v, want the mode error", err)
+	if f := failureFrom(t, err); f.Kind != failAgentError || !strings.Contains(f.Message, `only "full" is supported`) {
+		t.Errorf("failure = %+v, want the mode error", f)
 	}
 }
 
 func TestGenerateAgentCrash(t *testing.T) {
 	err, _, _ := driveGeneration(t, fakeSpec{Crash: "exploded on start"}, nil, nil)
-	if err == nil || !strings.Contains(err.Error(), "The agent exited before answering initialize.") || !strings.Contains(err.Error(), "exploded on start") {
-		t.Errorf("error = %v, want the exit with the agent's stderr", err)
+	f := failureFrom(t, err)
+	if f.Kind != failAgentError || !strings.Contains(f.Message, "The agent exited before answering initialize.") || !strings.Contains(f.Message, "exploded on start") || f.Hint != hintAgentError {
+		t.Errorf("failure = %+v, want agent-error with the agent's stderr", f)
 	}
 }

@@ -11,6 +11,7 @@ import type {
   ViewSnapshot,
 } from "./types";
 import { DocumentHost, events, type GenerateProgress as WireProgress } from "./generated/mygo";
+import { cancelled, failureOf, GenerationError, isFailureKind } from "./generationError";
 
 const PHASES: Record<GeneratePhase, true> = {
   starting: true,
@@ -114,18 +115,26 @@ export function createMyGoHost(): HostAdapter {
 
     // The host writes the view file when the run succeeds; closing the
     // channel is how the page cancels, which cancels the call's context.
+    // A failed run's last step carries its failure, which arrives before
+    // the call rejects.
     async generate(req: GenerateRequest, onProgress: (progress: GenerateProgress) => void, signal: AbortSignal) {
+      let failed: GenerationError | null = null;
       const progress = new Channel<WireProgress>((step) => {
-        if (isPhase(step.phase)) onProgress({ phase: step.phase, text: step.text });
+        if (step.phase === "failed" && step.failure) {
+          const { kind, ...rest } = step.failure;
+          failed = new GenerationError({ ...rest, kind: isFailureKind(kind) ? kind : "agent-error" });
+        } else if (isPhase(step.phase)) {
+          onProgress({ phase: step.phase, text: step.text });
+        }
       });
       const cancel = () => progress.close();
-      if (signal.aborted) throw new Error("Generation was cancelled.");
+      if (signal.aborted) throw cancelled();
       signal.addEventListener("abort", cancel, { once: true });
       try {
         await DocumentHost.generate(req, progress);
       } catch (error) {
-        if (signal.aborted) throw new Error("Generation was cancelled.");
-        throw error;
+        if (signal.aborted) throw cancelled();
+        throw failed ?? new GenerationError(failureOf(error));
       } finally {
         signal.removeEventListener("abort", cancel);
       }

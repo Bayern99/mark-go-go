@@ -8,6 +8,7 @@ import type {
   HostDocSnapshot,
   ViewSnapshot,
 } from './types'
+import { cancelled, failureOf, GenerationError } from './generationError'
 
 export const DEMO_MARKDOWN = `# Quarterly Report
 
@@ -64,8 +65,9 @@ export interface BrowserHost extends HostAdapter {
 
 /**
  * A scripted stand-in for the agent. It gets the request and a `progress`
- * function; what it returns becomes the view file, a thrown error the
- * message the reader sees. `signal` aborts when the page cancels.
+ * function; what it returns becomes the view file. Throwing a
+ * `GenerationError` plays that failure; any other error is an `agent-error`.
+ * `signal` aborts when the page cancels.
  */
 export type FakeGenerator = (
   req: GenerateRequest,
@@ -170,21 +172,38 @@ export function createBrowserHost(
     // Same rules as the desktop host: one run at a time, a saved document,
     // and the view file written only when the run succeeds.
     async generate(req, onProgress, signal) {
-      if (state.path === '') throw new Error('Save the document first: the view is stored next to it.')
-      if (generating) throw new Error('A view is already being generated.')
+      if (state.path === '') {
+        throw new GenerationError({ kind: 'unsaved', message: 'Save the document first: the view is stored next to it.' })
+      }
+      if (generating) {
+        throw new GenerationError({
+          kind: 'busy',
+          message: 'A view is already being generated.',
+          hint: 'Wait for it to finish, or cancel it.',
+        })
+      }
       generations.push(req)
-      if (!options.generator) throw new Error('No agent is available in the browser preview.')
+      if (!options.generator) {
+        throw new GenerationError({
+          kind: 'agent-not-found',
+          message: 'No agent is available in the browser preview.',
+          hint: 'Open the document in the Mark Go Go app to generate a view.',
+        })
+      }
       generating = true
       try {
         onProgress({ phase: 'starting', text: 'Starting the agent' })
-        const cancelled = new Promise<never>((_, reject) => {
-          const stop = () => reject(new Error('Generation was cancelled.'))
+        const stopped = new Promise<never>((_, reject) => {
+          const stop = () => reject(cancelled())
           if (signal.aborted) stop()
           else signal.addEventListener('abort', stop, { once: true })
         })
-        const body = await Promise.race([options.generator(req, onProgress, signal), cancelled])
+        const body = await Promise.race([options.generator(req, onProgress, signal), stopped])
         onProgress({ phase: 'checking', text: 'Checking the view' })
         writeView(body)
+      } catch (error) {
+        if (signal.aborted) throw cancelled()
+        throw error instanceof GenerationError ? error : new GenerationError(failureOf(error))
       } finally {
         generating = false
       }

@@ -70,6 +70,31 @@ export interface GenerateProgress {
   text: string
 }
 
+export type GenerateFailureKind =
+  | 'unsaved'
+  | 'busy'
+  | 'agent-not-found'
+  | 'auth-required'
+  | 'model-invalid'
+  | 'agent-message'
+  | 'invalid-output'
+  | 'agent-error'
+  | 'timeout'
+  | 'cancelled'
+
+/** Why a generation ended without a new view, and what the reader can do. */
+export interface GenerateFailure {
+  kind: GenerateFailureKind
+  /** What happened, in a sentence or two. */
+  message: string
+  /** What the reader can do about it. */
+  hint?: string
+  /** The agent's own words, verbatim. */
+  detail?: string
+  /** The models the agent offers, for `model-invalid`. */
+  models?: string[]
+}
+
 export interface GenerationSettings {
   /** The model the agent is asked to use; empty leaves the agent's own choice. */
   model: string
@@ -85,7 +110,8 @@ export interface GenerationSettings {
 export interface ViewGenerator {
   /**
    * Runs one generation, reporting progress, until it is done. Rejects with
-   * a message for the reader. Aborting `signal` cancels the run.
+   * a `GenerationError` whose failure tells the reader what happened.
+   * Aborting `signal` cancels the run, which rejects as `cancelled`.
    */
   generate(
     req: GenerateRequest,

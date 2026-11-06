@@ -1,4 +1,4 @@
-# 验收结果（2026-11-06，原型）
+# 验收结果（2026-11-07，原型）
 
 环境：macOS arm64，Go 1.27.3，MyGo v0.7.4，Milkdown 7.23.0，Node 24。
 
@@ -8,8 +8,8 @@
 |---|---|---|
 | Go | `go vet ./...`、`go test -race ./...` | 通过 |
 | TS 类型 | `npm --prefix web run typecheck` | 通过 |
-| 测试 | `npm --prefix web test`（真实 Chromium） | 14 个文件、153 项通过 |
-| 打包 | `go tool mygo build` | `Mark Go Go.app` 12.8MB，dmg 4.1MB |
+| 测试 | `npm --prefix web test`（真实 Chromium） | 14 个文件、155 项通过 |
+| 打包 | `go tool mygo build` | `Mark Go Go.app` 12.8MB，dmg 4.2MB |
 
 测试覆盖：23 个语料文件 + 编辑用例零编辑 compose **逐字节一致**；改一段只改变该块字节；编辑后 compose 幂等；插件禁用释放视图/命令/监听（含编辑器选择监听），重新启用正常，`activate` 失败回滚。
 
@@ -134,9 +134,9 @@
 - 运行：agent 只带 `acp` 参数，临时目录开始时只有 `source.md`；提示里有格式文档与读者的请求；模型经 `session/set_config_option` 选择；进度按阶段变化逐步上报。
 - 成功：视图文件键顺序为 `version` / `generatedAt` / `model` / `request` / `sources` / `a2ui`；`a2ui` 原样、多余字段丢弃；`sources` 哈希由宿主按原文计算（与页面共享向量一致），找不到的标题不带哈希；新文件为 0644，替换时保留原权限。
 - 权限请求：读 `source.md` / 写 `out.json` 允许，其余拒绝；agent 汇报的工具调用越界（shell、未知的调用）→ 停止运行、视图不变；只带 id 的 `tool_call_update` 沿用其 `tool_call` 的类型与路径。
-- 失败：未知模型 → 列出 agent 提供的模型；`out.json` 缺失（附 agent 最后一句话）/ 非 JSON / 超大 / 符号链接 / 缺 `a2ui` 或为空 / `sources` 格式错误 → 视图不变、临时目录删除；agent 启动即退出 → 附其 stderr；命令找不到 → 错误。“同一窗口只跑一次”与“未保存文档”的 Go 端检查依赖窗口会话，没有单元测试（页面在运行中和未保存时本就禁用 `Generate`）。
-- 取消：页面关闭通道 → `session/cancel` 后结束进程，临时目录删除，视图不变。
-- 页面：生成中显示步骤列表与骨架、隐藏旧视图、请求与设置禁用；生成中继续编辑，视图按发起时的文本生成；失败保留旧视图并显示可关闭的错误；未保存文档禁用 `Generate`；`Agent settings` 改模型与命令并持久化。
+- 失败（#8，每类断言 `kind` / `message` / `hint`，并检查视图不变、临时目录删除）：命令找不到、完整路径不存在 → `agent-not-found`；`session/new` 返回 -32000、提示里含 “authentication required”、stderr 里含 → `auth-required`（登录提示带配置的命令）；未知模型 → `model-invalid` 带模型列表；这一轮无 `out.json` 但有回复、`session/prompt` 返回错误 → `agent-message`，`detail` 原样（含换行的额度提示）；`out.json` 缺失 / 非 JSON / 超大 / 符号链接 / 缺 `a2ui` 或为空 / `sources` 格式错误 → `invalid-output`；agent 启动即退出 → `agent-error` 附 stderr；`reportFailure` 发出 `failed` 步骤并以 message + hint 拒绝。“同一窗口只跑一次”与“未保存文档”的 Go 端检查依赖窗口会话，没有单元测试（页面在运行中和未保存时本就禁用 `Generate`）。
+- 取消与超时（`hangingRun`）：页面关闭通道（ctx 取消，关窗口与退出走同一条路）/ 300ms 超时 → agent 收到 `session/cancel`，进程已退出，临时目录删除，视图文件字节不变；超时文字 `Generation timed out after 5 minutes.`（默认值）。
+- 页面：生成中显示步骤列表与骨架、隐藏旧视图、请求与设置禁用；生成中继续编辑，视图按发起时的文本生成；失败保留旧视图，显示 message、hint、原样的 agent 原话、模型列表，`Retry` 用同一请求重跑并可成功、`Open agent settings` 打开设置、`Dismiss` 关闭；失败时没有 `Cancel`；非 `GenerationError` 的错误显示为 agent-error；未保存文档禁用 `Generate`；`Agent settings` 改模型与命令并持久化。
 
 前端体积：初始代码块 563.80 KB gzip；GenUI 代码块 144.21 KB gzip（#11 时 139.69）+ CSS 2.05 KB。
 
@@ -149,6 +149,16 @@
 | 视图文件键为 `version` / `generatedAt`（UTC）/ `model` / `request` / `sources` / `a2ui`；`sources.options.hash` 为 `fnv1a32:cebf17b8` | 通过 |
 | `Generate again` 后在 agent 读完 `source.md`、思考中时点 `Cancel`：回到旧视图、无错误；`agy` 进程退出、`markgogo-genui-*` 临时目录删除、视图文件字节不变、无残留 `.tmp-*` | 通过 |
 | 以上全部操作后 `report.md` sha256 不变 | 通过 |
+
+#8 打包应用手动检查（2026-11-07，同一 `agy acp`，`/tmp/mdws-smoke/gen8/report.md`）：
+
+| 检查 | 状态 |
+|---|---|
+| 设置模型 `gemini-9-nope` → `Generate`：提示 `The agent does not know the model "gemini-9-nope".`、该做什么、agy 实际提供的 5 个模型，按钮 `Retry` / `Open agent settings` / `Dismiss`，无 `Cancel`；之后无 `agy` 进程与临时目录 | 通过（自动化 UI 操作） |
+| `Open agent settings` 改为 `gemini-3.8-flash` 并保存 → `Retry`：真实运行到 Thinking / File source.md | 通过（自动化 UI 操作） |
+| 运行中 Cmd+Q（AppleScript quit）：退出前 `agy acp` pid 27608 与 `markgogo-genui-*` 存在；退出后 app、`agy` 进程、临时目录都不在，目录里无 `.tmp-*`，`report.md` sha256 不变 | 通过 |
+| 生成中途点 `Cancel` | #7 已检查（同一路径） |
+| 额度耗尽的模型触发额度提示（原样显示） | 未检查：当前账户没有额度耗尽的模型；同一路径由假 agent 的多行额度提示覆盖 |
 
 ## 打包应用手动冒烟（`/tmp/mdws-smoke/report.md`：frontmatter、alert、setext 标题、`+` 列表、CJK 表格、带 meta 的代码块、引用式链接）
 
@@ -170,7 +180,7 @@
 - 自动化工具注入中文只落下首字，属注入方式限制；真实输入法已人工确认正常。
 - 外部重载会重建编辑器：撤销历史和光标重置（已接受）。
 - 编辑过的块按 Milkdown 规则重写（setext→ATX、表格补齐、块内 CRLF→LF）；插入/删除块后的块间空白回退为 `\n\n`。
-- GenUI 视图由 `agy acp` 生成（#7）。超时、退出时清理和错误分类在 #8；局部重新生成与撤销在 #12。
+- GenUI 视图由 `agy acp` 生成（#7），失败分类与清理见 #8；局部重新生成与撤销在 #12。A2UI 校验不过的视图显示问题列表（`role="alert"`）和可用的 `Generate again`，「撤回」等 #12 的备份。
 - Agent 隔离只是尽力而为（ADR 0003）：agy 按用户自己的 `~/.gemini/antigravity-cli/settings.json` 运行，可能不请求权限就写目录外文件或运行 shell。宿主看到越界工具调用就停止运行、不写视图，但无法阻止已经发生的那一步。
 - 只有 GenUI 有深色令牌；应用其余部分（头部、大纲、编辑器）还没有深色主题，`:root` 固定为 `color-scheme: light`。
 - ComparisonTable 的列头按钮在 macOS 辅助功能树里不出现（表格行可见），自动化只能用坐标点击。

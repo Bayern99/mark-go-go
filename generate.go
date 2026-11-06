@@ -53,16 +53,23 @@ type SectionRef struct {
 // page while the generation runs.
 type GenerateProgress struct {
 	// Phase is "starting", "thinking", "reading", "writing" or
-	// "checking".
+	// "checking"; "failed" is the last step of a run that failed.
 	Phase string `json:"phase"`
 	// Text is a short, human-readable description of the step.
 	Text string `json:"text"`
+	// Failure is why the run failed, on the "failed" step only.
+	Failure *GenerateFailure `json:"failure,omitempty"`
 }
 
-// errCancelled says the page or its window went away: the run stops,
-// the agent is stopped, and the reader is told the generation was
-// cancelled.
+// errCancelled says the page or its window went away, or the run took
+// too long: the run stops and the agent is stopped.
 var errCancelled = errors.New("generation cancelled")
+
+// errTimedOut is the cause of a run's context that ran out of time.
+var errTimedOut = errors.New("generation timed out")
+
+// defaultGenerationTimeout is how long a run may take.
+const defaultGenerationTimeout = 5 * time.Minute
 
 // Generate runs the document's view generation: the host starts the
 // user's Antigravity agent over ACP in an isolated temporary folder
@@ -71,20 +78,32 @@ var errCancelled = errors.New("generation cancelled")
 // document's view file atomically. The page follows the progress on
 // the channel and sees the new view through the view watch, so
 // Generate only returns an error. The document itself is never
-// written.
+// written. A failed run sends the page its failure as the last step,
+// then returns it as the error.
 func (h *documentHost) Generate(ctx context.Context, req GenerateRequest, progress *mygo.Channel[GenerateProgress]) error {
+	h.runs.Add(1)
+	defer h.runs.Done()
+	send := func(p GenerateProgress) error { return progress.Send(p) }
+	if err := h.generate(ctx, req, send); err != nil {
+		return reportFailure(err, send)
+	}
+	return nil
+}
+
+// generate runs Generate's generation for the calling window.
+func (h *documentHost) generate(ctx context.Context, req GenerateRequest, send func(GenerateProgress) error) error {
 	s, err := h.session(ctx)
 	if err != nil {
 		return err
 	}
 	docPath := s.doc.State().Path
 	if docPath == "" {
-		return errors.New("Save the document first: the view is stored next to it.")
+		return newFailure(failUnsaved, "Save the document first: the view is stored next to it.", "")
 	}
 	h.mu.Lock()
 	if s.generating {
 		h.mu.Unlock()
-		return errors.New("A view is already being generated.")
+		return newFailure(failBusy, "A view is already being generated.", hintBusy)
 	}
 	s.generating = true
 	h.mu.Unlock()
@@ -101,9 +120,23 @@ func (h *documentHost) Generate(ctx context.Context, req GenerateRequest, progre
 		Model:        settings.Model,
 		ViewPath:     viewPath(docPath),
 		Now:          time.Now,
-	}, func(p GenerateProgress) error {
-		return progress.Send(p)
-	})
+	}, send)
+}
+
+// waitForGenerations waits, for at most limit, until no generation
+// runs. Quitting closes every window, which cancels their runs, but the
+// process exits as soon as the app's loop returns: waiting lets each
+// run stop its agent and remove its temporary folder first.
+func (h *documentHost) waitForGenerations(limit time.Duration) {
+	done := make(chan struct{})
+	go func() {
+		h.runs.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(limit):
+	}
 }
 
 // GetSettings returns the generation settings.
@@ -126,6 +159,9 @@ type generationJob struct {
 	Model        string
 	ViewPath     string
 	Now          func() time.Time
+	// Timeout is how long the run may take; zero is
+	// defaultGenerationTimeout.
+	Timeout time.Duration
 
 	// Env is the environment of the agent process; nil inherits this
 	// process's. Tests run a fake agent through it.
@@ -133,36 +169,47 @@ type generationJob struct {
 }
 
 // runGeneration makes one view, as Generate does, with the job's
-// injections. On any error the view file is untouched, the agent
-// process is stopped and the temporary folder is gone.
+// injections. On any error, a *genError, the view file is untouched,
+// the agent process is stopped and the temporary folder is gone.
 func runGeneration(ctx context.Context, job generationJob, progress func(GenerateProgress) error) error {
 	if job.Req.Mode != "full" {
-		return fmt.Errorf("Unknown generation mode %q: only \"full\" is supported.", job.Req.Mode)
+		return agentErrorf("Unknown generation mode %q: only \"full\" is supported.", job.Req.Mode)
 	}
 	if job.Now == nil {
 		job.Now = time.Now
 	}
+	if job.Timeout <= 0 {
+		job.Timeout = defaultGenerationTimeout
+	}
+	ctx, stop := context.WithTimeoutCause(ctx, job.Timeout, errTimedOut)
+	defer stop()
+	// interrupted is the failure of a run whose context ended, or
+	// whose page stopped listening.
+	interrupted := func() error {
+		if context.Cause(ctx) == errTimedOut {
+			return timedOut(job.Timeout)
+		}
+		return newFailure(failCancelled, "Generation was cancelled.", "")
+	}
 
 	dir, err := os.MkdirTemp("", "markgogo-genui-")
 	if err != nil {
-		return err
-	}
-	dir, err = filepath.EvalSymlinks(dir)
-	if err != nil {
-		os.RemoveAll(dir)
-		return err
+		return agentErrorf("Could not make the agent's folder: %v.", err)
 	}
 	// Deferred calls run last in, first out: the agent is stopped
 	// before the folder with its files goes away.
 	defer os.RemoveAll(dir)
+	if dir, err = filepath.EvalSymlinks(dir); err != nil {
+		return agentErrorf("Could not make the agent's folder: %v.", err)
+	}
 
 	if err := os.WriteFile(filepath.Join(dir, "source.md"), []byte(job.Req.Text), 0o644); err != nil {
-		return fmt.Errorf("Could not write the agent's source file: %v", err)
+		return agentErrorf("Could not write the agent's source file: %v.", err)
 	}
 
 	send := &progressSender{send: progress}
 	if err := send.step("starting", "Starting the agent"); err != nil {
-		return errors.New("Generation was cancelled.")
+		return interrupted()
 	}
 
 	resolved, err := resolveAgentCommand(job.AgentCommand)
@@ -176,7 +223,7 @@ func runGeneration(ctx context.Context, job generationJob, progress func(Generat
 	run := &genRun{job: job, dir: dir, send: send, abortCh: make(chan struct{}), toolCalls: make(map[string]toolCallState)}
 	agent, err := newACPAgent(cmd, newLimitBuffer(4<<10))
 	if err != nil {
-		return fmt.Errorf("Could not start the agent command %q: %v.", job.AgentCommand, err)
+		return newFailure(failAgentNotFound, fmt.Sprintf("Could not start the agent command %q: %v.", job.AgentCommand, err), hintAgentNotFound)
 	}
 	run.agent = agent
 	agent.handleRequest = run.handleRequest
@@ -190,7 +237,7 @@ func runGeneration(ctx context.Context, job generationJob, progress func(Generat
 	}
 	if errors.Is(err, errCancelled) {
 		run.cancelGracefully(2 * time.Second)
-		return errors.New("Generation was cancelled.")
+		return interrupted()
 	}
 	return err
 }
@@ -229,9 +276,11 @@ func (r *genRun) execute(ctx context.Context) error {
 			"configId":  "model",
 			"value":     r.job.Model,
 		}, nil); err != nil {
-			if models := configValues(opened.ConfigOptions, "model"); len(models) > 0 {
-				return fmt.Errorf("The agent does not know the model %q. Models it offers: %s.",
-					r.job.Model, strings.Join(models, ", "))
+			var ge *genError
+			if models := configValues(opened.ConfigOptions, "model"); len(models) > 0 && errors.As(err, &ge) && ge.Kind == failAgentError {
+				invalid := newFailure(failModelInvalid, fmt.Sprintf("The agent does not know the model %q.", r.job.Model), hintModelInvalid)
+				invalid.Models = models
+				return invalid
 			}
 			return err
 		}
@@ -263,7 +312,6 @@ type genRun struct {
 
 	agent     *acpAgent
 	sessionID string
-	lastRPC   *acpError // the JSON-RPC error of the last call, if any
 
 	// toolCalls remembers the kind and locations of each tool call by
 	// id, so that a tool_call_update, whose fields are optional, is
@@ -273,7 +321,7 @@ type genRun struct {
 
 	// abortCh stops the run from inside a notification handler, when a
 	// tool call went outside the working folder; abortReason is the
-	// error to return for it.
+	// message of the failure to return for it.
 	abortCh     chan struct{}
 	abortOnce   sync.Once
 	abortReason string
@@ -283,33 +331,41 @@ type genRun struct {
 }
 
 // callAgent sends one request to the agent and waits for its answer,
-// the page's cancellation, or an abort from a notification handler.
+// the end of the run's context (errCancelled), or an abort from a
+// notification handler. Every other failure is a *genError: an agent
+// that is not signed in, the agent's error answer to the prompt (its
+// own words, as a quota running out), or an agent-error.
 func (r *genRun) callAgent(ctx context.Context, method string, params any, result any) error {
-	type outcome struct {
-		err error
-		rpc *acpError
-	}
-	ch := make(chan outcome, 1)
-	go func() {
-		err := r.agent.call(method, params, result)
-		var rpc *acpError
-		errors.As(err, &rpc)
-		ch <- outcome{err: err, rpc: rpc}
-	}()
+	ch := make(chan error, 1)
+	go func() { ch <- r.agent.call(method, params, result) }()
 	select {
-	case got := <-ch:
-		if got.err == nil {
+	case err := <-ch:
+		if err == nil {
 			return nil
 		}
-		if got.rpc != nil {
-			r.lastRPC = got.rpc
-			return fmt.Errorf("the agent answered %s with an error: %s", method, got.rpc.Message)
+		var rpc *acpError
+		if !errors.As(err, &rpc) {
+			// The agent exited or its answer was malformed; an agent
+			// that is not signed in may say so on its error output.
+			if isAuthError(0, err.Error()) {
+				return authRequired(r.job.AgentCommand, err.Error())
+			}
+			return agentError(err.Error())
 		}
-		return got.err
+		switch {
+		case isAuthError(rpc.Code, rpc.Message):
+			return authRequired(r.job.AgentCommand, rpc.Message)
+		case method == "session/prompt":
+			stopped := newFailure(failAgentMessage, "The agent stopped with an error.", hintAgentMessage)
+			stopped.Detail = cutRunes(rpc.Message, maxDetailRunes)
+			return stopped
+		default:
+			return agentErrorf("The agent answered %s with an error: %s", method, rpc.Message)
+		}
 	case <-ctx.Done():
 		return errCancelled
 	case <-r.abortCh:
-		return errors.New(r.abortReason)
+		return agentError(r.abortReason)
 	}
 }
 
@@ -572,7 +628,7 @@ func resolveAgentCommand(command string) (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("Could not find the agent command %q. Install Antigravity, or set the agent command to its full path.", command)
+	return "", newFailure(failAgentNotFound, fmt.Sprintf("Could not find the agent command %q.", command), hintAgentNotFound)
 }
 
 // agentSource is one entry of the agent's out.json sources.
@@ -588,6 +644,13 @@ func (r *genRun) collect() error {
 	outPath := filepath.Join(r.dir, "out.json")
 	fi, err := os.Lstat(outPath)
 	if errors.Is(err, fs.ErrNotExist) {
+		// An agent that answers without a view says why, as when its
+		// quota ran out: the reader needs its words, not ours.
+		if reply := strings.TrimSpace(r.lastReply()); reply != "" {
+			finished := newFailure(failAgentMessage, "The agent finished without writing a view.", hintAgentMessage)
+			finished.Detail = cutRunes(reply, maxDetailRunes)
+			return finished
+		}
 		return r.outputError("The agent did not write out.json.")
 	}
 	if err != nil {
@@ -698,7 +761,10 @@ func (r *genRun) writeView(sources map[string]agentSource, a2ui json.RawMessage)
 	if err != nil {
 		return r.outputError("The agent's out.json could not be turned into a view.")
 	}
-	return writeFileAtomic(r.job.ViewPath, append(data, '\n'))
+	if err := writeFileAtomic(r.job.ViewPath, append(data, '\n')); err != nil {
+		return agentErrorf("Could not write the view file: %v.", err)
+	}
+	return nil
 }
 
 // sectionHash finds the request section a source names, by its
@@ -767,14 +833,11 @@ func hashUTF16Range(text string, start, end int) (string, bool) {
 }
 
 // outputError explains why the agent's output could not become a view,
-// with the agent's last reply, its message chunks, cut to a few
-// hundred characters.
+// with the agent's last reply, its message chunks, as the detail.
 func (r *genRun) outputError(what string) error {
-	reply := strings.TrimSpace(r.lastReply())
-	if reply == "" {
-		return errors.New(what)
-	}
-	return fmt.Errorf("%s Its last reply: %q.", what, cutRunes(reply, 400))
+	e := newFailure(failInvalidOutput, what, hintInvalidOutput)
+	e.Detail = cutRunes(strings.TrimSpace(r.lastReply()), maxDetailRunes)
+	return e
 }
 
 // cutRunes cuts s to max runes, marking the cut with an ellipsis.

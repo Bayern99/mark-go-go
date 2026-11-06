@@ -23,7 +23,7 @@
 | `WatchView()` | `→ ViewSnapshot` | 开始跟随调用窗口文档的视图文件，返回开始跟随后的首个快照 |
 | `UnwatchView()` | `→ void` | 停止跟随 |
 | `viewChanged` | 事件 `ViewSnapshot` | 跟随期间视图文件被写入、替换或删除；文档改名/首次保存后改跟随新路径并推送一次 |
-| `Generate(req, progress)` | `GenerateRequest`、`Channel<GenerateProgress>` `→ void` | 经 ACP 运行一次生成（见「GenUI 生成」）；成功后视图文件已原子写入，页面经 `viewChanged` 看到；失败返回给读者看的英文句子。页面关闭通道即取消 |
+| `Generate(req, progress)` | `GenerateRequest`、`Channel<GenerateProgress>` `→ void` | 经 ACP 运行一次生成（见「GenUI 生成」）；成功后视图文件已原子写入，页面经 `viewChanged` 看到。失败时最后一步是 `{phase: "failed", text, failure: GenerateFailure}`，再以 `message`（+ 空格 + `hint`）拒绝。页面关闭通道、关闭窗口、退出 app 都是取消 |
 | `GetSettings()` / `SetSettings(s)` | `Settings {model, agentCommand}` | 存在用户数据目录的 `settings.json`；默认 `{gemini-3.8-flash, agy}` |
 
 `Snapshot = { text, version, state }`；`version` 从 1 开始，每次从磁盘重载 +1。`ViewSnapshot = { exists, text, error }`。生成客户端：`web/src/host/generated/mygo.ts`（`go tool mygo generate`）。
@@ -49,11 +49,15 @@ interface ViewGenerator {
 interface GenerateRequest { text: string; mode: 'full'; request?: string; format: string; sections: SectionRef[] }
 interface SectionRef { heading: string; occurrence: number; start: number; end: number } // UTF-16 偏移
 interface GenerateProgress { phase: 'starting' | 'thinking' | 'reading' | 'writing' | 'checking'; text: string }
+// generate 总是以 GenerationError（web/src/host/generationError.ts，带 failure）拒绝
+interface GenerateFailure { kind: GenerateFailureKind; message: string; hint?: string; detail?: string; models?: string[] }
+type GenerateFailureKind = 'unsaved' | 'busy' | 'agent-not-found' | 'auth-required' | 'model-invalid'
+  | 'agent-message' | 'invalid-output' | 'agent-error' | 'timeout' | 'cancelled'
 ```
 
 - `mygoHost.watchView` 对多个监听者计数：首个监听者调用 `WatchView()`，最后一个释放时调用 `UnwatchView()`。
-- `mygoHost.generate` 用 `mygo-runtime` 的 `Channel` 接进度，`signal` 中止时关闭通道（取消 Go 端的 ctx）。
-- `createBrowserHost(text, name, { view?, generator?, settings?, untitled? })` 用内存视图文件；`host.writeView(text | null)` 模拟写入/删除；`generator(req, progress, signal) → Promise<视图文件文本>` 扮演 Agent，`host.generations` 记录收到的请求（测试用）。规则与 Go 端相同：未保存的文档、正在生成时都拒绝；只有成功才写视图文件。
+- `mygoHost.generate` 用 `mygo-runtime` 的 `Channel` 接进度，`signal` 中止时关闭通道（取消 Go 端的 ctx）。`failed` 步骤里的 `failure` 在调用被拒绝之前到达，变成 `GenerationError`；未知 kind 当作 `agent-error`，没有 failure 的拒绝也是 `agent-error`；中止的是 `cancelled`。
+- `createBrowserHost(text, name, { view?, generator?, settings?, untitled? })` 用内存视图文件；`host.writeView(text | null)` 模拟写入/删除；`generator(req, progress, signal) → Promise<视图文件文本>` 扮演 Agent，抛 `GenerationError` 即扮演那种失败，其他错误为 `agent-error`；`host.generations` 记录收到的请求（测试用）。规则与 Go 端相同：未保存的文档（`unsaved`）、正在生成时（`busy`）都拒绝；只有成功才写视图文件。
 
 ## 插件契约（`web/src/core/types.ts`）
 
@@ -126,7 +130,9 @@ interface PluginContext {
 ## GenUI 生成（#7，ADR 0003）
 
 - 页面（`generation.ts` 的 `GenerationController`，一个窗口一个，跨 GenUI 挂载保留）：点 Generate 时取 `documents.snapshot().text`（含未保存修改）和它的章节（共享章节模块，UTF-16 偏移），`format` = `view-format.md` + 「Catalog definition」JSON（`catalogDefinition()`），`request` = 生成要求（去首尾空白，空则不发）。一次只跑一个；运行中 GenUI 显示进度（`role="status"` 最新一步 + 已完成的步骤列表）和骨架，旧视图暂时隐藏；只剩 Cancel。生成期间可以离开 GenUI 继续编辑。
-- 生成要求输入框预填当前视图文件的 `request`；未保存的文档 Generate 禁用并提示 `Save the document first: the view is stored next to it.`。失败时 `role="alert"` 显示宿主给的原因（可 Dismiss），旧视图不变；取消不算失败、不提示。
+- 生成要求输入框预填当前视图文件的 `request`；未保存的文档 Generate 禁用并提示 `Save the document first: the view is stored next to it.`。失败时 `role="alert"` 显示 `message`、`hint`（该做什么）、`model-invalid` 的可用模型列表、`detail`（「The agent said:」下原样的 `<pre>`），按钮：`Retry`（用失败那次的请求重跑）、`Open agent settings`（仅 `agent-not-found` / `model-invalid`）、`Dismiss`；旧视图不变。`Cancel` 只在运行中出现；取消不算失败、不提示。
+- 失败分类（Go `failure.go`，`GenerateFailure.kind`）：`agent-not-found`（找不到或启动不了命令）、`auth-required`（任一调用的 JSON-RPC -32000 或含 “authentication required”，包括 stderr；提示 ``Run `<命令> acp --login` in Terminal, then retry.``）、`model-invalid`（`set_config_option` 失败且 `session/new` 列出了模型）、`agent-message`（这一轮结束但没有 `out.json` 而有回复，或 `session/prompt` 返回错误；`detail` 为原话，最多 4000 字符）、`invalid-output`（缺失、过大、符号链接、非 JSON、`a2ui` / `sources` 不合格；有回复时附为 `detail`）、`agent-error`（Agent 提前退出附 stderr、其他 RPC 错误、越界工具调用、内部错误）、`timeout`（默认 5 分钟，`generationJob.Timeout`）、`cancelled`、`unsaved`、`busy`。超时与取消同样 `session/cancel` → 2 秒 → 杀进程 → 删临时目录。
+- 退出：关窗口取消调用的 ctx；退出 app 时 `main` 在 `App.Run` 返回后 `waitForGenerations(5s)`，等每个运行结束 Agent、删除临时目录再退出进程。
 - `Agent settings`：Model（空 = Agent 自己的默认）与 Agent command（空 = `agy`），经 `getSettings` / `setSettings` 读写。
 - 宿主（Go）：临时目录里只有 `source.md`；`<agentCommand> acp`，无其他参数；`initialize` → `session/new` → `set_config_option(model)`（模型非空时）→ `session/prompt`。权限与工具调用按同一条路径规则检查（读 `source.md`、写 `out.json`、思考），越界即取消本次运行。`out.json` ≤ 1 MiB、普通文件、JSON 对象、非空 `a2ui`、合法 `sources`；宿主写 `version: 2`、`generatedAt`、`model`、`request`、带 `hash` 的 `sources`、原样的 `a2ui`，丢弃其他字段，原子替换视图文件；临时目录总是删除。进度：`starting`（启动、Agent 就绪）、`thinking`、`reading` / `writing`（工具标题）、`checking`。
 - 共享测试向量 `web/test/fixtures/section-vectors.json` 增加了章节的 UTF-16 `start` / `end` 与标题规范化（`normalize`），TS 与 Go 两边都用它验证。
@@ -180,4 +186,4 @@ CrepeBuilder features：`cursor, listItem, placeholder, linkTooltip, blockEdit, 
 
 ## 尚未实现（后续阶段）
 
-搜索替换、生成超时与错误分类（#8）、局部重新生成与撤回（#12）、批注（#13）、多标签页。
+搜索替换、局部重新生成与撤回（#12）、批注（#13）、多标签页。

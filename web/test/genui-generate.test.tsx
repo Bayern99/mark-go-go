@@ -2,7 +2,8 @@ import '../src/styles.css'
 import { page, userEvent } from 'vitest/browser'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createBrowserHost, type BrowserHost, type FakeGenerator } from '../src/host/browserHost'
-import type { GenerateProgress } from '../src/host/types'
+import { GenerationError } from '../src/host/generationError'
+import type { GenerateFailure, GenerateProgress } from '../src/host/types'
 import { extractSections } from '../src/markdown/sections'
 import { CATALOG_COMPONENTS } from '../src/plugins/genui/a2ui'
 import { mountApp, type MountedApp } from './helpers/app'
@@ -57,8 +58,8 @@ function scripted() {
     finish(text: string) {
       settle?.resolve(text)
     },
-    fail(message: string) {
-      settle?.reject(new Error(message))
+    fail(failure: GenerateFailure | Error) {
+      settle?.reject(failure instanceof Error ? failure : new GenerationError(failure))
     },
     get signal() {
       return aborted
@@ -163,7 +164,7 @@ describe('GenUI generation', () => {
     await expect.element(page.getByText('After the edit', { exact: false })).toBeVisible()
   })
 
-  it('keeps the old view and shows why when the run fails', async () => {
+  it('keeps the old view, shows what the agent said and retries the same request', async () => {
     const agent = scripted()
     const host = createBrowserHost(DOCUMENT, 'report.md', {
       view: viewFile('The old view'),
@@ -172,11 +173,66 @@ describe('GenUI generation', () => {
     await openGenUI(host)
     await expect.element(page.getByText('The old view', { exact: false })).toBeVisible()
 
+    await requestBox().fill('Compare the metrics')
     await generate().click()
-    agent.fail('The agent\'s out.json is not valid JSON. Its last reply: "Done."')
+    const quota = 'Individual quota reached.\nResets in 3h 12m.'
+    agent.fail({
+      kind: 'agent-message',
+      message: 'The agent finished without writing a view.',
+      hint: "Read the agent's message; retry once it is resolved.",
+      detail: quota,
+    })
 
-    await containsText(genui().getByRole('alert'), "The agent's out.json is not valid JSON.")
+    const alert = genui().getByRole('alert')
+    await containsText(alert, 'The agent finished without writing a view.')
+    await containsText(alert, "Read the agent's message; retry once it is resolved.")
+    // The agent's words verbatim, line breaks included.
+    expect(alert.element().querySelector('pre')?.textContent).toBe(quota)
     await expect.element(page.getByText('The old view', { exact: false })).toBeVisible()
+    expect(page.getByRole('button', { name: 'Cancel' }).query()).toBeNull()
+    expect(page.getByRole('button', { name: 'Open agent settings' }).query()).toBeNull()
+
+    await page.getByRole('button', { name: 'Retry' }).click()
+    await expect.element(page.getByTestId('genui-progress')).toBeVisible()
+    expect(genui().getByRole('alert').query()).toBeNull()
+    expect(host.generations.map((req) => req.request)).toEqual(['Compare the metrics', 'Compare the metrics'])
+    agent.finish(viewFile('Made on retry', 'Compare the metrics'))
+    await expect.element(page.getByText('Made on retry', { exact: false })).toBeVisible()
+    expect(genui().getByRole('alert').query()).toBeNull()
+  })
+
+  it('lists the models the agent offers and opens the agent settings', async () => {
+    const agent = scripted()
+    const host = createBrowserHost(DOCUMENT, 'report.md', { generator: agent.generator })
+    await openGenUI(host)
+    await generate().click()
+    agent.fail({
+      kind: 'model-invalid',
+      message: 'The agent does not know the model "gemini-9".',
+      hint: 'Choose one of the models it offers in Agent settings.',
+      models: ['gemini-3.8-flash', 'claude-opus-5-5'],
+    })
+
+    const alert = genui().getByRole('alert')
+    await containsText(alert, 'The agent does not know the model "gemini-9".')
+    expect(Array.from(alert.element().querySelectorAll('li'), (li) => li.textContent)).toEqual([
+      'gemini-3.8-flash',
+      'claude-opus-5-5',
+    ])
+    await page.getByRole('button', { name: 'Open agent settings' }).click()
+    await expect.element(page.getByRole('textbox', { name: 'Model' })).toHaveValue('gemini-3.8-flash')
+  })
+
+  it('shows an error that is not a failure as an agent error, and dismisses it', async () => {
+    const agent = scripted()
+    const host = createBrowserHost(DOCUMENT, 'report.md', { generator: agent.generator })
+    await openGenUI(host)
+    await generate().click()
+    agent.fail(new Error('The agent exited before answering initialize.'))
+
+    const alert = genui().getByRole('alert')
+    await containsText(alert, 'The agent exited before answering initialize.')
+    await containsText(alert, 'run the agent command in Terminal')
     await page.getByRole('button', { name: 'Dismiss' }).click()
     expect(genui().getByRole('alert').query()).toBeNull()
     await expect.element(generate()).toBeEnabled()

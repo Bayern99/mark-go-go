@@ -45,6 +45,10 @@ type documentHost struct {
 	// settings keeps the generation settings in the user data
 	// directory (settings.go).
 	settings *settingsStore
+
+	// runs counts the generations running, so that quitting waits for
+	// them to clean up (waitForGenerations).
+	runs sync.WaitGroup
 }
 
 // docSession ties a document to its window and its page's events.

@@ -25,15 +25,17 @@ export interface Disposable {
 /**
  * The document's view file (`.<name>.md.genui.json` next to it), as the host
  * read it. `exists` is false when there is none, including for an untitled
- * document; `error` says why an existing file could not be read.
+ * document; `error` says why an existing file could not be read. `canUndo`
+ * says the view the last generation replaced is kept, to go back to once.
  */
 export interface ViewSnapshot {
   exists: boolean
   text: string
   error: string
+  canUndo: boolean
 }
 
-/** What plugins may do with the view file: follow it. */
+/** What plugins may do with the view file: follow it, and go back once. */
 export interface ViewFileSource {
   /**
    * Follow the view file on disk: `fn` gets the file as it is once the watch
@@ -41,6 +43,11 @@ export interface ViewFileSource {
    * Disposing stops the host's watch once no one else follows.
    */
   watchView(fn: (snap: ViewSnapshot) => void): Disposable
+  /**
+   * Puts back the view the last generation replaced; the kept copy is then
+   * gone. The view arrives through `watchView`. Rejects when there is none.
+   */
+  undoView(): Promise<void>
 }
 
 /** One heading section of the text sent to the agent, in UTF-16 offsets of that text. */
@@ -54,7 +61,10 @@ export interface SectionRef {
 export interface GenerateRequest {
   /** The editor text at the moment Generate was clicked; the agent reads only this. */
   text: string
-  mode: 'full'
+  /** `full` makes a new view; `update` replaces `replaceIds` in the current one. */
+  mode: 'full' | 'update'
+  /** The components an update replaces: those whose sources changed. */
+  replaceIds?: string[]
   /** What the reader asked for; kept in the view file and offered again next time. */
   request?: string
   /** The format document and the catalog definition, for the agent's prompt. */

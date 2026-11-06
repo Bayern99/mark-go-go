@@ -7,9 +7,10 @@ import { ViewRegistry } from '../src/core/ViewRegistry'
 import type { AppPlugin, PluginContext } from '../src/core/types'
 import type { ViewFileSource, ViewGenerator, ViewSnapshot } from '../src/host/types'
 
-/** Generation is not what these tests are about. */
-const noGeneration: ViewGenerator = {
+/** Generation and going back are not what these tests are about. */
+const noGeneration: ViewGenerator & Pick<ViewFileSource, 'undoView'> = {
   generate: () => Promise.reject(new Error('not in these tests')),
+  undoView: () => Promise.reject(new Error('not in these tests')),
   getSettings: () => Promise.resolve({ model: '', agentCommand: 'agy' }),
   setSettings: () => Promise.resolve(),
 }

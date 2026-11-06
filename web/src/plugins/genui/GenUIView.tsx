@@ -3,16 +3,17 @@ import { createRoot } from 'react-dom/client'
 import type { PluginContext } from '../../core/types'
 import type { Disposable, GenerateFailure, GenerateFailureKind, GenerationSettings, ViewSnapshot } from '../../host/types'
 import { loadSurface, ViewSurface, type LoadedSurface } from './a2ui'
-import { GenerationController, type GenerationState } from './generation'
+import { GenerationController, type GenerationRun, type GenerationState } from './generation'
 import type { SourceActions } from './SourceFrame'
 import { SourceStore } from './sources'
 import { parseViewFile, type ViewFile } from './viewFile'
 import './genui.css'
 
+/** `canUndo`: the view the last generation replaced is kept, to go back to once. */
 type GenUIState =
   | { kind: 'loading' }
-  | { kind: 'none' }
-  | { kind: 'error'; error: string }
+  | { kind: 'none'; canUndo: boolean }
+  | { kind: 'error'; error: string; canUndo: boolean }
   | {
       kind: 'view'
       view: ViewFile
@@ -22,6 +23,7 @@ type GenUIState =
       text: string
       /** Counts loaded files, so each new file renders as a new surface. */
       revision: number
+      canUndo: boolean
     }
 
 /**
@@ -64,12 +66,13 @@ class GenUIStore {
   }
 
   private load(snap: ViewSnapshot): GenUIState {
-    if (snap.error !== '') return { kind: 'error', error: snap.error }
-    if (!snap.exists) return { kind: 'none' }
+    const { canUndo } = snap
+    if (snap.error !== '') return { kind: 'error', error: snap.error, canUndo }
+    if (!snap.exists) return { kind: 'none', canUndo }
     const parsed = parseViewFile(snap.text)
-    if (!parsed.ok) return { kind: 'error', error: parsed.error }
+    if (!parsed.ok) return { kind: 'error', error: parsed.error, canUndo }
     const loaded = loadSurface(parsed.view.messages)
-    if (!loaded.ok) return { kind: 'error', error: loaded.error }
+    if (!loaded.ok) return { kind: 'error', error: loaded.error, canUndo }
     const sources = new SourceStore(parsed.view.sources, this.documentText())
     this.release = () => {
       loaded.dispose()
@@ -82,8 +85,34 @@ class GenUIStore {
       sources,
       text: snap.text,
       revision: ++this.revision,
+      canUndo,
     }
   }
+}
+
+const noSubscription = () => () => {}
+const noRevision = () => 0
+
+/**
+ * The view's components whose sources changed in the document, in the
+ * surface's order: what "Regenerate changed" replaces.
+ */
+function useChangedComponents(state: GenUIState): string[] {
+  const surface = state.kind === 'view' ? state.surface : null
+  const sources = state.kind === 'view' ? state.sources : null
+  const revision = useSyncExternalStore(sources?.subscribe ?? noSubscription, sources?.getRevision ?? noRevision)
+  return useMemo(() => {
+    if (!surface || !sources) return []
+    const changed: string[] = []
+    for (const [id, component] of surface.componentsModel.entries) {
+      const ids: unknown = component.properties.sources
+      if (Array.isArray(ids) && sources.status(ids.filter((s): s is string => typeof s === 'string')) === 'changed') {
+        changed.push(id)
+      }
+    }
+    return changed
+    // `revision` changes when the statuses may have.
+  }, [surface, sources, revision])
 }
 
 /**
@@ -192,6 +221,7 @@ function GenUIView({
   )
 
   const savedRequest = state.kind === 'view' ? (state.view.request ?? '') : ''
+  const changed = useChangedComponents(state)
 
   return (
     <div className="genui-view" data-testid="genui-view" data-state={state.kind} ref={content}>
@@ -204,6 +234,8 @@ function GenUIView({
           savedRequest={savedRequest}
           untitled={path === ''}
           hasView={state.kind === 'view'}
+          changed={changed}
+          undo={state.canUndo ? () => ctx.viewFile.undo() : null}
         />
       )}
 
@@ -234,7 +266,10 @@ function GenUIView({
 
 /**
  * Generate, with the reader's request and the agent's settings. The
- * request starts as the one the current view was made with.
+ * request starts as the one the current view was made with. With a view,
+ * "Regenerate changed" replaces only the components whose sources changed
+ * and "Regenerate all" makes a new one; `undo`, when the view the last
+ * generation replaced is kept, goes back to it.
  */
 function GeneratePanel({
   generation,
@@ -243,6 +278,8 @@ function GeneratePanel({
   savedRequest,
   untitled,
   hasView,
+  changed,
+  undo,
 }: {
   generation: GenerationController
   run: GenerationState
@@ -250,17 +287,25 @@ function GeneratePanel({
   savedRequest: string
   untitled: boolean
   hasView: boolean
+  changed: string[]
+  undo: (() => Promise<void>) | null
 }): React.ReactElement {
   const [request, setRequest] = useState(memory.draft ?? savedRequest)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [undoError, setUndoError] = useState('')
   const running = run.kind === 'running'
   const change = (next: string) => {
     memory.draft = next
     setRequest(next)
   }
-  const start = () => {
+  const start = (run: GenerationRun) => {
     memory.draft = undefined
-    void generation.generate(request)
+    setUndoError('')
+    void generation.generate(run)
+  }
+  const goBack = (undo: () => Promise<void>) => {
+    setUndoError('')
+    undo().catch((error: unknown) => setUndoError(error instanceof Error ? error.message : String(error)))
   }
 
   return (
@@ -280,11 +325,41 @@ function GeneratePanel({
           <button type="button" className="genui-cancel" onClick={() => generation.cancel()}>
             Cancel
           </button>
+        ) : hasView ? (
+          <>
+            <button
+              type="button"
+              className="genui-generate"
+              disabled={untitled || changed.length === 0}
+              title={changed.length === 0 ? 'No component’s source has changed.' : undefined}
+              onClick={() => start({ mode: 'update', request, replaceIds: changed })}
+            >
+              {changed.length === 0 ? 'Regenerate changed' : `Regenerate changed (${changed.length})`}
+            </button>
+            <button
+              type="button"
+              className="genui-generate-all"
+              disabled={untitled}
+              onClick={() => start({ mode: 'full', request })}
+            >
+              Regenerate all
+            </button>
+          </>
         ) : (
-          <button type="button" className="genui-generate" disabled={untitled} onClick={start}>
-            {hasView ? 'Generate again' : 'Generate'}
+          <button
+            type="button"
+            className="genui-generate"
+            disabled={untitled}
+            onClick={() => start({ mode: 'full', request })}
+          >
+            Generate
           </button>
         )}
+        {undo ? (
+          <button type="button" className="genui-undo" disabled={running} onClick={() => goBack(undo)}>
+            Undo last generation
+          </button>
+        ) : null}
         <button
           type="button"
           className="genui-settings-toggle"
@@ -296,6 +371,11 @@ function GeneratePanel({
         </button>
       </div>
       {untitled ? <p className="genui-note">Save the document first: the view is stored next to it.</p> : null}
+      {undoError ? (
+        <p className="genui-file-error" role="alert">
+          {undoError}
+        </p>
+      ) : null}
       {run.kind === 'failed' ? (
         <GenerationFailure failure={run.failure} generation={generation} openSettings={() => setSettingsOpen(true)} />
       ) : null}

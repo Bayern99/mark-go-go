@@ -59,9 +59,12 @@ export interface GenerateRequest {
    * source.md for the agent to read, and hashes its sections from it.
    */
   text: string;
-  /** Mode is the kind of generation; only "full" is supported. */
+  /**
+   * Mode is "full", a new view, or "update", which replaces the
+   * components ReplaceIDs names in the current view.
+   */
   mode: string;
-  /** ReplaceIDs is unused until a later ticket. */
+  /** ReplaceIDs are the components an update replaces. */
   replaceIds?: string[];
   /** Request is the reader's generation request; may be empty. */
   request?: string;
@@ -118,11 +121,14 @@ export interface Snapshot {
  * ViewSnapshot is a document's view file, as the host read it. Exists is
  * false when there is none, including for an untitled document; Error says
  * why an existing file could not be read. The page validates the text.
+ * CanUndo says the view before the last generation is kept, so that
+ * UndoView can go back to it.
  */
 export interface ViewSnapshot {
   exists: boolean;
   text: string;
   error: string;
+  canUndo: boolean;
 }
 
 // ---- Services ----
@@ -161,6 +167,14 @@ export const DocumentHost = {
   /** SetSettings replaces the generation settings. */
   setSettings(s: Settings): Promise<void> {
     return call("DocumentHost.SetSettings", s);
+  },
+  /**
+   * UndoView puts back the view the last generation replaced, once: the
+   * kept view becomes the view file and nothing is kept any more. The
+   * page sees it through the view watch.
+   */
+  undoView(): Promise<void> {
+    return call("DocumentHost.UndoView");
   },
   /** UnwatchView stops following the calling page's view file. */
   unwatchView(): Promise<void> {

@@ -8,8 +8,8 @@
 |---|---|---|
 | Go | `go vet ./...`、`go test -race ./...` | 通过 |
 | TS 类型 | `npm --prefix web run typecheck` | 通过 |
-| 测试 | `npm --prefix web test`（真实 Chromium） | 14 个文件、155 项通过 |
-| 打包 | `go tool mygo build` | `Mark Go Go.app` 12.8MB，dmg 4.2MB |
+| 测试 | `npm --prefix web test`（真实 Chromium） | 14 个文件、158 项通过 |
+| 打包 | `go tool mygo build` | `Mark Go Go.app` 12.9MB，dmg 4.2MB |
 
 测试覆盖：23 个语料文件 + 编辑用例零编辑 compose **逐字节一致**；改一段只改变该块字节；编辑后 compose 幂等；插件禁用释放视图/命令/监听（含编辑器选择监听），重新启用正常，`activate` 失败回滚。
 
@@ -160,6 +160,25 @@
 | 生成中途点 `Cancel` | #7 已检查（同一路径） |
 | 额度耗尽的模型触发额度提示（原样显示） | 未检查：当前账户没有额度耗尽的模型；同一路径由假 agent 的多行额度提示覆盖 |
 
+## GenUI 重新生成与撤回（#12）
+
+自动化（`update_test.go` 用同一个假 agent；`web/test/genui-generate.test.tsx` 的「GenUI regeneration」）：
+
+- 局部：agent 目录开始时只有 `source.md` 与 `view.json`；读 `view.json` 允许、写它拒绝；提示里有要替换的 id、surface、生成要求；结果是原消息 + agent 的一条 `updateComponents`，来源全部按本次文本重算哈希并加入新来源；被替换的视图成为备份（权限与视图相同）。
+- 越界整次拒绝（`invalid-output`，视图和备份不变）：改了未点名的组件、改了 `root`、两条消息、`createSurface`、另一个 surface、改动已有来源。视图没有那个 id、没有 id、没有视图 → 不启动 agent。agent 工作期间视图被改写 → 不写入、不留备份。
+- 备份与撤回：全部重新生成也留备份；生成失败备份不变；撤回后视图 = 备份、不再有备份，再次撤回被拒绝。
+- 页面：没有组件「原文已改」时 `Regenerate changed` 禁用；改了一节后变为 `Regenerate changed (1)`，发出 `mode: 'update'`、`replaceIds: ['metrics']` 和生成要求；更新后另一个组件保持原样；`Undo last generation` 回到旧视图后按钮消失；`Regenerate all` 发 `mode: 'full'`；失败保留备份，生成中撤回禁用。
+
+打包应用手动检查（2026-11-07，真实 `agy acp`，`gemini-3.8-flash`，`/tmp/mdws-smoke/gen12/report.md` + #7 生成的视图）：
+
+| 检查 | 状态 |
+|---|---|
+| Rich text 里把 Options 表格 Tauri 的 9 改成 0 → GenUI：`From Options` 标 Source changed，按钮 `Regenerate changed (1)` | 通过（自动化 UI 操作） |
+| `Regenerate changed (1)`：进度 Starting / Agent ready / Thinking / File source.md / File view.json / File out.json，约 1 分钟后表格显示 Tauri 0、无 Source changed、`Regenerate changed` 禁用、出现 `Undo last generation` | 通过（自动化 UI 操作） |
+| 视图文件：`a2ui` = 原 `createSurface` + 一条只含 `compare` 的 `updateComponents`；`sources.options.hash` 重算为 `fnv1a32:6a329a8c`；`.report.md.genui.prev.json` 与原视图逐字节一致；无 `agy` 进程与临时目录 | 通过 |
+| `Undo last generation`：视图文件与原视图逐字节一致、备份删除；页面回到 Tauri 9 + Source changed + `Regenerate changed (1)`，撤回按钮消失 | 通过 |
+| 备份权限：这次实测发现备份是 0644、视图是 0600，已改为备份沿用视图权限（Go 测试覆盖） | 修复后未在打包应用里重测 |
+
 ## 打包应用手动冒烟（`/tmp/mdws-smoke/report.md`：frontmatter、alert、setext 标题、`+` 列表、CJK 表格、带 meta 的代码块、引用式链接）
 
 | 场景 | 结果 |
@@ -180,7 +199,8 @@
 - 自动化工具注入中文只落下首字，属注入方式限制；真实输入法已人工确认正常。
 - 外部重载会重建编辑器：撤销历史和光标重置（已接受）。
 - 编辑过的块按 Milkdown 规则重写（setext→ATX、表格补齐、块内 CRLF→LF）；插入/删除块后的块间空白回退为 `\n\n`。
-- GenUI 视图由 `agy acp` 生成（#7），失败分类与清理见 #8；局部重新生成与撤销在 #12。A2UI 校验不过的视图显示问题列表（`role="alert"`）和可用的 `Generate again`，「撤回」等 #12 的备份。
+- GenUI 视图由 `agy acp` 生成（#7），失败分类与清理见 #8，局部重新生成与撤回见 #12。A2UI 校验不过的视图显示问题列表（`role="alert"`）和 `Regenerate all`；有备份时也可以撤回。
+- 撤回只有一份备份；视图里已经是局部更新的组件，下一次局部更新后 `a2ui` 继续变长（不压缩）。
 - Agent 隔离只是尽力而为（ADR 0003）：agy 按用户自己的 `~/.gemini/antigravity-cli/settings.json` 运行，可能不请求权限就写目录外文件或运行 shell。宿主看到越界工具调用就停止运行、不写视图，但无法阻止已经发生的那一步。
 - 只有 GenUI 有深色令牌；应用其余部分（头部、大纲、编辑器）还没有深色主题，`:root` 固定为 `color-scheme: light`。
 - ComparisonTable 的列头按钮在 macOS 辅助功能树里不出现（表格行可见），自动化只能用坐标点击。

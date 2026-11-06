@@ -49,6 +49,8 @@ export interface PluginContext {
       onProgress: (progress: GenerateProgress) => void,
       signal: AbortSignal,
     ): Promise<void>
+    /** Puts back the view the last generation replaced, once. */
+    undo(): Promise<void>
     getSettings(): Promise<GenerationSettings>
     setSettings(settings: GenerationSettings): Promise<void>
   }

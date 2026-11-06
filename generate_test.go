@@ -1158,7 +1158,7 @@ func TestGenerateCommandNotFound(t *testing.T) {
 
 func TestGenerateBadMode(t *testing.T) {
 	err, _, _ := driveGeneration(t, fakeSpec{}, nil, func(job *generationJob) { job.Req.Mode = "sections" })
-	if f := failureFrom(t, err); f.Kind != failAgentError || !strings.Contains(f.Message, `only "full" is supported`) {
+	if f := failureFrom(t, err); f.Kind != failAgentError || !strings.Contains(f.Message, `only "full" and "update" are supported`) {
 		t.Errorf("failure = %+v, want the mode error", f)
 	}
 }

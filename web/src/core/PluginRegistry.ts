@@ -99,6 +99,7 @@ export class PluginRegistry {
       viewFile: {
         watch: (fn) => track(this.viewFile.watchView(fn)),
         generate: (req, onProgress, signal) => this.viewFile.generate(req, onProgress, signal),
+        undo: () => this.viewFile.undoView(),
         getSettings: () => this.viewFile.getSettings(),
         setSettings: (settings) => this.viewFile.setSettings(settings),
       },

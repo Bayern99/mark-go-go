@@ -17,13 +17,15 @@ Generate 不在 app 里接任何模型 API，而是通过 Agent Client Protocol�
 - **提示词的内容。** 页面把格式文档（`view-format.md`）和由组件目录生成的组件定义 JSON 一起交给宿主，宿主把它接在固定的隔离指令后面；读者的生成要求单独标出，并存进视图文件的 `request`。
 - **设置。** `{model, agentCommand}` 存在 app 用户数据目录的 `settings.json`。`model` 为空表示不发 `set_config_option`，用 Agent 自己的默认模型；写错的模型名报错时列出 Agent 提供的模型。
 - **从 Finder 启动的 PATH。** 打包后的 app 从 Finder 启动时 PATH 很短，命令先按 PATH 找，再找 `~/.local/bin`、`/opt/homebrew/bin`、`/usr/local/bin`；也可以在设置里填绝对路径。
+- **局部重新生成（#12）。** 临时目录里多放一份 `view.json`（当前视图原样），只读。Agent 只写一条 `updateComponents`；合并由宿主完成：追加到 `a2ui` 末尾，来源只增不改，哈希全部重算。这是 ADR 0002「校验只在页面上做」的一个例外：宿主检查更新只动了被要求替换的 id 和新 id、是视图的 surface。否则 Agent 可以借「局部」之名改掉整个视图，而页面已经无法区分。组件属性与目录的深层校验仍只在页面上做。
+- **撤回一次（#12）。** 写入新视图前把当前视图保留为 `.<name>.md.genui.prev.json`（权限与视图相同），撤回是一次 `rename`。局部更新在写入前核对视图文件还是 Agent 开始时的那份，变了就不写。
 
 ## 局限（必须知道的）
 
 - **隔离不是沙箱。** 实测（2026-11-07）：本机 `~/.gemini/antigravity-cli/settings.json` 里 `allowNonWorkspaceAccess: true`、权限预设为 TURBO 时，`agy acp` 写工作区外的文件、执行 shell 命令都**不会**先发 `request_permission`。第二道防线只能在 Agent 报告这次工具调用时停下整次运行，那一次调用可能已经发生。真正的限制取决于用户在 Antigravity 里的权限设置；app 不改那些设置，也不绕过它们。
 - 临时目录只是让 Agent 默认看不到别的文件，并不阻止它访问绝对路径。
 - Agent 的输出被当成数据：只渲染组件目录里的组件，不执行任何 HTML 或脚本（ADR 0002）。
-- 超时、错误分类、退出清理在 #8；局部重新生成与撤回在 #12。
+- 超时、错误分类、退出清理在 #8。撤回只有一份备份：连续生成两次后，只能回到第二次之前。
 
 ## 放弃的方案
 

@@ -57,15 +57,18 @@ export interface BrowserHost extends HostAdapter {
   /** Simulate an external change (used by tests and the demo reload button). */
   reload(text: string): void
   getState(): DocState
-  /** Simulate another tool writing (text) or removing (null) the view file. */
+  /** Simulate another tool writing (text) or removing (null) the view file; the kept view stays. */
   writeView(text: string | null): void
+  /** The kept view the last generation replaced, or null. */
+  keptView(): string | null
   /** Requests generate() received, in order. */
   readonly generations: GenerateRequest[]
 }
 
 /**
  * A scripted stand-in for the agent. It gets the request and a `progress`
- * function; what it returns becomes the view file. Throwing a
+ * function; what it returns becomes the view file, for an update as well
+ * (the desktop host merges the agent's message itself). Throwing a
  * `GenerationError` plays that failure; any other error is an `agent-error`.
  * `signal` aborts when the page cancels.
  */
@@ -78,6 +81,8 @@ export type FakeGenerator = (
 export interface BrowserHostOptions {
   /** Initial view file text; none when omitted. */
   view?: string
+  /** Initial kept view, the one to go back to; none when omitted. */
+  kept?: string
   /** Plays the agent; without one, Generate fails with a message. */
   generator?: FakeGenerator
   /** Stored settings; the defaults of the desktop host when omitted. */
@@ -106,6 +111,7 @@ export function createBrowserHost(
     path: options.untitled ? '' : `/demo/${initialName}`,
   }
   let view: string | null = options.view ?? null
+  let kept: string | null = options.kept ?? null
   const reloadListeners = new Set<(snap: HostDocSnapshot) => void>()
   const stateListeners = new Set<(state: DocState) => void>()
   const viewListeners = new Set<(snap: ViewSnapshot) => void>()
@@ -114,7 +120,9 @@ export function createBrowserHost(
   const generations: GenerateRequest[] = []
 
   const viewSnapshot = (): ViewSnapshot =>
-    view === null ? { exists: false, text: '', error: '' } : { exists: true, text: view, error: '' }
+    view === null
+      ? { exists: false, text: '', error: '', canUndo: kept !== null }
+      : { exists: true, text: view, error: '', canUndo: kept !== null }
 
   const snapshot = (): HostDocSnapshot => ({ text, version, state: { ...state } })
 
@@ -169,8 +177,18 @@ export function createBrowserHost(
       return disposable(() => viewListeners.delete(fn))
     },
     writeView,
+    keptView: () => kept,
+    // Same rules as the desktop host.
+    async undoView() {
+      if (generating) throw new Error('A view is being generated; wait for it to finish, or cancel it.')
+      if (kept === null) throw new Error('There is no earlier view to go back to.')
+      const back = kept
+      kept = null
+      writeView(back)
+    },
     // Same rules as the desktop host: one run at a time, a saved document,
-    // and the view file written only when the run succeeds.
+    // the view file written only when the run succeeds, and the view it
+    // replaces kept to go back to.
     async generate(req, onProgress, signal) {
       if (state.path === '') {
         throw new GenerationError({ kind: 'unsaved', message: 'Save the document first: the view is stored next to it.' })
@@ -200,6 +218,7 @@ export function createBrowserHost(
         })
         const body = await Promise.race([options.generator(req, onProgress, signal), stopped])
         onProgress({ phase: 'checking', text: 'Checking the view' })
+        if (view !== null) kept = view
         writeView(body)
       } catch (error) {
         if (signal.aborted) throw cancelled()

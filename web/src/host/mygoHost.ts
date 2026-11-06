@@ -99,7 +99,7 @@ export function createMyGoHost(): HostAdapter {
         latest = null;
         offViewChanged = events.viewChanged.on(deliver);
         inTurn(() => DocumentHost.watchView()).catch((err: unknown) => {
-          if (current === cycle) deliver({ exists: true, text: "", error: String(err) });
+          if (current === cycle) deliver({ exists: true, text: "", error: String(err), canUndo: false });
         });
       }
       return disposable(() => {
@@ -111,6 +111,10 @@ export function createMyGoHost(): HostAdapter {
         cycle++;
         void inTurn(() => DocumentHost.unwatchView());
       });
+    },
+
+    async undoView(): Promise<void> {
+      await DocumentHost.undoView();
     },
 
     // The host writes the view file when the run succeeds; closing the

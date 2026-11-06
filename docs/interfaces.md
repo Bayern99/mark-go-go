@@ -22,11 +22,12 @@
 | `docState` | 事件 `DocState` | edited / conflict / deleted / readOnly / name / path |
 | `WatchView()` | `→ ViewSnapshot` | 开始跟随调用窗口文档的视图文件，返回开始跟随后的首个快照 |
 | `UnwatchView()` | `→ void` | 停止跟随 |
+| `UndoView()` | `→ void` | 把上一次生成前保留的 `.<name>.genui.prev.json` 改名回视图文件（一次，之后不再有备份）；没有备份或正在生成时拒绝；页面经 `viewChanged` 看到 |
 | `viewChanged` | 事件 `ViewSnapshot` | 跟随期间视图文件被写入、替换或删除；文档改名/首次保存后改跟随新路径并推送一次 |
 | `Generate(req, progress)` | `GenerateRequest`、`Channel<GenerateProgress>` `→ void` | 经 ACP 运行一次生成（见「GenUI 生成」）；成功后视图文件已原子写入，页面经 `viewChanged` 看到。失败时最后一步是 `{phase: "failed", text, failure: GenerateFailure}`，再以 `message`（+ 空格 + `hint`）拒绝。页面关闭通道、关闭窗口、退出 app 都是取消 |
 | `GetSettings()` / `SetSettings(s)` | `Settings {model, agentCommand}` | 存在用户数据目录的 `settings.json`；默认 `{gemini-3.8-flash, agy}` |
 
-`Snapshot = { text, version, state }`；`version` 从 1 开始，每次从磁盘重载 +1。`ViewSnapshot = { exists, text, error }`。生成客户端：`web/src/host/generated/mygo.ts`（`go tool mygo generate`）。
+`Snapshot = { text, version, state }`；`version` 从 1 开始，每次从磁盘重载 +1。`ViewSnapshot = { exists, text, error, canUndo }`，`canUndo` = 备份存在（监听同时看视图文件与备份）。生成客户端：`web/src/host/generated/mygo.ts`（`go tool mygo generate`）。
 
 ## HostAdapter（`web/src/host/types.ts`）
 
@@ -34,6 +35,7 @@
 interface ViewFileSource {
   // 首个快照在开始跟随后送达一次，之后每次变化送达
   watchView(fn: (snap: ViewSnapshot) => void): Disposable
+  undoView(): Promise<void> // 回到上一次生成前的视图，一次
 }
 interface HostAdapter extends ViewFileSource, ViewGenerator {
   load(): Promise<HostDocSnapshot>
@@ -46,7 +48,7 @@ interface ViewGenerator {
   getSettings(): Promise<GenerationSettings>
   setSettings(settings: GenerationSettings): Promise<void>
 }
-interface GenerateRequest { text: string; mode: 'full'; request?: string; format: string; sections: SectionRef[] }
+interface GenerateRequest { text: string; mode: 'full' | 'update'; replaceIds?: string[]; request?: string; format: string; sections: SectionRef[] }
 interface SectionRef { heading: string; occurrence: number; start: number; end: number } // UTF-16 偏移
 interface GenerateProgress { phase: 'starting' | 'thinking' | 'reading' | 'writing' | 'checking'; text: string }
 // generate 总是以 GenerationError（web/src/host/generationError.ts，带 failure）拒绝
@@ -57,7 +59,7 @@ type GenerateFailureKind = 'unsaved' | 'busy' | 'agent-not-found' | 'auth-requir
 
 - `mygoHost.watchView` 对多个监听者计数：首个监听者调用 `WatchView()`，最后一个释放时调用 `UnwatchView()`。
 - `mygoHost.generate` 用 `mygo-runtime` 的 `Channel` 接进度，`signal` 中止时关闭通道（取消 Go 端的 ctx）。`failed` 步骤里的 `failure` 在调用被拒绝之前到达，变成 `GenerationError`；未知 kind 当作 `agent-error`，没有 failure 的拒绝也是 `agent-error`；中止的是 `cancelled`。
-- `createBrowserHost(text, name, { view?, generator?, settings?, untitled? })` 用内存视图文件；`host.writeView(text | null)` 模拟写入/删除；`generator(req, progress, signal) → Promise<视图文件文本>` 扮演 Agent，抛 `GenerationError` 即扮演那种失败，其他错误为 `agent-error`；`host.generations` 记录收到的请求（测试用）。规则与 Go 端相同：未保存的文档（`unsaved`）、正在生成时（`busy`）都拒绝；只有成功才写视图文件。
+- `createBrowserHost(text, name, { view?, kept?, generator?, settings?, untitled? })` 用内存视图文件；`host.writeView(text | null)` 模拟写入/删除；`generator(req, progress, signal) → Promise<视图文件文本>` 扮演 Agent（`update` 时也返回完整视图文件，合并只在 Go 端），抛 `GenerationError` 即扮演那种失败，其他错误为 `agent-error`；`host.generations` 记录收到的请求，`host.keptView()` 返回备份（测试用）。规则与 Go 端相同：未保存的文档（`unsaved`）、正在生成时（`busy`）都拒绝；只有成功才写视图文件，被替换的视图成为备份。
 
 ## 插件契约（`web/src/core/types.ts`）
 
@@ -137,6 +139,12 @@ interface PluginContext {
 - 宿主（Go）：临时目录里只有 `source.md`；`<agentCommand> acp`，无其他参数；`initialize` → `session/new` → `set_config_option(model)`（模型非空时）→ `session/prompt`。权限与工具调用按同一条路径规则检查（读 `source.md`、写 `out.json`、思考），越界即取消本次运行。`out.json` ≤ 1 MiB、普通文件、JSON 对象、非空 `a2ui`、合法 `sources`；宿主写 `version: 2`、`generatedAt`、`model`、`request`、带 `hash` 的 `sources`、原样的 `a2ui`，丢弃其他字段，原子替换视图文件；临时目录总是删除。进度：`starting`（启动、Agent 就绪）、`thinking`、`reading` / `writing`（工具标题）、`checking`。
 - 共享测试向量 `web/test/fixtures/section-vectors.json` 增加了章节的 UTF-16 `start` / `end` 与标题规范化（`normalize`），TS 与 Go 两边都用它验证。
 
+## GenUI 重新生成与撤回（#12）
+
+- 页面：有视图时按钮是 `Regenerate changed (N)` 与 `Regenerate all`；没有视图时是 `Generate`。N = 表面上 `sources` 状态为「原文已改」的组件数（随来源刷新）；N = 0 时 `Regenerate changed` 禁用。`Regenerate changed` 发 `mode: 'update'`、`replaceIds` = 这些组件 id；两种都带生成要求，失败后 `Retry` 按同一种方式重跑。有备份时显示 `Undo last generation`（生成中禁用）。
+- 宿主（`update.go`）：局部生成前先读当前视图（版本 2、有 surface、`replaceIds` 非空且都是视图里的组件），否则不启动 Agent，`agent-error`「The current view cannot be updated: …」。临时目录里放 `source.md` 和 `view.json`（当前视图原样）；权限策略允许读 `view.json`，只允许写 `out.json`。提示词列出要替换的 id 和 surface。`out.json` 的 `a2ui` 必须是**恰好一条** `updateComponents`（只有 `version` 与 `updateComponents` 两个键），是视图的 surface，组件 id 只能是要替换的或视图里没有的，不重复；`sources` 只能新增，或与视图里同名的完全一致。任何一条不符合 → `invalid-output`，视图和备份不变。通过后这条消息追加到 `a2ui` 末尾，所有来源按本次文本重算哈希，`generatedAt` / `model` / `request` 取本次。写入前再读一次视图文件，如果 Agent 工作期间被改过，不写入（`agent-error`）。
+- 备份：每次成功写入新视图（全部或局部）前，把当前视图原子写到 `.<name>.genui.prev.json`，权限与视图相同；写视图失败时把备份恢复原样。生成失败不动备份。撤回 = `rename(prev, view)`，只有一份。
+
 ## Editor Adapter（`web/src/editor/createEditor.ts`）
 
 ```ts
@@ -186,4 +194,4 @@ CrepeBuilder features：`cursor, listItem, placeholder, linkTooltip, blockEdit, 
 
 ## 尚未实现（后续阶段）
 
-搜索替换、局部重新生成与撤回（#12）、批注（#13）、多标签页。
+搜索替换、批注（#13）、多标签页。

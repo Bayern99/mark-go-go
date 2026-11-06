@@ -6,6 +6,7 @@ import { GenerationError } from '../src/host/generationError'
 import type { GenerateFailure, GenerateProgress } from '../src/host/types'
 import { extractSections } from '../src/markdown/sections'
 import { CATALOG_COMPONENTS } from '../src/plugins/genui/a2ui'
+import { SOURCE_DEBOUNCE_MS } from '../src/plugins/genui/sources'
 import { mountApp, type MountedApp } from './helpers/app'
 
 const DOCUMENT = `# Overview
@@ -90,7 +91,10 @@ async function openGenUI(host: BrowserHost): Promise<MountedApp> {
 }
 
 const genui = () => page.getByTestId('genui-view')
-const generate = () => page.getByRole('button', { name: /^Generate/ })
+const generate = () => page.getByRole('button', { name: 'Generate', exact: true })
+const regenerateChanged = () => page.getByRole('button', { name: /^Regenerate changed/ })
+const regenerateAll = () => page.getByRole('button', { name: 'Regenerate all' })
+const undo = () => page.getByRole('button', { name: 'Undo last generation' })
 const requestBox = () => page.getByRole('textbox', { name: /What should the view focus on/ })
 
 describe('GenUI generation', () => {
@@ -134,7 +138,9 @@ describe('GenUI generation', () => {
     agent.finish(viewFile('Made by the agent', 'Focus on the metrics'))
     await expect.element(page.getByText('Made by the agent', { exact: false })).toBeVisible()
     expect(page.getByTestId('genui-progress').query()).toBeNull()
-    await containsText(generate(), 'Generate again')
+    // Nothing changed since: only a whole new view has anything to do.
+    await expect.element(regenerateChanged()).toBeDisabled()
+    await expect.element(regenerateAll()).toBeEnabled()
     // The view's own request is offered again.
     await expect.element(requestBox()).toHaveValue('Focus on the metrics')
     expect(host.getState().edited).toBe(false)
@@ -174,7 +180,7 @@ describe('GenUI generation', () => {
     await expect.element(page.getByText('The old view', { exact: false })).toBeVisible()
 
     await requestBox().fill('Compare the metrics')
-    await generate().click()
+    await regenerateAll().click()
     const quota = 'Individual quota reached.\nResets in 3h 12m.'
     agent.fail({
       kind: 'agent-message',
@@ -245,7 +251,7 @@ describe('GenUI generation', () => {
       generator: agent.generator,
     })
     await openGenUI(host)
-    await generate().click()
+    await regenerateAll().click()
     await expect.element(page.getByTestId('genui-progress')).toBeVisible()
 
     await page.getByRole('button', { name: 'Cancel' }).click()
@@ -281,5 +287,129 @@ describe('GenUI generation', () => {
 
     await page.getByRole('button', { name: 'Agent settings' }).click()
     await expect.element(page.getByRole('textbox', { name: 'Model' })).toHaveValue('claude-opus-5-5')
+  })
+})
+
+/**
+ * A view of both sections whose hashes match DOCUMENT, so that a section
+ * edited afterwards shows as changed; `update` is appended as the host
+ * appends an update's message.
+ */
+function trackedView(update?: { id: string; title: string }): string {
+  const sections = extractSections(DOCUMENT)
+  const source = (index: number) => {
+    const section = sections[index]
+    if (!section) throw new Error('section missing')
+    return { heading: section.heading.text, occurrence: section.occurrence, hash: section.hash }
+  }
+  return JSON.stringify({
+    version: 2,
+    sources: { overview: source(0), metrics: source(1) },
+    a2ui: [
+      {
+        version: '1.0',
+        createSurface: {
+          surfaceId: 'view',
+          catalogId: 'markgogo.dev:genui/v1',
+          components: [
+            { id: 'root', component: 'Column', children: ['overview', 'metrics'] },
+            { id: 'overview', component: 'KeyPoints', title: 'Old overview', items: ['O.'], sources: ['overview'] },
+            { id: 'metrics', component: 'KeyPoints', title: 'Old metrics', items: ['M.'], sources: ['metrics'] },
+          ],
+        },
+      },
+      ...(update
+        ? [
+            {
+              version: '1.0',
+              updateComponents: {
+                surfaceId: 'view',
+                components: [
+                  { id: update.id, component: 'KeyPoints', title: update.title, items: ['N.'], sources: [update.id] },
+                ],
+              },
+            },
+          ]
+        : []),
+    ],
+  })
+}
+
+/** Types at the end of the Metrics section in rich text, then goes back to GenUI. */
+async function editMetrics(mounted: MountedApp, host: BrowserHost): Promise<void> {
+  await page.getByTestId('view-mode-richtext').click()
+  const paragraph = Array.from(mounted.container.querySelectorAll<HTMLElement>('.ProseMirror p')).find(
+    (p) => p.textContent === 'Second body.',
+  )
+  if (!paragraph) throw new Error('paragraph missing')
+  await userEvent.click(paragraph)
+  await userEvent.keyboard('{End} More.')
+  await vi.waitFor(() => expect(host.getState().edited).toBe(true))
+  await page.getByTestId('view-mode-genui').click()
+}
+
+describe('GenUI regeneration', () => {
+  it('replaces only the changed components, then goes back once', async () => {
+    const agent = scripted()
+    const host = createBrowserHost(DOCUMENT, 'report.md', { view: trackedView(), generator: agent.generator })
+    const mounted = await openGenUI(host)
+    await expect.element(page.getByText('Old metrics', { exact: false })).toBeVisible()
+    await expect.element(regenerateChanged()).toBeDisabled()
+    expect(undo().query()).toBeNull()
+
+    await editMetrics(mounted, host)
+    await vi.waitFor(() => expect(regenerateChanged().element().textContent).toBe('Regenerate changed (1)'), {
+      timeout: SOURCE_DEBOUNCE_MS + 2000,
+    })
+    await requestBox().fill('Shorter')
+    await regenerateChanged().click()
+
+    const [req] = host.generations
+    expect(req?.mode).toBe('update')
+    expect(req?.replaceIds).toEqual(['metrics'])
+    expect(req?.request).toBe('Shorter')
+    expect(req?.text).toContain('Second body. More.')
+
+    agent.finish(trackedView({ id: 'metrics', title: 'New metrics' }))
+    // The update applies over the view: the other component stays.
+    await expect.element(page.getByText('New metrics', { exact: false })).toBeVisible()
+    await expect.element(page.getByText('Old overview', { exact: false })).toBeVisible()
+    expect(page.getByText('Old metrics', { exact: false }).query()).toBeNull()
+
+    await undo().click()
+    await expect.element(page.getByText('Old metrics', { exact: false })).toBeVisible()
+    expect(page.getByText('New metrics', { exact: false }).query()).toBeNull()
+    // Once: nothing is kept any more.
+    await vi.waitFor(() => expect(undo().query()).toBeNull())
+    expect(host.keptView()).toBeNull()
+  })
+
+  it('regenerates the whole view whether or not anything changed', async () => {
+    const agent = scripted()
+    const host = createBrowserHost(DOCUMENT, 'report.md', { view: trackedView(), generator: agent.generator })
+    await openGenUI(host)
+    await regenerateAll().click()
+    expect(host.generations[0]?.mode).toBe('full')
+    expect(host.generations[0]?.replaceIds).toBeUndefined()
+    agent.finish(viewFile('All new'))
+    await expect.element(page.getByText('All new', { exact: false })).toBeVisible()
+    expect(host.keptView()).toBe(trackedView())
+    await expect.element(undo()).toBeEnabled()
+  })
+
+  it('keeps the earlier view when a run fails', async () => {
+    const agent = scripted()
+    const kept = viewFile('The kept view')
+    const host = createBrowserHost(DOCUMENT, 'report.md', { view: trackedView(), kept, generator: agent.generator })
+    await openGenUI(host)
+    await regenerateAll().click()
+    // Going back waits while a run goes on.
+    await expect.element(undo()).toBeDisabled()
+    agent.fail({ kind: 'invalid-output', message: 'The view the agent wrote is not valid.', hint: 'Generate again.' })
+
+    await containsText(genui().getByRole('alert'), 'The view the agent wrote is not valid.')
+    expect(host.keptView()).toBe(kept)
+    await undo().click()
+    await expect.element(page.getByText('The kept view', { exact: false })).toBeVisible()
   })
 })

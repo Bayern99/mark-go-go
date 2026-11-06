@@ -20,10 +20,13 @@ const maxViewBytes = 1 << 20
 // ViewSnapshot is a document's view file, as the host read it. Exists is
 // false when there is none, including for an untitled document; Error says
 // why an existing file could not be read. The page validates the text.
+// CanUndo says the view before the last generation is kept, so that
+// UndoView can go back to it.
 type ViewSnapshot struct {
-	Exists bool   `json:"exists"`
-	Text   string `json:"text"`
-	Error  string `json:"error"`
+	Exists  bool   `json:"exists"`
+	Text    string `json:"text"`
+	Error   string `json:"error"`
+	CanUndo bool   `json:"canUndo"`
 }
 
 // viewChanged tells a page that follows its document's view file that the
@@ -44,6 +47,15 @@ func readView(path string) ViewSnapshot {
 	if path == "" {
 		return ViewSnapshot{}
 	}
+	snap := readViewText(path)
+	if fi, err := os.Lstat(prevViewPath(path)); err == nil && fi.Mode().IsRegular() {
+		snap.CanUndo = true
+	}
+	return snap
+}
+
+// readViewText reads the view file at path, at most maxViewBytes of it.
+func readViewText(path string) ViewSnapshot {
 	f, err := os.Open(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return ViewSnapshot{}
@@ -96,6 +108,27 @@ func (h *documentHost) UnwatchView(ctx context.Context) error {
 	}
 	s.unfollowView()
 	return nil
+}
+
+// UndoView puts back the view the last generation replaced, once: the
+// kept view becomes the view file and nothing is kept any more. The
+// page sees it through the view watch.
+func (h *documentHost) UndoView(ctx context.Context) error {
+	s, err := h.session(ctx)
+	if err != nil {
+		return err
+	}
+	h.mu.Lock()
+	generating := s.generating
+	h.mu.Unlock()
+	if generating {
+		return errors.New("A view is being generated; wait for it to finish, or cancel it.")
+	}
+	path := viewPath(s.doc.State().Path)
+	if path == "" {
+		return errors.New("There is no earlier view to go back to.")
+	}
+	return undoView(path)
 }
 
 func (s *docSession) unfollowView() {
@@ -154,10 +187,11 @@ func (s *docSession) startViewWatch(path string, gen int) error {
 		return nil
 	}
 	h := s.host
-	name := filepath.Base(path)
+	// The kept view, there to go back to, comes and goes with the view.
+	name, prev := filepath.Base(path), filepath.Base(prevViewPath(path))
 	ctx, cancel := context.WithCancel(context.Background())
 	w, err := mygo.WatchFiles(ctx, filepath.Dir(path), mygo.FileWatchOptions{
-		Ignore: func(p string, _ bool) bool { return p != name },
+		Ignore: func(p string, _ bool) bool { return p != name && p != prev },
 	})
 	if err != nil {
 		cancel()

@@ -46,10 +46,10 @@ func resolveToolPath(dir, loc string) string {
 // agentToolAllowed says whether a tool call of kind with the location
 // paths locations stays inside dir, the agent's canonical working
 // directory. Thinking may touch anything; reading and searching only
-// the working directory itself, source.md and out.json; editing only
-// out.json. Everything else, and any path that leaves dir, is denied:
-// other kinds, a missing kind, no locations for read, search or edit,
-// and paths elsewhere.
+// the working directory itself, source.md, view.json (the current view,
+// there for an update) and out.json; editing only out.json. Everything
+// else, and any path that leaves dir, is denied: other kinds, a missing
+// kind, no locations for read, search or edit, and paths elsewhere.
 func agentToolAllowed(dir, kind string, locations []string) bool {
 	switch kind {
 	case "think":
@@ -60,7 +60,7 @@ func agentToolAllowed(dir, kind string, locations []string) bool {
 		}
 		for _, loc := range locations {
 			switch resolveToolPath(dir, loc) {
-			case dir, filepath.Join(dir, "source.md"), filepath.Join(dir, "out.json"):
+			case dir, filepath.Join(dir, "source.md"), filepath.Join(dir, "view.json"), filepath.Join(dir, "out.json"):
 			default:
 				return false
 			}

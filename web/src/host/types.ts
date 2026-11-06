@@ -43,7 +43,60 @@ export interface ViewFileSource {
   watchView(fn: (snap: ViewSnapshot) => void): Disposable
 }
 
-export interface HostAdapter extends ViewFileSource {
+/** One heading section of the text sent to the agent, in UTF-16 offsets of that text. */
+export interface SectionRef {
+  heading: string
+  occurrence: number
+  start: number
+  end: number
+}
+
+export interface GenerateRequest {
+  /** The editor text at the moment Generate was clicked; the agent reads only this. */
+  text: string
+  mode: 'full'
+  /** What the reader asked for; kept in the view file and offered again next time. */
+  request?: string
+  /** The format document and the catalog definition, for the agent's prompt. */
+  format: string
+  /** The text's heading sections, which the host hashes into the view's sources. */
+  sections: SectionRef[]
+}
+
+export type GeneratePhase = 'starting' | 'thinking' | 'reading' | 'writing' | 'checking'
+
+export interface GenerateProgress {
+  phase: GeneratePhase
+  text: string
+}
+
+export interface GenerationSettings {
+  /** The model the agent is asked to use; empty leaves the agent's own choice. */
+  model: string
+  /** The agent's command, run as `<agentCommand> acp`. */
+  agentCommand: string
+}
+
+/**
+ * Making a view with the reader's agent. The host writes the view file when
+ * the run succeeds, so the new view arrives through `watchView`; a failed
+ * or cancelled run leaves the file as it was.
+ */
+export interface ViewGenerator {
+  /**
+   * Runs one generation, reporting progress, until it is done. Rejects with
+   * a message for the reader. Aborting `signal` cancels the run.
+   */
+  generate(
+    req: GenerateRequest,
+    onProgress: (progress: GenerateProgress) => void,
+    signal: AbortSignal,
+  ): Promise<void>
+  getSettings(): Promise<GenerationSettings>
+  setSettings(settings: GenerationSettings): Promise<void>
+}
+
+export interface HostAdapter extends ViewFileSource, ViewGenerator {
   /** Content of this window's document. */
   load(): Promise<HostDocSnapshot>
   /** Full Markdown text after an edit. */

@@ -4,7 +4,7 @@
 
 | 模块 | 位置 | 职责 |
 |---|---|---|
-| Host（Go） | `main.go`、`documenthost.go`、`viewfile.go` | `mygo.NewDocuments[string]`：文件读写（原始字节）、脏状态、自动保存、恢复副本、外部修改重载/冲突、File/Edit 菜单；跟随文档旁的视图文件 |
+| Host（Go） | `main.go`、`documenthost.go`、`viewfile.go`、`generate.go` 等 | `mygo.NewDocuments[string]`：文件读写（原始字节）、脏状态、自动保存、恢复副本、外部修改重载/冲突、File/Edit 菜单；跟随文档旁的视图文件；经 ACP 运行 Agent 生成视图文件（ADR 0003） |
 | Host Adapter（TS） | `web/src/host/` | `HostAdapter` 契约；`mygoHost.ts`（MyGo IPC）、`browserHost.ts`（纯浏览器内存实现） |
 | Editor Adapter | `web/src/editor/` | CrepeBuilder 装配；块级分段、锁定块、`compose`、源码偏移映射（`reveal` / `onSelectionChange`） |
 | Application Core | `web/src/core/` | `DocumentService`、`CommandRegistry`、`ViewRegistry`、`PluginRegistry`、`EditorAccess`（插件侧编辑器选择源） |
@@ -23,6 +23,8 @@
 | `WatchView()` | `→ ViewSnapshot` | 开始跟随调用窗口文档的视图文件，返回开始跟随后的首个快照 |
 | `UnwatchView()` | `→ void` | 停止跟随 |
 | `viewChanged` | 事件 `ViewSnapshot` | 跟随期间视图文件被写入、替换或删除；文档改名/首次保存后改跟随新路径并推送一次 |
+| `Generate(req, progress)` | `GenerateRequest`、`Channel<GenerateProgress>` `→ void` | 经 ACP 运行一次生成（见「GenUI 生成」）；成功后视图文件已原子写入，页面经 `viewChanged` 看到；失败返回给读者看的英文句子。页面关闭通道即取消 |
+| `GetSettings()` / `SetSettings(s)` | `Settings {model, agentCommand}` | 存在用户数据目录的 `settings.json`；默认 `{gemini-3.8-flash, agy}` |
 
 `Snapshot = { text, version, state }`；`version` 从 1 开始，每次从磁盘重载 +1。`ViewSnapshot = { exists, text, error }`。生成客户端：`web/src/host/generated/mygo.ts`（`go tool mygo generate`）。
 
@@ -33,16 +35,25 @@ interface ViewFileSource {
   // 首个快照在开始跟随后送达一次，之后每次变化送达
   watchView(fn: (snap: ViewSnapshot) => void): Disposable
 }
-interface HostAdapter extends ViewFileSource {
+interface HostAdapter extends ViewFileSource, ViewGenerator {
   load(): Promise<HostDocSnapshot>
   update(text: string): Promise<void>
   onReload(fn: (snap: HostDocSnapshot) => void): Disposable
   onState(fn: (state: DocState) => void): Disposable
 }
+interface ViewGenerator {
+  generate(req: GenerateRequest, onProgress: (p: GenerateProgress) => void, signal: AbortSignal): Promise<void>
+  getSettings(): Promise<GenerationSettings>
+  setSettings(settings: GenerationSettings): Promise<void>
+}
+interface GenerateRequest { text: string; mode: 'full'; request?: string; format: string; sections: SectionRef[] }
+interface SectionRef { heading: string; occurrence: number; start: number; end: number } // UTF-16 偏移
+interface GenerateProgress { phase: 'starting' | 'thinking' | 'reading' | 'writing' | 'checking'; text: string }
 ```
 
 - `mygoHost.watchView` 对多个监听者计数：首个监听者调用 `WatchView()`，最后一个释放时调用 `UnwatchView()`。
-- `createBrowserHost(text, name, { view? })` 用内存视图文件；`host.writeView(text | null)` 模拟写入/删除（测试用）。
+- `mygoHost.generate` 用 `mygo-runtime` 的 `Channel` 接进度，`signal` 中止时关闭通道（取消 Go 端的 ctx）。
+- `createBrowserHost(text, name, { view?, generator?, settings?, untitled? })` 用内存视图文件；`host.writeView(text | null)` 模拟写入/删除；`generator(req, progress, signal) → Promise<视图文件文本>` 扮演 Agent，`host.generations` 记录收到的请求（测试用）。规则与 Go 端相同：未保存的文档、正在生成时都拒绝；只有成功才写视图文件。
 
 ## 插件契约（`web/src/core/types.ts`）
 
@@ -51,17 +62,18 @@ interface AppPlugin { id: string; title: string; activate(ctx: PluginContext): v
 type ViewLocation = 'left' | 'center'
 interface ViewRegistration { id: string; title: string; location: ViewLocation; mount(el: HTMLElement): Disposable }
 interface PluginContext {
-  documents: { snapshot(): { text: string; version: number }; onDidChange(fn): Disposable }
+  documents: { snapshot(): { text: string; version: number; path: string }; onDidChange(fn): Disposable } // path '' = 未保存
   views:     { register(v: ViewRegistration): Disposable }
   commands:  { register(id, fn): Disposable; execute(id, ...args): Promise<unknown> }
   editor:    { onSelectionChange(fn: (offset: number) => void): Disposable }
-  viewFile:  { watch(fn: (snap: ViewSnapshot) => void): Disposable }
+  viewFile:  { watch(fn: (snap: ViewSnapshot) => void): Disposable
+              generate(req, onProgress, signal): Promise<void>; getSettings(); setSettings(s) }
   subscriptions: Disposable[]
 }
 ```
 
 - `PluginRegistry.enable(id)` / `disable(id)`：注册表追踪所有经 ctx 产生的注册与订阅，`disable` 统一释放；`activate` 抛错时回滚。`ctx.editor.onSelectionChange` 同样被追踪，禁用插件即移除其选择监听。
-- `PluginRegistry(documents, views, commands, editor, viewFile)`：`editor` 是 `EditorSelectionSource`，App 用 `EditorAccess` 实现：注册表在编辑器创建前构造，编辑器就绪后 `attach(editor)`，之后才注册/启用插件；未 attach 时调用抛错（不会静默失效），App 卸载时 `detach()`。`viewFile` 是 host；`ctx.viewFile.watch` 被追踪，禁用插件即停止跟随视图文件。
+- `PluginRegistry(documents, views, commands, editor, viewFile)`：`editor` 是 `EditorSelectionSource`，App 用 `EditorAccess` 实现：注册表在编辑器创建前构造，编辑器就绪后 `attach(editor)`，之后才注册/启用插件；未 attach 时调用抛错（不会静默失效），App 卸载时 `detach()`。`viewFile` 是 host（`ViewFileSource & ViewGenerator`）；`ctx.viewFile.watch` 被追踪，禁用插件即停止跟随视图文件。`documents.path` 由 App 按 host 的 `DocState.path` 更新。
 - `ViewRegistration.location` 必填：`'left'` 进左侧栏（没有左侧视图时整栏不渲染）；`'center'` 成为一个视图模式，与 `Rich text` / `Markdown` 并列出现在头部的三选一切换里，只在被选中时挂载、离开时卸载。没有右侧栏。
 - 编辑器提供的命令：`editor.reveal(offset: number)`（偏移越界时返回 `false`；当前是中央视图时先切回 Rich text 再跳转）、`editor.toggleSourceMode()`（在 Rich text 与 Markdown 之间切换，从中央视图出发则切到编辑器的另一模式；返回当前编辑器模式）。插件跳转一律 `ctx.commands.execute('editor.reveal', offset)`，不另设 reveal API。
 
@@ -92,7 +104,7 @@ interface PluginContext {
 - `Text` 的 Markdown 由 `SafeMarkdown.tsx` 用应用自己的 mdast 解析器渲染为 React 元素：粗体、斜体、删除线、行内代码、代码块、列表、引用；链接只显示文字（`.genui-link`），图片和原始 HTML 不显示。没有 `innerHTML`。（`@a2ui/markdown-it` 0.2.2 的 peer 依赖是 web_core ^0.14，与 0.15 冲突，未采用。）
 - 视图里的交互（切换标签页等）只改变显示，不调用 `host.update`。
 - 章节（`sections.ts`）与 `fnv1a32` 哈希不变。
-- 没有视图文件时显示 `No view yet.` 与禁用的 `Generate`（生成在 #7 接入）；有文件时显示模型与生成时间。
+- 有视图文件时显示模型与生成时间。
 
 ## GenUI 来源状态与“去原文修改”（#10）
 
@@ -100,7 +112,7 @@ interface PluginContext {
 - `SourceFrame.tsx`：所有内容组件都画在同一个框里：底部 `From <标题…>`、状态标记 `Source changed` / `Source not found`（只在这两种状态显示）、`Edit in source` 按钮（`missing` 时禁用）。状态写在 `data-source-status`。组件经 `useComponentSource(sources)` 取状态与 `edit(text?)`。
 - `Edit in source`：取组件第一个仍在文档里的来源，先立即刷新章节（不用防抖中的旧偏移），再执行命令 `editor.select(start, end)`。带 `text` 时（Checklist 项）在各来源节里找这段原文，找到就只选它，否则选第一个来源整节。App 切到 Rich text、选中，并在编辑器区显示 `← Back to GenUI`（`data-testid="return-to-view"`）。点它回到 GenUI；在头部选任一模式后这个按钮消失。
 - 滚动位置：GenUI 视图的挂载元素 `.center-view` 就是滚动区。位置按视图文件文本记在插件里（`ScrollMemory`），跨挂载保留；同一份视图文件回来时恢复，换了视图文件从顶部开始。A2UI 首次提交后才渲染组件树，所以恢复时跟随内容增高（`ResizeObserver`，最多 1s）。
-- 生成器写入 `hash` 尚未实现（#7）；现在只有带 `hash` 的视图文件才会显示状态。
+- 生成器（#7）按页面给的章节范围写入每个来源的 `hash`；手写的视图文件不带 `hash` 时不显示状态。
 
 ## GenUI 组件目录（#11）
 
@@ -110,6 +122,14 @@ interface PluginContext {
 - 排版：`Row` 在 GenUI 里换行，每项至少 260px；`.genui-block` `min-width: 0` 与 `overflow-wrap: anywhere`；宽表在自己的框里横向滚动。
 - 主题：颜色是 `light-dark()` 令牌（`genui.css` 的 `--genui-*`，并映射到 `--a2ui-*`），跟随继承的 `color-scheme`。构建会把 `light-dark()` 降级成只有源码里声明了 `color-scheme` 的规则才设置的变量，所以 `:root` 声明 `color-scheme: light`；以后的主题切换要改这条规则，不能用内联样式。
 - 格式文档 `view-format.md`：每个组件一节，示例用到全部 10 个组件（合约测试：示例无错误渲染，且组件集合等于目录）。
+
+## GenUI 生成（#7，ADR 0003）
+
+- 页面（`generation.ts` 的 `GenerationController`，一个窗口一个，跨 GenUI 挂载保留）：点 Generate 时取 `documents.snapshot().text`（含未保存修改）和它的章节（共享章节模块，UTF-16 偏移），`format` = `view-format.md` + 「Catalog definition」JSON（`catalogDefinition()`），`request` = 生成要求（去首尾空白，空则不发）。一次只跑一个；运行中 GenUI 显示进度（`role="status"` 最新一步 + 已完成的步骤列表）和骨架，旧视图暂时隐藏；只剩 Cancel。生成期间可以离开 GenUI 继续编辑。
+- 生成要求输入框预填当前视图文件的 `request`；未保存的文档 Generate 禁用并提示 `Save the document first: the view is stored next to it.`。失败时 `role="alert"` 显示宿主给的原因（可 Dismiss），旧视图不变；取消不算失败、不提示。
+- `Agent settings`：Model（空 = Agent 自己的默认）与 Agent command（空 = `agy`），经 `getSettings` / `setSettings` 读写。
+- 宿主（Go）：临时目录里只有 `source.md`；`<agentCommand> acp`，无其他参数；`initialize` → `session/new` → `set_config_option(model)`（模型非空时）→ `session/prompt`。权限与工具调用按同一条路径规则检查（读 `source.md`、写 `out.json`、思考），越界即取消本次运行。`out.json` ≤ 1 MiB、普通文件、JSON 对象、非空 `a2ui`、合法 `sources`；宿主写 `version: 2`、`generatedAt`、`model`、`request`、带 `hash` 的 `sources`、原样的 `a2ui`，丢弃其他字段，原子替换视图文件；临时目录总是删除。进度：`starting`（启动、Agent 就绪）、`thinking`、`reading` / `writing`（工具标题）、`checking`。
+- 共享测试向量 `web/test/fixtures/section-vectors.json` 增加了章节的 UTF-16 `start` / `end` 与标题规范化（`normalize`），TS 与 Go 两边都用它验证。
 
 ## Editor Adapter（`web/src/editor/createEditor.ts`）
 
@@ -160,4 +180,4 @@ CrepeBuilder features：`cursor, listItem, placeholder, linkTooltip, blockEdit, 
 
 ## 尚未实现（后续阶段）
 
-搜索替换、GenUI 经 ACP 生成（#7、#8）、多标签页。
+搜索替换、生成超时与错误分类（#8）、局部重新生成与撤回（#12）、批注（#13）、多标签页。

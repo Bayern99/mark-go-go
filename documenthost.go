@@ -41,6 +41,10 @@ var docState = mygo.NewEvent[DocState]("docState")
 type documentHost struct {
 	mu       sync.Mutex
 	byWindow map[*mygo.Window]*docSession
+
+	// settings keeps the generation settings in the user data
+	// directory (settings.go).
+	settings *settingsStore
 }
 
 // docSession ties a document to its window and its page's events.
@@ -53,6 +57,11 @@ type docSession struct {
 	version   int
 	offReload func()
 	offState  func()
+
+	// generating says a view generation is running for this window
+	// (generate.go), so that a window runs one at a time; guarded by
+	// documentHost.mu.
+	generating bool
 
 	// The view file the page follows (viewfile.go), guarded by
 	// documentHost.mu: following says the page asked to, viewPath is the
@@ -67,7 +76,13 @@ type docSession struct {
 }
 
 func newDocumentHost() *documentHost {
-	return &documentHost{byWindow: make(map[*mygo.Window]*docSession)}
+	// The settings live in the user data directory. When MyGo cannot
+	// give one, the store answers with the defaults and refuses saves.
+	dir, _ := mygo.App.Path(mygo.PathUserData)
+	return &documentHost{
+		byWindow: make(map[*mygo.Window]*docSession),
+		settings: &settingsStore{dir: dir},
+	}
 }
 
 // openWindow makes the web page window of doc. MyGo calls it on the main

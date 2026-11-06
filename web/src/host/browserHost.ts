@@ -1,4 +1,13 @@
-import type { Disposable, DocState, HostAdapter, HostDocSnapshot, ViewSnapshot } from './types'
+import type {
+  Disposable,
+  DocState,
+  GenerateProgress,
+  GenerateRequest,
+  GenerationSettings,
+  HostAdapter,
+  HostDocSnapshot,
+  ViewSnapshot,
+} from './types'
 
 export const DEMO_MARKDOWN = `# Quarterly Report
 
@@ -49,12 +58,33 @@ export interface BrowserHost extends HostAdapter {
   getState(): DocState
   /** Simulate another tool writing (text) or removing (null) the view file. */
   writeView(text: string | null): void
+  /** Requests generate() received, in order. */
+  readonly generations: GenerateRequest[]
 }
+
+/**
+ * A scripted stand-in for the agent. It gets the request and a `progress`
+ * function; what it returns becomes the view file, a thrown error the
+ * message the reader sees. `signal` aborts when the page cancels.
+ */
+export type FakeGenerator = (
+  req: GenerateRequest,
+  progress: (step: GenerateProgress) => void,
+  signal: AbortSignal,
+) => Promise<string>
 
 export interface BrowserHostOptions {
   /** Initial view file text; none when omitted. */
   view?: string
+  /** Plays the agent; without one, Generate fails with a message. */
+  generator?: FakeGenerator
+  /** Stored settings; the defaults of the desktop host when omitted. */
+  settings?: GenerationSettings
+  /** Open the document as never saved: it has no path, so no view file. */
+  untitled?: boolean
 }
+
+export const DEFAULT_SETTINGS: GenerationSettings = { model: 'gemini-3.8-flash', agentCommand: 'agy' }
 
 /**
  * In-memory HostAdapter used when the page runs outside MyGo and in tests.
@@ -68,11 +98,18 @@ export function createBrowserHost(
 ): BrowserHost {
   let text = initial
   let version = 1
-  let state: DocState = { ...INITIAL_STATE, name: initialName }
+  let state: DocState = {
+    ...INITIAL_STATE,
+    name: initialName,
+    path: options.untitled ? '' : `/demo/${initialName}`,
+  }
   let view: string | null = options.view ?? null
   const reloadListeners = new Set<(snap: HostDocSnapshot) => void>()
   const stateListeners = new Set<(state: DocState) => void>()
   const viewListeners = new Set<(snap: ViewSnapshot) => void>()
+  let settings: GenerationSettings = { ...(options.settings ?? DEFAULT_SETTINGS) }
+  let generating = false
+  const generations: GenerateRequest[] = []
 
   const viewSnapshot = (): ViewSnapshot =>
     view === null ? { exists: false, text: '', error: '' } : { exists: true, text: view, error: '' }
@@ -84,7 +121,14 @@ export function createBrowserHost(
     for (const fn of stateListeners) fn({ ...copy })
   }
 
+  const writeView = (next: string | null) => {
+    view = next
+    const snap = viewSnapshot()
+    for (const fn of viewListeners) fn(snap)
+  }
+
   return {
+    generations,
     async load() {
       return snapshot()
     },
@@ -122,10 +166,34 @@ export function createBrowserHost(
       })
       return disposable(() => viewListeners.delete(fn))
     },
-    writeView(next: string | null) {
-      view = next
-      const snap = viewSnapshot()
-      for (const fn of viewListeners) fn(snap)
+    writeView,
+    // Same rules as the desktop host: one run at a time, a saved document,
+    // and the view file written only when the run succeeds.
+    async generate(req, onProgress, signal) {
+      if (state.path === '') throw new Error('Save the document first: the view is stored next to it.')
+      if (generating) throw new Error('A view is already being generated.')
+      generations.push(req)
+      if (!options.generator) throw new Error('No agent is available in the browser preview.')
+      generating = true
+      try {
+        onProgress({ phase: 'starting', text: 'Starting the agent' })
+        const cancelled = new Promise<never>((_, reject) => {
+          const stop = () => reject(new Error('Generation was cancelled.'))
+          if (signal.aborted) stop()
+          else signal.addEventListener('abort', stop, { once: true })
+        })
+        const body = await Promise.race([options.generator(req, onProgress, signal), cancelled])
+        onProgress({ phase: 'checking', text: 'Checking the view' })
+        writeView(body)
+      } finally {
+        generating = false
+      }
+    },
+    async getSettings() {
+      return { ...settings }
+    },
+    async setSettings(next) {
+      settings = { model: next.model, agentCommand: next.agentCommand || DEFAULT_SETTINGS.agentCommand }
     },
   }
 }

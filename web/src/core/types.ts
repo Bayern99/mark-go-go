@@ -1,8 +1,16 @@
-import type { Disposable, ViewSnapshot } from '../host/types'
+import type {
+  Disposable,
+  GenerateProgress,
+  GenerateRequest,
+  GenerationSettings,
+  ViewSnapshot,
+} from '../host/types'
 
 export interface DocumentSnapshot {
   text: string
   version: number
+  /** Where the document is saved; `''` while it is untitled. */
+  path: string
 }
 
 /**
@@ -33,9 +41,16 @@ export interface PluginContext {
   editor: {
     onSelectionChange(fn: (offset: number) => void): Disposable
   }
-  /** The document's view file; following it starts the host's watch. */
+  /** The document's view file: following it starts the host's watch; generating writes it. */
   viewFile: {
     watch(fn: (snap: ViewSnapshot) => void): Disposable
+    generate(
+      req: GenerateRequest,
+      onProgress: (progress: GenerateProgress) => void,
+      signal: AbortSignal,
+    ): Promise<void>
+    getSettings(): Promise<GenerationSettings>
+    setSettings(settings: GenerationSettings): Promise<void>
   }
   subscriptions: Disposable[]
 }

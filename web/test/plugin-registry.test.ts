@@ -5,7 +5,14 @@ import { EditorAccess } from '../src/core/EditorAccess'
 import { PluginRegistry } from '../src/core/PluginRegistry'
 import { ViewRegistry } from '../src/core/ViewRegistry'
 import type { AppPlugin, PluginContext } from '../src/core/types'
-import type { ViewFileSource, ViewSnapshot } from '../src/host/types'
+import type { ViewFileSource, ViewGenerator, ViewSnapshot } from '../src/host/types'
+
+/** Generation is not what these tests are about. */
+const noGeneration: ViewGenerator = {
+  generate: () => Promise.reject(new Error('not in these tests')),
+  getSettings: () => Promise.resolve({ model: '', agentCommand: 'agy' }),
+  setSettings: () => Promise.resolve(),
+}
 
 interface Effects {
   subscriptionCalls: number
@@ -18,9 +25,12 @@ interface Effects {
 }
 
 /** A view file source that records who follows it. */
-function fakeViewFile(effects: Effects): ViewFileSource & { followers: Set<(snap: ViewSnapshot) => void> } {
+function fakeViewFile(
+  effects: Effects,
+): ViewFileSource & ViewGenerator & { followers: Set<(snap: ViewSnapshot) => void> } {
   const followers = new Set<(snap: ViewSnapshot) => void>()
   return {
+    ...noGeneration,
     followers,
     watchView(fn) {
       followers.add(fn)
@@ -174,6 +184,7 @@ describe('PluginRegistry', () => {
     const commands = new CommandRegistry()
     const views = new ViewRegistry()
     const registry = new PluginRegistry(documents, views, commands, new EditorAccess(), {
+      ...noGeneration,
       watchView: () => ({ dispose() {} }),
     })
     let release!: () => void
@@ -216,6 +227,7 @@ describe('PluginRegistry', () => {
     const commands = new CommandRegistry()
     const views = new ViewRegistry()
     const registry = new PluginRegistry(documents, views, commands, new EditorAccess(), {
+      ...noGeneration,
       watchView: () => ({ dispose() {} }),
     })
     let disposed = false

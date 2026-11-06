@@ -1,5 +1,29 @@
-import type { Disposable, DocState, HostAdapter, HostDocSnapshot, ViewSnapshot } from "./types";
-import { DocumentHost, events } from "./generated/mygo";
+import { Channel } from "mygo-runtime";
+import type {
+  Disposable,
+  DocState,
+  GeneratePhase,
+  GenerateProgress,
+  GenerateRequest,
+  GenerationSettings,
+  HostAdapter,
+  HostDocSnapshot,
+  ViewSnapshot,
+} from "./types";
+import { DocumentHost, events, type GenerateProgress as WireProgress } from "./generated/mygo";
+
+const PHASES: Record<GeneratePhase, true> = {
+  starting: true,
+  thinking: true,
+  reading: true,
+  writing: true,
+  checking: true,
+};
+
+/** The host's phases are plain strings on the wire; a phase the page does not know is not shown. */
+function isPhase(phase: string): phase is GeneratePhase {
+  return Object.hasOwn(PHASES, phase);
+}
 
 /**
  * Wraps an unsubscribe function in the host adapter's Disposable.
@@ -86,6 +110,33 @@ export function createMyGoHost(): HostAdapter {
         cycle++;
         void inTurn(() => DocumentHost.unwatchView());
       });
+    },
+
+    // The host writes the view file when the run succeeds; closing the
+    // channel is how the page cancels, which cancels the call's context.
+    async generate(req: GenerateRequest, onProgress: (progress: GenerateProgress) => void, signal: AbortSignal) {
+      const progress = new Channel<WireProgress>((step) => {
+        if (isPhase(step.phase)) onProgress({ phase: step.phase, text: step.text });
+      });
+      const cancel = () => progress.close();
+      if (signal.aborted) throw new Error("Generation was cancelled.");
+      signal.addEventListener("abort", cancel, { once: true });
+      try {
+        await DocumentHost.generate(req, progress);
+      } catch (error) {
+        if (signal.aborted) throw new Error("Generation was cancelled.");
+        throw error;
+      } finally {
+        signal.removeEventListener("abort", cancel);
+      }
+    },
+
+    getSettings(): Promise<GenerationSettings> {
+      return DocumentHost.getSettings();
+    },
+
+    async setSettings(settings: GenerationSettings): Promise<void> {
+      await DocumentHost.setSettings(settings);
     },
   };
 }

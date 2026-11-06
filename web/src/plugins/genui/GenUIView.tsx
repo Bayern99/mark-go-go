@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { PluginContext } from '../../core/types'
-import type { Disposable, ViewSnapshot } from '../../host/types'
+import type { Disposable, GenerationSettings, ViewSnapshot } from '../../host/types'
 import { loadSurface, ViewSurface, type LoadedSurface } from './a2ui'
+import { GenerationController, type GenerationState } from './generation'
 import type { SourceActions } from './SourceFrame'
 import { SourceStore } from './sources'
 import { parseViewFile, type ViewFile } from './viewFile'
@@ -96,6 +97,15 @@ export interface ScrollMemory {
   top: number
 }
 
+/**
+ * What outlives the GenUI view's mounts: where the reader was in the view,
+ * the generation of the window, and the request being written.
+ */
+export interface GenUIMemory extends ScrollMemory {
+  generation: GenerationController | undefined
+  draft: string | undefined
+}
+
 /** How long a remembered position waits for the view's content to grow tall enough. */
 const RESTORE_WINDOW_MS = 1000
 
@@ -134,20 +144,36 @@ function useScrollMemory(
   }, [scroller, memory, text, content])
 }
 
+function useDocumentPath(ctx: PluginContext): string {
+  const subscribe = useMemo(
+    () => (listener: () => void) => {
+      const subscription = ctx.documents.onDidChange(listener)
+      return () => subscription.dispose()
+    },
+    [ctx],
+  )
+  return useSyncExternalStore(subscribe, () => ctx.documents.snapshot().path)
+}
+
 function GenUIView({
   store,
   ctx,
   scroller,
   memory,
+  generation,
 }: {
   store: GenUIStore
   ctx: PluginContext
   scroller: HTMLElement
-  memory: ScrollMemory
+  memory: GenUIMemory
+  generation: GenerationController
 }): React.ReactElement {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
+  const run = useSyncExternalStore(generation.subscribe, generation.getSnapshot)
+  const path = useDocumentPath(ctx)
   const content = useRef<HTMLDivElement>(null)
-  useScrollMemory(scroller, memory, state.kind === 'view' ? state.text : null, content)
+  const running = run.kind === 'running'
+  useScrollMemory(scroller, memory, state.kind === 'view' && !running ? state.text : null, content)
 
   const sources = state.kind === 'view' ? state.sources : null
   const actions = useMemo<SourceActions | null>(
@@ -165,25 +191,33 @@ function GenUIView({
     [sources, ctx, scroller, memory],
   )
 
+  const savedRequest = state.kind === 'view' ? (state.view.request ?? '') : ''
+
   return (
     <div className="genui-view" data-testid="genui-view" data-state={state.kind} ref={content}>
-      {state.kind === 'none' && (
-        <div className="genui-empty">
-          <p>No view yet.</p>
-          <button type="button" className="genui-generate" disabled>
-            Generate
-          </button>
-          <p className="genui-note">Generating is coming soon.</p>
-        </div>
+      {state.kind === 'loading' ? null : (
+        <GeneratePanel
+          key={state.kind === 'view' ? state.text : state.kind}
+          generation={generation}
+          run={run}
+          memory={memory}
+          savedRequest={savedRequest}
+          untitled={path === ''}
+          hasView={state.kind === 'view'}
+        />
       )}
 
-      {state.kind === 'error' && (
+      {running ? <GenerationProgress run={run} /> : null}
+
+      {!running && state.kind === 'none' && <p className="genui-empty">No view yet.</p>}
+
+      {!running && state.kind === 'error' && (
         <p className="genui-file-error" role="alert">
           {state.error}
         </p>
       )}
 
-      {state.kind === 'view' && actions && (
+      {!running && state.kind === 'view' && actions && (
         <>
           {(state.view.model || state.view.generatedAt) && (
             <p className="genui-meta">
@@ -199,14 +233,181 @@ function GenUIView({
 }
 
 /**
+ * Generate, with the reader's request and the agent's settings. The
+ * request starts as the one the current view was made with.
+ */
+function GeneratePanel({
+  generation,
+  run,
+  memory,
+  savedRequest,
+  untitled,
+  hasView,
+}: {
+  generation: GenerationController
+  run: GenerationState
+  memory: GenUIMemory
+  savedRequest: string
+  untitled: boolean
+  hasView: boolean
+}): React.ReactElement {
+  const [request, setRequest] = useState(memory.draft ?? savedRequest)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const running = run.kind === 'running'
+  const change = (next: string) => {
+    memory.draft = next
+    setRequest(next)
+  }
+  const start = () => {
+    memory.draft = undefined
+    void generation.generate(request)
+  }
+
+  return (
+    <section className="genui-generate-panel" aria-label="Generate a view">
+      <label className="genui-request">
+        <span>What should the view focus on? (optional)</span>
+        <textarea
+          value={request}
+          rows={2}
+          disabled={running}
+          placeholder="For example: compare the options in a table"
+          onChange={(event) => change(event.target.value)}
+        />
+      </label>
+      <div className="genui-generate-actions">
+        {running ? (
+          <button type="button" className="genui-cancel" onClick={() => generation.cancel()}>
+            Cancel
+          </button>
+        ) : (
+          <button type="button" className="genui-generate" disabled={untitled} onClick={start}>
+            {hasView ? 'Generate again' : 'Generate'}
+          </button>
+        )}
+        <button
+          type="button"
+          className="genui-settings-toggle"
+          aria-expanded={settingsOpen}
+          disabled={running}
+          onClick={() => setSettingsOpen((open) => !open)}
+        >
+          Agent settings
+        </button>
+      </div>
+      {untitled ? <p className="genui-note">Save the document first: the view is stored next to it.</p> : null}
+      {run.kind === 'failed' ? (
+        <div className="genui-file-error genui-run-error" role="alert">
+          <p>{run.error}</p>
+          <button type="button" onClick={() => generation.dismissError()}>
+            Dismiss
+          </button>
+        </div>
+      ) : null}
+      {settingsOpen && !running ? <SettingsForm generation={generation} onDone={() => setSettingsOpen(false)} /> : null}
+    </section>
+  )
+}
+
+function SettingsForm({
+  generation,
+  onDone,
+}: {
+  generation: GenerationController
+  onDone: () => void
+}): React.ReactElement {
+  const [settings, setSettings] = useState<GenerationSettings | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    let live = true
+    generation.getSettings().then(
+      (loaded) => live && setSettings(loaded),
+      (reason: unknown) => live && setError(String(reason)),
+    )
+    return () => {
+      live = false
+    }
+  }, [generation])
+
+  if (!settings) {
+    return <p className="genui-note">{error ?? 'Loading settings…'}</p>
+  }
+  const save = (event: React.FormEvent) => {
+    event.preventDefault()
+    generation.setSettings(settings).then(onDone, (reason: unknown) => setError(String(reason)))
+  }
+  return (
+    <form className="genui-settings" onSubmit={save}>
+      <label>
+        <span>Model</span>
+        <input
+          value={settings.model}
+          placeholder="The agent's own choice"
+          onChange={(event) => setSettings({ ...settings, model: event.target.value })}
+        />
+      </label>
+      <label>
+        <span>Agent command</span>
+        <input
+          value={settings.agentCommand}
+          placeholder="agy"
+          onChange={(event) => setSettings({ ...settings, agentCommand: event.target.value })}
+        />
+      </label>
+      <p className="genui-note">Runs as “{settings.agentCommand || 'agy'} acp” in a folder that holds only a copy of the document.</p>
+      {error ? (
+        <p className="genui-file-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <div className="genui-generate-actions">
+        <button type="submit">Save</button>
+        <button type="button" onClick={onDone}>
+          Close
+        </button>
+      </div>
+    </form>
+  )
+}
+
+/** The steps so far and a skeleton where the view will be. */
+function GenerationProgress({ run }: { run: Extract<GenerationState, { kind: 'running' }> }): React.ReactElement {
+  const latest = run.progress.at(-1)
+  return (
+    <div className="genui-progress" data-testid="genui-progress">
+      <p className="genui-progress-now" role="status" aria-live="polite">
+        {latest ? latest.text : 'Starting the agent'}…
+      </p>
+      <ol className="genui-progress-steps">
+        {run.progress.map((step, index) => (
+          <li key={index} data-phase={step.phase}>
+            {step.text}
+          </li>
+        ))}
+      </ol>
+      <div className="genui-skeleton" aria-hidden="true">
+        <div className="genui-skeleton-line" />
+        <div className="genui-skeleton-row">
+          <div className="genui-skeleton-block" />
+          <div className="genui-skeleton-block" />
+        </div>
+        <div className="genui-skeleton-block genui-skeleton-wide" />
+      </div>
+    </div>
+  )
+}
+
+/**
  * Shows the document's GenUI view in `el`, which is its scroll area, and
  * follows the view file and the document until disposed. `memory` outlives
  * the mount.
  */
-export function mountGenUIView(el: HTMLElement, ctx: PluginContext, memory: ScrollMemory): Disposable {
+export function mountGenUIView(el: HTMLElement, ctx: PluginContext, memory: GenUIMemory): Disposable {
   const store = new GenUIStore(() => ctx.documents.snapshot().text)
+  memory.generation ??= new GenerationController(ctx)
+  const generation = memory.generation
   const root = createRoot(el)
-  root.render(<GenUIView store={store} ctx={ctx} scroller={el} memory={memory} />)
+  root.render(<GenUIView store={store} ctx={ctx} scroller={el} memory={memory} generation={generation} />)
   const watch = ctx.viewFile.watch((snap) => store.setView(snap))
   const changes = ctx.documents.onDidChange((snapshot) => store.documentChanged(snapshot.text))
   // Read while mounted: once the view is removed, its element no longer scrolls.

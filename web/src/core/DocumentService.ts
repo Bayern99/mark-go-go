@@ -6,8 +6,8 @@ export class DocumentService {
   private state: DocumentSnapshot
   private readonly listeners = new Set<(state: DocumentSnapshot) => void>()
 
-  constructor(initial: DocumentSnapshot = { text: '', version: 0 }) {
-    this.state = { ...initial }
+  constructor(initial: Partial<DocumentSnapshot> = {}) {
+    this.state = { text: '', version: 0, path: '', ...initial }
   }
 
   snapshot(): DocumentSnapshot {
@@ -17,7 +17,7 @@ export class DocumentService {
   /** A reload from the host: text and version both change. */
   setSnapshot(text: string, version: number): void {
     if (this.state.text === text && this.state.version === version) return
-    this.state = { text, version }
+    this.state = { ...this.state, text, version }
     this.emit()
   }
 
@@ -25,6 +25,13 @@ export class DocumentService {
   setText(text: string): void {
     if (this.state.text === text) return
     this.state = { ...this.state, text }
+    this.emit()
+  }
+
+  /** The document was saved somewhere new, or first saved; `''` while untitled. */
+  setPath(path: string): void {
+    if (this.state.path === path) return
+    this.state = { ...this.state, path }
     this.emit()
   }
 

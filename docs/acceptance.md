@@ -6,10 +6,10 @@
 
 | 检查 | 命令 | 结果 |
 |---|---|---|
-| Go | `go vet ./...` | 通过 |
+| Go | `go vet ./...`、`go test -race ./...` | 通过 |
 | TS 类型 | `npm --prefix web run typecheck` | 通过 |
-| 测试 | `npm --prefix web test`（真实 Chromium） | 13 个文件、146 项通过（连续 4 次） |
-| 打包 | `go tool mygo build` | `Mark Go Go.app` 12.7MB，dmg 4.1MB |
+| 测试 | `npm --prefix web test`（真实 Chromium） | 14 个文件、153 项通过 |
+| 打包 | `go tool mygo build` | `Mark Go Go.app` 12.8MB，dmg 4.1MB |
 
 测试覆盖：23 个语料文件 + 编辑用例零编辑 compose **逐字节一致**；改一段只改变该块字节；编辑后 compose 幂等；插件禁用释放视图/命令/监听（含编辑器选择监听），重新启用正常，`activate` 失败回滚。
 
@@ -58,7 +58,7 @@
 自动化（`web/test/genui.test.tsx`、`web/test/app-source.test.tsx`、`web/test/outline.test.tsx` 在 App + `createBrowserHost` 接缝；`web/test/sections.test.ts` 用共享向量；`web/test/side-pane.test.tsx`、`web/test/plugin-registry.test.ts`）：
 
 - 头部三选一 `Rich text` / `Markdown` / `GenUI`；`⌘/`、`Ctrl+/` 在 Rich text 与 Markdown 之间切换。
-- 没有视图文件：显示 `No view yet.` 与禁用的 `Generate`。
+- 没有视图文件：显示 `No view yet.` 与 `Generate`（#7 起可用）。
 - `view-format.md` 的 v2 JSON 示例直接加载：替代编辑器占满中央，无错误，Tabs / Row / Card / Column / Text / KeyPoints 全部渲染，`Text` 里的 `**粗体**` 是 `<strong>`；切到 `Details` 标签页显示第二页。
 - 在视图里切换标签页不调用 `host.update`，文档不变为 edited。
 - 目录外组件（`Chart`）：只在其位置显示错误，其余照常渲染。
@@ -127,6 +127,29 @@
 | WebKit 深色：临时把 `:root` 改成 `color-scheme: dark` 打包，组件为深色背景、浅色文字（只验证了 GenUI；其余界面还没有深色样式） | 通过（截图），已改回 |
 | 以上全部操作后 `report.md` sha1 不变 | 通过 |
 
+## GenUI 生成（#7，ADR 0003）
+
+自动化（`generate_test.go`：测试二进制自己充当假 agent，走真实 ACP 管道；`web/test/genui-generate.test.tsx` 在 App + `createBrowserHost` 接缝；`web/test/sections.test.ts` 与 Go 共用 `section-vectors.json`）：
+
+- 运行：agent 只带 `acp` 参数，临时目录开始时只有 `source.md`；提示里有格式文档与读者的请求；模型经 `session/set_config_option` 选择；进度按阶段变化逐步上报。
+- 成功：视图文件键顺序为 `version` / `generatedAt` / `model` / `request` / `sources` / `a2ui`；`a2ui` 原样、多余字段丢弃；`sources` 哈希由宿主按原文计算（与页面共享向量一致），找不到的标题不带哈希；新文件为 0644，替换时保留原权限。
+- 权限请求：读 `source.md` / 写 `out.json` 允许，其余拒绝；agent 汇报的工具调用越界（shell、未知的调用）→ 停止运行、视图不变；只带 id 的 `tool_call_update` 沿用其 `tool_call` 的类型与路径。
+- 失败：未知模型 → 列出 agent 提供的模型；`out.json` 缺失（附 agent 最后一句话）/ 非 JSON / 超大 / 符号链接 / 缺 `a2ui` 或为空 / `sources` 格式错误 → 视图不变、临时目录删除；agent 启动即退出 → 附其 stderr；命令找不到 → 错误。“同一窗口只跑一次”与“未保存文档”的 Go 端检查依赖窗口会话，没有单元测试（页面在运行中和未保存时本就禁用 `Generate`）。
+- 取消：页面关闭通道 → `session/cancel` 后结束进程，临时目录删除，视图不变。
+- 页面：生成中显示步骤列表与骨架、隐藏旧视图、请求与设置禁用；生成中继续编辑，视图按发起时的文本生成；失败保留旧视图并显示可关闭的错误；未保存文档禁用 `Generate`；`Agent settings` 改模型与命令并持久化。
+
+前端体积：初始代码块 563.80 KB gzip；GenUI 代码块 144.21 KB gzip（#11 时 139.69）+ CSS 2.05 KB。
+
+打包应用手动检查（2026-11-06，`go tool mygo build` 产物，真实 `agy acp` 1.5.2，模型 `gemini-3.8-flash`，`/tmp/mdws-smoke/gen7/report.md`）：
+
+| 检查 | 状态 |
+|---|---|
+| 请求 `Compare the options in a table` → `Generate`：依次显示 Starting the agent / Agent ready / Thinking / File source.md …，只有 `Cancel` 可点 | 通过（自动化 UI 操作） |
+| 约 3 分钟后渲染新视图：`OPTIONS` ComparisonTable，`From Options` 无过期标记；按钮变为 `Generate again`，请求预填 | 通过（自动化 UI 操作） |
+| 视图文件键为 `version` / `generatedAt`（UTC）/ `model` / `request` / `sources` / `a2ui`；`sources.options.hash` 为 `fnv1a32:cebf17b8` | 通过 |
+| `Generate again` 后在 agent 读完 `source.md`、思考中时点 `Cancel`：回到旧视图、无错误；`agy` 进程退出、`markgogo-genui-*` 临时目录删除、视图文件字节不变、无残留 `.tmp-*` | 通过 |
+| 以上全部操作后 `report.md` sha256 不变 | 通过 |
+
 ## 打包应用手动冒烟（`/tmp/mdws-smoke/report.md`：frontmatter、alert、setext 标题、`+` 列表、CJK 表格、带 meta 的代码块、引用式链接）
 
 | 场景 | 结果 |
@@ -147,7 +170,8 @@
 - 自动化工具注入中文只落下首字，属注入方式限制；真实输入法已人工确认正常。
 - 外部重载会重建编辑器：撤销历史和光标重置（已接受）。
 - 编辑过的块按 Milkdown 规则重写（setext→ATX、表格补齐、块内 CRLF→LF）；插入/删除块后的块间空白回退为 `\n\n`。
-- GenUI 视图目前只能手写或由其他工具写入；`Generate` 按钮在 #7 接入 Agent 生成。生成器写入来源 `hash` 也在 #7，在此之前只有手工带 `hash` 的视图会显示来源状态。
+- GenUI 视图由 `agy acp` 生成（#7）。超时、退出时清理和错误分类在 #8；局部重新生成与撤销在 #12。
+- Agent 隔离只是尽力而为（ADR 0003）：agy 按用户自己的 `~/.gemini/antigravity-cli/settings.json` 运行，可能不请求权限就写目录外文件或运行 shell。宿主看到越界工具调用就停止运行、不写视图，但无法阻止已经发生的那一步。
 - 只有 GenUI 有深色令牌；应用其余部分（头部、大纲、编辑器）还没有深色主题，`:root` 固定为 `color-scheme: light`。
 - ComparisonTable 的列头按钮在 macOS 辅助功能树里不出现（表格行可见），自动化只能用坐标点击。
 - 多来源组件只要有一个来源 `missing` 就禁用 `Edit in source`，即使其他来源还在。

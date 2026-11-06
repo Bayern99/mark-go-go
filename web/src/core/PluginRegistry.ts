@@ -1,4 +1,4 @@
-import type { Disposable, ViewFileSource } from '../host/types'
+import type { Disposable, ViewFileSource, ViewGenerator } from '../host/types'
 import type { CommandRegistry } from './CommandRegistry'
 import type { DocumentService } from './DocumentService'
 import type { EditorSelectionSource } from './EditorAccess'
@@ -29,14 +29,14 @@ export class PluginRegistry {
   private readonly views: ViewRegistry
   private readonly commands: CommandRegistry
   private readonly editor: EditorSelectionSource
-  private readonly viewFile: ViewFileSource
+  private readonly viewFile: ViewFileSource & ViewGenerator
 
   constructor(
     documents: DocumentService,
     views: ViewRegistry,
     commands: CommandRegistry,
     editor: EditorSelectionSource,
-    viewFile: ViewFileSource,
+    viewFile: ViewFileSource & ViewGenerator,
   ) {
     this.documents = documents
     this.views = views
@@ -98,6 +98,9 @@ export class PluginRegistry {
       },
       viewFile: {
         watch: (fn) => track(this.viewFile.watchView(fn)),
+        generate: (req, onProgress, signal) => this.viewFile.generate(req, onProgress, signal),
+        getSettings: () => this.viewFile.getSettings(),
+        setSettings: (settings) => this.viewFile.setSettings(settings),
       },
       subscriptions,
     }

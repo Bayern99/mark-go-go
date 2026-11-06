@@ -77,13 +77,12 @@ function reportHost(view?: string) {
 }
 
 describe('GenUI view mode', () => {
-  it('offers a disabled Generate button when the document has no view', async () => {
+  it('offers Generate when the document has no view', async () => {
     const app = await mountApp(DOCUMENT)
     try {
       await showMode('genui')
       await expect.element(genui().getByText('No view yet.')).toBeVisible()
-      await expect.element(genui().getByRole('button', { name: 'Generate' })).toBeDisabled()
-      await expect.element(genui().getByText('coming soon', { exact: false })).toBeVisible()
+      await expect.element(genui().getByRole('button', { name: 'Generate' })).toBeEnabled()
     } finally {
       await app.unmount()
     }

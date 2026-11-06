@@ -184,6 +184,7 @@ export function App({
     const applyDocumentState = (state: DocState) => {
       if (disposed) return
       setDocState(state)
+      services.documents.setPath(state.path)
       editorRef.current?.setReadonly(state.readOnly)
     }
 
@@ -192,6 +193,7 @@ export function App({
       if (disposed) return
 
       services.documents.setSnapshot(snapshot.text, snapshot.version)
+      services.documents.setPath(snapshot.state.path)
       setDocState(snapshot.state)
       setVersion(snapshot.version)
 

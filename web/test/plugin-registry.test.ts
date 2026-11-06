@@ -137,6 +137,45 @@ describe('PluginRegistry', () => {
     expect(effects.selectionCalls).toBe(2)
   })
 
+  it('drops registrations made after a disable during a pending activation', async () => {
+    const documents = new DocumentService()
+    const commands = new CommandRegistry()
+    const views = new ViewRegistry()
+    const registry = new PluginRegistry(documents, views, commands, new EditorAccess())
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let activated = false
+
+    registry.register({
+      id: 'slow',
+      title: 'Slow',
+      async activate(ctx) {
+        await gate
+        ctx.commands.register('slow.ping', () => 'pong')
+        ctx.views.register({
+          id: 'slow.view',
+          title: 'Slow view',
+          mount() {
+            return { dispose() {} }
+          },
+        })
+        activated = true
+      },
+    })
+
+    const enabling = registry.enable('slow')
+    registry.disable('slow')
+    release()
+    await enabling
+
+    expect(activated).toBe(true)
+    expect(registry.isEnabled('slow')).toBe(false)
+    expect(views.getAll()).toHaveLength(0)
+    await expect(commands.execute('slow.ping')).rejects.toThrow(/Unknown command/)
+  })
+
   it('disposes everything when activate throws', async () => {
     const documents = new DocumentService()
     const commands = new CommandRegistry()

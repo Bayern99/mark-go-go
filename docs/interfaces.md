@@ -57,11 +57,12 @@ interface PluginContext {
 
 - `web/src/components/SidePane.tsx`：按 `location` 过滤 `ViewRegistry` 的注册，生成 `aside.side-pane-{left,right}`（测试钩子 `left-pane` / `side-pane`）；视图挂载/卸载沿用原有 `mount(el)` / `Disposable` 语义。
 - Outline 插件（`createOutlinePlugin()`）注册视图 `outline.panel`（`location: 'left'`，标题 `Outline`），App 与 GenUI 一样注册、启用，并提供头部开关 `Outline: On/Off`。
-- 条目来自 `extractHeadings(ctx.documents.snapshot().text)`，按 `level` 缩进；文档变更经 `OUTLINE_DEBOUNCE_MS`（150ms，导出自 `OutlinePanel.tsx`）防抖后重新解析。
-- 当前章节 = 最后一个 `offset ≤ 光标偏移` 的标题；光标偏移来自 `ctx.editor.onSelectionChange`（WYSIWYG 为顶层块起始偏移，源码为精确偏移），高亮条目标 `aria-current="true"`。
+- 条目来自 `extractHeadings(ctx.documents.snapshot().text)`，按 `level` 缩进；文档变更经 `OUTLINE_DEBOUNCE_MS`（300ms，导出自 `OutlinePanel.tsx`）防抖后重新解析。
+- 当前章节 = 最后一个 `offset ≤ 光标偏移` 的标题；光标在第一个标题之前时不高亮任何条目；光标偏移来自 `ctx.editor.onSelectionChange`（WYSIWYG 为顶层块起始偏移，源码为精确偏移），高亮条目标 `aria-current="true"`。
 - 点击条目执行 `editor.reveal(该条目自身 offset)`，所以同文标题各跳各的位置；两种模式行为一致。
 - 无标题时显示 `No headings in this document.`（`data-testid="outline-empty"`）。
-- GenUI 面板不再自带标题列表，保留 source chips（按标题文本经共享模块解析到偏移后 reveal）。
+- GenUI 面板不再自带标题列表，保留 source chips；chip 只在点击时用 `extractHeadings(ctx.documents.snapshot().text)` 解析偏移，面板不随文档变化重渲染。
+- `App({ host, plugins })` 在 GenUI / Outline 之后追加注册插件（自动化测试注入异步激活插件用），注册与启用逐项检查 `disposed`。
 
 ## Editor Adapter（`web/src/editor/createEditor.ts`）
 

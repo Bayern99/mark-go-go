@@ -107,6 +107,12 @@ export class PluginRegistry {
       this.emit()
       throw error
     }
+    if (record.disposables !== disposables) {
+      // Disabled while activate() was still pending (e.g. the app unmounted).
+      // Registrations made after that await must not survive activation.
+      this.disposeAll(disposables, subscriptions)
+      return
+    }
     this.emit()
   }
 

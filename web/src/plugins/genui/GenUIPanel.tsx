@@ -1,54 +1,24 @@
-import { useMemo, useSyncExternalStore } from 'react'
 import type { PluginContext } from '../../core/types'
 import { extractHeadings, normalizeHeadingText } from '../../markdown/headings'
 import { renderBlock } from './catalog'
 import type { GenUIDocument, SourceRef } from './schema'
 
-export class SnapshotStore {
-  private value: { text: string; version: number }
-  private readonly listeners = new Set<() => void>()
-
-  constructor(initial: { text: string; version: number }) {
-    this.value = initial
-  }
-
-  readonly subscribe = (listener: () => void): (() => void) => {
-    this.listeners.add(listener)
-    return () => {
-      this.listeners.delete(listener)
-    }
-  }
-
-  readonly getSnapshot = (): { text: string; version: number } => this.value
-
-  set(next: { text: string; version: number }): void {
-    if (next.text === this.value.text && next.version === this.value.version) return
-    this.value = next
-    for (const listener of this.listeners) listener()
-  }
-}
-
 export function GenUIPanel({
   ctx,
-  store,
   document,
 }: {
   ctx: PluginContext
-  store: SnapshotStore
   document: GenUIDocument
 }): React.ReactElement {
-  const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot)
-  const headings = useMemo(() => extractHeadings(snapshot.text), [snapshot.text])
-
-  const revealOffset = (offset: number) => {
-    void ctx.commands.execute('editor.reveal', offset)
-  }
-
   const revealSource = (source: SourceRef) => {
     const wanted = normalizeHeadingText(source.heading)
     if (wanted === '') return
-    const match = headings.find((heading) => normalizeHeadingText(heading.text) === wanted)
-    if (match) revealOffset(match.offset)
+    // Resolve the current offset only when a chip is used; the panel itself
+    // does not re-render on document changes.
+    const match = extractHeadings(ctx.documents.snapshot().text).find(
+      (heading) => normalizeHeadingText(heading.text) === wanted,
+    )
+    if (match) void ctx.commands.execute('editor.reveal', match.offset)
   }
 
   return (

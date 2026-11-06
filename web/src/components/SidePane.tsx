@@ -4,13 +4,19 @@ import type { ViewRegistration } from '../core/types'
 
 type ViewLocation = 'left' | 'right'
 
+function selectSideViews(views: ViewRegistry, location: ViewLocation): ViewRegistration[] {
+  return views.getAll().filter((view) => (view.location ?? 'right') === location)
+}
+
 /** Live view registrations for one sidebar, filtered by location. */
 function useSideViews(views: ViewRegistry, location: ViewLocation): ViewRegistration[] {
-  const [entries, setEntries] = useState<ViewRegistration[]>(() => views.getAll())
+  const [entries, setEntries] = useState<ViewRegistration[]>(() =>
+    selectSideViews(views, location),
+  )
 
   useEffect(() => {
     const select = () => {
-      setEntries(views.getAll().filter((view) => (view.location ?? 'right') === location))
+      setEntries(selectSideViews(views, location))
     }
     select()
     const subscription = views.onDidChange(select)
@@ -53,7 +59,7 @@ function RegisteredView({ view }: { view: ViewRegistration }): React.ReactElemen
   }, [view])
 
   return (
-    <section className="side-view" data-view-id={view.id}>
+    <section className="side-view" data-view-id={view.id} aria-label={view.title}>
       <header className="side-view-header">{view.title}</header>
       <div className="side-view-body" ref={host} />
     </section>

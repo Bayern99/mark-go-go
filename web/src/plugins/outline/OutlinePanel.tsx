@@ -4,7 +4,7 @@ import type { MarkdownHeading } from '../../markdown/headings'
 import { extractHeadings } from '../../markdown/headings'
 
 /** Heading text is re-read this long after the last document change. */
-export const OUTLINE_DEBOUNCE_MS = 150
+export const OUTLINE_DEBOUNCE_MS = 300
 
 export interface OutlineState {
   headings: MarkdownHeading[]
@@ -110,8 +110,6 @@ export function OutlinePanel({
               <button
                 type="button"
                 className="outline-link"
-                data-level={heading.level}
-                data-offset={heading.offset}
                 aria-current={index === active ? 'true' : undefined}
                 title={heading.text}
                 onClick={() => {

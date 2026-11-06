@@ -1,3 +1,4 @@
+import { page } from 'vitest/browser'
 import { describe, expect, it, vi } from 'vitest'
 import { mountApp } from './helpers/app'
 
@@ -41,12 +42,11 @@ describe('App navigation by Markdown source offset', () => {
   it('jumps to a setext heading referenced by a GenUI source chip', async () => {
     const app = await mountApp(DOCUMENT)
     try {
-      const chip = Array.from(app.container.querySelectorAll<HTMLButtonElement>('.genui-source')).find(
-        (button) => button.textContent === 'Metrics',
-      )
-      expect(chip).toBeDefined()
-
-      chip?.click()
+      await page
+        .getByRole('region', { name: 'Generated UI' })
+        .getByRole('button', { name: 'Metrics' })
+        .first()
+        .click()
 
       await vi.waitFor(() => {
         expect(editorHeadings(app.container).map((heading) => heading.textContent)).toEqual([

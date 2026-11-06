@@ -5,6 +5,7 @@ import { DocumentService } from './core/DocumentService'
 import { EditorAccess } from './core/EditorAccess'
 import { PluginRegistry } from './core/PluginRegistry'
 import { ViewRegistry } from './core/ViewRegistry'
+import type { AppPlugin } from './core/types'
 import type { Disposable, DocState, HostAdapter } from './host/types'
 import { createMarkdownEditor, type EditorMode, type MarkdownEditor } from './editor/createEditor'
 import { createGenUIPlugin } from './plugins/genui'
@@ -12,7 +13,14 @@ import { createOutlinePlugin } from './plugins/outline'
 
 const EDIT_DEBOUNCE_MS = 250
 
-export function App({ host }: { host: HostAdapter }): React.ReactElement {
+export function App({
+  host,
+  plugins = [],
+}: {
+  host: HostAdapter
+  /** Extra plugins registered after the built-ins (test seam). */
+  plugins?: AppPlugin[]
+}): React.ReactElement {
   const editorRoot = useRef<HTMLDivElement>(null)
   const editorRef = useRef<MarkdownEditor | null>(null)
   const [docState, setDocState] = useState<DocState | null>(null)
@@ -124,11 +132,23 @@ export function App({ host }: { host: HostAdapter }): React.ReactElement {
         }),
       )
 
-      services.plugins.register(createGenUIPlugin())
-      services.plugins.register(createOutlinePlugin())
-      await services.plugins.enable('genui')
-      await services.plugins.enable('outline')
-      if (disposed) return
+      const appPlugins = [createGenUIPlugin(), createOutlinePlugin(), ...plugins]
+      for (const plugin of appPlugins) {
+        if (disposed) return
+        services.plugins.register(plugin)
+      }
+      for (const plugin of appPlugins) {
+        if (disposed) return
+        try {
+          await services.plugins.enable(plugin.id)
+        } catch (error) {
+          // Unmounting detaches the editor; a pending activation that resumes
+          // afterwards is expected to fail and must not become unhandled.
+          if (disposed) return
+          throw error
+        }
+        if (disposed) return
+      }
       refreshPlugins()
       setReady(true)
     })()

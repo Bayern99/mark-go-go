@@ -32,6 +32,7 @@ export async function mountApp(
       if (!container.querySelector('[data-testid="editor-root"] .ProseMirror'))
         throw new Error('editor not mounted yet')
       if (!container.querySelector('.outline-panel')) throw new Error('outline panel missing')
+      if (!container.querySelector('.genui-panel')) throw new Error('GenUI panel missing')
     },
     { timeout: 5000 },
   )

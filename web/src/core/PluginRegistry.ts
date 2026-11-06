@@ -1,6 +1,7 @@
 import type { Disposable } from '../host/types'
 import type { CommandRegistry } from './CommandRegistry'
 import type { DocumentService } from './DocumentService'
+import type { EditorSelectionSource } from './EditorAccess'
 import type { ViewRegistry } from './ViewRegistry'
 import type { AppPlugin, PluginContext } from './types'
 
@@ -27,11 +28,18 @@ export class PluginRegistry {
   private readonly documents: DocumentService
   private readonly views: ViewRegistry
   private readonly commands: CommandRegistry
+  private readonly editor: EditorSelectionSource
 
-  constructor(documents: DocumentService, views: ViewRegistry, commands: CommandRegistry) {
+  constructor(
+    documents: DocumentService,
+    views: ViewRegistry,
+    commands: CommandRegistry,
+    editor: EditorSelectionSource,
+  ) {
     this.documents = documents
     this.views = views
     this.commands = commands
+    this.editor = editor
   }
 
   register(plugin: AppPlugin): void {
@@ -81,6 +89,9 @@ export class PluginRegistry {
       commands: {
         register: (commandId, fn) => track(this.commands.register(commandId, fn)),
         execute: (commandId, ...args) => this.commands.execute(commandId, ...args),
+      },
+      editor: {
+        onSelectionChange: (fn) => track(this.editor.onSelectionChange(fn)),
       },
       subscriptions,
     }

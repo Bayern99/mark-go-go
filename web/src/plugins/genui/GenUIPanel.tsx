@@ -58,27 +58,6 @@ export function GenUIPanel({
         <p>Generated from {document.blocks.length} components</p>
       </header>
 
-      <section className="genui-headings">
-        <h3>Headings in this document</h3>
-        {headings.length === 0 ? (
-          <p className="genui-empty">No headings yet.</p>
-        ) : (
-          <ul>
-            {headings.map((heading, index) => (
-              <li key={index} style={{ paddingLeft: `${(heading.level - 1) * 12}px` }}>
-                <button
-                  type="button"
-                  className="genui-heading-link"
-                  onClick={() => revealOffset(heading.offset)}
-                >
-                  {heading.text}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
       {document.blocks.map((block, index) => (
         <div key={index}>{renderBlock(block, revealSource)}</div>
       ))}

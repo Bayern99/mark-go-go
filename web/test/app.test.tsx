@@ -63,22 +63,4 @@ describe('App navigation by Markdown source offset', () => {
       await app.unmount()
     }
   })
-
-  it('reveals the second of two headings with identical text', async () => {
-    const app = await mountApp(DOCUMENT)
-    try {
-      const links = Array.from(
-        app.container.querySelectorAll<HTMLButtonElement>('.genui-heading-link'),
-      ).filter((button) => button.textContent === 'Overview')
-      expect(links).toHaveLength(2)
-
-      links[1]?.click()
-
-      await vi.waitFor(() => {
-        expect(caretHeadingIndex(app.container)).toBe(1)
-      })
-    } finally {
-      await app.unmount()
-    }
-  })
 })

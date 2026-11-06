@@ -30,7 +30,7 @@ export async function mountApp(
       if (!modeToggle || modeToggle.disabled) throw new Error('editor not ready yet')
       if (!container.querySelector('[data-testid="editor-root"] .ProseMirror'))
         throw new Error('editor not mounted yet')
-      if (!container.querySelector('.genui-heading-link')) throw new Error('GenUI headings missing')
+      if (!container.querySelector('.outline-panel')) throw new Error('outline panel missing')
     },
     { timeout: 5000 },
   )

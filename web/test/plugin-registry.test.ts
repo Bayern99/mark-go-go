@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { CommandRegistry } from '../src/core/CommandRegistry'
 import { DocumentService } from '../src/core/DocumentService'
+import { EditorAccess } from '../src/core/EditorAccess'
 import { PluginRegistry } from '../src/core/PluginRegistry'
 import { ViewRegistry } from '../src/core/ViewRegistry'
 import type { AppPlugin, PluginContext } from '../src/core/types'
@@ -10,18 +11,38 @@ interface Effects {
   subscriptionDisposals: number
   viewMounts: number
   viewDisposals: number
+  selectionCalls: number
+  selectionDisposals: number
 }
 
 function setup() {
   const documents = new DocumentService({ text: 'hello', version: 1 })
   const commands = new CommandRegistry()
   const views = new ViewRegistry()
-  const registry = new PluginRegistry(documents, views, commands)
+  const editor = new EditorAccess()
+  const selectionListeners = new Set<(offset: number) => void>()
+  editor.attach({
+    onSelectionChange(fn) {
+      selectionListeners.add(fn)
+      return {
+        dispose() {
+          if (!selectionListeners.delete(fn)) return
+          effects.selectionDisposals += 1
+        },
+      }
+    },
+  })
+  const registry = new PluginRegistry(documents, views, commands, editor)
   const effects: Effects = {
     subscriptionCalls: 0,
     subscriptionDisposals: 0,
     viewMounts: 0,
     viewDisposals: 0,
+    selectionCalls: 0,
+    selectionDisposals: 0,
+  }
+  const emitSelection = (offset: number) => {
+    for (const fn of selectionListeners) fn(offset)
   }
 
   const plugin: AppPlugin = {
@@ -43,6 +64,7 @@ function setup() {
         },
       })
       ctx.subscriptions.push(ctx.documents.onDidChange(() => (effects.subscriptionCalls += 1)))
+      ctx.editor.onSelectionChange(() => (effects.selectionCalls += 1))
       ctx.subscriptions.push({
         dispose() {
           effects.subscriptionDisposals += 1
@@ -52,7 +74,7 @@ function setup() {
   }
 
   registry.register(plugin)
-  return { documents, commands, views, registry, effects }
+  return { documents, commands, views, registry, effects, emitSelection }
 }
 
 describe('PluginRegistry', () => {
@@ -99,11 +121,27 @@ describe('PluginRegistry', () => {
     expect(effects.subscriptionDisposals).toBe(1)
   })
 
+  it('disposes editor selection listeners when disabled', async () => {
+    const { registry, effects, emitSelection } = setup()
+    await registry.enable('demo')
+    emitSelection(4)
+    expect(effects.selectionCalls).toBe(1)
+
+    registry.disable('demo')
+    emitSelection(9)
+    expect(effects.selectionCalls).toBe(1)
+    expect(effects.selectionDisposals).toBe(1)
+
+    await registry.enable('demo')
+    emitSelection(12)
+    expect(effects.selectionCalls).toBe(2)
+  })
+
   it('disposes everything when activate throws', async () => {
     const documents = new DocumentService()
     const commands = new CommandRegistry()
     const views = new ViewRegistry()
-    const registry = new PluginRegistry(documents, views, commands)
+    const registry = new PluginRegistry(documents, views, commands, new EditorAccess())
     let disposed = false
 
     registry.register({

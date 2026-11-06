@@ -8,6 +8,8 @@ export interface DocumentSnapshot {
 export interface ViewRegistration {
   id: string
   title: string
+  /** Sidebar the view lives in. Defaults to the right sidebar. */
+  location?: 'left' | 'right'
   mount(el: HTMLElement): Disposable
 }
 
@@ -22,6 +24,9 @@ export interface PluginContext {
   commands: {
     register(id: string, fn: (...a: unknown[]) => unknown): Disposable
     execute(id: string, ...a: unknown[]): Promise<unknown>
+  }
+  editor: {
+    onSelectionChange(fn: (offset: number) => void): Disposable
   }
   subscriptions: Disposable[]
 }

@@ -7,9 +7,10 @@
 | Host（Go） | `main.go`、`documenthost.go` | `mygo.NewDocuments[string]`：文件读写（原始字节）、脏状态、自动保存、恢复副本、外部修改重载/冲突、File/Edit 菜单 |
 | Host Adapter（TS） | `web/src/host/` | `HostAdapter` 契约；`mygoHost.ts`（MyGo IPC）、`browserHost.ts`（纯浏览器内存实现） |
 | Editor Adapter | `web/src/editor/` | CrepeBuilder 装配；块级分段、锁定块、`compose`、源码偏移映射（`reveal` / `onSelectionChange`） |
-| Application Core | `web/src/core/` | `DocumentService`、`CommandRegistry`、`ViewRegistry`、`PluginRegistry` |
+| Application Core | `web/src/core/` | `DocumentService`、`CommandRegistry`、`ViewRegistry`、`PluginRegistry`、`EditorAccess`（插件侧编辑器选择源） |
 | Markdown 标题 | `web/src/markdown/headings.ts` | 共享标题提取：ATX + setext，排除代码块/HTML/frontmatter，去内联格式，带源偏移 |
-| GenUI 插件 | `web/src/plugins/genui/` | 内部 schema + 组件白名单 + 固定 JSON；标题列表与 source chips 使用共享标题模块 |
+| GenUI 插件 | `web/src/plugins/genui/` | 内部 schema + 组件白名单 + 固定 JSON；source chips 用共享标题模块按偏移跳转（右侧栏） |
+| Outline 插件 | `web/src/plugins/outline/` | 左侧栏文档大纲：共享标题模块 + 光标所在章节高亮 + 点击跳转 |
 
 ## Go ↔ 页面 IPC（服务 `DocumentHost`）
 
@@ -37,16 +38,30 @@ interface HostAdapter {
 
 ```ts
 interface AppPlugin { id: string; title: string; activate(ctx: PluginContext): void | Promise<void> }
+interface ViewRegistration { id: string; title: string; location?: 'left' | 'right'; mount(el: HTMLElement): Disposable }
 interface PluginContext {
   documents: { snapshot(): { text: string; version: number }; onDidChange(fn): Disposable }
-  views:     { register(v: { id; title; mount(el: HTMLElement): Disposable }): Disposable }
+  views:     { register(v: ViewRegistration): Disposable }
   commands:  { register(id, fn): Disposable; execute(id, ...args): Promise<unknown> }
+  editor:    { onSelectionChange(fn: (offset: number) => void): Disposable }
   subscriptions: Disposable[]
 }
 ```
 
-- `PluginRegistry.enable(id)` / `disable(id)`：注册表追踪所有经 ctx 产生的注册与订阅，`disable` 统一释放；`activate` 抛错时回滚。
-- 编辑器提供的命令：`editor.reveal(offset: number)`（偏移越界时返回 `false`）、`editor.toggleSourceMode()`（切换后返回当前模式）。
+- `PluginRegistry.enable(id)` / `disable(id)`：注册表追踪所有经 ctx 产生的注册与订阅，`disable` 统一释放；`activate` 抛错时回滚。`ctx.editor.onSelectionChange` 同样被追踪，禁用插件即移除其选择监听。
+- `PluginRegistry` 的构造依赖 `EditorSelectionSource`，App 用 `EditorAccess` 实现：注册表在编辑器创建前构造，编辑器就绪后 `attach(editor)`，之后才注册/启用插件；未 attach 时调用抛错（不会静默失效），App 卸载时 `detach()`。
+- `ViewRegistration.location` 缺省为 `'right'`。App 分别渲染左右两个栏；某一侧没有任何视图注册时整栏不渲染（左栏只在有 `location: 'left'` 的视图时出现）。
+- 编辑器提供的命令：`editor.reveal(offset: number)`（偏移越界时返回 `false`）、`editor.toggleSourceMode()`（切换后返回当前模式）。插件跳转一律 `ctx.commands.execute('editor.reveal', offset)`，不另设 reveal API。
+
+## 侧边栏与大纲插件（#4）
+
+- `web/src/components/SidePane.tsx`：按 `location` 过滤 `ViewRegistry` 的注册，生成 `aside.side-pane-{left,right}`（测试钩子 `left-pane` / `side-pane`）；视图挂载/卸载沿用原有 `mount(el)` / `Disposable` 语义。
+- Outline 插件（`createOutlinePlugin()`）注册视图 `outline.panel`（`location: 'left'`，标题 `Outline`），App 与 GenUI 一样注册、启用，并提供头部开关 `Outline: On/Off`。
+- 条目来自 `extractHeadings(ctx.documents.snapshot().text)`，按 `level` 缩进；文档变更经 `OUTLINE_DEBOUNCE_MS`（150ms，导出自 `OutlinePanel.tsx`）防抖后重新解析。
+- 当前章节 = 最后一个 `offset ≤ 光标偏移` 的标题；光标偏移来自 `ctx.editor.onSelectionChange`（WYSIWYG 为顶层块起始偏移，源码为精确偏移），高亮条目标 `aria-current="true"`。
+- 点击条目执行 `editor.reveal(该条目自身 offset)`，所以同文标题各跳各的位置；两种模式行为一致。
+- 无标题时显示 `No headings in this document.`（`data-testid="outline-empty"`）。
+- GenUI 面板不再自带标题列表，保留 source chips（按标题文本经共享模块解析到偏移后 reveal）。
 
 ## Editor Adapter（`web/src/editor/createEditor.ts`）
 
@@ -96,4 +111,4 @@ CrepeBuilder features：`cursor, listItem, placeholder, linkTooltip, blockEdit, 
 
 ## 尚未实现（后续阶段）
 
-搜索替换、大纲面板、AI/Agent、GenUI 自动生成、多标签页。
+搜索替换、AI/Agent、GenUI 自动生成、多标签页。

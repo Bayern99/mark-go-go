@@ -200,8 +200,16 @@ body {
   gap: 16px;
 }
 
-.side-pane:empty {
-  display: none;
+.side-pane-left {
+  width: 240px;
+  border-left: 0;
+  border-right: 1px solid var(--mgo-border);
+}
+
+.side-view-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .side-view-header {

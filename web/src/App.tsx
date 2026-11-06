@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
-import { ViewsPanel } from './components/ViewsPanel'
+import { SidePane } from './components/SidePane'
 import { CommandRegistry } from './core/CommandRegistry'
 import { DocumentService } from './core/DocumentService'
+import { EditorAccess } from './core/EditorAccess'
 import { PluginRegistry } from './core/PluginRegistry'
 import { ViewRegistry } from './core/ViewRegistry'
 import type { Disposable, DocState, HostAdapter } from './host/types'
 import { createMarkdownEditor, type EditorMode, type MarkdownEditor } from './editor/createEditor'
 import { createGenUIPlugin } from './plugins/genui'
+import { createOutlinePlugin } from './plugins/outline'
 
 const EDIT_DEBOUNCE_MS = 250
 
@@ -23,8 +25,9 @@ export function App({ host }: { host: HostAdapter }): React.ReactElement {
     const documents = new DocumentService()
     const commands = new CommandRegistry()
     const views = new ViewRegistry()
-    const plugins = new PluginRegistry(documents, views, commands)
-    return { documents, commands, views, plugins }
+    const editor = new EditorAccess()
+    const plugins = new PluginRegistry(documents, views, commands, editor)
+    return { documents, commands, views, editor, plugins }
   }, [])
 
   useEffect(() => {
@@ -71,6 +74,7 @@ export function App({ host }: { host: HostAdapter }): React.ReactElement {
         return
       }
       editorRef.current = editor
+      services.editor.attach(editor)
       editor.setReadonly(snapshot.state.readOnly)
 
       cleanups.push(
@@ -121,7 +125,9 @@ export function App({ host }: { host: HostAdapter }): React.ReactElement {
       )
 
       services.plugins.register(createGenUIPlugin())
+      services.plugins.register(createOutlinePlugin())
       await services.plugins.enable('genui')
+      await services.plugins.enable('outline')
       if (disposed) return
       refreshPlugins()
       setReady(true)
@@ -131,17 +137,22 @@ export function App({ host }: { host: HostAdapter }): React.ReactElement {
       disposed = true
       if (debounceTimer !== undefined) window.clearTimeout(debounceTimer)
       for (const cleanup of cleanups) cleanup.dispose()
-      services.plugins.disable('genui')
+      for (const plugin of services.plugins.list()) services.plugins.disable(plugin.id)
+      services.editor.detach()
       void editorRef.current?.destroy()
       editorRef.current = null
     }
   }, [host, services])
 
-  const genuiEnabled = services.plugins.list().find((p) => p.id === 'genui')?.enabled ?? false
+  const pluginEnabled = (id: string) =>
+    services.plugins.list().find((p) => p.id === id)?.enabled ?? false
 
-  const toggleGenUI = () => {
-    if (genuiEnabled) services.plugins.disable('genui')
-    else void services.plugins.enable('genui').then(refreshPlugins)
+  const genuiEnabled = pluginEnabled('genui')
+  const outlineEnabled = pluginEnabled('outline')
+
+  const togglePlugin = (id: string) => {
+    if (pluginEnabled(id)) services.plugins.disable(id)
+    else void services.plugins.enable(id).then(refreshPlugins)
     refreshPlugins()
   }
 
@@ -171,10 +182,20 @@ export function App({ host }: { host: HostAdapter }): React.ReactElement {
             className="toggle-button"
             data-testid="genui-toggle"
             aria-pressed={genuiEnabled}
-            onClick={toggleGenUI}
+            onClick={() => togglePlugin('genui')}
             disabled={!ready}
           >
             GenUI: {genuiEnabled ? 'On' : 'Off'}
+          </button>
+          <button
+            type="button"
+            className="toggle-button"
+            data-testid="outline-toggle"
+            aria-pressed={outlineEnabled}
+            onClick={() => togglePlugin('outline')}
+            disabled={!ready}
+          >
+            Outline: {outlineEnabled ? 'On' : 'Off'}
           </button>
         </div>
       </header>
@@ -192,14 +213,13 @@ export function App({ host }: { host: HostAdapter }): React.ReactElement {
       {docState?.readOnly ? <div className="banner banner-readonly">Read only</div> : null}
 
       <div className="app-body">
+        <SidePane views={services.views} location="left" />
         <main className="editor-pane">
           <div className="editor-scroll">
             <div className="crepe-root" ref={editorRoot} data-testid="editor-root" />
           </div>
         </main>
-        <aside className="side-pane" data-testid="side-pane">
-          <ViewsPanel views={services.views} />
-        </aside>
+        <SidePane views={services.views} location="right" />
       </div>
 
       <footer className="status-bar">

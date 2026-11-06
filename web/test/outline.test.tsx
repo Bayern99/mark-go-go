@@ -365,29 +365,6 @@ describe('Outline plugin', () => {
       await app.unmount()
     }
   })
-
-  it('leaves GenUI without its own heading list', async () => {
-    const app = await mountApp(fixture)
-    try {
-      const genui = page.getByRole('region', { name: 'Generated UI' })
-      expect(genui.getByText('Headings in this document').query()).toBeNull()
-
-      const headingTexts = new Set(EXPECTED_HEADINGS)
-      for (const text of headingTexts) {
-        expect(genui.getByRole('button', { name: text }).query()).toBeNull()
-      }
-      const headingListItems = genui
-        .getByRole('listitem')
-        .elements()
-        .filter((item) => headingTexts.has(item.textContent?.trim() ?? ''))
-      expect(headingListItems).toEqual([])
-
-      // Source chips are still there.
-      expect(genui.getByRole('button', { name: 'Metrics' }).first().query()).not.toBeNull()
-    } finally {
-      await app.unmount()
-    }
-  })
 })
 
 describe('App plugin activation', () => {

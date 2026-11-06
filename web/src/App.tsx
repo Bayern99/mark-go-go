@@ -34,9 +34,9 @@ export function App({
     const commands = new CommandRegistry()
     const views = new ViewRegistry()
     const editor = new EditorAccess()
-    const plugins = new PluginRegistry(documents, views, commands, editor)
+    const plugins = new PluginRegistry(documents, views, commands, editor, host)
     return { documents, commands, views, editor, plugins }
-  }, [])
+  }, [host])
 
   useEffect(() => {
     let disposed = false

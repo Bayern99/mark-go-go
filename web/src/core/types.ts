@@ -1,4 +1,4 @@
-import type { Disposable } from '../host/types'
+import type { Disposable, ViewSnapshot } from '../host/types'
 
 export interface DocumentSnapshot {
   text: string
@@ -27,6 +27,10 @@ export interface PluginContext {
   }
   editor: {
     onSelectionChange(fn: (offset: number) => void): Disposable
+  }
+  /** The document's view file; following it starts the host's watch. */
+  viewFile: {
+    watch(fn: (snap: ViewSnapshot) => void): Disposable
   }
   subscriptions: Disposable[]
 }

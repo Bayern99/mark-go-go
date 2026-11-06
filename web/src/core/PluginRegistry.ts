@@ -1,4 +1,4 @@
-import type { Disposable } from '../host/types'
+import type { Disposable, ViewFileSource } from '../host/types'
 import type { CommandRegistry } from './CommandRegistry'
 import type { DocumentService } from './DocumentService'
 import type { EditorSelectionSource } from './EditorAccess'
@@ -29,17 +29,20 @@ export class PluginRegistry {
   private readonly views: ViewRegistry
   private readonly commands: CommandRegistry
   private readonly editor: EditorSelectionSource
+  private readonly viewFile: ViewFileSource
 
   constructor(
     documents: DocumentService,
     views: ViewRegistry,
     commands: CommandRegistry,
     editor: EditorSelectionSource,
+    viewFile: ViewFileSource,
   ) {
     this.documents = documents
     this.views = views
     this.commands = commands
     this.editor = editor
+    this.viewFile = viewFile
   }
 
   register(plugin: AppPlugin): void {
@@ -92,6 +95,9 @@ export class PluginRegistry {
       },
       editor: {
         onSelectionChange: (fn) => track(this.editor.onSelectionChange(fn)),
+      },
+      viewFile: {
+        watch: (fn) => track(this.viewFile.watchView(fn)),
       },
       subscriptions,
     }

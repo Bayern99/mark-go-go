@@ -5,6 +5,7 @@ import { EditorAccess } from '../src/core/EditorAccess'
 import { PluginRegistry } from '../src/core/PluginRegistry'
 import { ViewRegistry } from '../src/core/ViewRegistry'
 import type { AppPlugin, PluginContext } from '../src/core/types'
+import type { ViewFileSource, ViewSnapshot } from '../src/host/types'
 
 interface Effects {
   subscriptionCalls: number
@@ -13,6 +14,23 @@ interface Effects {
   viewDisposals: number
   selectionCalls: number
   selectionDisposals: number
+  viewWatchDisposals: number
+}
+
+/** A view file source that records who follows it. */
+function fakeViewFile(effects: Effects): ViewFileSource & { followers: Set<(snap: ViewSnapshot) => void> } {
+  const followers = new Set<(snap: ViewSnapshot) => void>()
+  return {
+    followers,
+    watchView(fn) {
+      followers.add(fn)
+      return {
+        dispose() {
+          if (followers.delete(fn)) effects.viewWatchDisposals += 1
+        },
+      }
+    },
+  }
 }
 
 function setup() {
@@ -32,7 +50,6 @@ function setup() {
       }
     },
   })
-  const registry = new PluginRegistry(documents, views, commands, editor)
   const effects: Effects = {
     subscriptionCalls: 0,
     subscriptionDisposals: 0,
@@ -40,7 +57,10 @@ function setup() {
     viewDisposals: 0,
     selectionCalls: 0,
     selectionDisposals: 0,
+    viewWatchDisposals: 0,
   }
+  const viewFile = fakeViewFile(effects)
+  const registry = new PluginRegistry(documents, views, commands, editor, viewFile)
   const emitSelection = (offset: number) => {
     for (const fn of selectionListeners) fn(offset)
   }
@@ -65,6 +85,7 @@ function setup() {
       })
       ctx.subscriptions.push(ctx.documents.onDidChange(() => (effects.subscriptionCalls += 1)))
       ctx.editor.onSelectionChange(() => (effects.selectionCalls += 1))
+      ctx.viewFile.watch(() => {})
       ctx.subscriptions.push({
         dispose() {
           effects.subscriptionDisposals += 1
@@ -74,7 +95,7 @@ function setup() {
   }
 
   registry.register(plugin)
-  return { documents, commands, views, registry, effects, emitSelection }
+  return { documents, commands, views, registry, effects, emitSelection, viewFile }
 }
 
 describe('PluginRegistry', () => {
@@ -137,11 +158,23 @@ describe('PluginRegistry', () => {
     expect(effects.selectionCalls).toBe(2)
   })
 
+  it('stops following the view file when disabled', async () => {
+    const { registry, effects, viewFile } = setup()
+    await registry.enable('demo')
+    expect(viewFile.followers.size).toBe(1)
+
+    registry.disable('demo')
+    expect(viewFile.followers.size).toBe(0)
+    expect(effects.viewWatchDisposals).toBe(1)
+  })
+
   it('drops registrations made after a disable during a pending activation', async () => {
     const documents = new DocumentService()
     const commands = new CommandRegistry()
     const views = new ViewRegistry()
-    const registry = new PluginRegistry(documents, views, commands, new EditorAccess())
+    const registry = new PluginRegistry(documents, views, commands, new EditorAccess(), {
+      watchView: () => ({ dispose() {} }),
+    })
     let release!: () => void
     const gate = new Promise<void>((resolve) => {
       release = resolve
@@ -180,7 +213,9 @@ describe('PluginRegistry', () => {
     const documents = new DocumentService()
     const commands = new CommandRegistry()
     const views = new ViewRegistry()
-    const registry = new PluginRegistry(documents, views, commands, new EditorAccess())
+    const registry = new PluginRegistry(documents, views, commands, new EditorAccess(), {
+      watchView: () => ({ dispose() {} }),
+    })
     let disposed = false
 
     registry.register({

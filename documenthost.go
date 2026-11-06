@@ -53,6 +53,17 @@ type docSession struct {
 	version   int
 	offReload func()
 	offState  func()
+
+	// The view file the page follows (viewfile.go), guarded by
+	// documentHost.mu: following says the page asked to, viewPath is the
+	// file watched, stopView ends its watch, and viewGen counts
+	// retargets. emitMu, taken before documentHost.mu, orders the reads
+	// of the file with the events that carry them.
+	following bool
+	viewPath  string
+	stopView  func()
+	viewGen   int
+	emitMu    sync.Mutex
 }
 
 func newDocumentHost() *documentHost {
@@ -92,6 +103,7 @@ func (h *documentHost) track(doc *mygo.Document[string], win *mygo.Window) {
 	})
 	s.offState = doc.OnStateChange(func(state mygo.DocumentState) {
 		_ = docState.Emit(win, docStateOf(state))
+		s.viewMoved(state.Path)
 	})
 	win.OnClosed(func() { h.forget(s) })
 }
@@ -103,6 +115,7 @@ func (h *documentHost) forget(s *docSession) {
 	if s.offState != nil {
 		s.offState()
 	}
+	s.unfollowView()
 	h.mu.Lock()
 	delete(h.byWindow, s.win)
 	h.mu.Unlock()

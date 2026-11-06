@@ -1,4 +1,4 @@
-import type { Disposable, DocState, HostAdapter, HostDocSnapshot } from './types'
+import type { Disposable, DocState, HostAdapter, HostDocSnapshot, ViewSnapshot } from './types'
 
 export const DEMO_MARKDOWN = `# Quarterly Report
 
@@ -47,6 +47,13 @@ export interface BrowserHost extends HostAdapter {
   /** Simulate an external change (used by tests and the demo reload button). */
   reload(text: string): void
   getState(): DocState
+  /** Simulate another tool writing (text) or removing (null) the view file. */
+  writeView(text: string | null): void
+}
+
+export interface BrowserHostOptions {
+  /** Initial view file text; none when omitted. */
+  view?: string
 }
 
 /**
@@ -57,12 +64,18 @@ export interface BrowserHost extends HostAdapter {
 export function createBrowserHost(
   initial: string = DEMO_MARKDOWN,
   initialName = INITIAL_STATE.name,
+  options: BrowserHostOptions = {},
 ): BrowserHost {
   let text = initial
   let version = 1
   let state: DocState = { ...INITIAL_STATE, name: initialName }
+  let view: string | null = options.view ?? null
   const reloadListeners = new Set<(snap: HostDocSnapshot) => void>()
   const stateListeners = new Set<(state: DocState) => void>()
+  const viewListeners = new Set<(snap: ViewSnapshot) => void>()
+
+  const viewSnapshot = (): ViewSnapshot =>
+    view === null ? { exists: false, text: '', error: '' } : { exists: true, text: view, error: '' }
 
   const snapshot = (): HostDocSnapshot => ({ text, version, state: { ...state } })
 
@@ -100,6 +113,19 @@ export function createBrowserHost(
     },
     getState() {
       return { ...state }
+    },
+    watchView(fn) {
+      viewListeners.add(fn)
+      // Like the Go host, the first snapshot comes once the watch runs.
+      queueMicrotask(() => {
+        if (viewListeners.has(fn)) fn(viewSnapshot())
+      })
+      return disposable(() => viewListeners.delete(fn))
+    },
+    writeView(next: string | null) {
+      view = next
+      const snap = viewSnapshot()
+      for (const fn of viewListeners) fn(snap)
     },
   }
 }

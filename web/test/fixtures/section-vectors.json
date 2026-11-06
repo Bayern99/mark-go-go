@@ -1,0 +1,56 @@
+{
+  "description": "Shared section/hash vectors. Each section text runs from its heading to the next heading of the same or higher level, or EOF; hash is fnv1a32 over UTF-8 bytes. Expected values computed independently (Python). Read by the web tests and the Go host tests.",
+  "hashes": [
+    {
+      "text": "",
+      "hash": "fnv1a32:811c9dc5"
+    },
+    {
+      "text": "a",
+      "hash": "fnv1a32:e40c292c"
+    },
+    {
+      "text": "café 概要 🚀\r\n",
+      "hash": "fnv1a32:8ae747d8"
+    }
+  ],
+  "document": "Intro text before any heading.\n\n# Report\n\nOpening paragraph.\n\n## Überblick 概要 🚀\n\nBody with an emoji 🎉 and café.\n\n### Detail\n\nNested text.\n\n## Überblick 概要 🚀\n\nSecond occurrence.\n\nSetext Title\n------------\n\nUnder the setext heading.\n\n```md\n# Not a heading\n```\n\n# Appendix\n\nLast line.\n",
+  "sections": [
+    {
+      "heading": "Report",
+      "occurrence": 1,
+      "text": "# Report\n\nOpening paragraph.\n\n## Überblick 概要 🚀\n\nBody with an emoji 🎉 and café.\n\n### Detail\n\nNested text.\n\n## Überblick 概要 🚀\n\nSecond occurrence.\n\nSetext Title\n------------\n\nUnder the setext heading.\n\n```md\n# Not a heading\n```\n\n",
+      "hash": "fnv1a32:d04be74a"
+    },
+    {
+      "heading": "Überblick 概要 🚀",
+      "occurrence": 1,
+      "text": "## Überblick 概要 🚀\n\nBody with an emoji 🎉 and café.\n\n### Detail\n\nNested text.\n\n",
+      "hash": "fnv1a32:ee7a184a"
+    },
+    {
+      "heading": "Detail",
+      "occurrence": 1,
+      "text": "### Detail\n\nNested text.\n\n",
+      "hash": "fnv1a32:99d21f4d"
+    },
+    {
+      "heading": "Überblick 概要 🚀",
+      "occurrence": 2,
+      "text": "## Überblick 概要 🚀\n\nSecond occurrence.\n\n",
+      "hash": "fnv1a32:9da8db51"
+    },
+    {
+      "heading": "Setext Title",
+      "occurrence": 1,
+      "text": "Setext Title\n------------\n\nUnder the setext heading.\n\n```md\n# Not a heading\n```\n\n",
+      "hash": "fnv1a32:b7b4be86"
+    },
+    {
+      "heading": "Appendix",
+      "occurrence": 1,
+      "text": "# Appendix\n\nLast line.\n",
+      "hash": "fnv1a32:c6896bcf"
+    }
+  ]
+}

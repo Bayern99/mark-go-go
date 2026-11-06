@@ -25,6 +25,17 @@ export interface Snapshot {
   state: DocState;
 }
 
+/**
+ * ViewSnapshot is a document's view file, as the host read it. Exists is
+ * false when there is none, including for an untitled document; Error says
+ * why an existing file could not be read. The page validates the text.
+ */
+export interface ViewSnapshot {
+  exists: boolean;
+  text: string;
+  error: string;
+}
+
 // ---- Services ----
 
 /**
@@ -40,6 +51,10 @@ export const DocumentHost = {
   load(): Promise<Snapshot> {
     return call("DocumentHost.Load");
   },
+  /** UnwatchView stops following the calling page's view file. */
+  unwatchView(): Promise<void> {
+    return call("DocumentHost.UnwatchView");
+  },
   /**
    * Update replaces the content of the calling window's document with the
    * full Markdown text the page composed. It edits the document, which
@@ -48,6 +63,16 @@ export const DocumentHost = {
    */
   update(text: string): Promise<void> {
     return call("DocumentHost.Update", text);
+  },
+  /**
+   * WatchView makes the calling page follow its document's view file: the
+   * host sends viewChanged with the file as it is once the watch runs, then
+   * whenever the file changes, and when the document is renamed, moved or
+   * first saved. Every snapshot comes as that event, in the order the host
+   * read them. Calling it again restarts the watch.
+   */
+  watchView(): Promise<void> {
+    return call("DocumentHost.WatchView");
   },
 } as const;
 
@@ -65,4 +90,9 @@ export const events = {
    * saved, renamed or moved, in conflict, or its file deleted.
    */
   docState: event<DocState>("docState"),
+  /**
+   * viewChanged tells a page that follows its document's view file that the
+   * file changed, appeared or went away.
+   */
+  viewChanged: event<ViewSnapshot>("viewChanged"),
 } as const;

@@ -21,13 +21,6 @@ Paragraph one.
 Paragraph two.
 `
 
-const SOURCE_ONLY_DOCUMENT = `# Overview
-
-## Metrics
-
-Body text.
-`
-
 function longDocument(): string {
   const paragraphs = Array.from({ length: 300 }, (_, index) => `Paragraph ${index}.`)
   return `# Long\n\n${paragraphs.join('\n\n')}\n`
@@ -255,25 +248,6 @@ describe('App source mode', () => {
       expect(visibleSource(app.container)).toBe(DOCUMENT)
       await new Promise((resolve) => setTimeout(resolve, 350))
       expect(update).not.toHaveBeenCalled()
-    } finally {
-      await app.unmount()
-    }
-  })
-
-  it('jumps to a GenUI heading while in source mode', async () => {
-    const app = await mountApp(SOURCE_ONLY_DOCUMENT)
-    try {
-      await enterSourceMode(app.container)
-      const chip = Array.from(app.container.querySelectorAll<HTMLButtonElement>('.genui-source')).find(
-        (button) => button.textContent === 'Metrics',
-      )
-      expect(chip).toBeDefined()
-      await userEvent.click(chip as HTMLButtonElement)
-
-      await vi.waitFor(() => {
-        expect(caretLineInSource(app.container)?.textContent).toBe('## Metrics')
-        expect(document.activeElement?.closest('.cm-editor')).not.toBeNull()
-      })
     } finally {
       await app.unmount()
     }

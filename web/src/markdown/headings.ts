@@ -1,8 +1,4 @@
-import remarkFrontmatter from 'remark-frontmatter'
-import remarkGfm from 'remark-gfm'
-import remarkMath from 'remark-math'
-import remarkParse from 'remark-parse'
-import { unified } from 'unified'
+import { parseMdast, plainText, type MdastNode } from './mdast'
 
 export interface MarkdownHeading {
   /** Heading level, 1–6. */
@@ -13,31 +9,13 @@ export interface MarkdownHeading {
   offset: number
 }
 
-interface MdastNode {
-  type: string
-  depth?: number
-  alt?: string | null
-  value?: string
-  children?: MdastNode[]
-  position?: {
-    start: { offset?: number }
-  }
-}
-
-interface MdastRoot {
-  children: MdastNode[]
-}
-
 /**
- * Same remark stack the block segmentation uses, so the outline and GenUI see
- * exactly the headings the editor sees: ATX and setext count, while headings
- * inside fences, raw HTML and frontmatter do not.
+ * Every real heading in the document, in source order. Parsing is shared with
+ * block segmentation, so ATX and setext headings count while headings inside
+ * fences, raw HTML and frontmatter do not.
  */
-const processor = unified().use(remarkParse).use(remarkGfm).use(remarkFrontmatter).use(remarkMath)
-
-/** Every real heading in the document, in source order. */
 export function extractHeadings(markdown: string): MarkdownHeading[] {
-  const tree = processor.parse(markdown) as unknown as MdastRoot
+  const tree = parseMdast(markdown)
   const headings: MarkdownHeading[] = []
   collectHeadings(tree.children, headings)
   return headings
@@ -59,16 +37,4 @@ function collectHeadings(nodes: MdastNode[], out: MarkdownHeading[]): void {
     }
     if (node.children) collectHeadings(node.children, out)
   }
-}
-
-function plainText(node: MdastNode): string {
-  if (node.type === 'html') return ''
-  if (node.type === 'image') return node.alt ?? ''
-  if (typeof node.value === 'string') return node.value
-  if (!node.children) return ''
-  let text = ''
-  for (const child of node.children) {
-    text += child.type === 'break' ? ' ' : plainText(child)
-  }
-  return text
 }

@@ -1,8 +1,4 @@
-import { unified } from 'unified'
-import remarkParse from 'remark-parse'
-import remarkGfm from 'remark-gfm'
-import remarkFrontmatter from 'remark-frontmatter'
-import remarkMath from 'remark-math'
+import { parseMdast, plainText, type MdastNode } from '../../markdown/mdast'
 
 /**
  * Kinds of top-level blocks that are kept as raw, read-only source instead of
@@ -39,24 +35,6 @@ export interface Segmentation {
   trailing: string
 }
 
-interface MdastNode {
-  type: string
-  value?: string
-  meta?: string | null
-  lang?: string | null
-  children?: MdastNode[]
-  position?: {
-    start: { offset?: number }
-    end: { offset?: number }
-  }
-}
-
-interface MdastRoot {
-  children: MdastNode[]
-}
-
-const processor = unified().use(remarkParse).use(remarkGfm).use(remarkFrontmatter).use(remarkMath)
-
 const ALERT_RE = /^\[!(?:note|tip|important|warning|caution)\]/i
 const FRONTMATTER_TYPES: Record<string, true> = { yaml: true, toml: true, frontmatter: true }
 
@@ -66,7 +44,7 @@ const FRONTMATTER_TYPES: Record<string, true> = { yaml: true, toml: true, frontm
  * CRLF and blank-line runs survive untouched.
  */
 export function segmentMarkdown(text: string): Segmentation {
-  const tree = processor.parse(text) as unknown as MdastRoot
+  const tree = parseMdast(text)
   const segments: SourceSegment[] = []
 
   let previousEnd = 0
@@ -103,7 +81,10 @@ export function segmentMarkdown(text: string): Segmentation {
   }
 
   if (segments.length === 0) {
-    return { segments, prefix: '', trailing: text }
+    // Empty or whitespace-only documents have no block to anchor around. The
+    // text stays a prefix, so it remains byte-exact if the user types the first
+    // block into it (the original bytes stay before that block).
+    return { segments, prefix: text, trailing: '' }
   }
 
   return {
@@ -131,10 +112,4 @@ function isGithubAlert(node: MdastNode): boolean {
   const first = node.children?.[0]
   if (!first || first.type !== 'paragraph') return false
   return ALERT_RE.test(plainText(first).trimStart())
-}
-
-function plainText(node: MdastNode): string {
-  if (typeof node.value === 'string') return node.value
-  if (!node.children) return ''
-  return node.children.map(plainText).join('')
 }

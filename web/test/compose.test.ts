@@ -97,4 +97,26 @@ describe('empty documents', () => {
       await mounted.cleanup()
     }
   })
+
+  it('keeps leading whitespace when the first block is typed in', async () => {
+    const source = '\n\n  \n'
+    const mounted = await mountEditor(source)
+    try {
+      expect(mounted.editor.getMarkdown()).toBe(source)
+
+      const view = mounted.editor.getView()
+      view.dispatch(view.state.tr.insertText('Hello', 1))
+
+      expect(mounted.editor.getMarkdown()).toBe(`${source}Hello\n`)
+
+      const offsets: number[] = []
+      mounted.editor.onSelectionChange((offset) => offsets.push(offset))
+      expect(offsets[0]).toBe(source.length)
+
+      expect(mounted.editor.reveal(source.length + 2)).toBe(true)
+      expect(offsets.at(-1)).toBe(source.length)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
 })

@@ -54,7 +54,9 @@ export function composeWithRanges(doc: PMNode, ctx: ComposeContext): ComposedDoc
     const meaningful = nodes.filter((node) => !(node.type.name === 'paragraph' && node.content.size === 0))
     if (meaningful.length === 0) return { text: ctx.prefix + ctx.trailing, blocks: [] }
 
-    let text = ''
+    // The document was empty or whitespace-only when loaded: its original text
+    // is a prefix and must stay before the blocks the user just created.
+    let text = ctx.prefix
     const blocks: ComposedBlock[] = []
     for (let i = 0; i < meaningful.length; i += 1) {
       if (i > 0) text += '\n\n'
@@ -63,7 +65,7 @@ export function composeWithRanges(doc: PMNode, ctx: ComposeContext): ComposedDoc
       text += renderBlock(node, undefined, ctx)
       blocks.push({ node, start, end: text.length })
     }
-    return { text: `${text}\n`, blocks }
+    return { text: text + (ctx.trailing === '' ? '\n' : ctx.trailing), blocks }
   }
 
   if (nodes.length === 0) return { text: '', blocks: [] }

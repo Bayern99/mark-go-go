@@ -88,6 +88,9 @@
 
 .genui-heading:disabled {
   cursor: default;
+}
+
+.genui-section[data-status='missing'] .genui-heading {
   text-decoration: line-through;
 }
 

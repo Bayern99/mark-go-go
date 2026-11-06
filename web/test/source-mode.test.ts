@@ -136,6 +136,27 @@ describe('source mode cursor mapping', () => {
     }
   })
 
+  it('selects an exact source range and reports where it starts', async () => {
+    const mounted = await mountEditor(source)
+    try {
+      mounted.editor.setMode('source')
+      const view = getSourceView(mounted.root)
+      const offsets: number[] = []
+      mounted.editor.onSelectionChange((offset) => offsets.push(offset))
+
+      const from = source.indexOf('First paragraph.')
+      const to = from + 'First paragraph.'.length
+      expect(mounted.editor.select(from, to)).toBe(true)
+      expect(view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to)).toBe(
+        'First paragraph.',
+      )
+      expect(offsets.at(-1)).toBe(from)
+      expect(mounted.editor.select(to, from)).toBe(false)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('notifies listeners registered at different times', async () => {
     const mounted = await mountEditor(source)
     try {

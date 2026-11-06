@@ -45,7 +45,9 @@ function rememberViewMode(path: string, mode: ViewMode): void {
 /**
  * Switches the center between the editor and a center view. The editor
  * stays mounted while hidden, so its state, selection and undo history
- * survive; its scroll position is put back when it shows again.
+ * survive; its scroll position is put back when it shows again. When a
+ * center view sends the reader to the source, it stays the way back until
+ * the reader picks a mode.
  */
 class ViewModeController {
   private center: string | null = null
@@ -53,15 +55,13 @@ class ViewModeController {
 
   constructor(
     private readonly setCenter: (id: string | null) => void,
+    private readonly setReturnTo: (id: string | null) => void,
     private readonly editor: () => MarkdownEditor | null,
     private readonly scroller: () => HTMLElement | null,
   ) {}
 
-  current(): string | null {
-    return this.center
-  }
-
   showCenter(id: string): void {
+    this.setReturnTo(null)
     if (this.center === id) return
     if (this.center === null) this.savedScroll = this.scroller()?.scrollTop ?? 0
     this.center = id
@@ -73,13 +73,21 @@ class ViewModeController {
    * returns, so a reveal right after it can scroll and focus.
    */
   showEditor(mode?: EditorMode): void {
-    if (this.center !== null) {
-      this.center = null
-      flushSync(() => this.setCenter(null))
-      const scroller = this.scroller()
-      if (scroller) scroller.scrollTop = this.savedScroll
-    }
+    this.setReturnTo(null)
+    this.leaveCenter()
     if (mode) this.editor()?.setMode(mode)
+  }
+
+  /**
+   * Navigation to a place in the source: from a center view it lands in
+   * rich text and keeps that view as the way back.
+   */
+  showSource(): void {
+    const from = this.center
+    if (from === null) return
+    this.leaveCenter()
+    this.editor()?.setMode('wysiwyg')
+    this.setReturnTo(from)
   }
 
   /** ⌘/: between rich text and Markdown; from a center view, the one the editor is not in. */
@@ -93,6 +101,14 @@ class ViewModeController {
   dropCenter(): void {
     this.center = null
     this.setCenter(null)
+  }
+
+  private leaveCenter(): void {
+    if (this.center === null) return
+    this.center = null
+    flushSync(() => this.setCenter(null))
+    const scroller = this.scroller()
+    if (scroller) scroller.scrollTop = this.savedScroll
   }
 }
 
@@ -111,6 +127,7 @@ export function App({
   const [version, setVersion] = useState(0)
   const [editorMode, setEditorMode] = useState<EditorMode>('wysiwyg')
   const [centerViewId, setCenterViewId] = useState<string | null>(null)
+  const [returnToId, setReturnToId] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
   const [, refreshPlugins] = useReducer((value: number) => value + 1, 0)
   const restored = useRef(false)
@@ -128,6 +145,7 @@ export function App({
     () =>
       new ViewModeController(
         setCenterViewId,
+        setReturnToId,
         () => editorRef.current,
         () => editorScroll.current,
       ),
@@ -135,6 +153,7 @@ export function App({
 
   const centerViews = useViews(services.views, 'center')
   const centerView = centerViews.find((view) => view.id === centerViewId) ?? null
+  const returnTo = centerView ? null : (centerViews.find((view) => view.id === returnToId) ?? null)
   const viewMode: ViewMode = centerView ? centerView.id : editorMode === 'source' ? 'markdown' : 'richtext'
 
   useEffect(() => {
@@ -191,9 +210,18 @@ export function App({
         services.commands.register('editor.reveal', (offset) => {
           const value = Number(offset)
           if (!Number.isFinite(value)) return false
-          // Navigating to the source from a center view lands in rich text.
-          if (modes.current() !== null) modes.showEditor('wysiwyg')
+          modes.showSource()
           return editor.reveal(value)
+        }),
+      )
+
+      cleanups.push(
+        services.commands.register('editor.select', (from, to) => {
+          const start = Number(from)
+          const end = Number(to)
+          if (!Number.isFinite(start) || !Number.isFinite(end)) return false
+          modes.showSource()
+          return editor.select(start, end)
         }),
       )
 
@@ -361,6 +389,16 @@ export function App({
       <div className="app-body">
         <SidePane views={services.views} />
         <main className="editor-pane" hidden={centerView !== null}>
+          {returnTo ? (
+            <button
+              type="button"
+              className="return-to-view"
+              data-testid="return-to-view"
+              onClick={() => modes.showCenter(returnTo.id)}
+            >
+              ← Back to {returnTo.title}
+            </button>
+          ) : null}
           <div className="editor-scroll" ref={editorScroll}>
             <div className="crepe-root" ref={editorRoot} data-testid="editor-root" />
           </div>

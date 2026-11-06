@@ -188,4 +188,27 @@ describe('Markdown source offsets', () => {
       await mounted.cleanup()
     }
   })
+
+  it('selects whole blocks of a source range, each duplicate section its own', async () => {
+    const source = '# Report\n\n## Summary\n\nFirst one.\n\nStill first.\n\n## Summary\n\nSecond one.\n'
+    const mounted = await mountEditor(source)
+    try {
+      const view = mounted.editor.getView()
+      const selected = () =>
+        view.state.doc.textBetween(view.state.selection.from, view.state.selection.to, '|')
+
+      const firstStart = source.indexOf('## Summary')
+      const secondStart = source.indexOf('## Summary', firstStart + 1)
+      expect(mounted.editor.select(firstStart, secondStart)).toBe(true)
+      expect(selected()).toBe('Summary|First one.|Still first.')
+
+      expect(mounted.editor.select(secondStart, source.length)).toBe(true)
+      expect(selected()).toBe('Summary|Second one.')
+
+      expect(mounted.editor.select(-1, 3)).toBe(false)
+      expect(mounted.editor.select(0, 10_000)).toBe(false)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
 })

@@ -40,6 +40,13 @@ that text's UTF-8 bytes.
 Components name the sources they draw on in their `sources` property, a list
 of ids from this table.
 
+Each component with sources shows where it came from, and is marked when its
+source moved on since the view was made: **Source changed** when a section's
+hash no longer matches, **Source not found** when a heading is gone (this wins
+over changed). A source without a `hash` is never marked. **Edit in source**
+selects the component's first source section that is still in the document in
+the editor.
+
 ## Messages
 
 `a2ui` holds A2UI 1.0 messages, each with `"version": "1.0"`. The first is a

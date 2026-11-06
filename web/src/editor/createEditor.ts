@@ -22,6 +22,7 @@ import {
   NodeSelection,
   Plugin,
   Selection,
+  TextSelection,
 } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { listenerCtx } from '@milkdown/kit/plugin/listener'
@@ -30,6 +31,7 @@ import { buildDocument, type BuiltDocument } from './blocks/build'
 import {
   blockAtOffset,
   composeWithRanges,
+  type ComposedBlock,
   type ComposedDocument,
   type ComposeContext,
 } from './blocks/compose'
@@ -71,6 +73,14 @@ export interface MarkdownEditor {
    * Returns false when the offset falls outside the current composed text.
    */
   reveal(offset: number): boolean
+  /**
+   * Select a Markdown source range and scroll its start to the top of the
+   * editor's scroll area. Rich text selects whole top-level blocks: from the
+   * block holding `from` through the last block starting before `to`; source
+   * selects the exact offsets. Returns false when the range falls outside the
+   * current composed text.
+   */
+  select(from: number, to: number): boolean
   /**
    * Fires with the source start offset of the cursor's top-level block whenever
    * the selection changes block or an edit moves that offset. Also reports the
@@ -209,13 +219,13 @@ export async function createMarkdownEditor(
     return sourceEditor
   }
 
-  const revealSource = (offset: number, alwaysReport: boolean): boolean => {
+  const revealSource = (from: number, to: number, alwaysReport: boolean): boolean => {
     if (!sourceEditor) return false
     lastReportedOffset = undefined
-    if (!sourceEditor.reveal(offset)) return false
+    if (!sourceEditor.reveal(from, to)) return false
     // The dispatch reports through the update listener unless the selection
     // was already exactly there; a switch must still emit the current offset.
-    if (alwaysReport && lastReportedOffset !== offset) emitSelection(offset)
+    if (alwaysReport && lastReportedOffset !== from) emitSelection(from)
     return true
   }
 
@@ -264,12 +274,34 @@ export async function createMarkdownEditor(
   if (options.onChange) listeners.add(options.onChange)
 
   /**
+   * Select `selection`, which starts at the top-level `block` at `pos`, and
+   * scroll that block to the top. Navigating is an explicit request: the
+   * block is reported even when the selection was already inside it.
+   */
+  const land = (selection: Selection, block: ComposedBlock | undefined, pos: number) => {
+    // Clearing the dedupe first lets the selection plugin do the reporting
+    // when the selection actually moves.
+    lastReportedOffset = undefined
+    // A caller may still be focused in source mode or on a toolbar button;
+    // focus first so the selection lands in the ProseMirror DOM.
+    view.focus()
+    view.dispatch(view.state.tr.setSelection(selection))
+    // Same top alignment as the source view; scroll-margin-top in styles.css
+    // keeps the gap above the block. Blocks without their own DOM node fall
+    // back to ProseMirror's nearest-edge scroll.
+    const target = view.nodeDOM(pos)
+    if (target instanceof HTMLElement) target.scrollIntoView({ block: 'start' })
+    else view.dispatch(view.state.tr.scrollIntoView())
+    if (block && lastReportedOffset !== block.start) emitSelection(block.start)
+  }
+
+  /**
    * Resolve an offset against the *current* composed text, then select the
    * start of the corresponding top-level block. Atom blocks (frontmatter,
    * alerts, ...) get a node selection; everything else a text cursor.
    */
   const reveal = (offset: number): boolean => {
-    if (mode === 'source') return revealSource(offset, true)
+    if (mode === 'source') return revealSource(offset, offset, true)
     if (!Number.isFinite(offset)) return false
     const { text, blocks } = composed(view.state.doc)
     if (offset < 0 || offset > text.length) return false
@@ -287,22 +319,33 @@ export async function createMarkdownEditor(
             view.state.doc.resolve(Math.min(pos + 1, view.state.doc.content.size)),
             1,
           )
+    land(selection, block, pos)
+    return true
+  }
 
-    // Revealing is an explicit navigation request: report the block even when
-    // the cursor was already inside it. Clearing the dedupe first lets the
-    // selection plugin do the reporting when the selection actually moves.
-    lastReportedOffset = undefined
-    // A caller may still be focused in source mode or on a toolbar button;
-    // focus first so the selection lands in the ProseMirror DOM.
-    view.focus()
-    view.dispatch(view.state.tr.setSelection(selection))
-    // Same top alignment as the source view; scroll-margin-top in styles.css
-    // keeps the gap above the block. Blocks without their own DOM node fall
-    // back to ProseMirror's nearest-edge scroll.
-    const target = view.nodeDOM(pos)
-    if (target instanceof HTMLElement) target.scrollIntoView({ block: 'start' })
-    else view.dispatch(view.state.tr.scrollIntoView())
-    if (block && lastReportedOffset !== block.start) emitSelection(block.start)
+  const select = (from: number, to: number): boolean => {
+    if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return false
+    if (mode === 'source') return revealSource(from, to, true)
+    const { text, blocks } = composed(view.state.doc)
+    if (from < 0 || to > text.length) return false
+
+    const first = blockAtOffset(blocks, from)
+    if (!first) return reveal(from)
+    let last = first
+    for (const block of blocks) {
+      if (block.start >= to) break
+      if (block.start > first.start) last = block
+    }
+    const doc = view.state.doc
+    const start = topLevelPosition(doc, first.node)
+    const lastStart = topLevelPosition(doc, last.node)
+    if (start === undefined || lastStart === undefined) return false
+
+    const selection =
+      first === last && first.node.type.name === LOCKED_NODE
+        ? NodeSelection.create(doc, start)
+        : TextSelection.between(doc.resolve(start), doc.resolve(lastStart + last.node.nodeSize))
+    land(selection, first, start)
     return true
   }
 
@@ -317,7 +360,7 @@ export async function createMarkdownEditor(
       wysiwygRoot.hidden = true
       sourceRoot.hidden = false
       ensureSourceEditor(text)
-      revealSource(offset, true)
+      revealSource(offset, offset, true)
     } else {
       const text = sourceEditor?.getText() ?? ''
       const offset = sourceEditor?.getSelection() ?? 0
@@ -388,6 +431,7 @@ export async function createMarkdownEditor(
       }
     },
     reveal,
+    select,
     onSelectionChange(fn) {
       selectionListeners.add(fn)
       // Emit the current offset to the new listener only. Mutating the shared

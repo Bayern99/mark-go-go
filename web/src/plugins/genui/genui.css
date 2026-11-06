@@ -86,3 +86,48 @@
   text-decoration: underline;
   text-decoration-color: var(--mgo-border, #e2ded7);
 }
+
+.genui-source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--mgo-border, #e2ded7);
+  font-size: 11px;
+  color: var(--mgo-muted, #6b6b6b);
+}
+
+.genui-source-from {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.genui-source-status {
+  border-radius: 999px;
+  padding: 1px 8px;
+  background: #fbf1dc;
+  color: #8a5a12;
+}
+
+[data-source-status='missing'] .genui-source-status {
+  background: #f3eded;
+  color: #9a3b3b;
+}
+
+.genui-source-edit {
+  font: inherit;
+  border: 1px solid var(--mgo-border, #e2ded7);
+  border-radius: 6px;
+  padding: 2px 8px;
+  background: #fff;
+  color: var(--mgo-accent, #2f6f62);
+  cursor: pointer;
+}
+
+.genui-source-edit:disabled {
+  color: var(--mgo-muted, #6b6b6b);
+  cursor: not-allowed;
+}

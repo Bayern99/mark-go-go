@@ -8,8 +8,8 @@
 |---|---|---|
 | Go | `go vet ./...` | 通过 |
 | TS 类型 | `npm --prefix web run typecheck` | 通过 |
-| 测试 | `npm --prefix web test`（真实 Chromium） | 12 个文件、131 项通过 |
-| 打包 | `go tool mygo build` | `Mark Go Go.app` 12.3MB，dmg 4.0MB |
+| 测试 | `npm --prefix web test`（真实 Chromium） | 12 个文件、138 项通过 |
+| 打包 | `go tool mygo build` | `Mark Go Go.app` 12.7MB，dmg 4.1MB |
 
 测试覆盖：23 个语料文件 + 编辑用例零编辑 compose **逐字节一致**；改一段只改变该块字节；编辑后 compose 幂等；插件禁用释放视图/命令/监听（含编辑器选择监听），重新启用正常，`activate` 失败回滚。
 
@@ -82,6 +82,26 @@
 | 在磁盘上改写视图文件：未知组件只在其位置报错；写成 v1 显示「请重新生成」 | 通过（自动化 UI 操作） |
 | 以上全部操作后 `report.md` sha1 不变 | 通过 |
 
+## GenUI 来源状态与“去原文修改”（#10）
+
+自动化（`web/test/genui.test.tsx` 在 App + `createBrowserHost` 接缝；`web/test/editor-offsets.test.ts`、`web/test/source-mode.test.ts` 在编辑器接缝）：
+
+- 视图哈希由共享章节模块算出（与宿主将写入的一致）。外部改动一个章节：只有引用它的组件（含多来源组件）标 `Source changed`，其他不变；改掉标题：引用它的组件标 `Source not found`（优先于 changed），内容照常显示，`Edit in source` 禁用；恢复原文后标记全部消失。
+- 无 `hash` 的手写视图：改动来源后仍不显示任何状态。
+- `Edit in source` 引用第二个同名 `Summary`：切到 Rich text，选中的正是第二个章节（标题 + 正文），而不是第一个。
+- 视图滚到下方点 `Edit in source`、在 Rich text 修改、点 `← Back to GenUI`：回到 GenUI，滚动位置误差 < 2px，被改章节的组件标 `Source changed`，其余不变；之后返回按钮消失。在头部选模式后返回按钮也消失。
+- 编辑器 `select`：WYSIWYG 按整块选中区间（重复标题各选各的），越界返回 `false`；源码模式为精确选区并报告起始偏移，`from > to` 返回 `false`。
+
+打包应用手动检查（2026-11-06，`go tool mygo build` 产物，`/tmp/mdws-smoke/view10/report.md`，视图哈希按格式文档独立计算）：
+
+| 检查 | 状态 |
+|---|---|
+| 进入 GenUI：所有组件无标记，底部显示 `From <标题>` 与 `Edit in source` | 通过（自动化 UI 操作） |
+| 滚到底部点 LATE 的 `Edit in source`：切到 Rich text，第二个 `Summary` 章节被选中，大纲高亮该条，显示 `← Back to GenUI` | 通过（自动化 UI 操作） |
+| 在该段末尾输入 ` Revised.`：自动保存，文件末尾为 `Late summary. Revised.` | 通过（自动化 UI 操作） |
+| 点 `← Back to GenUI`：回到原滚动位置，只有 LATE 标 `Source changed` | 通过（自动化 UI 操作） |
+| 外部进程把 `# Metrics` 改成 `# Numbers`：版本 v2，METRICS 与 BOTH 标 `Source not found`，LATE 仍为 `Source changed` | 通过（自动化 UI 操作） |
+
 ## 打包应用手动冒烟（`/tmp/mdws-smoke/report.md`：frontmatter、alert、setext 标题、`+` 列表、CJK 表格、带 meta 的代码块、引用式链接）
 
 | 场景 | 结果 |
@@ -102,7 +122,9 @@
 - 自动化工具注入中文只落下首字，属注入方式限制；真实输入法已人工确认正常。
 - 外部重载会重建编辑器：撤销历史和光标重置（已接受）。
 - 编辑过的块按 Milkdown 规则重写（setext→ATX、表格补齐、块内 CRLF→LF）；插入/删除块后的块间空白回退为 `\n\n`。
-- GenUI 视图目前只能手写或由其他工具写入；`Generate` 按钮在 #7 接入 Agent 生成。
+- GenUI 视图目前只能手写或由其他工具写入；`Generate` 按钮在 #7 接入 Agent 生成。生成器写入来源 `hash` 也在 #7，在此之前只有手工带 `hash` 的视图会显示来源状态。
+- 多来源组件只要有一个来源 `missing` 就禁用 `Edit in source`，即使其他来源还在。
+- 打开 `~/Downloads/SuperCollider 深度分析报告.md`（同目录 516 项，含子目录约 1.6 万个文件）首次切到 GenUI 时，中央区域空白一段时间后才显示视图；浏览器测试中同一文档与视图文件立即渲染。推测（未验证）是宿主在 `WatchFiles` 建好目录监听后才发送第一份视图快照（`viewfile.go` 的 `WatchView` 先 `startViewWatch` 再 `emitView`）。另外 GenUI 在 `loading` 状态什么都不显示，没有“加载中”提示。待查（#14）。
 - 大纲在 WYSIWYG 模式按顶层块粒度高亮章节：光标在同一顶级块内移动不会改变当前章节。
 - `markdownUpdated` 每次编辑都会在内部整篇序列化（仅耗时，不影响保存内容）。
 - 纯 `go build`/`go run` 不处理文件参数；须用 `go tool mygo dev|build`。

@@ -17,6 +17,7 @@ import { basicCatalog } from '@a2ui/web_core/catalogs/basic/v1'
 import { STRICT_VALIDATION } from '@a2ui/web_core/validation'
 import { isRecord } from '../../lib/guards'
 import { SafeMarkdown } from './SafeMarkdown'
+import { SourceContext, SourceFrame, type SourceActions } from './SourceFrame'
 
 /** The catalog id a view file's surface must name. */
 export const CATALOG_ID = 'markgogo.dev:genui/v1'
@@ -45,14 +46,14 @@ const KeyPoints = createComponentImplementation(
     allowedChildren: [],
   },
   ({ props }) => (
-    <article className="genui-block genui-keypoints" style={flex(props.weight)}>
+    <SourceFrame sources={props.sources} className="genui-keypoints" style={flex(props.weight)}>
       {props.title ? <h4>{props.title}</h4> : null}
       <ul>
         {props.items.map((item, index) => (
           <li key={index}>{item}</li>
         ))}
       </ul>
-    </article>
+    </SourceFrame>
   ),
 )
 
@@ -152,26 +153,33 @@ function describe(error: unknown): string {
   return message.replace(/^\w*Error: /, '')
 }
 
-/** Renders a loaded surface with the app's Markdown rendering for Text. */
+/**
+ * Renders a loaded surface with the app's Markdown rendering for Text and
+ * the source actions its content components draw on.
+ */
 export function ViewSurface({
   surface,
+  sources,
 }: {
   surface: SurfaceModel<ReactCatalogComponent>
+  sources: SourceActions
 }): React.ReactElement {
   const problems = useSurfaceProblems(surface)
   return (
-    <MarkdownComponentContext.Provider value={SafeMarkdown}>
-      {problems.length > 0 ? (
-        <ul className="genui-problems" role="alert">
-          {problems.map((problem, index) => (
-            <li key={index}>{problem}</li>
-          ))}
-        </ul>
-      ) : null}
-      <div className="genui-surface">
-        <A2uiSurface surface={surface} />
-      </div>
-    </MarkdownComponentContext.Provider>
+    <SourceContext.Provider value={sources}>
+      <MarkdownComponentContext.Provider value={SafeMarkdown}>
+        {problems.length > 0 ? (
+          <ul className="genui-problems" role="alert">
+            {problems.map((problem, index) => (
+              <li key={index}>{problem}</li>
+            ))}
+          </ul>
+        ) : null}
+        <div className="genui-surface">
+          <A2uiSurface surface={surface} />
+        </div>
+      </MarkdownComponentContext.Provider>
+    </SourceContext.Provider>
   )
 }
 

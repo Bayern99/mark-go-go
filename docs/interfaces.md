@@ -91,8 +91,16 @@ interface PluginContext {
 - A2UI 适配（`a2ui.tsx`，唯一 import `@a2ui/*` 的模块，版本精确锁定 0.15.0）：组件目录 `markgogo.dev:genui/v1` = 基础目录的 `Column` / `Row` / `Tabs` / `Card` / `Text` + 我们的 `KeyPoints`。`MessageProcessor` 以严格校验运行（必须有 `root`、引用必须存在、属性按 zod schema 严格校验、只允许 `createSurface` / `updateComponents`、只能一个 surface）；任一失败 → 整个视图一条错误。目录外的组件名在加载前替换为占位组件，只在该处显示 `“<名字>” is not a component this app can show.`，其余照常。
 - `Text` 的 Markdown 由 `SafeMarkdown.tsx` 用应用自己的 mdast 解析器渲染为 React 元素：粗体、斜体、删除线、行内代码、代码块、列表、引用；链接只显示文字（`.genui-link`），图片和原始 HTML 不显示。没有 `innerHTML`。（`@a2ui/markdown-it` 0.2.2 的 peer 依赖是 web_core ^0.14，与 0.15 冲突，未采用。）
 - 视图里的交互（切换标签页等）只改变显示，不调用 `host.update`。
-- 章节（`sections.ts`）与 `fnv1a32` 哈希不变；来源状态与“去原文修改”在 #10。
+- 章节（`sections.ts`）与 `fnv1a32` 哈希不变。
 - 没有视图文件时显示 `No view yet.` 与禁用的 `Generate`（生成在 #7 接入）；有文件时显示模型与生成时间。
+
+## GenUI 来源状态与“去原文修改”（#10）
+
+- `sources.ts` 的 `SourceStore`：视图文件的来源表对照当前文档。文档变化后防抖 300ms（与大纲相同）重新提取章节；状态 `fresh` / `changed`（哈希不同）/ `missing`（找不到 heading + occurrence，优先于 changed）/ `unknown`（无记录哈希的手写视图，或组件没有来源）。
+- `SourceFrame.tsx`：目录内容组件（目前 `KeyPoints`）都画在同一个框里：底部 `From <标题…>`、状态标记 `Source changed` / `Source not found`（只在这两种状态显示）、`Edit in source` 按钮（`missing` 时禁用）。状态写在 `data-source-status`。
+- `Edit in source`：取组件第一个仍在文档里的来源，先立即刷新章节（不用防抖中的旧偏移），再执行命令 `editor.select(start, end)`。App 切到 Rich text、整段选中，并在编辑器区显示 `← Back to GenUI`（`data-testid="return-to-view"`）。点它回到 GenUI；在头部选任一模式后这个按钮消失。
+- 滚动位置：GenUI 视图的挂载元素 `.center-view` 就是滚动区。位置按视图文件文本记在插件里（`ScrollMemory`），跨挂载保留；同一份视图文件回来时恢复，换了视图文件从顶部开始。A2UI 首次提交后才渲染组件树，所以恢复时跟随内容增高（`ResizeObserver`，最多 1s）。
+- 生成器写入 `hash` 尚未实现（#7）；现在只有带 `hash` 的视图文件才会显示状态。
 
 ## Editor Adapter（`web/src/editor/createEditor.ts`）
 
@@ -108,6 +116,7 @@ interface MarkdownEditor {
   setMarkdown(text: string): void
   onChange(fn: (markdown: string) => void): Disposable
   reveal(offset: number): boolean
+  select(from: number, to: number): boolean
   onSelectionChange(fn: (offset: number) => void): Disposable
   setReadonly(readonly: boolean): void
   getView(): EditorView
@@ -116,7 +125,7 @@ interface MarkdownEditor {
 ```
 
 - 跨模块位置一律是当前 Markdown 文本的 UTF-16 源偏移；ProseMirror 位置不出适配器。
-- WYSIWYG 模式下按顶层块粒度映射：`reveal(offset)` 滚动到并聚焦包含该偏移的顶层块开头（锁定块用节点选择），偏移超出当前 compose 文本时返回 `false`；只要命中块就会报告该块起始偏移（光标原本就在该块也报告）。`onSelectionChange` 在光标换块或编辑使该块偏移变化时报告光标所在顶层块的源起始偏移，并在注册时同步回调一次当前偏移（大纲可立即高亮当前章节）。块范围每次由最新 compose 文本推导，所以块内编辑以及光标之前的增删不会让偏移失效。
+- WYSIWYG 模式下按顶层块粒度映射：`reveal(offset)` 滚动到并聚焦包含该偏移的顶层块开头（锁定块用节点选择），偏移超出当前 compose 文本时返回 `false`；只要命中块就会报告该块起始偏移（光标原本就在该块也报告）。`select(from, to)` 选中从包含 `from` 的块到 `to` 之前最后一个块的全部块（`to` 为区间终点，不含），滚动并聚焦，报告起始块偏移；区间越界或 `from > to` 返回 `false`。源码模式下 `select` 是精确的 CodeMirror 选区。`onSelectionChange` 在光标换块或编辑使该块偏移变化时报告光标所在顶层块的源起始偏移，并在注册时同步回调一次当前偏移（大纲可立即高亮当前章节）。块范围每次由最新 compose 文本推导，所以块内编辑以及光标之前的增删不会让偏移失效。
 - 选择到块的解析只使用 ProseMirror 文档结构（文本选择取 `$from.node(1)`，文档级选择取 `$from.index(0)` 对应的顶层节点），从不把 ProseMirror 位置当作 Markdown 偏移比较。
 - `getMarkdown()`：WYSIWYG 模式返回当前 compose 文本（未改动块保持原始字节）；源码模式返回 CodeMirror 文档文本（逐字节原样）。
 - 旧接口 `revealHeading(text)` 已删除；调用方先经共享标题模块解析出偏移再 `editor.reveal`。

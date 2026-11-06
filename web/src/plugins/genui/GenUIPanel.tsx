@@ -1,7 +1,7 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import type { PluginContext } from '../../core/types'
+import { extractHeadings, normalizeHeadingText } from '../../markdown/headings'
 import { renderBlock } from './catalog'
-import { extractHeadings } from './headings'
 import type { GenUIDocument, SourceRef } from './schema'
 
 export class SnapshotStore {
@@ -40,8 +40,15 @@ export function GenUIPanel({
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const headings = useMemo(() => extractHeadings(snapshot.text), [snapshot.text])
 
-  const reveal = (source: SourceRef) => {
-    void ctx.commands.execute('editor.revealHeading', source.heading)
+  const revealOffset = (offset: number) => {
+    void ctx.commands.execute('editor.reveal', offset)
+  }
+
+  const revealSource = (source: SourceRef) => {
+    const wanted = normalizeHeadingText(source.heading)
+    if (wanted === '') return
+    const match = headings.find((heading) => normalizeHeadingText(heading.text) === wanted)
+    if (match) revealOffset(match.offset)
   }
 
   return (
@@ -62,9 +69,7 @@ export function GenUIPanel({
                 <button
                   type="button"
                   className="genui-heading-link"
-                  onClick={() => {
-                    void ctx.commands.execute('editor.revealHeading', heading.text)
-                  }}
+                  onClick={() => revealOffset(heading.offset)}
                 >
                   {heading.text}
                 </button>
@@ -75,7 +80,7 @@ export function GenUIPanel({
       </section>
 
       {document.blocks.map((block, index) => (
-        <div key={index}>{renderBlock(block, reveal)}</div>
+        <div key={index}>{renderBlock(block, revealSource)}</div>
       ))}
     </div>
   )

@@ -56,9 +56,10 @@ export function App({ host }: { host: HostAdapter }): React.ReactElement {
       editor.setReadonly(snapshot.state.readOnly)
 
       cleanups.push(
-        services.commands.register('editor.revealHeading', (heading) =>
-          editor.revealHeading(String(heading ?? '')),
-        ),
+        services.commands.register('editor.reveal', (offset) => {
+          const value = Number(offset)
+          return Number.isFinite(value) ? editor.reveal(value) : false
+        }),
       )
 
       cleanups.push(

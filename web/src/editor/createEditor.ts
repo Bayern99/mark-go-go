@@ -19,16 +19,21 @@ import {
 import type { Node as PMNode } from '@milkdown/kit/prose/model'
 import {
   EditorState,
+  NodeSelection,
+  Plugin,
   Selection,
-  TextSelection,
-  type Plugin,
 } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { listenerCtx } from '@milkdown/kit/plugin/listener'
 import type { Disposable } from '../host/types'
 import { buildDocument } from './blocks/build'
-import { composeDocument } from './blocks/compose'
-import { lockedBlockSchema } from './blocks/locked'
+import {
+  blockAtOffset,
+  composeDocument,
+  composeWithRanges,
+  type ComposeContext,
+} from './blocks/compose'
+import { LOCKED_NODE, lockedBlockSchema } from './blocks/locked'
 import { languages } from './languages'
 
 /**
@@ -49,8 +54,17 @@ export interface MarkdownEditor {
   setMarkdown(text: string): void
   /** Fires after every user edit with freshly composed Markdown. */
   onChange(fn: (markdown: string) => void): Disposable
-  /** Scroll to and select the first heading with matching text. */
-  revealHeading(heading: string): boolean
+  /**
+   * Scroll a Markdown source offset into view and place the cursor at the
+   * start of the top-level block containing it. Returns false when the offset
+   * falls outside the current composed text.
+   */
+  reveal(offset: number): boolean
+  /**
+   * Fires with the source start offset of the cursor's top-level block whenever
+   * the selection changes block or an edit moves that offset.
+   */
+  onSelectionChange(fn: (offset: number) => void): Disposable
   setReadonly(readonly: boolean): void
   /** Low-level access for tests and host integrations. */
   getView(): EditorView
@@ -85,22 +99,66 @@ export async function createMarkdownEditor(
   const parser = editor.action((ctx) => ctx.get(parserCtx))
   const serializer = editor.action((ctx) => ctx.get(serializerCtx))
 
-  const plugins = view.state.plugins.filter((plugin) => !isIdentityBreaking(plugin))
-
   let built = buildDocument(options.initialText ?? '', schema, parser)
   let suppressChange = false
   let readonly = false
   const listeners = new Set<(markdown: string) => void>()
+  const selectionListeners = new Set<(offset: number) => void>()
+  let lastReportedOffset: number | undefined
 
-  const compose = (doc: PMNode, current: typeof built): string =>
-    composeDocument(doc, {
-      schema,
-      serializer,
-      origins: current.origins,
-      segments: current.segments,
-      prefix: current.prefix,
-      trailing: current.trailing,
-    })
+  const composeContext = (current: typeof built): ComposeContext => ({
+    schema,
+    serializer,
+    origins: current.origins,
+    segments: current.segments,
+    prefix: current.prefix,
+    trailing: current.trailing,
+  })
+
+  const compose = (doc: PMNode): string => composeDocument(doc, composeContext(built))
+
+  /** Source start offset of the top-level block holding the current selection. */
+  const selectionOffset = (state: EditorState): number | undefined => {
+    const { blocks } = composeWithRanges(state.doc, composeContext(built))
+    if (blocks.length === 0) return undefined
+
+    const { $from } = state.selection
+    if ($from.depth >= 1) {
+      const top = $from.node(1)
+      const match = blocks.find((block) => block.node === top)
+      if (match) return match.start
+    }
+
+    const selection = state.selection
+    if ('node' in selection) {
+      const selected = selection.node
+      const match = blocks.find((block) => block.node === selected)
+      if (match) return match.start
+    }
+
+    return blockAtOffset(blocks, state.selection.from)?.start
+  }
+
+  const reportSelection = (state: EditorState) => {
+    if (selectionListeners.size === 0) return
+    const offset = selectionOffset(state)
+    if (offset === undefined || offset === lastReportedOffset) return
+    lastReportedOffset = offset
+    for (const fn of selectionListeners) fn(offset)
+  }
+
+  const selectionPlugin = new Plugin({
+    view: () => ({
+      update(currentView, prevState) {
+        const state = currentView.state
+        if (state.doc === prevState.doc && state.selection.eq(prevState.selection)) return
+        reportSelection(state)
+      },
+    }),
+  })
+
+  const plugins = view.state.plugins.filter((plugin) => !isIdentityBreaking(plugin))
+  plugins.push(selectionPlugin)
 
   const load = (text: string) => {
     suppressChange = true
@@ -125,21 +183,38 @@ export async function createMarkdownEditor(
 
   editor.action((ctx) => {
     ctx.get(listenerCtx).markdownUpdated(() => {
-      notify(compose(view.state.doc, built))
+      notify(compose(view.state.doc))
     })
   })
 
   load(options.initialText ?? '')
   if (options.onChange) listeners.add(options.onChange)
 
-  const revealHeading = (heading: string): boolean => {
-    const found = findHeading(view.state.doc, heading)
-    if (!found) return false
-    const from = found.pos + 1
-    const tr = view.state.tr
-      .setSelection(TextSelection.create(view.state.doc, from, from + found.size))
-      .scrollIntoView()
-    view.dispatch(tr)
+  /**
+   * Resolve an offset against the *current* composed text, then select the
+   * start of the corresponding top-level block. Atom blocks (frontmatter,
+   * alerts, ...) get a node selection; everything else a text cursor.
+   */
+  const reveal = (offset: number): boolean => {
+    if (!Number.isFinite(offset)) return false
+    const { text, blocks } = composeWithRanges(view.state.doc, composeContext(built))
+    if (offset < 0 || offset > text.length) return false
+
+    const block = blockAtOffset(blocks, offset)
+    // Empty or whitespace-only documents compose to no blocks; the invisible
+    // empty paragraph is still a valid place for the cursor.
+    const pos = block ? topLevelPosition(view.state.doc, block.node) : 1
+    if (pos === undefined) return false
+
+    const selection =
+      block && block.node.type.name === LOCKED_NODE
+        ? NodeSelection.create(view.state.doc, pos)
+        : Selection.near(
+            view.state.doc.resolve(Math.min(pos + 1, view.state.doc.content.size)),
+            1,
+          )
+
+    view.dispatch(view.state.tr.setSelection(selection).scrollIntoView())
     view.focus()
     return true
   }
@@ -151,7 +226,7 @@ export async function createMarkdownEditor(
   }
 
   return {
-    getMarkdown: () => compose(view.state.doc, built),
+    getMarkdown: () => compose(view.state.doc),
     setMarkdown(text) {
       load(text)
     },
@@ -163,20 +238,28 @@ export async function createMarkdownEditor(
         },
       }
     },
-    revealHeading,
+    reveal,
+    onSelectionChange(fn) {
+      selectionListeners.add(fn)
+      const offset = selectionOffset(view.state)
+      if (offset !== undefined) {
+        lastReportedOffset = offset
+        fn(offset)
+      }
+      return {
+        dispose() {
+          selectionListeners.delete(fn)
+        },
+      }
+    },
     setReadonly,
     getView: () => view,
     async destroy() {
       listeners.clear()
+      selectionListeners.clear()
       await builder.destroy()
     },
   }
-}
-
-const HEADING_ESCAPES = /[#*_`[\]]/g
-
-function normalizeHeading(value: string): string {
-  return value.replace(HEADING_ESCAPES, '').replace(/\s+/g, ' ').trim().toLowerCase()
 }
 
 function isIdentityBreaking(plugin: Plugin): boolean {
@@ -194,16 +277,10 @@ function pluginKey(plugin: Plugin): string | undefined {
   return typeof key === 'string' ? key : undefined
 }
 
-function findHeading(doc: PMNode, heading: string): { pos: number; size: number } | null {
-  const wanted = normalizeHeading(heading)
-  if (wanted === '') return null
-  let result: { pos: number; size: number } | null = null
-  doc.descendants((node, pos) => {
-    if (result) return false
-    if (node.type.name !== 'heading') return true
-    if (normalizeHeading(node.textContent) !== wanted) return true
-    result = { pos, size: node.content.size }
-    return false
+function topLevelPosition(doc: PMNode, target: PMNode): number | undefined {
+  let found: number | undefined
+  doc.forEach((node, offset) => {
+    if (found === undefined && node === target) found = offset
   })
-  return result
+  return found
 }

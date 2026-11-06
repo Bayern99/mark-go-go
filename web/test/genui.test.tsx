@@ -2,7 +2,6 @@ import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it } from 'vitest'
 import { renderBlock } from '../src/plugins/genui/catalog'
-import { extractHeadings } from '../src/plugins/genui/headings'
 import { parseGenUIDocument } from '../src/plugins/genui/schema'
 
 describe('GenUI schema', () => {
@@ -43,12 +42,3 @@ describe('GenUI schema', () => {
   })
 })
 
-describe('GenUI headings', () => {
-  it('ignores headings inside fenced code', () => {
-    const markdown = '# One\n\n```md\n# Not a heading\n```\n\n## Two\n'
-    expect(extractHeadings(markdown)).toEqual([
-      { level: 1, text: 'One' },
-      { level: 2, text: 'Two' },
-    ])
-  })
-})

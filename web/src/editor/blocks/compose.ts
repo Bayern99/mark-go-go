@@ -13,6 +13,21 @@ export interface ComposeContext {
 }
 
 /**
+ * Where a top-level node's bytes landed in the composed Markdown. Offsets are
+ * UTF-16 offsets into the composed text.
+ */
+export interface ComposedBlock {
+  node: PMNode
+  start: number
+  end: number
+}
+
+export interface ComposedDocument {
+  text: string
+  blocks: ComposedBlock[]
+}
+
+/**
  * Compose Markdown from the live document.
  *
  * Unchanged top-level nodes are emitted as their original bytes (identity is
@@ -21,6 +36,15 @@ export interface ComposeContext {
  * neighbouring paragraph and a heading never rewrites the rest of the file.
  */
 export function composeDocument(doc: PMNode, ctx: ComposeContext): string {
+  return composeWithRanges(doc, ctx).text
+}
+
+/**
+ * Compose the document and report the source range of every top-level block in
+ * the composed text. Ranges are derived from the current text on every call, so
+ * edits and insertions elsewhere in the document move them correctly.
+ */
+export function composeWithRanges(doc: PMNode, ctx: ComposeContext): ComposedDocument {
   const nodes: PMNode[] = []
   doc.forEach((node) => {
     nodes.push(node)
@@ -28,13 +52,24 @@ export function composeDocument(doc: PMNode, ctx: ComposeContext): string {
 
   if (ctx.segments.length === 0) {
     const meaningful = nodes.filter((node) => !(node.type.name === 'paragraph' && node.content.size === 0))
-    if (meaningful.length === 0) return ctx.prefix + ctx.trailing
-    return `${meaningful.map((node) => renderBlock(node, undefined, ctx)).join('\n\n')}\n`
+    if (meaningful.length === 0) return { text: ctx.prefix + ctx.trailing, blocks: [] }
+
+    let text = ''
+    const blocks: ComposedBlock[] = []
+    for (let i = 0; i < meaningful.length; i += 1) {
+      if (i > 0) text += '\n\n'
+      const node = meaningful[i]
+      const start = text.length
+      text += renderBlock(node, undefined, ctx)
+      blocks.push({ node, start, end: text.length })
+    }
+    return { text: `${text}\n`, blocks }
   }
 
-  if (nodes.length === 0) return ''
+  if (nodes.length === 0) return { text: '', blocks: [] }
 
   let out = ''
+  const blocks: ComposedBlock[] = []
   for (let i = 0; i < nodes.length; i += 1) {
     const node = nodes[i]
     const origin = ctx.origins.get(node)
@@ -47,14 +82,26 @@ export function composeDocument(doc: PMNode, ctx: ComposeContext): string {
       out += '\n\n'
     }
 
+    const start = out.length
     out += renderBlock(node, origin, ctx)
+    blocks.push({ node, start, end: out.length })
   }
 
   const last = nodes[nodes.length - 1]
   const lastOrigin = ctx.origins.get(last)
-  if (ctx.segments.length === 0) return out
   out += lastOrigin && lastOrigin.segment.index === ctx.segments.length - 1 ? ctx.trailing : '\n'
-  return out
+  return { text: out, blocks }
+}
+
+/** The block whose composed range contains `offset`; nearby blocks for gaps. */
+export function blockAtOffset(blocks: ComposedBlock[], offset: number): ComposedBlock | undefined {
+  for (const block of blocks) {
+    if (offset >= block.start && offset < block.end) return block
+  }
+  for (const block of blocks) {
+    if (block.start >= offset) return block
+  }
+  return blocks[blocks.length - 1]
 }
 
 function renderBlock(node: PMNode, origin: BlockOrigin | undefined, ctx: ComposeContext): string {

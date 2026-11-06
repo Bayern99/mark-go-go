@@ -6,9 +6,10 @@
 |---|---|---|
 | Host（Go） | `main.go`、`documenthost.go` | `mygo.NewDocuments[string]`：文件读写（原始字节）、脏状态、自动保存、恢复副本、外部修改重载/冲突、File/Edit 菜单 |
 | Host Adapter（TS） | `web/src/host/` | `HostAdapter` 契约；`mygoHost.ts`（MyGo IPC）、`browserHost.ts`（纯浏览器内存实现） |
-| Editor Adapter | `web/src/editor/` | CrepeBuilder 装配；块级分段、锁定块、`compose` |
+| Editor Adapter | `web/src/editor/` | CrepeBuilder 装配；块级分段、锁定块、`compose`、源码偏移映射（`reveal` / `onSelectionChange`） |
 | Application Core | `web/src/core/` | `DocumentService`、`CommandRegistry`、`ViewRegistry`、`PluginRegistry` |
-| GenUI 插件 | `web/src/plugins/genui/` | 内部 schema + 组件白名单 + 固定 JSON；实时标题列表 |
+| Markdown 标题 | `web/src/markdown/headings.ts` | 共享标题提取：ATX + setext，排除代码块/HTML/frontmatter，去内联格式，带源偏移 |
+| GenUI 插件 | `web/src/plugins/genui/` | 内部 schema + 组件白名单 + 固定 JSON；标题列表与 source chips 使用共享标题模块 |
 
 ## Go ↔ 页面 IPC（服务 `DocumentHost`）
 
@@ -45,7 +46,27 @@ interface PluginContext {
 ```
 
 - `PluginRegistry.enable(id)` / `disable(id)`：注册表追踪所有经 ctx 产生的注册与订阅，`disable` 统一释放；`activate` 抛错时回滚。
-- 编辑器提供的命令：`editor.revealHeading(text: string)`。
+- 编辑器提供的命令：`editor.reveal(offset: number)`（偏移越界时返回 `false`）。
+
+## Editor Adapter（`web/src/editor/createEditor.ts`）
+
+```ts
+interface MarkdownEditor {
+  getMarkdown(): string
+  setMarkdown(text: string): void
+  onChange(fn: (markdown: string) => void): Disposable
+  reveal(offset: number): boolean
+  onSelectionChange(fn: (offset: number) => void): Disposable
+  setReadonly(readonly: boolean): void
+  getView(): EditorView
+  destroy(): Promise<void>
+}
+```
+
+- 跨模块位置一律是当前 Markdown 文本的 UTF-16 源偏移；ProseMirror 位置不出适配器。
+- WYSIWYG 模式下按顶层块粒度映射：`reveal(offset)` 滚动到并聚焦包含该偏移的顶层块开头（锁定块用节点选择），偏移超出当前 compose 文本时返回 `false`；`onSelectionChange` 在光标换块或编辑使该块偏移变化时，报告光标所在顶层块的源起始偏移。块范围每次由最新 compose 文本推导，所以块内编辑以及光标之前的增删不会让偏移失效。
+- `getMarkdown()` 返回当前 compose 文本（未改动块保持原始字节）。
+- 旧接口 `revealHeading(text)` 已删除；调用方（GenUI source chips）改为先经共享标题模块解析出偏移再 `editor.reveal`。
 
 ## 锁定块（按原文显示与写回，不可视化编辑）
 

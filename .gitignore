@@ -1,0 +1,15 @@
+# MyGo development app and builds
+.mygo/
+build/
+
+# The frontend
+web/node_modules/
+web/dist/
+
+.DS_Store
+
+# A plain `go build` writes the app binary here
+/markgogo
+
+# Vitest browser-mode failure artifacts
+web/.vitest/

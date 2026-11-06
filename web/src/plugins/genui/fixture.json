@@ -1,0 +1,37 @@
+{
+  "title": "Quarterly Report",
+  "blocks": [
+    {
+      "component": "Summary",
+      "title": "Highlights",
+      "items": [
+        {
+          "text": "The document is the only source of truth; the UI is a view of it.",
+          "source": { "heading": "Overview" }
+        },
+        {
+          "text": "Only edited blocks are re-serialized; untouched blocks keep their bytes.",
+          "source": { "heading": "Overview" }
+        }
+      ]
+    },
+    {
+      "component": "KeyValueTable",
+      "title": "Metrics",
+      "rows": [
+        { "key": "Documents edited", "value": "12", "source": { "heading": "Metrics" } },
+        { "key": "Round trips", "value": "100%", "source": { "heading": "Metrics" } },
+        { "key": "Blocks locked", "value": "3", "source": { "heading": "Metrics" } }
+      ]
+    },
+    {
+      "component": "Checklist",
+      "title": "Next steps",
+      "items": [
+        { "label": "Open a real file through the MyGo host", "checked": false, "source": { "heading": "Next steps" } },
+        { "label": "Toggle this panel off and on", "checked": false },
+        { "label": "Jump to a heading from the list", "checked": true, "source": { "heading": "Overview" } }
+      ]
+    }
+  ]
+}

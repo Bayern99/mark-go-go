@@ -1,0 +1,5 @@
+export { CommandRegistry } from './CommandRegistry'
+export { DocumentService } from './DocumentService'
+export { PluginRegistry } from './PluginRegistry'
+export { ViewRegistry } from './ViewRegistry'
+export type { AppPlugin, DocumentSnapshot, PluginContext, ViewRegistration } from './types'

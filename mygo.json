@@ -1,0 +1,19 @@
+{
+  "name": "Mark Go Go",
+  "slug": "mark-go-go",
+  "identifier": "dev.markgogo.editor",
+  "version": "0.1.0",
+  "devUrl": "http://localhost:5173",
+  "devCommand": "npm --prefix web run dev:web",
+  "buildCommand": "npm --prefix web run build:web",
+  "frontendDist": "web/dist",
+  "bindings": "web/src/host/generated/mygo.ts",
+  "out": "build",
+  "fileAssociations": [
+    {
+      "ext": ["md", "markdown"],
+      "name": "Markdown Document",
+      "mimeType": "text/markdown"
+    }
+  ]
+}

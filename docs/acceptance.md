@@ -24,14 +24,14 @@
 - 源码中外部 reload 替换文本、保持模式并重置历史；即使 reload 文本等于进入源码前的 compose 文本，回到 WYSIWYG 仍强制重建（撤销不会复活 reload 前状态）；只读文档在源码中只读。
 - App：头部按钮与 `⌘/`、`Ctrl+/` 均可切换；进入/退出无编辑时 `host.update` 从未调用；源码中改 frontmatter 并去掉 `[!NOTE]` 后 host 收到期望字节，回到 WYSIWYG 该块是可编辑引用而非锁定块，随后 WYSIWYG 编辑仍保留源码改动的字节；源码 undo；源码中 reload 保持模式；只读 host；GenUI chip 在源码模式按精确偏移跳转。
 
-打包应用手动检查（**PENDING manual**，需在 `go tool mygo build` 产物中执行）：
+打包应用手动检查（2026-11-06，`go tool mygo build` 产物）：
 
 | 检查 | 状态 |
 |---|---|
-| `⌘/` 在打包应用中切换源码 / WYSIWYG，焦点与滚动位置正确 | PENDING |
-| 源码模式内 `⌘Z` / `⇧⌘Z` 撤销重做（真实键盘） | PENDING |
-| 源码模式内中文输入法输入正常（真实 IME） | PENDING |
-| 源码模式编辑后自动保存：状态栏 Edited → Saved，文件字节与源码一致 | PENDING |
+| `⌘/` 在打包应用中切换源码 / WYSIWYG，焦点与滚动位置正确；不编辑来回切换后文件 sha256 不变 | 通过（自动化 UI 操作） |
+| 源码模式内 `⌘Z` / `⇧⌘Z` 撤销重做（真实键盘） | 通过（人工） |
+| 源码模式内中文输入法输入正常（真实 IME） | 通过（人工） |
+| 源码模式编辑后自动保存：状态栏 Edited → Saved | 通过（人工） |
 
 ## 大纲（#4）
 

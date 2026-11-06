@@ -37,7 +37,7 @@
 
 自动化（`web/test/outline.test.tsx` 在 App + `createBrowserHost` 接缝；`web/test/plugin-registry.test.ts` 在注册表接缝）：
 
-- 视图注册支持 `location: 'left' | 'right'`（缺省 right）；有左侧视图时左栏出现，右侧 GenUI 栏不受影响。
+- 视图注册的 `location` 是 `'left' | 'center'`：左侧视图进左栏，中央视图成为视图模式（见 #9）；没有右栏。
 - 大纲对 `test/fixtures/outline.md`（ATX H1–H3、setext H2、代码围栏内的伪标题、重复标题）只列真实标题且层级正确。
 - 点击每个条目（含第二个重复标题）把光标移到该标题：WYSIWYG 检查光标所在标题，源码模式检查 CodeMirror 精确偏移。
 - 新增 / 重命名 / 删除标题在防抖（300ms）后更新列表。
@@ -46,34 +46,41 @@
 - 点击条目会把标题滚动进视口并把焦点交给编辑器（WYSIWYG 与源码模式都验证），焦点不停留在大纲按钮上。
 - 源码模式中把光标移到后续章节时，对应条目高亮；光标在第一个标题之前时没有高亮。
 - 关闭后重新打开大纲：左栏与条目恢复，高亮继续跟随光标。
-- 预注册左右视图后挂载侧边栏：每个视图只挂载一次且只出现在自己的一侧；只有右侧视图时不渲染左栏。
+- 预注册左侧与中央视图后挂载侧栏：左侧视图只挂载一次，中央视图不会被侧栏挂载；只有中央视图时不渲染左栏。
 - App 在插件激活未完成时卸载：无 unhandled rejection，激活完成后才产生的注册被丢弃。
 - 移动光标高亮所在章节（`aria-current="true"`）。
 - 无标题文档显示空状态。
 - 关闭大纲插件：左栏消失、编辑仍写入 host；`PluginContext.editor.onSelectionChange` 监听随插件禁用被释放。
-- GenUI 面板不包含自己的标题列表。
+- GenUI 不包含自己的标题列表；在 GenUI 模式下大纲仍在左栏，点条目切回 Rich text 并把光标放到该标题。
 
-## GenUI 视图文件（#6）
+## 视图模式与 GenUI（#9，取代 #6 的右侧栏与 v1 格式）
 
-自动化（`web/test/genui.test.tsx` 在 App + `createBrowserHost` 接缝；`web/test/sections.test.ts` 用共享向量 `test/fixtures/section-vectors.json`；`web/test/plugin-registry.test.ts` 在注册表接缝）：
+自动化（`web/test/genui.test.tsx`、`web/test/app-source.test.tsx`、`web/test/outline.test.tsx` 在 App + `createBrowserHost` 接缝；`web/test/sections.test.ts` 用共享向量；`web/test/side-pane.test.tsx`、`web/test/plugin-registry.test.ts`）：
 
+- 头部三选一 `Rich text` / `Markdown` / `GenUI`；`⌘/`、`Ctrl+/` 在 Rich text 与 Markdown 之间切换。
 - 没有视图文件：显示 `No view yet.` 与禁用的 `Generate`。
-- `view-format.md` 中的 JSON 示例直接加载：三个章节无错误，`Summary` / `KeyValueTable` / `Checklist` 全部渲染，模型与时间显示。
-- 不在白名单的组件、缺字段的条目：只在所属章节列出问题，其余照常渲染；HTML 与 Markdown 按纯文本显示，不产生元素。
-- 非 JSON、版本不是 1：整个面板一条错误。
-- 视图文件被写入、替换、删除：面板随之更新。
-- 编辑某章节正文：只有该章节标 `Stale`；改掉某标题：该章节标 `Missing`、标题按钮禁用；改回原文恢复 `fresh`。
-- 点章节标题跳到该标题，重复标题按 `occurrence` 各跳各的（WYSIWYG）；源码模式跳到对应行并聚焦编辑器。
-- 关闭 GenUI：停止跟随视图文件；重新打开后读到关闭期间写入的视图。禁用插件释放 `ctx.viewFile.watch`。
+- `view-format.md` 的 v2 JSON 示例直接加载：替代编辑器占满中央，无错误，Tabs / Row / Card / Column / Text / KeyPoints 全部渲染，`Text` 里的 `**粗体**` 是 `<strong>`；切到 `Details` 标签页显示第二页。
+- 在视图里切换标签页不调用 `host.update`，文档不变为 edited。
+- 目录外组件（`Chart`）：只在其位置显示错误，其余照常渲染。
+- `Text` 里的链接、图片、`<b>`：不产生 `a` / `img` / `b` 元素；链接只显示文字。
+- 非 JSON、`version: 1`（提示「请重新生成」）、`version: 3`、缺 `a2ui`、引用不存在的组件：整个视图一条错误；写入、替换、删除视图文件时视图随之更新。
+- 只在 GenUI 模式显示时跟随视图文件：启动时 0 个跟随者，进入 GenUI 1 个，离开归 0；离开期间写入的视图在再次进入时显示。
+- Markdown 模式里的修改经过一次 GenUI 后仍在，并已写入 host；Rich text 的滚动位置在往返 GenUI 后恢复。
+- 视图模式按文档记忆：重新挂载 App 后回到 GenUI。
 - 章节范围与 `fnv1a32` 哈希与独立计算的向量一致（含 CJK、emoji、CRLF、重复标题、setext、代码围栏伪标题）。
 
-打包应用手动检查（2026-11-06，`go tool mygo build` 产物，`/tmp/mgg-view-check/report.md`）：
+前端体积（`npm run build`）：初始代码块 `index-*.js` 562.86 KB gzip（#6 时 563.5 KB）；GenUI 代码块 `GenUIView-*.js` 136.34 KB gzip + CSS 0.50 KB，只在进入 GenUI 时加载。
+
+打包应用手动检查（2026-11-06，`go tool mygo build` 产物，`/tmp/mdws-smoke/view6/report.md`）：
 
 | 检查 | 状态 |
 |---|---|
-| 文档旁手写 `.report.md.genui.json`（格式文档示例）打开即渲染三个章节 | 通过（自动化 UI 操作） |
-| 在磁盘上改写视图文件，面板随之更新 | 通过（自动化 UI 操作） |
-| 点击 GenUI 章节标题，光标跳到编辑器中的该标题，大纲同步高亮 | 通过（自动化 UI 操作） |
+| 头部三选一，切到 GenUI：格式文档示例占满中央，粗体、标签页、分栏、卡片、KeyPoints 正确 | 通过（自动化 UI 操作） |
+| 切到 `Details` 标签页 | 通过（自动化 UI 操作） |
+| GenUI 模式下点大纲 `Metrics`：切回 Rich text，光标在 Metrics 标题 | 通过（自动化 UI 操作） |
+| 退出后重新打开：直接回到 GenUI | 通过（自动化 UI 操作） |
+| 在磁盘上改写视图文件：未知组件只在其位置报错；写成 v1 显示「请重新生成」 | 通过（自动化 UI 操作） |
+| 以上全部操作后 `report.md` sha1 不变 | 通过 |
 
 ## 打包应用手动冒烟（`/tmp/mdws-smoke/report.md`：frontmatter、alert、setext 标题、`+` 列表、CJK 表格、带 meta 的代码块、引用式链接）
 
@@ -84,7 +91,7 @@
 | 输入文字 → 自动保存 | 状态栏 Edited → Saved；`diff` 只有新增的一行，其余字节不变（`+` 列表、setext 标题、`~~~` 代码块均保留） |
 | 外部进程改写文件（模拟 Agent） | 自动重载，版本 v1 → v2，状态 Saved，编辑器显示新内容 |
 | 退出 | AppleScript quit 正常退出，文件为外部写入的版本 |
-| GenUI 开关 | 面板读取文档旁的视图文件；关闭后停止跟随，开启后重新读取 |
+| GenUI 视图模式 | 见 #9 的打包检查 |
 | Outline 开关（人工） | 左栏标题列表随文档与光标更新，点击条目跳转；关闭后左栏消失 |
 | ⌘Z 撤销（人工，真实键盘） | 正常。Edit 菜单 Undo/Redo 显示禁用但不拦截按键，按键到达 ProseMirror |
 | 中文输入法（人工） | 正常 |

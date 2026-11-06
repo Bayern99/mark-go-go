@@ -26,10 +26,17 @@ function longDocument(): string {
   return `# Long\n\n${paragraphs.join('\n\n')}\n`
 }
 
-function modeToggle(container: HTMLElement): HTMLButtonElement {
-  const button = container.querySelector<HTMLButtonElement>('[data-testid="mode-toggle"]')
-  if (!button) throw new Error('mode toggle missing')
+function modeButton(container: HTMLElement, mode: 'richtext' | 'markdown'): HTMLButtonElement {
+  const button = container.querySelector<HTMLButtonElement>(`[data-testid="view-mode-${mode}"]`)
+  if (!button) throw new Error(`view mode ${mode} missing`)
   return button
+}
+
+/** The id of the checked view mode radio. */
+function checkedMode(container: HTMLElement): string | undefined {
+  return container
+    .querySelector<HTMLElement>('.view-mode[aria-checked="true"]')
+    ?.dataset.testid?.replace('view-mode-', '')
 }
 
 function sourceLine(container: HTMLElement, text: string): HTMLElement {
@@ -53,9 +60,9 @@ function isWithin(element: HTMLElement, scroller: HTMLElement): boolean {
 }
 
 async function enterSourceMode(container: HTMLElement): Promise<void> {
-  await userEvent.click(modeToggle(container))
+  await userEvent.click(modeButton(container, 'markdown'))
   await vi.waitFor(() => {
-    expect(modeToggle(container).getAttribute('aria-pressed')).toBe('true')
+    expect(checkedMode(container)).toBe('markdown')
     expect(visibleSource(container)).not.toBe('')
   })
 }
@@ -79,16 +86,14 @@ async function replaceSourceLine(
 }
 
 describe('App source mode', () => {
-  it('toggles with the toolbar control and shows the current mode', async () => {
+  it('switches with the view mode control and shows the current mode', async () => {
     const app = await mountApp(DOCUMENT)
     try {
-      expect(modeToggle(app.container).textContent).toBe('Rich text')
-      expect(modeToggle(app.container).getAttribute('aria-pressed')).toBe('false')
+      expect(checkedMode(app.container)).toBe('richtext')
 
-      await userEvent.click(modeToggle(app.container))
+      await userEvent.click(modeButton(app.container, 'markdown'))
       await vi.waitFor(() => {
-        expect(modeToggle(app.container).textContent).toBe('Source')
-        expect(modeToggle(app.container).getAttribute('aria-pressed')).toBe('true')
+        expect(checkedMode(app.container)).toBe('markdown')
         expect(visibleSource(app.container)).toBe(DOCUMENT)
       })
       expect(app.container.querySelector<HTMLElement>('.mgo-source-root')?.hidden).toBe(false)
@@ -103,13 +108,13 @@ describe('App source mode', () => {
     try {
       await toggleShortcut('Meta')
       await vi.waitFor(() => {
-        expect(modeToggle(app.container).textContent).toBe('Source')
+        expect(checkedMode(app.container)).toBe('markdown')
         expect(visibleSource(app.container)).toBe(DOCUMENT)
       })
 
       await toggleShortcut('Control')
       await vi.waitFor(() => {
-        expect(modeToggle(app.container).textContent).toBe('Rich text')
+        expect(checkedMode(app.container)).toBe('richtext')
         expect(app.container.querySelector<HTMLElement>('.mgo-wysiwyg-root')?.hidden).toBe(false)
         expect(app.container.querySelector<HTMLElement>('.mgo-source-root')?.hidden).toBe(true)
       })
@@ -125,9 +130,9 @@ describe('App source mode', () => {
       await enterSourceMode(app.container)
       expect(visibleSource(app.container)).toBe(DOCUMENT)
 
-      await userEvent.click(modeToggle(app.container))
+      await userEvent.click(modeButton(app.container, 'richtext'))
       await vi.waitFor(() => {
-        expect(modeToggle(app.container).getAttribute('aria-pressed')).toBe('false')
+        expect(checkedMode(app.container)).toBe('richtext')
       })
       await new Promise((resolve) => setTimeout(resolve, 350))
       expect(update).not.toHaveBeenCalled()
@@ -154,9 +159,9 @@ describe('App source mode', () => {
         timeout: 3000,
       })
 
-      await userEvent.click(modeToggle(app.container))
+      await userEvent.click(modeButton(app.container, 'richtext'))
       await vi.waitFor(() => {
-        expect(modeToggle(app.container).getAttribute('aria-pressed')).toBe('false')
+        expect(checkedMode(app.container)).toBe('richtext')
         expect(app.container.querySelector('[data-testid="editor-root"] .ProseMirror')).not.toBeNull()
         expect(app.container.querySelector('[data-testid="editor-root"] blockquote')).not.toBeNull()
       })
@@ -220,8 +225,7 @@ describe('App source mode', () => {
 
       await vi.waitFor(() => {
         expect(visibleSource(app.container)).toBe(reloaded)
-        expect(modeToggle(app.container).textContent).toBe('Source')
-        expect(modeToggle(app.container).getAttribute('aria-pressed')).toBe('true')
+        expect(checkedMode(app.container)).toBe('markdown')
       })
     } finally {
       await app.unmount()
@@ -271,18 +275,18 @@ describe('App source mode', () => {
       ;(scroller as HTMLElement).scrollTop = 0
       expect(isWithin(last as HTMLElement, scroller as HTMLElement)).toBe(false)
 
-      await userEvent.click(modeToggle(app.container))
+      await userEvent.click(modeButton(app.container, 'markdown'))
       await vi.waitFor(() => {
-        expect(modeToggle(app.container).getAttribute('aria-pressed')).toBe('true')
+        expect(checkedMode(app.container)).toBe('markdown')
         const line = caretLineInSource(app.container)
         expect(line?.textContent).toBe('Paragraph 299.')
         expect(isWithin(line as HTMLElement, scroller as HTMLElement)).toBe(true)
       })
 
       ;(scroller as HTMLElement).scrollTop = 0
-      await userEvent.click(modeToggle(app.container))
+      await userEvent.click(modeButton(app.container, 'richtext'))
       await vi.waitFor(() => {
-        expect(modeToggle(app.container).getAttribute('aria-pressed')).toBe('false')
+        expect(checkedMode(app.container)).toBe('richtext')
         const block = caretBlock(app.container)
         expect(block?.textContent).toBe('Paragraph 299.')
         expect(isWithin(block as HTMLElement, scroller as HTMLElement)).toBe(true)

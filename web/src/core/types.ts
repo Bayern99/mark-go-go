@@ -5,11 +5,16 @@ export interface DocumentSnapshot {
   version: number
 }
 
+/**
+ * Where a view shows: `left` is the sidebar; `center` makes the view a view
+ * mode the user picks instead of the editor, mounted only while it is shown.
+ */
+export type ViewLocation = 'left' | 'center'
+
 export interface ViewRegistration {
   id: string
   title: string
-  /** Sidebar the view lives in. Defaults to the right sidebar. */
-  location?: 'left' | 'right'
+  location: ViewLocation
   mount(el: HTMLElement): Disposable
 }
 

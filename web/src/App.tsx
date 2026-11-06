@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { SidePane } from './components/SidePane'
+import { useViews, ViewHost } from './components/ViewHost'
 import { CommandRegistry } from './core/CommandRegistry'
 import { DocumentService } from './core/DocumentService'
 import { EditorAccess } from './core/EditorAccess'
@@ -13,6 +15,87 @@ import { createOutlinePlugin } from './plugins/outline'
 
 const EDIT_DEBOUNCE_MS = 250
 
+/**
+ * What the center of the window shows: the editor as rich text or as
+ * Markdown, or the id of a center view a plugin registered.
+ */
+type ViewMode = 'richtext' | 'markdown' | (string & {})
+
+/** The view mode is remembered per document path in the page's storage. */
+const VIEW_MODE_KEY = 'mgo.viewMode:'
+
+function rememberedViewMode(path: string): string | null {
+  if (path === '') return null
+  try {
+    return window.localStorage.getItem(VIEW_MODE_KEY + path)
+  } catch {
+    return null
+  }
+}
+
+function rememberViewMode(path: string, mode: ViewMode): void {
+  if (path === '') return
+  try {
+    window.localStorage.setItem(VIEW_MODE_KEY + path, mode)
+  } catch {
+    // No storage: the mode is a convenience, the next window starts in rich text.
+  }
+}
+
+/**
+ * Switches the center between the editor and a center view. The editor
+ * stays mounted while hidden, so its state, selection and undo history
+ * survive; its scroll position is put back when it shows again.
+ */
+class ViewModeController {
+  private center: string | null = null
+  private savedScroll = 0
+
+  constructor(
+    private readonly setCenter: (id: string | null) => void,
+    private readonly editor: () => MarkdownEditor | null,
+    private readonly scroller: () => HTMLElement | null,
+  ) {}
+
+  current(): string | null {
+    return this.center
+  }
+
+  showCenter(id: string): void {
+    if (this.center === id) return
+    if (this.center === null) this.savedScroll = this.scroller()?.scrollTop ?? 0
+    this.center = id
+    this.setCenter(id)
+  }
+
+  /**
+   * Shows the editor, in `mode` when given. The editor is visible when this
+   * returns, so a reveal right after it can scroll and focus.
+   */
+  showEditor(mode?: EditorMode): void {
+    if (this.center !== null) {
+      this.center = null
+      flushSync(() => this.setCenter(null))
+      const scroller = this.scroller()
+      if (scroller) scroller.scrollTop = this.savedScroll
+    }
+    if (mode) this.editor()?.setMode(mode)
+  }
+
+  /** ⌘/: between rich text and Markdown; from a center view, the one the editor is not in. */
+  toggleEditorMode(): void {
+    const editor = this.editor()
+    if (!editor) return
+    this.showEditor(editor.getMode() === 'wysiwyg' ? 'source' : 'wysiwyg')
+  }
+
+  /** The shown center view went away (its plugin was disabled). */
+  dropCenter(): void {
+    this.center = null
+    this.setCenter(null)
+  }
+}
+
 export function App({
   host,
   plugins = [],
@@ -22,12 +105,15 @@ export function App({
   plugins?: AppPlugin[]
 }): React.ReactElement {
   const editorRoot = useRef<HTMLDivElement>(null)
+  const editorScroll = useRef<HTMLDivElement>(null)
   const editorRef = useRef<MarkdownEditor | null>(null)
   const [docState, setDocState] = useState<DocState | null>(null)
   const [version, setVersion] = useState(0)
   const [editorMode, setEditorMode] = useState<EditorMode>('wysiwyg')
+  const [centerViewId, setCenterViewId] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
   const [, refreshPlugins] = useReducer((value: number) => value + 1, 0)
+  const restored = useRef(false)
 
   const services = useMemo(() => {
     const documents = new DocumentService()
@@ -38,6 +124,23 @@ export function App({
     return { documents, commands, views, editor, plugins }
   }, [host])
 
+  const [modes] = useState(
+    () =>
+      new ViewModeController(
+        setCenterViewId,
+        () => editorRef.current,
+        () => editorScroll.current,
+      ),
+  )
+
+  const centerViews = useViews(services.views, 'center')
+  const centerView = centerViews.find((view) => view.id === centerViewId) ?? null
+  const viewMode: ViewMode = centerView ? centerView.id : editorMode === 'source' ? 'markdown' : 'richtext'
+
+  useEffect(() => {
+    if (centerViewId !== null && centerView === null) modes.dropCenter()
+  }, [centerViewId, centerView, modes])
+
   useEffect(() => {
     let disposed = false
     const cleanups: Disposable[] = []
@@ -46,11 +149,10 @@ export function App({
     const handleModeShortcut = (event: KeyboardEvent) => {
       if (event.repeat) return
       if (!(event.metaKey || event.ctrlKey) || event.altKey || event.key !== '/') return
-      const editor = editorRef.current
-      if (!editor) return
+      if (!editorRef.current) return
       event.preventDefault()
       event.stopPropagation()
-      editor.toggleMode()
+      modes.toggleEditorMode()
     }
 
     window.addEventListener('keydown', handleModeShortcut, true)
@@ -88,13 +190,16 @@ export function App({
       cleanups.push(
         services.commands.register('editor.reveal', (offset) => {
           const value = Number(offset)
-          return Number.isFinite(value) ? editor.reveal(value) : false
+          if (!Number.isFinite(value)) return false
+          // Navigating to the source from a center view lands in rich text.
+          if (modes.current() !== null) modes.showEditor('wysiwyg')
+          return editor.reveal(value)
         }),
       )
 
       cleanups.push(
         services.commands.register('editor.toggleSourceMode', () => {
-          editor.toggleMode()
+          modes.toggleEditorMode()
           return editor.getMode()
         }),
       )
@@ -162,18 +267,44 @@ export function App({
       void editorRef.current?.destroy()
       editorRef.current = null
     }
-  }, [host, services])
+  }, [host, services, modes])
+
+  // Reopen in the mode the document was last shown in, once its views exist.
+  useLayoutEffect(() => {
+    if (!ready || restored.current || !docState) return
+    restored.current = true
+    const saved = rememberedViewMode(docState.path)
+    if (saved === 'markdown') editorRef.current?.setMode('source')
+    else if (saved && services.views.getAll().some((v) => v.location === 'center' && v.id === saved)) {
+      modes.showCenter(saved)
+    }
+  }, [ready, docState, services, modes])
+
+  useEffect(() => {
+    if (restored.current && docState) rememberViewMode(docState.path, viewMode)
+  }, [viewMode, docState])
 
   const pluginEnabled = (id: string) =>
     services.plugins.list().find((p) => p.id === id)?.enabled ?? false
 
-  const genuiEnabled = pluginEnabled('genui')
   const outlineEnabled = pluginEnabled('outline')
 
   const togglePlugin = (id: string) => {
     if (pluginEnabled(id)) services.plugins.disable(id)
     else void services.plugins.enable(id).then(refreshPlugins)
     refreshPlugins()
+  }
+
+  const modeChoices = [
+    { id: 'richtext', label: 'Rich text', title: 'Rich text (⌘/)' },
+    { id: 'markdown', label: 'Markdown', title: 'Markdown source (⌘/)' },
+    ...centerViews.map((view) => ({ id: view.id, label: view.title, title: view.title })),
+  ]
+
+  const chooseMode = (id: string) => {
+    if (id === 'richtext') modes.showEditor('wysiwyg')
+    else if (id === 'markdown') modes.showEditor('source')
+    else modes.showCenter(id)
   }
 
   return (
@@ -185,28 +316,23 @@ export function App({
         </div>
         <div className="header-actions">
           <span className="version-chip">v{version}</span>
-          <button
-            type="button"
-            className="toggle-button"
-            data-testid="mode-toggle"
-            data-mode={editorMode}
-            aria-pressed={editorMode === 'source'}
-            title="Toggle source mode (⌘/)"
-            onClick={() => editorRef.current?.toggleMode()}
-            disabled={!ready}
-          >
-            {editorMode === 'source' ? 'Source' : 'Rich text'}
-          </button>
-          <button
-            type="button"
-            className="toggle-button"
-            data-testid="genui-toggle"
-            aria-pressed={genuiEnabled}
-            onClick={() => togglePlugin('genui')}
-            disabled={!ready}
-          >
-            GenUI: {genuiEnabled ? 'On' : 'Off'}
-          </button>
+          <div className="view-modes" role="radiogroup" aria-label="View mode">
+            {modeChoices.map((choice) => (
+              <button
+                key={choice.id}
+                type="button"
+                role="radio"
+                className="view-mode"
+                data-testid={`view-mode-${choice.id}`}
+                aria-checked={viewMode === choice.id}
+                title={choice.title}
+                onClick={() => chooseMode(choice.id)}
+                disabled={!ready}
+              >
+                {choice.label}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             className="toggle-button"
@@ -233,13 +359,22 @@ export function App({
       {docState?.readOnly ? <div className="banner banner-readonly">Read only</div> : null}
 
       <div className="app-body">
-        <SidePane views={services.views} location="left" />
-        <main className="editor-pane">
-          <div className="editor-scroll">
+        <SidePane views={services.views} />
+        <main className="editor-pane" hidden={centerView !== null}>
+          <div className="editor-scroll" ref={editorScroll}>
             <div className="crepe-root" ref={editorRoot} data-testid="editor-root" />
           </div>
         </main>
-        <SidePane views={services.views} location="right" />
+        {centerView ? (
+          <section
+            className="center-pane"
+            data-testid="center-pane"
+            data-view-id={centerView.id}
+            aria-label={centerView.title}
+          >
+            <ViewHost key={centerView.id} view={centerView} className="center-view" />
+          </section>
+        ) : null}
       </div>
 
       <footer className="status-bar">

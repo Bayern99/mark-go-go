@@ -3,9 +3,9 @@ import { createRoot } from 'react-dom/client'
 import { describe, expect, it } from 'vitest'
 import { SidePane } from '../src/components/SidePane'
 import { ViewRegistry } from '../src/core/ViewRegistry'
-import type { ViewRegistration } from '../src/core/types'
+import type { ViewLocation, ViewRegistration } from '../src/core/types'
 
-function makeView(id: string, location: 'left' | 'right' | undefined, mounts: string[]): ViewRegistration {
+function makeView(id: string, location: ViewLocation, mounts: string[]): ViewRegistration {
   return {
     id,
     title: id,
@@ -18,17 +18,12 @@ function makeView(id: string, location: 'left' | 'right' | undefined, mounts: st
   }
 }
 
-function renderPanes(views: ViewRegistry) {
+function renderPane(views: ViewRegistry) {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
   flushSync(() => {
-    root.render(
-      <>
-        <SidePane views={views} location="left" />
-        <SidePane views={views} location="right" />
-      </>,
-    )
+    root.render(<SidePane views={views} />)
   })
   return {
     container,
@@ -40,37 +35,31 @@ function renderPanes(views: ViewRegistry) {
 }
 
 describe('SidePane', () => {
-  it('mounts each pre-registered view exactly once in its own pane', () => {
+  it('mounts left views once and never mounts center views', () => {
     const views = new ViewRegistry()
     const mounts: string[] = []
     views.register(makeView('left.view', 'left', mounts))
-    views.register(makeView('right.view', undefined, mounts))
-    const rendered = renderPanes(views)
+    views.register(makeView('center.view', 'center', mounts))
+    const rendered = renderPane(views)
     try {
-      expect([...mounts].sort()).toEqual(['left.view', 'right.view'])
-
+      expect(mounts).toEqual(['left.view'])
       const left = rendered.container.querySelector('[data-testid="left-pane"]')
-      const right = rendered.container.querySelector('[data-testid="side-pane"]')
       expect(left?.querySelectorAll('[data-view-id]')).toHaveLength(1)
       expect(left?.querySelector('[data-view-id="left.view"]')).not.toBeNull()
-      expect(left?.querySelector('[data-view-id="right.view"]')).toBeNull()
-      expect(right?.querySelectorAll('[data-view-id]')).toHaveLength(1)
-      expect(right?.querySelector('[data-view-id="right.view"]')).not.toBeNull()
-      expect(right?.querySelector('[data-view-id="left.view"]')).toBeNull()
+      expect(rendered.container.querySelector('[data-view-id="center.view"]')).toBeNull()
     } finally {
       rendered.cleanup()
     }
   })
 
-  it('renders no left pane when only right views are registered', () => {
+  it('renders no pane when only center views are registered', () => {
     const views = new ViewRegistry()
     const mounts: string[] = []
-    views.register(makeView('right.view', 'right', mounts))
-    const rendered = renderPanes(views)
+    views.register(makeView('center.view', 'center', mounts))
+    const rendered = renderPane(views)
     try {
-      expect(mounts).toEqual(['right.view'])
+      expect(mounts).toEqual([])
       expect(rendered.container.querySelector('[data-testid="left-pane"]')).toBeNull()
-      expect(rendered.container.querySelector('[data-view-id="right.view"]')).not.toBeNull()
     } finally {
       rendered.cleanup()
     }

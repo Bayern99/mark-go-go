@@ -1,67 +1,19 @@
-import { useEffect, useRef, useState } from 'react'
 import type { ViewRegistry } from '../core/ViewRegistry'
-import type { ViewRegistration } from '../core/types'
+import { useViews, ViewHost } from './ViewHost'
 
-type ViewLocation = 'left' | 'right'
-
-function selectSideViews(views: ViewRegistry, location: ViewLocation): ViewRegistration[] {
-  return views.getAll().filter((view) => (view.location ?? 'right') === location)
-}
-
-/** Live view registrations for one sidebar, filtered by location. */
-function useSideViews(views: ViewRegistry, location: ViewLocation): ViewRegistration[] {
-  const [entries, setEntries] = useState<ViewRegistration[]>(() =>
-    selectSideViews(views, location),
-  )
-
-  useEffect(() => {
-    const select = () => {
-      setEntries(selectSideViews(views, location))
-    }
-    select()
-    const subscription = views.onDidChange(select)
-    return () => subscription.dispose()
-  }, [views, location])
-
-  return entries
-}
-
-export function SidePane({
-  views,
-  location,
-}: {
-  views: ViewRegistry
-  location: ViewLocation
-}): React.ReactElement | null {
-  const entries = useSideViews(views, location)
+/** The left sidebar: every `location: 'left'` view, or nothing when there is none. */
+export function SidePane({ views }: { views: ViewRegistry }): React.ReactElement | null {
+  const entries = useViews(views, 'left')
   if (entries.length === 0) return null
 
   return (
-    <aside
-      className={`side-pane side-pane-${location}`}
-      data-testid={location === 'left' ? 'left-pane' : 'side-pane'}
-    >
+    <aside className="side-pane" data-testid="left-pane">
       {entries.map((view) => (
-        <RegisteredView key={view.id} view={view} />
+        <section key={view.id} className="side-view" data-view-id={view.id} aria-label={view.title}>
+          <header className="side-view-header">{view.title}</header>
+          <ViewHost view={view} className="side-view-body" />
+        </section>
       ))}
     </aside>
-  )
-}
-
-function RegisteredView({ view }: { view: ViewRegistration }): React.ReactElement {
-  const host = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const element = host.current
-    if (!element) return
-    const mounted = view.mount(element)
-    return () => mounted.dispose()
-  }, [view])
-
-  return (
-    <section className="side-view" data-view-id={view.id} aria-label={view.title}>
-      <header className="side-view-header">{view.title}</header>
-      <div className="side-view-body" ref={host} />
-    </section>
   )
 }

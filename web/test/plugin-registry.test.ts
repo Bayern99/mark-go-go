@@ -73,6 +73,7 @@ function setup() {
       ctx.views.register({
         id: 'demo.view',
         title: 'Demo view',
+        location: 'left',
         mount(el) {
           effects.viewMounts += 1
           el.textContent = 'demo view'
@@ -190,6 +191,7 @@ describe('PluginRegistry', () => {
         ctx.views.register({
           id: 'slow.view',
           title: 'Slow view',
+          location: 'left',
           mount() {
             return { dispose() {} }
           },

@@ -12,6 +12,7 @@ export interface MdastNode {
   meta?: string | null
   lang?: string | null
   alt?: string | null
+  ordered?: boolean | null
   children?: MdastNode[]
   position?: {
     start: { offset?: number }

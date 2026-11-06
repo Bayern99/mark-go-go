@@ -1,35 +1,47 @@
-import { createRoot } from 'react-dom/client'
 import type { AppPlugin, PluginContext } from '../../core/types'
-import { GenUIPanel, GenUIStore } from './GenUIPanel'
-import './genui.css'
+import type { Disposable } from '../../host/types'
 
+/**
+ * The GenUI view mode. Nothing of it loads until the view is shown: the
+ * module with A2UI is imported on first mount, and the view file is only
+ * watched while the view is mounted.
+ */
 export function createGenUIPlugin(): AppPlugin {
   return {
     id: 'genui',
     title: 'GenUI',
     activate(ctx: PluginContext) {
-      const store = new GenUIStore(ctx.documents.snapshot().text)
-
-      ctx.subscriptions.push(ctx.documents.onDidChange((snapshot) => store.schedule(snapshot.text)))
-      ctx.subscriptions.push({ dispose: () => store.cancelPending() })
-      // Tracked by the registry: disabling the plugin stops the host's watch.
-      ctx.viewFile.watch((snap) => store.setView(snap))
-
       ctx.views.register({
-        id: 'genui.panel',
-        title: 'Generated UI',
-        mount(el: HTMLElement) {
-          const root = createRoot(el)
-          root.render(<GenUIPanel ctx={ctx} store={store} />)
-          return {
-            dispose() {
-              // Defer: React may be committing the host tree when the panel is
-              // removed, and a nested root must not unmount during that render.
-              queueMicrotask(() => root.unmount())
-            },
-          }
-        },
+        id: 'genui',
+        title: 'GenUI',
+        location: 'center',
+        mount: (el) => mountLazily(el, ctx),
       })
+    },
+  }
+}
+
+function mountLazily(el: HTMLElement, ctx: PluginContext): Disposable {
+  let inner: Disposable | undefined
+  let disposed = false
+  void import('./GenUIView').then(
+    ({ mountGenUIView }) => {
+      if (!disposed) inner = mountGenUIView(el, ctx)
+    },
+    (error: unknown) => {
+      if (disposed) return
+      const message = error instanceof Error ? error.message : String(error)
+      const alert = document.createElement('p')
+      alert.className = 'genui-file-error'
+      alert.setAttribute('role', 'alert')
+      alert.textContent = `GenUI could not load: ${message}`
+      el.replaceChildren(alert)
+    },
+  )
+  return {
+    dispose() {
+      disposed = true
+      inner?.dispose()
     },
   }
 }

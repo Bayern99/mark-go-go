@@ -1,8 +1,9 @@
-.genui-panel {
+.genui-view {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--mgo-text, #1c1c1c);
 }
 
@@ -38,7 +39,8 @@
 }
 
 .genui-file-error,
-.genui-problems {
+.genui-problems,
+.genui-unknown {
   margin: 0;
   border: 1px solid #d9a7a7;
   border-radius: 8px;
@@ -50,67 +52,6 @@
 
 .genui-problems {
   padding-left: 28px;
-}
-
-.genui-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.genui-section-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.genui-section-header h3 {
-  margin: 0;
-  min-width: 0;
-  font-size: 14px;
-  letter-spacing: -0.01em;
-}
-
-.genui-heading {
-  border: 0;
-  padding: 0;
-  background: none;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.genui-heading:hover:not(:disabled) {
-  color: var(--mgo-accent, #2f6f62);
-}
-
-.genui-heading:disabled {
-  cursor: default;
-}
-
-.genui-section[data-status='missing'] .genui-heading {
-  text-decoration: line-through;
-}
-
-.genui-status {
-  flex: none;
-  border-radius: 999px;
-  padding: 1px 8px;
-  font-size: 10px;
-  background: #fbf1dc;
-  color: #8a5a12;
-}
-
-.genui-section[data-status='missing'] .genui-status {
-  background: #f3eded;
-  color: #9a3b3b;
-}
-
-.genui-section[data-status='stale'] .genui-block,
-.genui-section[data-status='missing'] .genui-block {
-  opacity: 0.6;
 }
 
 .genui-block {
@@ -129,40 +70,19 @@
   color: var(--mgo-muted, #6b6b6b);
 }
 
-.genui-summary,
-.genui-checklist {
+.genui-keypoints ul {
   margin: 0;
-  padding: 0;
-  list-style: none;
+  padding-left: 18px;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.genui-checklist label {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
+.genui-markdown-heading {
+  font-weight: 600;
 }
 
-.genui-checklist input {
-  margin-top: 2px;
-}
-
-.genui-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-}
-
-.genui-table th,
-.genui-table td {
-  text-align: left;
-  padding: 4px 6px;
-  border-bottom: 1px solid var(--mgo-border, #eeeae3);
-}
-
-.genui-table th {
-  font-weight: 500;
-  color: var(--mgo-muted, #6b6b6b);
+.genui-link {
+  text-decoration: underline;
+  text-decoration-color: var(--mgo-border, #e2ded7);
 }

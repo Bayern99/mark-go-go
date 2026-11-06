@@ -29,7 +29,7 @@ afterEach(async () => {
 })
 
 describe('layout at the default window size', () => {
-  it('keeps a readable text column with both sidebars open', async () => {
+  it('keeps a readable text column with the outline open', async () => {
     await page.viewport(WINDOW.width, WINDOW.height)
     mounted = await mountApp(DOCUMENT)
 

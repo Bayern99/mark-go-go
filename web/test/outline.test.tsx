@@ -53,14 +53,14 @@ function textLeft(button: Element): number {
   return range.getBoundingClientRect().left
 }
 
-function modeToggle() {
-  return page.getByTestId('mode-toggle')
+function viewMode(mode: 'richtext' | 'markdown' | 'genui') {
+  return page.getByTestId(`view-mode-${mode}`)
 }
 
 async function enterSourceMode(): Promise<void> {
-  await modeToggle().click()
+  await viewMode('markdown').click()
   await vi.waitFor(() => {
-    expect(modeToggle().element().getAttribute('aria-pressed')).toBe('true')
+    expect(viewMode('markdown').element().getAttribute('aria-checked')).toBe('true')
     expect(sourceText(document.body)).not.toBe('')
   })
 }
@@ -137,15 +137,24 @@ describe('Outline plugin', () => {
     }
   })
 
-  it('opens a left sidebar while GenUI stays on the right', async () => {
+  it('stays in the left sidebar in GenUI mode and jumps back to rich text', async () => {
     const app = await mountApp(fixture)
     try {
+      await viewMode('genui').click()
+      await vi.waitFor(() => {
+        expect(page.getByTestId('center-pane').query()).not.toBeNull()
+        expect(app.container.querySelector<HTMLElement>('.editor-pane')?.hidden).toBe(true)
+      })
       const left = page.getByTestId('left-pane')
-      const right = page.getByTestId('side-pane')
       expect(left.getByRole('navigation', { name: 'Document outline' }).query()).not.toBeNull()
-      expect(left.getByRole('region', { name: 'Generated UI' }).query()).toBeNull()
-      expect(right.getByRole('region', { name: 'Generated UI' }).query()).not.toBeNull()
-      expect(right.getByRole('navigation', { name: 'Document outline' }).query()).toBeNull()
+      expect(left.getByTestId('genui-view').query()).toBeNull()
+
+      await outlineButtons().nth(2).click()
+      await vi.waitFor(() => {
+        expect(viewMode('richtext').element().getAttribute('aria-checked')).toBe('true')
+        expect(page.getByTestId('center-pane').query()).toBeNull()
+        expect(caretHeadingIndex()).toBe(2)
+      })
     } finally {
       await app.unmount()
     }
@@ -352,7 +361,6 @@ describe('Outline plugin', () => {
       await vi.waitFor(() => {
         expect(page.getByTestId('outline-toggle').element().getAttribute('aria-pressed')).toBe('false')
         expect(page.getByTestId('left-pane').query()).toBeNull()
-        expect(page.getByTestId('side-pane').query()).not.toBeNull()
       })
 
       await enterSourceMode()

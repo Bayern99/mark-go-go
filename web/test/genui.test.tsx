@@ -1,12 +1,12 @@
-import { page, userEvent } from 'vitest/browser'
+import '../src/styles.css'
+import { page } from 'vitest/browser'
 import { describe, expect, it, vi } from 'vitest'
 import { createBrowserHost } from '../src/host/browserHost'
 import type { HostAdapter } from '../src/host/types'
-import { extractSections } from '../src/markdown/sections'
-import { GENUI_DEBOUNCE_MS } from '../src/plugins/genui/GenUIPanel'
+import { isRecord } from '../src/lib/guards'
 import formatDoc from '../src/plugins/genui/view-format.md?raw'
 import { mountApp } from './helpers/app'
-import { caretLineInSource, getSourceView, replaceSourceText } from './helpers/source'
+import { getSourceView, replaceSourceText, visibleSource } from './helpers/source'
 
 const DOCUMENT = `# Overview
 
@@ -28,81 +28,56 @@ function formatExample(): string {
   return match[1]
 }
 
-interface ViewInput {
-  heading: string
-  occurrence?: number
-  sourceHash?: string
-  blocks: unknown[]
+type Component = Record<string, unknown> & { id: string }
+
+/** The format example with its component list changed by `edit`. */
+function exampleWith(edit: (components: Component[]) => Component[]): string {
+  const file: unknown = JSON.parse(formatExample())
+  if (!isRecord(file) || !Array.isArray(file.a2ui)) throw new Error('unexpected example shape')
+  const first: unknown = file.a2ui[0]
+  if (!isRecord(first) || !isRecord(first.createSurface)) throw new Error('unexpected example shape')
+  const components = first.createSurface.components
+  if (!Array.isArray(components)) throw new Error('unexpected example shape')
+  first.createSurface.components = edit(components.filter(isComponent))
+  return JSON.stringify(file)
 }
 
-function viewFile(sections: ViewInput[]): string {
-  return JSON.stringify({ version: 1, sections })
+function isComponent(value: unknown): value is Component {
+  return isRecord(value) && typeof value.id === 'string'
 }
 
-/** A view whose sections carry the hashes of `markdown`, as the host writes them. */
-function stampedView(markdown: string, sections: ViewInput[]): string {
-  const current = extractSections(markdown)
-  return viewFile(
-    sections.map((section) => {
-      const match = current.find(
-        (candidate) =>
-          candidate.heading.text === section.heading &&
-          candidate.occurrence === (section.occurrence ?? 1),
-      )
-      if (!match) throw new Error(`no section ${section.heading}`)
-      return { ...section, sourceHash: match.hash }
-    }),
-  )
+function replaceComponent(id: string, next: Component): (components: Component[]) => Component[] {
+  return (components) => components.map((component) => (component.id === id ? next : component))
 }
 
-const SUMMARY = { component: 'Summary', items: [{ text: 'A point.' }] }
+function viewMode(mode: 'richtext' | 'markdown' | 'genui') {
+  return page.getByTestId(`view-mode-${mode}`)
+}
+
+async function showMode(mode: 'richtext' | 'markdown' | 'genui'): Promise<void> {
+  await viewMode(mode).click()
+  await vi.waitFor(() => expect(viewMode(mode)).toHaveAttribute('aria-checked', 'true'))
+}
 
 function genui() {
-  return page.getByRole('region', { name: 'Generated UI' })
+  return page.getByTestId('genui-view')
 }
 
-/** Each rendered section's heading and status badge, as the reader sees them. */
-function sectionRows(container: HTMLElement): Array<[string, string]> {
-  return Array.from(container.querySelectorAll<HTMLElement>('.genui-section')).map((section) => [
-    section.querySelector('.genui-heading')?.textContent ?? '',
-    section.querySelector('.genui-status')?.textContent ?? '',
-  ])
+function surface(container: HTMLElement): HTMLElement {
+  const element = container.querySelector<HTMLElement>('.genui-surface')
+  if (!element) throw new Error('no rendered view')
+  return element
 }
 
-function sectionNamed(container: HTMLElement, heading: string): HTMLElement {
-  const section = Array.from(container.querySelectorAll<HTMLElement>('.genui-section')).find(
-    (candidate) => candidate.querySelector('.genui-heading')?.textContent === heading,
-  )
-  if (!section) throw new Error(`section not rendered: ${heading}`)
-  return section
+function reportHost(view?: string) {
+  return createBrowserHost(DOCUMENT, 'report.md', view === undefined ? {} : { view })
 }
 
-async function enterSourceMode(container: HTMLElement): Promise<void> {
-  const toggle = container.querySelector<HTMLButtonElement>('[data-testid="mode-toggle"]')
-  if (!toggle) throw new Error('mode toggle missing')
-  await userEvent.click(toggle)
-  await vi.waitFor(() => expect(toggle.getAttribute('aria-pressed')).toBe('true'))
-}
-
-function editorHeadings(container: HTMLElement): HTMLElement[] {
-  return Array.from(
-    container.querySelectorAll<HTMLElement>(
-      '[data-testid="editor-root"] h1, [data-testid="editor-root"] h2',
-    ),
-  )
-}
-
-/** Index of the editor heading whose DOM contains the caret, or -1. */
-function caretHeadingIndex(container: HTMLElement): number {
-  const anchor: Node | null = window.getSelection()?.anchorNode ?? null
-  if (!anchor) return -1
-  return editorHeadings(container).findIndex((heading) => heading.contains(anchor))
-}
-
-describe('GenUI view file', () => {
+describe('GenUI view mode', () => {
   it('offers a disabled Generate button when the document has no view', async () => {
     const app = await mountApp(DOCUMENT)
     try {
+      await showMode('genui')
       await expect.element(genui().getByText('No view yet.')).toBeVisible()
       await expect.element(genui().getByRole('button', { name: 'Generate' })).toBeDisabled()
       await expect.element(genui().getByText('coming soon', { exact: false })).toBeVisible()
@@ -111,239 +86,131 @@ describe('GenUI view file', () => {
     }
   })
 
-  it('renders the format document example with every component', async () => {
-    const markdown = '# Overview\n\nA.\n\n# Metrics\n\nB.\n\n# Next steps\n\nC.\n'
-    const app = await mountApp(markdown, createBrowserHost(markdown, 'report.md', { view: formatExample() }))
+  it('renders the format document example in place of the editor', async () => {
+    const app = await mountApp(DOCUMENT, reportHost(formatExample()))
     try {
-      await vi.waitFor(() =>
-        expect(sectionRows(app.container)).toEqual([
-          ['Overview', ''],
-          ['Metrics', ''],
-          ['Next steps', ''],
-        ]),
-      )
-      const panel = genui()
-      expect(panel.getByRole('alert').query()).toBeNull()
-      await expect.element(panel.getByText('gemini-3.8-flash', { exact: false })).toBeVisible()
+      await showMode('genui')
+      await vi.waitFor(() => expect(genui()).toHaveAttribute('data-state', 'view'))
+      expect(app.container.querySelector<HTMLElement>('.editor-pane')?.hidden).toBe(true)
+      expect(genui().getByRole('alert').query()).toBeNull()
+      await expect.element(genui().getByText('gemini-3.8-flash', { exact: false })).toBeVisible()
 
-      await expect.element(panel.getByRole('heading', { name: 'In short' })).toBeVisible()
-      await expect
-        .element(panel.getByText('Only the edited block is written again.'))
-        .toBeVisible()
+      await expect.element(genui().getByText('In short')).toBeVisible()
+      await expect.element(genui().getByText('Only the edited block is written again.')).toBeVisible()
+      await expect.element(genui().getByText('Open a real file through the host.')).toBeVisible()
+      const bold = surface(app.container).querySelector('strong')
+      expect(bold?.textContent).toBe('untouched blocks')
 
-      await expect.element(panel.getByRole('rowheader', { name: 'Round trips' })).toBeVisible()
-      await expect.element(panel.getByRole('cell', { name: '100%' })).toBeVisible()
-
-      await expect
-        .element(panel.getByRole('checkbox', { name: 'Open a real file through the host' }))
-        .toBeChecked()
-      await expect
-        .element(panel.getByRole('checkbox', { name: 'Scroll to a heading from the panel' }))
-        .not.toBeChecked()
+      await genui().getByText('Details').click()
+      await expect.element(genui().getByText('100% round trips')).toBeVisible()
     } finally {
       await app.unmount()
     }
   })
 
-  it('reports a bad component in its own section and still renders the rest', async () => {
-    const view = viewFile([
-      {
-        heading: 'Overview',
-        blocks: [
-          { component: 'Script', html: '<img src=x onerror="alert(1)">' },
-          { component: 'Summary', items: [{ text: 'Kept point.' }, { txt: 'typo' }] },
+  it('changes only the display when the reader uses the view', async () => {
+    const host = reportHost(formatExample())
+    const app = await mountApp(DOCUMENT, host)
+    const update = vi.spyOn(host, 'update')
+    try {
+      await showMode('genui')
+      await genui().getByText('Details').click()
+      await expect.element(genui().getByText('Figures')).toBeVisible()
+      await genui().getByText('Summary').click()
+      await expect.element(genui().getByText('In short')).toBeVisible()
+
+      await new Promise((resolve) => setTimeout(resolve, 350))
+      expect(update).not.toHaveBeenCalled()
+      expect(host.getState().edited).toBe(false)
+    } finally {
+      await app.unmount()
+    }
+  })
+
+  it('shows an unknown component as an error where it is and renders the rest', async () => {
+    const view = exampleWith(
+      replaceComponent('nextPoints', { id: 'nextPoints', component: 'Chart', series: [1, 2] }),
+    )
+    const app = await mountApp(DOCUMENT, reportHost(view))
+    try {
+      await showMode('genui')
+      await vi.waitFor(() => expect(genui()).toHaveAttribute('data-state', 'view'))
+      const unknown = app.container.querySelector('.genui-unknown')
+      expect(unknown?.textContent).toContain('“Chart”')
+      expect(unknown?.closest('.genui-surface')).not.toBeNull()
+      await expect.element(genui().getByText('Only the edited block is written again.')).toBeVisible()
+    } finally {
+      await app.unmount()
+    }
+  })
+
+  it('shows Markdown text without links, images or HTML', async () => {
+    const view = exampleWith(
+      replaceComponent('lead', {
+        id: 'lead',
+        component: 'Text',
+        text: 'See [the docs](https://example.test) ![chart](https://example.test/c.png) <b>raw</b> **bold** and `code`.',
+      }),
+    )
+    const app = await mountApp(DOCUMENT, reportHost(view))
+    try {
+      await showMode('genui')
+      await expect.element(genui().getByText('the docs')).toBeVisible()
+      const shown = surface(app.container)
+      expect(shown.querySelector('a, img, b')).toBeNull()
+      expect(shown.querySelector('.genui-link')?.textContent).toBe('the docs')
+      expect(shown.querySelector('strong')?.textContent).toBe('bold')
+      expect(shown.querySelector('code')?.textContent).toBe('code')
+    } finally {
+      await app.unmount()
+    }
+  })
+
+  it('follows the view file: errors, older views, removal', async () => {
+    const host = reportHost()
+    const app = await mountApp(DOCUMENT, host)
+    try {
+      await showMode('genui')
+      await vi.waitFor(() => expect(genui()).toHaveAttribute('data-state', 'none'))
+
+      const cases: Array<[string, string]> = [
+        ['{ not json', 'The view file is not valid JSON.'],
+        [
+          JSON.stringify({ version: 1, sections: [] }),
+          'This view was made by an older version of Mark Go Go. Generate it again.',
         ],
-      },
-      {
-        heading: 'Metrics',
-        blocks: [{ component: 'Summary', items: [{ text: '<b>not bold</b> **nor this**' }] }],
-      },
-    ])
-    const app = await mountApp(DOCUMENT, createBrowserHost(DOCUMENT, 'report.md', { view }))
-    try {
-      await vi.waitFor(() => expect(sectionRows(app.container)).toHaveLength(2))
+        [JSON.stringify({ version: 3, a2ui: [] }), 'version 3'],
+        [JSON.stringify({ version: 2 }), '"a2ui"'],
+      ]
+      for (const [text, message] of cases) {
+        host.writeView(text)
+        await vi.waitFor(() => {
+          expect(genui()).toHaveAttribute('data-state', 'error')
+          expect(app.container.querySelector('.genui-file-error')?.textContent).toContain(message)
+        })
+      }
 
-      const overview = sectionNamed(app.container, 'Overview')
-      const problems = overview.querySelector('[role="alert"]')?.textContent ?? ''
-      expect(problems).toContain('"Script" is not in the whitelist')
-      expect(problems).toContain('items 2')
-      expect(overview.textContent).toContain('Kept point.')
+      host.writeView(formatExample())
+      await expect.element(genui().getByText('In short')).toBeVisible()
 
-      const metrics = sectionNamed(app.container, 'Metrics')
-      expect(metrics.querySelector('[role="alert"]')).toBeNull()
-      expect(metrics.textContent).toContain('<b>not bold</b> **nor this**')
-      expect(app.container.querySelector('.genui-panel b, .genui-panel img, .genui-panel strong')).toBeNull()
-    } finally {
-      await app.unmount()
-    }
-  })
-
-  it('shows a section with a bad anchor unmatched, and no card for a block without its list', async () => {
-    const view = viewFile([
-      {
-        heading: 'Overview',
-        occurrence: 0,
-        blocks: [SUMMARY, { component: 'KeyValueTable', title: 'Empty', rows: 'none' }],
-      },
-    ])
-    const app = await mountApp(DOCUMENT, createBrowserHost(DOCUMENT, 'report.md', { view }))
-    try {
-      await vi.waitFor(() => expect(sectionRows(app.container)).toEqual([['Overview', '']]))
-
-      const overview = sectionNamed(app.container, 'Overview')
-      expect(overview.querySelector<HTMLButtonElement>('.genui-heading')?.disabled).toBe(true)
-      const problems = overview.querySelector('[role="alert"]')?.textContent ?? ''
-      expect(problems).toContain('"occurrence" must be a whole number from 1.')
-      expect(problems).toContain('"rows" must be an array')
-      expect(overview.querySelectorAll('.genui-block')).toHaveLength(1)
-      expect(overview.textContent).toContain('A point.')
-      expect(overview.textContent).not.toContain('Empty')
-    } finally {
-      await app.unmount()
-    }
-  })
-
-  it('shows one message for a file that is not a usable view', async () => {
-    const host = createBrowserHost(DOCUMENT, 'report.md', { view: '{ "version": 1, ' })
-    const app = await mountApp(DOCUMENT, host)
-    try {
-      await expect.element(genui().getByRole('alert')).toMatchTextContent('not valid JSON')
-
-      host.writeView(JSON.stringify({ version: 2, sections: [] }))
-      await expect.element(genui().getByRole('alert')).toMatchTextContent('version 2')
-      expect(sectionRows(app.container)).toEqual([])
-    } finally {
-      await app.unmount()
-    }
-  })
-
-  it('follows the view file as it is written, replaced and removed', async () => {
-    const host = createBrowserHost(DOCUMENT, 'report.md')
-    const app = await mountApp(DOCUMENT, host)
-    try {
-      await expect.element(genui().getByText('No view yet.')).toBeVisible()
-
-      host.writeView(viewFile([{ heading: 'Metrics', blocks: [SUMMARY] }]))
-      await vi.waitFor(() => expect(sectionRows(app.container)).toEqual([['Metrics', '']]))
-
-      host.writeView(viewFile([{ heading: 'Next steps', blocks: [SUMMARY] }]))
-      await vi.waitFor(() => expect(sectionRows(app.container)).toEqual([['Next steps', '']]))
+      // A reference to no component makes the whole view one error.
+      host.writeView(
+        exampleWith(replaceComponent('nextCard', { id: 'nextCard', component: 'Card', child: 'missing' })),
+      )
+      await vi.waitFor(() => {
+        expect(genui()).toHaveAttribute('data-state', 'error')
+        expect(app.container.querySelector('.genui-surface')).toBeNull()
+      })
 
       host.writeView(null)
       await expect.element(genui().getByText('No view yet.')).toBeVisible()
-      expect(sectionRows(app.container)).toEqual([])
     } finally {
       await app.unmount()
     }
   })
 
-  it('marks only the edited section stale and a renamed heading missing', async () => {
-    const view = stampedView(DOCUMENT, [
-      { heading: 'Overview', blocks: [SUMMARY] },
-      { heading: 'Metrics', blocks: [SUMMARY] },
-      { heading: 'Next steps', blocks: [SUMMARY] },
-    ])
-    const app = await mountApp(DOCUMENT, createBrowserHost(DOCUMENT, 'report.md', { view }))
-    try {
-      await vi.waitFor(() =>
-        expect(sectionRows(app.container)).toEqual([
-          ['Overview', ''],
-          ['Metrics', ''],
-          ['Next steps', ''],
-        ]),
-      )
-      await enterSourceMode(app.container)
-
-      replaceSourceText(getSourceView(app.container), 'Second body.', 'Second body, edited.')
-      await vi.waitFor(
-        () =>
-          expect(sectionRows(app.container)).toEqual([
-            ['Overview', ''],
-            ['Metrics', 'Stale'],
-            ['Next steps', ''],
-          ]),
-        { timeout: GENUI_DEBOUNCE_MS + 2000 },
-      )
-
-      replaceSourceText(getSourceView(app.container), '# Next steps', '# Later')
-      await vi.waitFor(
-        () =>
-          expect(sectionRows(app.container)).toEqual([
-            ['Overview', ''],
-            ['Metrics', 'Stale'],
-            ['Next steps', 'Missing'],
-          ]),
-        { timeout: GENUI_DEBOUNCE_MS + 2000 },
-      )
-      await expect.element(genui().getByRole('button', { name: 'Next steps' })).toBeDisabled()
-
-      replaceSourceText(getSourceView(app.container), 'Second body, edited.', 'Second body.')
-      await vi.waitFor(
-        () => expect(sectionRows(app.container)[1]).toEqual(['Metrics', '']),
-        { timeout: GENUI_DEBOUNCE_MS + 2000 },
-      )
-    } finally {
-      await app.unmount()
-    }
-  })
-
-  it('jumps from each section to its own heading, including a duplicate, in rich text', async () => {
-    const markdown = `Overview
-========
-
-First overview body.
-
-Overview
---------
-
-Second overview body.
-
-Metrics
--------
-
-Body.
-`
-    const view = viewFile([
-      { heading: 'Overview', blocks: [SUMMARY] },
-      { heading: 'Overview', occurrence: 2, blocks: [SUMMARY] },
-      { heading: 'Metrics', blocks: [SUMMARY] },
-    ])
-    const app = await mountApp(markdown, createBrowserHost(markdown, 'report.md', { view }))
-    try {
-      await vi.waitFor(() => expect(sectionRows(app.container)).toHaveLength(3))
-      const buttons = genui().getByRole('button', { name: 'Overview' })
-
-      await buttons.nth(1).click()
-      await vi.waitFor(() => expect(caretHeadingIndex(app.container)).toBe(1))
-
-      await genui().getByRole('button', { name: 'Metrics' }).click()
-      await vi.waitFor(() => expect(caretHeadingIndex(app.container)).toBe(2))
-
-      await buttons.nth(0).click()
-      await vi.waitFor(() => expect(caretHeadingIndex(app.container)).toBe(0))
-    } finally {
-      await app.unmount()
-    }
-  })
-
-  it('jumps to a section heading in source mode', async () => {
-    const view = viewFile([{ heading: 'Metrics', blocks: [SUMMARY] }])
-    const app = await mountApp(DOCUMENT, createBrowserHost(DOCUMENT, 'report.md', { view }))
-    try {
-      await enterSourceMode(app.container)
-      await genui().getByRole('button', { name: 'Metrics' }).click()
-
-      await vi.waitFor(() => {
-        expect(caretLineInSource(app.container)?.textContent).toBe('# Metrics')
-        expect(document.activeElement?.closest('.cm-editor')).not.toBeNull()
-      })
-    } finally {
-      await app.unmount()
-    }
-  })
-
-  it('stops following the view file while GenUI is off', async () => {
-    const base = createBrowserHost(DOCUMENT, 'report.md')
+  it('follows the view file only while GenUI is shown', async () => {
+    const base = reportHost()
     let following = 0
     const host: HostAdapter = {
       ...base,
@@ -360,19 +227,73 @@ Body.
     }
     const app = await mountApp(DOCUMENT, host)
     try {
-      expect(following).toBe(1)
-      const toggle = page.getByTestId('genui-toggle')
-
-      await toggle.click()
-      await vi.waitFor(() => expect(toggle).toHaveAttribute('aria-pressed', 'false'))
       expect(following).toBe(0)
-      base.writeView(viewFile([{ heading: 'Metrics', blocks: [SUMMARY] }]))
+      await showMode('genui')
+      await vi.waitFor(() => expect(following).toBe(1))
 
-      await toggle.click()
-      await vi.waitFor(() => expect(sectionRows(app.container)).toEqual([['Metrics', '']]))
+      await showMode('markdown')
+      expect(following).toBe(0)
+      base.writeView(formatExample())
+
+      await showMode('genui')
+      await expect.element(genui().getByText('In short')).toBeVisible()
       expect(following).toBe(1)
     } finally {
       await app.unmount()
+    }
+  })
+
+  it('keeps source edits and the editor mode across a visit to GenUI', async () => {
+    const app = await mountApp(DOCUMENT)
+    const update = vi.spyOn(app.host, 'update')
+    try {
+      await showMode('markdown')
+      replaceSourceText(getSourceView(app.container), 'Second body.', 'Second body, edited.')
+      await showMode('genui')
+      await vi.waitFor(
+        () => expect(update.mock.lastCall?.[0]).toContain('Second body, edited.'),
+        { timeout: 3000 },
+      )
+
+      await showMode('markdown')
+      expect(visibleSource(app.container)).toContain('Second body, edited.')
+      expect(app.container.querySelector<HTMLElement>('.editor-pane')?.hidden).toBe(false)
+    } finally {
+      await app.unmount()
+    }
+  })
+
+  it('returns to the rich text scroll position', async () => {
+    const long = `# Long\n\n${Array.from({ length: 200 }, (_, index) => `Paragraph ${index}.`).join('\n\n')}\n`
+    const app = await mountApp(long)
+    try {
+      const scroller = app.container.querySelector<HTMLElement>('.editor-scroll')
+      if (!scroller) throw new Error('editor scroller missing')
+      scroller.scrollTop = 1200
+      await vi.waitFor(() => expect(scroller.scrollTop).toBe(1200))
+
+      await showMode('genui')
+      await showMode('richtext')
+      await vi.waitFor(() => expect(scroller.scrollTop).toBe(1200))
+    } finally {
+      await app.unmount()
+    }
+  })
+
+  it('remembers the view mode for the document', async () => {
+    const first = await mountApp(DOCUMENT, reportHost(formatExample()))
+    try {
+      await showMode('genui')
+    } finally {
+      await first.unmount()
+    }
+
+    const second = await mountApp(DOCUMENT, reportHost(formatExample()))
+    try {
+      await vi.waitFor(() => expect(viewMode('genui')).toHaveAttribute('aria-checked', 'true'))
+      await expect.element(genui().getByText('In short')).toBeVisible()
+    } finally {
+      await second.unmount()
     }
   })
 })

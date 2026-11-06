@@ -62,6 +62,7 @@ function collectHeadings(nodes: MdastNode[], out: MarkdownHeading[]): void {
 }
 
 function plainText(node: MdastNode): string {
+  if (node.type === 'html') return ''
   if (node.type === 'image') return node.alt ?? ''
   if (typeof node.value === 'string') return node.value
   if (!node.children) return ''

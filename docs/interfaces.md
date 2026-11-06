@@ -64,7 +64,8 @@ interface MarkdownEditor {
 ```
 
 - 跨模块位置一律是当前 Markdown 文本的 UTF-16 源偏移；ProseMirror 位置不出适配器。
-- WYSIWYG 模式下按顶层块粒度映射：`reveal(offset)` 滚动到并聚焦包含该偏移的顶层块开头（锁定块用节点选择），偏移超出当前 compose 文本时返回 `false`；`onSelectionChange` 在光标换块或编辑使该块偏移变化时，报告光标所在顶层块的源起始偏移。块范围每次由最新 compose 文本推导，所以块内编辑以及光标之前的增删不会让偏移失效。
+- WYSIWYG 模式下按顶层块粒度映射：`reveal(offset)` 滚动到并聚焦包含该偏移的顶层块开头（锁定块用节点选择），偏移超出当前 compose 文本时返回 `false`；只要命中块就会报告该块起始偏移（光标原本就在该块也报告）。`onSelectionChange` 在光标换块或编辑使该块偏移变化时报告光标所在顶层块的源起始偏移，并在注册时同步回调一次当前偏移（大纲可立即高亮当前章节）。块范围每次由最新 compose 文本推导，所以块内编辑以及光标之前的增删不会让偏移失效。
+- 选择到块的解析只使用 ProseMirror 文档结构（文本选择取 `$from.node(1)`，文档级选择取 `$from.index(0)` 对应的顶层节点），从不把 ProseMirror 位置当作 Markdown 偏移比较。
 - `getMarkdown()` 返回当前 compose 文本（未改动块保持原始字节）。
 - 旧接口 `revealHeading(text)` 已删除；调用方（GenUI source chips）改为先经共享标题模块解析出偏移再 `editor.reveal`。
 

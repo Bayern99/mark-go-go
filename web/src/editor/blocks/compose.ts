@@ -93,13 +93,18 @@ export function composeWithRanges(doc: PMNode, ctx: ComposeContext): ComposedDoc
   return { text: out, blocks }
 }
 
-/** The block whose composed range contains `offset`; nearby blocks for gaps. */
+/**
+ * The block an offset belongs to. A block owns its own text plus its end
+ * boundary, so an offset at `end` stays in that block; only offsets strictly
+ * inside the gap between two blocks resolve to the following block. Offsets
+ * past the trailing text resolve to the last block.
+ */
 export function blockAtOffset(blocks: ComposedBlock[], offset: number): ComposedBlock | undefined {
   for (const block of blocks) {
-    if (offset >= block.start && offset < block.end) return block
+    if (offset >= block.start && offset <= block.end) return block
   }
   for (const block of blocks) {
-    if (block.start >= offset) return block
+    if (block.start > offset) return block
   }
   return blocks[blocks.length - 1]
 }

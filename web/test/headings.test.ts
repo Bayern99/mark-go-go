@@ -49,6 +49,12 @@ describe('extractHeadings', () => {
     ])
   })
 
+  it('drops raw inline HTML from heading text but keeps adjacent text', () => {
+    expect(extractHeadings('## Title <span>x</span>\n')).toEqual([
+      { level: 2, text: 'Title x', offset: 0 },
+    ])
+  })
+
   it('normalizes heading text for comparisons', () => {
     expect(normalizeHeadingText('  Next   steps ')).toBe('next steps')
   })

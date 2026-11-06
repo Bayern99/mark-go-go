@@ -62,7 +62,9 @@ export interface MarkdownEditor {
   reveal(offset: number): boolean
   /**
    * Fires with the source start offset of the cursor's top-level block whenever
-   * the selection changes block or an edit moves that offset.
+   * the selection changes block or an edit moves that offset. Also reports the
+   * current offset synchronously when the listener is registered, so views can
+   * highlight the current section immediately.
    */
   onSelectionChange(fn: (offset: number) => void): Disposable
   setReadonly(readonly: boolean): void
@@ -120,31 +122,29 @@ export async function createMarkdownEditor(
   /** Source start offset of the top-level block holding the current selection. */
   const selectionOffset = (state: EditorState): number | undefined => {
     const { blocks } = composeWithRanges(state.doc, composeContext(built))
-    if (blocks.length === 0) return undefined
+    if (blocks.length === 0 || state.doc.childCount === 0) return undefined
 
     const { $from } = state.selection
-    if ($from.depth >= 1) {
-      const top = $from.node(1)
-      const match = blocks.find((block) => block.node === top)
-      if (match) return match.start
-    }
+    // Text selections live inside a top-level block; document-level selections
+    // (node selection, gap cursor, select-all) index the doc itself. Never
+    // compare a ProseMirror position with a Markdown offset.
+    const top =
+      $from.depth >= 1
+        ? $from.node(1)
+        : state.doc.child(Math.min($from.index(0), state.doc.childCount - 1))
+    return blocks.find((block) => block.node === top)?.start
+  }
 
-    const selection = state.selection
-    if ('node' in selection) {
-      const selected = selection.node
-      const match = blocks.find((block) => block.node === selected)
-      if (match) return match.start
-    }
-
-    return blockAtOffset(blocks, state.selection.from)?.start
+  const emitSelection = (offset: number) => {
+    lastReportedOffset = offset
+    for (const fn of selectionListeners) fn(offset)
   }
 
   const reportSelection = (state: EditorState) => {
     if (selectionListeners.size === 0) return
     const offset = selectionOffset(state)
     if (offset === undefined || offset === lastReportedOffset) return
-    lastReportedOffset = offset
-    for (const fn of selectionListeners) fn(offset)
+    emitSelection(offset)
   }
 
   const selectionPlugin = new Plugin({
@@ -214,8 +214,13 @@ export async function createMarkdownEditor(
             1,
           )
 
+    // Revealing is an explicit navigation request: report the block even when
+    // the cursor was already inside it. Clearing the dedupe first lets the
+    // selection plugin do the reporting when the selection actually moves.
+    lastReportedOffset = undefined
     view.dispatch(view.state.tr.setSelection(selection).scrollIntoView())
     view.focus()
+    if (block && lastReportedOffset !== block.start) emitSelection(block.start)
     return true
   }
 

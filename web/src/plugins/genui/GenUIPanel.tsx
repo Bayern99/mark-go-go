@@ -4,6 +4,24 @@ import type { ViewSnapshot } from '../../host/types'
 import { extractSections, findSection, type MarkdownSection } from '../../markdown/sections'
 import { renderBlock } from './catalog'
 import { parseViewFile, type ParsedView, type ViewSection } from './schema'
+import { A2uiSpike } from './a2uiSpike'
+
+/** SPIKE: a v2 file (`a2ui` messages + `sources` table), unvalidated beyond JSON. */
+interface SpikeView {
+  messages: unknown[]
+  sources: Record<string, { heading?: unknown; occurrence?: unknown }>
+}
+
+function spikeView(text: string): SpikeView | null {
+  try {
+    const raw: unknown = JSON.parse(text)
+    if (!raw || typeof raw !== 'object' || !('a2ui' in raw) || !Array.isArray(raw.a2ui)) return null
+    const sources = 'sources' in raw && raw.sources && typeof raw.sources === 'object' ? raw.sources : {}
+    return { messages: raw.a2ui, sources: sources as SpikeView['sources'] }
+  } catch {
+    return null
+  }
+}
 
 /** Section freshness is re-checked this long after the last document change, like the outline. */
 export const GENUI_DEBOUNCE_MS = 300
@@ -56,7 +74,18 @@ export class GenUIStore {
 
   readonly getSnapshot = (): GenUIState => this.state
 
+  /** SPIKE: the last v2 view file, rendered by A2uiSpike instead of the v1 parser. */
+  spike: SpikeView | null = null
+  spikeGen = 0
+
   setView(snap: ViewSnapshot): void {
+    this.spike = snap.error === '' && snap.exists ? spikeView(snap.text) : null
+    this.spikeGen++
+    if (this.spike) {
+      this.state = { kind: 'loading' }
+      for (const listener of this.listeners) listener()
+      return
+    }
     if (snap.error !== '') this.parsed = { ok: false, error: snap.error }
     else this.parsed = snap.exists ? parseViewFile(snap.text) : null
     // A pending edit is part of what the new view is checked against.
@@ -156,6 +185,22 @@ export function GenUIPanel({
       section.occurrence,
     )
     if (target) void ctx.commands.execute('editor.reveal', target.start)
+  }
+
+  const spike = store.spike
+  if (spike) {
+    const revealSources = (ids: string[]) => {
+      const ref = spike.sources[ids[0] ?? '']
+      if (!ref || typeof ref.heading !== 'string') return
+      const occurrence = typeof ref.occurrence === 'number' ? ref.occurrence : 1
+      const target = findSection(extractSections(ctx.documents.snapshot().text), ref.heading, occurrence)
+      if (target) void ctx.commands.execute('editor.reveal', target.start)
+    }
+    return (
+      <div className="genui-panel" data-testid="genui-panel">
+        <A2uiSpike key={store.spikeGen} messages={spike.messages} onReveal={revealSources} />
+      </div>
+    )
   }
 
   return (

@@ -13,6 +13,8 @@
     "generate": "cd .. && go tool mygo generate"
   },
   "dependencies": {
+    "@a2ui/react": "0.15.0",
+    "@a2ui/web_core": "0.15.0",
     "@codemirror/commands": "6.11.1",
     "@codemirror/lang-go": "6.0.1",
     "@codemirror/lang-javascript": "6.2.5",
@@ -32,7 +34,8 @@
     "remark-gfm": "4.0.1",
     "remark-math": "6.0.0",
     "remark-parse": "11.0.0",
-    "unified": "11.0.5"
+    "unified": "11.0.5",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

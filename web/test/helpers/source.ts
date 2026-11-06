@@ -13,6 +13,27 @@ export function sourceText(container: HTMLElement): string {
   return getSourceView(container).state.doc.toString()
 }
 
+/** Text a user can actually see, assembled from CodeMirror's rendered lines. */
+export function visibleSource(container: HTMLElement): string {
+  return sourceLines(container)
+    .map((line) => line.textContent ?? '')
+    .join('\n')
+}
+
+export function sourceLines(container: HTMLElement): HTMLElement[] {
+  const content = container.querySelector<HTMLElement>('.mgo-source-root .cm-content')
+  if (!content) throw new Error('source editor is not mounted')
+  return Array.from(content.querySelectorAll<HTMLElement>('.cm-line'))
+}
+
+/** The rendered source line containing the DOM caret, if any. */
+export function caretLineInSource(container: HTMLElement): HTMLElement | undefined {
+  const anchor = window.getSelection()?.anchorNode
+  const element = anchor instanceof Element ? anchor : anchor?.parentElement
+  const line = element?.closest<HTMLElement>('.cm-line')
+  return line && container.querySelector('.mgo-source-root')?.contains(line) ? line : undefined
+}
+
 /**
  * Replace a range the way a user edit does, so updates carry an input event
  * instead of looking like a programmatic document replacement.

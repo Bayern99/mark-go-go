@@ -16,6 +16,7 @@ export async function mountApp(
   host: HostAdapter = createBrowserHost(text),
 ): Promise<MountedApp> {
   const container = document.createElement('div')
+  container.style.height = '100%'
   document.body.append(container)
   const root = createRoot(container)
   flushSync(() => {

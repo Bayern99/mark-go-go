@@ -292,6 +292,11 @@ export async function createMarkdownEditor(
     // the cursor was already inside it. Clearing the dedupe first lets the
     // selection plugin do the reporting when the selection actually moves.
     lastReportedOffset = undefined
+    // scrollIntoView only scrolls when the browser selection is inside the
+    // ProseMirror DOM; a caller may still be focused in source mode or on a
+    // toolbar button. Focus (and restore the selection) first so the scroll
+    // effect has a DOM anchor.
+    view.focus()
     view.dispatch(view.state.tr.setSelection(selection).scrollIntoView())
     view.focus()
     if (block && lastReportedOffset !== block.start) emitSelection(block.start)

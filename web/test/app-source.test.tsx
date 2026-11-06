@@ -1,11 +1,10 @@
-import { EditorState } from '@codemirror/state'
-import { undo } from '@codemirror/commands'
+import '../src/styles.css'
 import { userEvent } from 'vitest/browser'
 import { describe, expect, it, vi } from 'vitest'
 import { createBrowserHost } from '../src/host/browserHost'
 import type { HostAdapter, HostDocSnapshot } from '../src/host/types'
 import { mountApp } from './helpers/app'
-import { getSourceView, replaceSourceText, sourceText } from './helpers/source'
+import { caretLineInSource, sourceLines, visibleSource } from './helpers/source'
 
 const DOCUMENT = `---
 title: Draft
@@ -29,22 +28,61 @@ const SOURCE_ONLY_DOCUMENT = `# Overview
 Body text.
 `
 
+function longDocument(): string {
+  const paragraphs = Array.from({ length: 300 }, (_, index) => `Paragraph ${index}.`)
+  return `# Long\n\n${paragraphs.join('\n\n')}\n`
+}
+
 function modeToggle(container: HTMLElement): HTMLButtonElement {
   const button = container.querySelector<HTMLButtonElement>('[data-testid="mode-toggle"]')
   if (!button) throw new Error('mode toggle missing')
   return button
 }
 
+function sourceLine(container: HTMLElement, text: string): HTMLElement {
+  const line = sourceLines(container).find((candidate) => candidate.textContent === text)
+  if (!line) throw new Error(`source line not found: ${text}`)
+  return line
+}
+
+function caretBlock(container: HTMLElement): HTMLElement | undefined {
+  const anchor = window.getSelection()?.anchorNode
+  const element = anchor instanceof Element ? anchor : anchor?.parentElement
+  const block = element?.closest<HTMLElement>('p, h1, h2, h3, h4, h5, h6, li, blockquote')
+  return block && container.querySelector('.ProseMirror')?.contains(block) ? block : undefined
+}
+
+function isWithin(element: HTMLElement, scroller: HTMLElement): boolean {
+  const rect = element.getBoundingClientRect()
+  const viewport = scroller.getBoundingClientRect()
+  const visible = Math.min(rect.bottom, viewport.bottom) - Math.max(rect.top, viewport.top)
+  return visible >= Math.min(rect.height, 10)
+}
+
 async function enterSourceMode(container: HTMLElement): Promise<void> {
-  modeToggle(container).click()
+  await userEvent.click(modeToggle(container))
   await vi.waitFor(() => {
     expect(modeToggle(container).getAttribute('aria-pressed')).toBe('true')
-    expect(sourceText(container)).not.toBe('')
+    expect(visibleSource(container)).not.toBe('')
   })
 }
 
-function pressToggleShortcut(init: KeyboardEventInit): void {
-  window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true, ...init }))
+async function toggleShortcut(modifier: 'Meta' | 'Control'): Promise<void> {
+  await userEvent.keyboard(`{${modifier}>}/{/${modifier}}`)
+}
+
+/** Replace one visible source line through real keyboard input. */
+async function replaceSourceLine(
+  container: HTMLElement,
+  oldLine: string,
+  newLine: string,
+): Promise<void> {
+  await userEvent.click(sourceLine(container, oldLine))
+  await userEvent.keyboard('{Home}{Shift>}{End}{/Shift}')
+  await userEvent.keyboard(newLine)
+  await vi.waitFor(() => {
+    expect(sourceLines(container).some((line) => line.textContent === newLine)).toBe(true)
+  })
 }
 
 describe('App source mode', () => {
@@ -54,11 +92,11 @@ describe('App source mode', () => {
       expect(modeToggle(app.container).textContent).toBe('Rich text')
       expect(modeToggle(app.container).getAttribute('aria-pressed')).toBe('false')
 
-      modeToggle(app.container).click()
+      await userEvent.click(modeToggle(app.container))
       await vi.waitFor(() => {
         expect(modeToggle(app.container).textContent).toBe('Source')
         expect(modeToggle(app.container).getAttribute('aria-pressed')).toBe('true')
-        expect(sourceText(app.container)).toBe(DOCUMENT)
+        expect(visibleSource(app.container)).toBe(DOCUMENT)
       })
       expect(app.container.querySelector<HTMLElement>('.mgo-source-root')?.hidden).toBe(false)
       expect(app.container.querySelector<HTMLElement>('.mgo-wysiwyg-root')?.hidden).toBe(true)
@@ -70,13 +108,13 @@ describe('App source mode', () => {
   it('toggles with ⌘/ and Ctrl+/', async () => {
     const app = await mountApp(DOCUMENT)
     try {
-      pressToggleShortcut({ metaKey: true })
+      await toggleShortcut('Meta')
       await vi.waitFor(() => {
         expect(modeToggle(app.container).textContent).toBe('Source')
-        expect(sourceText(app.container)).toBe(DOCUMENT)
+        expect(visibleSource(app.container)).toBe(DOCUMENT)
       })
 
-      pressToggleShortcut({ ctrlKey: true })
+      await toggleShortcut('Control')
       await vi.waitFor(() => {
         expect(modeToggle(app.container).textContent).toBe('Rich text')
         expect(app.container.querySelector<HTMLElement>('.mgo-wysiwyg-root')?.hidden).toBe(false)
@@ -92,9 +130,9 @@ describe('App source mode', () => {
     const update = vi.spyOn(app.host, 'update')
     try {
       await enterSourceMode(app.container)
-      expect(sourceText(app.container)).toBe(DOCUMENT)
+      expect(visibleSource(app.container)).toBe(DOCUMENT)
 
-      modeToggle(app.container).click()
+      await userEvent.click(modeToggle(app.container))
       await vi.waitFor(() => {
         expect(modeToggle(app.container).getAttribute('aria-pressed')).toBe('false')
       })
@@ -110,20 +148,20 @@ describe('App source mode', () => {
     const update = vi.spyOn(app.host, 'update')
     try {
       await enterSourceMode(app.container)
-      const view = getSourceView(app.container)
-      const afterTitle = replaceSourceText(view, 'title: Draft', 'title: Final')
-      const expected = replaceSourceText(
-        view,
-        '[!NOTE]',
-        'Note',
+      await replaceSourceLine(app.container, 'title: Draft', 'title: Final')
+      await replaceSourceLine(app.container, '> [!NOTE]', '> Note')
+
+      const expected = DOCUMENT.replace('title: Draft', 'title: Final').replace(
+        '> [!NOTE]',
+        '> Note',
       )
-      expect(expected).toBe(afterTitle.replace('[!NOTE]', 'Note'))
+      expect(visibleSource(app.container)).toBe(expected)
 
       await vi.waitFor(() => expect(update).toHaveBeenLastCalledWith(expected), {
         timeout: 3000,
       })
 
-      modeToggle(app.container).click()
+      await userEvent.click(modeToggle(app.container))
       await vi.waitFor(() => {
         expect(modeToggle(app.container).getAttribute('aria-pressed')).toBe('false')
         expect(app.container.querySelector('[data-testid="editor-root"] .ProseMirror')).not.toBeNull()
@@ -156,21 +194,21 @@ describe('App source mode', () => {
     }
   })
 
-  it('undoes source edits and saves the reverted text', async () => {
+  it('undoes source edits with ⌘Z and saves the reverted text', async () => {
     const app = await mountApp(DOCUMENT)
     const update = vi.spyOn(app.host, 'update')
     try {
       await enterSourceMode(app.container)
-      const view = getSourceView(app.container)
-      replaceSourceText(view, 'Paragraph one.', 'Paragraph one, changed.')
-
+      await userEvent.click(sourceLine(app.container, 'Paragraph one.'))
+      await userEvent.keyboard('{End}!')
+      await vi.waitFor(() => expect(visibleSource(app.container)).toContain('Paragraph one.!'))
       await vi.waitFor(
-        () => expect(update.mock.lastCall?.[0]).toContain('Paragraph one, changed.'),
+        () => expect(update.mock.lastCall?.[0]).toContain('Paragraph one.!'),
         { timeout: 3000 },
       )
 
-      undo(view)
-      expect(sourceText(app.container)).toBe(DOCUMENT)
+      await userEvent.keyboard('{Meta>}z{/Meta}')
+      await vi.waitFor(() => expect(visibleSource(app.container)).toBe(DOCUMENT))
       await vi.waitFor(() => expect(update).toHaveBeenLastCalledWith(DOCUMENT), {
         timeout: 3000,
       })
@@ -188,7 +226,7 @@ describe('App source mode', () => {
       host.reload(reloaded)
 
       await vi.waitFor(() => {
-        expect(sourceText(app.container)).toBe(reloaded)
+        expect(visibleSource(app.container)).toBe(reloaded)
         expect(modeToggle(app.container).textContent).toBe('Source')
         expect(modeToggle(app.container).getAttribute('aria-pressed')).toBe('true')
       })
@@ -197,7 +235,7 @@ describe('App source mode', () => {
     }
   })
 
-  it('makes the source editor read-only when the document is read-only', async () => {
+  it('ignores typing when the document is read-only', async () => {
     const base = createBrowserHost(DOCUMENT)
     const host: HostAdapter = {
       ...base,
@@ -207,12 +245,16 @@ describe('App source mode', () => {
       },
     }
     const app = await mountApp(DOCUMENT, host)
+    const update = vi.spyOn(app.host, 'update')
     try {
       await vi.waitFor(() => expect(app.container.querySelector('.banner-readonly')).not.toBeNull())
       await enterSourceMode(app.container)
-      const view = getSourceView(app.container)
-      expect(view.state.facet(EditorState.readOnly)).toBe(true)
-      expect(view.contentDOM.getAttribute('contenteditable')).toBe('false')
+
+      await userEvent.click(sourceLine(app.container, 'Paragraph one.'))
+      await userEvent.keyboard('X')
+      expect(visibleSource(app.container)).toBe(DOCUMENT)
+      await new Promise((resolve) => setTimeout(resolve, 350))
+      expect(update).not.toHaveBeenCalled()
     } finally {
       await app.unmount()
     }
@@ -226,11 +268,50 @@ describe('App source mode', () => {
         (button) => button.textContent === 'Metrics',
       )
       expect(chip).toBeDefined()
-      chip?.click()
+      await userEvent.click(chip as HTMLButtonElement)
 
       await vi.waitFor(() => {
-        const view = getSourceView(app.container)
-        expect(view.state.selection.main.head).toBe(SOURCE_ONLY_DOCUMENT.indexOf('## Metrics'))
+        expect(caretLineInSource(app.container)?.textContent).toBe('## Metrics')
+        expect(document.activeElement?.closest('.cm-editor')).not.toBeNull()
+      })
+    } finally {
+      await app.unmount()
+    }
+  })
+
+  it('keeps the caret block visible when switching modes near the end', async () => {
+    const source = longDocument()
+    const app = await mountApp(source)
+    try {
+      const scroller = app.container.querySelector<HTMLElement>('.editor-scroll')
+      expect(scroller).not.toBeNull()
+      const last = Array.from(
+        app.container.querySelectorAll<HTMLElement>('[data-testid="editor-root"] .ProseMirror p'),
+      ).find((paragraph) => paragraph.textContent === 'Paragraph 299.')
+      expect(last).toBeDefined()
+
+      await userEvent.click(last as HTMLElement)
+      expect(caretBlock(app.container)).toBe(last)
+      expect(isWithin(last as HTMLElement, scroller as HTMLElement)).toBe(true)
+
+      ;(scroller as HTMLElement).scrollTop = 0
+      expect(isWithin(last as HTMLElement, scroller as HTMLElement)).toBe(false)
+
+      await userEvent.click(modeToggle(app.container))
+      await vi.waitFor(() => {
+        expect(modeToggle(app.container).getAttribute('aria-pressed')).toBe('true')
+        const line = caretLineInSource(app.container)
+        expect(line?.textContent).toBe('Paragraph 299.')
+        expect(isWithin(line as HTMLElement, scroller as HTMLElement)).toBe(true)
+      })
+
+      ;(scroller as HTMLElement).scrollTop = 0
+      await userEvent.click(modeToggle(app.container))
+      await vi.waitFor(() => {
+        expect(modeToggle(app.container).getAttribute('aria-pressed')).toBe('false')
+        const block = caretBlock(app.container)
+        expect(block?.textContent).toBe('Paragraph 299.')
+        expect(isWithin(block as HTMLElement, scroller as HTMLElement)).toBe(true)
       })
     } finally {
       await app.unmount()

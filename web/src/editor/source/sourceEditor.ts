@@ -20,7 +20,7 @@ export interface SourceEditor {
   /** Replace all text and reset the CodeMirror undo history. */
   setText(text: string): void
   setReadonly(value: boolean): void
-  /** Select an exact offset, scroll it into view, and focus. */
+  /** Select an exact offset, scroll its line to the top of the view, and focus. */
   reveal(offset: number): boolean
   destroy(): void
 }
@@ -47,6 +47,9 @@ const readonlyExtensions = (value: boolean) => [
   EditorState.readOnly.of(value),
   EditorView.editable.of(!value),
 ]
+
+/** Space kept above a revealed line; matches scroll-margin-top for rich text in styles.css. */
+const REVEAL_MARGIN_PX = 16
 
 export function createSourceEditor(options: SourceEditorOptions): SourceEditor {
   const readonlyCompartment = new Compartment()
@@ -96,7 +99,9 @@ export function createSourceEditor(options: SourceEditorOptions): SourceEditor {
       if (offset < 0 || offset > length) return false
       view.dispatch({
         selection: { anchor: offset },
-        scrollIntoView: true,
+        // Navigation (outline, GenUI chips) should land the target at the top
+        // like a table of contents, not on whichever edge is nearest.
+        effects: EditorView.scrollIntoView(offset, { y: 'start', yMargin: REVEAL_MARGIN_PX }),
       })
       view.focus()
       return true

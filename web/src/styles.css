@@ -150,6 +150,10 @@ body {
   padding: 24px 24px 64px 56px;
 }
 
+.crepe-root .milkdown .ProseMirror > * {
+  scroll-margin-top: 16px;
+}
+
 .mgo-wysiwyg-root,
 .mgo-source-root {
   min-height: 100%;

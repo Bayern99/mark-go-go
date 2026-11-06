@@ -66,9 +66,9 @@ export interface MarkdownEditor {
   /** Fires after every user edit with freshly composed Markdown. */
   onChange(fn: (markdown: string) => void): Disposable
   /**
-   * Scroll a Markdown source offset into view and place the cursor at the
-   * start of the top-level block containing it. Returns false when the offset
-   * falls outside the current composed text.
+   * Place the cursor at the start of the top-level block containing a Markdown
+   * source offset and scroll that block to the top of the editor's scroll area.
+   * Returns false when the offset falls outside the current composed text.
    */
   reveal(offset: number): boolean
   /**
@@ -292,13 +292,16 @@ export async function createMarkdownEditor(
     // the cursor was already inside it. Clearing the dedupe first lets the
     // selection plugin do the reporting when the selection actually moves.
     lastReportedOffset = undefined
-    // scrollIntoView only scrolls when the browser selection is inside the
-    // ProseMirror DOM; a caller may still be focused in source mode or on a
-    // toolbar button. Focus (and restore the selection) first so the scroll
-    // effect has a DOM anchor.
+    // A caller may still be focused in source mode or on a toolbar button;
+    // focus first so the selection lands in the ProseMirror DOM.
     view.focus()
-    view.dispatch(view.state.tr.setSelection(selection).scrollIntoView())
-    view.focus()
+    view.dispatch(view.state.tr.setSelection(selection))
+    // Same top alignment as the source view; scroll-margin-top in styles.css
+    // keeps the gap above the block. Blocks without their own DOM node fall
+    // back to ProseMirror's nearest-edge scroll.
+    const target = view.nodeDOM(pos)
+    if (target instanceof HTMLElement) target.scrollIntoView({ block: 'start' })
+    else view.dispatch(view.state.tr.scrollIntoView())
     if (block && lastReportedOffset !== block.start) emitSelection(block.start)
     return true
   }

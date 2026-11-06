@@ -1,3 +1,4 @@
+import '../src/styles.css'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { page } from 'vitest/browser'
@@ -21,7 +22,7 @@ const LONG_DOCUMENT = [
     (_, index) => `Filler paragraph ${index} with enough words to take up a line.`,
   ),
   '## Deep heading',
-  'Deep body.',
+  ...Array.from({ length: 40 }, (_, index) => `Deep body paragraph ${index}.`),
 ].join('\n\n')
 
 function outline() {
@@ -89,9 +90,16 @@ function sourceCaretOffset(container: HTMLElement): number | null {
   return getSourceView(container).posAtDOM(anchor, selection?.anchorOffset ?? 0)
 }
 
-function inViewport(element: Element): boolean {
-  const rect = element.getBoundingClientRect()
-  return rect.top >= 0 && rect.bottom <= window.innerHeight && rect.height > 0
+/**
+ * Navigating to a heading must bring it to the top of the editor's scroll
+ * area, as a table of contents does, not merely somewhere on screen (the
+ * caret-only scroll left the heading on the bottom edge).
+ */
+function nearScrollTop(element: Element): boolean {
+  const scroller = element.closest('.editor-scroll')
+  if (!scroller) throw new Error('heading is not inside the editor scroll area')
+  const top = element.getBoundingClientRect().top - scroller.getBoundingClientRect().top
+  return top >= 0 && top <= 120
 }
 
 function editorHasFocus(container: HTMLElement): boolean {
@@ -268,11 +276,11 @@ describe('Outline plugin', () => {
     const app = await mountApp(LONG_DOCUMENT)
     try {
       const heading = page.getByRole('heading', { name: 'Deep heading' })
-      expect(inViewport(heading.element())).toBe(false)
+      expect(nearScrollTop(heading.element())).toBe(false)
 
       await outlineButtons().last().click()
       await vi.waitFor(() => {
-        expect(inViewport(heading.element())).toBe(true)
+        expect(nearScrollTop(heading.element())).toBe(true)
         expect(editorHasFocus(app.container)).toBe(true)
       })
       expect(outlineButtons().last().element()).not.toBe(document.activeElement)
@@ -292,7 +300,7 @@ describe('Outline plugin', () => {
           app.container.querySelectorAll<HTMLElement>('.cm-content .cm-line'),
         ).find((element) => element.textContent === '## Deep heading')
         expect(line).toBeDefined()
-        expect(inViewport(line as HTMLElement)).toBe(true)
+        expect(nearScrollTop(line as HTMLElement)).toBe(true)
         expect(editorHasFocus(app.container)).toBe(true)
       })
       expect(outlineButtons().last().element()).not.toBe(document.activeElement)

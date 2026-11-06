@@ -1,7 +1,7 @@
 import { NodeSelection } from '@milkdown/kit/prose/state'
 import { describe, expect, it } from 'vitest'
 import type { MarkdownEditor } from '../src/editor/createEditor'
-import { mountEditor } from './helpers/editor'
+import { mountEditor, replaceParagraph } from './helpers/editor'
 
 function reportedOffsets(editor: MarkdownEditor): number[] {
   const offsets: number[] = []
@@ -9,24 +9,6 @@ function reportedOffsets(editor: MarkdownEditor): number[] {
   return offsets
 }
 
-function replaceParagraph(editor: MarkdownEditor, oldText: string, newText: string): void {
-  const view = editor.getView()
-  let position = -1
-  view.state.doc.descendants((node, pos) => {
-    if (position !== -1) return false
-    if (node.type.name !== 'paragraph') return true
-    if (!node.textContent.includes(oldText)) return true
-    position = pos
-    return false
-  })
-  if (position === -1) throw new Error(`paragraph not found: ${oldText}`)
-  const node = view.state.doc.nodeAt(position)
-  if (!node) throw new Error('paragraph node missing')
-  const from = position + 1
-  view.dispatch(
-    view.state.tr.replaceWith(from, from + node.content.size, view.state.schema.text(newText)),
-  )
-}
 
 describe('Markdown source offsets', () => {
   it('reveals the start of the top-level block containing an offset', async () => {

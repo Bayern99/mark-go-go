@@ -2,8 +2,7 @@ import { redo, undo } from '@codemirror/commands'
 import { EditorState } from '@codemirror/state'
 import { undo as undoWysiwyg } from '@milkdown/kit/prose/history'
 import { describe, expect, it } from 'vitest'
-import type { MarkdownEditor } from '../src/editor/createEditor'
-import { mountEditor } from './helpers/editor'
+import { mountEditor, replaceParagraph } from './helpers/editor'
 import { getSourceView, replaceSource, replaceSourceText } from './helpers/source'
 
 const files = import.meta.glob('./fixtures/*.md', {
@@ -12,28 +11,6 @@ const files = import.meta.glob('./fixtures/*.md', {
   eager: true,
 }) as Record<string, string>
 
-function replaceWysiwygParagraph(
-  editor: MarkdownEditor,
-  oldText: string,
-  newText: string,
-): void {
-  const view = editor.getView()
-  let position = -1
-  view.state.doc.descendants((node, pos) => {
-    if (position !== -1) return false
-    if (node.type.name !== 'paragraph') return true
-    if (!node.textContent.includes(oldText)) return true
-    position = pos
-    return false
-  })
-  if (position === -1) throw new Error(`paragraph not found: ${oldText}`)
-  const node = view.state.doc.nodeAt(position)
-  if (!node) throw new Error('paragraph node missing')
-  const from = position + 1
-  view.dispatch(
-    view.state.tr.replaceWith(from, from + node.content.size, view.state.schema.text(newText)),
-  )
-}
 
 describe('source mode round trip', () => {
   const names = Object.keys(files).sort()
@@ -229,7 +206,7 @@ describe('source mode switching boundaries', () => {
   it('keeps WYSIWYG state and undo history when leaving unchanged', async () => {
     const mounted = await mountEditor(source)
     try {
-      replaceWysiwygParagraph(mounted.editor, 'First paragraph.', 'First paragraph, edited.')
+      replaceParagraph(mounted.editor, 'First paragraph.', 'First paragraph, edited.')
       const composed = mounted.editor.getMarkdown()
       const wysiwygView = mounted.editor.getView()
 
@@ -263,6 +240,45 @@ describe('source mode switching boundaries', () => {
     }
   })
 
+  it('rebuilds WYSIWYG when a source reload matches the pre-source text', async () => {
+    const mounted = await mountEditor(source)
+    try {
+      replaceParagraph(mounted.editor, 'First paragraph.', 'First paragraph, edited.')
+      const composed = mounted.editor.getMarkdown()
+
+      mounted.editor.setMode('source')
+      mounted.editor.setMarkdown(composed)
+      mounted.editor.setMode('wysiwyg')
+      expect(mounted.editor.getMarkdown()).toBe(composed)
+
+      const wysiwygView = mounted.editor.getView()
+      undoWysiwyg(wysiwygView.state, (transaction) => wysiwygView.dispatch(transaction))
+      expect(mounted.editor.getMarkdown()).toBe(composed)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('does not emit a transient leading offset when returning from edited source', async () => {
+    const source = 'First paragraph.\n\nSecond paragraph.\n'
+    const mounted = await mountEditor(source)
+    try {
+      mounted.editor.setMode('source')
+      const view = getSourceView(mounted.root)
+      const secondStart = source.indexOf('Second paragraph.')
+      replaceSourceText(view, 'Second paragraph.', 'Second paragraph, edited.')
+
+      const offsets: number[] = []
+      mounted.editor.onSelectionChange((offset) => offsets.push(offset))
+      offsets.length = 0
+
+      mounted.editor.setMode('wysiwyg')
+      expect(offsets).toEqual([secondStart])
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('does not emit change events for switching or reloading', async () => {
     const mounted = await mountEditor(source)
     const changes: string[] = []
@@ -281,6 +297,28 @@ describe('source mode switching boundaries', () => {
 })
 
 describe('source mode external state', () => {
+  it('reports the caret reset when source is reloaded', async () => {
+    const mounted = await mountEditor('First paragraph.\n\nSecond paragraph.\n')
+    try {
+      mounted.editor.setMode('source')
+      const view = getSourceView(mounted.root)
+      const target = view.state.doc.toString().indexOf('Second paragraph.')
+      view.dispatch({ selection: { anchor: target } })
+
+      const offsets: number[] = []
+      mounted.editor.onSelectionChange((offset) => offsets.push(offset))
+      expect(offsets).toEqual([target])
+
+      mounted.editor.setMarkdown('First paragraph.\n\nSecond paragraph.\n')
+      expect(offsets.at(-1)).toBe(0)
+
+      view.dispatch({ selection: { anchor: target } })
+      expect(offsets.at(-1)).toBe(target)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('replaces the visible source and resets its history without changing mode', async () => {
     const mounted = await mountEditor('Original.\n')
     try {

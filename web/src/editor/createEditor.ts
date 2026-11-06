@@ -1,8 +1,3 @@
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
-import { markdown } from '@codemirror/lang-markdown'
-import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language'
-import { Compartment, EditorState as CodeMirrorState } from '@codemirror/state'
-import { EditorView as CodeMirrorView, keymap } from '@codemirror/view'
 import { CrepeBuilder } from '@milkdown/crepe/builder'
 import { blockEdit } from '@milkdown/crepe/feature/block-edit'
 import { codeMirror } from '@milkdown/crepe/feature/code-mirror'
@@ -40,6 +35,7 @@ import {
 } from './blocks/compose'
 import { LOCKED_NODE, lockedBlockSchema } from './blocks/locked'
 import { languages } from './languages'
+import { createSourceEditor, type SourceEditor } from './source/sourceEditor'
 
 /**
  * Plugins that rewrite the document on load or after transactions. They break
@@ -125,16 +121,16 @@ export async function createMarkdownEditor(
 
   let built = buildDocument(options.initialText ?? '', schema, parser)
   let suppressChange = false
+  let suppressSelectionReporting = false
   let readonly = false
   const listeners = new Set<(markdown: string) => void>()
   const selectionListeners = new Set<(offset: number) => void>()
   const modeListeners = new Set<(mode: EditorMode) => void>()
   let lastReportedOffset: number | undefined
   let mode: EditorMode = 'wysiwyg'
-  let sourceView: CodeMirrorView | undefined
+  let sourceEditor: SourceEditor | undefined
   /** Text the rich-text editor represented when source mode was entered. */
   let sourceBaseText: string | undefined
-  const readonlyCompartment = new Compartment()
 
   const composeContext = (current: typeof built): ComposeContext => ({
     schema,
@@ -187,87 +183,36 @@ export async function createMarkdownEditor(
   }
 
   const reportSelection = (state: EditorState) => {
-    if (selectionListeners.size === 0) return
+    if (suppressSelectionReporting || selectionListeners.size === 0) return
     const offset = selectionOffset(state)
     if (offset === undefined || offset === lastReportedOffset) return
     emitSelection(offset)
   }
 
-  const readonlyExtensions = (value: boolean) => [
-    CodeMirrorState.readOnly.of(value),
-    CodeMirrorView.editable.of(!value),
-  ]
-
-  const sourceTheme = CodeMirrorView.theme({
-    '&': {
-      minHeight: '100%',
-      backgroundColor: 'transparent',
-      fontSize: '14px',
-    },
-    '.cm-scroller': {
-      fontFamily: "ui-monospace, 'SFMono-Regular', Menlo, monospace",
-      lineHeight: '1.65',
-    },
-    '.cm-content': {
-      padding: '24px 32px 64px',
-    },
-    '&.cm-focused': {
-      outline: 'none',
-    },
-  })
-
-  const reportSourceSelection = (offset: number) => {
-    if (selectionListeners.size === 0 || offset === lastReportedOffset) return
-    emitSelection(offset)
-  }
-
-  const createSourceState = (text: string): CodeMirrorState =>
-    CodeMirrorState.create({
-      doc: text,
-      extensions: [
-        // Keep every line break exactly as it appears in the file: only LF
-        // splits lines, so CR stays part of the preceding line's text.
-        CodeMirrorState.lineSeparator.of('\n'),
-        markdown(),
-        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-        history(),
-        keymap.of([...defaultKeymap, ...historyKeymap]),
-        CodeMirrorView.lineWrapping,
-        readonlyCompartment.of(readonlyExtensions(readonly)),
-        sourceTheme,
-        CodeMirrorView.updateListener.of((update) => {
-          if (update.docChanged && !suppressChange) {
-            const text = update.state.doc.toString()
-            for (const fn of listeners) fn(text)
-          }
-          if (update.docChanged || update.selectionSet) {
-            reportSourceSelection(update.state.selection.main.head)
-          }
-        }),
-      ],
-    })
-
-  /** Fresh state each time: entering source starts an empty undo history. */
-  const ensureSourceView = (text: string): CodeMirrorView => {
-    if (!sourceView) {
-      sourceView = new CodeMirrorView({ state: createSourceState(text), parent: sourceRoot })
-    } else {
-      sourceView.setState(createSourceState(text))
+  const ensureSourceEditor = (text: string): SourceEditor => {
+    if (sourceEditor) {
+      sourceEditor.setText(text)
+      return sourceEditor
     }
-    return sourceView
+    sourceEditor = createSourceEditor({
+      parent: sourceRoot,
+      text,
+      readonly,
+      onChange(markdown) {
+        for (const fn of listeners) fn(markdown)
+      },
+      onSelection(offset) {
+        if (selectionListeners.size === 0 || offset === lastReportedOffset) return
+        emitSelection(offset)
+      },
+    })
+    return sourceEditor
   }
 
   const revealSource = (offset: number, alwaysReport: boolean): boolean => {
-    if (!sourceView || !Number.isFinite(offset)) return false
-    const length = sourceView.state.doc.length
-    if (offset < 0 || offset > length) return false
-
+    if (!sourceEditor) return false
     lastReportedOffset = undefined
-    sourceView.dispatch({
-      selection: { anchor: offset },
-      scrollIntoView: true,
-    })
-    sourceView.focus()
+    if (!sourceEditor.reveal(offset)) return false
     // The dispatch reports through the update listener unless the selection
     // was already exactly there; a switch must still emit the current offset.
     if (alwaysReport && lastReportedOffset !== offset) emitSelection(offset)
@@ -363,17 +308,26 @@ export async function createMarkdownEditor(
       sourceBaseText = text
       wysiwygRoot.hidden = true
       sourceRoot.hidden = false
-      ensureSourceView(text)
+      ensureSourceEditor(text)
       revealSource(offset, true)
     } else {
-      const text = sourceView?.state.doc.toString() ?? ''
-      const offset = sourceView?.state.selection.main.head ?? 0
+      const text = sourceEditor?.getText() ?? ''
+      const offset = sourceEditor?.getSelection() ?? 0
       mode = 'wysiwyg'
       sourceRoot.hidden = true
       wysiwygRoot.hidden = false
       // Untouched source keeps the existing ProseMirror state (and its undo
       // history); edits rebuild through the normal load pipeline.
-      if (sourceBaseText === undefined || text !== sourceBaseText) load(text)
+      if (sourceBaseText === undefined || text !== sourceBaseText) {
+        // load() briefly parks the selection at the document start; only the
+        // reveal below is a real cursor move for listeners.
+        suppressSelectionReporting = true
+        try {
+          load(text)
+        } finally {
+          suppressSelectionReporting = false
+        }
+      }
       sourceBaseText = undefined
       if (!reveal(offset)) reveal(0)
     }
@@ -385,9 +339,7 @@ export async function createMarkdownEditor(
     if (readonly === value) return
     readonly = value
     builder.setReadonly(value)
-    sourceView?.dispatch({
-      effects: readonlyCompartment.reconfigure(readonlyExtensions(value)),
-    })
+    sourceEditor?.setReadonly(value)
   }
 
   return {
@@ -403,13 +355,18 @@ export async function createMarkdownEditor(
       }
     },
     getMarkdown: () =>
-      mode === 'source' ? (sourceView?.state.doc.toString() ?? '') : compose(view.state.doc),
+      mode === 'source' ? (sourceEditor?.getText() ?? '') : compose(view.state.doc),
     setMarkdown(text) {
       if (mode === 'source') {
-        // The rich-text copy may no longer match; leaving source rebuilds it
-        // unless the reload happens to be identical to what ProseMirror holds.
-        sourceBaseText = compose(view.state.doc)
-        ensureSourceView(text)
+        // Any reload invalidates the hidden rich-text copy and its undo
+        // history; leaving source must rebuild from this exact text.
+        sourceBaseText = undefined
+        const source = ensureSourceEditor(text)
+        // setState resets the CodeMirror caret without an update event, so
+        // listeners would otherwise keep a stale offset and drop the next move
+        // back to it.
+        lastReportedOffset = undefined
+        emitSelection(source.getSelection())
         return
       }
       load(text)
@@ -430,7 +387,7 @@ export async function createMarkdownEditor(
       // each other's next real selection event.
       const offset =
         mode === 'source'
-          ? sourceView?.state.selection.main.head
+          ? sourceEditor?.getSelection()
           : selectionOffset(view.state)
       if (offset !== undefined) fn(offset)
       return {
@@ -445,8 +402,8 @@ export async function createMarkdownEditor(
       listeners.clear()
       selectionListeners.clear()
       modeListeners.clear()
-      sourceView?.destroy()
-      sourceView = undefined
+      sourceEditor?.destroy()
+      sourceEditor = undefined
       await builder.destroy()
     },
   }

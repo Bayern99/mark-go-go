@@ -8,7 +8,7 @@
 |---|---|---|
 | Go | `go vet ./...` | 通过 |
 | TS 类型 | `npm --prefix web run typecheck` | 通过 |
-| 测试 | `npm --prefix web test`（真实 Chromium） | 9 个文件、96 项通过 |
+| 测试 | `npm --prefix web test`（真实 Chromium） | 9 个文件、99 项通过 |
 | 打包 | `go tool mygo build` | `Mark Go Go.app` 12.2MB，dmg 4.0MB |
 
 测试覆盖：21 个刁钻语料文件 + 编辑用例零编辑 compose **逐字节一致**；改一段只改变该块字节；编辑后 compose 幂等；插件禁用释放视图/命令/监听，重新启用正常，`activate` 失败回滚。
@@ -20,8 +20,8 @@
 - 21 个语料文件：进入源码 → 文本与 `getMarkdown` 逐字节一致 → 不编辑退出 → 逐字节一致，且无 change 事件。
 - CRLF、混合换行、无末尾换行、单独 CR：源码中编辑无关行，其余字节不变。
 - 源码模式 undo/redo；切换保留/重建 WYSIWYG 的边界（未改动保留撤销历史，改动后以新文本重建）；切换不触发 change。
-- 源码中 `reveal` / `onSelectionChange` 为精确偏移；切换模式后在新模式 reveal 旧光标偏移。
-- 源码中外部 reload 替换文本、保持模式并重置历史；只读文档在源码中只读。
+- 源码中 `reveal` / `onSelectionChange` 为精确偏移；切换模式后在新模式 reveal 旧光标偏移；源码 reload 会报告光标重置为新位置，切换回 WYSIWYG 只报告最终块偏移、不报告加载中间态。
+- 源码中外部 reload 替换文本、保持模式并重置历史；即使 reload 文本等于进入源码前的 compose 文本，回到 WYSIWYG 仍强制重建（撤销不会复活 reload 前状态）；只读文档在源码中只读。
 - App：头部按钮与 `⌘/`、`Ctrl+/` 均可切换；进入/退出无编辑时 `host.update` 从未调用；源码中改 frontmatter 并去掉 `[!NOTE]` 后 host 收到期望字节，回到 WYSIWYG 该块是可编辑引用而非锁定块，随后 WYSIWYG 编辑仍保留源码改动的字节；源码 undo；源码中 reload 保持模式；只读 host；GenUI chip 在源码模式按精确偏移跳转。
 
 打包应用手动检查（**PENDING manual**，需在 `go tool mygo build` 产物中执行）：

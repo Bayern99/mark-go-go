@@ -107,6 +107,11 @@ export interface Settings {
    * default: a name looked up on PATH, or a path to the executable.
    */
   agentCommand: string;
+  /**
+   * Models are the models the agent offered on its last handshake, or
+   * the default fallback list before any handshake has succeeded.
+   */
+  models?: string[];
 }
 
 /**

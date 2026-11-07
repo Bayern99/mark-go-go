@@ -91,7 +91,13 @@ export interface BrowserHostOptions {
   untitled?: boolean
 }
 
-export const DEFAULT_SETTINGS: GenerationSettings = { model: 'gemini-3.8-flash', agentCommand: 'agy' }
+export const DEFAULT_MODELS = ['gemini-3.8-flash', 'gemini-4-argon', 'claude-opus-5-5'] as const
+
+export const DEFAULT_SETTINGS: GenerationSettings = {
+  model: 'gemini-3.8-flash',
+  agentCommand: 'agy',
+  models: [...DEFAULT_MODELS],
+}
 
 /**
  * In-memory HostAdapter used when the page runs outside MyGo and in tests.
@@ -115,7 +121,11 @@ export function createBrowserHost(
   const reloadListeners = new Set<(snap: HostDocSnapshot) => void>()
   const stateListeners = new Set<(state: DocState) => void>()
   const viewListeners = new Set<(snap: ViewSnapshot) => void>()
-  let settings: GenerationSettings = { ...(options.settings ?? DEFAULT_SETTINGS) }
+  let settings: GenerationSettings = {
+    model: options.settings?.model ?? DEFAULT_SETTINGS.model,
+    agentCommand: options.settings?.agentCommand || DEFAULT_SETTINGS.agentCommand,
+    models: options.settings?.models?.length ? [...options.settings.models] : [...DEFAULT_MODELS],
+  }
   let generating = false
   const generations: GenerateRequest[] = []
 
@@ -228,10 +238,17 @@ export function createBrowserHost(
       }
     },
     async getSettings() {
-      return { ...settings }
+      return {
+        ...settings,
+        models: settings.models ? [...settings.models] : [...DEFAULT_MODELS],
+      }
     },
     async setSettings(next) {
-      settings = { model: next.model, agentCommand: next.agentCommand || DEFAULT_SETTINGS.agentCommand }
+      settings = {
+        model: next.model,
+        agentCommand: next.agentCommand || DEFAULT_SETTINGS.agentCommand,
+        models: next.models?.length ? [...next.models] : settings.models,
+      }
     },
   }
 }

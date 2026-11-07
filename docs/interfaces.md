@@ -25,7 +25,7 @@
 | `UndoView()` | `→ void` | 把上一次生成前保留的 `.<name>.genui.prev.json` 改名回视图文件（一次，之后不再有备份）；没有备份或正在生成时拒绝；页面经 `viewChanged` 看到 |
 | `viewChanged` | 事件 `ViewSnapshot` | 跟随期间视图文件被写入、替换或删除；文档改名/首次保存后改跟随新路径并推送一次 |
 | `Generate(req, progress)` | `GenerateRequest`、`Channel<GenerateProgress>` `→ void` | 经 ACP 运行一次生成（见「GenUI 生成」）；成功后视图文件已原子写入，页面经 `viewChanged` 看到。失败时最后一步是 `{phase: "failed", text, failure: GenerateFailure}`，再以 `message`（+ 空格 + `hint`）拒绝。页面关闭通道、关闭窗口、退出 app 都是取消 |
-| `GetSettings()` / `SetSettings(s)` | `Settings {model, agentCommand}` | 存在用户数据目录的 `settings.json`；默认 `{gemini-3.8-flash, agy}` |
+| `GetSettings()` / `SetSettings(s)` | `Settings {model, agentCommand, models?}` | 存在用户数据目录的 `settings.json`；默认 `{gemini-3.8-flash, agy, [gemini-3.8-flash, gemini-4-argon, claude-opus-5-5]}`；每次 ACP `session/new` 握手成功后自动缓存 `configOptions` 中的模型列表 |
 
 `Snapshot = { text, version, state }`；`version` 从 1 开始，每次从磁盘重载 +1。`ViewSnapshot = { exists, text, error, canUndo }`，`canUndo` = 备份存在（监听同时看视图文件与备份）。生成客户端：`web/src/host/generated/mygo.ts`（`go tool mygo generate`）。
 
@@ -48,6 +48,7 @@ interface ViewGenerator {
   getSettings(): Promise<GenerationSettings>
   setSettings(settings: GenerationSettings): Promise<void>
 }
+interface GenerationSettings { model: string; agentCommand: string; models?: string[] }
 interface GenerateRequest { text: string; mode: 'full' | 'update'; replaceIds?: string[]; request?: string; format: string; sections: SectionRef[] }
 interface SectionRef { heading: string; occurrence: number; start: number; end: number } // UTF-16 偏移
 interface GenerateProgress { phase: 'starting' | 'thinking' | 'reading' | 'writing' | 'checking'; text: string }
@@ -135,7 +136,7 @@ interface PluginContext {
 - 生成要求输入框预填当前视图文件的 `request`；未保存的文档 Generate 禁用并提示 `Save the document first: the view is stored next to it.`。失败时 `role="alert"` 显示 `message`、`hint`（该做什么）、`model-invalid` 的可用模型列表、`detail`（「The agent said:」下原样的 `<pre>`），按钮：`Retry`（用失败那次的请求重跑）、`Open agent settings`（仅 `agent-not-found` / `model-invalid`）、`Dismiss`；旧视图不变。`Cancel` 只在运行中出现；取消不算失败、不提示。
 - 失败分类（Go `failure.go`，`GenerateFailure.kind`）：`agent-not-found`（找不到或启动不了命令）、`auth-required`（任一调用的 JSON-RPC -32000 或含 “authentication required”，包括 stderr；提示 ``Run `<命令> acp --login` in Terminal, then retry.``）、`model-invalid`（`set_config_option` 失败且 `session/new` 列出了模型）、`agent-message`（这一轮结束但没有 `out.json` 而有回复，或 `session/prompt` 返回错误；`detail` 为原话，最多 4000 字符）、`invalid-output`（缺失、过大、符号链接、非 JSON、`a2ui` / `sources` 不合格；有回复时附为 `detail`）、`agent-error`（Agent 提前退出附 stderr、其他 RPC 错误、越界工具调用、内部错误）、`timeout`（默认 5 分钟，`generationJob.Timeout`）、`cancelled`、`unsaved`、`busy`。超时与取消同样 `session/cancel` → 2 秒 → 杀进程 → 删临时目录。
 - 退出：关窗口取消调用的 ctx；退出 app 时 `main` 在 `App.Run` 返回后 `waitForGenerations(5s)`，等每个运行结束 Agent、删除临时目录再退出进程。
-- `Agent settings`：Model（空 = Agent 自己的默认）与 Agent command（空 = `agy`），经 `getSettings` / `setSettings` 读写。
+- 模型选择与设置（#17，ADR 0004）：面板底部固定区展示只读 `Agent: Antigravity (agy)` 与向上弹出菜单 `ModelMenu`（`.sel-btn` 26px 凸起触发钮 + `.mmenu.pop` 10px 圆角白纸弹层 + `Agent’s choice` 与缓存的 `models` 列表 + 右侧勾号 `.chk`）；点选模型后立即经 `setSettings` 持久化并关闭弹层，支持点击外部或按 `Escape`（`document` 级监听）关闭、生成中禁用。常规界面不暴露 `Model` 自由文本输入框与 `Agent command` 输入框。
 - 宿主（Go）：临时目录里只有 `source.md`；`<agentCommand> acp`，无其他参数；`initialize` → `session/new` → `set_config_option(model)`（模型非空时）→ `session/prompt`。权限与工具调用按同一条路径规则检查（读 `source.md`、写 `out.json`、思考），越界即取消本次运行。`out.json` ≤ 1 MiB、普通文件、JSON 对象、非空 `a2ui`、合法 `sources`；宿主写 `version: 2`、`generatedAt`、`model`、`request`、带 `hash` 的 `sources`、原样的 `a2ui`，丢弃其他字段，原子替换视图文件；临时目录总是删除。进度：`starting`（启动、Agent 就绪）、`thinking`、`reading` / `writing`（工具标题）、`checking`。
 - 共享测试向量 `web/test/fixtures/section-vectors.json` 增加了章节的 UTF-16 `start` / `end` 与标题规范化（`normalize`），TS 与 Go 两边都用它验证。
 

@@ -207,7 +207,7 @@ describe('GenUI generation', () => {
     expect(genui().getByRole('alert').query()).toBeNull()
   })
 
-  it('lists the models the agent offers and opens the agent settings', async () => {
+  it('lists the models the agent offers and updates the model menu on model-invalid', async () => {
     const agent = scripted()
     const host = createBrowserHost(DOCUMENT, 'report.md', { generator: agent.generator })
     await openGenUI(host)
@@ -215,7 +215,7 @@ describe('GenUI generation', () => {
     agent.fail({
       kind: 'model-invalid',
       message: 'The agent does not know the model "gemini-9".',
-      hint: 'Choose one of the models it offers in Agent settings.',
+      hint: 'Choose one of the models it offers.',
       models: ['gemini-3.8-flash', 'claude-opus-5-5'],
     })
 
@@ -225,8 +225,13 @@ describe('GenUI generation', () => {
       'gemini-3.8-flash',
       'claude-opus-5-5',
     ])
-    await page.getByRole('button', { name: 'Open agent settings' }).click()
-    await expect.element(page.getByRole('textbox', { name: 'Model' })).toHaveValue('gemini-3.8-flash')
+    const trigger = page.getByTestId('model-menu-trigger')
+    await trigger.click()
+    const menu = page.getByRole('listbox', { name: 'Model' })
+    await expect.element(menu).toBeVisible()
+    expect(
+      Array.from(menu.element().querySelectorAll('[role="option"] .t'), (el) => el.textContent),
+    ).toEqual(['Agent’s choice', 'gemini-3.8-flash', 'claude-opus-5-5'])
   })
 
   it('shows an error that is not a failure as an agent error, and dismisses it', async () => {
@@ -266,27 +271,71 @@ describe('GenUI generation', () => {
 
   it('does not generate for a document that was never saved', async () => {
     const agent = scripted()
-    const host = createBrowserHost(DOCUMENT, 'Untitled', { generator: agent.generator, untitled: true })
+    const host = createBrowserHost(DOCUMENT, 'report.md', { generator: agent.generator, untitled: true })
     await openGenUI(host)
     await expect.element(generate()).toBeDisabled()
     await expect.element(page.getByText('Save the document first', { exact: false })).toBeVisible()
     expect(host.generations).toHaveLength(0)
   })
 
-  it('keeps the agent settings', async () => {
-    const host = createBrowserHost(DOCUMENT, 'report.md', { generator: scripted().generator })
+  it('selects models via ModelMenu, supports Escape and outside click, disables while running, and omits text inputs', async () => {
+    const agent = scripted()
+    const host = createBrowserHost(DOCUMENT, 'report.md', {
+      generator: agent.generator,
+      settings: {
+        model: '',
+        agentCommand: 'agy',
+        models: ['gemini-3.8-flash', 'gemini-4-argon', 'claude-opus-5-5'],
+      },
+    })
     await openGenUI(host)
-    await page.getByRole('button', { name: 'Agent settings' }).click()
-    const model = page.getByRole('textbox', { name: 'Model' })
-    await expect.element(model).toHaveValue('gemini-3.8-flash')
-    await expect.element(page.getByRole('textbox', { name: 'Agent command' })).toHaveValue('agy')
 
-    await model.fill('claude-opus-5-5')
-    await page.getByRole('button', { name: 'Save' }).click()
-    expect(await host.getSettings()).toEqual({ model: 'claude-opus-5-5', agentCommand: 'agy' })
+    // Routine UI does not render text inputs for Model or Agent command.
+    expect(page.getByRole('textbox', { name: 'Model' }).query()).toBeNull()
+    expect(page.getByRole('textbox', { name: 'Agent command' }).query()).toBeNull()
 
-    await page.getByRole('button', { name: 'Agent settings' }).click()
-    await expect.element(page.getByRole('textbox', { name: 'Model' })).toHaveValue('claude-opus-5-5')
+    const trigger = page.getByTestId('model-menu-trigger')
+    await expect.element(trigger).toHaveTextContent('Agent’s choice')
+
+    // Click trigger to open upward popover (.mmenu.pop).
+    await trigger.click()
+    const menu = page.getByRole('listbox', { name: 'Model' })
+    await expect.element(menu).toBeVisible()
+    expect(menu.element().classList.contains('mmenu')).toBe(true)
+    expect(menu.element().classList.contains('pop')).toBe(true)
+
+    // Current selection ("Agent’s choice") is marked selected with a checkmark.
+    const defaultOpt = menu.getByRole('option', { name: 'Agent’s choice' })
+    await expect.element(defaultOpt).toHaveAttribute('aria-selected', 'true')
+    expect(defaultOpt.element().querySelector('.chk')).not.toBeNull()
+
+    // Pressing Escape when document.body has focus closes the menu.
+    document.body.focus()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await expect.poll(() => page.getByRole('listbox', { name: 'Model' }).query()).toBeNull()
+
+    // Reopen and click outside to close.
+    await trigger.click()
+    await expect.element(page.getByRole('listbox', { name: 'Model' })).toBeVisible()
+    document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    await expect.poll(() => page.getByRole('listbox', { name: 'Model' }).query()).toBeNull()
+
+    // Reopen and choose a model: saves immediately and closes the menu.
+    await trigger.click()
+    await page.getByRole('option', { name: 'claude-opus-5-5' }).click()
+    await expect.poll(() => page.getByRole('listbox', { name: 'Model' }).query()).toBeNull()
+    await expect.element(trigger).toHaveTextContent('claude-opus-5-5')
+    expect(await host.getSettings()).toEqual({
+      model: 'claude-opus-5-5',
+      agentCommand: 'agy',
+      models: ['gemini-3.8-flash', 'gemini-4-argon', 'claude-opus-5-5'],
+    })
+
+    // While generation is running, ModelMenu is disabled.
+    await generate().click()
+    await expect.element(trigger).toBeDisabled()
+    agent.finish(viewFile('Done'))
+    await expect.element(trigger).toBeEnabled()
   })
 })
 

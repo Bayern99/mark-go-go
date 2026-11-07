@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -1106,26 +1107,42 @@ func TestReportFailure(t *testing.T) {
 func TestSettingsStore(t *testing.T) {
 	dir := t.TempDir()
 	st := &settingsStore{dir: dir}
-	if got := st.get(); got != (Settings{Model: "gemini-3.8-flash", AgentCommand: "agy"}) {
-		t.Errorf("defaults = %+v", got)
+	wantDefaults := Settings{
+		Model:        "gemini-3.8-flash",
+		AgentCommand: "agy",
+		Models:       []string{"gemini-3.8-flash", "gemini-4-argon", "claude-opus-5-5"},
+	}
+	if got := st.get(); !reflect.DeepEqual(got, wantDefaults) {
+		t.Errorf("defaults = %+v, want %+v", got, wantDefaults)
 	}
 	if err := st.set(Settings{Model: "m-1", AgentCommand: "/usr/bin/agy"}); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	if got := (&settingsStore{dir: dir}).get(); got != (Settings{Model: "m-1", AgentCommand: "/usr/bin/agy"}) {
+	if got := (&settingsStore{dir: dir}).get(); !reflect.DeepEqual(got, Settings{
+		Model:        "m-1",
+		AgentCommand: "/usr/bin/agy",
+		Models:       wantDefaults.Models,
+	}) {
 		t.Errorf("round trip = %+v", got)
+	}
+	// Caching models from ACP session/new persists across reloads and survives SetSettings that only changes model.
+	if err := st.setModels([]string{"claude-opus-5-5", "gemini-3.8-flash", "claude-opus-5-5", ""}); err != nil {
+		t.Fatalf("setModels: %v", err)
+	}
+	if got := (&settingsStore{dir: dir}).get(); !reflect.DeepEqual(got.Models, []string{"claude-opus-5-5", "gemini-3.8-flash"}) {
+		t.Errorf("cached models = %+v", got.Models)
 	}
 	if err := st.set(Settings{Model: "", AgentCommand: ""}); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	if got := st.get(); got.Model != "" || got.AgentCommand != "agy" {
+	if got := (&settingsStore{dir: dir}).get(); got.Model != "" || got.AgentCommand != "agy" || !reflect.DeepEqual(got.Models, []string{"claude-opus-5-5", "gemini-3.8-flash"}) {
 		t.Errorf("empty model and command = %+v", got)
 	}
 
 	// A store without a directory answers with the defaults and
 	// refuses saves.
 	empty := &settingsStore{}
-	if got := empty.get(); got != defaultSettings() {
+	if got := empty.get(); !reflect.DeepEqual(got, defaultSettings()) {
 		t.Errorf("store without a directory = %+v", got)
 	}
 	if err := empty.set(defaultSettings()); err == nil {
@@ -1141,6 +1158,23 @@ func TestSettingsStore(t *testing.T) {
 		if e.Name() != settingsFile {
 			t.Errorf("stray file %q in the settings directory", e.Name())
 		}
+	}
+}
+
+func TestGenerateCachesModelsFromHandshake(t *testing.T) {
+	st := &settingsStore{dir: t.TempDir()}
+	err, _, _ := driveGeneration(t, fakeSpec{
+		Models: []string{"model-alpha", "model-beta"},
+		Out:    happyOut,
+	}, nil, func(job *generationJob) {
+		job.Model = "model-alpha"
+		job.Settings = st
+	})
+	if err != nil {
+		t.Fatalf("driveGeneration: %v", err)
+	}
+	if got := (&settingsStore{dir: st.dir}).get().Models; !reflect.DeepEqual(got, []string{"model-alpha", "model-beta"}) {
+		t.Errorf("cached models after handshake = %+v, want [model-alpha model-beta]", got)
 	}
 }
 

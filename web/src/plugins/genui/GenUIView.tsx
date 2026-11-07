@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 import { createRoot } from 'react-dom/client'
 import type { PluginContext } from '../../core/types'
 import { askForNote } from '../../editor/noteDialog'
-import type { Disposable, GenerateFailure, GenerateFailureKind, GenerationSettings, ViewSnapshot } from '../../host/types'
+import type { Disposable, GenerateFailure, GenerationSettings, ViewSnapshot } from '../../host/types'
 import { loadSurface, ViewSurface, type LoadedSurface } from './a2ui'
 import { GenerationController, type GenerationRun, type GenerationState } from './generation'
+import { ModelMenu } from './ModelMenu'
 import type { SourceActions } from './SourceFrame'
 import { SourceStore } from './sources'
 import { parseViewFile, type ViewFile } from './viewFile'
@@ -259,11 +260,7 @@ function GenUIView({
 
       {!running && state.kind === 'view' && actions && (
         <>
-          {(state.view.model || state.view.generatedAt) && (
-            <p className="genui-meta">
-              {[state.view.model, state.view.generatedAt].filter(Boolean).join(' · ')}
-            </p>
-          )}
+          {state.view.generatedAt && <p className="genui-meta">{state.view.generatedAt}</p>}
           {/* A new file is a new surface: remount rather than diff across surfaces. */}
           <ViewSurface key={state.revision} surface={state.surface} sources={actions} />
         </>
@@ -271,6 +268,8 @@ function GenUIView({
     </div>
   )
 }
+
+const DEFAULT_MODELS = ['gemini-3.8-flash', 'gemini-4-argon', 'claude-opus-5-5']
 
 /**
  * Generate, with the reader's request and the agent's settings. The
@@ -299,9 +298,37 @@ function GeneratePanel({
   undo: (() => Promise<void>) | null
 }): React.ReactElement {
   const [request, setRequest] = useState(memory.draft ?? savedRequest)
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settings, setSettings] = useState<GenerationSettings>({
+    model: 'gemini-3.8-flash',
+    agentCommand: 'agy',
+    models: DEFAULT_MODELS,
+  })
   const [undoError, setUndoError] = useState('')
   const running = run.kind === 'running'
+
+  useEffect(() => {
+    let live = true
+    generation.getSettings().then(
+      (loaded) => {
+        if (!live) return
+        setSettings({
+          model: loaded.model,
+          agentCommand: loaded.agentCommand || 'agy',
+          models: loaded.models?.length ? loaded.models : DEFAULT_MODELS,
+        })
+      },
+      () => {},
+    )
+    return () => {
+      live = false
+    }
+  }, [generation, run.kind])
+
+  const models =
+    run.kind === 'failed' && run.failure.models?.length
+      ? run.failure.models
+      : (settings.models ?? DEFAULT_MODELS)
+
   const change = (next: string) => {
     memory.draft = next
     setRequest(next)
@@ -314,6 +341,17 @@ function GeneratePanel({
   const goBack = (undo: () => Promise<void>) => {
     setUndoError('')
     undo().catch((error: unknown) => setUndoError(error instanceof Error ? error.message : String(error)))
+  }
+  const selectModel = (nextModel: string) => {
+    const nextSettings: GenerationSettings = {
+      ...settings,
+      model: nextModel,
+      models,
+    }
+    setSettings(nextSettings)
+    generation.setSettings(nextSettings).catch((error: unknown) => {
+      setUndoError(error instanceof Error ? error.message : String(error))
+    })
   }
 
   return (
@@ -368,15 +406,6 @@ function GeneratePanel({
             Undo last generation
           </button>
         ) : null}
-        <button
-          type="button"
-          className="genui-settings-toggle"
-          aria-expanded={settingsOpen}
-          disabled={running}
-          onClick={() => setSettingsOpen((open) => !open)}
-        >
-          Agent settings
-        </button>
       </div>
       {untitled ? <p className="genui-note">Save the document first: the view is stored next to it.</p> : null}
       {undoError ? (
@@ -384,26 +413,28 @@ function GeneratePanel({
           {undoError}
         </p>
       ) : null}
-      {run.kind === 'failed' ? (
-        <GenerationFailure failure={run.failure} generation={generation} openSettings={() => setSettingsOpen(true)} />
-      ) : null}
-      {settingsOpen && !running ? <SettingsForm generation={generation} onDone={() => setSettingsOpen(false)} /> : null}
+      {run.kind === 'failed' ? <GenerationFailure failure={run.failure} generation={generation} /> : null}
+      <div className="rp-foot">
+        <div className="gp-kv">
+          <span>Agent</span>
+          <span className="v">Antigravity (agy)</span>
+        </div>
+        <div className="gp-kv">
+          <span>Model</span>
+          <ModelMenu value={settings.model} models={models} disabled={running} onChange={selectModel} />
+        </div>
+      </div>
     </section>
   )
 }
-
-/** The kinds whose fix is in the agent settings. */
-const SETTINGS_FIXES: Partial<Record<GenerateFailureKind, true>> = { 'agent-not-found': true, 'model-invalid': true }
 
 /** Why the last run failed, what to do about it, and the agent's own words. */
 function GenerationFailure({
   failure,
   generation,
-  openSettings,
 }: {
   failure: GenerateFailure
   generation: GenerationController
-  openSettings: () => void
 }): React.ReactElement {
   return (
     <div className="genui-file-error genui-run-error" role="alert">
@@ -431,77 +462,11 @@ function GenerationFailure({
         <button type="button" onClick={() => void generation.retry()}>
           Retry
         </button>
-        {SETTINGS_FIXES[failure.kind] ? (
-          <button type="button" onClick={openSettings}>
-            Open agent settings
-          </button>
-        ) : null}
         <button type="button" onClick={() => generation.dismissError()}>
           Dismiss
         </button>
       </div>
     </div>
-  )
-}
-
-function SettingsForm({
-  generation,
-  onDone,
-}: {
-  generation: GenerationController
-  onDone: () => void
-}): React.ReactElement {
-  const [settings, setSettings] = useState<GenerationSettings | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  useEffect(() => {
-    let live = true
-    generation.getSettings().then(
-      (loaded) => live && setSettings(loaded),
-      (reason: unknown) => live && setError(String(reason)),
-    )
-    return () => {
-      live = false
-    }
-  }, [generation])
-
-  if (!settings) {
-    return <p className="genui-note">{error ?? 'Loading settings…'}</p>
-  }
-  const save = (event: React.FormEvent) => {
-    event.preventDefault()
-    generation.setSettings(settings).then(onDone, (reason: unknown) => setError(String(reason)))
-  }
-  return (
-    <form className="genui-settings" onSubmit={save}>
-      <label>
-        <span>Model</span>
-        <input
-          value={settings.model}
-          placeholder="The agent's own choice"
-          onChange={(event) => setSettings({ ...settings, model: event.target.value })}
-        />
-      </label>
-      <label>
-        <span>Agent command</span>
-        <input
-          value={settings.agentCommand}
-          placeholder="agy"
-          onChange={(event) => setSettings({ ...settings, agentCommand: event.target.value })}
-        />
-      </label>
-      <p className="genui-note">Runs as “{settings.agentCommand || 'agy'} acp” in a folder that holds only a copy of the document.</p>
-      {error ? (
-        <p className="genui-file-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-      <div className="genui-generate-actions">
-        <button type="submit">Save</button>
-        <button type="button" onClick={onDone}>
-          Close
-        </button>
-      </div>
-    </form>
   )
 }
 

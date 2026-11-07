@@ -61,8 +61,7 @@
   background: var(--genui-surface-soft);
 }
 
-.genui-request,
-.genui-settings label {
+.genui-request {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -70,8 +69,7 @@
   color: var(--genui-muted);
 }
 
-.genui-request textarea,
-.genui-settings input {
+.genui-request textarea {
   width: 100%;
   border: 1px solid var(--genui-border);
   border-radius: 6px;
@@ -89,7 +87,7 @@
   gap: 8px;
 }
 
-.genui-generate-panel button,
+.genui-generate-actions button,
 .genui-run-error button {
   border: 1px solid var(--genui-border);
   border-radius: 6px;
@@ -107,23 +105,137 @@
   color: var(--genui-surface);
 }
 
-.genui-generate-panel button:disabled {
+.genui-generate-actions button:disabled {
   border-color: var(--genui-border);
   background: var(--genui-surface);
   color: var(--genui-muted);
   cursor: not-allowed;
 }
 
-.genui-settings {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
-  gap: 8px 12px;
+.rp-foot {
+  margin-top: auto;
+  border-top: 1px solid var(--line);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--chrome);
 }
 
-.genui-settings > .genui-note,
-.genui-settings > .genui-file-error,
-.genui-settings > .genui-generate-actions {
-  grid-column: 1 / -1;
+.gp-kv {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+}
+
+.gp-kv .v {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-2);
+}
+
+.sel-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.sel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 8px 0 9px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--raised);
+  box-shadow: var(--raised-shadow);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    transform 120ms var(--ease-out),
+    background 120ms var(--ease-out);
+}
+
+.sel-btn:hover:not(:disabled) {
+  filter: brightness(0.985);
+}
+
+.sel-btn:active:not(:disabled) {
+  background: var(--raised-press);
+  transform: scale(0.98);
+}
+
+.sel-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.sel-btn .sel-caret {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.mmenu {
+  min-width: 208px;
+  padding: 5px;
+  border-radius: 10px;
+  background: var(--paper);
+  box-shadow: var(--pop-shadow);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.mgg.dark .mmenu {
+  background: #2a2a2d;
+}
+
+.mmenu.pop {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+}
+
+.mmenu .mi {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.mmenu .mi:hover {
+  background: var(--fill-hover);
+}
+
+.mmenu .mi .t {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.mmenu .mi .chk {
+  margin-left: auto;
+  font-size: 14px;
+  color: var(--accent);
 }
 
 .genui-run-error {

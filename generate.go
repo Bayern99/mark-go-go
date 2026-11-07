@@ -131,6 +131,7 @@ func (h *documentHost) generate(ctx context.Context, req GenerateRequest, send f
 		Model:        settings.Model,
 		ViewPath:     viewPath(docPath),
 		Now:          time.Now,
+		Settings:     h.settings,
 	}, send)
 }
 
@@ -170,6 +171,9 @@ type generationJob struct {
 	Model        string
 	ViewPath     string
 	Now          func() time.Time
+	// Settings, when non-nil, caches the models the agent offers on its
+	// session/new handshake.
+	Settings *settingsStore
 	// Timeout is how long the run may take; zero is
 	// defaultGenerationTimeout.
 	Timeout time.Duration
@@ -291,6 +295,9 @@ func (r *genRun) execute(ctx context.Context) error {
 		return err
 	}
 	r.sessionID = opened.SessionID
+	if models := configValues(opened.ConfigOptions, "model"); len(models) > 0 && r.job.Settings != nil {
+		_ = r.job.Settings.setModels(models)
+	}
 	if err := r.send.step("starting", "Agent ready"); err != nil {
 		return err
 	}

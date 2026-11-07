@@ -112,6 +112,8 @@ export interface GenerationSettings {
   model: string
   /** The agent's command, run as `<agentCommand> acp`. */
   agentCommand: string
+  /** Candidate models cached from the last ACP `session/new` handshake, or defaults. */
+  models?: string[]
 }
 
 /**

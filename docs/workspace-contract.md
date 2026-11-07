@@ -75,6 +75,14 @@ UndoView(ctx, documentId string) error
 Generate(ctx, documentId string, req GenerateRequest, progress *Channel[GenerateProgress]) error
 GetSettings() (Settings, error)
 SetSettings(s Settings) error
+
+// Navigation (#22). Opening a workspace does not wait for a full directory scan.
+NavSnapshot(ctx) (NavSnapshot, error)
+SetFilter(ctx, query string) (NavSearchResult, error)
+ToggleFolder(ctx, rel string) error
+RevealPath(ctx, path string) error
+PickFolder(ctx) (string, error)                 // native directory dialog; ErrCanceled if dismissed
+RecentWorkspaces(ctx) ([]RecentWorkspace, error)
 ```
 
 `Flush` is the page's contract for last-input delivery: the editor must send the current Markdown of `documentId` before Save/Close/SaveAs of that document. The host then uses that document's content, not the active tab.
@@ -90,6 +98,8 @@ workspaceChanged: WorkspaceSnapshot
 docReloaded: Snapshot                 // { id, text, version, state }
 docState: DocumentInfo                // { id, name, path, edited, conflict, deleted, readOnly }
 viewChanged: { id: string } & ViewSnapshot
+navChanged: NavSnapshot               // incremental tree; status scanning|indexing|ready|error
+navSearchReady: NavSearchResult       // incomplete is true until the index is ready
 ```
 
 `workspaceChanged` is the source of truth for tab order, active tab, root, and per-tab badges. Background `docState` updates the matching tab without activating it.
@@ -145,6 +155,14 @@ interface WorkspaceAdapter {
   closeDocument(id: string, text?: string): Promise<CloseResult>
   closeWorkspace(): Promise<CloseResult>
   document(id: string): HostAdapter   // permanently bound to id
+  navSnapshot(): Promise<NavSnapshot>
+  subscribeNav(fn: (snap: NavSnapshot) => void): Disposable
+  setFilter(query: string): Promise<NavSearchResult>
+  subscribeSearch(fn: (result: NavSearchResult) => void): Disposable
+  toggleFolder(rel: string): Promise<void>
+  revealPath(path: string): Promise<void>
+  pickFolder(): Promise<string>
+  recentWorkspaces(): Promise<RecentWorkspace[]>
 }
 
 interface HostAdapter extends ViewFileSource, ViewGenerator {
@@ -182,3 +200,4 @@ viewChanged: { id, exists, text, error, canUndo }
 
 - Browser: `WorkspaceAdapter` / `HostAdapter` / `App` / `DocumentPane` public operations.
 - Go: real temp files through `workspaceHost` public methods (open/activate/close/save/save-as routing, identity preserved, cancel close). Native menus and file dialogs are verified after integration on macOS, not claimed here.
+- #22: `NavSnapshot` / `SetFilter` / `PickFolder` / `RecentWorkspaces` and the left-pane tree, filter, splitter, crumbs, and welcome/recents. Opening a folder does not wait for WatchFiles or a full scan; `incomplete` stays true until indexing is ready. Native Open Folder / large-dir smoke is the verification owner.

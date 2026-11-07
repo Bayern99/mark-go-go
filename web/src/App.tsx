@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { RightPane } from './components/RightPane'
-import { SidePane } from './components/SidePane'
+import { PathCrumbs, SidePane } from './components/SidePane'
 import { useViews, ViewHost } from './components/ViewHost'
 import { CommandRegistry } from './core/CommandRegistry'
 import { DocumentService } from './core/DocumentService'
@@ -9,7 +9,7 @@ import { EditorAccess } from './core/EditorAccess'
 import { PluginRegistry } from './core/PluginRegistry'
 import { ViewRegistry } from './core/ViewRegistry'
 import type { AppPlugin } from './core/types'
-import type { Disposable, DocumentInfo, HostAdapter, WorkspaceAdapter } from './host/types'
+import type { Disposable, DocumentInfo, HostAdapter, RecentWorkspace, WorkspaceAdapter, WorkspaceSnapshot } from './host/types'
 import { wrapHostAsWorkspace } from './host/browserHost'
 import { registerDocumentFlush } from './host/mygoHost'
 import { createMarkdownEditor, type EditorMode, type MarkdownEditor } from './editor/createEditor'
@@ -120,15 +120,20 @@ class ViewModeController {
   }
 }
 
-/** Per-document pane: editor, plugins and view modes bound to one HostAdapter. */
 export function DocumentPane({
   host,
   plugins = [],
   active = true,
+  workspaceRoot = '',
+  onOpenPath,
+  onReadyReveal,
 }: {
   host: HostAdapter
   plugins?: AppPlugin[]
   active?: boolean
+  workspaceRoot?: string
+  onOpenPath?: (path: string, isFile: boolean) => void
+  onReadyReveal?: (id: string, reveal: (offset: number) => boolean) => () => void
 }): React.ReactElement {
   const editorRoot = useRef<HTMLDivElement>(null)
   const editorScroll = useRef<HTMLDivElement>(null)
@@ -147,7 +152,9 @@ export function DocumentPane({
   const restored = useRef(false)
   const latestMarkdown = useRef('')
   const activeRef = useRef(active)
+  const revealBinder = useRef(onReadyReveal)
   activeRef.current = active
+  revealBinder.current = onReadyReveal
 
   const services = useMemo(() => {
     const documents = new DocumentService()
@@ -258,6 +265,15 @@ export function DocumentPane({
       editorRef.current = editor
       services.editor.attach(editor)
       editor.setReadonly(snapshot.state.readOnly)
+
+      if (revealBinder.current) {
+        cleanups.push({
+          dispose: revealBinder.current(host.id, (offset) => {
+            modes.showSource()
+            return editor.reveal(offset)
+          }),
+        })
+      }
 
       cleanups.push(
         services.commands.register('editor.reveal', (offset) => {
@@ -439,13 +455,19 @@ export function DocumentPane({
       data-document-id={host.id}
     >
       <div className="app-body">
-        <SidePane views={services.views} doc={docState} />
-
         <div className="main center-column">
           <section className="sheet">
             <header className="app-header docbar">
               <div className="doc-title crumbs">
-                <span className="doc-name last">{docState?.name ?? 'Loading…'}</span>
+                {docState?.path ? (
+                  <PathCrumbs
+                    root={workspaceRoot}
+                    path={docState.path}
+                    onOpen={(path, isFile) => onOpenPath?.(path, isFile)}
+                  />
+                ) : (
+                  <span className="doc-name last">{docState?.name ?? 'Loading…'}</span>
+                )}
                 {docState?.edited ? <span className="edited-dot" title="Unsaved edits" /> : null}
               </div>
               <div className="header-actions">
@@ -584,13 +606,19 @@ function WorkspaceApp({
   workspace: WorkspaceAdapter
   plugins?: AppPlugin[]
 }): React.ReactElement {
-  const [snap, setSnap] = useState<{ documents: { id: string; name: string; path: string; edited: boolean; conflict: boolean; deleted: boolean; readOnly: boolean }[]; activeId: string; name: string; kind: string; root: string } | null>(null)
+  const [snap, setSnap] = useState<WorkspaceSnapshot | null>(null)
+  const [recents, setRecents] = useState<RecentWorkspace[]>([])
   const panes = useRef(new Map<string, HostAdapter>())
+  const reveals = useRef(new Map<string, (offset: number) => boolean>())
+  const emptyViews = useMemo(() => new ViewRegistry(), [])
 
   useEffect(() => {
     let disposed = false
     void workspace.snapshot().then((next) => {
       if (!disposed) setSnap(next)
+    })
+    void workspace.recentWorkspaces().then((list) => {
+      if (!disposed) setRecents(list)
     })
     const sub = workspace.subscribe((next) => setSnap(next))
     return () => {
@@ -609,9 +637,7 @@ function WorkspaceApp({
   }
 
   const activate = (id: string) => {
-    void (async () => {
-      await workspace.activate(id)
-    })()
+    void workspace.activate(id)
   }
 
   const closeTab = (id: string) => {
@@ -632,6 +658,26 @@ function WorkspaceApp({
       closeTab(activeId)
     }
   }
+
+  const openPath = (path: string, isFile: boolean) => {
+    if (isFile) void workspace.open(path)
+    else void workspace.revealPath(path)
+  }
+
+  const jumpHeading = (documentId: string | undefined, path: string, offset: number) => {
+    void (async () => {
+      const info = documentId ? { id: documentId } : await workspace.open(path)
+      const id = documentId ?? info.id
+      await workspace.activate(id)
+      const tryReveal = () => reveals.current.get(id)?.(offset)
+      if (tryReveal()) return
+      window.setTimeout(() => {
+        tryReveal()
+      }, 80)
+    })()
+  }
+
+  const showWelcome = !snap || (snap.kind !== 'folder' && documents.length === 0)
 
   return (
     <div className="workspace-shell">
@@ -668,19 +714,99 @@ function WorkspaceApp({
           </button>
         ))}
       </div>
-      {documents.map((doc) => (
-        <DocumentPane
-          key={doc.id}
-          host={panes.current.get(doc.id)!}
-          plugins={plugins}
-          active={doc.id === activeId}
+      <div className="workspace-body">
+        <SidePane
+          views={emptyViews}
+          workspace={workspace}
+          workspaceSnap={snap}
+          doc={documents.find((d) => d.id === activeId) ?? null}
+          onJumpHeading={jumpHeading}
         />
-      ))}
-      {documents.length === 0 ? (
-        <div className="workspace-empty" data-testid="workspace-empty">
-          {snap?.kind === 'folder' ? 'Open a Markdown file from this folder.' : 'New Document'}
+        <div className="workspace-main">
+          {documents.map((doc) => (
+            <DocumentPane
+              key={doc.id}
+              host={panes.current.get(doc.id)!}
+              plugins={plugins}
+              active={doc.id === activeId}
+              workspaceRoot={snap?.root ?? ''}
+              onOpenPath={openPath}
+              onReadyReveal={(id, reveal) => {
+                reveals.current.set(id, reveal)
+                return () => {
+                  if (reveals.current.get(id) === reveal) reveals.current.delete(id)
+                }
+              }}
+            />
+          ))}
+          {documents.length === 0 ? (
+            showWelcome ? (
+              <Welcome
+                recents={recents}
+                onOpenFolder={() => {
+                  void workspace.pickFolder().then(() => workspace.recentWorkspaces().then(setRecents))
+                }}
+                onNew={() => {
+                  void workspace.newDocument()
+                }}
+                onOpenRecent={(root) => {
+                  void workspace.openWorkspace(root)
+                }}
+              />
+            ) : (
+              <div className="workspace-empty" data-testid="workspace-empty">
+                Open a Markdown file from this folder.
+              </div>
+            )
+          ) : null}
         </div>
-      ) : null}
+      </div>
+    </div>
+  )
+}
+
+function Welcome({
+  recents,
+  onOpenFolder,
+  onNew,
+  onOpenRecent,
+}: {
+  recents: RecentWorkspace[]
+  onOpenFolder: () => void
+  onNew: () => void
+  onOpenRecent: (root: string) => void
+}): React.ReactElement {
+  return (
+    <div className="welcome" data-testid="welcome">
+      <h1>Welcome</h1>
+      <p>Open a folder to browse Markdown files, or start an untitled document.</p>
+      <div className="welcome-actions">
+        <button type="button" className="pill primary" data-testid="open-folder" onClick={onOpenFolder}>
+          Open Folder
+        </button>
+        <button type="button" className="pill" data-testid="new-document" onClick={onNew}>
+          New Document
+        </button>
+      </div>
+      <section className="recent-workspaces" aria-label="Recent workspaces">
+        <h2>Recent Workspaces</h2>
+        {recents.length === 0 ? (
+          <p className="nav-empty" data-testid="recent-empty">No recent workspaces yet.</p>
+        ) : (
+          <ul data-testid="recent-workspaces">
+            {recents.map((item) => (
+              <li key={item.root}>
+                <button type="button" className="row file" onClick={() => onOpenRecent(item.root)}>
+                  <span className="body">
+                    <span className="l1"><span className="nm">{item.name}</span></span>
+                    <span className="l2"><span className="s">{item.root}</span></span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   )
 }

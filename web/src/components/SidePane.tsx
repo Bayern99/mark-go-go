@@ -1,15 +1,19 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ViewRegistry } from '../core/ViewRegistry'
-import type { DocState } from '../host/types'
+import type {
+  DocumentInfo,
+  NavEntry,
+  NavSearchResult,
+  NavSnapshot,
+  WorkspaceAdapter,
+  WorkspaceSnapshot,
+} from '../host/types'
+import { breadcrumbs } from '../workspace/nav'
 import { useViews, ViewHost } from './ViewHost'
 
-function workspaceFolder(path: string | undefined): string {
-  if (!path) return 'Workspace'
-  const normalized = path.replace(/\\/g, '/')
-  const lastSlash = normalized.lastIndexOf('/')
-  if (lastSlash <= 0) return normalized
-  return normalized.slice(0, lastSlash)
-}
+const SIDEBAR_MIN = 190
+const SIDEBAR_MAX = 420
+const SIDEBAR_DEFAULT = 248
 
 function AppLogo() {
   return (
@@ -22,45 +26,141 @@ function AppLogo() {
   )
 }
 
+function formatModified(ms?: number): string {
+  if (!ms) return ''
+  const then = new Date(ms)
+  if (Number.isNaN(then.getTime())) return ''
+  const now = new Date()
+  const sameDay = then.toDateString() === now.toDateString()
+  if (sameDay) {
+    return then.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  }
+  return then.toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
+
+function highlight(text: string, query: string): React.ReactNode {
+  if (!query) return text
+  const lower = text.toLowerCase()
+  const needle = query.toLowerCase()
+  const at = lower.indexOf(needle)
+  if (at < 0) return text
+  return (
+    <>
+      {text.slice(0, at)}
+      <mark className="hit">{text.slice(at, at + query.length)}</mark>
+      {text.slice(at + query.length)}
+    </>
+  )
+}
+
+function relativeFolder(rel: string): string {
+  const slash = rel.replace(/\\/g, '/')
+  const i = slash.lastIndexOf('/')
+  return i <= 0 ? slash : slash.slice(i + 1)
+}
+
+function treeRel(root: string, path: string): string {
+  const a = root.replace(/\\/g, '/').replace(/\/$/, '')
+  const b = path.replace(/\\/g, '/')
+  if (!a) return b
+  if (b === a) return ''
+  return b.startsWith(`${a}/`) ? b.slice(a.length + 1) : b
+}
+
 /**
- * The left workspace column: workspace header, filter input, current open
- * document item, and any registered `location: 'left'` views.
+ * The left workspace column: folder tree, filter, and any `location: 'left'` views.
+ * When `workspace` is omitted the pane still mounts plugin views for older tests.
  */
 export function SidePane({
   views,
   doc,
+  workspace,
+  workspaceSnap,
+  onJumpHeading,
 }: {
   views: ViewRegistry
-  doc?: DocState | null
+  doc?: DocumentInfo | null
+  workspace?: WorkspaceAdapter
+  workspaceSnap?: WorkspaceSnapshot | null
+  onJumpHeading?: (documentId: string | undefined, path: string, offset: number) => void
 }): React.ReactElement | null {
   const entries = useViews(views, 'left')
   const [filter, setFilter] = useState('')
+  const [nav, setNav] = useState<NavSnapshot | null>(null)
+  const [search, setSearch] = useState<NavSearchResult | null>(null)
+  const [width, setWidth] = useState(SIDEBAR_DEFAULT)
 
-  if (doc === undefined && entries.length === 0) return null
+  useEffect(() => {
+    if (!workspace) return
+    let disposed = false
+    void workspace.navSnapshot().then((snap) => {
+      if (!disposed) setNav(snap)
+    })
+    const sub = workspace.subscribeNav((snap) => setNav(snap))
+    const searchSub = workspace.subscribeSearch((result) => setSearch(result))
+    return () => {
+      disposed = true
+      sub.dispose()
+      searchSub.dispose()
+    }
+  }, [workspace])
 
-  const docName = doc?.name ?? 'Loading…'
-  const docPath = doc?.path ?? ''
-  const query = filter.trim().toLowerCase()
-  const showDoc =
-    query === '' ||
-    docName.toLowerCase().includes(query) ||
-    docPath.toLowerCase().includes(query)
+  useEffect(() => {
+    if (!workspace) return
+    const handle = window.setTimeout(() => {
+      void workspace.setFilter(filter).then(setSearch)
+    }, 80)
+    return () => window.clearTimeout(handle)
+  }, [filter, workspace])
+
+  if (!workspace && doc === undefined && entries.length === 0) return null
+
+  const root = workspaceSnap?.root ?? nav?.root ?? ''
+  const name = workspaceSnap?.name ?? (root ? relativeFolder(root) : 'Workspace')
+  const kind = workspaceSnap?.kind ?? (root ? 'folder' : 'untitled')
+  const activePath = workspaceSnap?.documents.find((d) => d.id === workspaceSnap.activeId)?.path ?? doc?.path ?? ''
+  const total = nav?.total ?? 0
+  const query = filter.trim()
+  const filtering = query !== ''
+
+  const onOpenFile = (path: string) => {
+    if (!workspace) return
+    void workspace.open(path)
+  }
+
+  const onToggle = (entry: NavEntry) => {
+    if (!workspace) return
+    void workspace.toggleFolder(treeRel(root, entry.path) || entry.path)
+  }
+
+  const tree = nav?.entries ?? []
+  const fileCountLabel =
+    nav?.status === 'scanning' || nav?.status === 'indexing'
+      ? `Indexing ${nav.indexed} of ${nav.total} files`
+      : nav?.status === 'error'
+        ? nav.error || 'Could not index this folder'
+        : `${total} ${total === 1 ? 'file' : 'files'}`
 
   return (
-    <aside className="side-pane left-pane side" data-testid="left-pane" aria-label="Workspace">
-      {doc !== undefined ? (
-        <>
-          <div className="ws">
-            <div className="ws-name">
-              <AppLogo />
-              <span>Mark Go Go</span>
-            </div>
-            <div className="ws-meta meta">
-              <span className="p">{workspaceFolder(doc?.path)}</span>
-              <span>·</span>
-              <span>1 file</span>
-            </div>
+    <>
+      <aside
+        className="side-pane left-pane side"
+        data-testid="left-pane"
+        aria-label="Workspace"
+        style={{ width, maxWidth: width, minWidth: width }}
+      >
+        <div className="ws">
+          <div className="ws-name">
+            <AppLogo />
+            <span>{kind === 'untitled' ? 'Untitled' : name}</span>
           </div>
+          <div className="ws-meta meta">
+            <span className="p">{kind === 'folder' ? root || name : 'Untitled window'}</span>
+            <span>·</span>
+            <span data-testid="workspace-file-count">{fileCountLabel}</span>
+          </div>
+        </div>
+        {kind === 'folder' ? (
           <label className={`filter${filter ? ' has' : ''}`}>
             <input
               type="text"
@@ -75,43 +175,320 @@ export function SidePane({
                 type="button"
                 className="clear"
                 aria-label="Clear filter"
+                data-testid="clear-filter"
                 onClick={() => setFilter('')}
               >
                 ×
               </button>
             ) : null}
           </label>
+        ) : null}
+        {kind === 'folder' && filtering ? (
+          <FilterResults
+            query={query}
+            search={search}
+            nav={nav}
+            onOpenFile={onOpenFile}
+            onJumpHeading={onJumpHeading}
+          />
+        ) : kind === 'folder' ? (
+          <FileTree
+            entries={tree}
+            activePath={activePath}
+            collapsedCount={nav?.collapsedCount ?? 0}
+            status={nav?.status ?? 'idle'}
+            onOpenFile={onOpenFile}
+            onToggle={onToggle}
+          />
+        ) : (
           <div className="list" role="tree" aria-label="Files">
-            {showDoc ? (
-              <button
-                type="button"
-                className="row file sel"
-                data-testid="workspace-current-file"
-                aria-current="true"
-                title={docPath || docName}
-              >
-                <span className="ed-slot">
-                  {doc?.edited ? <span className="edited" title="Unsaved edits" /> : null}
-                </span>
-                <span className="body">
-                  <span className="l1">
-                    <span className="nm">{docName}</span>
-                  </span>
-                  <span className="l2">
-                    <span className="s">{docPath || 'Untitled'}</span>
-                  </span>
-                </span>
-              </button>
-            ) : null}
+            {doc ? (
+              <FileRow entry={{
+                id: `open:${doc.id ?? 'current'}`,
+                kind: 'file',
+                name: doc.name,
+                path: doc.path,
+                parent: '',
+                depth: 0,
+                edited: doc.edited,
+                conflict: doc.conflict,
+                deleted: doc.deleted,
+              }} selected query="" onOpen={() => {}} />
+            ) : (
+              <p className="nav-empty" data-testid="untitled-empty">Write a new document, or open a folder.</p>
+            )}
           </div>
-        </>
+        )}
+        {entries.map((view) => (
+          <section key={view.id} className="side-view" data-view-id={view.id} aria-label={view.title}>
+            <header className="side-view-header">{view.title}</header>
+            <ViewHost view={view} className="side-view-body" />
+          </section>
+        ))}
+      </aside>
+      <div
+        className="sidebar-splitter"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize workspace sidebar"
+        aria-valuemin={SIDEBAR_MIN}
+        aria-valuemax={SIDEBAR_MAX}
+        aria-valuenow={width}
+        tabIndex={0}
+        data-testid="sidebar-splitter"
+        onPointerDown={(event) => {
+          event.preventDefault()
+          const startX = event.clientX
+          const startW = width
+          const move = (ev: PointerEvent) => {
+            const next = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, startW + (ev.clientX - startX)))
+            setWidth(next)
+          }
+          const up = () => {
+            window.removeEventListener('pointermove', move)
+            window.removeEventListener('pointerup', up)
+          }
+          window.addEventListener('pointermove', move)
+          window.addEventListener('pointerup', up)
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowLeft') {
+            event.preventDefault()
+            setWidth((w) => Math.max(SIDEBAR_MIN, w - 16))
+          } else if (event.key === 'ArrowRight') {
+            event.preventDefault()
+            setWidth((w) => Math.min(SIDEBAR_MAX, w + 16))
+          } else if (event.key === 'Home') {
+            event.preventDefault()
+            setWidth(SIDEBAR_MIN)
+          } else if (event.key === 'End') {
+            event.preventDefault()
+            setWidth(SIDEBAR_MAX)
+          }
+        }}
+      />
+    </>
+  )
+}
+
+function FileTree({
+  entries,
+  activePath,
+  collapsedCount,
+  status,
+  onOpenFile,
+  onToggle,
+}: {
+  entries: NavEntry[]
+  activePath: string
+  collapsedCount: number
+  status: string
+  onOpenFile: (path: string) => void
+  onToggle: (entry: NavEntry) => void
+}) {
+  if (status === 'error') {
+    return (
+      <div className="list" role="tree" aria-label="Files" data-testid="workspace-tree">
+        <p className="nav-empty" role="alert" data-testid="nav-error">Could not read this folder.</p>
+      </div>
+    )
+  }
+  if (entries.length === 0 && (status === 'scanning' || status === 'indexing')) {
+    return (
+      <div className="list" role="tree" aria-label="Files" data-testid="workspace-tree">
+        <p className="nav-empty" data-testid="nav-loading" role="status">Indexing files…</p>
+      </div>
+    )
+  }
+  if (entries.length === 0) {
+    return (
+      <div className="list" role="tree" aria-label="Files" data-testid="workspace-tree">
+        <p className="nav-empty" data-testid="nav-empty">No Markdown files in this folder.</p>
+      </div>
+    )
+  }
+  return (
+    <div className="list" role="tree" aria-label="Files" data-testid="workspace-tree">
+      {collapsedCount > 0 ? (
+        <p className="nav-collapsed meta" data-testid="collapsed-count">{collapsedCount} files hidden</p>
       ) : null}
-      {entries.map((view) => (
-        <section key={view.id} className="side-view" data-view-id={view.id} aria-label={view.title}>
-          <header className="side-view-header">{view.title}</header>
-          <ViewHost view={view} className="side-view-body" />
-        </section>
+      {entries.map((entry) =>
+        entry.kind === 'folder' ? (
+          <FolderRow key={entry.id} entry={entry} onToggle={() => onToggle(entry)} />
+        ) : (
+          <FileRow
+            key={entry.id}
+            entry={entry}
+            selected={entry.path === activePath}
+            query=""
+            onOpen={() => onOpenFile(entry.path)}
+          />
+        ),
+      )}
+    </div>
+  )
+}
+
+function FolderRow({ entry, onToggle }: { entry: NavEntry; onToggle: () => void }) {
+  const collapsed = entry.folderState === 'collapsed'
+  return (
+    <button
+      type="button"
+      className="row folder"
+      role="treeitem"
+      aria-expanded={!collapsed}
+      data-testid={`folder-${entry.name}`}
+      style={{ paddingLeft: 8 + entry.depth * 16 }}
+      onClick={onToggle}
+    >
+      <span className="ed-slot" aria-hidden="true">{collapsed ? '▸' : '▾'}</span>
+      <span className="body">
+        <span className="l1">
+          <span className="nm">{entry.name}</span>
+          <span className="count meta">{entry.markdownCount ?? 0}</span>
+        </span>
+      </span>
+    </button>
+  )
+}
+
+function FileRow({
+  entry,
+  selected,
+  query,
+  onOpen,
+}: {
+  entry: NavEntry
+  selected: boolean
+  query: string
+  onOpen: () => void
+}) {
+  const subtitle = entry.title && entry.title !== entry.name ? entry.title : entry.excerpt || entry.path || 'Untitled'
+  return (
+    <button
+      type="button"
+      className={`row file${selected ? ' sel' : ''}${entry.deleted ? ' deleted' : ''}${entry.conflict ? ' conflict' : ''}`}
+      role="treeitem"
+      aria-current={selected ? 'true' : undefined}
+      data-testid={selected ? 'workspace-current-file' : `file-${entry.name}`}
+      title={entry.path || entry.name}
+      style={{ paddingLeft: 8 + entry.depth * 16 }}
+      onClick={onOpen}
+    >
+      <span className="ed-slot">
+        {entry.edited ? <span className="edited" title="Unsaved edits" /> : null}
+      </span>
+      <span className="body">
+        <span className="l1">
+          <span className="nm">{highlight(entry.name, query)}</span>
+          {entry.conflict ? <span className="badge conflict" title="Conflict">conflict</span> : null}
+          {entry.deleted ? <span className="badge deleted" title="Deleted">deleted</span> : null}
+        </span>
+        <span className="l2">
+          <span className="s">{highlight(subtitle, query)}</span>
+          {entry.notes ? <span className="notes meta" title="Notes">{entry.notes}</span> : null}
+          {entry.modifiedAt ? <span className="mtime meta">{formatModified(entry.modifiedAt)}</span> : null}
+        </span>
+      </span>
+    </button>
+  )
+}
+
+function FilterResults({
+  query,
+  search,
+  nav,
+  onOpenFile,
+  onJumpHeading,
+}: {
+  query: string
+  search: NavSearchResult | null
+  nav: NavSnapshot | null
+  onOpenFile: (path: string) => void
+  onJumpHeading?: (documentId: string | undefined, path: string, offset: number) => void
+}) {
+  const incomplete = search?.incomplete || nav?.status === 'scanning' || nav?.status === 'indexing'
+  const matched = search?.matched ?? 0
+  const total = search?.total ?? nav?.total ?? 0
+  return (
+    <div className="list" role="tree" aria-label="Filter results" data-testid="filter-results">
+      <p className="nav-status meta" data-testid="filter-status" role="status">
+        {incomplete
+          ? `Indexing ${search?.indexed ?? nav?.indexed ?? 0} of ${total} files — ${matched} so far`
+          : `${matched} of ${total} files`}
+      </p>
+      {incomplete && matched === 0 ? (
+        <p className="nav-empty" data-testid="filter-indexing">Still indexing — not an empty result.</p>
+      ) : null}
+      {!incomplete && matched === 0 ? (
+        <p className="nav-empty" data-testid="filter-empty">No matching files or headings.</p>
+      ) : null}
+      {search?.hits.map((hit) => (
+        <div key={hit.path} className="hit-group">
+          <FileRow
+            entry={{
+              id: `hit:${hit.path}`,
+              kind: 'file',
+              name: hit.name,
+              path: hit.path,
+              parent: '',
+              depth: 0,
+              title: hit.title,
+              excerpt: hit.excerpt,
+              documentId: hit.documentId,
+            }}
+            selected={false}
+            query={query}
+            onOpen={() => onOpenFile(hit.path)}
+          />
+          {hit.headings.map((heading) => (
+            <button
+              key={`${hit.path}:${heading.offset}`}
+              type="button"
+              className="row heading-hit"
+              data-testid={`heading-hit-${heading.offset}`}
+              style={{ paddingLeft: 32 }}
+              onClick={() => onJumpHeading?.(hit.documentId, hit.path, heading.offset)}
+            >
+              <span className="ed-slot" />
+              <span className="body">
+                <span className="l1">
+                  <span className="nm">{highlight(heading.text, query)}</span>
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
       ))}
-    </aside>
+    </div>
+  )
+}
+
+export function PathCrumbs({
+  root,
+  path,
+  onOpen,
+}: {
+  root: string
+  path: string
+  onOpen: (path: string, isFile: boolean) => void
+}): React.ReactElement | null {
+  const crumbs = useMemo(() => breadcrumbs(root, path), [root, path])
+  if (!path || crumbs.length === 0) return null
+  return (
+    <nav className="crumbs" aria-label="Path" data-testid="path-crumbs">
+      {crumbs.map((crumb, index) => (
+        <span key={crumb.path} className="crumb">
+          {index > 0 ? <span className="sep" aria-hidden="true">/</span> : null}
+          <button
+            type="button"
+            className={`crumb-btn${crumb.isFile ? ' last' : ''}`}
+            onClick={() => onOpen(crumb.path, crumb.isFile)}
+          >
+            {crumb.name}
+          </button>
+        </span>
+      ))}
+    </nav>
   )
 }

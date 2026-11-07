@@ -65,6 +65,7 @@ type workspace struct {
 	win    *mygo.Window
 	tabs   []string
 	active string
+	index  *workspaceIndex
 }
 
 func (w *workspace) kind() string {
@@ -285,6 +286,7 @@ func (h *documentHost) OpenWorkspace(ctx context.Context, root string) error {
 			h.mu.Unlock()
 			win.Show()
 			win.Focus()
+			h.rememberRoot(abs)
 			return nil
 		}
 	}
@@ -463,6 +465,10 @@ func (h *documentHost) newWorkspaceWindow(root, title string) *mygo.Window {
 	h.byWindow[win] = w
 	h.mu.Unlock()
 	win.OnClosed(func() { h.forgetWindow(win) })
+	if root != "" {
+		h.rememberRoot(root)
+		h.startIndex(w)
+	}
 	return win
 }
 
@@ -475,6 +481,7 @@ func (h *documentHost) forgetWindow(win *mygo.Window) {
 		ids = append([]string{}, w.tabs...)
 	}
 	h.mu.Unlock()
+	h.forgetIndex(w)
 	for _, id := range ids {
 		if s, err := h.docSession(id); err == nil {
 			h.dropSession(s)

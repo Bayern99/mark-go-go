@@ -37,8 +37,9 @@ type documentHost struct {
 
 	docs *mygo.Documents[string]
 
-	settings *settingsStore
-	runs     sync.WaitGroup
+	settings     *settingsStore
+	runs         sync.WaitGroup
+	disableWatch bool
 }
 
 // docSession is one open document, permanently bound to its id.
@@ -192,6 +193,7 @@ func (h *documentHost) adopt(doc *mygo.Document[string], win *mygo.Window) {
 		s.viewMoved(state.Path)
 		h.migrateIfNeeded(s)
 		h.emitWorkspace(s.ws)
+		h.reindexOpenDocument(s)
 	})
 	s.offClosed = doc.OnClosed(func() {
 		h.dropSession(s)
@@ -200,6 +202,7 @@ func (h *documentHost) adopt(doc *mygo.Document[string], win *mygo.Window) {
 		h.docs.SetActive(doc)
 	}
 	h.emitWorkspace(w)
+	h.reindexOpenDocument(s)
 }
 
 func (h *documentHost) dropSession(s *docSession) {
@@ -374,6 +377,7 @@ func (h *documentHost) Update(ctx context.Context, documentID, text string) erro
 		return err
 	}
 	s.doc.Set(text)
+	h.reindexOpenDocument(s)
 	return nil
 }
 
@@ -505,4 +509,3 @@ func (h *documentHost) Revert(ctx context.Context, documentID string) error {
 	}
 	return s.doc.Revert()
 }
-

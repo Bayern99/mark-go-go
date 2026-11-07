@@ -8,12 +8,15 @@ import type {
   GenerationSettings,
   HostAdapter,
   HostDocSnapshot,
+  NavSearchResult,
+  NavSnapshot,
   ViewSnapshot,
   WorkspaceAdapter,
   WorkspaceKind,
   WorkspaceSnapshot,
 } from './types'
 import { cancelled, failureOf, GenerationError } from './generationError'
+import { BrowserNavIndex, liveTexts, type BrowserNavSeed } from '../workspace/nav'
 
 export const DEMO_MARKDOWN = `# Quarterly Report
 
@@ -346,6 +349,23 @@ export function wrapHostAsWorkspace(host: HostAdapter, name?: string): Workspace
     const current = snap()
     for (const fn of listeners) fn(current)
   })
+  const idleNav = (): NavSnapshot => ({
+    root: '',
+    status: 'idle',
+    indexed: 0,
+    total: 0,
+    entries: [],
+    collapsedCount: 0,
+  })
+  const idleSearch = (): NavSearchResult => ({
+    query: '',
+    status: 'idle',
+    matched: 0,
+    indexed: 0,
+    total: 0,
+    incomplete: false,
+    hits: [],
+  })
   return {
     snapshot: async () => snap(),
     subscribe(fn) {
@@ -373,6 +393,26 @@ export function wrapHostAsWorkspace(host: HostAdapter, name?: string): Workspace
       if (id !== host.id) throw new Error(`unknown document ${id}`)
       return host
     },
+    async navSnapshot() {
+      return idleNav()
+    },
+    subscribeNav() {
+      return disposable(() => {})
+    },
+    async setFilter() {
+      return idleSearch()
+    },
+    subscribeSearch() {
+      return disposable(() => {})
+    },
+    async toggleFolder() {},
+    async revealPath() {},
+    async pickFolder() {
+      return ''
+    },
+    async recentWorkspaces() {
+      return []
+    },
   }
 }
 
@@ -390,6 +430,7 @@ export interface BrowserWorkspaceOptions {
   /** Close-ask: canceled keeps every tab and the adapter cache. */
   confirmClose?: (id: string) => CloseResult | Promise<CloseResult>
   confirmCloseWorkspace?: () => CloseResult | Promise<CloseResult>
+  nav?: BrowserNavSeed
 }
 
 function isBrowserHost(host: HostAdapter): host is BrowserHost {
@@ -453,9 +494,22 @@ export function createBrowserWorkspace(
     activeId,
   })
 
+  const nav = new BrowserNavIndex(root, options.nav)
+
   const emit = () => {
     const current = snap()
     for (const fn of listeners) fn(current)
+    void refreshNav()
+  }
+
+  const refreshNav = async () => {
+    const docs = snap().documents
+    const texts = await liveTexts(docs, (id) => {
+      const host = adapters.get(id)
+      if (!host) throw new Error(`unknown document ${id}`)
+      return host
+    })
+    nav.emit(docs, texts)
   }
 
   const drop = (id: string) => {
@@ -592,6 +646,52 @@ export function createBrowserWorkspace(
       const host = adapters.get(id)
       if (!host) throw new Error(`unknown document ${id}`)
       return host
+    },
+    async navSnapshot() {
+      const docs = snap().documents
+      const texts = await liveTexts(docs, (id) => {
+        const host = adapters.get(id)
+        if (!host) throw new Error(`unknown document ${id}`)
+        return host
+      })
+      return nav.snapshot(docs, texts)
+    },
+    subscribeNav(fn) {
+      return disposable(nav.subscribeNav(fn))
+    },
+    async setFilter(query: string) {
+      nav.setQuery(query)
+      const docs = snap().documents
+      const texts = await liveTexts(docs, (id) => {
+        const host = adapters.get(id)
+        if (!host) throw new Error(`unknown document ${id}`)
+        return host
+      })
+      const result = nav.search(docs, texts)
+      nav.emit(docs, texts)
+      return result
+    },
+    subscribeSearch(fn) {
+      return disposable(nav.subscribeSearch(fn))
+    },
+    async toggleFolder(rel: string) {
+      nav.toggleFolder(rel)
+      await refreshNav()
+    },
+    async revealPath(path: string) {
+      nav.reveal(path)
+      await refreshNav()
+    },
+    async pickFolder() {
+      if (nav.pickFolderImpl) {
+        const chosen = await nav.pickFolderImpl()
+        if (chosen) nav.remember(chosen)
+        return chosen
+      }
+      return root
+    },
+    async recentWorkspaces() {
+      return [...nav.recents]
     },
   }
 }

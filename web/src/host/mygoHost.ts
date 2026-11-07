@@ -11,6 +11,9 @@ import type {
   HostDocSnapshot,
   NativeCommand,
   NativeCommandName,
+  NavSearchResult,
+  NavSnapshot,
+  RecentWorkspace,
   ViewSnapshot,
   WorkspaceAdapter,
   WorkspaceSnapshot,
@@ -22,6 +25,7 @@ import {
   type NativeCommand as WireNativeCommand,
   type WorkspaceSnapshot as WireWorkspaceSnapshot,
 } from "./generated/mygo";
+import { WorkspaceNav, navEvents } from "./generated/nav";
 import { cancelled, failureOf, GenerationError, isFailureKind } from "./generationError";
 
 function asWorkspaceSnapshot(snap: WireWorkspaceSnapshot): WorkspaceSnapshot {
@@ -245,6 +249,30 @@ export function createMyGoHost(): WorkspaceAdapter {
       const created = bindDocument(id);
       adapters.set(id, created);
       return created;
+    },
+    navSnapshot(): Promise<NavSnapshot> {
+      return WorkspaceNav.navSnapshot();
+    },
+    subscribeNav(fn: (snap: NavSnapshot) => void): Disposable {
+      return disposable(navEvents.navChanged.on(fn));
+    },
+    setFilter(query: string): Promise<NavSearchResult> {
+      return WorkspaceNav.setFilter(query);
+    },
+    subscribeSearch(fn: (result: NavSearchResult) => void): Disposable {
+      return disposable(navEvents.navSearchReady.on(fn));
+    },
+    async toggleFolder(rel: string): Promise<void> {
+      await WorkspaceNav.toggleFolder(rel);
+    },
+    async revealPath(path: string): Promise<void> {
+      await WorkspaceNav.revealPath(path);
+    },
+    pickFolder(): Promise<string> {
+      return WorkspaceNav.pickFolder();
+    },
+    recentWorkspaces(): Promise<RecentWorkspace[]> {
+      return WorkspaceNav.recentWorkspaces();
     },
   };
 

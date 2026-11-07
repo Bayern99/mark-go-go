@@ -34,9 +34,10 @@ export const KeyPoints = createComponentImplementation(
       .strict()
       .describe('The few points a reader should take away.'),
   },
-  ({ props }) => (
+  ({ props, context }) => (
     <SourceFrame
       source={useComponentSource(props.sources)}
+      componentId={context.componentModel.id}
       className="genui-keypoints"
       style={flex(props.weight)}
       title={props.title}
@@ -77,9 +78,10 @@ export const MetricGrid = createComponentImplementation(
       .strict()
       .describe('A grid of headline figures.'),
   },
-  ({ props }) => (
+  ({ props, context }) => (
     <SourceFrame
       source={useComponentSource(props.sources)}
+      componentId={context.componentModel.id}
       className="genui-metrics"
       style={flex(props.weight)}
       title={props.title}
@@ -153,7 +155,7 @@ export const ComparisonTable = createComponentImplementation(
       })
       .describe('Items compared side by side. Readers can sort by any column; sorting changes only the display.'),
   },
-  ({ props }) => {
+  ({ props, context }) => {
     const [sort, setSort] = useState<SortState>(null)
     const order = props.rows.map((_, index) => index)
     if (sort) {
@@ -174,6 +176,7 @@ export const ComparisonTable = createComponentImplementation(
     return (
       <SourceFrame
         source={useComponentSource(props.sources)}
+        componentId={context.componentModel.id}
         className="genui-comparison"
         style={flex(props.weight)}
         title={props.title}
@@ -243,9 +246,10 @@ export const Timeline = createComponentImplementation(
       .strict()
       .describe('Events or phases in order.'),
   },
-  ({ props }) => (
+  ({ props, context }) => (
     <SourceFrame
       source={useComponentSource(props.sources)}
+      componentId={context.componentModel.id}
       className="genui-timeline"
       style={flex(props.weight)}
       title={props.title}
@@ -290,10 +294,16 @@ export const Checklist = createComponentImplementation(
         'Items with their state in the document. Read-only: clicking an item opens it in the document, it never changes the state.',
       ),
   },
-  ({ props }) => {
+  ({ props, context }) => {
     const source = useComponentSource(props.sources)
     return (
-      <SourceFrame source={source} className="genui-checklist" style={flex(props.weight)} title={props.title}>
+      <SourceFrame
+        source={source}
+        componentId={context.componentModel.id}
+        className="genui-checklist"
+        style={flex(props.weight)}
+        title={props.title}
+      >
         <ul>
           {props.items.map((item, index) => (
             <li key={index} data-done={item.done ? 'true' : 'false'}>

@@ -83,19 +83,22 @@ afterEach(async () => {
 async function openGenUI(host: BrowserHost): Promise<MountedApp> {
   app = await mountApp(DOCUMENT, host)
   await page.getByTestId('view-mode-genui').click()
+  await page.getByTestId('right-tab-genui.panel').click()
   await vi.waitFor(() => {
     const state = app?.container.querySelector('[data-testid="genui-view"]')?.getAttribute('data-state')
-    expect(state === 'none' || state === 'view').toBe(true)
+    const panelEl = app?.container.querySelector('[data-testid="genui-panel"]')
+    expect((state === 'none' || state === 'view') && panelEl !== null).toBe(true)
   })
   return app
 }
 
 const genui = () => page.getByTestId('genui-view')
-const generate = () => page.getByRole('button', { name: 'Generate', exact: true })
-const regenerateChanged = () => page.getByRole('button', { name: /^Regenerate changed/ })
-const regenerateAll = () => page.getByRole('button', { name: 'Regenerate all' })
-const undo = () => page.getByRole('button', { name: 'Undo last generation' })
-const requestBox = () => page.getByRole('textbox', { name: /What should the view focus on/ })
+const panel = () => page.getByTestId('genui-panel')
+const generate = () => panel().getByRole('button', { name: 'Generate', exact: true })
+const regenerateChanged = () => panel().getByRole('button', { name: /^Regenerate changed/ })
+const regenerateAll = () => panel().getByRole('button', { name: 'Regenerate all' })
+const undo = () => panel().getByRole('button', { name: 'Undo' })
+const requestBox = () => panel().getByRole('textbox', { name: 'Generation request' })
 
 describe('GenUI generation', () => {
   it('sends the editor text, its sections, the format and the request, then shows the new view', async () => {
@@ -103,21 +106,24 @@ describe('GenUI generation', () => {
     const host = createBrowserHost(DOCUMENT, 'report.md', { generator: agent.generator })
     const mounted = await openGenUI(host)
 
+    // Center view has no generate button, textbox, or model menu.
+    expect(genui().getByRole('button', { name: 'Generate', exact: true }).query()).toBeNull()
+    expect(genui().getByRole('textbox').query()).toBeNull()
+
     await requestBox().fill('Focus on the metrics')
     await generate().click()
 
     await expect.element(page.getByTestId('genui-progress')).toBeVisible()
     expect(mounted.container.querySelector('.genui-skeleton')).not.toBeNull()
-    await containsText(genui().getByRole('status'), 'Starting the agent')
+    await containsText(panel().getByRole('status'), 'Starting the agent')
     agent.step({ phase: 'reading', text: 'File source.md' })
-    await containsText(genui().getByRole('status'), 'File source.md')
+    await containsText(panel().getByRole('status'), 'File source.md')
     agent.step({ phase: 'writing', text: 'File out.json' })
-    await containsText(genui().getByRole('status'), 'File out.json')
+    await containsText(panel().getByRole('status'), 'File out.json')
 
     // One run at a time: the only action while it runs is Cancel.
     expect(generate().query()).toBeNull()
-    await expect.element(page.getByRole('button', { name: 'Cancel' })).toBeVisible()
-    await expect.element(requestBox()).toBeDisabled()
+    await expect.element(panel().getByRole('button', { name: 'Cancel' })).toBeVisible()
 
     const [req] = host.generations
     expect(req?.text).toBe(DOCUMENT)
@@ -136,13 +142,15 @@ describe('GenUI generation', () => {
     for (const name of CATALOG_COMPONENTS) expect(req?.format).toContain(`"${name}"`)
 
     agent.finish(viewFile('Made by the agent', 'Focus on the metrics'))
-    await expect.element(page.getByText('Made by the agent', { exact: false })).toBeVisible()
+    await expect.element(genui().getByText('Made by the agent', { exact: false })).toBeVisible()
     expect(page.getByTestId('genui-progress').query()).toBeNull()
-    // Nothing changed since: only a whole new view has anything to do.
-    await expect.element(regenerateChanged()).toBeDisabled()
+    // Nothing changed since: Up to date with only Regenerate all shown.
+    await expect.element(panel().getByText('Up to date')).toBeVisible()
+    expect(regenerateChanged().query()).toBeNull()
     await expect.element(regenerateAll()).toBeEnabled()
-    // The view's own request is offered again.
-    await expect.element(requestBox()).toHaveValue('Focus on the metrics')
+    // The view's Focus request is displayed read-only until Edit is clicked.
+    await expect.element(panel().getByTestId('focus-value')).toHaveTextContent('Focus on the metrics')
+    expect(requestBox().query()).toBeNull()
     expect(host.getState().edited).toBe(false)
   })
 
@@ -167,19 +175,21 @@ describe('GenUI generation', () => {
     await page.getByTestId('view-mode-genui').click()
     await expect.element(page.getByTestId('genui-progress')).toBeVisible()
     agent.finish(viewFile('After the edit'))
-    await expect.element(page.getByText('After the edit', { exact: false })).toBeVisible()
+    await expect.element(genui().getByText('After the edit', { exact: false })).toBeVisible()
   })
 
-  it('keeps the old view, shows what the agent said and retries the same request', async () => {
+  it('keeps the old view, shows what the agent said in the right panel, and retries the same request', async () => {
     const agent = scripted()
     const host = createBrowserHost(DOCUMENT, 'report.md', {
       view: viewFile('The old view'),
       generator: agent.generator,
     })
     await openGenUI(host)
-    await expect.element(page.getByText('The old view', { exact: false })).toBeVisible()
+    await expect.element(genui().getByText('The old view', { exact: false })).toBeVisible()
 
+    await panel().getByTestId('focus-edit').click()
     await requestBox().fill('Compare the metrics')
+    await panel().getByRole('button', { name: 'Save', exact: true }).click()
     await regenerateAll().click()
     const quota = 'Individual quota reached.\nResets in 3h 12m.'
     agent.fail({
@@ -189,22 +199,26 @@ describe('GenUI generation', () => {
       detail: quota,
     })
 
-    const alert = genui().getByRole('alert')
+    // Error alert appears in the right panel, NOT in the center genui-view.
+    expect(genui().getByRole('alert').query()).toBeNull()
+    const alert = panel().getByRole('alert')
     await containsText(alert, 'The agent finished without writing a view.')
     await containsText(alert, "Read the agent's message; retry once it is resolved.")
+    await expect.element(page.getByTestId('right-tab-dot-genui.panel')).toHaveAttribute('data-tone', 'danger')
     // The agent's words verbatim, line breaks included.
     expect(alert.element().querySelector('pre')?.textContent).toBe(quota)
-    await expect.element(page.getByText('The old view', { exact: false })).toBeVisible()
-    expect(page.getByRole('button', { name: 'Cancel' }).query()).toBeNull()
-    expect(page.getByRole('button', { name: 'Open agent settings' }).query()).toBeNull()
+    await expect.element(genui().getByText('The old view', { exact: false })).toBeVisible()
+    expect(panel().getByRole('button', { name: 'Cancel' }).query()).toBeNull()
+    expect(panel().getByRole('button', { name: 'Open agent settings' }).query()).toBeNull()
 
-    await page.getByRole('button', { name: 'Retry' }).click()
+    await panel().getByRole('button', { name: 'Retry' }).click()
     await expect.element(page.getByTestId('genui-progress')).toBeVisible()
-    expect(genui().getByRole('alert').query()).toBeNull()
+    expect(panel().getByRole('alert').query()).toBeNull()
     expect(host.generations.map((req) => req.request)).toEqual(['Compare the metrics', 'Compare the metrics'])
     agent.finish(viewFile('Made on retry', 'Compare the metrics'))
-    await expect.element(page.getByText('Made on retry', { exact: false })).toBeVisible()
-    expect(genui().getByRole('alert').query()).toBeNull()
+    await expect.element(genui().getByText('Made on retry', { exact: false })).toBeVisible()
+    expect(panel().getByRole('alert').query()).toBeNull()
+    expect(page.getByTestId('right-tab-dot-genui.panel').query()).toBeNull()
   })
 
   it('lists the models the agent offers and updates the model menu on model-invalid', async () => {
@@ -219,7 +233,7 @@ describe('GenUI generation', () => {
       models: ['gemini-3.8-flash', 'claude-opus-5-5'],
     })
 
-    const alert = genui().getByRole('alert')
+    const alert = panel().getByRole('alert')
     await containsText(alert, 'The agent does not know the model "gemini-9".')
     expect(Array.from(alert.element().querySelectorAll('li'), (li) => li.textContent)).toEqual([
       'gemini-3.8-flash',
@@ -241,11 +255,11 @@ describe('GenUI generation', () => {
     await generate().click()
     agent.fail(new Error('The agent exited before answering initialize.'))
 
-    const alert = genui().getByRole('alert')
+    const alert = panel().getByRole('alert')
     await containsText(alert, 'The agent exited before answering initialize.')
     await containsText(alert, 'run the agent command in Terminal')
-    await page.getByRole('button', { name: 'Dismiss' }).click()
-    expect(genui().getByRole('alert').query()).toBeNull()
+    await panel().getByRole('button', { name: 'Dismiss' }).click()
+    expect(panel().getByRole('alert').query()).toBeNull()
     await expect.element(generate()).toBeEnabled()
   })
 
@@ -259,10 +273,10 @@ describe('GenUI generation', () => {
     await regenerateAll().click()
     await expect.element(page.getByTestId('genui-progress')).toBeVisible()
 
-    await page.getByRole('button', { name: 'Cancel' }).click()
+    await panel().getByRole('button', { name: 'Cancel' }).click()
     expect(agent.signal?.aborted).toBe(true)
-    await expect.element(page.getByText('The old view', { exact: false })).toBeVisible()
-    expect(genui().getByRole('alert').query()).toBeNull()
+    await expect.element(genui().getByText('The old view', { exact: false })).toBeVisible()
+    expect(panel().getByRole('alert').query()).toBeNull()
     // A result arriving after the cancel changes nothing.
     agent.finish(viewFile('Too late'))
     await new Promise((resolve) => setTimeout(resolve, 50))
@@ -274,8 +288,42 @@ describe('GenUI generation', () => {
     const host = createBrowserHost(DOCUMENT, 'report.md', { generator: agent.generator, untitled: true })
     await openGenUI(host)
     await expect.element(generate()).toBeDisabled()
-    await expect.element(page.getByText('Save the document first', { exact: false })).toBeVisible()
+    await expect.element(panel().getByText('Save the document first', { exact: false })).toBeVisible()
     expect(host.generations).toHaveLength(0)
+  })
+
+  it('edits Focus in place with ⌘↩ to save and Escape to cancel', async () => {
+    const agent = scripted()
+    const host = createBrowserHost(DOCUMENT, 'report.md', {
+      view: viewFile('Existing view', 'Initial focus'),
+      generator: agent.generator,
+    })
+    await openGenUI(host)
+
+    // Focus is read-only by default when a view exists.
+    await expect.element(panel().getByTestId('focus-value')).toHaveTextContent('Initial focus')
+    expect(requestBox().query()).toBeNull()
+
+    // Click Edit -> opens inline composer; Escape cancels and reverts.
+    await panel().getByTestId('focus-edit').click()
+    const input = requestBox()
+    await expect.element(input).toHaveValue('Initial focus')
+    await input.fill('Discarded focus')
+    input.element().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await expect.poll(() => requestBox().query()).toBeNull()
+    await expect.element(panel().getByTestId('focus-value')).toHaveTextContent('Initial focus')
+
+    // Click Edit -> type new focus -> ⌘↩ commits and closes composer.
+    await panel().getByTestId('focus-edit').click()
+    const input2 = requestBox()
+    await input2.fill('Updated via shortcut')
+    input2.element().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }))
+    await expect.poll(() => requestBox().query()).toBeNull()
+    await expect.element(panel().getByTestId('focus-value')).toHaveTextContent('Updated via shortcut')
+
+    await regenerateAll().click()
+    expect(host.generations[0]?.request).toBe('Updated via shortcut')
+    agent.finish(viewFile('Updated view', 'Updated via shortcut'))
   })
 
   it('selects models via ModelMenu, supports Escape and outside click, disables while running, and omits text inputs', async () => {
@@ -402,15 +450,19 @@ describe('GenUI regeneration', () => {
     const agent = scripted()
     const host = createBrowserHost(DOCUMENT, 'report.md', { view: trackedView(), generator: agent.generator })
     const mounted = await openGenUI(host)
-    await expect.element(page.getByText('Old metrics', { exact: false })).toBeVisible()
-    await expect.element(regenerateChanged()).toBeDisabled()
+    await expect.element(genui().getByText('Old metrics', { exact: false })).toBeVisible()
+    await expect.element(panel().getByText('Up to date')).toBeVisible()
+    expect(regenerateChanged().query()).toBeNull()
     expect(undo().query()).toBeNull()
 
     await editMetrics(mounted, host)
     await vi.waitFor(() => expect(regenerateChanged().element().textContent).toBe('Regenerate changed (1)'), {
       timeout: SOURCE_DEBOUNCE_MS + 2000,
     })
+    await expect.element(panel().getByText('1 component out of date')).toBeVisible()
+    await panel().getByTestId('focus-edit').click()
     await requestBox().fill('Shorter')
+    await panel().getByRole('button', { name: 'Save', exact: true }).click()
     await regenerateChanged().click()
 
     const [req] = host.generations
@@ -421,13 +473,13 @@ describe('GenUI regeneration', () => {
 
     agent.finish(trackedView({ id: 'metrics', title: 'New metrics' }))
     // The update applies over the view: the other component stays.
-    await expect.element(page.getByText('New metrics', { exact: false })).toBeVisible()
-    await expect.element(page.getByText('Old overview', { exact: false })).toBeVisible()
-    expect(page.getByText('Old metrics', { exact: false }).query()).toBeNull()
+    await expect.element(genui().getByText('New metrics', { exact: false })).toBeVisible()
+    await expect.element(genui().getByText('Old overview', { exact: false })).toBeVisible()
+    expect(genui().getByText('Old metrics', { exact: false }).query()).toBeNull()
 
     await undo().click()
-    await expect.element(page.getByText('Old metrics', { exact: false })).toBeVisible()
-    expect(page.getByText('New metrics', { exact: false }).query()).toBeNull()
+    await expect.element(genui().getByText('Old metrics', { exact: false })).toBeVisible()
+    expect(genui().getByText('New metrics', { exact: false }).query()).toBeNull()
     // Once: nothing is kept any more.
     await vi.waitFor(() => expect(undo().query()).toBeNull())
     expect(host.keptView()).toBeNull()
@@ -441,7 +493,7 @@ describe('GenUI regeneration', () => {
     expect(host.generations[0]?.mode).toBe('full')
     expect(host.generations[0]?.replaceIds).toBeUndefined()
     agent.finish(viewFile('All new'))
-    await expect.element(page.getByText('All new', { exact: false })).toBeVisible()
+    await expect.element(genui().getByText('All new', { exact: false })).toBeVisible()
     expect(host.keptView()).toBe(trackedView())
     await expect.element(undo()).toBeEnabled()
   })
@@ -456,9 +508,9 @@ describe('GenUI regeneration', () => {
     await expect.element(undo()).toBeDisabled()
     agent.fail({ kind: 'invalid-output', message: 'The view the agent wrote is not valid.', hint: 'Generate again.' })
 
-    await containsText(genui().getByRole('alert'), 'The view the agent wrote is not valid.')
+    await containsText(panel().getByRole('alert'), 'The view the agent wrote is not valid.')
     expect(host.keptView()).toBe(kept)
     await undo().click()
-    await expect.element(page.getByText('The kept view', { exact: false })).toBeVisible()
+    await expect.element(genui().getByText('The kept view', { exact: false })).toBeVisible()
   })
 })

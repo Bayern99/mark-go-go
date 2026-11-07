@@ -302,6 +302,15 @@ export function App({
         }),
       )
 
+      cleanups.push(
+        services.commands.register('centerPane.show', (targetViewId) => {
+          if (typeof targetViewId === 'string' && targetViewId !== '') {
+            modes.showCenter(targetViewId)
+          }
+          return true
+        }),
+      )
+
       cleanups.push(editor.onModeChange(setEditorMode))
 
       cleanups.push(

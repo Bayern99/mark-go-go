@@ -3,6 +3,8 @@ import type { SourceStatus, SourceStore } from './sources'
 
 export interface SourceActions {
   store: SourceStore
+  /** Component ID currently highlighted by the right-pane out-of-date list. */
+  highlightedId?: string | null
   /**
    * Show a component's source in rich text, selected: where `text` is in its
    * source sections when given and found, otherwise its first source section.
@@ -73,21 +75,31 @@ export function useComponentSource(sources: readonly string[] | undefined): Comp
  */
 export function SourceFrame({
   source,
+  componentId,
   className,
   style,
   title,
   children,
 }: {
   source: ComponentSource
+  componentId?: string
   className: string
   style?: React.CSSProperties
   title?: string
   children: ReactNode
 }): React.ReactElement {
+  const actions = useContext(SourceContext)
+  const highlighted = Boolean(componentId && actions?.highlightedId === componentId)
   const label = STATUS_LABEL[source.status]
   const [noteFailed, setNoteFailed] = useState(false)
   return (
-    <article className={`genui-block ${className}`} style={style} data-source-status={source.status}>
+    <article
+      className={`genui-block ${className}${highlighted ? ' is-highlighted' : ''}`}
+      style={style}
+      data-source-status={source.status}
+      data-component-id={componentId}
+      data-highlighted={highlighted ? 'true' : undefined}
+    >
       {title ? <h4>{title}</h4> : null}
       {children}
       {source.notes.length > 0 ? (

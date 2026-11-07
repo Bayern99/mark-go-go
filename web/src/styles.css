@@ -731,7 +731,12 @@ body {
   flex-direction: column;
 }
 
+.rp-body[data-view-id='genui.panel'] {
+  overflow: visible;
+}
+
 .right-view-body {
+  flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;

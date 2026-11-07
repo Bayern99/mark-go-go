@@ -46,80 +46,328 @@
   font-size: 11px;
 }
 
-.genui-empty {
-  margin: 0;
-  color: var(--genui-muted);
+.gen-empty {
+  max-width: 520px;
+  margin: 72px auto 0;
+  text-align: left;
+  color: var(--ink-2);
 }
 
-.genui-generate-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  border: 1px solid var(--genui-border);
-  border-radius: 8px;
-  padding: 10px 12px;
-  background: var(--genui-surface-soft);
+.gen-empty h2 {
+  font-family: var(--font-display);
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 6px;
 }
 
-.genui-request {
+.gen-empty p {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--ink-2);
+  margin: 0 0 16px;
+}
+
+.gen-empty .pill.quiet {
+  margin-left: -8px;
+  padding: 0 8px;
+  color: var(--accent);
+}
+
+/* ─── Right-column GenUI Management Panel (.genui-panel / .gp) ─── */
+.genui-panel {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  justify-content: space-between;
+}
+
+.genui-panel-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 4px;
+  padding-bottom: 12px;
+}
+
+.gp-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gp-status {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 8px;
+}
+
+.gp-status.warn b {
+  color: var(--warn);
+}
+
+.gp-status.bad b {
+  color: var(--danger);
+}
+
+.gp-status b {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.gp-status span {
   font-size: 12px;
-  color: var(--genui-muted);
+  line-height: 18px;
+  color: var(--ink-2);
 }
 
-.genui-request textarea {
-  width: 100%;
-  border: 1px solid var(--genui-border);
-  border-radius: 6px;
-  padding: 6px 8px;
-  background: var(--genui-surface);
-  color: var(--genui-text);
-  font: inherit;
-  font-size: 13px;
-  resize: vertical;
+.gp-status code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--fill);
+  color: var(--ink);
 }
 
-.genui-generate-actions {
+.gp-list {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.genui-generate-actions button,
-.genui-run-error button {
-  border: 1px solid var(--genui-border);
-  border-radius: 6px;
-  padding: 4px 12px;
-  background: var(--genui-surface);
-  color: var(--genui-text);
+.gp-item {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: 6px;
+  align-items: center;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
   font: inherit;
-  font-size: 13px;
+  text-align: left;
   cursor: pointer;
 }
 
-.genui-generate-panel .genui-generate {
-  border-color: var(--genui-accent);
-  background: var(--genui-accent);
-  color: var(--genui-surface);
+.gp-item:hover {
+  background: var(--fill-hover);
 }
 
-.genui-generate-actions button:disabled {
-  border-color: var(--genui-border);
-  background: var(--genui-surface);
-  color: var(--genui-muted);
-  cursor: not-allowed;
+.gp-item .rdot {
+  justify-self: center;
 }
 
+.gp-item .t {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gp-item .s {
+  grid-column: 2;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gp-acts {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.gp-acts .pill.full {
+  flex: 1;
+}
+
+.gp-req {
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gp-req-h {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 8px;
+}
+
+.gp-req-h span {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+.gp-req-h button {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+  padding: 2px 6px;
+  margin-right: -6px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.gp-req-h button:hover:not(:disabled) {
+  background: var(--fill-hover);
+  color: var(--ink);
+}
+
+.gp-req-v {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  padding: 6px 8px;
+  border-radius: 8px;
+  text-align: left;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.gp-req-v:hover:not(:disabled) {
+  background: var(--fill-hover);
+  color: var(--ink);
+}
+
+.gp-req-v.empty {
+  color: var(--ink-3);
+}
+
+/* ─── Unified In-place Paper Composer ─── */
+.composer {
+  border-radius: 8px;
+  background: var(--paper);
+  box-shadow:
+    0 0 0 1px var(--line-strong),
+    0 1px 2px rgba(0, 0, 0, 0.04);
+  padding: 8px 10px;
+  transition: box-shadow 120ms var(--ease-out);
+}
+
+.composer:focus-within {
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 0 0 3px var(--focus);
+}
+
+.composer textarea {
+  display: block;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  margin: 0;
+  background: none;
+  resize: none;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ink);
+  min-height: 40px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.composer textarea::placeholder {
+  color: var(--ink-3);
+}
+
+.composer textarea:focus-visible {
+  outline: none;
+}
+
+.composer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+
+.composer-bar .hint {
+  margin-right: auto;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+}
+
+/* ─── Pinned Footer ─── */
 .rp-foot {
+  flex: none;
   margin-top: auto;
   border-top: 1px solid var(--line);
-  padding: 10px 14px;
+  padding: 10px 8px 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
   background: var(--chrome);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
+}
+
+.gp-when {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.gp-when button {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-2);
+  padding: 2px 6px;
+  margin-right: -6px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.gp-when button:hover:not(:disabled) {
+  background: var(--fill-hover);
+  color: var(--ink);
+}
+
+.gp-when button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .gp-kv {
@@ -383,6 +631,13 @@
   padding: 12px;
   background: var(--genui-surface);
   overflow-wrap: anywhere;
+  transition: box-shadow 180ms var(--ease-out);
+}
+
+.genui-block.is-highlighted {
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 0 0 3px var(--focus);
 }
 
 /* A card already frames its content. */

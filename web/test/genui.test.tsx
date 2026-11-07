@@ -77,12 +77,20 @@ function reportHost(view?: string) {
 }
 
 describe('GenUI view mode', () => {
-  it('offers Generate when the document has no view', async () => {
+  it('shows a quiet empty state in the center and opens the right GenUI panel to generate', async () => {
     const app = await mountApp(DOCUMENT)
     try {
       await showMode('genui')
       await expect.element(genui().getByText('No view yet.')).toBeVisible()
-      await expect.element(genui().getByRole('button', { name: 'Generate' })).toBeEnabled()
+      expect(genui().getByRole('button', { name: 'Generate', exact: true }).query()).toBeNull()
+      expect(genui().getByRole('textbox').query()).toBeNull()
+      expect(app.container.querySelector('[data-testid="genui-view"] [data-testid="model-menu-trigger"]')).toBeNull()
+
+      await genui().getByRole('button', { name: /GenUI panel/i }).click()
+      const panel = page.getByTestId('genui-panel')
+      await expect.element(panel).toBeVisible()
+      await expect.element(panel.getByText('No GenUI view yet')).toBeVisible()
+      await expect.element(panel.getByRole('button', { name: 'Generate', exact: true })).toBeEnabled()
     } finally {
       await app.unmount()
     }
@@ -102,7 +110,9 @@ describe('GenUI view mode', () => {
       await vi.waitFor(() => expect(genui()).toHaveAttribute('data-state', 'view'))
       expect(app.container.querySelector<HTMLElement>('.editor-pane')?.hidden).toBe(true)
       expect(genui().getByRole('alert').query()).toBeNull()
-      await expect.element(genui().getByText('gemini-3.8-flash', { exact: false })).toBeVisible()
+      // Center view is strictly read-only content: no model menu or generate controls inside genui-view.
+      expect(genui().getByRole('button', { name: /Generate|Regenerate/ }).query()).toBeNull()
+      expect(app.container.querySelector('[data-testid="genui-view"] [data-testid="model-menu-trigger"]')).toBeNull()
 
       await expect.element(genui().getByText('In short')).toBeVisible()
       await expect.element(genui().getByText('Only the edited block is written again.')).toBeVisible()
@@ -114,6 +124,13 @@ describe('GenUI view mode', () => {
       await genui().getByText('Details').click()
       await expect.element(genui().getByRole('columnheader', { name: /Size \(MB\)/ })).toBeVisible()
       await expect.element(genui().getByText('First prototype')).toBeVisible()
+
+      // Metadata lives in the right GenUI panel's pinned footer.
+      await page.getByTestId('right-tab-genui.panel').click()
+      const footer = page.getByTestId('genui-panel-footer')
+      await expect.element(footer.getByText('Antigravity (agy)')).toBeVisible()
+      await expect.element(footer.getByText('gemini-3.8-flash', { exact: false })).toBeVisible()
+      await expect.element(footer.getByText('2026-11-06T09:30:00Z', { exact: false })).toBeVisible()
     } finally {
       await app.unmount()
     }
@@ -534,6 +551,48 @@ describe('GenUI source references', () => {
       )
       await showMode('markdown')
       expect(page.getByTestId('return-to-view').query()).toBeNull()
+    } finally {
+      await app.unmount()
+    }
+  })
+
+  it('lists out-of-date components in the right panel, shows the tab warning dot, and scrolls to the card on click', async () => {
+    const host = createBrowserHost(SOURCED, 'report.md', { view: sourcedView(SOURCED, POINTS, TABLE) })
+    const app = await mountApp(SOURCED, host)
+    try {
+      await showMode('genui')
+      await page.getByTestId('right-tab-genui.panel').click()
+
+      // Initially up to date: no warning dot on GenUI tab.
+      expect(page.getByTestId('right-tab-dot-genui.panel').query()).toBeNull()
+      const panel = page.getByTestId('genui-panel')
+      await expect.element(panel.getByText('Up to date')).toBeVisible()
+
+      // Edit Metrics section: metrics and both become out of date.
+      host.reload(SOURCED.replace('Second body.', 'Second body, edited.'))
+      await vi.waitFor(
+        () => {
+          expect(panel.element().textContent).toContain('2 components out of date')
+        },
+        { timeout: SOURCE_DEBOUNCE_MS + 2000 },
+      )
+
+      const dot = page.getByTestId('right-tab-dot-genui.panel')
+      await expect.element(dot).toHaveAttribute('data-tone', 'warn')
+
+      const metricsCard = app.container.querySelector<HTMLElement>(
+        '[data-testid="genui-view"] [data-component-id="metrics"]',
+      )
+      expect(metricsCard).not.toBeNull()
+      if (!metricsCard) throw new Error('metrics card missing')
+      const scrollSpy = vi.spyOn(metricsCard, 'scrollIntoView')
+
+      const item = panel.getByTestId('stale-item-metrics')
+      await item.click()
+
+      expect(scrollSpy).toHaveBeenCalled()
+      expect(metricsCard.getAttribute('data-highlighted')).toBe('true')
+      expect(metricsCard.classList.contains('is-highlighted')).toBe(true)
     } finally {
       await app.unmount()
     }

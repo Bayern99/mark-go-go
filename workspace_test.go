@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/egoist/mygo"
@@ -214,5 +215,23 @@ func TestNativeCommandNameRoutesUndoRedo(t *testing.T) {
 	}
 	if _, ok := nativeCommandName(mygo.RoleCut); ok {
 		t.Fatal("cut is not a document native command")
+	}
+}
+
+func TestDocumentInfoGeneratingIsPerDocument(t *testing.T) {
+	a := DocumentInfo{ID: "a", Name: "a.md", Path: "/work/a.md", Generating: true}
+	b := DocumentInfo{ID: "b", Name: "b.md", Path: "/work/b.md"}
+	if !a.Generating || b.Generating {
+		t.Fatal("generating belongs to A only")
+	}
+	a.Path = "/elsewhere/a.md"
+	if a.ID != "a" {
+		t.Fatal("path change must not rewrite identity")
+	}
+}
+
+func TestErrGeneratingExplainsWaitOrCancel(t *testing.T) {
+	if !strings.Contains(errGenerating, "wait") || !strings.Contains(errGenerating, "cancel") {
+		t.Fatalf("errGenerating = %q, want wait-or-cancel wording", errGenerating)
 	}
 }

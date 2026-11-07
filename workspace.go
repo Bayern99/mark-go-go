@@ -25,13 +25,14 @@ type WorkspaceSnapshot struct {
 // DocumentInfo is one open document in a workspace. ID is stable across
 // path, tab and window.
 type DocumentInfo struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Path     string `json:"path"`
-	Edited   bool   `json:"edited"`
-	Conflict bool   `json:"conflict"`
-	Deleted  bool   `json:"deleted"`
-	ReadOnly bool   `json:"readOnly"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Path       string `json:"path"`
+	Edited     bool   `json:"edited"`
+	Conflict   bool   `json:"conflict"`
+	Deleted    bool   `json:"deleted"`
+	ReadOnly   bool   `json:"readOnly"`
+	Generating bool   `json:"generating"`
 }
 
 // CloseResult is the outcome of CloseDocument or CloseWorkspace.
@@ -206,7 +207,7 @@ func (h *documentHost) snapshotWorkspaceLocked(w *workspace) WorkspaceSnapshot {
 		if s == nil {
 			continue
 		}
-		docs = append(docs, s.info())
+		docs = append(docs, s.infoLocked())
 	}
 	return WorkspaceSnapshot{
 		ID:        w.id,

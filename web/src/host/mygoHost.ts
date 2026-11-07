@@ -21,6 +21,7 @@ import type {
 import {
   WorkspaceHost,
   events,
+  type DocumentInfo as HostDocumentInfo,
   type GenerateProgress as WireProgress,
   type NativeCommand as WireNativeCommand,
   type WorkspaceSnapshot as WireWorkspaceSnapshot,
@@ -29,15 +30,13 @@ import { WorkspaceNav, navEvents } from "./generated/nav";
 import { cancelled, failureOf, GenerationError, isFailureKind } from "./generationError";
 import { applyNativeEdit } from "../editor/nativeEdit";
 
-function asWorkspaceSnapshot(snap: WireWorkspaceSnapshot): WorkspaceSnapshot {
-  return {
-    ...snap,
-    kind: snap.kind === "untitled" ? "untitled" : "folder",
-  };
-}
-
 function asNativeCommand(cmd: WireNativeCommand): NativeCommand {
   return { id: cmd.id, command: cmd.command as NativeCommandName };
+}
+
+function generatingOf(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || !('generating' in value)) return false
+  return value.generating === true
 }
 
 const PHASES: Record<GeneratePhase, true> = {
@@ -63,6 +62,18 @@ function disposable(off: () => void): Disposable {
   };
 }
 
+function documentInfo(state: HostDocumentInfo): DocumentInfo {
+  return { ...state, generating: generatingOf(state) }
+}
+
+function workspaceSnapshot(snap: WireWorkspaceSnapshot): WorkspaceSnapshot {
+  return {
+    ...snap,
+    kind: snap.kind === 'untitled' ? 'untitled' : 'folder',
+    documents: snap.documents.map(documentInfo),
+  }
+}
+
 function bindDocument(id: string): HostAdapter {
   const viewListeners = new Set<{ fn: (snap: ViewSnapshot) => void }>();
   let offViewChanged: (() => void) | null = null;
@@ -83,7 +94,10 @@ function bindDocument(id: string): HostAdapter {
   return {
     id,
     load(): Promise<HostDocSnapshot> {
-      return WorkspaceHost.load(id);
+      return WorkspaceHost.load(id).then((snap) => ({
+        ...snap,
+        state: documentInfo(snap.state),
+      }));
     },
     async update(text: string): Promise<void> {
       await WorkspaceHost.update(id, text);
@@ -109,14 +123,14 @@ function bindDocument(id: string): HostAdapter {
     onReload(fn: (snap: HostDocSnapshot) => void): Disposable {
       return disposable(
         events.docReloaded.on((snap) => {
-          if (snap.id === id) fn(snap);
+          if (snap.id === id) fn({ ...snap, state: documentInfo(snap.state) });
         }),
       );
     },
     onState(fn: (state: DocumentInfo) => void): Disposable {
       return disposable(
         events.docState.on((state) => {
-          if (state.id === id) fn(state);
+          if (state.id === id) fn(documentInfo(state));
         }),
       );
     },
@@ -217,22 +231,22 @@ export function createMyGoHost(): WorkspaceAdapter {
 
   const workspace: WorkspaceAdapter = {
     snapshot(): Promise<WorkspaceSnapshot> {
-      return WorkspaceHost.snapshot().then(asWorkspaceSnapshot);
+      return WorkspaceHost.snapshot().then(workspaceSnapshot);
     },
     subscribe(fn: (snap: WorkspaceSnapshot) => void): Disposable {
-      return disposable(events.workspaceChanged.on((snap) => fn(asWorkspaceSnapshot(snap))));
+      return disposable(events.workspaceChanged.on((snap) => fn(workspaceSnapshot(snap))));
     },
     open(path: string): Promise<DocumentInfo> {
-      return WorkspaceHost.open(path);
+      return WorkspaceHost.open(path).then(documentInfo);
     },
     async openWorkspace(root: string): Promise<void> {
       await WorkspaceHost.openWorkspace(root);
     },
     newDocument(): Promise<DocumentInfo> {
-      return WorkspaceHost.new();
+      return WorkspaceHost.new().then(documentInfo);
     },
     duplicate(id: string): Promise<DocumentInfo> {
-      return WorkspaceHost.duplicate(id);
+      return WorkspaceHost.duplicate(id).then(documentInfo);
     },
     async activate(id: string): Promise<void> {
       await WorkspaceHost.activate(id);

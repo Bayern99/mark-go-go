@@ -1322,7 +1322,8 @@ body {
 
 .tab-conflict,
 .tab-deleted,
-.tab-readonly {
+.tab-readonly,
+.tab-generating {
   width: 6px;
   height: 6px;
   border-radius: 50%;
@@ -1339,6 +1340,11 @@ body {
 
 .tab-readonly {
   background: var(--ink-2);
+}
+
+.tab-generating {
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 .workspace-empty,

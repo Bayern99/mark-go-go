@@ -40,6 +40,10 @@ type documentHost struct {
 	settings     *settingsStore
 	runs         sync.WaitGroup
 	disableWatch bool
+
+	// prepareJob, when set, adjusts a generation job after settings and
+	// path are captured. Tests inject a fake agent through it.
+	prepareJob func(*generationJob)
 }
 
 // docSession is one open document, permanently bound to its id.
@@ -55,6 +59,14 @@ type docSession struct {
 	offState   func()
 	offClosed  func()
 	generating bool
+	// genSlot is this document's one generation; nil when idle. Concurrent
+	// documents each have their own. cancel stops the agent; abandoned is
+	// set on a real close so a finishing run cannot write a view.
+	genSlot *generationSlot
+	closed  bool
+	// pathFn, when set, is this session's path for tests without a MyGo
+	// document. Production sessions always have doc and leave this nil.
+	pathFn func() string
 
 	// The view file the page follows (viewfile.go), guarded by
 	// documentHost.mu: following says the page asked to, viewPath is the
@@ -70,6 +82,13 @@ type docSession struct {
 	emit      func(ViewSnapshot)
 }
 
+// generationSlot is one in-flight generation of a document.
+type generationSlot struct {
+	cancel    context.CancelFunc
+	path      string
+	abandoned bool
+}
+
 func newDocumentHost() *documentHost {
 	dir, _ := mygo.App.Path(mygo.PathUserData)
 	return &documentHost{
@@ -80,15 +99,53 @@ func newDocumentHost() *documentHost {
 }
 
 func (s *docSession) info() DocumentInfo {
-	st := s.doc.State()
+	st := s.documentState()
+	generating := false
+	if s.host != nil {
+		s.host.mu.Lock()
+		generating = s.generating
+		s.host.mu.Unlock()
+	}
+	return s.makeInfo(st, generating)
+}
+
+// infoLocked is info while documentHost.mu is already held.
+func (s *docSession) infoLocked() DocumentInfo {
+	return s.makeInfo(s.documentState(), s.generating)
+}
+
+func (s *docSession) documentState() mygo.DocumentState {
+	if s.doc != nil {
+		return s.doc.State()
+	}
+	path := s.currentPath()
+	name := filepath.Base(path)
+	if name == "." || name == "/" || name == "" {
+		name = "untitled.md"
+	}
+	return mygo.DocumentState{Name: name, Path: path}
+}
+
+func (s *docSession) currentPath() string {
+	if s.pathFn != nil {
+		return s.pathFn()
+	}
+	if s.doc != nil {
+		return s.doc.Path()
+	}
+	return ""
+}
+
+func (s *docSession) makeInfo(st mygo.DocumentState, generating bool) DocumentInfo {
 	return DocumentInfo{
-		ID:       s.id,
-		Name:     st.Name,
-		Path:     st.Path,
-		Edited:   st.Edited,
-		Conflict: st.Conflict,
-		Deleted:  st.Deleted,
-		ReadOnly: st.ReadOnly,
+		ID:         s.id,
+		Name:       st.Name,
+		Path:       st.Path,
+		Edited:     st.Edited,
+		Conflict:   st.Conflict,
+		Deleted:    st.Deleted,
+		ReadOnly:   st.ReadOnly,
+		Generating: generating,
 	}
 }
 
@@ -221,6 +278,10 @@ func (h *documentHost) dropSession(s *docSession) {
 		s.offClosed()
 		s.offClosed = nil
 	}
+	h.mu.Lock()
+	s.closed = true
+	h.mu.Unlock()
+	h.cancelGeneration(s)
 	s.unfollowView()
 	h.mu.Lock()
 	delete(h.byID, s.id)
@@ -412,11 +473,8 @@ func (h *documentHost) SaveAs(ctx context.Context, documentID string) error {
 	if err != nil {
 		return err
 	}
-	h.mu.Lock()
-	busy := s.generating
-	h.mu.Unlock()
-	if busy {
-		return errors.New("A view is being generated; wait for it to finish, or cancel it.")
+	if err := h.rejectPathChange(s); err != nil {
+		return err
 	}
 	target, err := h.askSavePath(s)
 	if err != nil {
@@ -461,11 +519,8 @@ func (h *documentHost) Rename(ctx context.Context, documentID string) error {
 	if err != nil {
 		return err
 	}
-	h.mu.Lock()
-	busy := s.generating
-	h.mu.Unlock()
-	if busy {
-		return errors.New("A view is being generated; wait for it to finish, or cancel it.")
+	if err := h.rejectPathChange(s); err != nil {
+		return err
 	}
 	before := s.doc.Path()
 	if err := s.doc.Rename(""); err != nil {
@@ -484,11 +539,8 @@ func (h *documentHost) MoveTo(ctx context.Context, documentID string) error {
 	if err != nil {
 		return err
 	}
-	h.mu.Lock()
-	busy := s.generating
-	h.mu.Unlock()
-	if busy {
-		return errors.New("A view is being generated; wait for it to finish, or cancel it.")
+	if err := h.rejectPathChange(s); err != nil {
+		return err
 	}
 	before := s.doc.Path()
 	if err := s.doc.MoveTo(""); err != nil {

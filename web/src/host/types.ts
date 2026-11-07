@@ -56,6 +56,8 @@ export interface SectionRef {
   occurrence: number
   start: number
   end: number
+  /** Ranges of the section its hash leaves out, in order: its notes. */
+  exclude?: Array<{ start: number; end: number }>
 }
 
 export interface GenerateRequest {

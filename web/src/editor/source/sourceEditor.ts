@@ -28,6 +28,8 @@ export interface SourceEditor {
    * line of `from` to the top of the view, and focus.
    */
   reveal(from: number, to?: number): boolean
+  /** Insert text at `at` as an undoable edit. */
+  insert(at: number, text: string): void
   destroy(): void
 }
 
@@ -111,6 +113,9 @@ export function createSourceEditor(options: SourceEditorOptions): SourceEditor {
       })
       view.focus()
       return true
+    },
+    insert(at, text) {
+      view.dispatch({ changes: { from: at, insert: text } })
     },
     destroy() {
       view.destroy()

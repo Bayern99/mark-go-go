@@ -11,11 +11,13 @@ import { toolbar } from '@milkdown/crepe/feature/toolbar'
 import '@milkdown/crepe/theme/common/style.css'
 import '@milkdown/crepe/theme/classic.css'
 import {
+  commandsCtx,
   editorViewCtx,
   parserCtx,
   schemaCtx,
   serializerCtx,
 } from '@milkdown/kit/core'
+import { clearTextInCurrentBlockCommand } from '@milkdown/kit/preset/commonmark'
 import type { Node as PMNode } from '@milkdown/kit/prose/model'
 import {
   EditorState,
@@ -36,8 +38,13 @@ import {
   type ComposeContext,
 } from './blocks/compose'
 import { LOCKED_NODE, lockedBlockSchema } from './blocks/locked'
+import { noteBlock, noteInsertionOffset, parseNote, withNoteText } from '../markdown/notes'
 import { languages } from './languages'
+import { askForNote } from './noteDialog'
 import { createSourceEditor, type SourceEditor } from './source/sourceEditor'
+
+const NOTE_ICON =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5h14v10H10l-5 4z"/></svg>'
 
 /**
  * Plugins that rewrite the document on load or after transactions. They break
@@ -82,6 +89,12 @@ export interface MarkdownEditor {
    */
   select(from: number, to: number): boolean
   /**
+   * Add a note as a normal, undoable edit, in rich text or source: right after
+   * the last top-level block that starts before the source offset. Returns
+   * false when the document is read only or no block starts before the offset.
+   */
+  addNote(offset: number, text: string): boolean
+  /**
    * Fires with the source start offset of the cursor's top-level block whenever
    * the selection changes block or an edit moves that offset. Also reports the
    * current offset synchronously when the listener is registered, so views can
@@ -110,12 +123,26 @@ export async function createMarkdownEditor(
   sourceRoot.hidden = true
   root.append(wysiwygRoot, sourceRoot)
 
+  /** Set once the view exists; the block menu can only open after that. */
+  let addNoteFromMenu: () => Promise<void> = () => Promise.resolve()
+
   const builder = new CrepeBuilder({ root: wysiwygRoot, defaultValue: '' })
     .addFeature(cursor)
     .addFeature(listItem)
     .addFeature(placeholder, { text: 'Start writing…', mode: 'doc' })
     .addFeature(linkTooltip)
-    .addFeature(blockEdit)
+    .addFeature(blockEdit, {
+      buildMenu: (menu) => {
+        menu.addGroup('review', 'Review').addItem('note', {
+          label: 'Add note',
+          icon: NOTE_ICON,
+          onRun: (ctx) => {
+            ctx.get(commandsCtx).call(clearTextInCurrentBlockCommand.key)
+            void addNoteFromMenu()
+          },
+        })
+      },
+    })
     .addFeature(table)
     .addFeature(imageBlock)
     .addFeature(toolbar)
@@ -239,8 +266,114 @@ export async function createMarkdownEditor(
     }),
   })
 
+  const noteNode = (text: string): PMNode =>
+    schema.nodes[LOCKED_NODE].create({ source: noteBlock(text), kind: 'note' })
+
+  /**
+   * A note in place of the empty paragraph the block menu was opened in, which
+   * is right after the block it was opened for; else after the cursor's block.
+   */
+  const insertNoteAtCursor = (text: string) => {
+    const { state } = view
+    const { $from } = state.selection
+    if ($from.depth < 1) return
+    const top = $from.node(1)
+    const pos = $from.before(1)
+    view.dispatch(
+      isEmptyParagraph(top)
+        ? state.tr.replaceWith(pos, pos + top.nodeSize, noteNode(text))
+        : state.tr.insert(pos + top.nodeSize, noteNode(text)),
+    )
+  }
+
+  /** Leave no empty paragraph behind when adding a note from the block menu is cancelled. */
+  const dropEmptyParagraphAtCursor = () => {
+    const { state } = view
+    const { $from } = state.selection
+    if ($from.depth < 1 || state.doc.childCount < 2 || !isEmptyParagraph($from.node(1))) return
+    const pos = $from.before(1)
+    view.dispatch(state.tr.delete(pos, pos + $from.node(1).nodeSize))
+  }
+
+  addNoteFromMenu = async () => {
+    const text = await askForNote()
+    if (readonly) return
+    if (text === null) dropEmptyParagraphAtCursor()
+    else insertNoteAtCursor(text)
+    view.focus()
+  }
+
+  /**
+   * A changed note keeps its place in the file: it stays the block loaded
+   * there, so only its text changes and the bytes around it stay.
+   */
+  const setNoteText = (pos: number, text: string) => {
+    const { state } = view
+    const node = state.doc.nodeAt(pos)
+    if (!node) return
+    const source = withNoteText(node.attrs.source as string, text)
+    const tr = state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, source })
+    const next = tr.doc.nodeAt(pos)
+    const origin = built.origins.get(node)
+    if (origin && next) built.origins.set(next, { ...origin, source, node: next })
+    view.dispatch(tr)
+  }
+
+  const handleNoteAction = (action: string, element: Element) => {
+    if (readonly) return
+    let pos: number | undefined
+    view.state.doc.forEach((_node, offset) => {
+      if (view.nodeDOM(offset) === element) pos = offset
+    })
+    if (pos === undefined) return
+    const at = pos
+    const node = view.state.doc.nodeAt(at)
+    if (!node) return
+    if (action === 'delete') {
+      view.dispatch(view.state.tr.delete(at, at + node.nodeSize))
+      return
+    }
+    void askForNote(parseNote(node.attrs.source as string)?.text ?? '').then((text) => {
+      // The dialog is modal, but a reload from disk can still replace the node.
+      if (text !== null && view.state.doc.nodeAt(at) === node) setNoteText(at, text)
+    })
+  }
+
+  const notePlugin = new Plugin({
+    props: {
+      handleDOMEvents: {
+        click(_view, event) {
+          const target = event.target instanceof Element ? event.target : null
+          const button = target?.closest<HTMLElement>('[data-note-action]')
+          const note = button?.closest('[data-note]')
+          if (!button || !note) return false
+          event.preventDefault()
+          handleNoteAction(button.dataset.noteAction ?? '', note)
+          return true
+        },
+      },
+    },
+  })
+
+  const addNote = (offset: number, text: string): boolean => {
+    if (readonly || !Number.isFinite(offset) || text.trim() === '') return false
+    if (mode === 'source') {
+      if (!sourceEditor) return false
+      const at = noteInsertionOffset(sourceEditor.getText(), offset)
+      if (at === undefined) return false
+      sourceEditor.insert(at, `\n\n${noteBlock(text)}`)
+      return true
+    }
+    const { doc } = view.state
+    const block = composed(doc).blocks.findLast((candidate) => candidate.start < offset)
+    const pos = block && topLevelPosition(doc, block.node)
+    if (!block || pos === undefined) return false
+    view.dispatch(view.state.tr.insert(pos + block.node.nodeSize, noteNode(text)))
+    return true
+  }
+
   const plugins = view.state.plugins.filter((plugin) => !isIdentityBreaking(plugin))
-  plugins.push(selectionPlugin)
+  plugins.push(selectionPlugin, notePlugin)
 
   const load = (text: string) => {
     suppressChange = true
@@ -432,6 +565,7 @@ export async function createMarkdownEditor(
     },
     reveal,
     select,
+    addNote,
     onSelectionChange(fn) {
       selectionListeners.add(fn)
       // Emit the current offset to the new listener only. Mutating the shared
@@ -459,6 +593,10 @@ export async function createMarkdownEditor(
       await builder.destroy()
     },
   }
+}
+
+function isEmptyParagraph(node: PMNode): boolean {
+  return node.type.name === 'paragraph' && node.content.size === 0
 }
 
 function isIdentityBreaking(plugin: Plugin): boolean {

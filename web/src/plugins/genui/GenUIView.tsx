@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { PluginContext } from '../../core/types'
+import { askForNote } from '../../editor/noteDialog'
 import type { Disposable, GenerateFailure, GenerateFailureKind, GenerationSettings, ViewSnapshot } from '../../host/types'
 import { loadSurface, ViewSurface, type LoadedSurface } from './a2ui'
 import { GenerationController, type GenerationRun, type GenerationState } from './generation'
@@ -215,6 +216,13 @@ function GenUIView({
           // A scroll the reader just made may not have reported its event yet.
           memory.top = scroller.scrollTop
           void ctx.commands.execute('editor.select', target.start, target.end)
+        },
+        async addNote(ids) {
+          const text = await askForNote()
+          if (text === null) return true
+          // Taken after the dialog: the document may have changed behind it.
+          const target = sources.target(ids)
+          return target !== undefined && (await ctx.commands.execute('editor.addNote', target.end, text)) === true
         },
       },
     [sources, ctx, scroller, memory],

@@ -1,4 +1,6 @@
-import { extractHeadings, normalizeHeadingText, type MarkdownHeading } from './headings'
+import { headingsIn, normalizeHeadingText, type MarkdownHeading } from './headings'
+import { parseMdast } from './mdast'
+import { notesIn, type MarkdownNote } from './notes'
 
 /**
  * A heading and the source text it owns: from the heading's own offset up to
@@ -11,12 +13,16 @@ export interface MarkdownSection {
   occurrence: number
   start: number
   end: number
-  /** `sectionHash` of `markdown.slice(start, end)`. */
+  /** The notes in the section, in document order. */
+  notes: MarkdownNote[]
+  /** `sectionHash` of `markdown.slice(start, end)` with its notes cut out: notes never count as a change. */
   hash: string
 }
 
 export function extractSections(markdown: string): MarkdownSection[] {
-  const headings = extractHeadings(markdown)
+  const tree = parseMdast(markdown)
+  const headings = headingsIn(tree)
+  const allNotes = notesIn(tree)
   const seen = new Map<string, number>()
   return headings.map((heading, index) => {
     const key = normalizeHeadingText(heading.text)
@@ -31,8 +37,19 @@ export function extractSections(markdown: string): MarkdownSection[] {
       }
     }
     const start = heading.offset
-    return { heading, occurrence, start, end, hash: sectionHash(markdown.slice(start, end)) }
+    const notes = allNotes.filter((note) => note.start >= start && note.end <= end)
+    return { heading, occurrence, start, end, notes, hash: sectionHash(withoutNotes(markdown, start, end, notes)) }
   })
+}
+
+function withoutNotes(markdown: string, start: number, end: number, notes: readonly MarkdownNote[]): string {
+  let text = ''
+  let at = start
+  for (const note of notes) {
+    text += markdown.slice(at, note.cutStart)
+    at = note.end
+  }
+  return text + markdown.slice(at, end)
 }
 
 /** The section a view refers to by heading text and occurrence, if it still exists. */

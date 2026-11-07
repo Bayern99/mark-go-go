@@ -227,6 +227,15 @@ export function App({
         }),
       )
 
+      // Adds to the document without leaving the view that asked for it.
+      cleanups.push(
+        services.commands.register('editor.addNote', (offset, text) => {
+          const at = Number(offset)
+          if (!Number.isFinite(at) || typeof text !== 'string') return false
+          return editor.addNote(at, text)
+        }),
+      )
+
       cleanups.push(
         services.commands.register('editor.toggleSourceMode', () => {
           modes.toggleEditorMode()

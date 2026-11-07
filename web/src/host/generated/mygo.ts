@@ -80,13 +80,16 @@ export interface GenerateRequest {
 /**
  * SectionRef is one heading section of the request's text, as the
  * page's shared section module found it: UTF-16 offsets [Start, End)
- * into Text.
+ * into Text. The host has no Markdown parser, so the page also says
+ * which ranges of the section are notes.
  */
 export interface SectionRef {
   heading: string;
   occurrence: number;
   start: number;
   end: number;
+  /** Exclude are ranges of the section its hash leaves out, in order. */
+  exclude?: TextRange[];
 }
 
 /**
@@ -115,6 +118,12 @@ export interface Snapshot {
   text: string;
   version: number;
   state: DocState;
+}
+
+/** TextRange is a UTF-16 range [Start, End) of the request's text. */
+export interface TextRange {
+  start: number;
+  end: number;
 }
 
 /**

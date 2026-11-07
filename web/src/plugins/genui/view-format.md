@@ -35,7 +35,13 @@ the document:
 A section runs from its heading to the next heading of the same or a higher
 level, or the end of the document, so it includes its sub-sections. `hash` is
 `fnv1a32:` followed by the 8 lowercase hex digits of the 32-bit FNV-1a hash of
-that text's UTF-8 bytes.
+that text's UTF-8 bytes, leaving out the reader's notes.
+
+A note is a top-level HTML comment block in the document, `<!-- note: text -->`,
+optionally with `key="value"` attributes before the colon. Notes are the
+reader's comments on the document, not its content: do not present them as
+what the document says. For the hash, each note is left out together with the
+whitespace between it and the block before it.
 
 Components name the sources they draw on in their `sources` property, a list
 of ids from this table.

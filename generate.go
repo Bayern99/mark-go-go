@@ -43,12 +43,21 @@ type GenerateRequest struct {
 
 // SectionRef is one heading section of the request's text, as the
 // page's shared section module found it: UTF-16 offsets [Start, End)
-// into Text.
+// into Text. The host has no Markdown parser, so the page also says
+// which ranges of the section are notes.
 type SectionRef struct {
 	Heading    string `json:"heading"`
 	Occurrence int    `json:"occurrence"`
 	Start      int    `json:"start"`
 	End        int    `json:"end"`
+	// Exclude are ranges of the section its hash leaves out, in order.
+	Exclude []TextRange `json:"exclude,omitempty"`
+}
+
+// TextRange is a UTF-16 range [Start, End) of the request's text.
+type TextRange struct {
+	Start int `json:"start"`
+	End   int `json:"end"`
 }
 
 // GenerateProgress is one step of a running generation, sent to the
@@ -821,7 +830,7 @@ func (r *genRun) sectionHash(src agentSource) (hash string, ok bool) {
 		if sec.Occurrence != src.Occurrence || normalizeKey(sec.Heading) != key {
 			continue
 		}
-		if h, valid := hashUTF16Range(r.job.Req.Text, sec.Start, sec.End); valid {
+		if h, valid := hashSection(r.job.Req.Text, sec); valid {
 			return h, true
 		}
 	}
@@ -835,11 +844,42 @@ func normalizeKey(s string) string {
 	return strings.ToLower(strings.Join(strings.Fields(s), " "))
 }
 
-// hashUTF16Range hashes the UTF-8 bytes of the UTF-16 range [start,
-// end) of text, the way the page hashes a section: FNV-1a 32, as
-// fnv1a32:xxxxxxxx. ok is false when the range does not fit, or a
-// boundary falls inside a surrogate pair.
+// hashSection hashes a section the way the page does: the UTF-8 bytes
+// of its UTF-16 range without its excluded ranges, FNV-1a 32, as
+// fnv1a32:xxxxxxxx. ok is false when a range does not fit the section
+// or the text, or a boundary falls inside a surrogate pair.
+func hashSection(text string, sec SectionRef) (string, bool) {
+	h := fnv.New32a()
+	at := sec.Start
+	for _, cut := range sec.Exclude {
+		if cut.Start < at || cut.End < cut.Start || cut.End > sec.End {
+			return "", false
+		}
+		part, ok := sliceUTF16(text, at, cut.Start)
+		if !ok {
+			return "", false
+		}
+		h.Write([]byte(part))
+		at = cut.End
+	}
+	part, ok := sliceUTF16(text, at, sec.End)
+	if !ok {
+		return "", false
+	}
+	h.Write([]byte(part))
+	return fmt.Sprintf("fnv1a32:%08x", h.Sum32()), true
+}
+
+// hashUTF16Range hashes the UTF-16 range [start, end) of text, the way
+// the page hashes a section without notes.
 func hashUTF16Range(text string, start, end int) (string, bool) {
+	return hashSection(text, SectionRef{Start: start, End: end})
+}
+
+// sliceUTF16 returns the UTF-16 range [start, end) of text. ok is false
+// when the range does not fit, or a boundary falls inside a surrogate
+// pair.
+func sliceUTF16(text string, start, end int) (string, bool) {
 	if start < 0 || end < start {
 		return "", false
 	}
@@ -868,12 +908,15 @@ func hashUTF16Range(text string, start, end int) (string, bool) {
 		}
 		byteEnd = len(text)
 	}
+	// The loop only looks at where runes start; the end of the text is a
+	// valid start too.
+	if byteStart < 0 && units == start {
+		byteStart = len(text)
+	}
 	if byteStart < 0 || byteStart > byteEnd {
 		return "", false
 	}
-	h := fnv.New32a()
-	h.Write([]byte(text[byteStart:byteEnd]))
-	return fmt.Sprintf("fnv1a32:%08x", h.Sum32()), true
+	return text[byteStart:byteEnd], true
 }
 
 // outputError explains why the agent's output could not become a view,

@@ -387,6 +387,15 @@ type sectionVectors struct {
 		Text string `json:"text"`
 		Key  string `json:"key"`
 	} `json:"normalize"`
+	Notes struct {
+		Document string `json:"document"`
+		Sections []struct {
+			Start   int         `json:"start"`
+			End     int         `json:"end"`
+			Exclude []TextRange `json:"exclude"`
+			Hash    string      `json:"hash"`
+		} `json:"sections"`
+	} `json:"notes"`
 }
 
 func loadVectors(t *testing.T) sectionVectors {
@@ -579,6 +588,32 @@ func TestHashAndNormalizeVectors(t *testing.T) {
 		got, ok := hashUTF16Range(vectors.Document, sec.Start, sec.End)
 		if !ok || got != sec.Hash {
 			t.Errorf("hashUTF16Range(document, %d, %d) = %q, %v; want %s", sec.Start, sec.End, got, ok, sec.Hash)
+		}
+	}
+}
+
+func TestHashLeavesOutNotes(t *testing.T) {
+	notes := loadVectors(t).Notes
+	if len(notes.Sections) == 0 {
+		t.Fatal("no note vectors")
+	}
+	for _, sec := range notes.Sections {
+		got, ok := hashSection(notes.Document, SectionRef{Start: sec.Start, End: sec.End, Exclude: sec.Exclude})
+		if !ok || got != sec.Hash {
+			t.Errorf("hashSection(%d, %d, %v) = %q, %v; want %s", sec.Start, sec.End, sec.Exclude, got, ok, sec.Hash)
+		}
+	}
+}
+
+func TestHashRejectsRangesOutsideTheSection(t *testing.T) {
+	for _, exclude := range [][]TextRange{
+		{{Start: 0, End: 5}},                     // starts before the section
+		{{Start: 3, End: 20}},                    // ends after the section
+		{{Start: 4, End: 3}},                     // backwards
+		{{Start: 3, End: 5}, {Start: 4, End: 6}}, // overlapping
+	} {
+		if got, ok := hashSection("0123456789", SectionRef{Start: 2, End: 8, Exclude: exclude}); ok {
+			t.Errorf("hashSection with %v = %q, want it refused", exclude, got)
 		}
 	}
 }

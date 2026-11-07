@@ -540,7 +540,8 @@
   color: var(--genui-danger);
 }
 
-.genui-source-edit {
+.genui-source-edit,
+.genui-source-note {
   font: inherit;
   border: 1px solid var(--genui-border);
   border-radius: 6px;
@@ -550,7 +551,30 @@
   cursor: pointer;
 }
 
-.genui-source-edit:disabled {
+.genui-source-edit:disabled,
+.genui-source-note:disabled {
   color: var(--genui-muted);
   cursor: not-allowed;
+}
+
+.genui-notes {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.genui-note {
+  border-left: 3px solid var(--genui-warning);
+  border-radius: 4px;
+  padding: 4px 8px;
+  background: var(--genui-warning-soft);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.genui-note-failed {
+  color: var(--genui-danger);
 }

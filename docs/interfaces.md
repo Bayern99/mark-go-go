@@ -145,6 +145,18 @@ interface PluginContext {
 - 宿主（`update.go`）：局部生成前先读当前视图（版本 2、有 surface、`replaceIds` 非空且都是视图里的组件），否则不启动 Agent，`agent-error`「The current view cannot be updated: …」。临时目录里放 `source.md` 和 `view.json`（当前视图原样）；权限策略允许读 `view.json`，只允许写 `out.json`。提示词列出要替换的 id 和 surface。`out.json` 的 `a2ui` 必须是**恰好一条** `updateComponents`（只有 `version` 与 `updateComponents` 两个键），是视图的 surface，组件 id 只能是要替换的或视图里没有的，不重复；`sources` 只能新增，或与视图里同名的完全一致。任何一条不符合 → `invalid-output`，视图和备份不变。通过后这条消息追加到 `a2ui` 末尾，所有来源按本次文本重算哈希，`generatedAt` / `model` / `request` 取本次。写入前再读一次视图文件，如果 Agent 工作期间被改过，不写入（`agent-error`）。
 - 备份：每次成功写入新视图（全部或局部）前，把当前视图原子写到 `.<name>.genui.prev.json`，权限与视图相同；写视图失败时把备份恢复原样。生成失败不动备份。撤回 = `rename(prev, view)`，只有一份。
 
+## 批注（#13）
+
+- 格式：一个单独的顶层 HTML 注释块 `<!-- note: 文字 -->`。`note` 后面可以有属性 `key="value"`，然后是 `:`、文字、`-->`。语法只在 `web/src/markdown/notes.ts` 里。同一行还有别的内容、不符合这个语法的注释、代码块或列表里的注释都不是批注。本阶段只写文字，不写属性。
+- 转义：文字里的 `-->` 写成 `--\>`，`--!>` 写成 `--\!>`（浏览器也把它当注释结束）；已经带反斜杠的再加一个，读回时去掉一个，所以任何文字都读回不变。文字可以多行，读写时去掉首尾空白。
+- 编辑器：批注是锁定块（`kind: 'note'`），按原字节写回。只有改过的批注才重新序列化，只改文字部分，冒号之前（包括不认识的属性）原样保留，并沿用这一块原来的间隔。
+- Rich text：块菜单（`+` 或 `/`）里的 `Add note` 把批注放在打开菜单的那一块后面；批注上有 `Edit`、`Delete`，都是普通事务，可以撤销。只读文档不能操作。Markdown 模式显示原始文本。
+- GenUI：组件的 `Note` 按钮通过命令 `editor.addNote(offset, text)` 把批注加到第一个来源那一节的末尾，停留在 GenUI。宿主编辑器处在 Rich text 或 Markdown 都写出相同的字节。组件旁显示它所有来源节里的批注。只读文档会提示无法添加。
+- `editor.addNote(offset, text)`：放在 `offset` 之前开始的最后一个顶层块之后，新批注前面是 `\n\n`。
+- 字节保留：插入或删除一块后，后面的块保留自己的间隔（间隔不含空行且换了位置时才用 `\n\n`，否则可能和新的前一块合并）。文件末尾的字节在增删批注时不变。
+- 哈希：章节哈希去掉每条批注，以及它和前一块之间的空白，所以结果和加批注之前的文本一样。Go 没有 Markdown 解析器，页面在 `GenerateRequest.sections[].exclude`（UTF-16 范围，按顺序）里告诉它哪些范围要去掉；范围越界时这个来源不写哈希。代码块里的 `<!-- note -->` 不会被去掉。共享向量 `section-vectors.json` 的 `notes` 部分在 TS 和 Go 两边验证。
+- 批注随 `source.md` 交给 Agent，格式文档说明它们是读者的意见，不是原文内容。
+
 ## Editor Adapter（`web/src/editor/createEditor.ts`）
 
 ```ts
@@ -184,7 +196,7 @@ interface MarkdownEditor {
 
 ## 锁定块（按原文显示与写回，不可视化编辑）
 
-`yaml-frontmatter`、`github-alert`、`footnote-definition`、`link-reference-definition`、`code-fence-meta`、`raw-html`、`math`（`$$` 块）、`unsupported`（单片段解析结果 ≠ 1 个顶层节点或解析失败）。
+`yaml-frontmatter`、`github-alert`、`footnote-definition`、`link-reference-definition`、`code-fence-meta`、`raw-html`、`note`（批注，可以编辑和删除，见「批注」）、`math`（`$$` 块）、`unsupported`（单片段解析结果 ≠ 1 个顶层节点或解析失败）。
 
 ## 编辑器装配
 
@@ -194,4 +206,4 @@ CrepeBuilder features：`cursor, listItem, placeholder, linkTooltip, blockEdit, 
 
 ## 尚未实现（后续阶段）
 
-搜索替换、批注（#13）、多标签页。
+搜索替换、多标签页。

@@ -1,4 +1,5 @@
 import { $nodeSchema } from '@milkdown/kit/utils'
+import { parseNote } from '../../markdown/notes'
 import type { LockKind } from './segment'
 
 export const LOCKED_NODE = 'locked_block'
@@ -15,6 +16,7 @@ const KIND_LABEL: Record<LockKind, string> = {
   'link-reference-definition': 'link reference definition',
   'code-fence-meta': 'code fence with meta',
   'raw-html': 'raw HTML',
+  note: 'note',
   math: 'math block',
   unsupported: 'unsupported block',
 }
@@ -22,7 +24,8 @@ const KIND_LABEL: Record<LockKind, string> = {
 /**
  * An immutable top-level block that keeps its original Markdown source.
  * ProseMirror treats it as a single atom: it cannot be edited in place, and
- * composing writes `source` back byte for byte.
+ * composing writes `source` back byte for byte. A note is such a block too,
+ * shown as its text with the actions the editor handles by `data-note-action`.
  */
 export const lockedBlockSchema = $nodeSchema(LOCKED_NODE, () => ({
   group: 'block',
@@ -36,6 +39,10 @@ export const lockedBlockSchema = $nodeSchema(LOCKED_NODE, () => ({
   },
   parseDOM: [
     {
+      tag: 'aside[data-note]',
+      getAttrs: (dom: HTMLElement) => ({ source: dom.dataset.source ?? '', kind: 'note' }),
+    },
+    {
       tag: 'pre[data-locked-block]',
       getAttrs: (dom: HTMLElement) => ({
         source: dom.querySelector('code')?.textContent ?? dom.textContent ?? '',
@@ -45,6 +52,28 @@ export const lockedBlockSchema = $nodeSchema(LOCKED_NODE, () => ({
   ],
   toDOM: (node) => {
     const attrs = node.attrs as LockedAttrs
+    if (attrs.kind === 'note') {
+      return [
+        'aside',
+        {
+          class: 'mgo-note',
+          'data-note': 'true',
+          'data-locked-block': 'true',
+          'data-kind': 'note',
+          'data-source': attrs.source,
+          'aria-label': 'Note',
+          contenteditable: 'false',
+        },
+        ['span', { class: 'mgo-note-label' }, 'Note'],
+        ['span', { class: 'mgo-note-text' }, parseNote(attrs.source)?.text ?? ''],
+        [
+          'span',
+          { class: 'mgo-note-actions' },
+          ['button', { type: 'button', 'data-note-action': 'edit' }, 'Edit'],
+          ['button', { type: 'button', 'data-note-action': 'delete' }, 'Delete'],
+        ],
+      ]
+    }
     const kind = (attrs.kind in KIND_LABEL ? attrs.kind : 'unsupported') as LockKind
     return [
       'pre',

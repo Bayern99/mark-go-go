@@ -86,6 +86,18 @@ export class SourceStore {
     })
   }
 
+  /** The notes now in a component's source sections, in document order. */
+  notes(ids: readonly string[] | undefined): string[] {
+    const notes = new Map<number, string>()
+    for (const id of ids ?? []) {
+      const ref = this.table[id]
+      const section = ref && findSection(this.sections, ref.heading, ref.occurrence)
+      // Sources can overlap: a section holds its sub-sections' notes too.
+      for (const note of section?.notes ?? []) notes.set(note.start, note.text)
+    }
+    return [...notes.keys()].sort((a, b) => a - b).map((start) => notes.get(start) ?? '')
+  }
+
   /**
    * The current range of `text` in the first of the sources that holds it
    * exactly, or else of the first source that is in the document.

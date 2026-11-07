@@ -23,4 +23,23 @@ describe('section text and hash (shared vectors)', () => {
     }))
     expect(sections).toEqual(vectors.sections)
   })
+
+  it('leaves notes out of the hash, and only notes', () => {
+    const { document, textWithoutNotes } = vectors.notes
+    const sections = extractSections(document).map((section) => ({
+      heading: section.heading.text,
+      occurrence: section.occurrence,
+      start: section.start,
+      end: section.end,
+      exclude: section.notes.map((note) => ({ start: note.cutStart, end: note.end })),
+      hash: section.hash,
+    }))
+    expect(sections).toEqual(vectors.notes.sections.map(({ text: _text, ...section }) => section))
+    for (const section of vectors.notes.sections) expect(sectionHash(section.text)).toBe(section.hash)
+
+    // The same sections before the notes were added hash the same.
+    expect(extractSections(textWithoutNotes).map((section) => section.hash)).toEqual(
+      vectors.notes.sections.map((section) => section.hash),
+    )
+  })
 })

@@ -1,4 +1,5 @@
 import { parseMdast, plainText, type MdastNode } from '../../markdown/mdast'
+import { parseNote } from '../../markdown/notes'
 
 /**
  * Kinds of top-level blocks that are kept as raw, read-only source instead of
@@ -12,6 +13,7 @@ export type LockKind =
   | 'link-reference-definition'
   | 'code-fence-meta'
   | 'raw-html'
+  | 'note'
   | 'math'
   | 'unsupported'
 
@@ -100,7 +102,7 @@ export function classifyMdast(node: MdastNode): LockKind | null {
   if (node.type === 'footnoteDefinition') return 'footnote-definition'
   if (node.type === 'definition') return 'link-reference-definition'
   if (node.type === 'math') return 'math'
-  if (node.type === 'html') return 'raw-html'
+  if (node.type === 'html') return parseNote(node.value ?? '') ? 'note' : 'raw-html'
   if (node.type === 'code' && typeof node.meta === 'string' && node.meta.trim() !== '') {
     return 'code-fence-meta'
   }

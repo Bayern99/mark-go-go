@@ -179,6 +179,28 @@
 | `Undo last generation`：视图文件与原视图逐字节一致、备份删除；页面回到 Tauri 9 + Source changed + `Regenerate changed (1)`，撤回按钮消失 | 通过 |
 | 备份权限：这次实测发现备份是 0644、视图是 0600，已改为备份沿用视图权限（Go 测试覆盖） | 修复后未在打包应用里重测 |
 
+## 批注（#13）
+
+自动化：`web/test/notes.test.ts`（格式、转义、Rich text 添加 / 编辑 / 删除 / 撤销、源码模式、只读）、`web/test/genui-notes.test.tsx`（从组件添加、显示、不标「原文已改」、`exclude` 传给宿主）、`web/test/compose-gaps.test.ts`（增删块后其余间隔不变）、语料 `22-notes.md`（逐字节往返）、`section-vectors.json` 的 `notes`（TS 和 Go）。
+
+打包应用实测（2026-11-07，真实 `agy acp`，`/tmp/mdws-smoke/notes/report.md`：CRLF、不规则空行、无结尾换行、带属性的批注、代码块里的 `<!-- note -->`）：
+
+| 检查 | 结果 |
+|---|---|
+| Rich text 显示 | 批注是标记，带 Edit / Delete；代码块里的注释仍是代码 |
+| 编辑（写入 `Edited --> note`） | 磁盘上只有文字变成 `Edited --\> note`，`author` / `id`、CRLF、空行不变；显示读回原文 |
+| ⌘Z | 文件回到编辑前的字节 |
+| 块菜单 `Add note` | 批注落在打开菜单的块后面，其余字节（含 `\n\n\n`）不变 |
+| 带批注的文档 `Generate` | 4 个来源的哈希与 Python 手工去掉批注后计算的一致；没有组件标 Source changed；Agent 没有把批注写进内容 |
+| GenUI 组件 `Note` | 带子节的来源：批注落在子节之后；末节：文件仍无结尾换行；两次都只多出批注；没有组件标 Source changed；停留在 GenUI |
+| Markdown 模式 | 显示 `<!-- note: … -->` 原始文本 |
+| 回 Rich text 按两次 ⌘Z | GenUI 加的两条都撤销，文件回到添加前的字节 |
+| Delete | 批注和它前面的间隔一起去掉，其余字节不变；GenUI 没有标 Source changed |
+| #12 遗留：备份权限 | 视图 0600 时 `Regenerate all`：备份 0600、视图 0600，备份与旧视图逐字节一致；Undo 后视图逐字节恢复，备份删除 |
+| 退出 | 没有 `agy` 进程，没有 `markgogo-genui-*` 临时目录 |
+
+自动化说明：网页内容第一次读取时可能不在辅助功能树里，重读一次就出现。屏幕锁定时 macOS 隐藏所有窗口的辅助功能树，窗口也显示空白，驱动报告 `screen_locked`，解锁后才能继续（#12 时「连不上窗口」可能是这两个原因之一，未确认）。像素点击和键入不一定到达编辑器；AX 按大纲条目会把焦点交给编辑器，之后 ⌘Z、`/` 和方向键可用。`--` 经键盘注入会被系统智能破折号替换成 `—`，测转义时用 AX 直接设值。
+
 ## 打包应用手动冒烟（`/tmp/mdws-smoke/report.md`：frontmatter、alert、setext 标题、`+` 列表、CJK 表格、带 meta 的代码块、引用式链接）
 
 | 场景 | 结果 |
@@ -198,7 +220,7 @@
 - Edit 菜单的 Undo/Redo 显示为禁用（WKWebView 自身 undo manager 为空，历史在 ProseMirror）。键盘 ⌘Z 不受影响；用鼠标点菜单撤销不可用。需要时让菜单经 IPC 调用编辑器命令。
 - 自动化工具注入中文只落下首字，属注入方式限制；真实输入法已人工确认正常。
 - 外部重载会重建编辑器：撤销历史和光标重置（已接受）。
-- 编辑过的块按 Milkdown 规则重写（setext→ATX、表格补齐、块内 CRLF→LF）；插入/删除块后的块间空白回退为 `\n\n`。
+- 编辑过的块按 Milkdown 规则重写（setext→ATX、表格补齐、块内 CRLF→LF）；新块前面的间隔是 `\n\n`，它后面的块保留自己的间隔（#13）。
 - GenUI 视图由 `agy acp` 生成（#7），失败分类与清理见 #8，局部重新生成与撤回见 #12。A2UI 校验不过的视图显示问题列表（`role="alert"`）和 `Regenerate all`；有备份时也可以撤回。
 - 撤回只有一份备份；视图里已经是局部更新的组件，下一次局部更新后 `a2ui` 继续变长（不压缩）。
 - Agent 隔离只是尽力而为（ADR 0003）：agy 按用户自己的 `~/.gemini/antigravity-cli/settings.json` 运行，可能不请求权限就写目录外文件或运行 shell。宿主看到越界工具调用就停止运行、不写视图，但无法阻止已经发生的那一步。
@@ -208,6 +230,10 @@
 - 打开 `~/Downloads/SuperCollider 深度分析报告.md`（同目录 516 项，含子目录约 1.6 万个文件）首次切到 GenUI 时，中央区域空白一段时间后才显示视图；浏览器测试中同一文档与视图文件立即渲染。推测（未验证）是宿主在 `WatchFiles` 建好目录监听后才发送第一份视图快照（`viewfile.go` 的 `WatchView` 先 `startViewWatch` 再 `emitView`）。另外 GenUI 在 `loading` 状态什么都不显示，没有“加载中”提示。待查（#14）。
 - 大纲在 WYSIWYG 模式按顶层块粒度高亮章节：光标在同一顶级块内移动不会改变当前章节。
 - `markdownUpdated` 每次编辑都会在内部整篇序列化（仅耗时，不影响保存内容）。
+- 批注加到父节末尾时，如果父节以子节结束，它也属于这个子节，所以两个组件旁都会显示。
+- 编辑批注时光标放到文字末尾，这个改动只经过 typecheck 和打包，没有在 app 里实测（当时屏幕已锁定）。
+- 真实键盘在开启系统智能破折号时，对话框里的 `--` 会变成 `—`；粘贴的 `-->` 按转义写入。
+- 中文通过自动化工具写入批注未测（注入方式限制，见上）；组件和往返测试覆盖了中文批注文字。
 - 纯 `go build`/`go run` 不处理文件参数；须用 `go tool mygo dev|build`。
 
 ## 失败条件（触发 ADR 0001 重新评估）

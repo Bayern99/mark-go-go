@@ -63,6 +63,10 @@ export class GenerationController {
       occurrence: section.occurrence,
       start: section.start,
       end: section.end,
+      exclude:
+        section.notes.length > 0
+          ? section.notes.map((note) => ({ start: note.cutStart, end: note.end }))
+          : undefined,
     }))
     const abort = new AbortController()
     this.abort = abort

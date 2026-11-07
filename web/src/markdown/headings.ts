@@ -1,4 +1,4 @@
-import { parseMdast, plainText, type MdastNode } from './mdast'
+import { parseMdast, plainText, type MdastNode, type MdastRoot } from './mdast'
 
 export interface MarkdownHeading {
   /** Heading level, 1–6. */
@@ -15,7 +15,10 @@ export interface MarkdownHeading {
  * fences, raw HTML and frontmatter do not.
  */
 export function extractHeadings(markdown: string): MarkdownHeading[] {
-  const tree = parseMdast(markdown)
+  return headingsIn(parseMdast(markdown))
+}
+
+export function headingsIn(tree: MdastRoot): MarkdownHeading[] {
   const headings: MarkdownHeading[] = []
   collectHeadings(tree.children, headings)
   return headings

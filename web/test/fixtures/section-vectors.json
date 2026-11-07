@@ -82,5 +82,58 @@
       "text": "# Appendix\n\nLast line.\n",
       "hash": "fnv1a32:c6896bcf"
     }
-  ]
+  ],
+  "notes": {
+    "description": "The same rules with notes in the document: each section lists the ranges its hash leaves out (a note and the gap before it), and text is what is hashed. A comment in a code fence is not a note. textWithoutNotes is the document before its notes were added; the sections of the two hash the same.",
+    "document": "# 概要 🚀\n\nBody.\n\n<!-- note: 第一条 🎉 -->\n\n```md\n<!-- note: in a fence -->\n```\n\n## Detail\n\nMore.\n\n<!-- note author=\"jerry\" x=\"1\": 第二条 --\\> end -->\n\n# End\n\nLast.\n\n<!-- note: last -->",
+    "textWithoutNotes": "# 概要 🚀\n\nBody.\n\n```md\n<!-- note: in a fence -->\n```\n\n## Detail\n\nMore.\n\n# End\n\nLast.",
+    "sections": [
+      {
+        "heading": "概要 🚀",
+        "occurrence": 1,
+        "start": 0,
+        "end": 144,
+        "exclude": [
+          {
+            "start": 14,
+            "end": 37
+          },
+          {
+            "start": 92,
+            "end": 142
+          }
+        ],
+        "text": "# 概要 🚀\n\nBody.\n\n```md\n<!-- note: in a fence -->\n```\n\n## Detail\n\nMore.\n\n",
+        "hash": "fnv1a32:73402e3f"
+      },
+      {
+        "heading": "Detail",
+        "occurrence": 1,
+        "start": 76,
+        "end": 144,
+        "exclude": [
+          {
+            "start": 92,
+            "end": 142
+          }
+        ],
+        "text": "## Detail\n\nMore.\n\n",
+        "hash": "fnv1a32:f9dc3959"
+      },
+      {
+        "heading": "End",
+        "occurrence": 1,
+        "start": 144,
+        "end": 177,
+        "exclude": [
+          {
+            "start": 156,
+            "end": 177
+          }
+        ],
+        "text": "# End\n\nLast.",
+        "hash": "fnv1a32:e72da377"
+      }
+    ]
+  }
 }

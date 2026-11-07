@@ -269,6 +269,89 @@ body {
   white-space: pre-wrap;
 }
 
+.mgo-note {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 6px 10px;
+  border-left: 3px solid #b08d57;
+  border-radius: 6px;
+  background: #f7f1e6;
+  color: #5c4a2f;
+  font-family: ui-sans-serif, -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  scroll-margin-top: 16px;
+}
+
+.mgo-note-label {
+  flex-shrink: 0;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9b7b4d;
+}
+
+.mgo-note-text {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.mgo-note-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.mgo-note-actions button,
+.mgo-note-dialog button {
+  font: inherit;
+  font-size: 12px;
+  border: 1px solid var(--mgo-border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.ProseMirror[contenteditable='false'] .mgo-note-actions {
+  display: none;
+}
+
+.mgo-note-dialog {
+  width: min(480px, 90vw);
+  border: 1px solid var(--mgo-border);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.mgo-note-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--mgo-border);
+  border-radius: 6px;
+  padding: 8px;
+  font: inherit;
+  resize: vertical;
+}
+
+.mgo-note-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.mgo-note-dialog button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .side-pane {
   width: clamp(180px, 20vw, 240px);
   flex-shrink: 0;

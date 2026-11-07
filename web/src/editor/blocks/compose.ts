@@ -78,10 +78,8 @@ export function composeWithRanges(doc: PMNode, ctx: ComposeContext): ComposedDoc
 
     if (i === 0) {
       if (origin && origin.segment.index === 0) out += ctx.prefix
-    } else if (origin && origin.segment.index === i) {
-      out += origin.segment.gapBefore
     } else {
-      out += '\n\n'
+      out += gapBefore(origin, i)
     }
 
     const start = out.length
@@ -89,10 +87,39 @@ export function composeWithRanges(doc: PMNode, ctx: ComposeContext): ComposedDoc
     blocks.push({ node, start, end: out.length })
   }
 
-  const last = nodes[nodes.length - 1]
-  const lastOrigin = ctx.origins.get(last)
-  out += lastOrigin && lastOrigin.segment.index === ctx.segments.length - 1 ? ctx.trailing : '\n'
+  out += endsAsLoaded(nodes, ctx) ? ctx.trailing : '\n'
   return { text: out, blocks }
+}
+
+const BLANK_LINE = /(?:\r\n?|\n)[ \t]*(?:\r\n?|\n)/
+
+/**
+ * The bytes before a block at top-level index `index`. A block keeps its own
+ * gap, also when blocks were inserted or removed above it, so such an edit
+ * leaves the rest of the file as it was. Away from its old place it needs a
+ * blank line there, or it could merge into the block now before it.
+ */
+function gapBefore(origin: BlockOrigin | undefined, index: number): string {
+  if (!origin) return '\n\n'
+  const { gapBefore: gap, index: loadedAt } = origin.segment
+  if (loadedAt === index) return gap
+  return loadedAt > 0 && BLANK_LINE.test(gap) ? gap : '\n\n'
+}
+
+/**
+ * Whether the file still ends with the block it ended with when loaded, so
+ * its trailing bytes stay. Notes do not count: adding or removing one at the
+ * end of the file changes nothing else.
+ */
+function endsAsLoaded(nodes: readonly PMNode[], ctx: ComposeContext): boolean {
+  const lastNode = nodes.findLast((node) => !isNoteNode(node))
+  const lastSegment = ctx.segments.findLast((segment) => segment.lock !== 'note')
+  if (!lastNode || !lastSegment) return true
+  return ctx.origins.get(lastNode)?.segment.index === lastSegment.index
+}
+
+function isNoteNode(node: PMNode): boolean {
+  return node.type.name === LOCKED_NODE && node.attrs.kind === 'note'
 }
 
 /**

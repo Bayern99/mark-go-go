@@ -15,8 +15,13 @@ import type {
   WorkspaceAdapter,
   WorkspaceSnapshot,
 } from "./types";
-import { WorkspaceHost, events, type GenerateProgress as WireProgress } from "./generated/mygo";
+import { WorkspaceHost, events, type DocumentInfo as HostDocumentInfo, type GenerateProgress as WireProgress, type WorkspaceSnapshot as HostWorkspaceSnapshot } from "./generated/mygo";
 import { cancelled, failureOf, GenerationError, isFailureKind } from "./generationError";
+
+function generatingOf(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || !('generating' in value)) return false
+  return value.generating === true
+}
 
 const PHASES: Record<GeneratePhase, true> = {
   starting: true,
@@ -39,6 +44,18 @@ function disposable(off: () => void): Disposable {
       off();
     },
   };
+}
+
+function documentInfo(state: HostDocumentInfo): DocumentInfo {
+  return { ...state, generating: generatingOf(state) }
+}
+
+function workspaceSnapshot(snap: HostWorkspaceSnapshot): WorkspaceSnapshot {
+  return {
+    ...snap,
+    kind: snap.kind === 'untitled' ? 'untitled' : 'folder',
+    documents: snap.documents.map(documentInfo),
+  }
 }
 
 function bindDocument(id: string): HostAdapter {
@@ -94,7 +111,7 @@ function bindDocument(id: string): HostAdapter {
     onState(fn: (state: DocumentInfo) => void): Disposable {
       return disposable(
         events.docState.on((state) => {
-          if (state.id === id) fn(state);
+          if (state.id === id) fn(documentInfo(state));
         }),
       );
     },
@@ -189,22 +206,22 @@ export function createMyGoHost(): WorkspaceAdapter {
 
   const workspace: WorkspaceAdapter = {
     snapshot(): Promise<WorkspaceSnapshot> {
-      return WorkspaceHost.snapshot();
+      return WorkspaceHost.snapshot().then(workspaceSnapshot);
     },
     subscribe(fn: (snap: WorkspaceSnapshot) => void): Disposable {
-      return disposable(events.workspaceChanged.on(fn));
+      return disposable(events.workspaceChanged.on((snap) => fn(workspaceSnapshot(snap))));
     },
     open(path: string): Promise<DocumentInfo> {
-      return WorkspaceHost.open(path);
+      return WorkspaceHost.open(path).then(documentInfo);
     },
     async openWorkspace(root: string): Promise<void> {
       await WorkspaceHost.openWorkspace(root);
     },
     newDocument(): Promise<DocumentInfo> {
-      return WorkspaceHost.new();
+      return WorkspaceHost.new().then(documentInfo);
     },
     duplicate(id: string): Promise<DocumentInfo> {
-      return WorkspaceHost.duplicate(id);
+      return WorkspaceHost.duplicate(id).then(documentInfo);
     },
     async activate(id: string): Promise<void> {
       await WorkspaceHost.activate(id);

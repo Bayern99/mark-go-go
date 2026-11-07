@@ -28,10 +28,11 @@ export type GenerationState =
   | { kind: 'failed'; failure: GenerateFailure; run: GenerationRun }
 
 /**
- * One window's generation: at most one run at a time, its progress, and the
- * error of the last run that failed. It outlives the GenUI view's mounts, so
- * leaving GenUI while a run goes on does not lose it. The view file itself
- * comes through the view watch.
+ * One document's generation: at most one run at a time, its progress, and the
+ * error of the last run that failed. Bound to this pane's PluginContext, so
+ * it never retargets through the active tab. It outlives the GenUI view's
+ * mounts, so leaving GenUI while a run goes on does not lose it. The view
+ * file itself comes through the view watch.
  */
 export class GenerationController {
   private state: GenerationState = { kind: 'idle' }

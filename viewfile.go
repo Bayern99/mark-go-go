@@ -123,11 +123,8 @@ func (h *documentHost) UndoView(ctx context.Context, documentID string) error {
 	if err != nil {
 		return err
 	}
-	h.mu.Lock()
-	generating := s.generating
-	h.mu.Unlock()
-	if generating {
-		return errors.New("A view is being generated; wait for it to finish, or cancel it.")
+	if err := h.rejectPathChange(s); err != nil {
+		return err
 	}
 	path := viewPath(s.doc.State().Path)
 	if path == "" {

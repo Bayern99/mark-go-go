@@ -1239,3 +1239,476 @@ func TestGenerateAgentCrash(t *testing.T) {
 		t.Errorf("failure = %+v, want agent-error with the agent's stderr", f)
 	}
 }
+
+func TestGenerateCapturesModelWhenSettingsChange(t *testing.T) {
+	// The run uses the model captured on the job, not a later SetSettings.
+	err, _, log := driveGeneration(t, fakeSpec{Out: minimalOut}, nil, func(job *generationJob) {
+		job.Model = "gemini-3.8-flash"
+	})
+	if err != nil {
+		t.Fatalf("runGeneration: %v", err)
+	}
+	sets := logRecv(log, "session/set_config_option")
+	if len(sets) != 1 || sets[0]["value"] != "gemini-3.8-flash" {
+		t.Errorf("set_config_option = %v, want the captured model", sets)
+	}
+}
+
+func TestGenerateConcurrentJobsKeepSeparateSourceAndOutput(t *testing.T) {
+	started := make(chan struct{}, 2)
+	done := make(chan struct{})
+	gate := func() {
+		started <- struct{}{}
+		<-done
+	}
+	dir := t.TempDir()
+	aPath := filepath.Join(dir, ".a.md.genui.json")
+	bPath := filepath.Join(dir, ".b.md.genui.json")
+	type result struct {
+		err error
+		log []map[string]any
+	}
+	run := func(text, viewPath, model string) result {
+		err, _, log := driveGeneration(t, fakeSpec{Out: minimalOut}, nil, func(job *generationJob) {
+			job.Req.Text = text
+			job.Req.Request = text
+			job.ViewPath = viewPath
+			job.Model = model
+			job.BeforeWrite = func() error {
+				gate()
+				return nil
+			}
+		})
+		return result{err, log}
+	}
+	aCh := make(chan result, 1)
+	bCh := make(chan result, 1)
+	go func() { aCh <- run("# Alpha\n", aPath, "gemini-3.8-flash") }()
+	go func() { bCh <- run("# Beta\n", bPath, "claude-opus-5-5") }()
+	for range 2 {
+		select {
+		case <-started:
+		case <-time.After(10 * time.Second):
+			t.Fatal("both jobs never reached BeforeWrite together")
+		}
+	}
+	close(done)
+	a := <-aCh
+	b := <-bCh
+	if a.err != nil {
+		t.Fatalf("A: %v", a.err)
+	}
+	if b.err != nil {
+		t.Fatalf("B: %v", b.err)
+	}
+	aSets := logRecv(a.log, "session/set_config_option")
+	bSets := logRecv(b.log, "session/set_config_option")
+	if len(aSets) != 1 || aSets[0]["value"] != "gemini-3.8-flash" {
+		t.Errorf("A model = %v", aSets)
+	}
+	if len(bSets) != 1 || bSets[0]["value"] != "claude-opus-5-5" {
+		t.Errorf("B model = %v", bSets)
+	}
+	aView, err := os.ReadFile(aPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bView, err := os.ReadFile(bPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(aView, []byte(`"model": "gemini-3.8-flash"`)) {
+		t.Errorf("A view missing captured model: %s", aView)
+	}
+	if !bytes.Contains(bView, []byte(`"model": "claude-opus-5-5"`)) {
+		t.Errorf("B view missing captured model: %s", bView)
+	}
+	if !bytes.Contains(aView, []byte(`"request": "# Alpha\n"`)) {
+		t.Errorf("A view missing captured request: %s", aView)
+	}
+	if !bytes.Contains(bView, []byte(`"request": "# Beta\n"`)) {
+		t.Errorf("B view missing captured request: %s", bView)
+	}
+}
+
+func TestGenerateBeforeWriteRefusesStalePathAndAbandonedClose(t *testing.T) {
+	viewPath, sentinel := writeSentinelView(t)
+	err, _, log := driveGeneration(t, fakeSpec{Out: minimalOut}, nil, func(job *generationJob) {
+		job.ViewPath = viewPath
+		job.BeforeWrite = func() error { return errPathChanged }
+	})
+	f := failureFrom(t, err)
+	if f.Kind != failAgentError || !strings.Contains(f.Message, "path changed") {
+		t.Errorf("failure = %+v, want path-changed", f)
+	}
+	sentinelKept(t, viewPath, sentinel)
+	tempDirGone(t, log)
+
+	viewPath, sentinel = writeSentinelView(t)
+	err, _, log = driveGeneration(t, fakeSpec{Out: minimalOut}, nil, func(job *generationJob) {
+		job.ViewPath = viewPath
+		job.BeforeWrite = func() error { return errAbandoned }
+	})
+	f = failureFrom(t, err)
+	if f.Kind != failCancelled {
+		t.Errorf("failure = %+v, want cancelled for abandoned close", f)
+	}
+	sentinelKept(t, viewPath, sentinel)
+	tempDirGone(t, log)
+}
+
+func TestCommitGenerationWriteGuardsLiveSlot(t *testing.T) {
+	h := &documentHost{}
+	s := &docSession{host: h, generating: true}
+	slot := &generationSlot{path: "/work/a.md"}
+	s.genSlot = slot
+
+	// Fake session has no MyGo document, so Path is empty: a live slot still
+	// refuses to write rather than succeeding against a vanished path.
+	if err := h.commitGenerationWrite(s, slot); err == nil || !strings.Contains(err.Error(), "path changed") {
+		t.Errorf("live empty path = %v, want path-changed", err)
+	}
+
+	s.pathFn = func() string { return slot.path }
+	if err := h.commitGenerationWrite(s, slot); err != nil {
+		t.Errorf("matching path = %v, want nil", err)
+	}
+
+	s.pathFn = func() string { return "/elsewhere/a.md" }
+	if err := h.commitGenerationWrite(s, slot); err == nil || !strings.Contains(err.Error(), "path changed") {
+		t.Errorf("moved path = %v, want path-changed", err)
+	}
+	s.pathFn = func() string { return slot.path }
+
+	slot.abandoned = true
+	if err := h.commitGenerationWrite(s, slot); err != errAbandoned {
+		t.Errorf("abandoned slot = %v, want errAbandoned", err)
+	}
+	slot.abandoned = false
+	s.closed = true
+	if err := h.commitGenerationWrite(s, slot); err != errAbandoned {
+		t.Errorf("closed session = %v, want errAbandoned", err)
+	}
+	s.closed = false
+	other := &generationSlot{path: slot.path}
+	s.genSlot = other
+	if err := h.commitGenerationWrite(s, slot); err != errAbandoned {
+		t.Errorf("stale slot = %v, want errAbandoned", err)
+	}
+}
+
+func TestRejectPathChangeWhileGenerating(t *testing.T) {
+	h := &documentHost{}
+	s := &docSession{host: h, generating: true, genSlot: &generationSlot{path: "/work/a.md"}}
+	if err := h.rejectPathChange(s); err == nil || err.Error() != errGenerating {
+		t.Errorf("rejectPathChange = %v, want %q", err, errGenerating)
+	}
+	s.generating = false
+	if err := h.rejectPathChange(s); err != nil {
+		t.Errorf("idle rejectPathChange = %v", err)
+	}
+}
+
+func TestCancelGenerationMarksAbandonedWithoutClearingIdleSlot(t *testing.T) {
+	h := &documentHost{}
+	s := &docSession{host: h}
+	h.cancelGeneration(s) // idle: must not panic
+
+	called := false
+	slot := &generationSlot{cancel: func() { called = true }}
+	s.genSlot = slot
+	s.generating = true
+	h.cancelGeneration(s)
+	if !slot.abandoned || !called {
+		t.Fatalf("cancelGeneration abandoned=%v called=%v", slot.abandoned, called)
+	}
+	if s.genSlot != slot {
+		t.Fatal("cancel must not drop the slot; Generate's defer still owns cleanup")
+	}
+}
+
+func TestWaitForGenerationsReturnsWhenIdle(t *testing.T) {
+	h := &documentHost{}
+	start := time.Now()
+	h.waitForGenerations(time.Second)
+	if time.Since(start) > 500*time.Millisecond {
+		t.Fatal("idle waitForGenerations must return immediately")
+	}
+}
+
+func fakeAgentJob(t *testing.T, spec fakeSpec) (func(*generationJob), string) {
+	t.Helper()
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "fake.log")
+	specData, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return func(job *generationJob) {
+		job.AgentCommand = os.Args[0]
+		job.Now = func() time.Time { return fakeNow }
+		job.Env = append(os.Environ(),
+			fakeAgentEnv+"=1",
+			fakeSpecEnv+"="+string(specData),
+			fakeLogEnv+"="+logPath,
+		)
+	}, logPath
+}
+
+func hostSession(t *testing.T, h *documentHost, id, path string) *docSession {
+	t.Helper()
+	captured := path
+	s := &docSession{host: h, id: id, pathFn: func() string { return captured }}
+	h.mu.Lock()
+	if h.byID == nil {
+		h.byID = make(map[string]*docSession)
+	}
+	h.byID[id] = s
+	h.mu.Unlock()
+	return s
+}
+
+func TestHostGenerateOneSlotPerDocumentConcurrentAcrossDocuments(t *testing.T) {
+	dir := t.TempDir()
+	aPath := filepath.Join(dir, "a.md")
+	bPath := filepath.Join(dir, "b.md")
+	h := &documentHost{settings: &settingsStore{dir: t.TempDir()}}
+	if err := h.settings.set(Settings{Model: "gemini-3.8-flash", AgentCommand: "agy"}); err != nil {
+		t.Fatal(err)
+	}
+	hostSession(t, h, "a", aPath)
+	hostSession(t, h, "b", bPath)
+
+	started := make(chan string, 2)
+	release := make(chan struct{})
+	prepare, logPath := fakeAgentJob(t, fakeSpec{Out: minimalOut})
+	h.prepareJob = func(job *generationJob) {
+		prepare(job)
+		inner := job.BeforeWrite
+		job.BeforeWrite = func() error {
+			started <- job.Req.Request
+			<-release
+			if inner != nil {
+				return inner()
+			}
+			return nil
+		}
+	}
+
+	aCh := make(chan error, 1)
+	bCh := make(chan error, 1)
+	go func() {
+		aCh <- h.generate(context.Background(), "a", GenerateRequest{Text: "# Alpha\n", Mode: "full", Request: "alpha-req", Format: "{}"}, func(GenerateProgress) error { return nil })
+	}()
+	go func() {
+		bCh <- h.generate(context.Background(), "b", GenerateRequest{Text: "# Beta\n", Mode: "full", Request: "beta-req", Format: "{}"}, func(GenerateProgress) error { return nil })
+	}()
+
+	seen := map[string]bool{}
+	for range 2 {
+		select {
+		case id := <-started:
+			seen[id] = true
+		case <-time.After(10 * time.Second):
+			t.Fatal("both documents never reached BeforeWrite together")
+		}
+	}
+	if !seen["alpha-req"] || !seen["beta-req"] {
+		t.Fatalf("started = %v, want both requests", seen)
+	}
+	h.mu.Lock()
+	aBusy, bBusy := h.byID["a"].generating, h.byID["b"].generating
+	h.mu.Unlock()
+	if !aBusy || !bBusy {
+		t.Fatalf("generating A=%v B=%v, want both", aBusy, bBusy)
+	}
+
+	busy := h.generate(context.Background(), "a", GenerateRequest{Text: "# Alpha\n", Mode: "full", Format: "{}"}, func(GenerateProgress) error { return nil })
+	if f := failureFrom(t, busy); f.Kind != failBusy {
+		t.Errorf("second A generate = %v, want busy", busy)
+	}
+
+	close(release)
+	if err := <-aCh; err != nil {
+		t.Fatalf("A: %v", err)
+	}
+	if err := <-bCh; err != nil {
+		t.Fatalf("B: %v", err)
+	}
+
+	aView, err := os.ReadFile(viewPath(aPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bView, err := os.ReadFile(viewPath(bPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(aView, []byte(`"request": "alpha-req"`)) {
+		t.Errorf("A view missing captured request: %s", aView)
+	}
+	if !bytes.Contains(bView, []byte(`"request": "beta-req"`)) {
+		t.Errorf("B view missing captured request: %s", bView)
+	}
+	if bytes.Contains(aView, []byte("beta-req")) || bytes.Contains(bView, []byte("alpha-req")) {
+		t.Fatal("requests crossed documents")
+	}
+	_ = logPath
+}
+
+func TestHostGenerateCapturesSettingsAndRefusesStalePath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.md")
+	sentinel := []byte("the view that was")
+	if err := os.WriteFile(viewPath(path), sentinel, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	settingsDir := t.TempDir()
+	h := &documentHost{settings: &settingsStore{dir: settingsDir}}
+	if err := h.settings.set(Settings{Model: "gemini-3.8-flash", AgentCommand: "agy"}); err != nil {
+		t.Fatal(err)
+	}
+	current := path
+	hostSession(t, h, "a", path).pathFn = func() string { return current }
+
+	gate := make(chan struct{})
+	goOn := make(chan struct{})
+	prepare, logPath := fakeAgentJob(t, fakeSpec{Out: minimalOut})
+	h.prepareJob = func(job *generationJob) {
+		prepare(job)
+		inner := job.BeforeWrite
+		job.BeforeWrite = func() error {
+			close(gate)
+			<-goOn
+			if inner != nil {
+				return inner()
+			}
+			return nil
+		}
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- h.generate(context.Background(), "a", GenerateRequest{Text: "# A\n", Mode: "full", Request: "keep-me", Format: "{}"}, func(GenerateProgress) error { return nil })
+	}()
+	select {
+	case <-gate:
+	case <-time.After(10 * time.Second):
+		t.Fatal("run never reached BeforeWrite")
+	}
+	if err := h.settings.set(Settings{Model: "claude-opus-5-5", AgentCommand: "agy"}); err != nil {
+		t.Fatal(err)
+	}
+	current = filepath.Join(dir, "renamed.md")
+	close(goOn)
+	err := <-errCh
+	f := failureFrom(t, err)
+	if f.Kind != failAgentError || !strings.Contains(f.Message, "path changed") {
+		t.Errorf("failure = %+v, want path-changed", f)
+	}
+	sentinelKept(t, viewPath(path), sentinel)
+	log := readFakeLog(t, logPath)
+	sets := logRecv(log, "session/set_config_option")
+	if len(sets) != 1 || sets[0]["value"] != "gemini-3.8-flash" {
+		t.Errorf("set_config_option = %v, want captured model", sets)
+	}
+	tempDirGone(t, log)
+}
+
+func TestHostGenerateAbandonedCloseDoesNotWriteAndCancelCloseKeepsSlot(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.md")
+	sentinel := []byte("the view that was")
+	if err := os.WriteFile(viewPath(path), sentinel, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := &documentHost{settings: &settingsStore{dir: t.TempDir()}}
+	s := hostSession(t, h, "a", path)
+
+	gate := make(chan struct{})
+	goOn := make(chan struct{})
+	prepare, logPath := fakeAgentJob(t, fakeSpec{Out: minimalOut})
+	h.prepareJob = func(job *generationJob) {
+		prepare(job)
+		inner := job.BeforeWrite
+		job.BeforeWrite = func() error {
+			close(gate)
+			<-goOn
+			if inner != nil {
+				return inner()
+			}
+			return nil
+		}
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- h.generate(context.Background(), "a", GenerateRequest{Text: "# A\n", Mode: "full", Format: "{}"}, func(GenerateProgress) error { return nil })
+	}()
+	select {
+	case <-gate:
+	case <-time.After(10 * time.Second):
+		t.Fatal("run never reached BeforeWrite")
+	}
+
+	// CloseResult{Canceled: true} is the ask-to-save cancel: it must not
+	// call dropSession, so the slot stays live.
+	if !s.generating {
+		t.Fatal("cancelled close must not clear generating")
+	}
+	h.mu.Lock()
+	live := s.genSlot
+	h.mu.Unlock()
+	if live == nil || live.abandoned {
+		t.Fatal("cancelled close must leave the live slot")
+	}
+
+	h.dropSession(s)
+	close(goOn)
+	err := <-errCh
+	if f := failureFrom(t, err); f.Kind != failCancelled {
+		t.Errorf("failure = %+v, want cancelled after real close", f)
+	}
+	sentinelKept(t, viewPath(path), sentinel)
+	tempDirGone(t, readFakeLog(t, logPath))
+}
+
+func TestHostGenerateCloseCancelsHangingAgentAndWaitReturns(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.md")
+	sentinel := []byte("the view that was")
+	if err := os.WriteFile(viewPath(path), sentinel, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := &documentHost{settings: &settingsStore{dir: t.TempDir()}}
+	s := hostSession(t, h, "a", path)
+	prepare, logPath := fakeAgentJob(t, fakeSpec{Hang: true})
+	h.prepareJob = prepare
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- h.Generate(context.Background(), "a", GenerateRequest{Text: "# A\n", Mode: "full", Format: "{}"}, nil)
+	}()
+	waitForLog(t, logPath, "session/prompt")
+	h.dropSession(s)
+	select {
+	case err := <-errCh:
+		if f := failureFrom(t, err); f.Kind != failCancelled {
+			t.Errorf("failure = %+v, want cancelled", f)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Generate never returned after close")
+	}
+	start := time.Now()
+	h.waitForGenerations(2 * time.Second)
+	if time.Since(start) > time.Second {
+		t.Fatal("waitForGenerations did not return after the cancelled run")
+	}
+	sentinelKept(t, viewPath(path), sentinel)
+	log := readFakeLog(t, logPath)
+	tempDirGone(t, log)
+	pid := int(logEntries(log, "pid")[0]["pid"].(float64))
+	if syscall.Kill(pid, 0) == nil {
+		t.Errorf("the agent process %d is still running", pid)
+	}
+}

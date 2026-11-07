@@ -13,6 +13,8 @@ export interface DocState {
   conflict: boolean
   deleted: boolean
   readOnly: boolean
+  /** True while this document's generation slot is occupied. */
+  generating?: boolean
 }
 
 /** One open document as the workspace lists it. `id` is stable across path and window. */

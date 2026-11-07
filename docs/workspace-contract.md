@@ -29,13 +29,14 @@ type WorkspaceSnapshot struct {
 }
 
 type DocumentInfo struct {
-    ID       string `json:"id"`
-    Name     string `json:"name"`
-    Path     string `json:"path"`
-    Edited   bool   `json:"edited"`
-    Conflict bool   `json:"conflict"`
-    Deleted  bool   `json:"deleted"`
-    ReadOnly bool   `json:"readOnly"`
+    ID         string `json:"id"`
+    Name       string `json:"name"`
+    Path       string `json:"path"`
+    Edited     bool   `json:"edited"`
+    Conflict   bool   `json:"conflict"`
+    Deleted    bool   `json:"deleted"`
+    ReadOnly   bool   `json:"readOnly"`
+    Generating bool   `json:"generating"` // this document's generation slot is occupied
 }
 
 type Snapshot struct {
@@ -88,7 +89,7 @@ Emitted to the workspace window that currently hosts the document.
 ```ts
 workspaceChanged: WorkspaceSnapshot
 docReloaded: Snapshot                 // { id, text, version, state }
-docState: DocumentInfo                // { id, name, path, edited, conflict, deleted, readOnly }
+docState: DocumentInfo                // { id, name, path, edited, conflict, deleted, readOnly, generating }
 viewChanged: { id: string } & ViewSnapshot
 ```
 
@@ -176,7 +177,7 @@ Generate(documentId, req, progress)
 viewChanged: { id, exists, text, error, canUndo }
 ```
 
-#21 only adds `documentId` to the same call/event boundary. #29 owns read/watch ordering: emit-first (the first snapshot does not wait for WatchFiles), then WatchFiles, then a catch-up snapshot once the watch is running, so there is no unwatched gap after the initial read. A watch that cannot start still returns its error on `WatchView`; the first snapshot already sent is not withdrawn. #24 owns multi-document generation isolation (one slot per `documentId`, concurrent slots across documents). #30 owns native Undo/Redo, not generation UX.
+#21 only adds `documentId` to the same call/event boundary. #29 owns read/watch ordering: emit-first (the first snapshot does not wait for WatchFiles), then WatchFiles, then a catch-up snapshot once the watch is running, so there is no unwatched gap after the initial read. A watch that cannot start still returns its error on `WatchView`; the first snapshot already sent is not withdrawn. #24 owns one generation slot per `documentId` (concurrent slots across documents): settings, text, path and request are captured at start; a finishing run refuses to write if the document closed or its path changed; a cancelled close must not cancel the slot. #30 owns native Undo/Redo, not generation UX.
 
 ## Testing seams (approved)
 

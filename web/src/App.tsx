@@ -9,7 +9,7 @@ import { EditorAccess } from './core/EditorAccess'
 import { PluginRegistry } from './core/PluginRegistry'
 import { ViewRegistry } from './core/ViewRegistry'
 import type { AppPlugin } from './core/types'
-import type { Disposable, DocumentInfo, HostAdapter, WorkspaceAdapter } from './host/types'
+import type { Disposable, DocumentInfo, HostAdapter, WorkspaceAdapter, WorkspaceSnapshot } from './host/types'
 import { wrapHostAsWorkspace } from './host/browserHost'
 import { registerDocumentFlush } from './host/mygoHost'
 import { createMarkdownEditor, type EditorMode, type MarkdownEditor } from './editor/createEditor'
@@ -452,6 +452,9 @@ export function DocumentPane({
                 <span className="status meta">
                   {docState?.edited ? 'Edited' : 'Saved'}
                   {docState?.conflict ? ' · conflict' : ''}
+                  {docState?.generating
+                    ? ' · generating — wait or cancel in the GenUI panel'
+                    : ''}
                 </span>
                 <span className="version-chip meta">v{version}</span>
                 <div className="view-modes seg" role="radiogroup" aria-label="View mode">
@@ -547,6 +550,7 @@ export function DocumentPane({
         <span className="status-state">
           {docState?.edited ? 'Edited' : 'Saved'}
           {docState?.conflict ? ' · conflict' : ''}
+          {docState?.generating ? ' · generating' : ''}
         </span>
       </footer>
     </div>
@@ -584,7 +588,7 @@ function WorkspaceApp({
   workspace: WorkspaceAdapter
   plugins?: AppPlugin[]
 }): React.ReactElement {
-  const [snap, setSnap] = useState<{ documents: { id: string; name: string; path: string; edited: boolean; conflict: boolean; deleted: boolean; readOnly: boolean }[]; activeId: string; name: string; kind: string; root: string } | null>(null)
+  const [snap, setSnap] = useState<WorkspaceSnapshot | null>(null)
   const panes = useRef(new Map<string, HostAdapter>())
 
   useEffect(() => {
@@ -650,6 +654,9 @@ function WorkspaceApp({
           >
             <span className="nm">{tabLabel(documents, doc)}</span>
             {doc.edited ? <span className="edited-dot" title="Unsaved edits" /> : null}
+            {doc.generating ? (
+              <span className="tab-generating" data-testid={`doc-tab-generating-${doc.id}`} title="Generating" />
+            ) : null}
             {doc.conflict ? <span className="tab-conflict" title="Conflict" /> : null}
             {doc.deleted ? <span className="tab-deleted" title="Deleted" /> : null}
             {doc.readOnly ? <span className="tab-readonly" title="Read only" /> : null}

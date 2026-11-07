@@ -14,6 +14,8 @@ export interface SourceActions {
   store: SourceStore
   /** Component ID currently highlighted by the right-pane out-of-date list. */
   highlightedId?: string | null
+  /** Component ids whose bodies are being regenerated in place. */
+  replacing?: ReadonlySet<string>
   /**
    * Show a component's source in rich text, selected: where `text` is in its
    * remaining source sections when given and found, otherwise its first
@@ -53,6 +55,15 @@ export interface ComponentSource {
   edit: ((text?: string) => void) | undefined
   /** Adds a note to the source; absent when there is nowhere to put it. */
   addNote: ((text: string) => Promise<boolean>) | undefined
+}
+
+function CardSkeleton(): React.ReactElement {
+  return (
+    <div className="genui-card-skeleton" data-testid="genui-card-skeleton" aria-hidden="true">
+      <div className="genui-skeleton-line" />
+      <div className="genui-skeleton-block" />
+    </div>
+  )
 }
 
 /**
@@ -104,6 +115,7 @@ export function SourceFrame({
 }): React.ReactElement {
   const actions = useContext(SourceContext)
   const highlighted = Boolean(componentId && actions?.highlightedId === componentId)
+  const replacing = Boolean(componentId && actions?.replacing?.has(componentId))
   const label = STATUS_LABEL[source.status]
   const [composingNote, setComposingNote] = useState(false)
   const [noteDraft, setNoteDraft] = useState('')
@@ -134,15 +146,16 @@ export function SourceFrame({
 
   return (
     <article
-      className={`genui-block ${className}${highlighted ? ' is-highlighted' : ''}`}
+      className={`genui-block ${className}${highlighted ? ' is-highlighted' : ''}${replacing ? ' is-replacing' : ''}`}
       style={style}
       data-source-status={source.status}
       data-component-id={componentId}
       data-highlighted={highlighted ? 'true' : undefined}
+      aria-busy={replacing || undefined}
     >
       {title ? <h4>{title}</h4> : null}
-      {children}
-      {source.notes.length > 0 ? (
+      {replacing ? <CardSkeleton /> : children}
+      {!replacing && source.notes.length > 0 ? (
         <ul className="genui-notes" aria-label="Notes">
           {source.notes.map((note, index) => (
             <li key={index} className="genui-note">
@@ -156,6 +169,10 @@ export function SourceFrame({
           <span className="genui-source-from">From {source.headings.join(', ')}</span>
           {label ? (
             <span className="genui-source-status" title={STATUS_HINT[source.status]}>
+              <i
+                className={`ph ${source.status === 'missing' ? 'ph-warning-circle' : 'ph-warning'}`}
+                aria-hidden="true"
+              />
               {label}
             </span>
           ) : null}

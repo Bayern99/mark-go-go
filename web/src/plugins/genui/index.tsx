@@ -1,6 +1,7 @@
 import type { AppPlugin, PluginContext } from '../../core/types'
 import type { Disposable } from '../../host/types'
 import type { GenUIMemory } from './GenUIView'
+import { ReadingStore } from './reading'
 
 /**
  * The GenUI plugin registers two views sharing one session:
@@ -23,6 +24,7 @@ export function createGenUIPlugin(): AppPlugin {
         generation: undefined,
         draft: undefined,
         session: undefined,
+        reading: new ReadingStore(),
         statusListeners: new Set(),
       }
       ctx.views.register({

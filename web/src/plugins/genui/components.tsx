@@ -3,10 +3,14 @@
  * `sources` and `weight`, has no children, and draws in the shared
  * source frame. `a2ui.tsx` puts them in the catalog.
  */
-import { useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
 import { createComponentImplementation } from '@a2ui/react'
 import { SourceFrame, useComponentSource } from './SourceFrame'
+import { ReadingContext } from './reading'
+
+/** Fold only when there are more points than this. */
+const KEYPOINTS_FOLD_AFTER = 4
 
 /** Props every content component accepts besides its own. */
 const common = {
@@ -34,21 +38,44 @@ export const KeyPoints = createComponentImplementation(
       .strict()
       .describe('The few points a reader should take away.'),
   },
-  ({ props, context }) => (
-    <SourceFrame
-      source={useComponentSource(props.sources)}
-      componentId={context.componentModel.id}
-      className="genui-keypoints"
-      style={flex(props.weight)}
-      title={props.title}
-    >
-      <ul>
-        {props.items.map((item, index) => (
-          <li key={index}>{item}</li>
-        ))}
-      </ul>
-    </SourceFrame>
-  ),
+  ({ props, context }) => {
+    const id = context.componentModel.id
+    const reading = useContext(ReadingContext)
+    const [expanded, setExpanded] = useState(() => reading?.keypointsExpanded(id) ?? false)
+    const foldable = props.items.length > KEYPOINTS_FOLD_AFTER
+    const visible = foldable && !expanded ? props.items.slice(0, KEYPOINTS_FOLD_AFTER) : props.items
+    return (
+      <SourceFrame
+        source={useComponentSource(props.sources)}
+        componentId={id}
+        className="genui-keypoints"
+        style={flex(props.weight)}
+        title={props.title}
+      >
+        <ol>
+          {visible.map((item, index) => (
+            <li key={index} value={index + 1}>
+              {item}
+            </li>
+          ))}
+        </ol>
+        {foldable ? (
+          <button
+            type="button"
+            className="pill xs quiet genui-keypoints-more"
+            aria-expanded={expanded}
+            onClick={() => {
+              const next = !expanded
+              setExpanded(next)
+              reading?.setKeypointsExpanded(id, next)
+            }}
+          >
+            {expanded ? 'Show fewer' : `Show all ${props.items.length}`}
+          </button>
+        ) : null}
+      </SourceFrame>
+    )
+  },
 )
 
 const Metric = z
@@ -156,7 +183,10 @@ export const ComparisonTable = createComponentImplementation(
       .describe('Items compared side by side. Readers can sort by any column; sorting changes only the display.'),
   },
   ({ props, context }) => {
-    const [sort, setSort] = useState<SortState>(null)
+    const id = context.componentModel.id
+    const reading = useContext(ReadingContext)
+    const [sort, setSort] = useState<SortState>(() => reading?.tableSort(id) ?? null)
+    const scroller = useRef<HTMLDivElement>(null)
     const tableName = props.title ? `${props.title} table` : 'Comparison table'
     const order = props.rows.map((_, index) => index)
     if (sort) {
@@ -167,17 +197,28 @@ export const ComparisonTable = createComponentImplementation(
       )
     }
     const toggle = (column: number) =>
-      setSort((current) =>
-        current?.column !== column
-          ? { column, direction: 'ascending' }
-          : current.direction === 'ascending'
-            ? { column, direction: 'descending' }
-            : null,
-      )
+      setSort((current) => {
+        const next =
+          current?.column !== column
+            ? { column, direction: 'ascending' as const }
+            : current.direction === 'ascending'
+              ? { column, direction: 'descending' as const }
+              : null
+        reading?.setTableSort(id, next)
+        return next
+      })
+    useEffect(() => {
+      const el = scroller.current
+      if (!el) return
+      el.scrollLeft = reading?.tableScrollLeft(id) ?? 0
+      const remember = () => reading?.setTableScrollLeft(id, el.scrollLeft)
+      el.addEventListener('scroll', remember, { passive: true })
+      return () => el.removeEventListener('scroll', remember)
+    }, [id, reading])
     return (
       <SourceFrame
         source={useComponentSource(props.sources)}
-        componentId={context.componentModel.id}
+        componentId={id}
         className="genui-comparison"
         style={flex(props.weight)}
         title={props.title}
@@ -187,6 +228,7 @@ export const ComparisonTable = createComponentImplementation(
           role="group"
           tabIndex={0}
           aria-label={`${tableName}, scrollable`}
+          ref={scroller}
         >
           <table>
             <caption className="genui-table-caption">{tableName}</caption>

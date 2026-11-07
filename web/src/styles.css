@@ -284,6 +284,15 @@ body {
   font-weight: 600;
   letter-spacing: -0.005em;
   color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.ws-logo {
+  flex: none;
+  display: block;
+  border-radius: 4px;
 }
 
 .ws-meta {

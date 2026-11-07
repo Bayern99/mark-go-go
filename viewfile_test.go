@@ -265,6 +265,7 @@ func TestFollowViewUnwatchStopsEvents(t *testing.T) {
 }
 
 func TestFollowViewWatchErrorAfterFirstSnapshot(t *testing.T) {
+	// WatchView returns this error to the page; the first snapshot stays.
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".notes.md.genui.json")
 	if err := os.WriteFile(path, []byte("ok"), 0o600); err != nil {

@@ -79,7 +79,9 @@ func readViewText(path string) ViewSnapshot {
 // one as soon as follow starts, one after the watch is running, then
 // each change, and when the document is renamed, moved or first saved.
 // The first event does not wait for WatchFiles to return. Calling it
-// again restarts the watch.
+// again restarts the watch. A snapshot already sent is not withdrawn; a
+// watch that cannot start is still returned on this call, so the page
+// does not treat the follow as live.
 //
 // #21 may add a documentId argument and an id field on the event; the
 // read/watch order here stays the same and does not retarget through
@@ -98,11 +100,7 @@ func (h *documentHost) WatchView(ctx context.Context) error {
 	path := viewPath(s.doc.State().Path)
 	gen := s.retargetLocked(path)
 	h.mu.Unlock()
-	// A watch that cannot start must not hide a snapshot already sent.
-	if err := s.followView(path, gen); err != nil {
-		log.Print(err)
-	}
-	return nil
+	return s.followView(path, gen)
 }
 
 // UnwatchView stops following the calling page's view file.

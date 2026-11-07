@@ -37,6 +37,7 @@ interface OpenComposerConfig extends ComposerMount {
   placeholder: string
   allowEmpty: boolean
   trim: boolean
+  restoreNewlines?: boolean
 }
 
 function openComposer(config: OpenComposerConfig): Promise<string | null> {
@@ -92,7 +93,10 @@ function openComposer(config: OpenComposerConfig): Promise<string | null> {
     const cancelCurrent = () => finish(null)
     activeCancel = cancelCurrent
 
-    const valueOf = () => (config.trim ? input.value.trim() : input.value)
+    const valueOf = () => {
+      const raw = config.trim ? input.value.trim() : input.value
+      return config.restoreNewlines ? restoreNewlines(config.initial, raw) : raw
+    }
 
     const syncSave = () => {
       save.disabled = config.allowEmpty ? false : valueOf() === ''
@@ -186,6 +190,27 @@ export function askForMarkdown(
     inputLabel: 'Markdown',
     placeholder: 'Edit this block as Markdown.',
     allowEmpty: true,
-    trim: false,
+    restoreNewlines: true,
   })
+}
+
+/**
+ * Textarea.value always stores LF. Map those LFs back onto the original
+ * block's CR / CRLF / LF endings so an in-place edit does not rewrite
+ * untouched line breaks inside the same source span.
+ */
+function restoreNewlines(original: string, typed: string): string {
+  const originalLines = original.split(/\r\n|\n|\r/)
+  const typedLines = typed.split(/\n/)
+  const endings: string[] = []
+  const ending = /\r\n|\n|\r/g
+  let match: RegExpExecArray | null
+  while ((match = ending.exec(original))) endings.push(match[0])
+  let out = ''
+  const count = Math.max(originalLines.length, typedLines.length)
+  for (let i = 0; i < count; i += 1) {
+    if (i > 0) out += endings[i - 1] ?? (endings[endings.length - 1] ?? '\n')
+    if (i < typedLines.length) out += typedLines[i]
+  }
+  return out
 }

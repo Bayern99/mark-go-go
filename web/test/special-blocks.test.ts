@@ -179,6 +179,32 @@ describe('special blocks in rich text', () => {
     }
   })
 
+  it('edits two non-adjacent fields in one Composer without rewriting mixed newlines', async () => {
+    const source =
+      'Intro.\n\n~~~js title="a.js" unknown=keep\r\nconst n = 1\r\nconst extra = true\nconst z = 9\r\n~~~\n\nOutro.\n'
+    const mounted = await mountEditor(source)
+    try {
+      const block = mounted.root.querySelector<HTMLElement>('.mgo-code-block')
+      if (!block) throw new Error('no code block')
+      const composer = await openBlockComposer(mounted, block)
+      const input = composer.querySelector<HTMLTextAreaElement>('textarea[aria-label="Markdown"]')
+      if (!input) throw new Error('no Markdown textarea')
+      const original = '~~~js title="a.js" unknown=keep\r\nconst n = 1\r\nconst extra = true\nconst z = 9\r\n~~~'
+      expect(input.value.replace(/\r\n?/g, '\n')).toBe(original.replace(/\r\n?/g, '\n'))
+      const typed = original.replace('title="a.js"', 'title="b.js"').replace('const z = 9', 'const z = 8')
+      const expected =
+        'Intro.\n\n' +
+        original.replace('title="a.js"', 'title="b.js"').replace('const z = 9', 'const z = 8') +
+        '\n\nOutro.\n'
+      await userEvent.fill(input, typed)
+      await saveComposer(composer)
+      await vi.waitFor(() => expect(mounted.root.querySelector('.mgo-block-composer')).toBeNull())
+      expect(mounted.editor.getMarkdown()).toBe(expected)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('keeps an in-place edit across Markdown mode and undo in Rich text', async () => {
     const source = 'Intro.\n\n> [!NOTE]\n> keep\n\nOutro.\n'
     const mounted = await mountEditor(source)

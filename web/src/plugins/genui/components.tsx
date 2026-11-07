@@ -157,6 +157,7 @@ export const ComparisonTable = createComponentImplementation(
   },
   ({ props, context }) => {
     const [sort, setSort] = useState<SortState>(null)
+    const tableName = props.title ? `${props.title} table` : 'Comparison table'
     const order = props.rows.map((_, index) => index)
     if (sort) {
       const sign = sort.direction === 'ascending' ? 1 : -1
@@ -181,8 +182,14 @@ export const ComparisonTable = createComponentImplementation(
         style={flex(props.weight)}
         title={props.title}
       >
-        <div className="genui-table-scroll">
+        <div
+          className="genui-table-scroll"
+          role="group"
+          tabIndex={0}
+          aria-label={`${tableName}, scrollable`}
+        >
           <table>
+            <caption className="genui-table-caption">{tableName}</caption>
             <thead>
               <tr>
                 {props.columns.map((column, index) => (
@@ -191,7 +198,11 @@ export const ComparisonTable = createComponentImplementation(
                     scope="col"
                     aria-sort={sort?.column === index ? sort.direction : 'none'}
                   >
-                    <button type="button" onClick={() => toggle(index)}>
+                    <button
+                      type="button"
+                      onClick={() => toggle(index)}
+                      aria-label={column.trim() === '' ? `Column ${index + 1}` : undefined}
+                    >
                       {column}
                       <span className="genui-sort-mark" aria-hidden="true">
                         {sort?.column === index ? (sort.direction === 'ascending' ? '↑' : '↓') : '↕'}

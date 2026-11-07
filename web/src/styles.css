@@ -1055,8 +1055,45 @@ body {
   color: var(--danger);
 }
 
-.ProseMirror[contenteditable='false'] .mgo-note-actions {
+.ProseMirror[contenteditable='false'] .mgo-note-actions,
+.ProseMirror[contenteditable='false'] .mgo-block-actions {
   display: none;
+}
+
+.mgo-block-actions {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity var(--duration-switch) ease;
+}
+
+.mgo-alert:hover .mgo-block-actions,
+.mgo-alert:focus-within .mgo-block-actions,
+.mgo-frontmatter-block:hover .mgo-block-actions,
+.mgo-frontmatter-block:focus-within .mgo-block-actions,
+.mgo-footnote:hover .mgo-block-actions,
+.mgo-footnote:focus-within .mgo-block-actions,
+.mgo-code-block:hover .mgo-block-actions,
+.mgo-code-block:focus-within .mgo-block-actions,
+.mgo-math:hover .mgo-block-actions,
+.mgo-math:focus-within .mgo-block-actions,
+.mgo-locked-block:hover .mgo-block-actions,
+.mgo-locked-block:focus-within .mgo-block-actions {
+  opacity: 1;
+}
+
+.composer.mgo-block-composer {
+  margin: 10px 0;
+  font-family: var(--font-mono);
+}
+
+.composer.mgo-block-composer textarea {
+  font-family: var(--font-mono);
+  font-size: var(--text-code-size);
+  line-height: var(--text-code-leading);
 }
 
 /* ─── Unified In-place Paper Composer (Rich text notes, GenUI card notes, Focus) ─── */

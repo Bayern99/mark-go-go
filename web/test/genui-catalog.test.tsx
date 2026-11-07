@@ -136,14 +136,87 @@ describe('GenUI content components', () => {
     await expect.element(page.getByRole('columnheader', { name: /^Size/ })).toHaveAttribute('aria-sort', 'ascending')
     await size.click()
     await order(['Electron', 'MyGo', 'Tauri'])
+    await expect.element(page.getByRole('columnheader', { name: /^Size/ })).toHaveAttribute('aria-sort', 'descending')
     await size.click()
     await order(['MyGo', 'Electron', 'Tauri'])
+    await expect.element(page.getByRole('columnheader', { name: /^Size/ })).toHaveAttribute('aria-sort', 'none')
 
     await page.getByRole('button', { name: /^Option/ }).click()
     await order(['Electron', 'MyGo', 'Tauri'])
 
     await new Promise((resolve) => setTimeout(resolve, 350))
     expect(update).not.toHaveBeenCalled()
+  })
+
+  it('names the table and headers, sorts from the keyboard, and stays read-only', async () => {
+    const mounted = await showView(EVERY)
+    const update = vi.spyOn(mounted.host, 'update')
+    const order = (expected: string[]) => vi.waitFor(() => expect(firstColumn(mounted)).toEqual(expected))
+    await order(['MyGo', 'Electron', 'Tauri'])
+
+    await expect.element(page.getByRole('table', { name: 'Options table' })).toBeVisible()
+    await expect.element(page.getByRole('group', { name: 'Options table, scrollable' })).toBeVisible()
+    for (const name of ['Option', 'Size', 'Notes']) {
+      await expect.element(page.getByRole('columnheader', { name })).toHaveAttribute('scope', 'col')
+      await expect.element(page.getByRole('columnheader', { name })).toHaveAttribute('aria-sort', 'none')
+      await expect.element(page.getByRole('button', { name })).toBeVisible()
+    }
+    await expect.element(page.getByRole('rowheader', { name: 'MyGo' })).toHaveAttribute('scope', 'row')
+
+    const scroller = mounted.container.querySelector<HTMLElement>('.genui-table-scroll')
+    const headers = Array.from(mounted.container.querySelectorAll<HTMLButtonElement>('.genui-comparison thead button'))
+    if (!scroller || headers.length !== 3) throw new Error('comparison headers missing')
+    scroller.focus()
+    expect(document.activeElement).toBe(scroller)
+    await userEvent.keyboard('{Tab}')
+    expect(document.activeElement).toBe(headers[0])
+    await userEvent.keyboard('{Tab}')
+    expect(document.activeElement).toBe(headers[1])
+    await userEvent.keyboard('{Tab}')
+    expect(document.activeElement).toBe(headers[2])
+
+    headers[1].focus()
+    await userEvent.keyboard('{Enter}')
+    await order(['Tauri', 'MyGo', 'Electron'])
+    await expect.element(page.getByRole('columnheader', { name: 'Size' })).toHaveAttribute('aria-sort', 'ascending')
+    await expect.element(page.getByRole('columnheader', { name: 'Option' })).toHaveAttribute('aria-sort', 'none')
+    expect(document.activeElement).toBe(headers[1])
+    await expect.element(page.getByRole('rowheader', { name: 'Tauri' })).toHaveAttribute('scope', 'row')
+
+    await userEvent.keyboard('{Enter}')
+    await order(['Electron', 'MyGo', 'Tauri'])
+    await expect.element(page.getByRole('columnheader', { name: 'Size' })).toHaveAttribute('aria-sort', 'descending')
+
+    await userEvent.keyboard('{Enter}')
+    await order(['MyGo', 'Electron', 'Tauri'])
+    await expect.element(page.getByRole('columnheader', { name: 'Size' })).toHaveAttribute('aria-sort', 'none')
+
+    headers[0].focus()
+    await userEvent.keyboard(' ')
+    await order(['Electron', 'MyGo', 'Tauri'])
+    await expect.element(page.getByRole('columnheader', { name: 'Option' })).toHaveAttribute('aria-sort', 'ascending')
+    expect(document.activeElement).toBe(headers[0])
+
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    expect(update).not.toHaveBeenCalled()
+    expect(lastHost?.getState().edited).toBe(false)
+  })
+
+  it('names an untitled comparison table', async () => {
+    await showView([
+      {
+        id: 'root',
+        component: 'ComparisonTable',
+        columns: ['A', 'B'],
+        rows: [
+          ['x', '1'],
+          ['y', '2'],
+        ],
+      },
+    ])
+    await expect.element(page.getByRole('table', { name: 'Comparison table' })).toBeVisible()
+    await expect.element(page.getByRole('group', { name: 'Comparison table, scrollable' })).toBeVisible()
+    await expect.element(page.getByRole('columnheader', { name: 'A' })).toHaveAttribute('aria-sort', 'none')
   })
 
   it('shows checklist state read-only, and a click selects the item in the document', async () => {

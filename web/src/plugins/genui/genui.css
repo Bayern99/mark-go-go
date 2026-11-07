@@ -688,7 +688,26 @@
 }
 
 .genui-table-scroll {
+  position: relative;
   overflow-x: auto;
+}
+
+.genui-table-scroll:focus-visible {
+  outline: 2px solid var(--genui-accent);
+  outline-offset: 2px;
+}
+
+.genui-table-caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .genui-comparison table {
@@ -727,6 +746,11 @@
   font-weight: 600;
   text-align: left;
   cursor: pointer;
+}
+
+.genui-comparison thead button:focus-visible {
+  outline: 2px solid var(--genui-accent);
+  outline-offset: -2px;
 }
 
 .genui-comparison thead th[aria-sort='ascending'] button,

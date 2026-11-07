@@ -118,8 +118,9 @@ them is plain text, not Markdown.
   `"flat"`, which only colours the change).
 
 **`ComparisonTable`**: items compared side by side. The reader can sort by
-any column; sorting changes only the display. Cells that read as numbers sort
-by value.
+any column from the keyboard or by activating the heading (ascending,
+descending, then original order); sorting changes only the display. Cells
+that read as numbers sort by value.
 
 - `columns` (list of at least two strings): the headings; the first names
   what each row compares.

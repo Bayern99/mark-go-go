@@ -1132,11 +1132,11 @@ func TestSettingsStore(t *testing.T) {
 	if got := (&settingsStore{dir: dir}).get(); !reflect.DeepEqual(got.Models, []string{"claude-opus-5-5", "gemini-3.8-flash"}) {
 		t.Errorf("cached models = %+v", got.Models)
 	}
-	if err := st.set(Settings{Model: "", AgentCommand: ""}); err != nil {
+	if err := st.set(Settings{Model: "", AgentCommand: "", Models: []string{"frontend-stale-model"}}); err != nil {
 		t.Fatalf("set: %v", err)
 	}
 	if got := (&settingsStore{dir: dir}).get(); got.Model != "" || got.AgentCommand != "agy" || !reflect.DeepEqual(got.Models, []string{"claude-opus-5-5", "gemini-3.8-flash"}) {
-		t.Errorf("empty model and command = %+v", got)
+		t.Errorf("empty model and command with stale frontend models = %+v", got)
 	}
 
 	// A store without a directory answers with the defaults and

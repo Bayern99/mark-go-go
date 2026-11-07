@@ -217,10 +217,13 @@ describe('GenUI view mode', () => {
           expect(genui()).toHaveAttribute('data-state', 'error')
           expect(app.container.querySelector('.genui-file-error')?.textContent).toContain(message)
         })
+        await expect.element(page.getByTestId('right-tab-dot-genui.panel')).toHaveAttribute('data-tone', 'danger')
+        await expect.element(page.getByTestId('right-tab-dot-genui.panel')).toHaveAttribute('title', 'GenUI view error')
       }
 
       host.writeView(formatExample())
       await expect.element(genui().getByText('In short')).toBeVisible()
+      await expect.element(page.getByTestId('right-tab-dot-genui.panel')).toHaveAttribute('data-tone', 'warn')
 
       // A reference to no component makes the whole view one error.
       host.writeView(
@@ -230,9 +233,11 @@ describe('GenUI view mode', () => {
         expect(genui()).toHaveAttribute('data-state', 'error')
         expect(app.container.querySelector('.genui-surface')).toBeNull()
       })
+      await expect.element(page.getByTestId('right-tab-dot-genui.panel')).toHaveAttribute('data-tone', 'danger')
 
       host.writeView(null)
       await expect.element(genui().getByText('No view yet.')).toBeVisible()
+      expect(page.getByTestId('right-tab-dot-genui.panel').query()).toBeNull()
     } finally {
       await app.unmount()
     }
@@ -587,7 +592,7 @@ describe('GenUI source references', () => {
       if (!metricsCard) throw new Error('metrics card missing')
       const scrollSpy = vi.spyOn(metricsCard, 'scrollIntoView')
 
-      const item = panel.getByTestId('stale-item-metrics')
+      const item = panel.getByTestId('changed-item-metrics')
       await item.click()
 
       expect(scrollSpy).toHaveBeenCalled()

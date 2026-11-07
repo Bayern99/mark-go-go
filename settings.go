@@ -112,8 +112,8 @@ func (st *settingsStore) get() Settings {
 }
 
 // set stores s, writing the file atomically. An empty agent command is
-// stored as the default, and existing cached models are preserved when
-// s.Models is empty.
+// stored as the default, and existing cached models on disk are preserved
+// so that only setModels (after an ACP handshake) overwrites them.
 func (st *settingsStore) set(s Settings) error {
 	if s.AgentCommand == "" {
 		s.AgentCommand = defaultSettings().AgentCommand
@@ -123,12 +123,10 @@ func (st *settingsStore) set(s Settings) error {
 	if st.dir == "" {
 		return errors.New("The settings folder is not available.")
 	}
-	if cleaned := cleanModels(s.Models); len(cleaned) > 0 {
-		s.Models = cleaned
-	} else {
-		s.Models = st.getLocked().Models
-	}
-	data, err := json.MarshalIndent(s, "", "  ")
+	existing := st.getLocked()
+	file := s
+	file.Models = existing.Models
+	data, err := json.MarshalIndent(file, "", "  ")
 	if err != nil {
 		return err
 	}

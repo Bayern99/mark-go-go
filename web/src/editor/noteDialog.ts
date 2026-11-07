@@ -13,10 +13,12 @@ export function cancelNoteComposer(): void {
   activeCancel?.()
 }
 
-export function autoGrowNoteTextarea(input: HTMLTextAreaElement): void {
+export function autoGrowTextarea(input: HTMLTextAreaElement): void {
   input.style.height = 'auto'
   input.style.height = `${Math.min(160, Math.max(40, input.scrollHeight))}px`
 }
+
+export const autoGrowNoteTextarea = autoGrowTextarea
 
 /**
  * Opens an in-place paper composer (`<div class="composer mgo-note-composer">`,
@@ -85,7 +87,7 @@ export function askForNote(
 
     const syncSave = () => {
       save.disabled = input.value.trim() === ''
-      autoGrowNoteTextarea(input)
+      autoGrowTextarea(input)
     }
 
     const submit = () => {

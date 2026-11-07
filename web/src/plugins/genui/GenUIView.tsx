@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { PluginContext, ViewStatusDot } from '../../core/types'
+import { autoGrowTextarea } from '../../editor/noteDialog'
 import type { Disposable, GenerateFailure, GenerationSettings, ViewSnapshot } from '../../host/types'
 import { loadSurface, ViewSurface, type LoadedSurface } from './a2ui'
 import { GenerationController, type GenerationRun, type GenerationState } from './generation'
@@ -94,17 +95,17 @@ class GenUIStore {
 const noSubscription = () => () => {}
 const noRevision = () => 0
 
-interface StaleComponentItem {
+interface ChangedComponentItem {
   id: string
   title: string
   subtitle: string
   status: 'changed' | 'missing'
 }
 
-function getStaleItems(state: GenUIState): StaleComponentItem[] {
+function getChangedItems(state: GenUIState): ChangedComponentItem[] {
   if (state.kind !== 'view') return []
   const { surface, sources } = state
-  const items: StaleComponentItem[] = []
+  const items: ChangedComponentItem[] = []
   for (const [id, component] of surface.componentsModel.entries) {
     const rawIds: unknown = component.properties.sources
     if (!Array.isArray(rawIds)) continue
@@ -130,13 +131,13 @@ function getStaleItems(state: GenUIState): StaleComponentItem[] {
  * The view's components whose sources are out of date in the document, in the
  * surface's order: what the right panel lists and what "Regenerate changed" replaces.
  */
-function useStaleComponents(state: GenUIState): StaleComponentItem[] {
+function useChangedComponents(state: GenUIState): ChangedComponentItem[] {
   const surface = state.kind === 'view' ? state.surface : null
   const sources = state.kind === 'view' ? state.sources : null
   const revision = useSyncExternalStore(sources?.subscribe ?? noSubscription, sources?.getRevision ?? noRevision)
   return useMemo(() => {
     if (!surface || !sources) return []
-    return getStaleItems(state)
+    return getChangedItems(state)
     // `revision` changes when the statuses may have.
   }, [state, surface, sources, revision])
 }
@@ -153,7 +154,21 @@ export interface ScrollMemory {
 }
 
 const DOT_DANGER: ViewStatusDot = { tone: 'danger', title: 'Generation failed' }
+const DOT_VIEW_ERROR: ViewStatusDot = { tone: 'danger', title: 'GenUI view error' }
 const DOT_WARN: ViewStatusDot = { tone: 'warn', title: 'A source changed' }
+
+function LoadingSkeleton(): React.ReactElement {
+  return (
+    <div className="genui-skeleton" aria-hidden="true">
+      <div className="genui-skeleton-line" />
+      <div className="genui-skeleton-row">
+        <div className="genui-skeleton-block" />
+        <div className="genui-skeleton-block" />
+      </div>
+      <div className="genui-skeleton-block genui-skeleton-wide" />
+    </div>
+  )
+}
 
 /**
  * Shared state between the center GenUI view (`genui`) and the right-column
@@ -229,26 +244,17 @@ export class GenUISession {
     this.highlightedId = id
     for (const listener of this.highlightListeners) listener()
     void this.ctx.commands.execute('centerPane.show', 'genui').catch(() => {})
-    const applyDomHighlightAndScroll = () => {
-      const prev = document.querySelectorAll<HTMLElement>('[data-testid="genui-view"] [data-highlighted="true"]')
-      for (const el of prev) {
-        if (el.getAttribute('data-component-id') !== id) {
-          el.removeAttribute('data-highlighted')
-          el.classList.remove('is-highlighted')
-        }
-      }
+    const scrollToCard = () => {
       const card = Array.from(
         document.querySelectorAll<HTMLElement>('[data-testid="genui-view"] [data-component-id]'),
       ).find((el) => el.getAttribute('data-component-id') === id)
       if (!card) return false
-      card.setAttribute('data-highlighted', 'true')
-      card.classList.add('is-highlighted')
       card.scrollIntoView({ block: 'center', behavior: 'smooth' })
       return true
     }
-    if (!applyDomHighlightAndScroll()) {
+    if (!scrollToCard()) {
       requestAnimationFrame(() => {
-        applyDomHighlightAndScroll()
+        scrollToCard()
       })
     }
   }
@@ -268,7 +274,8 @@ export class GenUISession {
     const run = this.generation.getSnapshot()
     if (run.kind === 'failed') return DOT_DANGER
     const state = this.store.getSnapshot()
-    if (state.kind === 'view' && getStaleItems(state).length > 0) {
+    if (state.kind === 'error') return DOT_VIEW_ERROR
+    if (state.kind === 'view' && getChangedItems(state).length > 0) {
       return DOT_WARN
     }
     return null
@@ -399,16 +406,7 @@ function GenUIView({
 
   return (
     <div className="genui-view" data-testid="genui-view" data-state={state.kind} ref={content}>
-      {running && state.kind !== 'view' ? (
-        <div className="genui-skeleton" aria-hidden="true">
-          <div className="genui-skeleton-line" />
-          <div className="genui-skeleton-row">
-            <div className="genui-skeleton-block" />
-            <div className="genui-skeleton-block" />
-          </div>
-          <div className="genui-skeleton-block genui-skeleton-wide" />
-        </div>
-      ) : null}
+      {running && state.kind !== 'view' ? <LoadingSkeleton /> : null}
 
       {!running && state.kind === 'none' ? (
         <div className="gen-empty genui-empty" data-testid="genui-empty">
@@ -448,7 +446,7 @@ const DEFAULT_MODELS = ['gemini-3.8-flash', 'gemini-4-argon', 'claude-opus-5-5']
  * The right-column GenUI management panel:
  * 1. Scrollable upper region (`.genui-panel-scroll`):
  *    - Layer 1: Status & single primary action for the current state (running, failed,
- *      no view, stale components with jump list, or up to date).
+ *      no view, changed components with jump list, or up to date).
  *    - Layer 2: Generation request (`Focus`), read-only by default when a view exists,
  *      expanding an in-place paper `.composer` on `Edit` (`⌘↩` / `Save` to commit, `Escape` / `Cancel` to revert).
  * 2. Pinned footer (`.genui-panel-footer`, outside scroll area):
@@ -466,7 +464,7 @@ function GenUIPanel({
   const state = useSyncExternalStore(session.store.subscribe, session.store.getSnapshot)
   const run = useSyncExternalStore(session.generation.subscribe, session.generation.getSnapshot)
   const path = useDocumentPath(ctx)
-  const staleItems = useStaleComponents(state)
+  const changedItems = useChangedComponents(state)
 
   const hasView = state.kind === 'view'
   const savedRequest = state.kind === 'view' ? (state.view.request ?? '') : ''
@@ -479,6 +477,7 @@ function GenUIPanel({
   const [editingFocus, setEditingFocus] = useState(false)
   const [focusDraft, setFocusDraft] = useState(request)
   const focusTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const inlineTextareaRef = useRef<HTMLTextAreaElement>(null)
 
   const [settings, setSettings] = useState<GenerationSettings>({
     model: 'gemini-3.8-flash',
@@ -522,9 +521,15 @@ function GenUIPanel({
     if (!editingFocus) return
     const el = focusTextareaRef.current
     if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${Math.min(160, Math.max(40, el.scrollHeight))}px`
+    autoGrowTextarea(el)
   }, [editingFocus, focusDraft])
+
+  useEffect(() => {
+    if (hasView) return
+    const el = inlineTextareaRef.current
+    if (!el) return
+    autoGrowTextarea(el)
+  }, [hasView, request])
 
   const models =
     run.kind === 'failed' && run.failure.models?.length
@@ -573,15 +578,18 @@ function GenUIPanel({
     })
   }
 
-  const selectModel = (nextModel: string) => {
-    const nextSettings: GenerationSettings = {
-      ...settings,
-      model: nextModel,
-      models,
-    }
+  const updateSettings = (nextSettings: GenerationSettings) => {
     setSettings(nextSettings)
     session.generation.setSettings(nextSettings).catch((error: unknown) => {
       setUndoError(error instanceof Error ? error.message : String(error))
+    })
+  }
+
+  const selectModel = (nextModel: string) => {
+    updateSettings({
+      ...settings,
+      model: nextModel,
+      models,
     })
   }
 
@@ -591,7 +599,12 @@ function GenUIPanel({
         {running ? (
           <GenerationProgress run={run} onCancel={() => session.generation.cancel()} />
         ) : run.kind === 'failed' ? (
-          <GenerationFailure failure={run.failure} generation={session.generation} />
+          <GenerationFailure
+            failure={run.failure}
+            generation={session.generation}
+            settings={settings}
+            onSetSettings={updateSettings}
+          />
         ) : !hasView ? (
           <div className="gp-block" data-testid="genui-status-empty">
             <div className={`gp-status${state.kind === 'error' ? ' bad' : ''}`}>
@@ -604,12 +617,29 @@ function GenUIPanel({
             </div>
             <div className="composer">
               <textarea
+                ref={inlineTextareaRef}
                 aria-label="Generation request"
                 value={request}
                 rows={2}
                 disabled={running}
                 placeholder="What should the view focus on? (optional)"
-                onChange={(event) => changeInlineRequest(event.target.value)}
+                onChange={(event) => {
+                  changeInlineRequest(event.target.value)
+                  autoGrowTextarea(event.currentTarget)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    event.currentTarget.blur()
+                  } else if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    if (!untitled && !running) {
+                      start({ mode: 'full', request })
+                    }
+                  }
+                }}
               />
             </div>
             <div className="gp-acts">
@@ -626,23 +656,23 @@ function GenUIPanel({
               <p className="genui-note">Save the document first: the view is stored next to it.</p>
             ) : null}
           </div>
-        ) : staleItems.length > 0 ? (
-          <div className="gp-block" data-testid="genui-status-stale">
+        ) : changedItems.length > 0 ? (
+          <div className="gp-block" data-testid="genui-status-changed">
             <div className="gp-status warn">
               <b>
-                {staleItems.length === 1
+                {changedItems.length === 1
                   ? '1 component out of date'
-                  : `${staleItems.length} components out of date`}
+                  : `${changedItems.length} components out of date`}
               </b>
               <span>The document changed since this view was generated.</span>
             </div>
-            <div className="gp-list stale-list" role="list" aria-label="Out of date components">
-              {staleItems.map((item) => (
+            <div className="gp-list changed-list" role="list" aria-label="Out of date components">
+              {changedItems.map((item) => (
                 <button
                   key={item.id}
                   type="button"
-                  className="gp-item stale-item"
-                  data-testid={`stale-item-${item.id}`}
+                  className="gp-item changed-item"
+                  data-testid={`changed-item-${item.id}`}
                   data-component-id={item.id}
                   onClick={() => session.highlightComponent(item.id)}
                 >
@@ -661,11 +691,11 @@ function GenUIPanel({
                   start({
                     mode: 'update',
                     request: effectiveRequest,
-                    replaceIds: staleItems.map((item) => item.id),
+                    replaceIds: changedItems.map((item) => item.id),
                   })
                 }
               >
-                {`Regenerate changed (${staleItems.length})`}
+                {`Regenerate changed (${changedItems.length})`}
               </button>
               <button
                 type="button"
@@ -800,10 +830,45 @@ function GenUIPanel({
 function GenerationFailure({
   failure,
   generation,
+  settings,
+  onSetSettings,
 }: {
   failure: GenerateFailure
   generation: GenerationController
+  settings: GenerationSettings
+  onSetSettings: (next: GenerationSettings) => void
 }): React.ReactElement {
+  const [locatingAgent, setLocatingAgent] = useState(false)
+  const [agentCommandDraft, setAgentCommandDraft] = useState(settings.agentCommand || 'agy')
+  const agentInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!locatingAgent) return
+    const input = agentInputRef.current
+    if (!input) return
+    input.focus()
+    input.select()
+  }, [locatingAgent])
+
+  const openLocateAgent = () => {
+    setAgentCommandDraft(settings.agentCommand || 'agy')
+    setLocatingAgent(true)
+  }
+
+  const saveAgentCommand = () => {
+    const trimmed = agentCommandDraft.trim() || 'agy'
+    onSetSettings({
+      ...settings,
+      agentCommand: trimmed,
+    })
+    setLocatingAgent(false)
+  }
+
+  const cancelLocateAgent = () => {
+    setAgentCommandDraft(settings.agentCommand || 'agy')
+    setLocatingAgent(false)
+  }
+
   return (
     <div className="gp-block genui-file-error genui-run-error" role="alert">
       <div className="gp-status bad">
@@ -828,10 +893,47 @@ function GenerationFailure({
           <pre>{failure.detail}</pre>
         </figure>
       ) : null}
+      {failure.kind === 'agent-not-found' && locatingAgent ? (
+        <div className="composer" data-testid="locate-agent-composer">
+          <input
+            ref={agentInputRef}
+            type="text"
+            aria-label="Agent command"
+            value={agentCommandDraft}
+            placeholder="agy or /path/to/agy"
+            onChange={(event) => setAgentCommandDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                event.stopPropagation()
+                cancelLocateAgent()
+              } else if (event.key === 'Enter') {
+                event.preventDefault()
+                event.stopPropagation()
+                saveAgentCommand()
+              }
+            }}
+          />
+          <div className="composer-bar">
+            <span className="hint meta">⌘↩ to save</span>
+            <button type="button" className="pill xs quiet" onClick={cancelLocateAgent}>
+              Cancel
+            </button>
+            <button type="button" className="pill xs primary" onClick={saveAgentCommand}>
+              Save
+            </button>
+          </div>
+        </div>
+      ) : null}
       <div className="gp-acts genui-generate-actions">
         <button type="button" className="pill primary full" onClick={() => void generation.retry()}>
           Retry
         </button>
+        {failure.kind === 'agent-not-found' && !locatingAgent ? (
+          <button type="button" className="pill" onClick={openLocateAgent}>
+            Locate agent…
+          </button>
+        ) : null}
         <button type="button" className="pill quiet" onClick={() => generation.dismissError()}>
           Dismiss
         </button>
@@ -865,14 +967,7 @@ function GenerationProgress({
           ))}
         </ol>
       ) : null}
-      <div className="genui-skeleton" aria-hidden="true">
-        <div className="genui-skeleton-line" />
-        <div className="genui-skeleton-row">
-          <div className="genui-skeleton-block" />
-          <div className="genui-skeleton-block" />
-        </div>
-        <div className="genui-skeleton-block genui-skeleton-wide" />
-      </div>
+      <LoadingSkeleton />
       <div className="gp-acts">
         <button type="button" className="pill full genui-cancel" onClick={onCancel}>
           Cancel

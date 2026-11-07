@@ -235,6 +235,7 @@ describe('GenUI generation', () => {
 
     const alert = panel().getByRole('alert')
     await containsText(alert, 'The agent does not know the model "gemini-9".')
+    expect(alert.getByRole('button', { name: 'Locate agent…' }).query()).toBeNull()
     expect(Array.from(alert.element().querySelectorAll('li'), (li) => li.textContent)).toEqual([
       'gemini-3.8-flash',
       'claude-opus-5-5',
@@ -258,9 +259,57 @@ describe('GenUI generation', () => {
     const alert = panel().getByRole('alert')
     await containsText(alert, 'The agent exited before answering initialize.')
     await containsText(alert, 'run the agent command in Terminal')
+    expect(alert.getByRole('button', { name: 'Locate agent…' }).query()).toBeNull()
     await panel().getByRole('button', { name: 'Dismiss' }).click()
     expect(panel().getByRole('alert').query()).toBeNull()
     await expect.element(generate()).toBeEnabled()
+  })
+
+  it('shows Locate agent… only on agent-not-found failure and saves agentCommand', async () => {
+    const agent = scripted()
+    const host = createBrowserHost(DOCUMENT, 'report.md', { generator: agent.generator })
+    await openGenUI(host)
+    await generate().click()
+    agent.fail({
+      kind: 'agent-not-found',
+      message: 'Could not find the agent command "agy".',
+      hint: 'Install the agent, or enter the command or path that runs it.',
+    })
+
+    const alert = panel().getByRole('alert')
+    await containsText(alert, 'Could not find the agent command "agy".')
+    const locateBtn = alert.getByRole('button', { name: 'Locate agent…' })
+    await expect.element(locateBtn).toBeVisible()
+    await locateBtn.click()
+
+    const cmdInput = alert.getByRole('textbox', { name: 'Agent command' })
+    await expect.element(cmdInput).toHaveValue('agy')
+    await cmdInput.fill('/opt/bin/agy')
+    cmdInput.element().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }))
+    await expect.poll(() => alert.getByRole('textbox', { name: 'Agent command' }).query()).toBeNull()
+
+    expect(await host.getSettings()).toMatchObject({
+      agentCommand: '/opt/bin/agy',
+    })
+  })
+
+  it('triggers generation with ⌘↩ and blurs on Escape in the no-view Generation request composer', async () => {
+    const agent = scripted()
+    const host = createBrowserHost(DOCUMENT, 'report.md', { generator: agent.generator })
+    await openGenUI(host)
+
+    const input = requestBox()
+    await input.fill('Summarize key points')
+    input.element().focus()
+    expect(document.activeElement).toBe(input.element())
+    input.element().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(document.activeElement).not.toBe(input.element())
+
+    input.element().focus()
+    input.element().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }))
+    await expect.element(page.getByTestId('genui-progress')).toBeVisible()
+    expect(host.generations[0]?.request).toBe('Summarize key points')
+    agent.finish(viewFile('Done', 'Summarize key points'))
   })
 
   it('cancels a run and leaves the view as it was', async () => {

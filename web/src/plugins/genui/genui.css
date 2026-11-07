@@ -261,70 +261,32 @@
   color: var(--ink-3);
 }
 
-/* ─── Unified In-place Paper Composer ─── */
-.composer {
-  border-radius: 8px;
-  background: var(--paper);
-  box-shadow:
-    0 0 0 1px var(--line-strong),
-    0 1px 2px rgba(0, 0, 0, 0.04);
-  padding: 8px 10px;
-  transition: box-shadow 120ms var(--ease-out);
+.genui-block .mgo-note-composer {
+  margin: 8px 0 0;
 }
 
-.composer:focus-within {
-  box-shadow:
-    0 0 0 1px var(--accent),
-    0 0 0 3px var(--focus);
-}
-
-.composer textarea {
+.composer input[type='text'] {
   display: block;
   width: 100%;
+  box-sizing: border-box;
   border: 0;
   outline: 0;
   padding: 0;
   margin: 0;
   background: none;
-  resize: none;
   font: inherit;
-  font-size: 13px;
+  font-family: var(--font-mono);
+  font-size: 12px;
   line-height: 20px;
   color: var(--ink);
-  min-height: 40px;
-  max-height: 160px;
-  overflow-y: auto;
 }
 
-.composer textarea::placeholder {
+.composer input[type='text']::placeholder {
   color: var(--ink-3);
 }
 
-.composer textarea:focus-visible {
+.composer input[type='text']:focus-visible {
   outline: none;
-}
-
-.composer-foot,
-.composer-bar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  margin-top: 8px;
-  padding-top: 6px;
-  border-top: 1px solid var(--line);
-}
-
-.composer-hint,
-.composer-bar .hint {
-  margin-right: auto;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--ink-3);
-}
-
-.genui-block .mgo-note-composer {
-  margin: 8px 0 0;
 }
 
 /* ─── Pinned Footer ─── */
@@ -451,7 +413,7 @@
 }
 
 .mgg.dark .mmenu {
-  background: #2a2a2d;
+  background: var(--raised);
 }
 
 .mmenu.pop {

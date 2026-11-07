@@ -7,7 +7,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react'
-import { autoGrowNoteTextarea } from '../../editor/noteDialog'
+import { autoGrowTextarea } from '../../editor/noteDialog'
 import type { SourceStatus, SourceStore } from './sources'
 
 export interface SourceActions {
@@ -108,7 +108,7 @@ export function SourceFrame({
   useEffect(() => {
     if (!composingNote || !noteInputRef.current) return
     const input = noteInputRef.current
-    autoGrowNoteTextarea(input)
+    autoGrowTextarea(input)
     input.focus()
     input.setSelectionRange(input.value.length, input.value.length)
   }, [composingNote])
@@ -192,7 +192,7 @@ export function SourceFrame({
             placeholder="Write a note. It is saved in the document, out of sight in other Markdown viewers."
             onChange={(event) => {
               setNoteDraft(event.target.value)
-              autoGrowNoteTextarea(event.currentTarget)
+              autoGrowTextarea(event.currentTarget)
             }}
             onKeyDown={(event) => {
               if (event.key === 'Escape') {

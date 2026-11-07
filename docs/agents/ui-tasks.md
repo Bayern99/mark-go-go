@@ -197,7 +197,7 @@
 - **A2UI 1.0 基础与高级只读组件目录**：
   - `web/src/plugins/genui/a2ui.tsx`（`Column`/`Row`/`Tabs`/`Card`/`Text`）与 `web/src/plugins/genui/components.tsx`（`KeyPoints`/`MetricGrid`/`ComparisonTable`/`Timeline`/`Checklist`）。
 - **中央只读 GenUI 视图与右栏 GenUI 管理面板**：
-  - `web/src/plugins/genui/index.ts` 与 `web/src/plugins/genui/GenUIView.tsx`：插件按需注册中央视图 `genui`（`location: 'center'`，纯只读 A2UI 组件卡片，无生成表单或横幅；空状态/错误时提供按钮经 `rightPane.show('genui.panel')` 打开右栏）与右栏面板 `genui.panel`（`location: 'right'`，含顶部五态状态卡与唯一主按钮、`.stale-list` 点击联动中央 `[data-component-id]` 卡片滚动定位与高亮、中部 `Focus` 生成要求展示与编辑、底部固定区 `Agent: Antigravity (agy)` / `ModelMenu` / `Generated <generatedAt>` / `Undo`）。
+  - `web/src/plugins/genui/index.ts` 与 `web/src/plugins/genui/GenUIView.tsx`：插件按需注册中央视图 `genui`（`location: 'center'`，纯只读 A2UI 组件卡片，无生成表单或横幅；空状态/错误时提供按钮经 `rightPane.show('genui.panel')` 打开右栏）与右栏面板 `genui.panel`（`location: 'right'`，含顶部五态状态卡与唯一主按钮、`.changed-list` 点击联动中央 `[data-component-id]` 卡片滚动定位与高亮、中部 `Focus` 生成要求展示与编辑、底部固定区 `Agent: Antigravity (agy)` / `ModelMenu` / `Generated <generatedAt>` / `Undo`）。
 - **来源引用底座区块**：
   - `web/src/plugins/genui/SourceFrame.tsx` 与 `web/src/plugins/genui/sources.ts`（`SourceStore` 状态计算，卡片底部 `From`、`Source changed` / `Source not found`、`Edit in source`、`Note`）。
 - **统一原地白纸输入块（`.composer`）**：

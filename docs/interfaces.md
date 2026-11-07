@@ -67,8 +67,8 @@ type GenerateFailureKind = 'unsaved' | 'busy' | 'agent-not-found' | 'auth-requir
 ```ts
 interface AppPlugin { id: string; title: string; activate(ctx: PluginContext): void | Promise<void> }
 type ViewLocation = 'left' | 'center' | 'right'
-type ViewStatusDot = { tone: 'warn' | 'danger'; label: string } | null
-interface ViewStatusSource { get(): ViewStatusDot; subscribe(fn: () => void): Disposable }
+type ViewStatusDot = { tone: 'warn' | 'danger'; title?: string } | null
+interface ViewStatusSource { getSnapshot(): ViewStatusDot; subscribe(fn: () => void): () => void }
 interface ViewRegistration { id: string; title: string; location: ViewLocation; status?: ViewStatusSource; mount(el: HTMLElement): Disposable }
 interface PluginContext {
   documents: { snapshot(): { text: string; version: number; path: string }; onDidChange(fn): Disposable } // path '' = 未保存
@@ -109,7 +109,7 @@ interface PluginContext {
 - 按需：插件注册两个视图：中央视图 `genui`（`location: 'center'`，纯只读 A2UI 组件卡片与来源引用底座）与右栏管理面板 `genui.panel`（`location: 'right'`，附带 `status: ViewStatusSource` 供右栏 `GenUI` 标签圆点提示）；任一视图首次 `mount` 时才 `import('./GenUIView')`（独立代码块，含 A2UI 与 zod）并开始引用计数的 `ctx.viewFile.watch`，两处视图都卸载时停止跟随文件。未进入 GenUI 时不加载该代码块，也没有 `WatchView` 调用。
 - 中央 `genui` 视图仅渲染只读 A2UI 组件表面（每张内容卡片带 `data-component-id` 与 `SourceFrame` 底座：`From`、`Source changed` / `Source not found`、`Edit in source`、`Note`），不包含生成按钮、生成要求输入框、模型选择或错误横幅；无视图或视图文件不可用时显示安静的空状态/说明并提供按钮经 `rightPane.show('genui.panel')` 打开右栏 `GenUI` 面板。
 - 右栏 `genui.panel` 管理面板分为滚动区（`.genui-panel-scroll`）与底部固定区（`.genui-panel-footer`）：
-  - 顶部状态与唯一主操作：五种状态互斥显示（无视图 `No GenUI view yet` + `Generate`；全部最新 `Up to date` + 次要 `Regenerate all`；存在过期组件 `N components out of date` + `.stale-list` 点击使中央滚动定位并高亮对应 `[data-component-id]` 卡片 + 主按钮 `Regenerate changed (N)` + 次要 `Regenerate all`；生成中进度 + `Cancel`；生成失败错误框 + `Retry` / `Dismiss`）。
+  - 顶部状态与唯一主操作：五种状态互斥显示（无视图 `No GenUI view yet` + `Generate`；全部最新 `Up to date` + 次要 `Regenerate all`；存在原文已改组件 `N components out of date` + `.changed-list` 点击使中央滚动定位并高亮对应 `[data-component-id]` 卡片 + 主按钮 `Regenerate changed (N)` + 次要 `Regenerate all`；生成中进度 + `Cancel`；生成失败错误框 + `Retry` / `Dismiss`）。
   - 生成要求（`Focus`）：有视图时默认只读显示（空时 `No focus set`），点击 `Edit` 原地展开 `.composer` 白纸输入块（`<textarea aria-label="Generation request">`，支持 `⌘↩` / `Save` 保存、`Escape` / `Cancel` 取消）。
   - 底部固定区（钉在滚动容器外）：常驻只读 `Agent: Antigravity (agy)`、`ModelMenu`、生成时间 `Generated <generatedAt>` 以及 `canUndo` 时按需显示的 `Undo` 按钮。
   - 右栏顶部分段标签状态圆点（`.rdot`）：生成失败时 `tone: 'danger'`，存在 `Source changed` / `Source not found` 组件时 `tone: 'warn'`，其余为 `null`。

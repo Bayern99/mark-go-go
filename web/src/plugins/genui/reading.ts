@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react'
+import { createContext } from 'react'
 
 /**
  * Local reading interactions for one document’s GenUI view: KeyPoints fold,

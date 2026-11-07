@@ -112,6 +112,8 @@ describe('Outline plugin', () => {
     const app = await mountApp(fixture)
     try {
       expect(outlineTexts()).toEqual(EXPECTED_HEADINGS)
+      await expect.element(page.getByTestId('outline-count')).toHaveTextContent('5 headings')
+
 
       const alpha = textLeft(outlineButtons().nth(0).element())
       const beta = textLeft(outlineButtons().nth(1).element())
@@ -218,7 +220,10 @@ describe('Outline plugin', () => {
         'Second beta body.\n\n## Added section\n',
       )
       await vi.waitFor(
-        () => expect(outlineTexts()).toContain('Added section'),
+        () => {
+          expect(outlineTexts()).toContain('Added section')
+          expect(page.getByTestId('outline-count').element().textContent).toBe('6 headings')
+        },
         { timeout: OUTLINE_DEBOUNCE_MS + 2000 },
       )
 
@@ -234,7 +239,10 @@ describe('Outline plugin', () => {
 
       replaceSourceText(getSourceView(app.container), '## Renamed section\n', '')
       await vi.waitFor(
-        () => expect(outlineTexts()).not.toContain('Renamed section'),
+        () => {
+          expect(outlineTexts()).not.toContain('Renamed section')
+          expect(page.getByTestId('outline-count').element().textContent).toBe('5 headings')
+        },
         { timeout: OUTLINE_DEBOUNCE_MS + 2000 },
       )
     } finally {

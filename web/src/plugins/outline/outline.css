@@ -4,6 +4,14 @@
   line-height: var(--text-ui-leading);
 }
 
+.outline-count {
+  margin: 0 0 6px;
+  padding: 0 8px;
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-leading);
+  color: var(--ink-3);
+}
+
 .outline-list {
   margin: 0;
   padding: 0;

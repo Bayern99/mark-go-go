@@ -14,6 +14,43 @@ export interface DocState {
   readOnly: boolean;
 }
 
+export interface DocumentInfo {
+  id: string;
+  name: string;
+  path: string;
+  edited: boolean;
+  conflict: boolean;
+  deleted: boolean;
+  readOnly: boolean;
+}
+
+export interface WorkspaceSnapshot {
+  id: string;
+  root: string;
+  name: string;
+  kind: string;
+  documents: DocumentInfo[];
+  activeId: string;
+}
+
+export interface CloseResult {
+  closed: boolean;
+  canceled: boolean;
+}
+
+export interface NativeCommand {
+  id: string;
+  command: string;
+}
+
+export interface ViewEvent {
+  id: string;
+  exists: boolean;
+  text: string;
+  error: string;
+  canUndo: boolean;
+}
+
 /**
  * GenerateFailure is why a generation ended without a new view, sent
  * to the page as the last step of the run, so that the page tells the
@@ -121,9 +158,10 @@ export interface Settings {
  * content is read from disk again.
  */
 export interface Snapshot {
+  id: string;
   text: string;
   version: number;
-  state: DocState;
+  state: DocumentInfo;
 }
 
 /** TextRange is a UTF-16 range [Start, End) of the request's text. */
@@ -148,91 +186,86 @@ export interface ViewSnapshot {
 
 // ---- Services ----
 
-/**
- * documentHost is the bound service: it gives the page of a document's
- * window that document, and takes its edits, through MyGo's document as
- * the only authority.
- */
-export const DocumentHost = {
-  /**
-   * Generate runs the document's view generation: the host starts the
-   * user's Antigravity agent over ACP in an isolated temporary folder
-   * with the document's text, the agent writes the view as out.json, the
-   * host stamps metadata and section hashes onto it and writes the
-   * document's view file atomically. The page follows the progress on
-   * the channel and sees the new view through the view watch, so
-   * Generate only returns an error. The document itself is never
-   * written. A failed run sends the page its failure as the last step,
-   * then returns it as the error.
-   */
-  generate(req: GenerateRequest, progress: Channel<GenerateProgress>): Promise<void> {
-    return call("DocumentHost.Generate", req, progress);
+/** WorkspaceHost is the bound service: workspace navigation and per-document commands keyed by document id. */
+export const WorkspaceHost = {
+  snapshot(): Promise<WorkspaceSnapshot> {
+    return call("WorkspaceHost.Snapshot");
   },
-  /** GetSettings returns the generation settings. */
+  open(path: string): Promise<DocumentInfo> {
+    return call("WorkspaceHost.Open", path);
+  },
+  openWorkspace(root: string): Promise<void> {
+    return call("WorkspaceHost.OpenWorkspace", root);
+  },
+  new(): Promise<DocumentInfo> {
+    return call("WorkspaceHost.New");
+  },
+  duplicate(documentId: string): Promise<DocumentInfo> {
+    return call("WorkspaceHost.Duplicate", documentId);
+  },
+  activate(documentId: string): Promise<void> {
+    return call("WorkspaceHost.Activate", documentId);
+  },
+  closeDocument(documentId: string): Promise<CloseResult> {
+    return call("WorkspaceHost.CloseDocument", documentId);
+  },
+  closeWorkspace(): Promise<CloseResult> {
+    return call("WorkspaceHost.CloseWorkspace");
+  },
+  load(documentId: string): Promise<Snapshot> {
+    return call("WorkspaceHost.Load", documentId);
+  },
+  update(documentId: string, text: string): Promise<void> {
+    return call("WorkspaceHost.Update", documentId, text);
+  },
+  flush(documentId: string, text: string): Promise<void> {
+    return call("WorkspaceHost.Flush", documentId, text);
+  },
+  save(documentId: string): Promise<void> {
+    return call("WorkspaceHost.Save", documentId);
+  },
+  saveAs(documentId: string): Promise<void> {
+    return call("WorkspaceHost.SaveAs", documentId);
+  },
+  rename(documentId: string): Promise<void> {
+    return call("WorkspaceHost.Rename", documentId);
+  },
+  moveTo(documentId: string): Promise<void> {
+    return call("WorkspaceHost.MoveTo", documentId);
+  },
+  revert(documentId: string): Promise<void> {
+    return call("WorkspaceHost.Revert", documentId);
+  },
+  watchView(documentId: string): Promise<void> {
+    return call("WorkspaceHost.WatchView", documentId);
+  },
+  unwatchView(documentId: string): Promise<void> {
+    return call("WorkspaceHost.UnwatchView", documentId);
+  },
+  undoView(documentId: string): Promise<void> {
+    return call("WorkspaceHost.UndoView", documentId);
+  },
+  generate(documentId: string, req: GenerateRequest, progress: Channel<GenerateProgress>): Promise<void> {
+    return call("WorkspaceHost.Generate", documentId, req, progress);
+  },
   getSettings(): Promise<Settings> {
-    return call("DocumentHost.GetSettings");
+    return call("WorkspaceHost.GetSettings");
   },
-  /**
-   * Load returns the content of the calling window's document, as it is
-   * now: the file's text, with the user's unsaved edits.
-   */
-  load(): Promise<Snapshot> {
-    return call("DocumentHost.Load");
-  },
-  /** SetSettings replaces the generation settings. */
   setSettings(s: Settings): Promise<void> {
-    return call("DocumentHost.SetSettings", s);
-  },
-  /**
-   * UndoView puts back the view the last generation replaced, once: the
-   * kept view becomes the view file and nothing is kept any more. The
-   * page sees it through the view watch.
-   */
-  undoView(): Promise<void> {
-    return call("DocumentHost.UndoView");
-  },
-  /** UnwatchView stops following the calling page's view file. */
-  unwatchView(): Promise<void> {
-    return call("DocumentHost.UnwatchView");
-  },
-  /**
-   * Update replaces the content of the calling window's document with the
-   * full Markdown text the page composed. It edits the document, which
-   * MyGo autosaves; a document in conflict is still edited, so that saving
-   * asks which version to keep.
-   */
-  update(text: string): Promise<void> {
-    return call("DocumentHost.Update", text);
-  },
-  /**
-   * WatchView makes the calling page follow its document's view file: the
-   * host sends viewChanged with the file as it is once the watch runs, then
-   * whenever the file changes, and when the document is renamed, moved or
-   * first saved. Every snapshot comes as that event, in the order the host
-   * read them. Calling it again restarts the watch.
-   */
-  watchView(): Promise<void> {
-    return call("DocumentHost.WatchView");
+    return call("WorkspaceHost.SetSettings", s);
   },
 } as const;
+
+/** @deprecated Use WorkspaceHost. Kept so in-flight callers compile during cutover. */
+export const DocumentHost = WorkspaceHost;
 
 // ---- Events ----
 
 /** Events sent by the Go side. Subscribe with `events.name.on(listener)`. */
 export const events = {
-  /**
-   * docReloaded tells a document's page that MyGo read the file again: the
-   * page loads the snapshot it carries.
-   */
+  workspaceChanged: event<WorkspaceSnapshot>("workspaceChanged"),
+  nativeCommand: event<NativeCommand>("nativeCommand"),
   docReloaded: event<Snapshot>("docReloaded"),
-  /**
-   * docState tells a document's page that its state changed: edited or
-   * saved, renamed or moved, in conflict, or its file deleted.
-   */
-  docState: event<DocState>("docState"),
-  /**
-   * viewChanged tells a page that follows its document's view file that the
-   * file changed, appeared or went away.
-   */
-  viewChanged: event<ViewSnapshot>("viewChanged"),
+  docState: event<DocumentInfo>("docState"),
+  viewChanged: event<ViewEvent>("viewChanged"),
 } as const;

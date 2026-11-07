@@ -91,19 +91,19 @@ const defaultGenerationTimeout = 5 * time.Minute
 // Generate only returns an error. The document itself is never
 // written. A failed run sends the page its failure as the last step,
 // then returns it as the error.
-func (h *documentHost) Generate(ctx context.Context, req GenerateRequest, progress *mygo.Channel[GenerateProgress]) error {
+func (h *documentHost) Generate(ctx context.Context, documentID string, req GenerateRequest, progress *mygo.Channel[GenerateProgress]) error {
 	h.runs.Add(1)
 	defer h.runs.Done()
 	send := func(p GenerateProgress) error { return progress.Send(p) }
-	if err := h.generate(ctx, req, send); err != nil {
+	if err := h.generate(ctx, documentID, req, send); err != nil {
 		return reportFailure(err, send)
 	}
 	return nil
 }
 
-// generate runs Generate's generation for the calling window.
-func (h *documentHost) generate(ctx context.Context, req GenerateRequest, send func(GenerateProgress) error) error {
-	s, err := h.session(ctx)
+// generate runs Generate for the named document.
+func (h *documentHost) generate(ctx context.Context, documentID string, req GenerateRequest, send func(GenerateProgress) error) error {
+	s, err := h.docSession(documentID)
 	if err != nil {
 		return err
 	}

@@ -1,16 +1,21 @@
 import { Channel } from "mygo-runtime";
 import type {
+  CloseResult,
   Disposable,
-  DocState,
+  DocumentInfo,
   GeneratePhase,
   GenerateProgress,
   GenerateRequest,
   GenerationSettings,
   HostAdapter,
   HostDocSnapshot,
+  NativeCommand,
+  NativeCommandName,
   ViewSnapshot,
+  WorkspaceAdapter,
+  WorkspaceSnapshot,
 } from "./types";
-import { DocumentHost, events, type GenerateProgress as WireProgress } from "./generated/mygo";
+import { WorkspaceHost, events, type GenerateProgress as WireProgress } from "./generated/mygo";
 import { cancelled, failureOf, GenerationError, isFailureKind } from "./generationError";
 
 const PHASES: Record<GeneratePhase, true> = {
@@ -21,15 +26,10 @@ const PHASES: Record<GeneratePhase, true> = {
   checking: true,
 };
 
-/** The host's phases are plain strings on the wire; a phase the page does not know is not shown. */
 function isPhase(phase: string): phase is GeneratePhase {
   return Object.hasOwn(PHASES, phase);
 }
 
-/**
- * Wraps an unsubscribe function in the host adapter's Disposable.
- * Disposing twice is harmless: the listener is only removed once.
- */
 function disposable(off: () => void): Disposable {
   let disposed = false;
   return {
@@ -41,24 +41,11 @@ function disposable(off: () => void): Disposable {
   };
 }
 
-/**
- * The document host backed by MyGo: the window's document, its edits and
- * its events come from the Go side, which owns the file, autosave,
- * recovery copies and the conflict with changes made by other apps.
- */
-export function createMyGoHost(): HostAdapter {
-  // The Go side keeps one watch per window: the first follower starts it,
-  // the last one to leave stops it. Every snapshot, the first included,
-  // comes as viewChanged in the order the host read them; latest is the
-  // last one, for followers that join a running watch. cycle tells a
-  // late failure of an old watch from the current one.
+function bindDocument(id: string): HostAdapter {
   const viewListeners = new Set<{ fn: (snap: ViewSnapshot) => void }>();
   let offViewChanged: (() => void) | null = null;
   let latest: ViewSnapshot | null = null;
   let cycle = 0;
-  // The host runs each call on a goroutine of its own, so a watch and an
-  // unwatch sent together could run in either order: they go one at a
-  // time.
   let calls: Promise<unknown> = Promise.resolve();
   const inTurn = <T>(call: () => Promise<T>): Promise<T> => {
     const result = calls.then(call);
@@ -72,22 +59,45 @@ export function createMyGoHost(): HostAdapter {
   };
 
   return {
+    id,
     load(): Promise<HostDocSnapshot> {
-      return DocumentHost.load();
+      return WorkspaceHost.load(id);
     },
-
     async update(text: string): Promise<void> {
-      await DocumentHost.update(text);
+      await WorkspaceHost.update(id, text);
     },
-
+    async flush(text: string): Promise<void> {
+      await WorkspaceHost.flush(id, text);
+    },
+    async save(): Promise<void> {
+      await WorkspaceHost.save(id);
+    },
+    async saveAs(): Promise<void> {
+      await WorkspaceHost.saveAs(id);
+    },
+    async rename(): Promise<void> {
+      await WorkspaceHost.rename(id);
+    },
+    async moveTo(): Promise<void> {
+      await WorkspaceHost.moveTo(id);
+    },
+    async revert(): Promise<void> {
+      await WorkspaceHost.revert(id);
+    },
     onReload(fn: (snap: HostDocSnapshot) => void): Disposable {
-      return disposable(events.docReloaded.on((snap) => fn(snap)));
+      return disposable(
+        events.docReloaded.on((snap) => {
+          if (snap.id === id) fn(snap);
+        }),
+      );
     },
-
-    onState(fn: (state: DocState) => void): Disposable {
-      return disposable(events.docState.on((state) => fn(state)));
+    onState(fn: (state: DocumentInfo) => void): Disposable {
+      return disposable(
+        events.docState.on((state) => {
+          if (state.id === id) fn(state);
+        }),
+      );
     },
-
     watchView(fn: (snap: ViewSnapshot) => void): Disposable {
       const listener = { fn };
       viewListeners.add(listener);
@@ -97,8 +107,16 @@ export function createMyGoHost(): HostAdapter {
       } else {
         const current = ++cycle;
         latest = null;
-        offViewChanged = events.viewChanged.on(deliver);
-        inTurn(() => DocumentHost.watchView()).catch((err: unknown) => {
+        offViewChanged = events.viewChanged.on((event) => {
+          if (event.id !== id) return;
+          deliver({
+            exists: event.exists,
+            text: event.text,
+            error: event.error,
+            canUndo: event.canUndo,
+          });
+        });
+        inTurn(() => WorkspaceHost.watchView(id)).catch((err: unknown) => {
           if (current === cycle) deliver({ exists: true, text: "", error: String(err), canUndo: false });
         });
       }
@@ -109,18 +127,12 @@ export function createMyGoHost(): HostAdapter {
         offViewChanged = null;
         latest = null;
         cycle++;
-        void inTurn(() => DocumentHost.unwatchView());
+        void inTurn(() => WorkspaceHost.unwatchView(id));
       });
     },
-
     async undoView(): Promise<void> {
-      await DocumentHost.undoView();
+      await WorkspaceHost.undoView(id);
     },
-
-    // The host writes the view file when the run succeeds; closing the
-    // channel is how the page cancels, which cancels the call's context.
-    // A failed run's last step carries its failure, which arrives before
-    // the call rejects.
     async generate(req: GenerateRequest, onProgress: (progress: GenerateProgress) => void, signal: AbortSignal) {
       let failed: GenerationError | null = null;
       const progress = new Channel<WireProgress>((step) => {
@@ -135,7 +147,7 @@ export function createMyGoHost(): HostAdapter {
       if (signal.aborted) throw cancelled();
       signal.addEventListener("abort", cancel, { once: true });
       try {
-        await DocumentHost.generate(req, progress);
+        await WorkspaceHost.generate(id, req, progress);
       } catch (error) {
         if (signal.aborted) throw cancelled();
         throw failed ?? new GenerationError(failureOf(error));
@@ -143,13 +155,133 @@ export function createMyGoHost(): HostAdapter {
         signal.removeEventListener("abort", cancel);
       }
     },
-
     getSettings(): Promise<GenerationSettings> {
-      return DocumentHost.getSettings();
+      return WorkspaceHost.getSettings();
     },
-
     async setSettings(settings: GenerationSettings): Promise<void> {
-      await DocumentHost.setSettings(settings);
+      await WorkspaceHost.setSettings(settings);
     },
   };
+}
+
+
+const flushers = new Map<string, () => Promise<string | undefined>>();
+
+/** DocumentPane registers how to read its current Markdown for native Save/Close. */
+export function registerDocumentFlush(id: string, flush: () => Promise<string | undefined>): () => void {
+  flushers.set(id, flush);
+  return () => {
+    if (flushers.get(id) === flush) flushers.delete(id);
+  };
+}
+
+async function flushDocument(id: string): Promise<void> {
+  const flush = flushers.get(id);
+  const text = flush ? await flush() : undefined;
+  if (text !== undefined) await WorkspaceHost.flush(id, text);
+}
+/**
+ * Workspace adapter backed by MyGo. document(id) is stable for an open
+ * session in this window; a real close or migrate drops the cache.
+ */
+export function createMyGoHost(): WorkspaceAdapter {
+  const adapters = new Map<string, HostAdapter>();
+
+  const workspace: WorkspaceAdapter = {
+    snapshot(): Promise<WorkspaceSnapshot> {
+      return WorkspaceHost.snapshot();
+    },
+    subscribe(fn: (snap: WorkspaceSnapshot) => void): Disposable {
+      return disposable(events.workspaceChanged.on(fn));
+    },
+    open(path: string): Promise<DocumentInfo> {
+      return WorkspaceHost.open(path);
+    },
+    async openWorkspace(root: string): Promise<void> {
+      await WorkspaceHost.openWorkspace(root);
+    },
+    newDocument(): Promise<DocumentInfo> {
+      return WorkspaceHost.new();
+    },
+    duplicate(id: string): Promise<DocumentInfo> {
+      return WorkspaceHost.duplicate(id);
+    },
+    async activate(id: string): Promise<void> {
+      await WorkspaceHost.activate(id);
+    },
+    async closeDocument(id: string, text?: string): Promise<CloseResult> {
+      if (text !== undefined) await WorkspaceHost.flush(id, text);
+      else await flushDocument(id);
+      const result = await WorkspaceHost.closeDocument(id);
+      if (result.closed) adapters.delete(id);
+      return result;
+    },
+    async closeWorkspace(): Promise<CloseResult> {
+      for (const id of [...flushers.keys()]) await flushDocument(id);
+      const result = await WorkspaceHost.closeWorkspace();
+      if (result.closed) adapters.clear();
+      return result;
+    },
+    document(id: string): HostAdapter {
+      const existing = adapters.get(id);
+      if (existing) return existing;
+      const created = bindDocument(id);
+      adapters.set(id, created);
+      return created;
+    },
+  };
+
+  events.nativeCommand.on((cmd: NativeCommand) => {
+    void handleNative(workspace, adapters, cmd);
+  });
+  events.workspaceChanged.on((snap) => {
+    const live = new Set(snap.documents.map((d) => d.id));
+    for (const id of [...adapters.keys()]) {
+      if (!live.has(id)) adapters.delete(id);
+    }
+  });
+
+  return workspace;
+}
+
+async function handleNative(
+  workspace: WorkspaceAdapter,
+  adapters: Map<string, HostAdapter>,
+  cmd: NativeCommand,
+): Promise<void> {
+  const command = cmd.command as NativeCommandName;
+  if (command === "closeWorkspace") {
+    for (const id of [...flushers.keys()]) await flushDocument(id);
+    await workspace.closeWorkspace();
+    return;
+  }
+  await flushDocument(cmd.id);
+  const host = adapters.get(cmd.id) ?? workspace.document(cmd.id);
+  switch (command) {
+    case "save":
+      await WorkspaceHost.save(cmd.id);
+      break;
+    case "saveAs":
+      await WorkspaceHost.saveAs(cmd.id);
+      break;
+    case "close": {
+      const result = await WorkspaceHost.closeDocument(cmd.id);
+      if (result.closed) adapters.delete(cmd.id);
+      break;
+    }
+    case "rename":
+      await WorkspaceHost.rename(cmd.id);
+      break;
+    case "moveTo":
+      await WorkspaceHost.moveTo(cmd.id);
+      break;
+    case "revert":
+      await WorkspaceHost.revert(cmd.id);
+      break;
+    case "duplicate":
+      await WorkspaceHost.duplicate(cmd.id);
+      break;
+    default:
+      void host;
+  }
 }

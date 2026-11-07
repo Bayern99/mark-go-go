@@ -1,6 +1,10 @@
 /**
  * Contract between the web frontend and whatever owns the document
  * (MyGo on the desktop host, an in-memory shim in a plain browser).
+ *
+ * Window, workspace root, path and tab are not this identity. A HostAdapter
+ * is bound to one `id` for its lifetime; async work must not retarget
+ * through the currently active tab. See docs/workspace-contract.md.
  */
 export interface DocState {
   name: string
@@ -11,11 +15,49 @@ export interface DocState {
   readOnly: boolean
 }
 
+/** One open document as the workspace lists it. `id` is stable across path and window. */
+export interface DocumentInfo extends DocState {
+  id: string
+}
+
 /** `version` increments every time content is (re)loaded from disk. */
 export interface HostDocSnapshot {
+  id: string
   text: string
   version: number
-  state: DocState
+  state: DocumentInfo
+}
+
+export type WorkspaceKind = 'folder' | 'untitled'
+
+export interface WorkspaceSnapshot {
+  id: string
+  root: string
+  name: string
+  kind: WorkspaceKind
+  documents: DocumentInfo[]
+  activeId: string
+}
+
+export interface CloseResult {
+  closed: boolean
+  canceled: boolean
+}
+
+export type NativeCommandName =
+  | 'save'
+  | 'saveAs'
+  | 'close'
+  | 'rename'
+  | 'moveTo'
+  | 'revert'
+  | 'duplicate'
+  | 'closeWorkspace'
+
+/** Native File-menu / key-equivalent command, captured with the document id at click time. */
+export interface NativeCommand {
+  id: string
+  command: NativeCommandName
 }
 
 export interface Disposable {
@@ -38,9 +80,11 @@ export interface ViewSnapshot {
 /** What plugins may do with the view file: follow it, and go back once. */
 export interface ViewFileSource {
   /**
-   * Follow the view file on disk: `fn` gets the file as it is once the watch
-   * runs, then every change, including the document moving to another path.
-   * Disposing stops the host's watch once no one else follows.
+   * Follow the view file on disk. `fn` gets the file as it is now (before
+   * directory watch setup), again after the watch is running, then every
+   * change, including the document moving. Disposing stops the host's watch
+   * once no one else follows. #21 may add `documentId` / `id` on this seam;
+   * keep this order and do not retarget through the active tab.
    */
   watchView(fn: (snap: ViewSnapshot) => void): Disposable
   /**
@@ -137,12 +181,40 @@ export interface ViewGenerator {
 }
 
 export interface HostAdapter extends ViewFileSource, ViewGenerator {
-  /** Content of this window's document. */
+  /** Stable document identity; never retargets through the active tab. */
+  readonly id: string
+  /** Content of this document. */
   load(): Promise<HostDocSnapshot>
   /** Full Markdown text after an edit. */
   update(text: string): Promise<void>
+  /** Last undebounced editor text, before Save/Close/Save As of this document. */
+  flush(text: string): Promise<void>
+  save(): Promise<void>
+  saveAs(): Promise<void>
+  rename(): Promise<void>
+  moveTo(): Promise<void>
+  revert(): Promise<void>
   /** An external change was reloaded by MyGo. */
   onReload(fn: (snap: HostDocSnapshot) => void): Disposable
-  /** edited / conflict / name changes. */
-  onState(fn: (state: DocState) => void): Disposable
+  /** edited / conflict / name changes for this document. */
+  onState(fn: (state: DocumentInfo) => void): Disposable
+  /**
+   * The page registers how to read this document's current editor Markdown so
+   * native commands can flush this id, not the active tab.
+   */
+  bindFlush?(getText: () => string): Disposable
+}
+
+export interface WorkspaceAdapter {
+  snapshot(): Promise<WorkspaceSnapshot>
+  subscribe(fn: (snap: WorkspaceSnapshot) => void): Disposable
+  open(path: string): Promise<DocumentInfo>
+  openWorkspace(root: string): Promise<void>
+  newDocument(): Promise<DocumentInfo>
+  duplicate(id: string): Promise<DocumentInfo>
+  activate(id: string): Promise<void>
+  closeDocument(id: string, text?: string): Promise<CloseResult>
+  closeWorkspace(): Promise<CloseResult>
+  /** Permanently bound to `id` for as long as this window hosts it. */
+  document(id: string): HostAdapter
 }

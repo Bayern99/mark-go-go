@@ -16,7 +16,7 @@ GenUI 的视图显示与视图管理是两件事：中间那块区域只负责�
 - **GenUI 管理面板的取舍。**
   1. **必放（顶部状态 + 唯一主按钮）**：过期时列出 `Source changed` 的组件（点一下让中央滚到该卡片）和一颗 `Regenerate N components`；最新时只显示 `Up to date`，不亮主按钮；无视图时显示说明、可选的生成要求输入框和 `Generate`；生成中显示当前步骤与 `Cancel`；失败时显示原因、下一步提示和 `Retry` / `Dismiss`。
   2. **该放（生成要求 Focus）**：有视图时平时显示成安静的只读文字，点 `Edit` 原地展开编辑，点 `Regenerate all` 生效。
-  3. **底部固定信息**：`Agent` 只读显示 `Antigravity (agy)`；`Model` 用与块菜单同一材质的弹出菜单选择（触发钮显示当前值，列表取自 ACP `session/new` 返回的 `configOptions`，加上 `Agent’s choice`）；以及生成时间与有备份时才出现的 `Undo`。
+  3. **底部固定信息**：`Agent` 只读显示 `Antigravity (agy)`；`Model` 用与块菜单同一材质的弹出菜单选择（触发钮显示当前值，列表由 Go 端缓存 ACP `session/new` 返回的 `configOptions` 模型列表并随 `getSettings` 提供，支持探测或默认回退列表，加上 `Agent’s choice`）；以及生成时间与有备份时才出现的 `Undo`。
   4. **不放**：常规界面里不放 `Agent command` 手输框（目前只接 `agy`，找不到可执行文件时只在 `failAgentNotFound` 错误提示里给定位动作），不放组件总数，不放重复的文档文件名。
 - **原地 Composer。** 批注（Rich text 与 GenUI 卡片内）和生成要求都不弹窗，直接在它最终落下的位置展开成一张白纸输入区，高度随内容长高，`⌘↩` 保存、`Esc` 取消。
 

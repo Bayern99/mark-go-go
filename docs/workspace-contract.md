@@ -168,7 +168,7 @@ interface HostAdapter extends ViewFileSource, ViewGenerator {
 
 `PluginContext.documents` remains per-document (`snapshot` / `onDidChange` of that pane's document). `viewFile.generate` / `watch` bind to that pane's `host`, hence to its `id`.
 
-## WatchView / Generate call shape (#29 / #30)
+## WatchView / Generate call shape (#29 / #24)
 
 ```
 WatchView(documentId) / UnwatchView(documentId) / UndoView(documentId)
@@ -176,7 +176,7 @@ Generate(documentId, req, progress)
 viewChanged: { id, exists, text, error, canUndo }
 ```
 
-#21 only adds `documentId` to the same call/event boundary. #29 owns read/watch ordering and must keep: the first snapshot is sent after the watch is running; there is no unwatched gap after the initial read. #30 owns generation UX; #21 guarantees one generation slot per `documentId` and concurrent slots across documents.
+#21 only adds `documentId` to the same call/event boundary. #29 owns read/watch ordering: emit-first (the first snapshot does not wait for WatchFiles), then WatchFiles, then a catch-up snapshot once the watch is running, so there is no unwatched gap after the initial read. A watch that cannot start still returns its error on `WatchView`; the first snapshot already sent is not withdrawn. #24 owns multi-document generation isolation (one slot per `documentId`, concurrent slots across documents). #30 owns native Undo/Redo, not generation UX.
 
 ## Testing seams (approved)
 

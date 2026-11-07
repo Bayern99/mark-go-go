@@ -71,12 +71,14 @@ type docSession struct {
 	// documentHost.mu: following says the page asked to, viewPath is the
 	// file watched, stopView ends its watch, and viewGen counts
 	// retargets. emitMu, taken before documentHost.mu, orders the reads
-	// of the file with the events that carry them.
+	// of the file with the events that carry them. emit, when set,
+	// receives those snapshots instead of the page (tests).
 	following bool
 	viewPath  string
 	stopView  func()
 	viewGen   int
 	emitMu    sync.Mutex
+	emit      func(ViewSnapshot)
 }
 
 func newDocumentHost() *documentHost {

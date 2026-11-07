@@ -182,7 +182,6 @@ function renderFootnote(dom: HTMLElement, source: string, readonly: boolean): bo
   const mark = document.createElement('a')
   mark.className = 'mgo-footnote-mark'
   mark.href = `#fnref-${cssSafe(footnote.label)}`
-  mark.dataset.footnoteBack = footnote.label
   mark.textContent = footnote.label
   mark.tabIndex = 0
   const body = document.createElement('div')

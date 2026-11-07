@@ -26,7 +26,7 @@ import {
   Selection,
   TextSelection,
 } from '@milkdown/kit/prose/state'
-import type { EditorView } from '@milkdown/kit/prose/view'
+import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { listenerCtx } from '@milkdown/kit/plugin/listener'
 import type { Disposable } from '../host/types'
 import { buildDocument, type BuiltDocument } from './blocks/build'
@@ -447,6 +447,44 @@ export async function createMarkdownEditor(
 
   const lockedViewPlugin = new Plugin({
     props: {
+      decorations(state) {
+        const widgets: Decoration[] = []
+        const mark = /\[\^([^\]]+)\]/g
+        state.doc.descendants((node, pos) => {
+          if (node.type.name === LOCKED_NODE) return false
+          if (!node.isTextblock) return true
+          const text = node.textContent
+          mark.lastIndex = 0
+          let match: RegExpExecArray | null
+          while ((match = mark.exec(text))) {
+            const from = pos + 1 + match.index
+            const to = from + match[0].length
+            const label = match[1]
+            widgets.push(
+              Decoration.inline(from, to, {
+                class: 'mgo-fnref',
+                style: 'display:none',
+              }),
+            )
+            widgets.push(
+              Decoration.widget(from, () => {
+                const link = document.createElement('a')
+                link.className = 'mgo-fnref'
+                link.id = `fnref-${cssSafe(label)}`
+                link.href = `#fn-${cssSafe(label)}`
+                link.dataset.footnoteRef = label
+                link.textContent = label
+                link.setAttribute('aria-label', `Footnote ${label}`)
+                link.tabIndex = 0
+                link.contentEditable = 'false'
+                return link
+              }, { side: -1, ignoreSelection: true, key: `fnref-${from}-${label}` }),
+            )
+          }
+          return true
+        })
+        return DecorationSet.create(state.doc, widgets)
+      },
       nodeViews: {
         [LOCKED_NODE]: (node, editorView) => lockedBlockView(node, editorView),
         footnote_reference: (node) => footnoteReferenceView(node),
@@ -671,6 +709,7 @@ export async function createMarkdownEditor(
     if (value) cancelNoteComposer()
     builder.setReadonly(value)
     sourceEditor?.setReadonly(value)
+    view.dispatch(view.state.tr.setMeta('mgo-readonly', value))
   }
 
   return {
@@ -749,6 +788,10 @@ function isEmptyParagraph(node: PMNode): boolean {
 
 function cssAttr(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+function cssSafe(label: string): string {
+  return encodeURIComponent(label).replace(/%/g, '_')
 }
 
 function isIdentityBreaking(plugin: Plugin): boolean {

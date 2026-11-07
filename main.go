@@ -73,6 +73,7 @@ func main() {
 			{Role: mygo.RoleWindowMenu},
 		}))
 		host.showWelcomeIfEmpty()
+		applyNativeEditMenu(false, false)
 	})
 	err := mygo.App.Run()
 	host.waitForGenerations(5 * time.Second)

@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/egoist/mygo"
 )
 
 func TestDeepestRootPrefersChildWorkspace(t *testing.T) {
@@ -194,5 +196,23 @@ func TestCloseResultCancelDoesNotClose(t *testing.T) {
 	ok := CloseResult{Closed: true}
 	if !ok.Closed || ok.Canceled {
 		t.Fatal("closed result must not also be canceled")
+	}
+}
+
+func TestNativeCommandNameRoutesUndoRedo(t *testing.T) {
+	undo, ok := nativeCommandName(mygo.RoleUndo)
+	if !ok || undo != "undo" {
+		t.Fatalf("undo = %q ok=%v", undo, ok)
+	}
+	redo, ok := nativeCommandName(mygo.RoleRedo)
+	if !ok || redo != "redo" {
+		t.Fatalf("redo = %q ok=%v", redo, ok)
+	}
+	save, ok := nativeCommandName(mygo.RoleSave)
+	if !ok || save != "save" {
+		t.Fatalf("save = %q ok=%v", save, ok)
+	}
+	if _, ok := nativeCommandName(mygo.RoleCut); ok {
+		t.Fatal("cut is not a document native command")
 	}
 }

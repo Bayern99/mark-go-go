@@ -1,4 +1,4 @@
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
+import { defaultKeymap, history, historyKeymap, redo, redoDepth, undo, undoDepth } from '@codemirror/commands'
 import { markdown } from '@codemirror/lang-markdown'
 import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { Compartment, EditorState } from '@codemirror/state'
@@ -30,6 +30,10 @@ export interface SourceEditor {
   reveal(from: number, to?: number): boolean
   /** Insert text at `at` as an undoable edit. */
   insert(at: number, text: string): void
+  canUndo(): boolean
+  canRedo(): boolean
+  undo(): boolean
+  redo(): boolean
   destroy(): void
 }
 
@@ -120,6 +124,18 @@ export function createSourceEditor(options: SourceEditorOptions): SourceEditor {
     },
     insert(at, text) {
       view.dispatch({ changes: { from: at, insert: text } })
+    },
+    canUndo() {
+      return undoDepth(view.state) > 0
+    },
+    canRedo() {
+      return redoDepth(view.state) > 0
+    },
+    undo() {
+      return undo({ state: view.state, dispatch: view.dispatch })
+    },
+    redo() {
+      return redo({ state: view.state, dispatch: view.dispatch })
     },
     destroy() {
       view.destroy()

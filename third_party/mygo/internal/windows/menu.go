@@ -387,7 +387,9 @@ func (b *Backend) menuCommand(cmd uint16, w *window) {
 	if w == nil {
 		w = b.focusedWindow()
 	}
-	if w != nil && editRole(w, e.role) {
+	// Undo/Redo of a document window are the app's editor history, not the
+	// web view's empty undo manager.
+	if w != nil && e.role != "undo" && e.role != "redo" && editRole(w, e.role) {
 		return
 	}
 	if w != nil {

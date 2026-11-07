@@ -260,6 +260,14 @@ export const WorkspaceHost = {
   saveAs(documentID: string): Promise<void> {
     return call("WorkspaceHost.SaveAs", documentID);
   },
+  /**
+   * SetNativeEditState enables native Undo/Redo for the focused window's
+   * active document. Reports from a background pane are ignored so they
+   * cannot steal menu state. This is editor undo, not UndoView.
+   */
+  setNativeEditState(documentID: string, canUndo: boolean, canRedo: boolean): Promise<void> {
+    return call("WorkspaceHost.SetNativeEditState", documentID, canUndo, canRedo);
+  },
   /** SetSettings replaces the generation settings. */
   setSettings(s: Settings): Promise<void> {
     return call("WorkspaceHost.SetSettings", s);

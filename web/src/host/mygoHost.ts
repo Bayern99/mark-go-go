@@ -1,4 +1,4 @@
-import { Channel } from "mygo-runtime";
+import { Channel, isMyGo } from "mygo-runtime";
 import type {
   CloseResult,
   Disposable,
@@ -27,6 +27,7 @@ import {
 } from "./generated/mygo";
 import { WorkspaceNav, navEvents } from "./generated/nav";
 import { cancelled, failureOf, GenerationError, isFailureKind } from "./generationError";
+import { applyNativeEdit } from "../editor/nativeEdit";
 
 function asWorkspaceSnapshot(snap: WireWorkspaceSnapshot): WorkspaceSnapshot {
   return {
@@ -196,6 +197,12 @@ export function registerDocumentFlush(id: string, flush: () => Promise<string | 
   };
 }
 
+/** Tell the native Edit menu whether this document currently can undo/redo. */
+export function reportNativeEditState(id: string, canUndo: boolean, canRedo: boolean): void {
+  if (!isMyGo()) return
+  void WorkspaceHost.setNativeEditState(id, canUndo, canRedo);
+}
+
 async function flushDocument(id: string): Promise<void> {
   const flush = flushers.get(id);
   const text = flush ? await flush() : undefined;
@@ -298,6 +305,10 @@ async function handleNative(
   if (command === "closeWorkspace") {
     for (const id of [...flushers.keys()]) await flushDocument(id);
     await workspace.closeWorkspace();
+    return;
+  }
+  if (command === "undo" || command === "redo") {
+    applyNativeEdit(cmd.id, command);
     return;
   }
   await flushDocument(cmd.id);

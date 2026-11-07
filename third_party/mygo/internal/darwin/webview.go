@@ -163,6 +163,28 @@ func (w *window) top() *window {
 	return w
 }
 
+
+// handleWebViewEditCommand reports a native Undo/Redo to Go when the
+// command is for the page. Native fields (textarea, input, contenteditable)
+// keep AppKit's undo manager: the first responder is not the web view.
+func handleWebViewEditCommand(web, sender id, role string) bool {
+	w := theBackend.byWebView[web]
+	if w == nil {
+		return false
+	}
+	first := send(w.win, "firstResponder")
+	// An inner WK view is still the page. A native field (NSTextView) is not
+	// a descendant of the web view and keeps AppKit's undo manager.
+	if first != 0 && first != web && !sendBool(first, "isDescendantOf:", uintptr(web)) {
+		return false
+	}
+	if role == "undo" || role == "redo" {
+		w.h.MenuItemClicked(sendInt(sender, "tag"))
+		return true
+	}
+	return false
+}
+
 // hasKeyboard reports whether the web view, or a view in it, is the first
 // responder of its window.
 func (w *window) hasKeyboard() bool {

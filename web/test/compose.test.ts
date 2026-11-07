@@ -52,9 +52,9 @@ describe('block-preserving compose', () => {
     const source = 'Intro.\n\n> [!WARNING]\n> stay locked\n\nOutro.\n'
     const mounted = await mountEditor(source)
     try {
-      const locked = mounted.root.querySelectorAll('[data-locked-block]')
+      const locked = mounted.root.querySelectorAll('[data-locked-block][data-kind="github-alert"]')
       expect(locked.length).toBe(1)
-      expect(locked[0].getAttribute('data-kind')).toBe('github-alert')
+      expect(locked[0].classList.contains('mgo-alert')).toBe(true)
       expect(mounted.editor.getMarkdown()).toBe(source)
     } finally {
       await mounted.cleanup()

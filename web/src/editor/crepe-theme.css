@@ -227,7 +227,15 @@
   font-family: var(--font-sans);
 }
 
-/* GitHub-alert / frontmatter / kept-as-written hooks for #26 to attach. */
+/* Special-block presentation (#26). Edit actions live in styles.css. */
+.mgo-alert,
+.mgo-frontmatter-block,
+.mgo-footnote,
+.mgo-code-block,
+.mgo-math {
+  position: relative;
+}
+
 .mgo-alert {
   margin: 0 0 16px;
   padding: 10px 14px;
@@ -237,7 +245,9 @@
 }
 
 .mgo-alert-k {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--font-display);
   font-size: var(--text-meta-size);
   line-height: var(--text-meta-leading);
@@ -248,13 +258,27 @@
   margin-bottom: 2px;
 }
 
+.mgo-alert-k .ph {
+  font-size: 14px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mgo-alert-body {
+  font-size: var(--text-reading-size);
+  line-height: var(--text-reading-leading);
+  white-space: pre-wrap;
+}
+
 .mgo-alert.note .mgo-alert-k,
-.mgo-alert.tip .mgo-alert-k {
+.mgo-alert.tip .mgo-alert-k,
+.mgo-alert.important .mgo-alert-k {
   color: var(--content-note);
 }
 
 .mgo-alert.note,
-.mgo-alert.tip {
+.mgo-alert.tip,
+.mgo-alert.important {
   background: var(--content-note-soft);
 }
 
@@ -274,9 +298,13 @@
   color: var(--content-caution);
 }
 
+.mgo-frontmatter-block {
+  margin: 0 0 24px;
+}
+
 .mgo-frontmatter {
   width: auto;
-  margin: 0 0 24px;
+  margin: 0;
   font-size: 13px;
   line-height: 20px;
   border-collapse: collapse;
@@ -298,4 +326,124 @@
   border: 0;
   padding: 3px 0;
   color: var(--ink);
+  white-space: pre-wrap;
+}
+
+.mgo-footnote {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: start;
+  margin: 0 0 16px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--fill);
+  color: var(--ink-2);
+  font-size: var(--text-small-size);
+  line-height: var(--text-small-leading);
+}
+
+.mgo-footnote-mark,
+.mgo-fnref {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-leading);
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.mgo-footnote-body {
+  white-space: pre-wrap;
+}
+
+.mgo-footnote-back {
+  color: var(--accent);
+  text-decoration: none;
+  margin-left: 4px;
+}
+
+.mgo-code-block {
+  margin: 0 0 20px;
+  border-radius: 8px;
+  background: var(--code);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+  overflow: auto;
+}
+
+.mgo-code-chrome {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 16px 0;
+}
+
+.mgo-code-lang {
+  font-family: var(--font-display);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-leading);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.mgo-code-meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-leading);
+  color: var(--ink-3);
+}
+
+.mgo-code-body {
+  margin: 0;
+  padding: 10px 16px 14px;
+  font-family: var(--font-mono);
+  font-size: var(--text-code-size);
+  line-height: var(--text-code-leading);
+  white-space: pre;
+  color: var(--ink);
+}
+
+.mgo-math {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--code);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+}
+
+.mgo-math-k {
+  display: block;
+  font-family: var(--font-display);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-leading);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 4px;
+}
+
+.mgo-math-source {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-code-size);
+  line-height: var(--text-code-leading);
+  white-space: pre-wrap;
+  color: var(--ink);
+}
+
+.mgo-code-body .tok-keyword {
+  color: var(--accent);
+}
+
+.mgo-code-body .tok-string {
+  color: var(--content-note);
+}
+
+.mgo-code-body .tok-comment {
+  color: var(--ink-3);
+}
+
+.mgo-code-body .tok-number {
+  color: var(--content-warning);
 }

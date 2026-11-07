@@ -46,13 +46,13 @@ describe('layout at the default window size', () => {
     expect(heading.getBoundingClientRect().height).toBeLessThan(lineHeight * 2)
   })
 
-  it('keeps the locked frontmatter block readable', async () => {
+  it('keeps the frontmatter block readable', async () => {
     await page.viewport(WINDOW.width, WINDOW.height)
     mounted = await mountApp(DOCUMENT)
 
-    const locked = mounted.container.querySelector('.mgo-locked-block')
-    if (!locked) throw new Error('locked block not rendered')
-    expect(locked.getBoundingClientRect().width).toBeGreaterThanOrEqual(280)
+    const frontmatter = mounted.container.querySelector('.mgo-frontmatter-block, .mgo-frontmatter')
+    if (!frontmatter) throw new Error('frontmatter block not rendered')
+    expect(frontmatter.getBoundingClientRect().width).toBeGreaterThanOrEqual(280)
   })
 
   it('auto-collapses the right pane below 1180px, opens it as .r-float on toggle, and closes on center click', async () => {

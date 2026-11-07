@@ -183,7 +183,7 @@ export function createBrowserHost(
     },
     watchView(fn) {
       viewListeners.add(fn)
-      // Like the Go host, the first snapshot comes once the watch runs.
+      // Like the Go host, the first snapshot is the file as it is now.
       if (!options.holdFirstView) {
         queueMicrotask(() => {
           if (viewListeners.has(fn)) fn(viewSnapshot())

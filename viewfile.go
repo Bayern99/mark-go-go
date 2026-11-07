@@ -74,11 +74,16 @@ func readViewText(path string) ViewSnapshot {
 	return ViewSnapshot{Exists: true, Text: string(data)}
 }
 
-// WatchView makes the calling page follow its document's view file: the
-// host sends viewChanged with the file as it is once the watch runs, then
-// whenever the file changes, and when the document is renamed, moved or
-// first saved. Every snapshot comes as that event, in the order the host
-// read them. Calling it again restarts the watch.
+// WatchView makes the calling page follow its document's view file.
+// viewChanged carries every snapshot, in the order the host read them:
+// one as soon as follow starts, one after the watch is running, then
+// each change, and when the document is renamed, moved or first saved.
+// The first event does not wait for WatchFiles to return. Calling it
+// again restarts the watch.
+//
+// #21 may add a documentId argument and an id field on the event; the
+// read/watch order here stays the same and does not retarget through
+// the active tab.
 func (h *documentHost) WatchView(ctx context.Context) error {
 	s, err := h.session(ctx)
 	if err != nil {
@@ -93,10 +98,10 @@ func (h *documentHost) WatchView(ctx context.Context) error {
 	path := viewPath(s.doc.State().Path)
 	gen := s.retargetLocked(path)
 	h.mu.Unlock()
-	if err := s.startViewWatch(path, gen); err != nil {
-		return err
+	// A watch that cannot start must not hide a snapshot already sent.
+	if err := s.followView(path, gen); err != nil {
+		log.Print(err)
 	}
-	s.emitView(path, gen)
 	return nil
 }
 
@@ -141,7 +146,7 @@ func (s *docSession) unfollowView() {
 
 // viewMoved retargets the watch when the document's path changed, and
 // tells the page what the view file at the new path is. It runs on the
-// main thread, so the watch starts on a goroutine of its own.
+// main thread, so followView starts the watch on a goroutine of its own.
 func (s *docSession) viewMoved(docPath string) {
 	path := viewPath(docPath)
 	h := s.host
@@ -153,11 +158,30 @@ func (s *docSession) viewMoved(docPath string) {
 	gen := s.retargetLocked(path)
 	h.mu.Unlock()
 	go func() {
-		if err := s.startViewWatch(path, gen); err != nil {
+		if err := s.followView(path, gen); err != nil {
 			log.Print(err)
 		}
-		s.emitView(path, gen)
 	}()
+}
+
+// followView sends the view as it is now, starts watching it, then sends
+// it again. The first event is not delayed by WatchFiles; the second
+// closes the gap between that read and the watch's baseline, so a write,
+// replacement or delete in between is not lost. An older generation
+// sends nothing and does not start a watch.
+func (s *docSession) followView(path string, gen int) error {
+	return s.followViewWith(path, gen, s.startViewWatch)
+}
+
+func (s *docSession) followViewWith(path string, gen int, start func(string, int) error) error {
+	if !s.emitView(path, gen) {
+		return nil
+	}
+	if err := start(path, gen); err != nil {
+		return err
+	}
+	s.emitView(path, gen)
+	return nil
 }
 
 // retargetLocked stops the session's watch and makes path the file
@@ -180,8 +204,10 @@ func (s *docSession) currentLocked(gen int) bool {
 }
 
 // startViewWatch watches the directory of the view file at path for
-// generation gen. When the watch cannot start, the session forgets path,
-// so that the next state change tries again.
+// generation gen. Ignore keeps the scan off every other name in that
+// folder; WatchFiles still enrolls the folder itself. When the watch
+// cannot start, the session forgets path, so that the next state change
+// tries again.
 func (s *docSession) startViewWatch(path string, gen int) error {
 	if path == "" {
 		return nil
@@ -241,6 +267,10 @@ func (s *docSession) emitView(path string, gen int) bool {
 	if !s.currentLocked(gen) {
 		return false
 	}
-	_ = viewChanged.Emit(s.win, snap)
+	if s.emit != nil {
+		s.emit(snap)
+	} else {
+		_ = viewChanged.Emit(s.win, snap)
+	}
 	return true
 }

@@ -102,14 +102,16 @@ export function OutlinePanel({
       ) : (
         <ul className="outline-list" data-testid="outline-list">
           {headings.map((heading, index) => (
-            <li
-              key={heading.offset}
-              className="outline-item"
-              style={{ paddingLeft: `${8 + (heading.level - 1) * 12}px` }}
-            >
+            <li key={heading.offset} className="outline-item">
               <button
                 type="button"
-                className="outline-link"
+                className="outline-link ol-row"
+                style={
+                  {
+                    '--l': heading.level - 1,
+                    paddingLeft: `${8 + (heading.level - 1) * 16}px`,
+                  } as React.CSSProperties
+                }
                 aria-current={index === active ? 'true' : undefined}
                 title={heading.text}
                 onClick={() => {

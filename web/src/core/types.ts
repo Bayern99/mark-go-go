@@ -14,15 +14,27 @@ export interface DocumentSnapshot {
 }
 
 /**
- * Where a view shows: `left` is the sidebar; `center` makes the view a view
- * mode the user picks instead of the editor, mounted only while it is shown.
+ * Where a view shows: `left` is the workspace sidebar; `center` makes the view
+ * a view mode the user picks instead of the editor, mounted only while it is
+ * shown; `right` is the document panel on the right side of the window.
  */
-export type ViewLocation = 'left' | 'center'
+export type ViewLocation = 'left' | 'center' | 'right'
+
+export type ViewStatusDot = {
+  tone: 'warn' | 'danger'
+  title?: string
+} | null
+
+export interface ViewStatusSource {
+  subscribe(fn: () => void): () => void
+  getSnapshot(): ViewStatusDot
+}
 
 export interface ViewRegistration {
   id: string
   title: string
   location: ViewLocation
+  status?: ViewStatusSource
   mount(el: HTMLElement): Disposable
 }
 

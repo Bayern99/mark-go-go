@@ -137,17 +137,22 @@ describe('Outline plugin', () => {
     }
   })
 
-  it('stays in the left sidebar in GenUI mode and jumps back to rich text', async () => {
+  it('renders in the right pane in GenUI mode and jumps back to rich text', async () => {
     const app = await mountApp(fixture)
     try {
+      expect(page.getByTestId('outline-toggle').query()).toBeNull()
+      const left = page.getByTestId('left-pane')
+      expect(left.query()).not.toBeNull()
+      expect(left.getByRole('navigation', { name: 'Document outline' }).query()).toBeNull()
+
       await viewMode('genui').click()
       await vi.waitFor(() => {
         expect(page.getByTestId('center-pane').query()).not.toBeNull()
         expect(app.container.querySelector<HTMLElement>('.editor-pane')?.hidden).toBe(true)
       })
-      const left = page.getByTestId('left-pane')
-      expect(left.getByRole('navigation', { name: 'Document outline' }).query()).not.toBeNull()
-      expect(left.getByTestId('genui-view').query()).toBeNull()
+      const right = page.getByTestId('right-pane')
+      expect(right.getByRole('navigation', { name: 'Document outline' }).query()).not.toBeNull()
+      expect(right.getByTestId('genui-view').query()).toBeNull()
 
       await outlineButtons().nth(2).click()
       await vi.waitFor(() => {
@@ -318,17 +323,23 @@ describe('Outline plugin', () => {
     }
   })
 
-  it('restores the left pane and highlighting when re-enabled', async () => {
+  it('restores the right pane and highlighting when re-opened', async () => {
     const app = await mountApp(fixture)
     try {
-      await page.getByTestId('outline-toggle').click()
+      await page.getByTestId('right-pane-toggle').click()
       await vi.waitFor(() => {
-        expect(page.getByTestId('left-pane').query()).toBeNull()
+        expect(page.getByTestId('right-pane').element().hasAttribute('hidden')).toBe(true)
+        expect(page.getByTestId('right-pane-toggle').element().getAttribute('aria-expanded')).toBe(
+          'false',
+        )
       })
 
-      await page.getByTestId('outline-toggle').click()
+      await page.getByTestId('right-pane-toggle').click()
       await vi.waitFor(() => {
-        expect(page.getByTestId('outline-toggle').element().getAttribute('aria-pressed')).toBe('true')
+        expect(page.getByTestId('right-pane').element().hasAttribute('hidden')).toBe(false)
+        expect(page.getByTestId('right-pane-toggle').element().getAttribute('aria-expanded')).toBe(
+          'true',
+        )
         expect(outlineTexts()).toEqual(EXPECTED_HEADINGS)
       })
 
@@ -351,16 +362,18 @@ describe('Outline plugin', () => {
     }
   })
 
-  it('removes the left sidebar when disabled and keeps edits flowing to the host', async () => {
+  it('collapses the right pane when toggled off and keeps edits flowing to the host', async () => {
     const app = await mountApp(fixture, createBrowserHost(fixture))
     const update = vi.spyOn(app.host, 'update')
     try {
-      expect(page.getByTestId('left-pane').query()).not.toBeNull()
+      expect(page.getByTestId('right-pane').element().hasAttribute('hidden')).toBe(false)
 
-      await page.getByTestId('outline-toggle').click()
+      await page.getByTestId('right-pane-toggle').click()
       await vi.waitFor(() => {
-        expect(page.getByTestId('outline-toggle').element().getAttribute('aria-pressed')).toBe('false')
-        expect(page.getByTestId('left-pane').query()).toBeNull()
+        expect(page.getByTestId('right-pane-toggle').element().getAttribute('aria-expanded')).toBe(
+          'false',
+        )
+        expect(page.getByTestId('right-pane').element().hasAttribute('hidden')).toBe(true)
       })
 
       await enterSourceMode()

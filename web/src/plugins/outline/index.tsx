@@ -18,7 +18,7 @@ export function createOutlinePlugin(): AppPlugin {
       ctx.views.register({
         id: 'outline.panel',
         title: 'Outline',
-        location: 'left',
+        location: 'right',
         mount(el: HTMLElement) {
           const root = createRoot(el)
           root.render(<OutlinePanel ctx={ctx} store={store} />)

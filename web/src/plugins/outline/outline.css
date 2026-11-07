@@ -1,5 +1,6 @@
 .outline-panel {
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 18px;
 }
 
 .outline-list {
@@ -13,18 +14,20 @@
 
 .outline-item {
   margin: 0;
-  border-radius: 5px;
+  border-radius: 7px;
 }
 
 .outline-link {
+  position: relative;
   display: block;
   width: 100%;
+  min-height: 28px;
   border: 0;
   background: none;
-  padding: 3px 6px;
-  border-radius: 5px;
+  padding: 5px 8px 5px calc(8px + var(--l, 0) * 16px);
+  border-radius: 7px;
   font: inherit;
-  color: var(--mgo-text);
+  color: var(--ink-2);
   text-align: left;
   cursor: pointer;
   overflow: hidden;
@@ -33,17 +36,32 @@
 }
 
 .outline-link:hover {
-  background: var(--mgo-panel-soft);
+  background: var(--fill-hover);
+  color: var(--ink);
 }
 
 .outline-link[aria-current='true'] {
-  background: var(--mgo-accent-soft);
-  color: var(--mgo-accent);
-  font-weight: 600;
+  background: var(--raised);
+  box-shadow: var(--row-shadow);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.outline-link[aria-current='true']::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 7px;
+  bottom: 7px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
 }
 
 .outline-empty {
   margin: 0;
-  color: var(--mgo-muted);
-  font-size: 11px;
+  padding: 6px 8px;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 16px;
 }

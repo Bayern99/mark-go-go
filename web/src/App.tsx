@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
+import { RightPane } from './components/RightPane'
 import { SidePane } from './components/SidePane'
 import { useViews, ViewHost } from './components/ViewHost'
 import { CommandRegistry } from './core/CommandRegistry'
@@ -14,6 +15,7 @@ import { createGenUIPlugin } from './plugins/genui'
 import { createOutlinePlugin } from './plugins/outline'
 
 const EDIT_DEBOUNCE_MS = 250
+export const NARROW_WINDOW_WIDTH = 1180
 
 /**
  * What the center of the window shows: the editor as rich text or as
@@ -40,6 +42,10 @@ function rememberViewMode(path: string, mode: ViewMode): void {
   } catch {
     // No storage: the mode is a convenience, the next window starts in rich text.
   }
+}
+
+function measureIsNarrow(): boolean {
+  return typeof window !== 'undefined' && window.innerWidth < NARROW_WINDOW_WIDTH
 }
 
 /**
@@ -128,6 +134,10 @@ export function App({
   const [editorMode, setEditorMode] = useState<EditorMode>('wysiwyg')
   const [centerViewId, setCenterViewId] = useState<string | null>(null)
   const [returnToId, setReturnToId] = useState<string | null>(null)
+  const [rightViewId, setRightViewId] = useState<string | null>('outline.panel')
+  const [isNarrow, setIsNarrow] = useState<boolean>(() => measureIsNarrow())
+  const [rightWantOpen, setRightWantOpen] = useState<boolean>(true)
+  const [rightFloatOpen, setRightFloatOpen] = useState<boolean>(false)
   const [ready, setReady] = useState(false)
   const [, refreshPlugins] = useReducer((value: number) => value + 1, 0)
   const restored = useRef(false)
@@ -152,9 +162,36 @@ export function App({
   )
 
   const centerViews = useViews(services.views, 'center')
+  const rightViews = useViews(services.views, 'right')
   const centerView = centerViews.find((view) => view.id === centerViewId) ?? null
   const returnTo = centerView ? null : (centerViews.find((view) => view.id === returnToId) ?? null)
   const viewMode: ViewMode = centerView ? centerView.id : editorMode === 'source' ? 'markdown' : 'richtext'
+
+  const rightShown = rightViews.length > 0 && (isNarrow ? rightFloatOpen : rightWantOpen)
+  const rightFloating = isNarrow && rightFloatOpen
+
+  const toggleRightPane = () => {
+    if (measureIsNarrow()) {
+      setIsNarrow(true)
+      setRightFloatOpen((open) => !open)
+    } else {
+      setIsNarrow(false)
+      setRightWantOpen((open) => !open)
+    }
+  }
+
+  useEffect(() => {
+    const syncViewport = () => {
+      const narrow = measureIsNarrow()
+      setIsNarrow((prev) => {
+        if (narrow && !prev) setRightFloatOpen(false)
+        return narrow
+      })
+    }
+    syncViewport()
+    window.addEventListener('resize', syncViewport)
+    return () => window.removeEventListener('resize', syncViewport)
+  }, [])
 
   useEffect(() => {
     if (centerViewId !== null && centerView === null) modes.dropCenter()
@@ -165,8 +202,14 @@ export function App({
     const cleanups: Disposable[] = []
     let debounceTimer: number | undefined
 
-    const handleModeShortcut = (event: KeyboardEvent) => {
+    const handleShortcuts = (event: KeyboardEvent) => {
       if (event.repeat) return
+      if ((event.metaKey || event.ctrlKey) && event.altKey && event.code === 'Digit0') {
+        event.preventDefault()
+        event.stopPropagation()
+        toggleRightPane()
+        return
+      }
       if (!(event.metaKey || event.ctrlKey) || event.altKey || event.key !== '/') return
       if (!editorRef.current) return
       event.preventDefault()
@@ -174,10 +217,10 @@ export function App({
       modes.toggleEditorMode()
     }
 
-    window.addEventListener('keydown', handleModeShortcut, true)
+    window.addEventListener('keydown', handleShortcuts, true)
     cleanups.push({
       dispose() {
-        window.removeEventListener('keydown', handleModeShortcut, true)
+        window.removeEventListener('keydown', handleShortcuts, true)
       },
     })
 
@@ -243,6 +286,22 @@ export function App({
         }),
       )
 
+      cleanups.push(
+        services.commands.register('rightPane.show', (targetViewId) => {
+          if (typeof targetViewId === 'string' && targetViewId !== '') {
+            setRightViewId(targetViewId)
+          }
+          if (measureIsNarrow()) {
+            setIsNarrow(true)
+            setRightFloatOpen(true)
+          } else {
+            setIsNarrow(false)
+            setRightWantOpen(true)
+          }
+          return true
+        }),
+      )
+
       cleanups.push(editor.onModeChange(setEditorMode))
 
       cleanups.push(
@@ -276,7 +335,7 @@ export function App({
         }),
       )
 
-      const appPlugins = [createGenUIPlugin(), createOutlinePlugin(), ...plugins]
+      const appPlugins = [createOutlinePlugin(), createGenUIPlugin(), ...plugins]
       for (const plugin of appPlugins) {
         if (disposed) return
         services.plugins.register(plugin)
@@ -323,17 +382,6 @@ export function App({
     if (restored.current && docState) rememberViewMode(docState.path, viewMode)
   }, [viewMode, docState])
 
-  const pluginEnabled = (id: string) =>
-    services.plugins.list().find((p) => p.id === id)?.enabled ?? false
-
-  const outlineEnabled = pluginEnabled('outline')
-
-  const togglePlugin = (id: string) => {
-    if (pluginEnabled(id)) services.plugins.disable(id)
-    else void services.plugins.enable(id).then(refreshPlugins)
-    refreshPlugins()
-  }
-
   const modeChoices = [
     { id: 'richtext', label: 'Rich text', title: 'Rich text (⌘/)' },
     { id: 'markdown', label: 'Markdown', title: 'Markdown source (⌘/)' },
@@ -346,84 +394,118 @@ export function App({
     else modes.showCenter(id)
   }
 
+  const handleCenterClick = () => {
+    if (isNarrow && rightFloatOpen) {
+      setRightFloatOpen(false)
+    }
+  }
+
   return (
-    <div className="app">
-      <header className="app-header">
-        <div className="doc-title">
-          <span className="doc-name">{docState?.name ?? 'Loading…'}</span>
-          {docState?.edited ? <span className="edited-dot" title="Unsaved edits" /> : null}
-        </div>
-        <div className="header-actions">
-          <span className="version-chip">v{version}</span>
-          <div className="view-modes" role="radiogroup" aria-label="View mode">
-            {modeChoices.map((choice) => (
-              <button
-                key={choice.id}
-                type="button"
-                role="radio"
-                className="view-mode"
-                data-testid={`view-mode-${choice.id}`}
-                aria-checked={viewMode === choice.id}
-                title={choice.title}
-                onClick={() => chooseMode(choice.id)}
-                disabled={!ready}
-              >
-                {choice.label}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            className="toggle-button"
-            data-testid="outline-toggle"
-            aria-pressed={outlineEnabled}
-            onClick={() => togglePlugin('outline')}
-            disabled={!ready}
-          >
-            Outline: {outlineEnabled ? 'On' : 'Off'}
-          </button>
-        </div>
-      </header>
-
-      {docState?.conflict ? (
-        <div className="banner banner-conflict" role="alert">
-          The file changed on disk. Saving will ask which version to keep.
-        </div>
-      ) : null}
-      {docState?.deleted ? (
-        <div className="banner banner-deleted" role="alert">
-          The file was deleted on disk. Edits are kept in the window until you save.
-        </div>
-      ) : null}
-      {docState?.readOnly ? <div className="banner banner-readonly">Read only</div> : null}
-
+    <div
+      className={`app mgg win${rightShown && !rightFloating ? ' rp-dock' : ''}${rightFloating ? ' rp-float' : ''}`}
+    >
       <div className="app-body">
-        <SidePane views={services.views} />
-        <main className="editor-pane" hidden={centerView !== null}>
-          {returnTo ? (
-            <button
-              type="button"
-              className="return-to-view"
-              data-testid="return-to-view"
-              onClick={() => modes.showCenter(returnTo.id)}
+        <SidePane views={services.views} doc={docState} />
+
+        <div className="main center-column">
+          <section className="sheet">
+            <header className="app-header docbar">
+              <div className="doc-title crumbs">
+                <span className="doc-name last">{docState?.name ?? 'Loading…'}</span>
+                {docState?.edited ? <span className="edited-dot" title="Unsaved edits" /> : null}
+              </div>
+              <div className="header-actions">
+                <span className="status meta">
+                  {docState?.edited ? 'Edited' : 'Saved'}
+                  {docState?.conflict ? ' · conflict' : ''}
+                </span>
+                <span className="version-chip meta">v{version}</span>
+                <div className="view-modes seg" role="radiogroup" aria-label="View mode">
+                  {modeChoices.map((choice) => (
+                    <button
+                      key={choice.id}
+                      type="button"
+                      role="radio"
+                      className="view-mode"
+                      data-testid={`view-mode-${choice.id}`}
+                      aria-checked={viewMode === choice.id}
+                      title={choice.title}
+                      onClick={() => chooseMode(choice.id)}
+                      disabled={!ready}
+                    >
+                      {choice.label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="toggle-button pill icon quiet rp-tg"
+                  data-testid="right-pane-toggle"
+                  data-rp-toggle
+                  aria-expanded={rightShown}
+                  aria-label={rightShown ? 'Hide right panel' : 'Show right panel'}
+                  title={`${rightShown ? 'Hide' : 'Show'} right panel (⌥⌘0)`}
+                  onClick={toggleRightPane}
+                  disabled={!ready}
+                >
+                  <span aria-hidden="true">◨</span>
+                </button>
+              </div>
+            </header>
+
+            {docState?.conflict ? (
+              <div className="banner banner-conflict" role="alert">
+                The file changed on disk. Saving will ask which version to keep.
+              </div>
+            ) : null}
+            {docState?.deleted ? (
+              <div className="banner banner-deleted" role="alert">
+                The file was deleted on disk. Edits are kept in the window until you save.
+              </div>
+            ) : null}
+            {docState?.readOnly ? <div className="banner banner-readonly">Read only</div> : null}
+
+            <div
+              className="center-stage"
+              data-testid="center-stage"
+              onClick={handleCenterClick}
             >
-              ← Back to {returnTo.title}
-            </button>
-          ) : null}
-          <div className="editor-scroll" ref={editorScroll}>
-            <div className="crepe-root" ref={editorRoot} data-testid="editor-root" />
-          </div>
-        </main>
-        {centerView ? (
-          <section
-            className="center-pane"
-            data-testid="center-pane"
-            data-view-id={centerView.id}
-            aria-label={centerView.title}
-          >
-            <ViewHost key={centerView.id} view={centerView} className="center-view" />
+              <main className="editor-pane" hidden={centerView !== null}>
+                {returnTo ? (
+                  <button
+                    type="button"
+                    className="return-to-view"
+                    data-testid="return-to-view"
+                    onClick={() => modes.showCenter(returnTo.id)}
+                  >
+                    ← Back to {returnTo.title}
+                  </button>
+                ) : null}
+                <div className="editor-scroll" ref={editorScroll}>
+                  <div className="crepe-root" ref={editorRoot} data-testid="editor-root" />
+                </div>
+              </main>
+              {centerView ? (
+                <section
+                  className="center-pane"
+                  data-testid="center-pane"
+                  data-view-id={centerView.id}
+                  aria-label={centerView.title}
+                >
+                  <ViewHost key={centerView.id} view={centerView} className="center-view" />
+                </section>
+              ) : null}
+            </div>
           </section>
-        ) : null}
+        </div>
+
+        <RightPane
+          views={services.views}
+          activeId={rightViewId}
+          onSelect={setRightViewId}
+          open={rightShown}
+          floating={rightFloating}
+        />
       </div>
 
       <footer className="status-bar">

@@ -54,4 +54,53 @@ describe('layout at the default window size', () => {
     if (!locked) throw new Error('locked block not rendered')
     expect(locked.getBoundingClientRect().width).toBeGreaterThanOrEqual(280)
   })
+
+  it('auto-collapses the right pane below 1180px, opens it as .r-float on toggle, and closes on center click', async () => {
+    await page.viewport(WINDOW.width, WINDOW.height)
+    mounted = await mountApp(DOCUMENT)
+
+    const rightPane = mounted.container.querySelector<HTMLElement>('[data-testid="right-pane"]')
+    const toggle = mounted.container.querySelector<HTMLButtonElement>(
+      '[data-testid="right-pane-toggle"]',
+    )
+    if (!rightPane || !toggle) throw new Error('right pane controls missing')
+
+    expect(rightPane.hidden).toBe(true)
+    expect(rightPane.classList.contains('r-float')).toBe(false)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+
+    await page.getByTestId('right-pane-toggle').click()
+    expect(rightPane.hidden).toBe(false)
+    expect(rightPane.classList.contains('r-float')).toBe(true)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+
+    await page.getByText('结论').first().click()
+    expect(rightPane.hidden).toBe(true)
+    expect(rightPane.classList.contains('r-float')).toBe(false)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('exposes Portrait semantic tokens in light and dark mode', async () => {
+    mounted = await mountApp(DOCUMENT)
+    const appEl = mounted.container.querySelector<HTMLElement>('.app.mgg')
+    if (!appEl) throw new Error('app root missing')
+
+    const lightStyle = getComputedStyle(appEl)
+    expect(lightStyle.getPropertyValue('--chrome').trim()).toBe('#f2f2f4')
+    expect(lightStyle.getPropertyValue('--paper').trim()).toBe('#ffffff')
+    expect(lightStyle.getPropertyValue('--accent').trim()).toBe('#2f6f62')
+    expect(lightStyle.getPropertyValue('--warn').trim()).toBe('#9a4d12')
+    expect(lightStyle.getPropertyValue('--danger').trim()).toBe('#a83a3a')
+    expect(lightStyle.getPropertyValue('--raised-shadow').trim()).not.toBe('')
+    expect(lightStyle.getPropertyValue('--sunken-shadow').trim()).not.toBe('')
+    expect(lightStyle.getPropertyValue('--pop-shadow').trim()).not.toBe('')
+
+    appEl.classList.add('dark')
+    const darkStyle = getComputedStyle(appEl)
+    expect(darkStyle.getPropertyValue('--chrome').trim()).toBe('#1e1e20')
+    expect(darkStyle.getPropertyValue('--paper').trim()).toBe('#19191b')
+    expect(darkStyle.getPropertyValue('--accent').trim()).toBe('#7cc4b2')
+    expect(darkStyle.getPropertyValue('--warn').trim()).toBe('#f0a560')
+    expect(darkStyle.getPropertyValue('--danger').trim()).toBe('#ef8a80')
+  })
 })

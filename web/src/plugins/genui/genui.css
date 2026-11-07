@@ -169,13 +169,17 @@
 }
 
 .gp-item .t {
-  font-size: 13px;
-  line-height: 18px;
+  font-size: var(--text-ui-size);
+  line-height: var(--text-ui-leading);
   font-weight: 500;
   color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 .gp-item .s {
@@ -548,6 +552,17 @@
   flex-basis: 100%;
 }
 
+.genui-card-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.genui-card-skeleton .genui-skeleton-block {
+  height: 72px;
+  flex-basis: auto;
+}
+
 @keyframes genui-pulse {
   50% {
     opacity: 0.45;
@@ -600,13 +615,17 @@
   padding: 12px;
   background: var(--genui-surface);
   overflow-wrap: anywhere;
-  transition: box-shadow 180ms var(--ease-out);
+  transition: box-shadow var(--duration-enter) var(--ease-out);
 }
 
 .genui-block.is-highlighted {
   box-shadow:
     0 0 0 1px var(--accent),
     0 0 0 3px var(--focus);
+}
+
+.genui-block.is-replacing {
+  background: var(--genui-surface-soft);
 }
 
 /* A card already frames its content. */
@@ -631,11 +650,40 @@
   margin: 0;
 }
 
-.genui-keypoints ul {
-  padding-left: 18px;
+.genui-keypoints ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  counter-reset: keypoints;
+}
+
+.genui-keypoints li {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: start;
+  font-size: var(--text-reading-size);
+  line-height: var(--text-reading-leading);
+  letter-spacing: var(--text-reading-tracking);
+}
+
+.genui-keypoints li::before {
+  counter-increment: keypoints;
+  content: counter(keypoints, decimal-leading-zero);
+  font-family: var(--font-display);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-leading);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--genui-muted);
+  padding-top: 4px;
+}
+
+.genui-keypoints-more {
+  margin-top: 8px;
 }
 
 .genui-metrics dl {
@@ -892,10 +940,13 @@
 }
 
 .genui-source-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border-radius: 999px;
   padding: 1px 8px;
-  background: var(--genui-warning-soft);
-  color: var(--genui-warning);
+  background: var(--warn-soft);
+  color: var(--warn);
 }
 
 [data-source-status='missing'] .genui-source-status {
@@ -912,6 +963,25 @@
   background: var(--genui-surface);
   color: var(--genui-accent);
   cursor: pointer;
+  transition:
+    background var(--duration-press) var(--ease-out),
+    transform var(--duration-press) var(--ease-out);
+}
+
+.genui-source-edit:hover:not(:disabled),
+.genui-source-note:hover:not(:disabled) {
+  background: var(--fill-hover);
+}
+
+.genui-source-edit:active:not(:disabled),
+.genui-source-note:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.genui-source-edit:focus-visible,
+.genui-source-note:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
 }
 
 .genui-source-edit:disabled,

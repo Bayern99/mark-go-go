@@ -5,7 +5,7 @@
  * `ViewSurface` and `catalogDefinition`, so the renderer can be replaced
  * without touching them.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
 import {
   A2uiSurface,
@@ -20,6 +20,7 @@ import { isRecord } from '../../lib/guards'
 import { CONTENT_COMPONENTS } from './components'
 import { SafeMarkdown } from './SafeMarkdown'
 import { SourceContext, type SourceActions } from './SourceFrame'
+import { ReadingContext, type ReadingStore } from './reading'
 
 /** The catalog id a view file's surface must name. */
 export const CATALOG_ID = 'markgogo.dev:genui/v1'
@@ -162,26 +163,53 @@ function describe(error: unknown): string {
 export function ViewSurface({
   surface,
   sources,
+  reading,
 }: {
   surface: SurfaceModel<ReactCatalogComponent>
   sources: SourceActions
+  reading: ReadingStore
 }): React.ReactElement {
   const problems = useSurfaceProblems(surface)
+  const root = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = root.current
+    if (!el) return
+    const tabsOf = () => [...el.querySelectorAll<HTMLElement & { activeIndex: number }>('a2ui-tabs')]
+    const restore = () => {
+      for (const [index, tabs] of tabsOf().entries()) {
+        const saved = reading.tab(`tabs:${index}`)
+        if (saved !== undefined) tabs.activeIndex = saved
+      }
+    }
+    restore()
+    const observer = new MutationObserver(restore)
+    observer.observe(el, { childList: true, subtree: true })
+    const remember = () => {
+      for (const [index, tabs] of tabsOf().entries()) reading.setTab(`tabs:${index}`, tabs.activeIndex)
+    }
+    el.addEventListener('click', remember)
+    return () => {
+      observer.disconnect()
+      el.removeEventListener('click', remember)
+    }
+  }, [surface, reading])
   return (
-    <SourceContext.Provider value={sources}>
-      <MarkdownComponentContext.Provider value={SafeMarkdown}>
-        {problems.length > 0 ? (
-          <ul className="genui-problems" role="alert">
-            {problems.map((problem, index) => (
-              <li key={index}>{problem}</li>
-            ))}
-          </ul>
-        ) : null}
-        <div className="genui-surface">
-          <A2uiSurface surface={surface} />
-        </div>
-      </MarkdownComponentContext.Provider>
-    </SourceContext.Provider>
+    <ReadingContext.Provider value={reading}>
+      <SourceContext.Provider value={sources}>
+        <MarkdownComponentContext.Provider value={SafeMarkdown}>
+          {problems.length > 0 ? (
+            <ul className="genui-problems" role="alert">
+              {problems.map((problem, index) => (
+                <li key={index}>{problem}</li>
+              ))}
+            </ul>
+          ) : null}
+          <div className="genui-surface" ref={root}>
+            <A2uiSurface surface={surface} />
+          </div>
+        </MarkdownComponentContext.Provider>
+      </SourceContext.Provider>
+    </ReadingContext.Provider>
   )
 }
 

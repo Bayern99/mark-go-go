@@ -68,8 +68,9 @@ export interface BrowserHost extends HostAdapter {
   writeView(text: string | null): void
   /** The kept view the last generation replaced, or null. */
   keptView(): string | null
-  /** Requests generate() received, in order. */
   readonly generations: GenerateRequest[]
+  /** Emit the first view snapshot when `holdFirstView` deferred it. */
+  releaseFirstView(): void
 }
 
 /**
@@ -96,6 +97,8 @@ export interface BrowserHostOptions {
   settings?: GenerationSettings
   /** Open the document as never saved: it has no path, so no view file. */
   untitled?: boolean
+  /** Do not emit the first watch snapshot until `releaseFirstView`. */
+  holdFirstView?: boolean
 }
 
 export const DEFAULT_MODELS = ['gemini-3.8-flash', 'gemini-4-argon', 'claude-opus-5-5'] as const
@@ -217,11 +220,17 @@ export function createBrowserHost(
     },
     watchView(fn) {
       viewListeners.add(fn)
-      // Like the Go host, the first snapshot comes once the watch runs.
-      queueMicrotask(() => {
-        if (viewListeners.has(fn)) fn(viewSnapshot())
-      })
+      // Like the Go host, the first snapshot is the file as it is now.
+      if (!options.holdFirstView) {
+        queueMicrotask(() => {
+          if (viewListeners.has(fn)) fn(viewSnapshot())
+        })
+      }
       return disposable(() => viewListeners.delete(fn))
+    },
+    releaseFirstView() {
+      const snap = viewSnapshot()
+      for (const fn of viewListeners) fn(snap)
     },
     writeView,
     keptView: () => kept,

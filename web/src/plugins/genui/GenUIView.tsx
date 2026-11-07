@@ -9,6 +9,7 @@ import { ModelMenu } from './ModelMenu'
 import type { SourceActions } from './SourceFrame'
 import { SourceStore } from './sources'
 import { parseViewFile, type ViewFile } from './viewFile'
+import { ReadingStore } from './reading'
 import './genui.css'
 
 /** `canUndo`: the view the last generation replaced is kept, to go back to once. */
@@ -170,6 +171,16 @@ function LoadingSkeleton(): React.ReactElement {
   )
 }
 
+function InitialLoading(): React.ReactElement {
+  return (
+    <div className="gen-empty genui-empty" data-testid="genui-loading" role="status" aria-live="polite">
+      <h2>Loading the GenUI view</h2>
+      <p>Reading the view file for this document.</p>
+      <LoadingSkeleton />
+    </div>
+  )
+}
+
 /**
  * Shared state between the center GenUI view (`genui`) and the right-column
  * GenUI management panel (`genui.panel`).
@@ -245,11 +256,12 @@ export class GenUISession {
     for (const listener of this.highlightListeners) listener()
     void this.ctx.commands.execute('centerPane.show', 'genui').catch(() => {})
     const scrollToCard = () => {
-      const card = Array.from(
-        document.querySelectorAll<HTMLElement>('[data-testid="genui-view"] [data-component-id]'),
-      ).find((el) => el.getAttribute('data-component-id') === id)
+      const cards = document.querySelectorAll<HTMLElement>('[data-testid="genui-view"] [data-component-id]')
+      for (const el of cards) el.classList.remove('mgo-jump')
+      const card = Array.from(cards).find((el) => el.getAttribute('data-component-id') === id)
       if (!card) return false
-      card.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      card.classList.add('mgo-jump')
+      card.scrollIntoView({ block: 'center', behavior: 'auto' })
       return true
     }
     if (!scrollToCard()) {
@@ -302,10 +314,12 @@ export interface GenUIMemory extends ScrollMemory {
   generation: GenerationController | undefined
   draft: string | undefined
   session: GenUISession | undefined
+  reading: ReadingStore
   statusListeners: Set<() => void>
 }
 
 function ensureSession(ctx: PluginContext, memory: GenUIMemory): GenUISession {
+  memory.reading ??= new ReadingStore()
   memory.session ??= new GenUISession(ctx, memory)
   return memory.session
 }
@@ -375,6 +389,10 @@ function GenUIView({
   const highlightedId = useSyncExternalStore(session.subscribeHighlight, session.getHighlightedId)
   const content = useRef<HTMLDivElement>(null)
   const running = run.kind === 'running'
+  const replacing =
+    running && run.run.mode === 'update' ? new Set(run.run.replaceIds) : undefined
+  const awaitingFirstView = state.kind === 'loading'
+  const generatingWithoutView = running && state.kind !== 'view' && !awaitingFirstView
   useScrollMemory(scroller, memory, state.kind === 'view' && !running ? state.text : null, content)
 
   const sources = state.kind === 'view' ? state.sources : null
@@ -383,6 +401,7 @@ function GenUIView({
       sources && {
         store: sources,
         highlightedId,
+        replacing,
         edit(ids, text) {
           const target = sources.target(ids, text)
           if (!target) return
@@ -397,7 +416,7 @@ function GenUIView({
           return target !== undefined && (await ctx.commands.execute('editor.addNote', target.end, trimmed)) === true
         },
       },
-    [sources, highlightedId, ctx, scroller, memory],
+    [sources, highlightedId, replacing, ctx, scroller, memory],
   )
 
   const openPanel = () => {
@@ -405,8 +424,15 @@ function GenUIView({
   }
 
   return (
-    <div className="genui-view" data-testid="genui-view" data-state={state.kind} ref={content}>
-      {running && state.kind !== 'view' ? <LoadingSkeleton /> : null}
+    <div
+      className="genui-view"
+      data-testid="genui-view"
+      data-state={state.kind}
+      aria-busy={awaitingFirstView || generatingWithoutView || undefined}
+      ref={content}
+    >
+      {awaitingFirstView ? <InitialLoading /> : null}
+      {generatingWithoutView ? <LoadingSkeleton /> : null}
 
       {!running && state.kind === 'none' ? (
         <div className="gen-empty genui-empty" data-testid="genui-empty">
@@ -434,7 +460,7 @@ function GenUIView({
 
       {state.kind === 'view' && actions ? (
         /* A new file is a new surface: remount rather than diff across surfaces. */
-        <ViewSurface key={state.revision} surface={state.surface} sources={actions} />
+        <ViewSurface key={state.revision} surface={state.surface} sources={actions} reading={memory.reading} />
       ) : null}
     </div>
   )
@@ -605,6 +631,13 @@ function GenUIPanel({
             settings={settings}
             onSetSettings={updateSettings}
           />
+        ) : state.kind === 'loading' ? (
+          <div className="gp-block" data-testid="genui-status-loading">
+            <div className="gp-status">
+              <b>Loading view</b>
+              <span>Reading the view file for this document.</span>
+            </div>
+          </div>
         ) : !hasView ? (
           <div className="gp-block" data-testid="genui-status-empty">
             <div className={`gp-status${state.kind === 'error' ? ' bad' : ''}`}>
@@ -676,8 +709,14 @@ function GenUIPanel({
                   data-component-id={item.id}
                   onClick={() => session.highlightComponent(item.id)}
                 >
-                  <span className="rdot" aria-hidden="true" />
-                  <span className="t">{item.title}</span>
+                  <span className={`rdot${item.status === 'missing' ? ' bad' : ''}`} aria-hidden="true" />
+                  <span className="t">
+                    <i
+                      className={`ph ${item.status === 'missing' ? 'ph-warning-circle' : 'ph-warning'}`}
+                      aria-hidden="true"
+                    />
+                    {item.title}
+                  </span>
                   <span className="s">{item.subtitle}</span>
                 </button>
               ))}

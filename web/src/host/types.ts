@@ -80,9 +80,11 @@ export interface ViewSnapshot {
 /** What plugins may do with the view file: follow it, and go back once. */
 export interface ViewFileSource {
   /**
-   * Follow the view file on disk: `fn` gets the file as it is once the watch
-   * runs, then every change, including the document moving to another path.
-   * Disposing stops the host's watch once no one else follows.
+   * Follow the view file on disk. `fn` gets the file as it is now (before
+   * directory watch setup), again after the watch is running, then every
+   * change, including the document moving. Disposing stops the host's watch
+   * once no one else follows. #21 may add `documentId` / `id` on this seam;
+   * keep this order and do not retarget through the active tab.
    */
   watchView(fn: (snap: ViewSnapshot) => void): Disposable
   /**

@@ -813,8 +813,7 @@ body {
   gap: 4px;
 }
 
-.mgo-note-actions button,
-.mgo-note-dialog button {
+.mgo-note-actions button {
   font: inherit;
   font-size: 12px;
   border: 1px solid var(--line-strong);
@@ -829,34 +828,74 @@ body {
   display: none;
 }
 
-.mgo-note-dialog {
-  width: min(480px, 90vw);
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
-  padding: 14px;
+/* ─── Unified In-place Paper Composer (Rich text notes, GenUI card notes, Focus) ─── */
+.composer {
+  display: block;
+  border-radius: 8px;
+  background: var(--paper);
+  box-shadow: var(--sheet-shadow);
+  padding: 8px 10px;
+  transition: box-shadow 120ms var(--ease-out);
 }
 
+.composer:focus-within {
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 0 0 3px var(--focus);
+}
+
+.mgo-note-composer {
+  margin: 10px 0;
+  font-family: var(--font-sans);
+}
+
+.composer textarea,
 .mgo-note-input {
   display: block;
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  padding: 8px;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  margin: 0;
+  background: none;
+  resize: none;
   font: inherit;
-  resize: vertical;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ink);
+  min-height: 40px;
+  max-height: 160px;
+  overflow-y: auto;
 }
 
-.mgo-note-dialog-actions {
+.composer textarea::placeholder,
+.mgo-note-input::placeholder {
+  color: var(--ink-3);
+}
+
+.composer textarea:focus-visible,
+.mgo-note-input:focus-visible {
+  outline: none;
+}
+
+.composer-foot,
+.composer-bar {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 10px;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
 }
 
-.mgo-note-dialog button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.composer-hint,
+.composer-bar .hint {
+  margin-right: auto;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-3);
 }
 
 .status-bar {

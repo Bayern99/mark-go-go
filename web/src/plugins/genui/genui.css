@@ -304,6 +304,7 @@
   outline: none;
 }
 
+.composer-foot,
 .composer-bar {
   display: flex;
   align-items: center;
@@ -314,11 +315,16 @@
   border-top: 1px solid var(--line);
 }
 
+.composer-hint,
 .composer-bar .hint {
   margin-right: auto;
   font-size: 12px;
   line-height: 16px;
   color: var(--ink-3);
+}
+
+.genui-block .mgo-note-composer {
+  margin: 8px 0 0;
 }
 
 /* ─── Pinned Footer ─── */

@@ -9,8 +9,8 @@
 | Editor Adapter | `web/src/editor/` | CrepeBuilder 装配；块级分段、锁定块、`compose`、源码偏移映射（`reveal` / `onSelectionChange`） |
 | Application Core | `web/src/core/` | `DocumentService`、`CommandRegistry`、`ViewRegistry`、`PluginRegistry`、`EditorAccess`（插件侧编辑器选择源） |
 | Markdown 标题/章节 | `web/src/markdown/headings.ts`、`sections.ts` | 共享标题提取：ATX + setext，排除代码块/HTML/frontmatter，去内联格式，带源偏移；章节范围与 `fnv1a32` 哈希 |
-| GenUI 插件 | `web/src/plugins/genui/` | 中央视图模式 `GenUI`：读取 v2 视图文件（格式见 `view-format.md`），经 A2UI 1.0 适配模块（`a2ui.tsx`）用组件目录渲染；按需加载 |
-| Outline 插件 | `web/src/plugins/outline/` | 左侧栏文档大纲：共享标题模块 + 光标所在章节高亮 + 点击跳转 |
+| GenUI 插件 | `web/src/plugins/genui/` | 中央视图模式 `GenUI`（读取 v2 视图文件，经 A2UI 1.0 适配模块 `a2ui.tsx` 用组件目录渲染只读卡片）与右侧栏管理面板 `genui.panel`（生成触发、进度、过期组件列表跳转、生成要求 `Focus` 与 `ModelMenu`）；按需加载 |
+| Outline 插件 | `web/src/plugins/outline/` | 右侧栏文档大纲（`location: 'right'`）：共享标题模块 + 光标所在章节高亮 + 点击跳转 |
 
 ## Go ↔ 页面 IPC（服务 `DocumentHost`）
 
@@ -66,8 +66,10 @@ type GenerateFailureKind = 'unsaved' | 'busy' | 'agent-not-found' | 'auth-requir
 
 ```ts
 interface AppPlugin { id: string; title: string; activate(ctx: PluginContext): void | Promise<void> }
-type ViewLocation = 'left' | 'center'
-interface ViewRegistration { id: string; title: string; location: ViewLocation; mount(el: HTMLElement): Disposable }
+type ViewLocation = 'left' | 'center' | 'right'
+type ViewStatusDot = { tone: 'warn' | 'danger'; label: string } | null
+interface ViewStatusSource { get(): ViewStatusDot; subscribe(fn: () => void): Disposable }
+interface ViewRegistration { id: string; title: string; location: ViewLocation; status?: ViewStatusSource; mount(el: HTMLElement): Disposable }
 interface PluginContext {
   documents: { snapshot(): { text: string; version: number; path: string }; onDidChange(fn): Disposable } // path '' = 未保存
   views:     { register(v: ViewRegistration): Disposable }
@@ -81,7 +83,7 @@ interface PluginContext {
 
 - `PluginRegistry.enable(id)` / `disable(id)`：注册表追踪所有经 ctx 产生的注册与订阅，`disable` 统一释放；`activate` 抛错时回滚。`ctx.editor.onSelectionChange` 同样被追踪，禁用插件即移除其选择监听。
 - `PluginRegistry(documents, views, commands, editor, viewFile)`：`editor` 是 `EditorSelectionSource`，App 用 `EditorAccess` 实现：注册表在编辑器创建前构造，编辑器就绪后 `attach(editor)`，之后才注册/启用插件；未 attach 时调用抛错（不会静默失效），App 卸载时 `detach()`。`viewFile` 是 host（`ViewFileSource & ViewGenerator`）；`ctx.viewFile.watch` 被追踪，禁用插件即停止跟随视图文件。`documents.path` 由 App 按 host 的 `DocState.path` 更新。
-- `ViewRegistration.location` 必填：`'left'` 进左侧栏（没有左侧视图时整栏不渲染）；`'center'` 成为一个视图模式，与 `Rich text` / `Markdown` 并列出现在头部的三选一切换里，只在被选中时挂载、离开时卸载。没有右侧栏。
+- `ViewRegistration.location` 必填：`'left'` 进左侧栏（`SidePane`）；`'center'` 成为一个视图模式，与 `Rich text` / `Markdown` 并列出现在头部的三选一切换里，只在被选中时挂载、离开时卸载；`'right'` 进右侧栏（`RightPane`，顶部 `Outline` / `GenUI` 分段切换，可带 `status` 圆点提示，窗口宽度 `< 1180px` 时收起为浮层）。
 - 编辑器提供的命令：`editor.reveal(offset: number)`（偏移越界时返回 `false`；当前是中央视图时先切回 Rich text 再跳转）、`editor.toggleSourceMode()`（在 Rich text 与 Markdown 之间切换，从中央视图出发则切到编辑器的另一模式；返回当前编辑器模式）。插件跳转一律 `ctx.commands.execute('editor.reveal', offset)`，不另设 reveal API。
 
 ## 视图模式（#9）
@@ -90,10 +92,10 @@ interface PluginContext {
 - 进入中央视图时编辑器只设 `hidden`、不销毁：ProseMirror / CodeMirror 状态、光标、撤销历史和未保存的修改保留；回到编辑器时恢复离开时的滚动位置。切换模式本身不调用 `host.update`。
 - 当前模式按文档路径记在页面 `localStorage`（`mgo.viewMode:<path>`），窗口重新打开时恢复；未保存的新文档不记。
 
-## 侧边栏与大纲插件（#4）
+## 侧边栏、右侧栏与大纲插件（#4，#16 三栏布局）
 
-- `web/src/components/SidePane.tsx`：渲染 `location: 'left'` 的注册（`aside.side-pane`，测试钩子 `left-pane`）；视图挂载/卸载沿用 `mount(el)` / `Disposable` 语义，由 `ViewHost.tsx` 的 `ViewHost` 完成（中央视图同用）。
-- Outline 插件（`createOutlinePlugin()`）注册视图 `outline.panel`（`location: 'left'`，标题 `Outline`），App 与 GenUI 一样注册、启用，并提供头部开关 `Outline: On/Off`。
+- `web/src/components/SidePane.tsx`：渲染 `location: 'left'` 的注册（`aside.side-pane`，测试钩子 `left-pane`）；`web/src/components/RightPane.tsx`：渲染 `location: 'right'` 的注册（`aside.right-pane`，测试钩子 `right-pane`，顶部分段标签 `right-tab-<id>`，支持 `rightPane.show(viewId)` 命令与 `< 1180px` 窄窗浮层开关 `right-pane-toggle`）。视图挂载/卸载沿用 `mount(el)` / `Disposable` 语义，由 `ViewHost.tsx` 的 `ViewHost` 完成（中央视图同用）。
+- Outline 插件（`createOutlinePlugin()`）注册视图 `outline.panel`（`location: 'right'`，标题 `Outline`），与 `genui.panel` 并列在右侧栏顶部分段标签中切换。
 - 条目来自 `extractHeadings(ctx.documents.snapshot().text)`，按 `level` 缩进；文档变更经 `OUTLINE_DEBOUNCE_MS`（300ms，导出自 `OutlinePanel.tsx`）防抖后重新解析。
 - 当前章节 = 最后一个 `offset ≤ 光标偏移` 的标题；光标在第一个标题之前时不高亮任何条目；光标偏移来自 `ctx.editor.onSelectionChange`（WYSIWYG 为顶层块起始偏移，源码为精确偏移），高亮条目标 `aria-current="true"`。
 - 点击条目执行 `editor.reveal(该条目自身 offset)`，所以同文标题各跳各的位置；两种模式行为一致。
@@ -152,13 +154,14 @@ interface PluginContext {
 - 宿主（`update.go`）：局部生成前先读当前视图（版本 2、有 surface、`replaceIds` 非空且都是视图里的组件），否则不启动 Agent，`agent-error`「The current view cannot be updated: …」。临时目录里放 `source.md` 和 `view.json`（当前视图原样）；权限策略允许读 `view.json`，只允许写 `out.json`。提示词列出要替换的 id 和 surface。`out.json` 的 `a2ui` 必须是**恰好一条** `updateComponents`（只有 `version` 与 `updateComponents` 两个键），是视图的 surface，组件 id 只能是要替换的或视图里没有的，不重复；`sources` 只能新增，或与视图里同名的完全一致。任何一条不符合 → `invalid-output`，视图和备份不变。通过后这条消息追加到 `a2ui` 末尾，所有来源按本次文本重算哈希，`generatedAt` / `model` / `request` 取本次。写入前再读一次视图文件，如果 Agent 工作期间被改过，不写入（`agent-error`）。
 - 备份：每次成功写入新视图（全部或局部）前，把当前视图原子写到 `.<name>.genui.prev.json`，权限与视图相同；写视图失败时把备份恢复原样。生成失败不动备份。撤回 = `rename(prev, view)`，只有一份。
 
-## 批注（#13）
+## 批注（#13，#19 原地 Composer）
 
 - 格式：一个单独的顶层 HTML 注释块 `<!-- note: 文字 -->`。`note` 后面可以有属性 `key="value"`，然后是 `:`、文字、`-->`。语法只在 `web/src/markdown/notes.ts` 里。同一行还有别的内容、不符合这个语法的注释、代码块或列表里的注释都不是批注。本阶段只写文字，不写属性。
 - 转义：文字里的 `-->` 写成 `--\>`，`--!>` 写成 `--\!>`（浏览器也把它当注释结束）；已经带反斜杠的再加一个，读回时去掉一个，所以任何文字都读回不变。文字可以多行，读写时去掉首尾空白。
 - 编辑器：批注是锁定块（`kind: 'note'`），按原字节写回。只有改过的批注才重新序列化，只改文字部分，冒号之前（包括不认识的属性）原样保留，并沿用这一块原来的间隔。
-- Rich text：块菜单（`+` 或 `/`）里的 `Add note` 把批注放在打开菜单的那一块后面；批注上有 `Edit`、`Delete`，都是普通事务，可以撤销。只读文档不能操作。Markdown 模式显示原始文本。
-- GenUI：组件的 `Note` 按钮通过命令 `editor.addNote(offset, text)` 把批注加到第一个来源那一节的末尾，停留在 GenUI。宿主编辑器处在 Rich text 或 Markdown 都写出相同的字节。组件旁显示它所有来源节里的批注。只读文档会提示无法添加。
+- 原地白纸输入块（`.composer.mgo-note-composer`，无 `<dialog>` 模态弹窗）：
+  - Rich text：块菜单（`+` 或 `/`）里的 `Add note` 或已有批注上的 `Edit` 按钮通过 `noteDialog.ts` 的 `askForNote` 在目标顶层块紧下方原地展开 `<div class="composer mgo-note-composer" role="region" aria-label="Note composer">`（含随内容增高的 `<textarea aria-label="Note">`、底部 `.composer-foot` 提示 `⌘↩ to save · Esc to cancel`、`Cancel` 与 `Save` 按钮）；保存或 `Delete` 都是普通事务，可以撤销。只读文档不能操作。Markdown 模式显示原始文本。
+  - GenUI：组件底座 `SourceFrame.tsx` 的 `Note` 按钮在卡片底座下方原地展开 React `.composer.mgo-note-composer`；`⌘↩` / `Ctrl+↩` 或点击 `Save` 时通过命令 `editor.addNote(offset, text)` 把批注加到第一个来源那一节的末尾，停留在 GenUI 且不使任何组件变为 `Source changed`；`Escape` 或 `Cancel` 关闭输入块不写入。宿主编辑器处在 Rich text 或 Markdown 都写出相同的字节。组件旁显示它所有来源节里的批注。只读文档会提示无法添加。
 - `editor.addNote(offset, text)`：放在 `offset` 之前开始的最后一个顶层块之后，新批注前面是 `\n\n`。
 - 字节保留：插入或删除一块后，后面的块保留自己的间隔（间隔不含空行且换了位置时才用 `\n\n`，否则可能和新的前一块合并）。文件末尾的字节在增删批注时不变。
 - 哈希：章节哈希去掉每条批注，以及它和前一块之间的空白，所以结果和加批注之前的文本一样。Go 没有 Markdown 解析器，页面在 `GenerateRequest.sections[].exclude`（UTF-16 范围，按顺序）里告诉它哪些范围要去掉；范围越界时这个来源不写哈希。代码块里的 `<!-- note -->` 不会被去掉。共享向量 `section-vectors.json` 的 `notes` 部分在 TS 和 Go 两边验证。

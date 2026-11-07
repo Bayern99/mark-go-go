@@ -82,23 +82,41 @@ function statuses(container: HTMLElement): string[] {
   return Array.from(container.querySelectorAll('.genui-source-status')).map((status) => status.textContent ?? '')
 }
 
-async function addNote(container: HTMLElement, title: string, text: string): Promise<void> {
+async function addNote(
+  container: HTMLElement,
+  title: string,
+  text: string,
+  commit: 'click' | 'shortcut' = 'click',
+): Promise<void> {
+  const card = blockOf(container, title)
   const button = await vi.waitFor(() => {
-    const found = blockOf(container, title).querySelector<HTMLButtonElement>('.genui-source-note')
+    const found = card.querySelector<HTMLButtonElement>('.genui-source-note')
     if (!found) throw new Error('no Note button')
     return found
   })
   await userEvent.click(button)
-  const dialog = await vi.waitFor(() => {
-    const found = document.querySelector<HTMLDialogElement>('dialog.mgo-note-dialog')
-    if (!found) throw new Error('no note dialog')
+  const composer = await vi.waitFor(() => {
+    expect(document.querySelector('dialog')).toBeNull()
+    const found = card.querySelector<HTMLElement>(
+      '.composer.mgo-note-composer[role="region"][aria-label="Note composer"]',
+    )
+    if (!found) throw new Error('no inline note composer on card')
     return found
   })
-  const input = dialog.querySelector('textarea')
-  const save = dialog.querySelector<HTMLButtonElement>('button[type="submit"]')
-  if (!input || !save) throw new Error('incomplete note dialog')
+  const input = composer.querySelector<HTMLTextAreaElement>('textarea[aria-label="Note"]')
+  const save = Array.from(composer.querySelectorAll<HTMLButtonElement>('.composer-foot button')).find(
+    (b) => b.textContent === 'Save',
+  )
+  const hint = composer.querySelector('.composer-foot .composer-hint')
+  if (!input || !save || !hint) throw new Error('incomplete inline note composer')
+  expect(hint.textContent).toContain('⌘↩ to save · Esc to cancel')
   await userEvent.fill(input, text)
-  await userEvent.click(save)
+  if (commit === 'shortcut') {
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true, cancelable: true }))
+  } else {
+    await userEvent.click(save)
+  }
+  await vi.waitFor(() => expect(card.querySelector('.mgo-note-composer')).toBeNull())
 }
 
 const waitLong = { timeout: SOURCE_DEBOUNCE_MS + 3000 }
@@ -165,12 +183,47 @@ Third body.`
       if (!app?.container.querySelector('.genui-keypoints')) throw new Error('no view yet')
     })
 
-    await addNote(app.container, 'metrics', 'Check this number')
+    await addNote(app.container, 'metrics', 'Check this number', 'shortcut')
     await vi.waitFor(() => expect(update).toHaveBeenLastCalledWith(WITH_NOTE), waitLong)
     expect(statuses(app.container)).toEqual([])
 
     await page.getByTestId('view-mode-markdown').click()
     await vi.waitFor(() => expect(visibleSource(app?.container as HTMLElement)).toContain('<!-- note: Check this number -->'))
+  })
+
+  it('closes the in-place card composer without writing when Escape or Cancel is used', async () => {
+    const host = createBrowserHost(DOCUMENT, 'report.md', { view: viewOf(DOCUMENT) })
+    const update = vi.spyOn(host, 'update')
+    const { container } = await open(host)
+    const card = blockOf(container, 'metrics')
+    const button = card.querySelector<HTMLButtonElement>('.genui-source-note')
+    if (!button) throw new Error('no Note button')
+
+    await userEvent.click(button)
+    const composer = await vi.waitFor(() => {
+      const found = card.querySelector<HTMLElement>('.composer.mgo-note-composer')
+      if (!found) throw new Error('no inline note composer')
+      return found
+    })
+    const input = composer.querySelector<HTMLTextAreaElement>('textarea[aria-label="Note"]')
+    if (!input) throw new Error('no Note textarea')
+    await userEvent.fill(input, 'Draft to discard\nSecond line\nThird line')
+    expect(Number.parseFloat(input.style.height)).toBeGreaterThanOrEqual(40)
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await vi.waitFor(() => expect(card.querySelector('.mgo-note-composer')).toBeNull())
+
+    await userEvent.click(button)
+    const secondComposer = await vi.waitFor(() => {
+      const found = card.querySelector<HTMLElement>('.composer.mgo-note-composer')
+      if (!found) throw new Error('no inline note composer')
+      return found
+    })
+    const cancelBtn = Array.from(secondComposer.querySelectorAll('button')).find((b) => b.textContent === 'Cancel')
+    if (!cancelBtn) throw new Error('no Cancel button')
+    await userEvent.click(cancelBtn)
+    await vi.waitFor(() => expect(card.querySelector('.mgo-note-composer')).toBeNull())
+    expect(update).not.toHaveBeenCalled()
+    expect(notesOf(card)).toEqual([])
   })
 
   it('shows notes already in the source sections, and changing them changes no status', async () => {

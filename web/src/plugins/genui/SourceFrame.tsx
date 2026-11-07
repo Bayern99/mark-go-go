@@ -1,4 +1,13 @@
-import { createContext, useContext, useState, useSyncExternalStore, type ReactNode } from 'react'
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react'
+import { autoGrowNoteTextarea } from '../../editor/noteDialog'
 import type { SourceStatus, SourceStore } from './sources'
 
 export interface SourceActions {
@@ -11,10 +20,10 @@ export interface SourceActions {
    */
   edit(ids: readonly string[], text?: string): void
   /**
-   * Ask for a note and add it to the end of the component's first source
-   * section. False when it could not be added; true also when cancelled.
+   * Add `text` as a note to the end of the component's first source section.
+   * False when it could not be added.
    */
-  addNote(ids: readonly string[]): Promise<boolean>
+  addNote(ids: readonly string[], text: string): Promise<boolean>
 }
 
 export const SourceContext = createContext<SourceActions | null>(null)
@@ -40,7 +49,7 @@ export interface ComponentSource {
   /** Opens the source in the editor; absent when there is nowhere to go. */
   edit: ((text?: string) => void) | undefined
   /** Adds a note to the source; absent when there is nowhere to put it. */
-  addNote: (() => Promise<boolean>) | undefined
+  addNote: ((text: string) => Promise<boolean>) | undefined
 }
 
 /**
@@ -64,7 +73,7 @@ export function useComponentSource(sources: readonly string[] | undefined): Comp
     headings: actions.store.headings(ids),
     notes: actions.store.notes(ids),
     edit: status === 'missing' ? undefined : (text) => actions.edit(ids, text),
-    addNote: status === 'missing' ? undefined : () => actions.addNote(ids),
+    addNote: status === 'missing' ? undefined : (text) => actions.addNote(ids, text),
   }
 }
 
@@ -91,7 +100,33 @@ export function SourceFrame({
   const actions = useContext(SourceContext)
   const highlighted = Boolean(componentId && actions?.highlightedId === componentId)
   const label = STATUS_LABEL[source.status]
+  const [composingNote, setComposingNote] = useState(false)
+  const [noteDraft, setNoteDraft] = useState('')
   const [noteFailed, setNoteFailed] = useState(false)
+  const noteInputRef = useRef<HTMLTextAreaElement | null>(null)
+
+  useEffect(() => {
+    if (!composingNote || !noteInputRef.current) return
+    const input = noteInputRef.current
+    autoGrowNoteTextarea(input)
+    input.focus()
+    input.setSelectionRange(input.value.length, input.value.length)
+  }, [composingNote])
+
+  const cancelCompose = () => {
+    setComposingNote(false)
+    setNoteDraft('')
+  }
+
+  const saveCompose = async () => {
+    const trimmed = noteDraft.trim()
+    if (trimmed === '' || !source.addNote) return
+    setComposingNote(false)
+    setNoteDraft('')
+    const added = await source.addNote(trimmed)
+    setNoteFailed(!added)
+  }
+
   return (
     <article
       className={`genui-block ${className}${highlighted ? ' is-highlighted' : ''}`}
@@ -137,12 +172,55 @@ export function SourceFrame({
             className="genui-source-note"
             disabled={!source.addNote}
             onClick={() => {
-              void source.addNote?.().then((added) => setNoteFailed(!added))
+              setNoteFailed(false)
+              setNoteDraft('')
+              setComposingNote(true)
             }}
           >
             Note
           </button>
         </footer>
+      ) : null}
+      {composingNote ? (
+        <div className="composer mgo-note-composer" role="region" aria-label="Note composer">
+          <textarea
+            ref={noteInputRef}
+            className="mgo-note-input"
+            rows={2}
+            aria-label="Note"
+            value={noteDraft}
+            placeholder="Write a note. It is saved in the document, out of sight in other Markdown viewers."
+            onChange={(event) => {
+              setNoteDraft(event.target.value)
+              autoGrowNoteTextarea(event.currentTarget)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                event.stopPropagation()
+                cancelCompose()
+              } else if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                event.preventDefault()
+                event.stopPropagation()
+                void saveCompose()
+              }
+            }}
+          />
+          <div className="composer-foot composer-bar">
+            <span className="composer-hint hint meta">⌘↩ to save · Esc to cancel</span>
+            <button type="button" className="pill xs quiet" onClick={cancelCompose}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="pill xs primary"
+              disabled={noteDraft.trim() === ''}
+              onClick={() => void saveCompose()}
+            >
+              Save
+            </button>
+          </div>
+        </div>
       ) : null}
     </article>
   )

@@ -178,38 +178,38 @@
 
 ## 附：Mark Go Go 当前代码与 ADR 0004 / 设计稿对照基准（仅描述真实状态）
 
-> 说明：以下区分**当前代码已实现能力**与 **ADR 0004 / 设计稿待落地缺口**，落地完成前不得将“待落地项”当作已实现接口或现成组件引用。
+> 说明：以下记录 #16、#17、#18、#19 全部落地后的**当前代码真实已实现状态**，供后续界面任务直接核对与复用。
 
-### 1. 基础值与语义 Token
+### 1. 基础值与语义 Token（已实现于 `web/src/styles.css` 与 `web/src/plugins/genui/genui.css`）
 
-- **当前已实现（旧暖米色体系，待升级）**：
-  - 全局变量定义于 `web/src/styles.css`（`#L1-L26`）：`--mgo-bg`、`--mgo-bg-elevated`、`--mgo-panel`、`--mgo-border`、`--mgo-text`、`--mgo-muted`、`--mgo-accent` 等。
-  - GenUI 局部变量定义于 `web/src/plugins/genui/genui.css`（`#L1-L32`）：`--genui-text`、`--genui-muted`、`--genui-border`、`--genui-surface`、`--genui-card`、`--genui-accent`、`--genui-stale-fg`、`--genui-missing-fg`。
-- **设计板定义的目标 Token（位于 `docs/design/Mark Go Go 界面设计.html` 画板 3 `3-language.html`，尚未写入 `web/src/styles.css`）**：
+- **Portrait 冷灰工作台 + 暖白纸张语义 Token（含 Dark 模式与 `--mgo-*` / `--genui-*` 映射）**：
   - 字体：`--font-sans`（IBM Plex Sans / SC）、`--font-display`（MGG Condensed / Barlow Semi Condensed）、`--font-mono`（IBM Plex Mono）。
-  - 表面与墨色（含 Dark 模式）：`--chrome`、`--paper`、`--raised`、`--code`、`--ink`、`--ink-2`、`--ink-3`、`--ink-4`、`--accent`、`--warn`、`--danger`、`--fill`、`--fill-hover`、`--fill-strong`、`--line`、`--line-strong`。
+  - 表面与墨色：`--chrome`、`--paper`、`--raised`、`--code`、`--ink`、`--ink-2`、`--ink-3`、`--ink-4`、`--accent`、`--warn`、`--danger`、`--fill`、`--fill-hover`、`--fill-strong`、`--line`、`--line-strong`、`--focus`。
   - 触觉阴影：`--raised-shadow`、`--row-shadow`、`--sunken-shadow`、`--sheet-shadow`、`--pop-shadow`。
   - 网格与尺寸：左右栏内边距 `8px`、图文对齐线 `16px`、树/大纲缩进 `16px/级`、顶栏 `46px`、次级栏 `44px`、窄窗右栏收起断点 `1180px`。
 
-### 2. 组件与区块现状（好例、反例与缺口）
+### 2. 组件与区块现状（已落地好例，可直接复用）
 
-- **真实代码中已实现的好例（可直接复用）**：
-  - **插件与视图宿主机制**：`web/src/core/ViewRegistry.ts`（`#L1-L43`）、`web/src/components/ViewHost.tsx`（`#L1-L38`）。
-  - **A2UI 1.0 基础与高级只读组件目录**：`web/src/plugins/genui/a2ui.tsx`（`#L1-L211`，`Column`/`Row`/`Tabs`/`Card`/`Text`）与 `web/src/plugins/genui/components.tsx`（`#L1-L349`，`KeyPoints`/`MetricGrid`/`ComparisonTable`/`Timeline`/`Checklist`）。
-  - **来源引用底座区块**：`web/src/plugins/genui/SourceFrame.tsx`（`#L15-L67`）与 `web/src/plugins/genui/sources.ts`（`#L1-L101`，`SourceStore` 状态计算）。
-  - **生成状态机**：`web/src/plugins/genui/generation.ts`（`#L1-L113`，`GenerationController` 维护生成进度、取消、局部重生成与单步 `Undo`）。
-- **真实代码中待改造的反例（违反 ADR 0004）**：
-  - `web/src/plugins/genui/GenUIView.tsx`（`#L234-L393`）：将 `<GeneratePanel>` 嵌在中央 GenUI 阅读视图顶部。
-  - `web/src/plugins/genui/GenUIView.tsx`（`#L475-L483`）：在折叠 `<SettingsForm>` 中用自由文本 `<input>` 输入 `Model` 并常驻 `Agent command` 输入框。
-  - `web/src/editor/noteDialog.ts`（`#L5-L47`）：`askForNote` 使用居中模态 `<dialog class="mgo-note-dialog">` 输入批注。
-  - `web/src/plugins/outline/index.tsx`（`#L18-L22`）：`outline.panel` 仍注册在 `location: 'left'`，顶栏 `web/src/App.tsx`（`#L375-L384`）仍保留 `Outline: On/Off` 开关。
-- **当前代码尚无现成实现、需按设计板 `4-components.html` 新建的组件/区块**：
-  - 右栏宿主容器（`ViewLocation` 扩展 `'right'`，顶部切换 `Outline` / `GenUI`，`< 1180px` 自动收起为浮层）；
-  - 右栏 `GenUI` 管理面板区块（顶部状态与唯一主按钮、中部生成要求 Focus、底部固定区）；
-  - `ModelMenu` 向上弹出菜单组件（`.sel-btn` 触发钮 + `.mmenu.pop` 弹层，`document` 级 `Escape` 与外部点击关闭）；
-  - 原地 `Composer` 输入组件（供正文批注、GenUI 卡片批注与右栏 Focus 共用）。
+- **三栏布局与视图宿主机制**：
+  - `web/src/core/types.ts`（`ViewLocation = 'left' | 'center' | 'right'`、`ViewStatusDot` / `ViewStatusSource`）、`web/src/core/ViewRegistry.ts`、`web/src/components/ViewHost.tsx`；
+  - `web/src/components/SidePane.tsx`（左栏工作区容器）与 `web/src/components/RightPane.tsx`（右栏当前文档面板容器，顶部 `Outline` / `GenUI` 分段切换、状态圆点 `.rdot`、`< 1180px` 自动收起为浮层并配遮罩与顶栏开关按钮）；
+  - `web/src/plugins/outline/index.tsx`（`outline.panel` 注册于 `location: 'right'`）。
+- **A2UI 1.0 基础与高级只读组件目录**：
+  - `web/src/plugins/genui/a2ui.tsx`（`Column`/`Row`/`Tabs`/`Card`/`Text`）与 `web/src/plugins/genui/components.tsx`（`KeyPoints`/`MetricGrid`/`ComparisonTable`/`Timeline`/`Checklist`）。
+- **中央只读 GenUI 视图与右栏 GenUI 管理面板**：
+  - `web/src/plugins/genui/index.ts` 与 `web/src/plugins/genui/GenUIView.tsx`：插件按需注册中央视图 `genui`（`location: 'center'`，纯只读 A2UI 组件卡片，无生成表单或横幅；空状态/错误时提供按钮经 `rightPane.show('genui.panel')` 打开右栏）与右栏面板 `genui.panel`（`location: 'right'`，含顶部五态状态卡与唯一主按钮、`.stale-list` 点击联动中央 `[data-component-id]` 卡片滚动定位与高亮、中部 `Focus` 生成要求展示与编辑、底部固定区 `Agent: Antigravity (agy)` / `ModelMenu` / `Generated <generatedAt>` / `Undo`）。
+- **来源引用底座区块**：
+  - `web/src/plugins/genui/SourceFrame.tsx` 与 `web/src/plugins/genui/sources.ts`（`SourceStore` 状态计算，卡片底部 `From`、`Source changed` / `Source not found`、`Edit in source`、`Note`）。
+- **统一原地白纸输入块（`.composer`）**：
+  - `web/src/editor/noteDialog.ts` 与 `web/src/editor/createEditor.ts`：Rich text 添加/编辑批注在目标块下方原地展开 `<div class="composer mgo-note-composer" role="region" aria-label="Note composer">`（不再使用 `<dialog>`）；
+  - `web/src/plugins/genui/SourceFrame.tsx`：GenUI 卡片点击 `Note` 在卡片底座下方原地展开 `.composer.mgo-note-composer`；
+  - `web/src/plugins/genui/GenUIView.tsx`：右栏点击 `Edit` 原地展开 `Focus` `.composer`；
+  - 三处均采用单张白纸样式（`background: var(--paper)`、`border-radius: 8px`、`box-shadow: var(--sheet-shadow)`、聚焦环）、随内容自动增高的 `<textarea>`、`⌘↩` / `Ctrl+↩` 或 `Save` 保存、`Escape` 或 `Cancel` 取消。
+- **ModelMenu 向上弹出菜单组件**：
+  - `web/src/plugins/genui/ModelMenu.tsx`：26px 凸起触发钮（`.sel-btn`）+ 向上弹出的白纸菜单（`.mmenu.pop`），展示 `Agent’s choice` 与缓存的 `models` 列表及当前选中勾号（`.chk`），支持点击外部或按 `Escape`（`document` 级监听）关闭，生成中禁用。
+- **生成状态机**：
+  - `web/src/plugins/genui/generation.ts`（`GenerationController` 维护生成进度、取消、局部重生成与单步 `Undo`）。
 
-### 3. 数据来源与接口缺口（文档 vs 实现）
+### 3. 数据来源与接口现状（Go ↔ Web `HostAdapter`）
 
-- **缺口说明**：`docs/adr/0004-three-column-layout-and-genui-panel.md` 要求 `ModelMenu` 展示 ACP `session/new` 返回的 `configOptions` 模型列表加 `Agent’s choice`。但当前 Go 端 `generate.go`（`#L283-L312`、`#L620-L649`）仅在执行生成的临时子进程中调用 `session/new`，而 `settings.go`（`#L47-L74`）的 `GetSettings` 与前端 `web/src/host/types.ts`（`#L110-L113`）的 `GenerationSettings` 仅返回 `{ model, agentCommand }`（模型列表仅在 `model-invalid` 失败时通过 `GenerateFailure.models` 带回）。
-- **已确认实施方案**：扩展 Go `Settings` / `Host`，缓存每次 ACP `session/new` 握手拿到的 `models` 列表（未握手前支持探测或默认回退列表），随 `getSettings` 一并返回给前端 `ModelMenu`。
+- Go 端 `settings.go` 与 `generate.go` 在 `Settings`（及前端 `web/src/host/types.ts` 的 `GenerationSettings`）中包含 `models?: string[]`（默认 `['gemini-3.8-flash', 'gemini-4-argon', 'claude-opus-5-5']`），每次 ACP `session/new` 握手成功后自动提取 `configOptions` 中的模型列表并持久化到 `settings.json`，随 `getSettings` 一并返回给前端 `ModelMenu`。

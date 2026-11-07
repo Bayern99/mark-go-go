@@ -19,22 +19,37 @@ function noteText(element: HTMLElement): string {
   return element.querySelector('.mgo-note-text')?.textContent ?? ''
 }
 
-async function openDialog(): Promise<HTMLDialogElement> {
+async function openComposer(mounted: MountedEditor): Promise<HTMLElement> {
   return vi.waitFor(() => {
-    const dialog = document.querySelector<HTMLDialogElement>('dialog.mgo-note-dialog')
-    if (!dialog) throw new Error('no note dialog')
-    return dialog
+    expect(document.querySelector('dialog')).toBeNull()
+    const composer = mounted.root.querySelector<HTMLElement>(
+      '.ProseMirror .composer.mgo-note-composer[role="region"][aria-label="Note composer"]',
+    )
+    if (!composer) throw new Error('no inline note composer')
+    return composer
   })
 }
 
-async function answerDialog(text: string): Promise<void> {
-  const dialog = await openDialog()
-  const input = dialog.querySelector('textarea')
-  const save = dialog.querySelector<HTMLButtonElement>('button[type="submit"]')
-  if (!input || !save) throw new Error('incomplete note dialog')
+async function answerComposer(
+  mounted: MountedEditor,
+  text: string,
+  commit: 'click' | 'shortcut' = 'click',
+): Promise<void> {
+  const composer = await openComposer(mounted)
+  const input = composer.querySelector<HTMLTextAreaElement>('textarea[aria-label="Note"]')
+  const save = Array.from(composer.querySelectorAll<HTMLButtonElement>('.composer-foot button')).find(
+    (b) => b.textContent === 'Save',
+  )
+  const hint = composer.querySelector('.composer-foot .composer-hint')
+  if (!input || !save || !hint) throw new Error('incomplete inline note composer')
+  expect(hint.textContent).toContain('⌘↩ to save · Esc to cancel')
   await userEvent.fill(input, text)
-  await userEvent.click(save)
-  await vi.waitFor(() => expect(document.querySelector('dialog.mgo-note-dialog')).toBeNull())
+  if (commit === 'shortcut') {
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true, cancelable: true }))
+  } else {
+    await userEvent.click(save)
+  }
+  await vi.waitFor(() => expect(mounted.root.querySelector('.mgo-note-composer')).toBeNull())
 }
 
 async function clickNoteAction(mounted: MountedEditor, index: number, action: 'edit' | 'delete'): Promise<void> {
@@ -96,15 +111,17 @@ describe('notes in rich text', () => {
     }
   })
 
-  it('edits one note: only its text changes, and undo restores every byte', async () => {
+  it('edits one note in-place: only its text changes, and undo restores every byte', async () => {
     const source =
       '# T\r\n\r\nOne.\n\n\n<!-- note author="jerry" id="7":   old   -->\n\n\n\nTwo.\r\n\r\n<!-- note: keep  -->\n'
     const mounted = await mountEditor(source)
     try {
       await clickNoteAction(mounted, 0, 'edit')
-      const dialog = await openDialog()
-      expect(dialog.querySelector('textarea')?.value).toBe('old')
-      await answerDialog('new --> text')
+      const composer = await openComposer(mounted)
+      // Anchored directly after the first note element inside the editor DOM.
+      expect(noteElements(mounted)[0]?.nextElementSibling).toBe(composer)
+      expect(composer.querySelector<HTMLTextAreaElement>('textarea[aria-label="Note"]')?.value).toBe('old')
+      await answerComposer(mounted, 'new --> text', 'shortcut')
 
       const edited =
         '# T\r\n\r\nOne.\n\n\n<!-- note author="jerry" id="7": new --\\> text -->\n\n\n\nTwo.\r\n\r\n<!-- note: keep  -->\n'
@@ -136,7 +153,7 @@ describe('notes in rich text', () => {
     }
   })
 
-  it('adds a note from the block menu, right after the block it was opened for', async () => {
+  it('adds a note from the block menu via in-place composer, right after the block it was opened for', async () => {
     const mounted = await mountEditor('One.\n\nTwo.\n')
     try {
       const first = mounted.root.querySelector('.ProseMirror p')
@@ -151,7 +168,7 @@ describe('notes in rich text', () => {
         return found
       })
       await userEvent.click(item)
-      await answerDialog('From the menu')
+      await answerComposer(mounted, 'From the menu', 'click')
 
       expect(mounted.editor.getMarkdown()).toBe('One.\n\n<!-- note: From the menu -->\n\nTwo.\n')
       expect(noteElements(mounted).map(noteText)).toEqual(['From the menu'])
@@ -160,7 +177,7 @@ describe('notes in rich text', () => {
     }
   })
 
-  it('leaves nothing behind when adding from the block menu is cancelled', async () => {
+  it('leaves nothing behind when adding from the block menu is cancelled by Escape or Cancel button', async () => {
     const mounted = await mountEditor('One.\n\nTwo.\n')
     try {
       const first = mounted.root.querySelector('.ProseMirror p')
@@ -175,13 +192,24 @@ describe('notes in rich text', () => {
         return found
       })
       await userEvent.click(item)
-      const dialog = await openDialog()
-      const cancel = Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent === 'Cancel')
-      if (!cancel) throw new Error('no Cancel')
-      await userEvent.click(cancel)
-      await vi.waitFor(() => expect(document.querySelector('dialog.mgo-note-dialog')).toBeNull())
-
+      const composer = await openComposer(mounted)
+      const input = composer.querySelector<HTMLTextAreaElement>('textarea[aria-label="Note"]')
+      if (!input) throw new Error('no Note textarea')
+      await userEvent.fill(input, 'Line 1\nLine 2\nLine 3\nLine 4')
+      expect(Number.parseFloat(input.style.height)).toBeGreaterThanOrEqual(40)
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      await vi.waitFor(() => expect(mounted.root.querySelector('.mgo-note-composer')).toBeNull())
       await vi.waitFor(() => expect(mounted.editor.getMarkdown()).toBe('One.\n\nTwo.\n'))
+
+      // Also verify cancelling via the Cancel button on an existing note edit
+      mounted.editor.setMarkdown('One.\n\n<!-- note: keep -->\n')
+      await clickNoteAction(mounted, 0, 'edit')
+      const editComposer = await openComposer(mounted)
+      const cancelBtn = Array.from(editComposer.querySelectorAll('button')).find((b) => b.textContent === 'Cancel')
+      if (!cancelBtn) throw new Error('no Cancel button')
+      await userEvent.click(cancelBtn)
+      await vi.waitFor(() => expect(mounted.root.querySelector('.mgo-note-composer')).toBeNull())
+      expect(mounted.editor.getMarkdown()).toBe('One.\n\n<!-- note: keep -->\n')
     } finally {
       await mounted.cleanup()
     }

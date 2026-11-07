@@ -2,18 +2,18 @@ import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { vi } from 'vitest'
 import { App } from '../../src/App'
-import { createBrowserHost } from '../../src/host/browserHost'
+import { createBrowserHost, type BrowserHost } from '../../src/host/browserHost'
 import type { HostAdapter } from '../../src/host/types'
 
 export interface MountedApp {
-  host: HostAdapter
+  host: HostAdapter & Partial<BrowserHost>
   container: HTMLDivElement
   unmount(): Promise<void>
 }
 
 export async function mountApp(
   text: string,
-  host: HostAdapter = createBrowserHost(text),
+  host: HostAdapter & Partial<BrowserHost> = createBrowserHost(text),
 ): Promise<MountedApp> {
   const container = document.createElement('div')
   container.style.height = '100%'

@@ -15,8 +15,25 @@ import type {
   WorkspaceAdapter,
   WorkspaceSnapshot,
 } from "./types";
-import { WorkspaceHost, events, type GenerateProgress as WireProgress } from "./generated/mygo";
+import {
+  WorkspaceHost,
+  events,
+  type GenerateProgress as WireProgress,
+  type NativeCommand as WireNativeCommand,
+  type WorkspaceSnapshot as WireWorkspaceSnapshot,
+} from "./generated/mygo";
 import { cancelled, failureOf, GenerationError, isFailureKind } from "./generationError";
+
+function asWorkspaceSnapshot(snap: WireWorkspaceSnapshot): WorkspaceSnapshot {
+  return {
+    ...snap,
+    kind: snap.kind === "untitled" ? "untitled" : "folder",
+  };
+}
+
+function asNativeCommand(cmd: WireNativeCommand): NativeCommand {
+  return { id: cmd.id, command: cmd.command as NativeCommandName };
+}
 
 const PHASES: Record<GeneratePhase, true> = {
   starting: true,
@@ -189,10 +206,10 @@ export function createMyGoHost(): WorkspaceAdapter {
 
   const workspace: WorkspaceAdapter = {
     snapshot(): Promise<WorkspaceSnapshot> {
-      return WorkspaceHost.snapshot();
+      return WorkspaceHost.snapshot().then(asWorkspaceSnapshot);
     },
     subscribe(fn: (snap: WorkspaceSnapshot) => void): Disposable {
-      return disposable(events.workspaceChanged.on(fn));
+      return disposable(events.workspaceChanged.on((snap) => fn(asWorkspaceSnapshot(snap))));
     },
     open(path: string): Promise<DocumentInfo> {
       return WorkspaceHost.open(path);
@@ -231,8 +248,8 @@ export function createMyGoHost(): WorkspaceAdapter {
     },
   };
 
-  events.nativeCommand.on((cmd: NativeCommand) => {
-    void handleNative(workspace, adapters, cmd);
+  events.nativeCommand.on((cmd: WireNativeCommand) => {
+    void handleNative(workspace, adapters, asNativeCommand(cmd));
   });
   events.workspaceChanged.on((snap) => {
     const live = new Set(snap.documents.map((d) => d.id));

@@ -52,14 +52,16 @@ function keyPoints(count: number): Component[] {
 
 function scripted() {
   let progress: ((step: GenerateProgress) => void) | undefined
-  let settle: PromiseWithResolvers<string> | undefined
+  let resolveText: ((text: string) => void) | undefined
+  let rejectRun: ((error: Error) => void) | undefined
   let aborted: AbortSignal | undefined
   const generator: FakeGenerator = (_req, onProgress, signal) => {
     progress = onProgress
     aborted = signal
-    const next = Promise.withResolvers<string>()
-    settle = next
-    return next.promise
+    return new Promise<string>((resolve, reject) => {
+      resolveText = resolve
+      rejectRun = reject
+    })
   }
   return {
     generator,
@@ -67,10 +69,10 @@ function scripted() {
       progress?.(step)
     },
     finish(text: string) {
-      settle?.resolve(text)
+      resolveText?.(text)
     },
     fail(failure: GenerateFailure | Error) {
-      settle?.reject(failure instanceof Error ? failure : new GenerationError(failure))
+      rejectRun?.(failure instanceof Error ? failure : new GenerationError(failure))
     },
     get signal() {
       return aborted
@@ -85,12 +87,12 @@ afterEach(async () => {
   app = undefined
 })
 
-async function showGenUI(host: BrowserHost): Promise<MountedApp> {
+async function showGenUI(host: BrowserHost): Promise<{ host: BrowserHost; container: HTMLDivElement; unmount(): Promise<void> }> {
   const mounted = await mountApp(DOCUMENT, host)
   app = mounted
   await page.getByTestId('view-mode-genui').click()
   await vi.waitFor(() => expect(page.getByTestId('genui-view').query()).not.toBeNull())
-  return mounted
+  return { ...mounted, host }
 }
 
 function genui() {

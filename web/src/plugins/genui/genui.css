@@ -920,6 +920,10 @@
   cursor: not-allowed;
 }
 
+.genui-source-unavailable {
+  flex: 1 0 100%;
+}
+
 .genui-notes {
   list-style: none;
   margin: 10px 0 0;

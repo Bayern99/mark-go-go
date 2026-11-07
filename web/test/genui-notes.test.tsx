@@ -279,4 +279,103 @@ Third body.`
     expect(metrics?.exclude).toEqual([{ start: gapAt, end: noteEnd }])
     expect(host.generations[0]?.sections.find((section) => section.heading === 'Overview')?.exclude).toBeUndefined()
   })
+
+  it('writes the note on the remaining source when the first heading is gone', async () => {
+    const view = JSON.stringify({
+      version: 2,
+      sources: {
+        overview: { heading: 'Overview', occurrence: 1 },
+        metrics: { heading: 'Metrics', occurrence: 1 },
+      },
+      a2ui: [
+        {
+          version: '1.0',
+          createSurface: {
+            surfaceId: 'view',
+            catalogId: 'markgogo.dev:genui/v1',
+            components: [
+              { id: 'root', component: 'KeyPoints', title: 'both', items: ['Together.'], sources: ['overview', 'metrics'] },
+            ],
+          },
+        },
+      ],
+    })
+    const host = createBrowserHost(DOCUMENT, 'report.md', { view })
+    const update = vi.spyOn(host, 'update')
+    const { container } = await open(host)
+    host.reload(DOCUMENT.replace('# Overview', '# Intro'))
+    await vi.waitFor(
+      () => {
+        const card = blockOf(container, 'both')
+        expect(card.querySelector('.genui-source-status')?.textContent).toBe('Source not found')
+        expect(card.querySelector<HTMLButtonElement>('.genui-source-note')?.disabled).toBe(false)
+      },
+      waitLong,
+    )
+
+    await addNote(container, 'both', 'a --> b')
+
+    const expected =
+      '# Intro\n\nFirst body.\n\n\n# Metrics\r\n\r\nSecond body.\n\n## Detail\n\nDetail body.\n\n<!-- note: a --\\> b -->\n\n# Next steps\n\nThird body.'
+    await vi.waitFor(() => expect(update).toHaveBeenLastCalledWith(expected), waitLong)
+    await vi.waitFor(() => expect(notesOf(blockOf(container, 'both'))).toEqual(['a --> b']), waitLong)
+    expect(statuses(container)).toEqual(['Source not found'])
+  })
+
+  it('keeps unknown attributes and source hashes when noting a remaining later source', async () => {
+    const noted =
+      DOCUMENT.replace(
+        'First body.',
+        'First body.\n\n<!-- note author="a" id="7": Keep me -->',
+      ).replace('# Metrics', '# Figures')
+    const view = JSON.stringify({
+      version: 2,
+      sources: {
+        overview: {
+          heading: 'Overview',
+          occurrence: 1,
+          hash: extractSections(DOCUMENT).find((section) => section.heading.text === 'Overview')?.hash,
+        },
+        metrics: { heading: 'Metrics', occurrence: 1 },
+      },
+      a2ui: [
+        {
+          version: '1.0',
+          createSurface: {
+            surfaceId: 'view',
+            catalogId: 'markgogo.dev:genui/v1',
+            components: [
+              {
+                id: 'root',
+                component: 'KeyPoints',
+                title: 'both',
+                items: ['Together.'],
+                sources: ['metrics', 'overview'],
+              },
+            ],
+          },
+        },
+      ],
+    })
+    const host = createBrowserHost(noted, 'report.md', { view })
+    const { container } = await open(host, noted)
+
+    await vi.waitFor(() => expect(notesOf(blockOf(container, 'both'))).toEqual(['Keep me']))
+    expect(blockOf(container, 'both').querySelector('.genui-source-status')?.textContent).toBe('Source not found')
+    expect(blockOf(container, 'both').querySelector<HTMLButtonElement>('.genui-source-note')?.disabled).toBe(false)
+
+    const update = vi.spyOn(host, 'update')
+    await addNote(container, 'both', 'two\n\nlines')
+
+    await vi.waitFor(() => {
+      const last = update.mock.calls.at(-1)?.[0]
+      expect(typeof last).toBe('string')
+      expect(last).toContain('<!-- note author="a" id="7": Keep me -->')
+      expect(last).toContain('<!-- note: two\n\nlines -->')
+      expect(last).toContain('# Figures')
+      expect(last).not.toContain('# Metrics')
+    }, waitLong)
+    await vi.waitFor(() => expect(notesOf(blockOf(container, 'both'))).toEqual(['Keep me', 'two\n\nlines']), waitLong)
+    expect(statuses(container)).toEqual(['Source not found'])
+  })
 })

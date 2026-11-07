@@ -23,9 +23,9 @@ const KIND_LABEL: Record<LockKind, string> = {
 
 /**
  * An immutable top-level block that keeps its original Markdown source.
- * ProseMirror treats it as a single atom: it cannot be edited in place, and
- * composing writes `source` back byte for byte. A note is such a block too,
- * shown as its text with the actions the editor handles by `data-note-action`.
+ * ProseMirror treats it as a single atom; composing writes `source` back byte
+ * for byte. Visual presentation and in-place Markdown editing are owned by the
+ * node view; `toDOM` is the clipboard/fallback shape.
  */
 export const lockedBlockSchema = $nodeSchema(LOCKED_NODE, () => ({
   group: 'block',
@@ -43,9 +43,9 @@ export const lockedBlockSchema = $nodeSchema(LOCKED_NODE, () => ({
       getAttrs: (dom: HTMLElement) => ({ source: dom.dataset.source ?? '', kind: 'note' }),
     },
     {
-      tag: 'pre[data-locked-block]',
+      tag: '[data-locked-block]',
       getAttrs: (dom: HTMLElement) => ({
-        source: dom.querySelector('code')?.textContent ?? dom.textContent ?? '',
+        source: dom.dataset.source ?? dom.querySelector('code')?.textContent ?? '',
         kind: dom.dataset.kind ?? 'unsupported',
       }),
     },

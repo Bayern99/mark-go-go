@@ -1,9 +1,10 @@
 import '../src/styles.css'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createBrowserHost, type BrowserHost } from '../src/host/browserHost'
 import { catalogDefinition, CATALOG_COMPONENTS } from '../src/plugins/genui/a2ui'
 import { extractSections } from '../src/markdown/sections'
+import { SOURCE_DEBOUNCE_MS } from '../src/plugins/genui/sources'
 import { mountApp, type MountedApp } from './helpers/app'
 
 const DOCUMENT = `# Plans
@@ -168,6 +169,74 @@ describe('GenUI content components', () => {
     ])
     expect(viewError(mounted)).toBe('')
     await expect.element(page.getByRole('checkbox', { name: 'Ship the editor' })).toBeDisabled()
+  })
+
+  it('selects an exact quote in a remaining source when another source is gone', async () => {
+    const host = createBrowserHost(DOCUMENT, 'plans.md', {
+      view: viewOf([
+        {
+          id: 'root',
+          component: 'Checklist',
+          title: 'Tasks',
+          items: [{ text: 'Generation', quote: 'Ship generation' }],
+          sources: ['history', 'plans'],
+        },
+      ]),
+    })
+    const mounted = await mountApp(DOCUMENT, host)
+    app = mounted
+    lastHost = host
+    await page.getByTestId('view-mode-genui').click()
+    await vi.waitFor(() => expect(mounted.container.querySelector('.genui-checklist')).not.toBeNull())
+
+    host.reload(DOCUMENT.replace('# History', '# Timeline'))
+    const item = await vi.waitFor(() => {
+      const card = mounted.container.querySelector('.genui-checklist')
+      expect(card?.querySelector('.genui-source-status')?.textContent).toBe('Source not found')
+      const checkbox = page.getByRole('checkbox', { name: 'Generation' }).element()
+      expect(checkbox).not.toBeDisabled()
+      return checkbox
+    }, { timeout: SOURCE_DEBOUNCE_MS + 2000 })
+    await userEvent.click(item)
+    await vi.waitFor(() => {
+      expect(page.getByTestId('view-mode-richtext').element().getAttribute('aria-checked')).toBe('true')
+      expect(window.getSelection()?.toString()).toContain('Ship generation')
+      expect(window.getSelection()?.toString()).not.toContain('History')
+    })
+  })
+
+  it('falls back to the first remaining section when the quote is gone', async () => {
+    const host = createBrowserHost(DOCUMENT, 'plans.md', {
+      view: viewOf([
+        {
+          id: 'root',
+          component: 'Checklist',
+          title: 'Tasks',
+          items: [{ text: 'Generation', quote: 'Ship generation' }],
+          sources: ['plans', 'history'],
+        },
+      ]),
+    })
+    const mounted = await mountApp(DOCUMENT, host)
+    app = mounted
+    lastHost = host
+    await page.getByTestId('view-mode-genui').click()
+    await vi.waitFor(() => expect(mounted.container.querySelector('.genui-checklist')).not.toBeNull())
+
+    host.reload(DOCUMENT.replace('- [ ] Ship generation', '- [ ] Ship the view'))
+    const item = await vi.waitFor(() => {
+      const checkbox = page.getByRole('checkbox', { name: 'Generation' }).element()
+      expect(checkbox).not.toBeDisabled()
+      return checkbox
+    }, { timeout: SOURCE_DEBOUNCE_MS + 2000 })
+    await userEvent.click(item)
+    await vi.waitFor(() => {
+      expect(page.getByTestId('view-mode-richtext').element().getAttribute('aria-checked')).toBe('true')
+      const selected = window.getSelection()?.toString() ?? ''
+      expect(selected).toContain('Plans')
+      expect(selected).toContain('We compare three options.')
+      expect(selected).not.toContain('It began in March.')
+    })
   })
 
   it('names the component and the reason when properties are wrong', async () => {

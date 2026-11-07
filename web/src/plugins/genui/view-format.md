@@ -49,9 +49,13 @@ of ids from this table.
 Each component with sources shows where it came from, and is marked when its
 source moved on since the view was made: **Source changed** when a section's
 hash no longer matches, **Source not found** when a heading is gone (this wins
-over changed). A source without a `hash` is never marked. **Edit in source**
-selects the component's first source section that is still in the document in
-the editor.
+over changed). A source without a `hash` is never marked. **Source not found**
+still shows when only some of a component's sources are gone. **Edit in source**
+and **Note** then use the first of those sources that is still in the document;
+they are disabled only when none is, and the frame says so. An exact quote is
+selected where it still occurs in a remaining source; if it is gone, the first
+remaining source section is selected. A missing heading is never replaced by
+another heading that happens to share its text.
 
 ## Messages
 
@@ -131,9 +135,9 @@ clicking an item selects it in the document and never changes it.
 
 - `items` (list, at least one) of objects with `text` (string), optional
   `done` (boolean, default `false`) and optional `quote` (string): text
-  copied exactly from the source section that clicking the item selects;
-  without it the item's `text` is looked for, and failing that the whole
-  section is selected.
+  copied exactly from a remaining source section that clicking the item selects;
+  without it the item's `text` is looked for, and failing that the first
+  remaining source section is selected.
 
 ## Example
 

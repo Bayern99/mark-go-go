@@ -9,6 +9,7 @@ export const SOURCE_DEBOUNCE_MS = 300
  * - `fresh`: every source section reads as when the view was made;
  * - `changed`: a source section was edited since;
  * - `missing`: a source heading is gone (renamed, deleted, or never there);
+ *   this is the aggregate, even when another listed source is still there;
  * - `unknown`: no recorded hash to compare against (a hand-written view), or
  *   the component names no sources.
  */
@@ -78,6 +79,18 @@ export class SourceStore {
     return status
   }
 
+  /**
+   * Whether any of a component's sources is still in the document.
+   * Independent of `status`: a missing sibling does not hide the rest.
+   */
+  hasSource(ids: readonly string[] | undefined): boolean {
+    for (const id of ids ?? []) {
+      const ref = this.table[id]
+      if (ref && findSection(this.sections, ref.heading, ref.occurrence)) return true
+    }
+    return false
+  }
+
   /** Headings of a component's sources, for its label. */
   headings(ids: readonly string[] | undefined): string[] {
     return (ids ?? []).flatMap((id) => {
@@ -99,8 +112,9 @@ export class SourceStore {
   }
 
   /**
-   * The current range of `text` in the first of the sources that holds it
-   * exactly, or else of the first source that is in the document.
+   * The current range of `text` in the first remaining source that holds it
+   * exactly, or else of the first source that is still in the document.
+   * A missing occurrence is not replaced by another heading of the same text.
    */
   target(ids: readonly string[] | undefined, text?: string): SourceTarget | undefined {
     if (this.timer !== undefined) {

@@ -468,6 +468,15 @@ describe('GenUI source references', () => {
       const missing = block(app.container, 'overview')
       expect(missing.textContent).toContain('Point of overview.')
       expect(missing.querySelector<HTMLButtonElement>('.genui-source-edit')?.disabled).toBe(true)
+      expect(missing.querySelector<HTMLButtonElement>('.genui-source-note')?.disabled).toBe(true)
+      expect(missing.querySelector('.genui-source-unavailable')?.textContent).toContain(
+        'None of this part\'s sources are in the document now.',
+      )
+      const both = block(app.container, 'both')
+      expect(both.querySelector('.genui-source-status')?.textContent).toBe('Source not found')
+      expect(both.querySelector<HTMLButtonElement>('.genui-source-edit')?.disabled).toBe(false)
+      expect(both.querySelector<HTMLButtonElement>('.genui-source-note')?.disabled).toBe(false)
+      expect(both.querySelector('.genui-source-unavailable')).toBeNull()
 
       host.reload(SOURCED)
       await vi.waitFor(
@@ -598,6 +607,122 @@ describe('GenUI source references', () => {
       expect(scrollSpy).toHaveBeenCalled()
       expect(metricsCard.getAttribute('data-highlighted')).toBe('true')
       expect(metricsCard.classList.contains('is-highlighted')).toBe(true)
+    } finally {
+      await app.unmount()
+    }
+  })
+
+  it('edits the remaining source when the first heading is gone', async () => {
+    const host = createBrowserHost(SOURCED, 'report.md', { view: sourcedView(SOURCED, POINTS, TABLE) })
+    const app = await mountApp(SOURCED, host)
+    try {
+      await showMode('genui')
+      host.reload(SOURCED.replace('# Overview', '# Intro'))
+      const both = await vi.waitFor(
+        () => {
+          const card = block(app.container, 'both')
+          expect(card.querySelector('.genui-source-status')?.textContent).toBe('Source not found')
+          expect(card.querySelector<HTMLButtonElement>('.genui-source-edit')?.disabled).toBe(false)
+          return card
+        },
+        { timeout: SOURCE_DEBOUNCE_MS + 2000 },
+      )
+      both.querySelector<HTMLButtonElement>('.genui-source-edit')?.click()
+      await vi.waitFor(() => {
+        expect(viewMode('richtext')).toHaveAttribute('aria-checked', 'true')
+        expect(richSelection(app.container)).toBe('Metrics|Second body.')
+      })
+    } finally {
+      await app.unmount()
+    }
+  })
+
+  it('edits the first remaining source when a later heading is gone', async () => {
+    const host = createBrowserHost(SOURCED, 'report.md', { view: sourcedView(SOURCED, POINTS, TABLE) })
+    const app = await mountApp(SOURCED, host)
+    try {
+      await showMode('genui')
+      host.reload(SOURCED.replace('# Metrics', '# Figures'))
+      const both = await vi.waitFor(
+        () => {
+          const card = block(app.container, 'both')
+          expect(card.querySelector('.genui-source-status')?.textContent).toBe('Source not found')
+          expect(card.querySelector<HTMLButtonElement>('.genui-source-edit')?.disabled).toBe(false)
+          return card
+        },
+        { timeout: SOURCE_DEBOUNCE_MS + 2000 },
+      )
+      both.querySelector<HTMLButtonElement>('.genui-source-edit')?.click()
+      await vi.waitFor(() => {
+        expect(viewMode('richtext')).toHaveAttribute('aria-checked', 'true')
+        expect(richSelection(app.container)).toBe('Overview|First body.')
+      })
+    } finally {
+      await app.unmount()
+    }
+  })
+
+  it('disables Edit and Note only when every source is gone, then restores them', async () => {
+    const host = createBrowserHost(SOURCED, 'report.md', { view: sourcedView(SOURCED, POINTS, TABLE) })
+    const app = await mountApp(SOURCED, host)
+    try {
+      await showMode('genui')
+      host.reload(SOURCED.replace('# Overview', '# Intro').replace('# Metrics', '# Figures'))
+      const both = await vi.waitFor(
+        () => {
+          const card = block(app.container, 'both')
+          expect(card.querySelector('.genui-source-status')?.textContent).toBe('Source not found')
+          expect(card.querySelector<HTMLButtonElement>('.genui-source-edit')?.disabled).toBe(true)
+          return card
+        },
+        { timeout: SOURCE_DEBOUNCE_MS + 2000 },
+      )
+      expect(both.querySelector<HTMLButtonElement>('.genui-source-note')?.disabled).toBe(true)
+      expect(both.querySelector('.genui-source-unavailable')?.textContent).toContain(
+        "None of this part's sources are in the document now.",
+      )
+      both.querySelector<HTMLButtonElement>('.genui-source-edit')?.click()
+      expect(viewMode('genui')).toHaveAttribute('aria-checked', 'true')
+
+      host.reload(SOURCED)
+      await vi.waitFor(
+        () => {
+          expect(statuses(app.container)).toEqual({ overview: '', metrics: '', both: '', late: '' })
+          expect(block(app.container, 'both').querySelector<HTMLButtonElement>('.genui-source-edit')?.disabled).toBe(
+            false,
+          )
+        },
+        { timeout: SOURCE_DEBOUNCE_MS + 2000 },
+      )
+      expect(block(app.container, 'both').querySelector('.genui-source-unavailable')).toBeNull()
+      block(app.container, 'both').querySelector<HTMLButtonElement>('.genui-source-edit')?.click()
+      await vi.waitFor(() => {
+        expect(viewMode('richtext')).toHaveAttribute('aria-checked', 'true')
+        expect(richSelection(app.container)).toBe('Overview|First body.')
+      })
+    } finally {
+      await app.unmount()
+    }
+  })
+
+  it('does not use another heading of the same text as a missing occurrence', async () => {
+    const host = createBrowserHost(SOURCED, 'report.md', { view: sourcedView(SOURCED, POINTS, TABLE) })
+    const app = await mountApp(SOURCED, host)
+    try {
+      await showMode('genui')
+      host.reload(SOURCED.replace('# Summary\n\nLate summary.\n', ''))
+      const late = await vi.waitFor(
+        () => {
+          const card = block(app.container, 'late')
+          expect(card.querySelector('.genui-source-status')?.textContent).toBe('Source not found')
+          expect(card.querySelector<HTMLButtonElement>('.genui-source-edit')?.disabled).toBe(true)
+          return card
+        },
+        { timeout: SOURCE_DEBOUNCE_MS + 2000 },
+      )
+      expect(late.querySelector('.genui-source-unavailable')?.textContent).toContain(
+        "None of this part's sources are in the document now.",
+      )
     } finally {
       await app.unmount()
     }

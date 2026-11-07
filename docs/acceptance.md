@@ -8,7 +8,7 @@
 |---|---|---|
 | Go | `go vet ./...`、`go test -race ./...` | 通过 |
 | TS 类型 | `npm --prefix web run typecheck` | 通过 |
-| 测试 | `npm --prefix web test`（真实 Chromium） | 14 个文件、158 项通过 |
+| 测试 | `npm --prefix web test`（真实 Chromium） | 17 个文件、189 项通过 |
 | 打包 | `go tool mygo build` | `Mark Go Go.app` 12.9MB，dmg 4.2MB |
 
 测试覆盖：23 个语料文件 + 编辑用例零编辑 compose **逐字节一致**；改一段只改变该块字节；编辑后 compose 幂等；插件禁用释放视图/命令/监听（含编辑器选择监听），重新启用正常，`activate` 失败回滚。
@@ -214,6 +214,24 @@
 | Outline 开关（人工） | 左栏标题列表随文档与光标更新，点击条目跳转；关闭后左栏消失 |
 | ⌘Z 撤销（人工，真实键盘） | 正常。Edit 菜单 Undo/Redo 显示禁用但不拦截按键，按键到达 ProseMirror |
 | 中文输入法（人工） | 正常 |
+
+## 三栏工作区与 Portrait 界面语言（#15, #16–#19, v0.1.0）
+
+自动化（`web/test/layout.test.tsx`、`web/test/side-pane.test.tsx`、`web/test/genui.test.tsx`、`web/test/genui-generate.test.tsx`、`web/test/notes.test.ts`、`web/test/genui-notes.test.tsx`）：
+
+- **三栏布局与 Outline 迁移（#16）**：
+  - `ViewLocation` 支持 `'left' | 'center' | 'right'`，`Outline` 注册在 `'right'` 且默认首选高亮。
+  - 顶栏移除旧 `Outline: On/Off` 独立按钮，改由右栏切换条与窄窗响应式开关控制。
+  - `< 1180px` 窄窗自动收起右栏为 `.r-float` 浮层，点击中央内容画布自动收起浮层。
+  - 全局样式引入 Portrait 语义 Token（浅色/深色模式 `--chrome`、`--paper`、`--raised`、`--code`、`--ink`~`--ink-4`、5 级触觉阴影）。
+- **ModelMenu 与模型列表持久化缓存（#17）**：
+  - Go `GetSettings` 在未握手前回退默认模型列表（`gemini-3.8-flash`、`gemini-4-argon`、`claude-opus-5-5`）；ACP `session/new` 握手拿到非空 `configOptions` 时自动更新并持久化 `models`。
+  - `ModelMenu` 实现 26px 凸起药丸按钮与向上展开的纸面菜单（`.mmenu.pop`），支持 `Agent’s choice`、当前项勾号，点击外部或按 `Escape`（`document` 级监听）均可关闭，生成运行中自动禁用。常规界面移除自由文本 `Model` 和 `Agent command` 输入框。
+- **GenUI 视图拆分（#18）**：
+  - 中央视图（`location: 'center'`）仅渲染纯净只读 A2UI 组件卡片与来源底座，彻底剥离生成工具栏与错误提示框。
+  - 右栏 `genui.panel`（`location: 'right'`）承载 5 种顶部状态与唯一主操作按钮、点击 `Source changed` 列表项平滑滚动并高亮定位中央卡片、Focus 生成要求安静只读与原地编辑、以及固定底部元数据（`Antigravity (agy)`、`ModelMenu`、生成时间、`Undo`）。
+- **原地白纸 Composer（#19）**：
+  - 彻底移除居中模态 `<dialog class="mgo-note-dialog">`，Rich text 与 GenUI 卡片内写批注均原地展开自适应增高白纸卡片（`.composer`，`⌘↩` 保存，`Esc` 取消），保持原文逐字节保真，且不触发“原文已改”。
 
 ## 未验证 / 已知问题
 

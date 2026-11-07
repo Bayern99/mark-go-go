@@ -94,7 +94,8 @@ export interface SectionRef {
 
 /**
  * Settings is the generation settings the page can read and change:
- * which model the agent uses, and what command starts it.
+ * which model the agent uses, what command starts it, and the models
+ * the agent offered on its last handshake.
  */
 export interface Settings {
   /**

@@ -194,12 +194,20 @@
 
 .gp-acts {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  align-items: center;
+  align-items: stretch;
+  min-width: 0;
 }
 
-.gp-acts .pill.full {
-  flex: 1;
+.gp-acts .pill {
+  flex: 1 1 100%;
+  min-width: 0;
+  white-space: normal;
+  height: auto;
+  min-height: 28px;
+  padding-block: 5px;
+  text-align: center;
 }
 
 .gp-req {

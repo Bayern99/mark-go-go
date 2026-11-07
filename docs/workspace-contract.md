@@ -72,6 +72,7 @@ Revert(ctx, documentId string) error
 WatchView(ctx, documentId string) error
 UnwatchView(ctx, documentId string) error
 UndoView(ctx, documentId string) error
+SetNativeEditState(ctx, documentId string, canUndo, canRedo bool) error  // editor undo, not UndoView
 Generate(ctx, documentId string, req GenerateRequest, progress *Channel[GenerateProgress]) error
 GetSettings() (Settings, error)
 SetSettings(s Settings) error
@@ -116,6 +117,8 @@ After a successful first save or Save As:
 ## Native commands
 
 File menu Save / Save As / Duplicate / Rename / Move / Revert act on the **active document of the focused window** (MyGo document group). Close (`Cmd+W`) closes the **active document tab**, not the window. The window close button / File > Close Window runs `CloseWorkspace` (asks every dirty document; cancel keeps the window and every tab).
+
+Edit menu Undo / Redo (`nativeCommand` `undo` / `redo`) capture that same active `documentId` at click time and apply the **editor** history of that document. They are not `UndoView`. A focused in-place Composer (`textarea` inside `.composer`) keeps native field undo; read-only GenUI / ComparisonTable focus does not rewrite the document. `SetNativeEditState(documentId, canUndo, canRedo)` reports real editor availability for the focused window's active document only, so a background pane cannot steal menu state. `DocumentsOptions.Equal` already clears the edited mark when Undo returns the on-disk bytes.
 
 Dialogs use the workspace window as parent. Generation in progress for a document disables that document's Save As / Rename / Move; ordinary Save, edit, and tab switch stay available.
 

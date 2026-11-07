@@ -53,6 +53,8 @@ export type NativeCommandName =
   | 'revert'
   | 'duplicate'
   | 'closeWorkspace'
+  | 'undo'
+  | 'redo'
 
 /** Native File-menu / key-equivalent command, captured with the document id at click time. */
 export interface NativeCommand {

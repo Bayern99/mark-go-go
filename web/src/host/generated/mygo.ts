@@ -245,6 +245,9 @@ export const WorkspaceHost = {
   undoView(documentId: string): Promise<void> {
     return call("WorkspaceHost.UndoView", documentId);
   },
+  setNativeEditState(documentId: string, canUndo: boolean, canRedo: boolean): Promise<void> {
+    return call("WorkspaceHost.SetNativeEditState", documentId, canUndo, canRedo);
+  },
   generate(documentId: string, req: GenerateRequest, progress: Channel<GenerateProgress>): Promise<void> {
     return call("WorkspaceHost.Generate", documentId, req, progress);
   },

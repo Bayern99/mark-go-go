@@ -53,6 +53,7 @@ func main() {
 			{Role: mygo.RoleViewMenu},
 			{Role: mygo.RoleWindowMenu},
 		}))
+		applyNativeEditMenu(false, false)
 	})
 
 	err := mygo.App.Run()

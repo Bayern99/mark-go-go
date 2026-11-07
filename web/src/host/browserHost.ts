@@ -120,6 +120,7 @@ export function createBrowserHost(
   options: BrowserHostOptions = {},
 ): BrowserHost {
   let text = initial
+  let saved = initial
   let version = 1
   const id = `browser:${initialName}:${Math.random().toString(36).slice(2, 10)}`
   let state: DocumentInfo = {
@@ -167,21 +168,26 @@ export function createBrowserHost(
     },
     async update(next: string) {
       text = next
-      if (!state.edited) {
-        state = { ...state, edited: true }
+      const edited = next !== saved
+      if (state.edited !== edited) {
+        state = { ...state, edited }
         emitState()
       }
     },
     async flush(next: string) {
       text = next
-      if (!state.edited) {
-        state = { ...state, edited: true }
+      const edited = next !== saved
+      if (state.edited !== edited) {
+        state = { ...state, edited }
         emitState()
       }
     },
     async save() {
-      state = { ...state, edited: false }
-      emitState()
+      saved = text
+      if (state.edited) {
+        state = { ...state, edited: false }
+        emitState()
+      }
     },
     async saveAs() {
       await this.save()
@@ -209,6 +215,7 @@ export function createBrowserHost(
     },
     reload(next: string) {
       text = next
+      saved = next
       version += 1
       state = { ...state, edited: false }
       const snap = snapshot()

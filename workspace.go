@@ -410,31 +410,99 @@ func (h *documentHost) closeWorkspace(w *workspace) (CloseResult, error) {
 	return CloseResult{Closed: true}, nil
 }
 
+func nativeCommandName(role mygo.MenuRole) (string, bool) {
+	switch role {
+	case mygo.RoleSave:
+		return "save", true
+	case mygo.RoleSaveAs:
+		return "saveAs", true
+	case mygo.RoleDuplicate:
+		return "duplicate", true
+	case mygo.RoleRename:
+		return "rename", true
+	case mygo.RoleMoveTo:
+		return "moveTo", true
+	case mygo.RoleRevert:
+		return "revert", true
+	case mygo.RoleClose:
+		return "close", true
+	case mygo.RoleUndo:
+		return "undo", true
+	case mygo.RoleRedo:
+		return "redo", true
+	default:
+		return "", false
+	}
+}
+
 func (h *documentHost) interceptCommand(role mygo.MenuRole, doc *mygo.Document[string], win *mygo.Window) bool {
 	if doc == nil {
 		return false
 	}
-	cmd := ""
-	switch role {
-	case mygo.RoleSave:
-		cmd = "save"
-	case mygo.RoleSaveAs:
-		cmd = "saveAs"
-	case mygo.RoleDuplicate:
-		cmd = "duplicate"
-	case mygo.RoleRename:
-		cmd = "rename"
-	case mygo.RoleMoveTo:
-		cmd = "moveTo"
-	case mygo.RoleRevert:
-		cmd = "revert"
-	case mygo.RoleClose:
-		cmd = "close"
-	default:
+	cmd, ok := nativeCommandName(role)
+	if !ok {
 		return false
 	}
 	_ = nativeCommand.Emit(win, NativeCommand{ID: doc.ID(), Command: cmd})
 	return true
+}
+
+// SetNativeEditState enables native Undo/Redo for the focused window's
+// active document. Reports from a background pane are ignored so they
+// cannot steal menu state. This is editor undo, not UndoView.
+func (h *documentHost) SetNativeEditState(ctx context.Context, documentID string, canUndo, canRedo bool) error {
+	if _, err := h.docSession(documentID); err != nil {
+		return err
+	}
+	win := mygo.CallerWindow(ctx)
+	if win == nil {
+		win = mygo.FocusedWindow()
+	}
+	h.mu.Lock()
+	w := h.byWindow[win]
+	active := ""
+	if w != nil {
+		active = w.active
+	}
+	h.mu.Unlock()
+	if active != "" && active != documentID {
+		return nil
+	}
+	applyNativeEditMenu(canUndo, canRedo)
+	return nil
+}
+
+func applyNativeEditMenu(canUndo, canRedo bool) {
+	m := mygo.App.Menu()
+	if m == nil {
+		return
+	}
+	setMenuRoleEnabled(m, mygo.RoleUndo, canUndo)
+	setMenuRoleEnabled(m, mygo.RoleRedo, canRedo)
+}
+
+func setMenuRoleEnabled(m *mygo.Menu, role mygo.MenuRole, on bool) {
+	if m == nil {
+		return
+	}
+	for _, it := range m.Items() {
+		if it.Role == role {
+			it.SetEnabled(on)
+		}
+		setMenuItemRoleEnabled(it, role, on)
+	}
+}
+
+func setMenuItemRoleEnabled(it *mygo.MenuItem, role mygo.MenuRole, on bool) {
+	if it == nil {
+		return
+	}
+	for _, child := range it.Submenu {
+		if child.Role == role {
+			child.SetEnabled(on)
+		}
+		setMenuItemRoleEnabled(child, role, on)
+	}
 }
 
 func (h *documentHost) interceptWindowClose(win *mygo.Window) bool {

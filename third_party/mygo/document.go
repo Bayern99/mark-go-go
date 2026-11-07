@@ -96,8 +96,9 @@ type DocumentsOptions[T any] struct {
 	// it has no windows.
 	NoUntitled bool
 	// Command, when set, runs a document menu role. If it returns true,
-	// MyGo skips the default Save/SaveAs/Duplicate/Rename/Move/Revert/Close.
-	// The document is the one active at the moment of the click.
+	// MyGo skips the default Save/SaveAs/Duplicate/Rename/Move/Revert/Close
+	// and, for Undo/Redo, the web view's execCommand. The document is the
+	// one active at the moment of the click.
 	Command func(role MenuRole, doc *Document[T], win *Window) bool
 	// BeforeWindowClose, when set and returning true, prevents the default
 	// group save-ask so the app can flush then CloseWorkspace.

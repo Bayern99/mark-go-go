@@ -11,8 +11,12 @@ import { ViewRegistry } from './core/ViewRegistry'
 import type { AppPlugin } from './core/types'
 import type { Disposable, DocumentInfo, HostAdapter, WorkspaceAdapter } from './host/types'
 import { wrapHostAsWorkspace } from './host/browserHost'
-import { registerDocumentFlush } from './host/mygoHost'
+import { registerDocumentFlush, reportNativeEditState } from './host/mygoHost'
 import { createMarkdownEditor, type EditorMode, type MarkdownEditor } from './editor/createEditor'
+import {
+  nativeEditCapabilities,
+  registerNativeEditTarget,
+} from './editor/nativeEdit'
 import { createGenUIPlugin } from './plugins/genui'
 import { createOutlinePlugin } from './plugins/outline'
 
@@ -259,6 +263,43 @@ export function DocumentPane({
       services.editor.attach(editor)
       editor.setReadonly(snapshot.state.readOnly)
 
+      const reportHistory = () => {
+        if (!activeRef.current) return
+        const caps = nativeEditCapabilities(host.id)
+        reportNativeEditState(host.id, caps.canUndo, caps.canRedo)
+      }
+      cleanups.push(
+        registerNativeEditTarget(
+          host.id,
+          {
+            capabilities: () => ({ canUndo: editor.canUndo(), canRedo: editor.canRedo() }),
+            editorVisible: () => {
+              const pane = editorRoot.current?.closest('.editor-pane')
+              return pane instanceof HTMLElement && !pane.hidden
+            },
+            perform(command) {
+              const acted = command === 'undo' ? editor.undo() : editor.redo()
+              if (acted && activeRef.current) reportHistory()
+              return acted
+            },
+          },
+          editorRoot.current?.closest('.app') ?? editorRoot.current,
+        ),
+      )
+      cleanups.push(editor.onHistoryChange(reportHistory))
+      reportHistory()
+      const onFocus = () => {
+        if (activeRef.current) reportHistory()
+      }
+      document.addEventListener('focusin', onFocus, true)
+      document.addEventListener('focusout', onFocus, true)
+      cleanups.push({
+        dispose() {
+          document.removeEventListener('focusin', onFocus, true)
+          document.removeEventListener('focusout', onFocus, true)
+        },
+      })
+
       cleanups.push(
         services.commands.register('editor.reveal', (offset) => {
           const value = Number(offset)
@@ -413,6 +454,12 @@ export function DocumentPane({
   useEffect(() => {
     if (restored.current && docState) rememberViewMode(docState.path, viewMode)
   }, [viewMode, docState])
+
+  useEffect(() => {
+    if (!active) return
+    const caps = nativeEditCapabilities(host.id)
+    reportNativeEditState(host.id, caps.canUndo, caps.canRedo)
+  }, [active, host.id, centerViewId, editorMode])
 
   const modeChoices = [
     { id: 'richtext', label: 'Rich text', title: 'Rich text (⌘/)' },

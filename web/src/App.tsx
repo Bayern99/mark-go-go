@@ -9,7 +9,9 @@ import { EditorAccess } from './core/EditorAccess'
 import { PluginRegistry } from './core/PluginRegistry'
 import { ViewRegistry } from './core/ViewRegistry'
 import type { AppPlugin } from './core/types'
-import type { Disposable, DocState, HostAdapter } from './host/types'
+import type { Disposable, DocumentInfo, HostAdapter, WorkspaceAdapter } from './host/types'
+import { wrapHostAsWorkspace } from './host/browserHost'
+import { registerDocumentFlush } from './host/mygoHost'
 import { createMarkdownEditor, type EditorMode, type MarkdownEditor } from './editor/createEditor'
 import { createGenUIPlugin } from './plugins/genui'
 import { createOutlinePlugin } from './plugins/outline'
@@ -118,18 +120,20 @@ class ViewModeController {
   }
 }
 
-export function App({
+/** Per-document pane: editor, plugins and view modes bound to one HostAdapter. */
+export function DocumentPane({
   host,
   plugins = [],
+  active = true,
 }: {
   host: HostAdapter
-  /** Extra plugins registered after the built-ins (test seam). */
   plugins?: AppPlugin[]
+  active?: boolean
 }): React.ReactElement {
   const editorRoot = useRef<HTMLDivElement>(null)
   const editorScroll = useRef<HTMLDivElement>(null)
   const editorRef = useRef<MarkdownEditor | null>(null)
-  const [docState, setDocState] = useState<DocState | null>(null)
+  const [docState, setDocState] = useState<DocumentInfo | null>(null)
   const [version, setVersion] = useState(0)
   const [editorMode, setEditorMode] = useState<EditorMode>('wysiwyg')
   const [centerViewId, setCenterViewId] = useState<string | null>(null)
@@ -141,6 +145,9 @@ export function App({
   const [ready, setReady] = useState(false)
   const [, refreshPlugins] = useReducer((value: number) => value + 1, 0)
   const restored = useRef(false)
+  const latestMarkdown = useRef('')
+  const activeRef = useRef(active)
+  activeRef.current = active
 
   const services = useMemo(() => {
     const documents = new DocumentService()
@@ -203,6 +210,7 @@ export function App({
     let debounceTimer: number | undefined
 
     const handleShortcuts = (event: KeyboardEvent) => {
+      if (!activeRef.current) return
       if (event.repeat) return
       if ((event.metaKey || event.ctrlKey) && event.altKey && event.code === 'Digit0') {
         event.preventDefault()
@@ -224,7 +232,7 @@ export function App({
       },
     })
 
-    const applyDocumentState = (state: DocState) => {
+    const applyDocumentState = (state: DocumentInfo) => {
       if (disposed) return
       setDocState(state)
       services.documents.setPath(state.path)
@@ -316,6 +324,7 @@ export function App({
       cleanups.push(
         editor.onChange((markdown) => {
           services.documents.setText(markdown)
+          latestMarkdown.current = markdown
           if (debounceTimer !== undefined) window.clearTimeout(debounceTimer)
           debounceTimer = window.setTimeout(() => {
             debounceTimer = undefined
@@ -323,6 +332,20 @@ export function App({
           }, EDIT_DEBOUNCE_MS)
         }),
       )
+      cleanups.push({
+        dispose: registerDocumentFlush(host.id, async () => {
+          if (debounceTimer !== undefined) {
+            window.clearTimeout(debounceTimer)
+            debounceTimer = undefined
+          }
+          const text = latestMarkdown.current
+          await host.flush(text)
+          return text
+        }),
+      })
+      if (host.bindFlush) {
+        cleanups.push(host.bindFlush(() => latestMarkdown.current))
+      }
 
       cleanups.push(
         host.onState((state) => {
@@ -412,6 +435,8 @@ export function App({
   return (
     <div
       className={`app mgg win${rightShown && !rightFloating ? ' rp-dock' : ''}${rightFloating ? ' rp-float' : ''}`}
+      hidden={!active}
+      data-document-id={host.id}
     >
       <div className="app-body">
         <SidePane views={services.views} doc={docState} />
@@ -524,6 +549,138 @@ export function App({
           {docState?.conflict ? ' · conflict' : ''}
         </span>
       </footer>
+    </div>
+  )
+}
+
+
+export function App({
+  host,
+  workspace,
+  plugins = [],
+}: {
+  host?: HostAdapter
+  workspace?: WorkspaceAdapter
+  plugins?: AppPlugin[]
+}): React.ReactElement {
+  const resolved =
+    workspace ??
+    (host ? wrapHostAsWorkspace(host) : null)
+  if (!resolved) throw new Error('App needs a workspace or a document host')
+  return <WorkspaceApp workspace={resolved} plugins={plugins} />
+}
+
+function tabLabel(docs: { id: string; name: string; path: string }[], doc: { id: string; name: string; path: string }): string {
+  const same = docs.filter((other) => other.name === doc.name)
+  if (same.length < 2) return doc.name
+  const parent = doc.path.replace(/\\/g, '/').split('/').slice(-2, -1)[0]
+  return parent ? `${doc.name} — ${parent}` : doc.path || doc.name
+}
+
+function WorkspaceApp({
+  workspace,
+  plugins = [],
+}: {
+  workspace: WorkspaceAdapter
+  plugins?: AppPlugin[]
+}): React.ReactElement {
+  const [snap, setSnap] = useState<{ documents: { id: string; name: string; path: string; edited: boolean; conflict: boolean; deleted: boolean; readOnly: boolean }[]; activeId: string; name: string; kind: string; root: string } | null>(null)
+  const panes = useRef(new Map<string, HostAdapter>())
+
+  useEffect(() => {
+    let disposed = false
+    void workspace.snapshot().then((next) => {
+      if (!disposed) setSnap(next)
+    })
+    const sub = workspace.subscribe((next) => setSnap(next))
+    return () => {
+      disposed = true
+      sub.dispose()
+    }
+  }, [workspace])
+
+  const documents = snap?.documents ?? []
+  const activeId = snap?.activeId ?? documents[0]?.id ?? ''
+  for (const doc of documents) {
+    if (!panes.current.has(doc.id)) panes.current.set(doc.id, workspace.document(doc.id))
+  }
+  for (const id of [...panes.current.keys()]) {
+    if (!documents.some((doc) => doc.id === id)) panes.current.delete(id)
+  }
+
+  const activate = (id: string) => {
+    void (async () => {
+      await workspace.activate(id)
+    })()
+  }
+
+  const closeTab = (id: string) => {
+    void workspace.closeDocument(id)
+  }
+
+  const onTabsKey = (event: React.KeyboardEvent) => {
+    if (!documents.length) return
+    const index = documents.findIndex((doc) => doc.id === activeId)
+    if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      activate(documents[(index + 1) % documents.length].id)
+    } else if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      activate(documents[(index - 1 + documents.length) % documents.length].id)
+    } else if (event.key === 'Delete' || (event.key === 'w' && (event.metaKey || event.ctrlKey))) {
+      event.preventDefault()
+      closeTab(activeId)
+    }
+  }
+
+  return (
+    <div className="workspace-shell">
+      <div className="doc-tabs" role="tablist" aria-label="Documents" onKeyDown={onTabsKey} data-testid="doc-tabs">
+        {documents.map((doc) => (
+          <button
+            key={doc.id}
+            type="button"
+            role="tab"
+            tabIndex={doc.id === activeId ? 0 : -1}
+            data-testid={`doc-tab-${doc.id}`}
+            className={`doc-tab${doc.id === activeId ? ' sel' : ''}`}
+            aria-selected={doc.id === activeId}
+            title={doc.path || doc.name}
+            onClick={() => activate(doc.id)}
+          >
+            <span className="nm">{tabLabel(documents, doc)}</span>
+            {doc.edited ? <span className="edited-dot" title="Unsaved edits" /> : null}
+            {doc.conflict ? <span className="tab-conflict" title="Conflict" /> : null}
+            {doc.deleted ? <span className="tab-deleted" title="Deleted" /> : null}
+            {doc.readOnly ? <span className="tab-readonly" title="Read only" /> : null}
+            <span
+              className="tab-close"
+              role="button"
+              aria-label={`Close ${doc.name}`}
+              data-testid={`doc-tab-close-${doc.id}`}
+              onClick={(event) => {
+                event.stopPropagation()
+                closeTab(doc.id)
+              }}
+            >
+              ×
+            </span>
+          </button>
+        ))}
+      </div>
+      {documents.map((doc) => (
+        <DocumentPane
+          key={doc.id}
+          host={panes.current.get(doc.id)!}
+          plugins={plugins}
+          active={doc.id === activeId}
+        />
+      ))}
+      {documents.length === 0 ? (
+        <div className="workspace-empty" data-testid="workspace-empty">
+          {snap?.kind === 'folder' ? 'Open a Markdown file from this folder.' : 'New Document'}
+        </div>
+      ) : null}
     </div>
   )
 }

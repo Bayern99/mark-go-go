@@ -1,12 +1,17 @@
 import type {
+  CloseResult,
   Disposable,
   DocState,
+  DocumentInfo,
   GenerateProgress,
   GenerateRequest,
   GenerationSettings,
   HostAdapter,
   HostDocSnapshot,
   ViewSnapshot,
+  WorkspaceAdapter,
+  WorkspaceKind,
+  WorkspaceSnapshot,
 } from './types'
 import { cancelled, failureOf, GenerationError } from './generationError'
 
@@ -57,6 +62,8 @@ export interface BrowserHost extends HostAdapter {
   /** Simulate an external change (used by tests and the demo reload button). */
   reload(text: string): void
   getState(): DocState
+  /** Overlay file-status flags so workspace tests can drive tab badges. */
+  patchState(partial: Partial<DocState>): void
   /** Simulate another tool writing (text) or removing (null) the view file; the kept view stays. */
   writeView(text: string | null): void
   /** The kept view the last generation replaced, or null. */
@@ -111,15 +118,17 @@ export function createBrowserHost(
 ): BrowserHost {
   let text = initial
   let version = 1
-  let state: DocState = {
+  const id = `browser:${initialName}:${Math.random().toString(36).slice(2, 10)}`
+  let state: DocumentInfo = {
     ...INITIAL_STATE,
+    id,
     name: initialName,
     path: options.untitled ? '' : `/demo/${initialName}`,
   }
   let view: string | null = options.view ?? null
   let kept: string | null = options.kept ?? null
   const reloadListeners = new Set<(snap: HostDocSnapshot) => void>()
-  const stateListeners = new Set<(state: DocState) => void>()
+  const stateListeners = new Set<(state: DocumentInfo) => void>()
   const viewListeners = new Set<(snap: ViewSnapshot) => void>()
   let settings: GenerationSettings = {
     model: options.settings?.model ?? DEFAULT_SETTINGS.model,
@@ -134,7 +143,7 @@ export function createBrowserHost(
       ? { exists: false, text: '', error: '', canUndo: kept !== null }
       : { exists: true, text: view, error: '', canUndo: kept !== null }
 
-  const snapshot = (): HostDocSnapshot => ({ text, version, state: { ...state } })
+  const snapshot = (): HostDocSnapshot => ({ id, text, version, state: { ...state } })
 
   const emitState = () => {
     const copy = { ...state }
@@ -147,7 +156,8 @@ export function createBrowserHost(
     for (const fn of viewListeners) fn(snap)
   }
 
-  return {
+  const hostSelf: BrowserHost = {
+    id,
     generations,
     async load() {
       return snapshot()
@@ -159,6 +169,29 @@ export function createBrowserHost(
         emitState()
       }
     },
+    async flush(next: string) {
+      text = next
+      if (!state.edited) {
+        state = { ...state, edited: true }
+        emitState()
+      }
+    },
+    async save() {
+      state = { ...state, edited: false }
+      emitState()
+    },
+    async saveAs() {
+      await this.save()
+    },
+    async rename() {},
+    async moveTo() {},
+    async revert() {},
+    bindFlush(getText) {
+      flushReaders.set(hostSelf, getText)
+      return disposable(() => {
+        if (flushReaders.get(hostSelf) === getText) flushReaders.delete(hostSelf)
+      })
+    },
     onReload(fn) {
       reloadListeners.add(fn)
       return disposable(() => reloadListeners.delete(fn))
@@ -166,6 +199,10 @@ export function createBrowserHost(
     onState(fn) {
       stateListeners.add(fn)
       return disposable(() => stateListeners.delete(fn))
+    },
+    patchState(partial) {
+      state = { ...state, ...partial }
+      emitState()
     },
     reload(next: string) {
       text = next
@@ -188,7 +225,6 @@ export function createBrowserHost(
     },
     writeView,
     keptView: () => kept,
-    // Same rules as the desktop host.
     async undoView() {
       if (generating) throw new Error('A view is being generated; wait for it to finish, or cancel it.')
       if (kept === null) throw new Error('There is no earlier view to go back to.')
@@ -196,9 +232,6 @@ export function createBrowserHost(
       kept = null
       writeView(back)
     },
-    // Same rules as the desktop host: one run at a time, a saved document,
-    // the view file written only when the run succeeds, and the view it
-    // replaces kept to go back to.
     async generate(req, onProgress, signal) {
       if (state.path === '') {
         throw new GenerationError({ kind: 'unsaved', message: 'Save the document first: the view is stored next to it.' })
@@ -251,6 +284,7 @@ export function createBrowserHost(
       }
     },
   }
+  return hostSelf
 }
 
 function disposable(fn: () => void): Disposable {
@@ -260,6 +294,295 @@ function disposable(fn: () => void): Disposable {
       if (done) return
       done = true
       fn()
+    },
+  }
+}
+
+const flushReaders = new WeakMap<HostAdapter, () => string>()
+
+
+/** One-document workspace around a HostAdapter, for existing pane tests. */
+export function wrapHostAsWorkspace(host: HostAdapter, name?: string): WorkspaceAdapter {
+  const info = (): DocumentInfo => {
+    const state = isBrowserHost(host)
+      ? host.getState()
+      : {
+          name: name ?? 'document',
+          path: '',
+          edited: false,
+          conflict: false,
+          deleted: false,
+          readOnly: false,
+        }
+    return {
+      id: host.id,
+      name: name ?? state.name,
+      path: state.path,
+      edited: state.edited,
+      conflict: state.conflict,
+      deleted: state.deleted,
+      readOnly: state.readOnly,
+    }
+  }
+  const snap = (): WorkspaceSnapshot => ({
+    id: 'ws-test',
+    root: '',
+    name: info().name,
+    kind: info().path ? 'folder' : 'untitled',
+    documents: [info()],
+    activeId: host.id,
+  })
+  const listeners = new Set<(s: WorkspaceSnapshot) => void>()
+  host.onState(() => {
+    const current = snap()
+    for (const fn of listeners) fn(current)
+  })
+  return {
+    snapshot: async () => snap(),
+    subscribe(fn) {
+      listeners.add(fn)
+      return disposable(() => listeners.delete(fn))
+    },
+    async open() {
+      return info()
+    },
+    async openWorkspace() {},
+    async newDocument() {
+      return info()
+    },
+    async duplicate() {
+      return info()
+    },
+    async activate() {},
+    async closeDocument() {
+      return { closed: false, canceled: false } satisfies CloseResult
+    },
+    async closeWorkspace() {
+      return { closed: false, canceled: false }
+    },
+    document(id: string) {
+      if (id !== host.id) throw new Error(`unknown document ${id}`)
+      return host
+    },
+  }
+}
+
+export interface BrowserWorkspaceSeed {
+  host: HostAdapter
+  name?: string
+  path?: string
+}
+
+export interface BrowserWorkspaceOptions {
+  id?: string
+  root?: string
+  name?: string
+  kind?: WorkspaceKind
+  /** Close-ask: canceled keeps every tab and the adapter cache. */
+  confirmClose?: (id: string) => CloseResult | Promise<CloseResult>
+  confirmCloseWorkspace?: () => CloseResult | Promise<CloseResult>
+}
+
+function isBrowserHost(host: HostAdapter): host is BrowserHost {
+  return typeof (host as BrowserHost).getState === 'function'
+}
+
+function asSeed(doc: HostAdapter | BrowserWorkspaceSeed): BrowserWorkspaceSeed {
+  if (typeof (doc as BrowserWorkspaceSeed).host?.id === 'string') {
+    return doc as BrowserWorkspaceSeed
+  }
+  return { host: doc as HostAdapter }
+}
+
+function infoFrom(seed: BrowserWorkspaceSeed): DocumentInfo {
+  const state = isBrowserHost(seed.host)
+    ? seed.host.getState()
+    : { name: 'untitled.md', path: '', edited: false, conflict: false, deleted: false, readOnly: false }
+  return {
+    id: seed.host.id,
+    name: seed.name ?? state.name,
+    path: seed.path ?? state.path,
+    edited: state.edited,
+    conflict: state.conflict,
+    deleted: state.deleted,
+    readOnly: state.readOnly,
+  }
+}
+
+/**
+ * In-memory multi-document WorkspaceAdapter for workspace tests and the
+ * browser preview. There is no hidden second window: every document is a
+ * tab in this one snapshot. `document(id)` returns the same HostAdapter
+ * for as long as this window hosts that id.
+ */
+export function createBrowserWorkspace(
+  docs: Array<HostAdapter | BrowserWorkspaceSeed> = [createBrowserHost()],
+  options: BrowserWorkspaceOptions = {},
+): WorkspaceAdapter {
+  const adapters = new Map<string, HostAdapter>()
+  const infos = new Map<string, DocumentInfo>()
+  const order: string[] = []
+  const stateSubs = new Map<string, Disposable>()
+  const listeners = new Set<(snap: WorkspaceSnapshot) => void>()
+  let activeId = ''
+
+  const workspaceId = options.id ?? 'browser-workspace'
+  const root = options.root ?? '/demo'
+  const workspaceName = options.name ?? 'demo'
+  const kind: WorkspaceKind = options.kind ?? (root === '' ? 'untitled' : 'folder')
+
+  const snap = (): WorkspaceSnapshot => ({
+    id: workspaceId,
+    root,
+    name: workspaceName,
+    kind,
+    documents: order.map((id) => {
+      const info = infos.get(id)
+      if (!info) throw new Error(`missing document ${id}`)
+      return { ...info }
+    }),
+    activeId,
+  })
+
+  const emit = () => {
+    const current = snap()
+    for (const fn of listeners) fn(current)
+  }
+
+  const drop = (id: string) => {
+    stateSubs.get(id)?.dispose()
+    stateSubs.delete(id)
+    adapters.delete(id)
+    infos.delete(id)
+    const index = order.indexOf(id)
+    if (index >= 0) order.splice(index, 1)
+    if (activeId === id) activeId = order[0] ?? ''
+  }
+
+  const add = (seed: BrowserWorkspaceSeed, activate = true): DocumentInfo => {
+    const host = seed.host
+    const existing = adapters.get(host.id)
+    if (existing) {
+      if (activate) activeId = host.id
+      return { ...(infos.get(host.id) as DocumentInfo) }
+    }
+    const byPath = seed.path ?? (isBrowserHost(host) ? host.getState().path : '')
+    if (byPath !== '') {
+      for (const [id, info] of infos) {
+        if (info.path === byPath) {
+          if (activate) activeId = id
+          return { ...info }
+        }
+      }
+    }
+    adapters.set(host.id, host)
+    const info = infoFrom(seed)
+    const overlayName = seed.name
+    const overlayPath = seed.path
+    infos.set(host.id, info)
+    order.push(host.id)
+    stateSubs.set(
+      host.id,
+      host.onState((state) => {
+        const current = infos.get(host.id)
+        if (!current) return
+        infos.set(host.id, {
+          ...current,
+          name: overlayName ?? state.name,
+          path: overlayPath ?? state.path,
+          edited: state.edited,
+          conflict: state.conflict,
+          deleted: state.deleted,
+          readOnly: state.readOnly,
+        })
+        emit()
+      }),
+    )
+    if (activate || activeId === '') activeId = host.id
+    return { ...info }
+  }
+
+  for (const doc of docs) add(asSeed(doc), false)
+  if (!activeId && order[0]) activeId = order[0]
+
+  return {
+    snapshot: async () => snap(),
+    subscribe(fn) {
+      listeners.add(fn)
+      return disposable(() => listeners.delete(fn))
+    },
+    async open(path: string) {
+      for (const [id, info] of infos) {
+        if (info.path === path) {
+          activeId = id
+          emit()
+          return { ...info }
+        }
+      }
+      const name = path.replace(/\\/g, '/').split('/').pop() || 'untitled.md'
+      const created = add({ host: createBrowserHost('', name), name, path })
+      emit()
+      return created
+    },
+    async openWorkspace() {},
+    async newDocument() {
+      const created = add({ host: createBrowserHost('', 'Untitled.md', { untitled: true }), name: 'Untitled.md', path: '' })
+      emit()
+      return created
+    },
+    async duplicate(id: string) {
+      const host = adapters.get(id)
+      const info = infos.get(id)
+      if (!host || !info) throw new Error(`unknown document ${id}`)
+      const snapshot = await host.load()
+      const created = add({
+        host: createBrowserHost(snapshot.text, info.name, { untitled: true }),
+        name: info.name,
+        path: '',
+      })
+      emit()
+      return created
+    },
+    async activate(id: string) {
+      if (!adapters.has(id)) throw new Error(`unknown document ${id}`)
+      activeId = id
+      emit()
+    },
+    async closeDocument(id: string, text?: string) {
+      const host = adapters.get(id)
+      if (!host) throw new Error(`unknown document ${id}`)
+      if (text !== undefined) await host.flush(text)
+      else {
+        const reader = flushReaders.get(host)
+        if (reader) await host.flush(reader())
+      }
+      const result = options.confirmClose
+        ? await options.confirmClose(id)
+        : { closed: true, canceled: false }
+      if (result.canceled || !result.closed) return result
+      drop(id)
+      emit()
+      return result
+    },
+    async closeWorkspace() {
+      for (const id of [...order]) {
+        const host = adapters.get(id)
+        if (!host) continue
+        const reader = flushReaders.get(host)
+        if (reader) await host.flush(reader())
+      }
+      const result = options.confirmCloseWorkspace
+        ? await options.confirmCloseWorkspace()
+        : { closed: true, canceled: false }
+      if (result.canceled || !result.closed) return result
+      for (const id of [...order]) drop(id)
+      emit()
+      return result
+    },
+    document(id: string) {
+      const host = adapters.get(id)
+      if (!host) throw new Error(`unknown document ${id}`)
+      return host
     },
   }
 }

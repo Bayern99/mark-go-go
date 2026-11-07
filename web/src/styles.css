@@ -1109,3 +1109,81 @@ body {
   outline: 3px solid var(--focus);
   outline-offset: 1px;
 }
+
+.workspace-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  min-width: 0;
+}
+
+.workspace-shell .app {
+  flex: 1;
+  min-height: 0;
+}
+
+.doc-tabs {
+  display: flex;
+  flex: none;
+  height: 36px;
+  gap: 2px;
+  padding: 4px 8px 0;
+  background: var(--chrome);
+  overflow-x: auto;
+}
+
+.doc-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.doc-tab.sel {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--row-shadow);
+}
+
+.doc-tab:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.tab-close {
+  opacity: 0.55;
+}
+
+.tab-conflict,
+.tab-deleted,
+.tab-readonly {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.tab-conflict {
+  background: var(--danger);
+}
+
+.tab-deleted {
+  background: var(--ink-3);
+}
+
+.tab-readonly {
+  background: var(--ink-2);
+}
+
+.workspace-empty {
+  padding: 48px 24px;
+  color: var(--ink-3);
+}

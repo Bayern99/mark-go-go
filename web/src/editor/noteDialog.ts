@@ -15,7 +15,7 @@ export function cancelNoteComposer(): void {
 
 export function autoGrowTextarea(input: HTMLTextAreaElement): void {
   input.style.height = 'auto'
-  input.style.height = `${Math.min(160, Math.max(40, input.scrollHeight))}px`
+  input.style.height = `${Math.max(38, input.scrollHeight)}px`
 }
 
 export const autoGrowNoteTextarea = autoGrowTextarea

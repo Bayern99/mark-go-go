@@ -1,3 +1,6 @@
+@import './assets/fonts.css';
+@import './assets/icons/phosphor.css';
+
 :root,
 .mgg {
   --font-sans: "IBM Plex Sans", "IBM Plex Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -32,6 +35,38 @@
   --warn-soft: rgba(154, 77, 18, 0.09);
   --danger: #a83a3a;
   --danger-soft: rgba(168, 58, 58, 0.08);
+
+  /* Content semantics (document Warning/Caution/Note) — not application status */
+  --content-note: var(--accent);
+  --content-note-soft: var(--accent-soft);
+  --content-warning: #9a4d12;
+  --content-warning-soft: rgba(154, 77, 18, 0.09);
+  --content-caution: #a83a3a;
+  --content-caution-soft: rgba(168, 58, 58, 0.08);
+
+  /* Type scale — only these roles. Line heights are even. */
+  --text-display-size: 28px;
+  --text-display-leading: 36px;
+  --text-title-size: 20px;
+  --text-title-leading: 28px;
+  --text-reading-size: 16px;
+  --text-reading-leading: 28px;
+  --text-reading-tracking: 0.01em;
+  --text-ui-size: 13px;
+  --text-ui-leading: 18px;
+  --text-small-size: 14px;
+  --text-small-leading: 22px;
+  --text-meta-size: 12px;
+  --text-meta-leading: 16px;
+  --text-code-size: 13px;
+  --text-code-leading: 22px;
+
+  --duration-press: 100ms;
+  --duration-switch: 120ms;
+  --duration-expand: 150ms;
+  --duration-enter: 200ms;
+  --duration-menu: 100ms;
+  --duration-jump: 1100ms;
 
   /* Tactile Materials & Shadows */
   --raised: linear-gradient(#ffffff, #f6f6f8);
@@ -98,6 +133,12 @@
   --warn-soft: rgba(240, 165, 96, 0.12);
   --danger: #ef8a80;
   --danger-soft: rgba(239, 138, 128, 0.12);
+  --content-note: var(--accent);
+  --content-note-soft: var(--accent-soft);
+  --content-warning: #f0a560;
+  --content-warning-soft: rgba(240, 165, 96, 0.12);
+  --content-caution: #ef8a80;
+  --content-caution-soft: rgba(239, 138, 128, 0.12);
 
   --raised: linear-gradient(#3d3d41, #333336);
   --raised-press: linear-gradient(#2e2e31, #333336);
@@ -137,6 +178,16 @@ body {
   letter-spacing: 0.01em;
 }
 
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.ph {
+  font-size: 15px;
+}
+
+
 /* ─── Controls: Raised Pills & Sunken Segmented Controls ─── */
 .pill {
   display: inline-flex;
@@ -156,7 +207,7 @@ body {
   color: var(--ink);
   white-space: nowrap;
   cursor: pointer;
-  transition: transform 0.1s ease, filter 0.1s ease;
+  transition: transform var(--duration-press) ease, filter var(--duration-press) ease;
 }
 
 .pill:hover:not(:disabled) {
@@ -196,6 +247,19 @@ body {
   padding: 0;
 }
 
+.pill.xs {
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.pill i,
+.pill .ph {
+  font-size: 15px;
+}
+
 .seg {
   display: inline-flex;
   padding: 2px;
@@ -217,7 +281,7 @@ body {
   color: var(--ink-3);
   font-weight: 500;
   cursor: pointer;
-  transition: color 0.12s ease;
+  transition: color var(--duration-switch) ease;
 }
 
 .seg button:hover:not(:disabled) {
@@ -559,9 +623,23 @@ body {
 }
 
 .banner {
-  padding: 6px 16px;
-  font-size: 12px;
-  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 12px;
+  margin: 8px 16px 0;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.banner i {
+  font-size: 16px;
+}
+
+.banner span {
+  flex: 1;
+  min-width: 0;
 }
 
 .banner-conflict {
@@ -570,12 +648,12 @@ body {
 }
 
 .banner-deleted {
-  background: var(--warn-soft);
-  color: var(--warn);
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .banner-readonly {
-  background: var(--code);
+  background: var(--fill);
   color: var(--ink-2);
 }
 
@@ -642,15 +720,6 @@ body {
 
 .crepe-root {
   min-height: 100%;
-}
-
-/*
- * Crepe pads the document 60px 120px for a full-page editor. With both
- * sidebars open that leaves no room for text, so keep only the gutter its
- * block handles (+ and drag) need on the left.
- */
-.crepe-root .milkdown .ProseMirror {
-  padding: 24px 24px 64px 56px;
 }
 
 .crepe-root .milkdown .ProseMirror > * {
@@ -753,84 +822,136 @@ body {
 
 /* ─── Editor Locked Blocks & Notes ─── */
 .mgo-locked-block {
-  margin: 12px 0;
-  padding: 10px 12px;
-  border: 1px dashed var(--line-strong);
-  border-left: 3px solid var(--ink-3);
-  border-radius: 6px;
-  background: var(--code);
+  position: relative;
+  margin: 0 0 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px var(--line);
+  background: repeating-linear-gradient(135deg, transparent 0 6px, var(--fill) 6px 7px);
   color: var(--ink-2);
   font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: var(--text-code-size);
+  line-height: var(--text-code-leading);
   white-space: pre-wrap;
   overflow-x: auto;
   user-select: text;
-  position: relative;
 }
 
 .mgo-locked-block::before {
-  content: attr(data-label) ' · locked';
-  display: block;
-  margin-bottom: 6px;
-  font-family: var(--font-sans);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  content: 'Kept as written';
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  position: absolute;
+  top: 7px;
+  left: 12px;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-leading);
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 500;
   color: var(--ink-3);
 }
 
+.mgo-locked-block[data-kind='raw-html']::before,
+.mgo-locked-block[data-kind='unsupported']::before {
+  content: 'Kept as written';
+}
+
 .mgo-locked-source {
+  display: block;
+  margin: 0;
+  padding: 28px 16px 12px;
   font: inherit;
   white-space: pre-wrap;
+  letter-spacing: 0;
+  color: var(--ink-2);
+  background: none;
 }
 
 .mgo-note {
-  display: flex;
-  align-items: baseline;
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
   gap: 8px;
-  margin: 12px 0;
-  padding: 6px 10px;
-  border-left: 3px solid var(--accent);
-  border-radius: 6px;
-  background: var(--code);
+  align-items: start;
+  margin: -4px 0 16px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--fill);
   color: var(--ink-2);
   font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: var(--text-small-size);
+  line-height: var(--text-small-leading);
   scroll-margin-top: 16px;
 }
 
 .mgo-note-label {
-  flex-shrink: 0;
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-3);
+  grid-column: 1;
+  width: 15px;
+  height: 15px;
+  margin-top: 3px;
+  overflow: hidden;
+  text-indent: -999px;
+  color: var(--accent);
+}
+
+.mgo-note-label::before {
+  content: '\e348';
+  display: block;
+  text-indent: 0;
+  font-family: 'Phosphor';
+  font-size: 15px;
+  line-height: 1;
+  speak: never;
+  font-style: normal;
+  font-weight: normal;
 }
 
 .mgo-note-text {
-  flex: 1;
+  grid-column: 2;
   min-width: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
 .mgo-note-actions {
+  grid-column: 3;
   display: flex;
   flex-shrink: 0;
   gap: 4px;
+  opacity: 0;
+  transition: opacity var(--duration-switch) ease;
+}
+
+.mgo-note:hover .mgo-note-actions,
+.mgo-note:focus-within .mgo-note-actions {
+  opacity: 1;
 }
 
 .mgo-note-actions button {
   font: inherit;
   font-size: 12px;
-  border: 1px solid var(--line-strong);
+  line-height: 16px;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
   border-radius: 6px;
-  padding: 2px 8px;
-  background: transparent;
-  color: inherit;
+  background: var(--raised);
+  box-shadow: var(--raised-shadow);
+  color: var(--ink);
   cursor: pointer;
+}
+
+.mgo-note-actions button:hover {
+  filter: brightness(0.985);
+}
+
+.mgo-note-actions button[data-note-action='delete'] {
+  color: var(--danger);
 }
 
 .ProseMirror[contenteditable='false'] .mgo-note-actions {
@@ -842,9 +963,9 @@ body {
   display: block;
   border-radius: 8px;
   background: var(--paper);
-  box-shadow: var(--sheet-shadow);
+  box-shadow: 0 0 0 1px var(--line-strong), 0 1px 2px rgba(0, 0, 0, 0.04);
   padding: 8px 10px;
-  transition: box-shadow 120ms var(--ease-out);
+  transition: box-shadow var(--duration-switch) var(--ease-out);
 }
 
 .composer:focus-within {
@@ -856,6 +977,35 @@ body {
 .mgo-note-composer {
   margin: 10px 0;
   font-family: var(--font-sans);
+}
+
+.composer.ncomp,
+.composer.mgo-note-composer {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 8px;
+  align-items: start;
+}
+
+.composer.ncomp > i,
+.composer.mgo-note-composer::before {
+  font-size: 15px;
+  color: var(--accent);
+  margin-top: 3px;
+}
+
+.composer.mgo-note-composer::before {
+  content: '\e348';
+  font-family: 'Phosphor';
+  speak: never;
+  font-style: normal;
+  font-weight: normal;
+  line-height: 1;
+}
+
+.composer.mgo-note-composer > textarea,
+.composer.mgo-note-composer > .composer-foot {
+  grid-column: 2;
 }
 
 .composer textarea,
@@ -873,9 +1023,9 @@ body {
   font-size: 13px;
   line-height: 20px;
   color: var(--ink);
-  min-height: 40px;
-  max-height: 160px;
-  overflow-y: auto;
+  min-height: 38px;
+  max-height: none;
+  overflow-y: hidden;
 }
 
 .composer textarea::placeholder,
@@ -920,4 +1070,42 @@ body {
 
 .status-state {
   font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.mgo-jump {
+  animation: mgo-jump-fade var(--duration-jump) var(--ease-out);
+}
+
+@keyframes mgo-jump-fade {
+  from {
+    background-color: var(--accent-soft);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mgo-jump {
+    animation: none;
+    background-color: var(--accent-soft);
+  }
+}
+
+.crepe-root .milkdown .mgo-note-actions button:focus-visible,
+.crepe-root .milkdown .composer .pill:focus-visible,
+.composer .pill:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
 }

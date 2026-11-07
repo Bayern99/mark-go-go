@@ -69,8 +69,8 @@ export const lockedBlockSchema = $nodeSchema(LOCKED_NODE, () => ({
         [
           'span',
           { class: 'mgo-note-actions' },
-          ['button', { type: 'button', 'data-note-action': 'edit' }, 'Edit'],
-          ['button', { type: 'button', 'data-note-action': 'delete' }, 'Delete'],
+          ['button', { type: 'button', class: 'pill xs', 'data-note-action': 'edit' }, 'Edit'],
+          ['button', { type: 'button', class: 'pill xs', 'data-note-action': 'delete' }, 'Delete'],
         ],
       ]
     }

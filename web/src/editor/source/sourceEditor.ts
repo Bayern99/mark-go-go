@@ -37,14 +37,18 @@ const sourceTheme = EditorView.theme({
   '&': {
     minHeight: '100%',
     backgroundColor: 'transparent',
-    fontSize: '14px',
+    fontSize: '13px',
+    color: 'var(--ink)',
   },
   '.cm-scroller': {
-    fontFamily: "ui-monospace, 'SFMono-Regular', Menlo, monospace",
-    lineHeight: '1.65',
+    fontFamily: 'var(--font-mono)',
+    lineHeight: '22px',
   },
   '.cm-content': {
-    padding: '24px 32px 64px',
+    padding: '44px 40px 120px',
+    maxWidth: '720px',
+    margin: '0 auto',
+    caretColor: 'var(--ink)',
   },
   '&.cm-focused': {
     outline: 'none',

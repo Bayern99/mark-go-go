@@ -9,7 +9,7 @@ import { placeholder } from '@milkdown/crepe/feature/placeholder'
 import { table } from '@milkdown/crepe/feature/table'
 import { toolbar } from '@milkdown/crepe/feature/toolbar'
 import '@milkdown/crepe/theme/common/style.css'
-import '@milkdown/crepe/theme/classic.css'
+import './crepe-theme.css'
 import {
   commandsCtx,
   editorViewCtx,

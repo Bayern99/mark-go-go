@@ -1,0 +1,301 @@
+/*
+ * Portrait mapping for Crepe/Milkdown. Common feature CSS still comes from
+ * `@milkdown/crepe/theme/common/style.css`; this file replaces classic.css so
+ * Georgia / Open Sans / Fira Code and the warm cream surface never leak.
+ * Editor commands, plugins and serialization are unchanged.
+ */
+
+.crepe-root {
+  --crepe-color-background: var(--paper);
+  --crepe-color-on-background: var(--ink);
+  --crepe-color-surface: var(--paper);
+  --crepe-color-surface-low: var(--code);
+  --crepe-color-on-surface: var(--ink);
+  --crepe-color-on-surface-variant: var(--ink-2);
+  --crepe-color-outline: var(--ink-3);
+  --crepe-color-primary: var(--accent);
+  --crepe-color-secondary: var(--accent-soft);
+  --crepe-color-on-secondary: var(--ink);
+  --crepe-color-inverse: var(--ink);
+  --crepe-color-on-inverse: var(--on-accent);
+  --crepe-color-inline-code: var(--ink);
+  --crepe-color-error: var(--danger);
+  --crepe-color-hover: var(--fill-hover);
+  --crepe-color-selected: var(--accent-soft);
+  --crepe-color-inline-area: var(--code);
+  --crepe-base-font-size: var(--text-reading-size);
+  --crepe-font-title: var(--font-display);
+  --crepe-font-default: var(--font-sans);
+  --crepe-font-code: var(--font-mono);
+  --crepe-shadow-1: var(--raised-shadow);
+  --crepe-shadow-2: var(--pop-shadow);
+}
+
+.crepe-root .milkdown {
+  font-family: var(--font-sans);
+  font-size: var(--text-reading-size);
+  color: var(--ink);
+  background: transparent;
+}
+
+.crepe-root .milkdown .ProseMirror {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 44px 40px 120px 56px;
+  font-size: var(--text-reading-size);
+  line-height: var(--text-reading-leading);
+  letter-spacing: var(--text-reading-tracking);
+  hanging-punctuation: allow-end;
+  overflow-wrap: break-word;
+  color: var(--ink);
+}
+
+.crepe-root .milkdown .ProseMirror > *:first-child {
+  margin-top: 0;
+}
+
+/* Kill Crepe's default title sizes (2.625em Georgia, weight 400). */
+.crepe-root .milkdown .ProseMirror h1,
+.crepe-root .milkdown .ProseMirror h2,
+.crepe-root .milkdown .ProseMirror h3,
+.crepe-root .milkdown .ProseMirror h4,
+.crepe-root .milkdown .ProseMirror h5,
+.crepe-root .milkdown .ProseMirror h6 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  padding: 0;
+  color: var(--ink);
+  letter-spacing: 0;
+}
+
+.crepe-root .milkdown .ProseMirror h1 {
+  font-size: var(--text-display-size);
+  line-height: var(--text-display-leading);
+  margin: 0 0 20px;
+}
+
+.crepe-root .milkdown .ProseMirror h2 {
+  font-size: var(--text-title-size);
+  line-height: var(--text-title-leading);
+  margin: 40px 0 12px;
+}
+
+.crepe-root .milkdown .ProseMirror h3,
+.crepe-root .milkdown .ProseMirror h4,
+.crepe-root .milkdown .ProseMirror h5,
+.crepe-root .milkdown .ProseMirror h6 {
+  font-family: var(--font-sans);
+  font-size: var(--text-reading-size);
+  line-height: var(--text-reading-leading);
+  margin: 28px 0 8px;
+}
+
+.crepe-root .milkdown .ProseMirror p {
+  font-size: var(--text-reading-size);
+  line-height: var(--text-reading-leading);
+  letter-spacing: var(--text-reading-tracking);
+  padding: 0;
+  margin: 0 0 16px;
+}
+
+.crepe-root .milkdown .ProseMirror strong {
+  font-weight: 600;
+}
+
+.crepe-root .milkdown .ProseMirror em {
+  font-style: italic;
+}
+
+.crepe-root .milkdown .ProseMirror a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  text-underline-offset: 3px;
+}
+
+.crepe-root .milkdown .ProseMirror code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  color: var(--ink);
+  background: var(--code);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+  padding: 0.1em 0.32em;
+  border-radius: 4px;
+  display: inline;
+  line-height: inherit;
+}
+
+.crepe-root .milkdown .ProseMirror pre {
+  position: relative;
+  margin: 0 0 20px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: var(--code);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+  overflow: auto;
+}
+
+.crepe-root .milkdown .ProseMirror pre code {
+  font-family: var(--font-mono);
+  font-size: var(--text-code-size);
+  line-height: var(--text-code-leading);
+  letter-spacing: 0;
+  background: none;
+  box-shadow: none;
+  padding: 0;
+  border-radius: 0;
+  color: var(--ink);
+  display: block;
+}
+
+.crepe-root .milkdown .ProseMirror blockquote {
+  position: relative;
+  margin: 0 0 16px;
+  padding: 0 0 0 16px;
+  box-sizing: border-box;
+  color: var(--ink-2);
+  box-shadow: inset 2px 0 0 var(--line-strong);
+  background: none;
+}
+
+.crepe-root .milkdown .ProseMirror blockquote::before {
+  content: none;
+}
+
+.crepe-root .milkdown .ProseMirror blockquote p {
+  margin: 0;
+}
+
+.crepe-root .milkdown .ProseMirror hr {
+  border: 0;
+  height: 1px;
+  padding: 0;
+  margin: 32px 0;
+  background: var(--line);
+  background-clip: border-box;
+}
+
+.crepe-root .milkdown .ProseMirror ul,
+.crepe-root .milkdown .ProseMirror ol {
+  margin: 0 0 16px;
+  padding: 0 0 0 1.35em;
+}
+
+.crepe-root .milkdown .ProseMirror li {
+  margin: 0 0 4px;
+}
+
+.crepe-root .milkdown .ProseMirror li::marker {
+  color: var(--ink-3);
+}
+
+.crepe-root .milkdown .ProseMirror ol > li::marker {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.crepe-root .milkdown .ProseMirror table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--text-small-size);
+  line-height: var(--text-small-leading);
+  margin: 0 0 20px;
+}
+
+.crepe-root .milkdown .ProseMirror th {
+  text-align: left;
+  font-weight: 600;
+  padding: 8px 12px 8px 0;
+  border-bottom: 1px solid var(--line-strong);
+  vertical-align: bottom;
+  background: none;
+}
+
+.crepe-root .milkdown .ProseMirror td {
+  padding: 8px 12px 8px 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+/* Block handle / slash menu / toolbar sit on paper, not cream. */
+.crepe-root .milkdown-slash-menu,
+.crepe-root .milkdown-toolbar,
+.crepe-root .milkdown-block-handle,
+.crepe-root [class*='slash-menu'],
+.crepe-root [class*='block-handle'] {
+  font-family: var(--font-sans);
+}
+
+/* GitHub-alert / frontmatter / kept-as-written hooks for #26 to attach. */
+.mgo-alert {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--content-note-soft);
+  color: var(--ink);
+}
+
+.mgo-alert-k {
+  display: block;
+  font-family: var(--font-display);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-leading);
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--content-note);
+  margin-bottom: 2px;
+}
+
+.mgo-alert.note .mgo-alert-k,
+.mgo-alert.tip .mgo-alert-k {
+  color: var(--content-note);
+}
+
+.mgo-alert.note,
+.mgo-alert.tip {
+  background: var(--content-note-soft);
+}
+
+.mgo-alert.warning {
+  background: var(--content-warning-soft);
+}
+
+.mgo-alert.warning .mgo-alert-k {
+  color: var(--content-warning);
+}
+
+.mgo-alert.caution {
+  background: var(--content-caution-soft);
+}
+
+.mgo-alert.caution .mgo-alert-k {
+  color: var(--content-caution);
+}
+
+.mgo-frontmatter {
+  width: auto;
+  margin: 0 0 24px;
+  font-size: 13px;
+  line-height: 20px;
+  border-collapse: collapse;
+}
+
+.mgo-frontmatter th {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-leading);
+  color: var(--ink-3);
+  border: 0;
+  padding: 3px 24px 3px 0;
+  vertical-align: top;
+  text-align: left;
+}
+
+.mgo-frontmatter td {
+  border: 0;
+  padding: 3px 0;
+  color: var(--ink);
+}

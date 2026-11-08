@@ -1,8 +1,14 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { PluginContext, ViewStatusDot } from '../../core/types'
 import { autoGrowTextarea } from '../../editor/noteDialog'
-import type { Disposable, GenerateFailure, GenerationSettings, ViewSnapshot } from '../../host/types'
+import type {
+  Disposable,
+  GenerateFailure,
+  GenerationSettings,
+  SettingsPatch,
+  ViewSnapshot,
+} from '../../host/types'
 import { loadSurface, ViewSurface, type LoadedSurface } from './a2ui'
 import { GenerationController, type GenerationRun, type GenerationState } from './generation'
 import { ModelMenu } from './ModelMenu'
@@ -505,12 +511,26 @@ function GenUIPanel({
   const focusTextareaRef = useRef<HTMLTextAreaElement>(null)
   const inlineTextareaRef = useRef<HTMLTextAreaElement>(null)
 
+  // The one settings store's committed value. Placeholders until the first
+  // read: the host's defaults are what it answers with anyway.
   const [settings, setSettings] = useState<GenerationSettings>({
     model: 'gemini-3.8-flash',
     agentCommand: 'agy',
     models: DEFAULT_MODELS,
   })
+  // Bumped by every applied read or change, so a slow initial read cannot
+  // overwrite a newer value that already arrived.
+  const settingsRevision = useRef(0)
   const [undoError, setUndoError] = useState('')
+
+  const applySettings = useCallback((next: GenerationSettings) => {
+    settingsRevision.current += 1
+    setSettings({
+      model: next.model,
+      agentCommand: next.agentCommand || 'agy',
+      models: next.models?.length ? next.models : DEFAULT_MODELS,
+    })
+  }, [])
 
   // Sync request when a new view file arrives and the user hasn't drafted a separate request.
   const viewKey = state.kind === 'view' ? state.text : state.kind
@@ -525,23 +545,28 @@ function GenUIPanel({
     }
   }, [viewKey, memory.draft, savedRequest])
 
+  // Settings are one store shared by every document and window, so this panel
+  // follows it: subscribing first means a change made in another panel while
+  // the first read is in flight is not missed, and the revision guard keeps
+  // that read from landing on top of it.
   useEffect(() => {
     let live = true
+    const followed = session.generation.onSettings((next) => {
+      if (live) applySettings(next)
+    })
+    const at = settingsRevision.current
     session.generation.getSettings().then(
       (loaded) => {
-        if (!live) return
-        setSettings({
-          model: loaded.model,
-          agentCommand: loaded.agentCommand || 'agy',
-          models: loaded.models?.length ? loaded.models : DEFAULT_MODELS,
-        })
+        if (!live || settingsRevision.current !== at) return
+        applySettings(loaded)
       },
       () => {},
     )
     return () => {
       live = false
+      followed.dispose()
     }
-  }, [session.generation, run.kind])
+  }, [session.generation, applySettings])
 
   useEffect(() => {
     if (!editingFocus) return
@@ -604,19 +629,18 @@ function GenUIPanel({
     })
   }
 
-  const updateSettings = (nextSettings: GenerationSettings) => {
-    setSettings(nextSettings)
-    session.generation.setSettings(nextSettings).catch((error: unknown) => {
+  // Sends only what the reader changed: the other window's command and the
+  // handshake's cached models are not this panel's to write. The committed
+  // value arrives through the store's announcement, in write order, so a
+  // write's own echo cannot land on a newer one.
+  const changeSettings = (patch: SettingsPatch) => {
+    session.generation.setSettings(patch).catch((error: unknown) => {
       setUndoError(error instanceof Error ? error.message : String(error))
     })
   }
 
   const selectModel = (nextModel: string) => {
-    updateSettings({
-      ...settings,
-      model: nextModel,
-      models,
-    })
+    changeSettings({ model: nextModel })
   }
 
   return (
@@ -629,7 +653,7 @@ function GenUIPanel({
             failure={run.failure}
             generation={session.generation}
             settings={settings}
-            onSetSettings={updateSettings}
+            onSetSettings={changeSettings}
           />
         ) : state.kind === 'loading' ? (
           <div className="gp-block" data-testid="genui-status-loading">
@@ -875,7 +899,7 @@ function GenerationFailure({
   failure: GenerateFailure
   generation: GenerationController
   settings: GenerationSettings
-  onSetSettings: (next: GenerationSettings) => void
+  onSetSettings: (patch: SettingsPatch) => void
 }): React.ReactElement {
   const [locatingAgent, setLocatingAgent] = useState(false)
   const [agentCommandDraft, setAgentCommandDraft] = useState(settings.agentCommand || 'agy')
@@ -896,10 +920,7 @@ function GenerationFailure({
 
   const saveAgentCommand = () => {
     const trimmed = agentCommandDraft.trim() || 'agy'
-    onSetSettings({
-      ...settings,
-      agentCommand: trimmed,
-    })
+    onSetSettings({ agentCommand: trimmed })
     setLocatingAgent(false)
   }
 

@@ -3,6 +3,7 @@ import type {
   GenerateProgress,
   GenerateRequest,
   GenerationSettings,
+  SettingsPatch,
   ViewSnapshot,
 } from '../host/types'
 
@@ -64,7 +65,10 @@ export interface PluginContext {
     /** Puts back the view the last generation replaced, once. */
     undo(): Promise<void>
     getSettings(): Promise<GenerationSettings>
-    setSettings(settings: GenerationSettings): Promise<void>
+    /** Writes only the patch's fields; resolves with the committed settings. */
+    setSettings(patch: SettingsPatch): Promise<GenerationSettings>
+    /** The one settings store changed, from this document or any other window. */
+    onSettings(fn: (settings: GenerationSettings) => void): Disposable
   }
   subscriptions: Disposable[]
 }

@@ -224,3 +224,54 @@ next:
 	}
 	return true
 }
+
+func TestNavSnapshotAndReindexWithOpenTabDoNotDeadlock(t *testing.T) {
+	dir := t.TempDir()
+	alpha := writeMD(t, dir, "alpha.md", "# Alpha\n\nFirst document.\n")
+	writeMD(t, dir, "beta.md", "# Beta\n\nSecond document.\n")
+
+	host := newDocumentHost()
+	host.disableWatch = true
+	host.settings = &settingsStore{dir: t.TempDir()}
+	w := &workspace{id: "ws-open", root: dir}
+	host.startIndex(w)
+	host.waitIndexReady(w, 2*time.Second)
+
+	s := &docSession{
+		host:   host,
+		id:     "doc-alpha",
+		ws:     w,
+		pathFn: func() string { return alpha },
+	}
+	host.mu.Lock()
+	host.byID[s.id] = s
+	w.tabs = append(w.tabs, s.id)
+	w.active = s.id
+	host.mu.Unlock()
+
+	done := make(chan NavSnapshot, 1)
+	go func() {
+		host.reindexOpenDocument(s)
+		done <- host.navSnapshot(w)
+	}()
+
+	var snap NavSnapshot
+	select {
+	case snap = <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("reindexOpenDocument/navSnapshot deadlocked with an open workspace tab")
+	}
+
+	var matched bool
+	for _, e := range snap.Entries {
+		if e.Kind == "file" && e.Name == "alpha.md" {
+			if e.DocumentID != "doc-alpha" {
+				t.Fatalf("alpha.md DocumentID = %q, want doc-alpha", e.DocumentID)
+			}
+			matched = true
+		}
+	}
+	if !matched {
+		t.Fatalf("alpha.md missing from navSnapshot entries: %+v", snap.Entries)
+	}
+}

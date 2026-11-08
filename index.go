@@ -452,10 +452,10 @@ func (h *documentHost) openTexts(w *workspace) map[string]string {
 	defer h.mu.Unlock()
 	for _, id := range w.tabs {
 		s := h.byID[id]
-		if s == nil {
+		if s == nil || s.doc == nil {
 			continue
 		}
-		p := s.doc.Path()
+		p := s.currentPath()
 		if p == "" {
 			continue
 		}
@@ -655,10 +655,10 @@ func (h *documentHost) navSnapshot(w *workspace) NavSnapshot {
 		if s == nil {
 			continue
 		}
-		extraInfo[id] = s.info()
-		p := s.doc.Path()
-		if p != "" {
-			openByPath[canonicalPath(p)] = s
+		info := s.infoLocked()
+		extraInfo[id] = info
+		if info.Path != "" {
+			openByPath[canonicalPath(info.Path)] = s
 		}
 	}
 	h.mu.Unlock()
@@ -717,9 +717,10 @@ func (h *documentHost) navSnapshot(w *workspace) NavSnapshot {
 		file := idx.files[rel]
 		sess := openByPath[canonicalPath(file.path)]
 		deleted := file.missing
+		var st DocumentInfo
 		if sess != nil {
 			seenOpen[sess.id] = true
-			st := sess.doc.State()
+			st = extraInfo[sess.id]
 			deleted = deleted || st.Deleted
 		}
 		if file.missing && sess == nil {
@@ -741,7 +742,6 @@ func (h *documentHost) navSnapshot(w *workspace) NavSnapshot {
 			Notes:      file.notes,
 		}
 		if sess != nil {
-			st := sess.doc.State()
 			entry.Edited = st.Edited
 			entry.Conflict = st.Conflict
 			entry.Deleted = deleted
@@ -842,7 +842,7 @@ func (h *documentHost) searchLockedResult(w *workspace, idx *workspaceIndex, que
 	openIDs := map[string]string{}
 	h.mu.Lock()
 	for _, s := range h.byID {
-		if p := s.doc.Path(); p != "" {
+		if p := s.currentPath(); p != "" {
 			openIDs[canonicalPath(p)] = s.id
 		}
 	}
@@ -1044,7 +1044,7 @@ func (h *documentHost) reindexOpenDocument(s *docSession) {
 	if idx == nil {
 		return
 	}
-	path := s.doc.Path()
+	path := s.currentPath()
 	rel := relSlash(idx.root, path)
 	open := h.openTexts(s.ws)
 	idx.mu.Lock()

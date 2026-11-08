@@ -111,12 +111,15 @@ type DocumentsOptions[T any] struct {
 	// from any goroutine, so keep it short and free of dialogs.
 	PathChange func(doc *Document[T]) error
 	// ReservePath, when set, is called with the file a document is about
-	// to become, before MyGo writes to it or moves the document's file
-	// there. Returning an error refuses the operation before anything
-	// touches the disk, and MyGo asks no overwrite questions about a
-	// target refused this way. The returned release function, when non
-	// nil, runs once the file operation ends, successful or not. It may
-	// be called from any goroutine, so keep it short and free of dialogs.
+	// to become, once a picker has returned that target and before MyGo
+	// writes to it or moves the document's file there. Returning an error
+	// refuses the operation before anything touches the disk, and MyGo
+	// skips its own overwrite question about a target refused this way. A
+	// platform save panel may confirm replacing an existing file while it
+	// picks the target, before this is called; that is the panel's
+	// question, not MyGo's. The returned release function, when non nil,
+	// runs once the file operation ends, successful or not. It may be
+	// called from any goroutine, so keep it short and free of dialogs.
 	ReservePath func(doc *Document[T], target string) (release func(), err error)
 	// AfterStart runs after recovery copies and launch files are opened,
 	// and before an untitled document would be created.

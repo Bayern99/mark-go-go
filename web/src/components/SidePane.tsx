@@ -308,7 +308,62 @@ function FileTree({
     )
   }
   return (
-    <div className="list" role="tree" aria-label="Files" data-testid="workspace-tree">
+    <div
+      className="list"
+      role="tree"
+      aria-label="Files"
+      data-testid="workspace-tree"
+      onKeyDown={(event) => {
+        const row = (event.target as HTMLElement | null)?.closest<HTMLElement>('[role="treeitem"]')
+        if (!row) return
+        const rows = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="treeitem"]'))
+        const index = rows.indexOf(row)
+        const entry = entries.find((item) => item.id === row.dataset.navId)
+        if (index < 0 || !entry) return
+        const focusRow = (next: number) => rows[next]?.focus()
+        switch (event.key) {
+          case 'ArrowDown':
+            event.preventDefault()
+            focusRow(index + 1)
+            return
+          case 'ArrowUp':
+            event.preventDefault()
+            focusRow(index - 1)
+            return
+          case 'Home':
+            event.preventDefault()
+            focusRow(0)
+            return
+          case 'End':
+            event.preventDefault()
+            focusRow(rows.length - 1)
+            return
+          case 'ArrowRight':
+            if (entry.kind !== 'folder') return
+            event.preventDefault()
+            if (entry.folderState === 'collapsed') onToggle(entry)
+            else if (Number(rows[index + 1]?.dataset.depth ?? -1) === entry.depth + 1) focusRow(index + 1)
+            return
+          case 'ArrowLeft': {
+            if (entry.kind === 'folder' && entry.folderState !== 'collapsed') {
+              event.preventDefault()
+              onToggle(entry)
+              return
+            }
+            event.preventDefault()
+            for (let above = index - 1; above >= 0; above -= 1) {
+              if (Number(rows[above].dataset.depth ?? -1) < entry.depth) {
+                focusRow(above)
+                return
+              }
+            }
+            return
+          }
+          default:
+            return
+        }
+      }}
+    >
       {collapsedCount > 0 ? (
         <p className="nav-collapsed meta" data-testid="collapsed-count">{collapsedCount} files hidden</p>
       ) : null}
@@ -331,13 +386,17 @@ function FileTree({
 
 function FolderRow({ entry, onToggle }: { entry: NavEntry; onToggle: () => void }) {
   const collapsed = entry.folderState === 'collapsed'
+  const count = entry.markdownCount ?? 0
   return (
     <button
       type="button"
       className="row folder"
       role="treeitem"
       aria-expanded={!collapsed}
+      aria-label={`${entry.name}, ${count} ${count === 1 ? 'file' : 'files'}`}
       data-testid={`folder-${entry.name}`}
+      data-nav-id={entry.id}
+      data-depth={entry.depth}
       style={{ paddingLeft: 8 + entry.depth * 16 }}
       onClick={onToggle}
     >
@@ -345,7 +404,7 @@ function FolderRow({ entry, onToggle }: { entry: NavEntry; onToggle: () => void 
       <span className="body">
         <span className="l1">
           <span className="nm">{entry.name}</span>
-          <span className="count meta">{entry.markdownCount ?? 0}</span>
+          <span className="count meta">{count}</span>
         </span>
       </span>
     </button>
@@ -371,6 +430,8 @@ function FileRow({
       role="treeitem"
       aria-current={selected ? 'true' : undefined}
       data-testid={selected ? 'workspace-current-file' : `file-${entry.name}`}
+      data-nav-id={entry.id}
+      data-depth={entry.depth}
       title={entry.path || entry.name}
       style={{ paddingLeft: 8 + entry.depth * 16 }}
       onClick={onOpen}

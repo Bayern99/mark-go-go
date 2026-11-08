@@ -377,7 +377,7 @@ const flushReaders = new WeakMap<HostAdapter, () => string>()
 /** One-document workspace around a HostAdapter, for existing pane tests. */
 export function wrapHostAsWorkspace(host: HostAdapter, name?: string): WorkspaceAdapter {
   const info = (): DocumentInfo => {
-    const state = isBrowserHost(host)
+    const state: DocState = isBrowserHost(host)
       ? host.getState()
       : {
           name: name ?? 'document',
@@ -511,7 +511,7 @@ function asSeed(doc: HostAdapter | BrowserWorkspaceSeed): BrowserWorkspaceSeed {
 }
 
 function infoFrom(seed: BrowserWorkspaceSeed): DocumentInfo {
-  const state = isBrowserHost(seed.host)
+  const state: DocState = isBrowserHost(seed.host)
     ? seed.host.getState()
     : { name: 'untitled.md', path: '', edited: false, conflict: false, deleted: false, readOnly: false, generating: false }
   return {

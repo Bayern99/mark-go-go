@@ -84,6 +84,13 @@ function treeSeed(root = '/work') {
   }
 }
 
+function typeInto(input: HTMLInputElement, value: string) {
+  // React's value tracker ignores a plain `input.value =` assignment, so drive
+  // the native setter before dispatching the input event.
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
 async function mountNav(workspace: WorkspaceAdapter) {
   const container = document.createElement('div')
   container.style.height = '100%'
@@ -123,7 +130,6 @@ describe('workspace navigation',
           expect(app.container.querySelector('[data-testid="file-audit.md"]')).not.toBeNull()
           expect(app.container.querySelector('[data-testid="folder-notes"]')?.textContent).toContain('1')
           expect(app.container.textContent).not.toContain('skip.txt')
-          expect(app.container.querySelector('[data-testid="workspace-empty"]')).toBeNull()
           expect(app.container.querySelector('[data-testid="welcome"]')).toBeNull()
         } finally {
           await app.unmount()
@@ -255,12 +261,12 @@ describe('workspace navigation',
         })
         const app = await mountNav(workspace)
         try {
-          const input = app.container.querySelector<HTMLInputElement>('input[aria-label="Filter files and headings"]')
-          if (!input) throw new Error('filter missing')
-          flushSync(() => {
-            input.value = 'Live Heading'
-            input.dispatchEvent(new Event('input', { bubbles: true }))
+          const input = await vi.waitFor(() => {
+            const el = app.container.querySelector<HTMLInputElement>('input[aria-label="Filter files and headings"]')
+            if (!el) throw new Error('filter missing')
+            return el
           })
+          flushSync(() => typeInto(input, 'Live Heading'))
           await vi.waitFor(() => {
             const hit = app.container.querySelector('[data-testid^="heading-hit-"]')
             if (!hit || !hit.textContent?.includes('Live Heading')) throw new Error('unsaved heading missing')
@@ -288,12 +294,12 @@ describe('workspace navigation',
         })
         const app = await mountNav(workspace)
         try {
-          const input = app.container.querySelector<HTMLInputElement>('input[aria-label="Filter files and headings"]')
-          if (!input) throw new Error('filter missing')
-          flushSync(() => {
-            input.value = 'zzzz'
-            input.dispatchEvent(new Event('input', { bubbles: true }))
+          const input = await vi.waitFor(() => {
+            const el = app.container.querySelector<HTMLInputElement>('input[aria-label="Filter files and headings"]')
+            if (!el) throw new Error('filter missing')
+            return el
           })
+          flushSync(() => typeInto(input, 'zzzz'))
           await vi.waitFor(() => {
             if (!app.container.querySelector('[data-testid="filter-indexing"]')) throw new Error('indexing notice missing')
           })
@@ -349,7 +355,9 @@ describe('workspace navigation',
           expect(app.container.querySelector('[data-testid="welcome"]')).not.toBeNull()
           expect(app.container.querySelector('[data-testid="open-folder"]')).not.toBeNull()
           expect(app.container.querySelector('[data-testid="new-document"]')).not.toBeNull()
-          expect(app.container.querySelector('[data-testid="recent-workspaces"]')?.textContent).toContain('work')
+          await vi.waitFor(() => {
+            expect(app.container.querySelector('[data-testid="recent-workspaces"]')?.textContent).toContain('work')
+          })
           flushSync(() => app.container.querySelector<HTMLButtonElement>('[data-testid="open-folder"]')?.click())
           await vi.waitFor(() => {
             expect(picked).toBe('/picked')

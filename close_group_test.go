@@ -8,10 +8,12 @@ import (
 )
 
 // Closing one document runs the session drop below (OnClosed): a folder
-// workspace keeps its window, its remaining tabs and its session entry.
-// This locks that lifecycle state and the session capture after a close.
-// It does not press the native menu: no headless seam reaches a menu key
-// equivalent, so the Cmd+W route itself is verified on the real app.
+// workspace keeps its registration, its remaining tabs and its session
+// entry. It does not press the native menu: no headless seam reaches a
+// menu key equivalent, so the Cmd+W route itself is verified on the real
+// app. Nor can a window made for a test show a real close: its destroy is
+// a no-op without a native handle, so window survival is the native run's
+// claim, not this test's.
 func TestClosingOneDocumentKeepsFolderWindowTabsAndSession(t *testing.T) {
 	root := t.TempDir()
 	h := &documentHost{
@@ -46,10 +48,7 @@ func TestClosingOneDocumentKeepsFolderWindowTabsAndSession(t *testing.T) {
 		t.Fatalf("active after closing the untitled = %q, want the last remaining tab", w.active)
 	}
 	if h.byWindow[win] != w {
-		t.Fatal("the folder workspace must keep its window")
-	}
-	if win.IsDestroyed() {
-		t.Fatal("closing one tab must not destroy the folder window")
+		t.Fatal("the folder workspace must stay registered after one tab closes")
 	}
 	if _, ok := h.byID["u"]; ok {
 		t.Fatal("the closed session must be gone")

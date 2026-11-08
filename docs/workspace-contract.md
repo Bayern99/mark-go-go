@@ -20,23 +20,26 @@ Document-level methods take `documentId`. Workspace-level methods act on the cal
 
 ```go
 type WorkspaceSnapshot struct {
-    ID        string         `json:"id"`
-    Root      string         `json:"root"`     // empty = untitled window
-    Name      string         `json:"name"`
-    Kind      string         `json:"kind"`     // "folder" | "untitled"
-    Documents []DocumentInfo `json:"documents"` // tab order
-    ActiveID  string         `json:"activeId"`  // empty when no tabs
+    ID           string         `json:"id"`
+    Root         string         `json:"root"`     // empty = untitled window
+    Name         string         `json:"name"`
+    Kind         string         `json:"kind"`     // "folder" | "untitled"
+    Documents    []DocumentInfo `json:"documents"` // tab order
+    ActiveID     string         `json:"activeId"`  // empty when no tabs
+    RestoreError string         `json:"restoreError,omitempty"`
 }
 
 type DocumentInfo struct {
-    ID         string `json:"id"`
-    Name       string `json:"name"`
-    Path       string `json:"path"`
-    Edited     bool   `json:"edited"`
-    Conflict   bool   `json:"conflict"`
-    Deleted    bool   `json:"deleted"`
-    ReadOnly   bool   `json:"readOnly"`
-    Generating bool   `json:"generating"` // this document's generation slot is occupied
+    ID           string `json:"id"`
+    Name         string `json:"name"`
+    Path         string `json:"path"`
+    Edited       bool   `json:"edited"`
+    Conflict     bool   `json:"conflict"`
+    Deleted      bool   `json:"deleted"`
+    ReadOnly     bool   `json:"readOnly"`
+    Generating   bool   `json:"generating"` // this document's generation slot is occupied
+    ViewMode     string `json:"viewMode,omitempty"`
+    RestoreError string `json:"restoreError,omitempty"`
 }
 
 type Snapshot struct {
@@ -74,6 +77,8 @@ WatchView(ctx, documentId string) error
 UnwatchView(ctx, documentId string) error
 UndoView(ctx, documentId string) error
 SetNativeEditState(ctx, documentId string, canUndo, canRedo bool) error  // editor undo, not UndoView
+SetViewMode(ctx, documentId, mode string) error
+PrepareQuit(ctx) error   // ack one window's flushQuit; persist after every window acks
 Generate(ctx, documentId string, req GenerateRequest, progress *Channel[GenerateProgress]) error
 GetSettings() (Settings, error)
 SetSettings(s Settings) error
@@ -127,11 +132,33 @@ After a successful first save or Save As:
 
 ## Native commands
 
-File menu Save / Save As / Duplicate / Rename / Move / Revert act on the **active document of the focused window** (MyGo document group). Close (`Cmd+W`) closes the **active document tab**, not the window. The window close button / File > Close Window runs `CloseWorkspace` (asks every dirty document; cancel keeps the window and every tab).
+File menu Save / Save As / Duplicate / Rename / Move / Revert act on the **active document of the focused window** (MyGo document group). Close (`Cmd+W`) closes the **active document tab**, not the window. The window close button / File > Close Window runs `CloseWorkspace` (asks every dirty document; cancel keeps the window and every tab). Quit emits `flushQuit` to every workspace window; `PrepareQuit` writes `session.json` only after every window acks, then continues the quit. AskOnQuit stays unset so MyGo recovery copies keep unsaved bytes.
 
 Edit menu Undo / Redo (`nativeCommand` `undo` / `redo`) capture that same active `documentId` at click time and apply the **editor** history of that document. They are not `UndoView`. A focused in-place Composer (`textarea` inside `.composer`) keeps native field undo; read-only GenUI / ComparisonTable focus does not rewrite the document. `SetNativeEditState(documentId, canUndo, canRedo)` reports real editor availability for the focused window's active document only, so a background pane cannot steal menu state. `DocumentsOptions.Equal` already clears the edited mark when Undo returns the on-disk bytes.
 
 Dialogs use the workspace window as parent. Generation in progress for a document disables that document's Save As / Rename / Move; ordinary Save, edit, and tab switch stay available.
+
+## Session file (#23)
+
+`session.json` in `PathUserData` is the layout this app restores, not a copy of unsaved bytes:
+
+```json
+{
+  "workspaces": [
+    {
+      "id": "workspace id",
+      "root": "/abs/folder or empty for an untitled window",
+      "tabs": [{"id": "documentId", "path": "/abs/file.md", "viewMode": "genui"}],
+      "activeId": "documentId"
+    }
+  ]
+}
+```
+
+- Written on layout changes (open, tab move, activate, close, view mode) and once more at quit after every window acked `flushQuit`. Writes are skipped while recovery/restore runs so startup cannot overwrite the stored layout with half-restored windows.
+- Only workspaces the user did not close are stored; an empty untitled window (Welcome) is not. Closing a tab or a workspace drops it, and cancel keeps the scene as it was.
+- Unsaved text stays in MyGo's recovery copies, keyed by `documentId`; the session only names the tabs, their order, the active one and the view mode. Restore reuses a recovery document instead of opening its path again, and never starts a generation the user cancelled.
+- A missing root or file becomes `WorkspaceSnapshot.restoreError` / `DocumentInfo.restoreError` and the other workspaces still restore. A file opened by this launch takes focus after the layout is placed.
 
 ## MyGo document groups (controlled patch)
 
@@ -179,6 +206,7 @@ interface HostAdapter extends ViewFileSource, ViewGenerator {
   rename(): Promise<void>
   moveTo(): Promise<void>
   revert(): Promise<void>
+  setViewMode(mode: string): Promise<void>
   onReload(fn: (snap: HostDocSnapshot) => void): Disposable
   onState(fn: (state: DocumentInfo) => void): Disposable
 }
@@ -205,3 +233,4 @@ viewChanged: { id, exists, text, error, canUndo }
 - Browser: `WorkspaceAdapter` / `HostAdapter` / `App` / `DocumentPane` public operations.
 - Go: real temp files through `workspaceHost` public methods (open/activate/close/save/save-as routing, identity preserved, cancel close). Native menus and file dialogs are verified after integration on macOS, not claimed here.
 - #22: `NavSnapshot` / `SetFilter` / `PickFolder` / `RecentWorkspaces` and the left-pane tree, filter, splitter, crumbs, and welcome/recents. Opening a folder does not wait for WatchFiles or a full scan; `incomplete` stays true until indexing is ready. Native Open Folder / large-dir smoke is the verification owner.
+- #23: `session.json` / `planSessionRestore` / `SetViewMode` / `PrepareQuit` for workspace roots, tab order, active document, view mode, missing-root/file issues, cancel-close vs explicit close, and quit flush-ack. Unsaved bytes stay MyGo recovery copies; Agent jobs are not replayed.

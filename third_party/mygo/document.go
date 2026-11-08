@@ -103,6 +103,9 @@ type DocumentsOptions[T any] struct {
 	// BeforeWindowClose, when set and returning true, prevents the default
 	// group save-ask so the app can flush then CloseWorkspace.
 	BeforeWindowClose func(win *Window) bool
+	// AfterStart runs after recovery copies and launch files are opened,
+	// and before an untitled document would be created.
+	AfterStart func()
 }
 
 // Documents opens, creates and keeps track of the documents of one kind,
@@ -179,6 +182,7 @@ func NewDocuments[T any](opts DocumentsOptions[T]) *Documents[T] {
 			return opts.Command(role, b.ops.(*Document[T]), win)
 		},
 		beforeClose: opts.BeforeWindowClose,
+		afterStart:  opts.AfterStart,
 	})
 	return ds
 }
@@ -789,6 +793,7 @@ type docKindConfig struct {
 	empty  func() any
 	command     func(MenuRole, *docBase, *Window) bool
 	beforeClose func(*Window) bool
+	afterStart  func()
 }
 
 func newDocKind(c docKindConfig) *docKind {

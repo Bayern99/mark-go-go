@@ -28,6 +28,7 @@ Then keep the document-group edits that live in this tree under `third_party/myg
 - `Document.OnClosed(fn) (off func())` — fired after the document is actually closed.
 - `DocumentsOptions.Command` — if set and returns true, documentRole skips default Save/SaveAs/Duplicate/Rename/Move/Revert/Close and Undo/Redo (the web view's empty undo manager). The document is the one active at click time.
 - `DocumentsOptions.BeforeWindowClose` — if set and returns true, the window close is prevented so the app can Flush then CloseWorkspace.
+- `DocumentsOptions.AfterStart` — if set, runs after recovery copies and launch files are opened, and before an untitled document would be created. #23 restores workspace layout there.
 
 `DocumentsOptions.Window` may return an existing window. `attach` appends to that window's `docGroup` instead of overwriting a single mapping. `documentFor(w)` returns the active document.
 

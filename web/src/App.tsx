@@ -154,6 +154,7 @@ export function DocumentPane({
   const [ready, setReady] = useState(false)
   const [, refreshPlugins] = useReducer((value: number) => value + 1, 0)
   const restored = useRef(false)
+  const reportedMode = useRef(false)
   const latestMarkdown = useRef('')
   const activeRef = useRef(active)
   const revealBinder = useRef(onReadyReveal)
@@ -459,7 +460,7 @@ export function DocumentPane({
   useLayoutEffect(() => {
     if (!ready || restored.current || !docState) return
     restored.current = true
-    const saved = rememberedViewMode(docState.path)
+    const saved = docState.viewMode || rememberedViewMode(docState.path)
     if (saved === 'markdown') editorRef.current?.setMode('source')
     else if (saved && services.views.getAll().some((v) => v.location === 'center' && v.id === saved)) {
       modes.showCenter(saved)
@@ -467,8 +468,17 @@ export function DocumentPane({
   }, [ready, docState, services, modes])
 
   useEffect(() => {
-    if (restored.current && docState) rememberViewMode(docState.path, viewMode)
-  }, [viewMode, docState])
+    if (!restored.current || !docState) return
+    rememberViewMode(docState.path, viewMode)
+    // The first run is the mode being restored, which the session already
+    // holds. Writing it back would race the restore with the default.
+    if (!reportedMode.current) {
+      reportedMode.current = true
+      return
+    }
+    if (docState.viewMode === viewMode) return
+    void host.setViewMode(viewMode)
+  }, [viewMode, docState, host])
 
   useEffect(() => {
     if (!active) return
@@ -569,6 +579,11 @@ export function DocumentPane({
               </div>
             ) : null}
             {docState?.readOnly ? <div className="banner banner-readonly">Read only</div> : null}
+            {docState?.restoreError ? (
+              <div className="banner" role="alert" data-testid="doc-restore-error">
+                {docState.restoreError}
+              </div>
+            ) : null}
 
             <div
               className="center-stage"
@@ -731,6 +746,11 @@ function WorkspaceApp({
 
   return (
     <div className="workspace-shell">
+      {snap?.restoreError ? (
+        <div className="banner" role="alert" data-testid="restore-error">
+          {snap.restoreError}
+        </div>
+      ) : null}
       <div className="doc-tabs" role="tablist" aria-label="Documents" onKeyDown={onTabsKey} data-testid="doc-tabs">
         {documents.map((doc) => (
           <button

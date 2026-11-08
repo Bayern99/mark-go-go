@@ -19,6 +19,7 @@ import (
 
 func main() {
 	host := newDocumentHost()
+	mygo.App.OnBeforeQuit(host.onBeforeQuit)
 
 	ds := mygo.NewDocuments(mygo.DocumentsOptions[string]{
 		Types: []mygo.DocumentType{
@@ -43,6 +44,7 @@ func main() {
 		BeforeWindowClose: func(win *mygo.Window) bool {
 			return host.interceptWindowClose(win)
 		},
+		AfterStart: host.restoreAfterStart,
 	})
 	host.setDocuments(ds)
 	mygo.BindAs("WorkspaceHost", host)
@@ -72,7 +74,6 @@ func main() {
 			{Role: mygo.RoleViewMenu},
 			{Role: mygo.RoleWindowMenu},
 		}))
-		host.showWelcomeIfEmpty()
 		applyNativeEditMenu(false, false)
 	})
 	err := mygo.App.Run()

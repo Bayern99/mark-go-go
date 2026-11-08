@@ -217,6 +217,10 @@ export function createBrowserHost(
       if (generating) throw new Error('A view is being generated; wait for it to finish, or cancel it.')
     },
     async revert() {},
+    async setViewMode(mode: string) {
+      state = { ...state, viewMode: mode }
+      emitState()
+    },
     bindFlush(getText) {
       flushReaders.set(hostSelf, getText)
       return disposable(() => {
@@ -393,6 +397,8 @@ export function wrapHostAsWorkspace(host: HostAdapter, name?: string): Workspace
       deleted: state.deleted,
       readOnly: state.readOnly,
       generating: state.generating ?? false,
+      viewMode: state.viewMode,
+      restoreError: state.restoreError,
     }
   }
   const snap = (): WorkspaceSnapshot => ({
@@ -490,6 +496,7 @@ export interface BrowserWorkspaceOptions {
   confirmClose?: (id: string) => CloseResult | Promise<CloseResult>
   confirmCloseWorkspace?: () => CloseResult | Promise<CloseResult>
   nav?: BrowserNavSeed
+  restoreError?: string
 }
 
 function isBrowserHost(host: HostAdapter): host is BrowserHost {
@@ -516,6 +523,8 @@ function infoFrom(seed: BrowserWorkspaceSeed): DocumentInfo {
     deleted: state.deleted,
     readOnly: state.readOnly,
     generating: state.generating ?? false,
+    viewMode: state.viewMode,
+    restoreError: state.restoreError,
   }
 }
 
@@ -552,6 +561,7 @@ export function createBrowserWorkspace(
       return { ...info }
     }),
     activeId,
+    restoreError: options.restoreError,
   })
 
   const nav = new BrowserNavIndex(root, options.nav)
@@ -620,6 +630,8 @@ export function createBrowserWorkspace(
           deleted: state.deleted,
           readOnly: state.readOnly,
           generating: state.generating ?? false,
+          viewMode: state.viewMode,
+          restoreError: state.restoreError,
         })
         emit()
       }),

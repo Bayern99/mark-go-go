@@ -15,6 +15,8 @@ export interface DocState {
   readOnly: boolean
   /** True while this document's generation slot is occupied. */
   generating?: boolean
+  viewMode?: string
+  restoreError?: string
 }
 
 /** One open document as the workspace lists it. `id` is stable across path and window. */
@@ -39,6 +41,7 @@ export interface WorkspaceSnapshot {
   kind: WorkspaceKind
   documents: DocumentInfo[]
   activeId: string
+  restoreError?: string
 }
 
 export type FolderState = 'open' | 'collapsed' | 'empty'
@@ -126,6 +129,7 @@ export type NativeCommandName =
   | 'closeWorkspace'
   | 'undo'
   | 'redo'
+  | 'flushQuit'
 
 /** Native File-menu / key-equivalent command, captured with the document id at click time. */
 export interface NativeCommand {
@@ -276,6 +280,8 @@ export interface HostAdapter extends ViewFileSource, ViewGenerator {
    * native commands can flush this id, not the active tab.
    */
   bindFlush?(getText: () => string): Disposable
+  /** Persist this document's view mode; bound to `id`, not the active tab. */
+  setViewMode(mode: string): Promise<void>
 }
 
 export interface WorkspaceAdapter {

@@ -292,48 +292,63 @@
 
 原生构建来源：`/private/tmp/mark-go-go-spec20-verify-21/build/darwin-arm64/Mark Go Go CoreSmoke21.app`，构建日志 `/private/tmp/mgo-spec20-evidence/coresmoke21-build-7b90f1e.log`。上述会话以正常 Cmd+Q 结束，应用已停止。
 
-### 已观察的原生失败（7b90f1e，FAIL）
+### 已观察的原生失败（7b90f1e，FAIL；47e 已复验修复）
 
-以下记录的是 `7b90f1e` 上的实际观察，作为历史证据保留；修复候选见下一小节，但未重新打包复验前仍不是 PASS。
+`7b90f1e` 上实际观察到的红证据保留在此，不因后续修复删除。最后一列是 `47e3b4a` 新包上的复验结果；未复验的项目不因“同名文件已修复”而转 PASS。
 
-| 场景 | 实际观察 | 判定 |
-|---|---|---|
-| 正常退出后的内容保护 | 正常 Quit 后，两份未编辑文档在磁盘上被写成 0 字节（2/2）。证据：`/private/tmp/mgo-spec20-evidence/native32/quit-zerodocs-7b90f1e/`（`alpha.md`、`beta.md` 均为 0 字节；同一快照里的 `session.json` 仍记录两个标签、各自 `viewMode` 与 `activeId`，说明布局写入正常、内容写入丢失） | **FAIL（已观察）** |
-| 退出后重启恢复的呈现 | 重启后存在标签，但中央没有活动的编辑器与选中状态；必须点击标签后才渲染文档 | **FAIL（已观察）** |
-| 期望（不变） | 未编辑的文档在退出、恢复、重启后必须逐字节不变；恢复后当前标签应立即可见并可编辑 | 规范要求 |
+| 场景 | 7b90f1e 实际观察 | 7b 判定 | 47e3b4a 复验 |
+|---|---|---|---|
+| 正常退出后的内容保护 | 正常 Quit 后两份未编辑文档被写成 0 字节（2/2），mtime 等于 CmdQ 时刻，无对话框，会话已保存。证据：`native32/quit-zerodocs-7b90f1e/` | **FAIL** | **PASS（已观察）**：无编辑 CmdQ 前后 alpha 172 B / beta 171 B 的 sha256 与 mtime 完全不变，进程退出，`session.json` 合理 |
+| 退出后重启恢复的呈现 | 重启后活动面板空白；窗口标题 / represented URL 是 `beta.md`，而会话 `activeId` 是 alpha；没有选中标签与编辑器子树，点击标签后才出现内容（2/2）。证据：同目录 + AX transcript | **FAIL** | **PASS（已观察）**：重启后标题与 URL 为 `alpha.md`，alpha 标签选中，alpha 编辑器已挂载并显示 `NATIVE-A-INPUTxy`，视图模式 `Markdown`，`Saved v1`；无空白、无错标签标题 |
+| 未命名 Save As 写入 0 字节并丢内容/历史 | 可见 584 字符、撤销重做正常的未命名文档 Save As 到工作区后为 0 字节，迁移标签只剩占位，历史消失。证据：`native32/quit-zerodocs-7b90f1e/untitled-migrate-0byte.md`、`evidence-7b90f1e/session-midtest.json` | **FAIL** | **PASS（已观察）**：typed untitled 经 Cmd+Z / ⇧⌘Z 后 Save As 为精确 50 B（`SAVEAS47-TYPED-LINE\n\nsecond-line-only-in-untitled\n`，sha256 `f100a808…ec30`），标签迁移到工作区且内容完整；迁移后撤销重做仍有效 |
+| 自动保存把两份打开文档清零（12:30:22） | `comparison.md`、`partial-sources.md` 在 7b 运行期间变为 0 字节（保留于 `evidence-7b90f1e/empty-autosave-1230/` 并从备份恢复） | **FAIL** | 同一交付修复覆盖；这两份文件没有逐一复跑。47e 上的普通编辑自动保存（alpha 181 B）与随后 CmdQ 字节保持已观察 |
+| 期望（不变） | 未编辑文档在退出、恢复、重启后逐字节不变；恢复后当前标签立即可见并可编辑；保存不得丢失内容与历史 | 规范要求 | 规范要求 |
 
-这两项已由原生候选 `47e3b4a`（基于 `6e7e395`）修复，见下一小节；在重新打包并完成同一原生流程复验之前，这两行保持 FAIL。不要因为自动回归或文档完成而改判。其余原生场景仍未运行，见下一节。
+修复根因与自动检查见下一小节；未列入“47e 复验”的场景仍按“未运行”处理。
 
-### 修复候选 `47e3b4a`（基于 `6e7e395`，自动检查 PASS，原生待验）
+### 修复 `47e3b4a`：自动检查 PASS
 
-最终原生候选提交 `47e3b4a`（`Flush the text on screen, not a change-only buffer (#23)`，父提交 `6e7e395`；已进入集成分支）。下面的历史 FAIL 行不因此改为 PASS；只有真实新包复验后才能更新。
+最终原生候选提交 `47e3b4a`（`Flush the text on screen, not a change-only buffer (#23)`，父提交 `6e7e395`，已进入集成分支）。
 
 | 项 | 内容 | 判定 |
 |---|---|---|
-| 自动回归（目标用例） | 目标回归由 2 项失败转为 **11 项通过**，`tsc` 通过（源码负责人执行并报告） | **PASS（自动，目标用例）** |
+| 自动回归（目标用例） | 目标回归由 2 项失败转为 **11 项通过**，`tsc` 通过（源码负责人执行并报告） | **PASS（自动）** |
 | 全量自动检查（`47e3b4a`） | 前端 `typecheck`、真实 Chromium 全量 **26 个文件、270 项通过**、`build` 通过；Go 树与 `6e7e395` 字节相同，沿用其 `go vet` + `go test -race` PASS；变更 Go 文件 `gofmt` 干净 | **PASS（自动）** |
-| 退出/保存的空缓冲成因与修复 | 面板此前用一份只记录 `onChange` 的占位缓冲参与 flush，重载或重新挂载后会交付假的 `''`。现在交付面板真正持有的文本：编辑器已挂载时取 `editor.getMarkdown()`（屏幕上的当前 Markdown），否则回落到宿主载入的核心文档状态；未挂载编辑器的面板不注册 flush；用户主动清空则按普通编辑送达 `""` | 已修复（代码，47e） |
+| 退出/保存的空缓冲成因与修复 | 面板此前用一份只记录 `onChange` 的占位缓冲参与 flush，重载或重新挂载后会交付假的 `''`。现在交付面板真正持有的文本：编辑器已挂载时取 `editor.getMarkdown()`，否则回落到宿主载入的核心文档状态；未挂载编辑器的面板不注册 flush；用户主动清空则按普通编辑送达 `""` | 已修复（代码，47e） |
 | 恢复后无活动编辑器：成因与修复 | 从磁盘打开的文档在恢复时得到新的 MyGo id，旧实现按会话里存的 id 设置活动标签，活动标签因此指向不存在的 id。现在把存储的 active tab 映射到该文档真实的新 id，再设为活动（6e） | 已修复（代码，6e） |
-| 原生重验 | 新原生包（`47e3b4a`）的复验待 `NativeAcceptance32` 执行；在真实打包应用上完成「退出 → 重启 → 字节与活动编辑器」复验前，上面的原生 FAIL 行保持 FAIL | **BLOCKED（等待原生）** |
 | 文档契约 | `docs/workspace-contract.md` 的会话规则同步为：flush 交付屏幕上的文本（否则核心文档状态），恢复把存储的 active tab 映射到真实 id | 已同步（47e 文本） |
 
-### 等待真实原生证据的行（BLOCKED / 未运行）
+### `47e3b4a` 原生复验（部分 PASS，实际观察）
 
-以下每一项都需要 `NativeAcceptance32` 在修复后的最终构建上实际操作；本文件不预填结果：
+构建：`/private/tmp/mark-go-go-spec20-verify-21/build/darwin-arm64/Mark Go Go CoreSmoke21.app`（`dev.markgogo.editor.coresmoke21`，构建日志 `coresmoke21-build-47e3b4a.log`），fixtures 仅用 `native32/…`。这是**部分报告**，下列之外未执行。
 
-| 范围 | 未运行的原生检查 |
+| 场景 | 实际观察 | 判定 |
+|---|---|---|
+| 无编辑 CmdQ 的字节与 mtime | alpha 172 B sha256 `1dc63b4b…9264`、beta 171 B `51e40b57…9f82`，退出后哈希与 mtime 均不变；进程退出，`session.json` 合理 | **PASS** |
+| 编辑与保存后的正常 CmdQ | alpha 181 B `c797c639…7306`、新的 `saveas-typed-47e.md` 50 B `f100a808…ec30`、beta 不变；退出后全部不变，无对话框 | **PASS** |
+| 输入归属与快速切换 | 在 alpha 输入 `R47-ALPHA` 后 119 ms 点击 beta（输入开始后 155 ms）：beta 无该文本，alpha 自动保存为 `NATIVE-A-INPUTxyR47-ALPHA`（181 B），beta 哈希与 mtime 不变 | **PASS** |
+| 首次输入的显式保存 | alpha 上 Cmd+S 写入同一 181 B 内容，编辑器内容保持，无空写入 | **PASS** |
+| 未命名 Save As 与迁移 | 见上表：精确 50 B、标签迁移、无占位、`Saved v1` | **PASS** |
+| 迁移后的撤销/重做 | 迁移文档内 Cmd+Z 移除输入（Edited）、⇧⌘Z 恢复；alpha/beta 字节不变，历史属于迁移后的文档 | **PASS** |
+| 原生 Rich text 特殊块与原地 Composer 字节保真（在 7b 构建观察；相关代码路径未被 6e/47e 改动） | `baseline-richtext.md`：frontmatter 表格、标题、NOTE alert、脚注与批注呈现；alert 的 `Edit` 打开 composer；输入 ` CANCEL-MARK` 后 Esc，文档与文件不变；输入 ` SAVED-MARK` 后 ⌘↩ 保存，仅该行变化（178→180 B，`e6141adb…6942`），其余字节一致；Cmd+Z + 自动保存恢复原始 169 B `5b377f55…75e6` | **PASS（7b 构建，路径未改动）** |
+| ComparisonTable 键盘排序与不写原文（7b 构建） | 表头 `Option/Size/Notes` 可聚焦，Space 排序 180/12/9（数值降序），再次 Space 恢复；`comparison.md` 哈希与 mtime 不变 | **PASS（7b 构建，路径未改动）** |
+| 部分来源与全部缺失的实时跟随（7b 构建） | mixed 视图：FRESH、STALE `Source changed`、MISSING `Source not found` 且 `Edit in source`/`Note` 禁用并提示“None of this part's sources are in the document now.”、无哈希不标记；面板 `2 components out of date`、`Regenerate changed (2)`；`state.sh all-missing` 实时变为 MISSING A/B 且均禁用，`state.sh partial` 恢复；原文哈希与 mtime 不变 | **PASS（7b 构建，路径未改动）** |
+| 窄窗右栏浮层（7b 构建） | 约 750 pt 窗口下 `Show right panel` 以浮层盖在文档上，含 Outline/GenUI 分段；GenUI 显示过期摘要；`Hide` 收起 | **PASS（7b 构建，路径未改动）；宽窗未验** |
+
+### 仍未运行 / 受策略阻塞的原生行
+
+| 范围 | 状态与缺口 |
 |---|---|
-| 输入与保存归属（#21/#30） | 在 A 输入后立即切换/关闭/保存，证明待发送输入属于 A；原生 Edit 菜单 Undo/Redo 与 `⌘Z` 同一事务；B 的独立历史；模式与选区状态保持 |
-| 标签与导航（#21/#22） | 同名标签的父目录区分、背景标签徽标、键盘树导航/过滤/分栏/面包屑、根文件计数换行表现、最近工作区持久化 |
-| 未命名与路由（#21） | 未命名草稿；只把 A 保存进目标工作区而 B 留在临时窗口；Save As 到根外只迁移一个稳定会话；Duplicate 目标唯一性；文件夹最后一个标签保留 vs 空临时窗口关闭 |
-| 关闭与取消（#21） | 脏未命名/标签/窗口关闭时原生 Cancel 保留现场；已保存文档依赖自动保存，需用真实未命名/冲突/已删除场景；原生命令与对话框指向捕获的文档/窗口 |
-| 恢复（#23） | 原生候选 `47e3b4a` 重新打包后：正常退出 + 重启，未编辑文档逐字节不变、恢复后当前标签立即有活动编辑器与选中；再验工作区、标签顺序、活动文档与模式、未保存文本、缺失路径部分恢复；显式关闭的文档/工作区不复活；不重放 Agent |
-| 并发生成与设置（#24） | A/B 用真实原生 Go ACP fixture 并发生成；切换时 A 冻结；空闲面板收到全局 `settingsChanged`；Model / Locate agent 控件与持久化、`Agent’s choice`；取消/失败保留旧视图；关闭/退出清理 |
-| 特殊块（#26） | 实际 Rich text 呈现、原地编辑/取消/保存/撤销、相邻字节与 CRLF 不变、原始 HTML 不执行、只读控件；批注/Focus Composer 键盘与不误报 `Source changed` |
-| 部分来源与对比表（#28/#31） | 部分/全部来源缺失时的编辑与批注目标、禁用行为；对比表键盘排序且来源字节不变 |
-| 大目录（#14/#29） | 准备好的大目录上首次视图就绪时间与监听竞态，按实际测量记录；不沿用未验证的旧根因 |
-| 视觉与离线资源（#25） | 打包应用离线字体/图标、窄窗右栏浮层开合、宽窗布局、reduced motion，以及与同一基准源的 Rich text 对比截图（基准图为浏览器 1351×1190 表面，不是原生 940×720） |
-| 辅助技术（#31） | ComparisonTable 的真实 VoiceOver/AX 行为，与键盘验证分开陈述；浅层 AX 树缺少子孙本身不作 PASS/FAIL |
+| 原生 Edit 菜单点击 Undo/Redo | 键盘 `⌘Z` / `⇧⌘Z` 已在 47e 验证；菜单项点击与 `SetNativeEditState` 的菜单可用性未在原生界面点击验证 |
+| 关闭与取消（#21） | 脏关闭/保存的原生 Cancel 与对话框归属、未命名脏关闭、只读文档保存、重复目标唯一性、文件夹最后一个标签 vs 空临时窗口，均未运行 |
+| 恢复剩余项（#23） | 未保存未命名文本、缺失根、显式关闭不复活、Agent 不重放，未运行 |
+| 标签与导航（#21/#22） | 同名标签父目录区分、背景标签徽标、键盘树/过滤/分栏/面包屑、根文件计数换行、最近工作区持久化，未运行 |
+| 并发生成与设置（#24） | 真实原生 ACP fixture 的 A/B 并发生成、切换时 A 冻结、空闲面板 `settingsChanged`、Model / Locate agent 持久化、取消/失败保留旧视图、关闭/退出清理，未运行（fixtures 已备好） |
+| 特殊块剩余（#26） | 其它特殊块类型、只读控件、批注/Focus Composer 键盘，未运行 |
+| 大目录（#14/#29） | 首次视图就绪时间与监听竞态，未测量 |
+| 视觉与离线资源（#25） | 打包应用离线字体/图标证明、宽窗布局、reduced motion、与同一基准源的 Rich text 对比截图，未运行 |
+| 辅助技术（#31） | **BLOCKED**：VoiceOver 处于关闭（无 VO 进程），开启属于动作时需用户同意的系统设置变更；键盘排序已 PASS，浅层 AX 只看到表头文本与聚焦的 `button Size`，不据此声称 VoiceOver 通过 |
+| reduced motion（#25） | **BLOCKED**：`ReduceMotionEnabled = 0`，开启同样需要动作时确认；不作 PASS |
 
 ### 设置审计（2026-11-08 复核）
 
@@ -345,7 +360,7 @@
 | 视图模式（Rich text / Markdown / GenUI） | 已实现；按 `documentId` 随会话保存 | `SetViewMode`、`session.json` |
 | ACP 模型列表缓存 | 已实现；只由 `session/new` 握手写入 | `settings.go` 的 `setModels` |
 | 字体、字号、主题、外观切换、系统提示词 | **N/A（按设计不提供）**，不是未实现控件 | ADR 0006：本轮固定浅色与离线字体；界面无此类入口 |
-| 原生保存表 / Edit 菜单归属 / VoiceOver | 未在本轮自动化中验证，等待上述原生行 | 本文件的 BLOCKED 表 |
+| 原生保存表 / Edit 菜单归属 / VoiceOver | 保存表（首次输入 Cmd+S、typed untitled Save As）已在 47e 原生观察；Edit 菜单点击与 VoiceOver 仍未验证，见上表 | 上文的原生证据与未运行行 |
 
 ## 未验证 / 已知问题
 

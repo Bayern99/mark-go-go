@@ -46,10 +46,35 @@ func TestParseMarkdownMetaHeadingsAndNotes(t *testing.T) {
 }
 
 func TestParseMarkdownMetaUTF16Offset(t *testing.T) {
-	body := "# café\n"
-	meta := parseMarkdownMeta(body)
-	if len(meta.Headings) != 1 || meta.Headings[0].Offset != 0 {
-		t.Fatalf("headings = %+v", meta.Headings)
+	cases := []struct {
+		name string
+		body string
+		want []int
+	}{
+		{
+			name: "ASCII, CJK and emoji headings",
+			body: "# one\n# 中\n# 😀\n# mixed café 😀\n",
+			// JS anchors count UTF-16 code units: emoji cost two.
+			want: []int{0, 6, 10, 15},
+		},
+		{
+			name: "CRLF and mixed line endings",
+			body: "# one\r\n# 中\r\n\r\n# 😀\n",
+			want: []int{0, 7, 14},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			meta := parseMarkdownMeta(tc.body)
+			if len(meta.Headings) != len(tc.want) {
+				t.Fatalf("headings = %+v, want %d", meta.Headings, len(tc.want))
+			}
+			for i, h := range meta.Headings {
+				if h.Offset != tc.want[i] {
+					t.Fatalf("heading %d (%q) offset = %d, want %d", i, h.Text, h.Offset, tc.want[i])
+				}
+			}
+		})
 	}
 }
 
@@ -154,7 +179,7 @@ func TestNavFilterUsesUnsavedOpenText(t *testing.T) {
 	host.waitIndexReady(w, 2*time.Second)
 
 	rel := relSlash(dir, path)
-	open := map[string]string{filepath.Clean(path): "# Live Heading\n\nUnsaved body.\n"}
+	open := map[string]string{canonicalPath(path): "# Live Heading\n\nUnsaved body.\n"}
 	w.index.mu.Lock()
 	file := w.index.files[rel]
 	if file == nil {
@@ -227,7 +252,7 @@ func TestRememberWorkspacePersists(t *testing.T) {
 		t.Fatal(err)
 	}
 	list := st.recentWorkspaces()
-	if len(list) != 1 || filepath.Clean(list[0].Root) != filepath.Clean(root) {
+	if len(list) != 1 || filepath.Clean(list[0].Root) != filepath.Clean(canonicalPath(root)) {
 		t.Fatalf("recent = %+v", list)
 	}
 }
@@ -256,6 +281,109 @@ next:
 		return false
 	}
 	return true
+}
+
+func TestNavSnapshotMergesOpenDocumentThroughDirectoryAlias(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeMD(t, root, "notes/alpha.md", "# Alpha\n\nBody text.\n")
+	// The open document reports the file through a symlinked spelling of the
+	// root, so only the routing boundary resolves it to the indexed path.
+	aliasRoot := filepath.Join(t.TempDir(), "ws-alias")
+	if err := os.Symlink(root, aliasRoot); err != nil {
+		t.Fatal(err)
+	}
+	aliased := filepath.Join(aliasRoot, "notes", "alpha.md")
+
+	host := newDocumentHost()
+	host.disableWatch = true
+	host.settings = &settingsStore{dir: t.TempDir()}
+	w := &workspace{id: "ws-alias", root: root}
+	host.startIndex(w)
+	host.waitIndexReady(w, 2*time.Second)
+
+	s := &docSession{
+		host:   host,
+		id:     "doc-alpha",
+		ws:     w,
+		pathFn: func() string { return aliased },
+	}
+	host.mu.Lock()
+	host.byID[s.id] = s
+	w.tabs = append(w.tabs, s.id)
+	w.active = s.id
+	host.mu.Unlock()
+
+	snap := host.navSnapshot(w)
+	var entries []NavEntry
+	for _, e := range snap.Entries {
+		if e.Name == "alpha.md" {
+			entries = append(entries, e)
+		}
+	}
+	if len(entries) != 1 {
+		t.Fatalf("alpha.md entries = %+v", entries)
+	}
+	if entries[0].ID != "file:notes/alpha.md" {
+		t.Fatalf("entry id = %q", entries[0].ID)
+	}
+	if entries[0].DocumentID != "doc-alpha" || entries[0].Deleted {
+		t.Fatalf("entry did not merge the open document: %+v", entries[0])
+	}
+	if entries[0].Parent != "notes" || entries[0].Depth != 1 {
+		t.Fatalf("entry rel = parent %q depth %d", entries[0].Parent, entries[0].Depth)
+	}
+
+	byName := host.searchLockedResult(w, w.index, "alpha")
+	if byName.Matched != 1 || len(byName.Hits) != 1 || byName.Hits[0].DocumentID != "doc-alpha" {
+		t.Fatalf("name filter = %+v", byName)
+	}
+	byPath := host.searchLockedResult(w, w.index, "notes/alpha")
+	if byPath.Matched != 1 {
+		t.Fatalf("relative-path filter = %+v", byPath)
+	}
+}
+
+func TestNavSnapshotKeepsOpenDocumentMissingFromScan(t *testing.T) {
+	dir := t.TempDir()
+	writeMD(t, dir, "kept.md", "# Kept\n")
+	draft := filepath.Join(dir, "drafts", "idea.md")
+
+	host := newDocumentHost()
+	host.disableWatch = true
+	host.settings = &settingsStore{dir: t.TempDir()}
+	w := &workspace{id: "ws-extra", root: dir}
+	host.startIndex(w)
+	host.waitIndexReady(w, 2*time.Second)
+
+	s := &docSession{
+		host:   host,
+		id:     "doc-draft",
+		ws:     w,
+		pathFn: func() string { return draft },
+	}
+	host.mu.Lock()
+	host.byID[s.id] = s
+	w.tabs = append(w.tabs, s.id)
+	w.active = s.id
+	host.mu.Unlock()
+
+	snap := host.navSnapshot(w)
+	var found []NavEntry
+	for _, e := range snap.Entries {
+		if e.ID == "open:doc-draft" {
+			found = append(found, e)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("draft entries = %+v", snap.Entries)
+	}
+	got := found[0]
+	if !got.Deleted || got.DocumentID != "doc-draft" || got.Parent != "drafts" || got.Depth != 1 {
+		t.Fatalf("draft entry = %+v", got)
+	}
 }
 
 func TestNavSnapshotAndReindexWithOpenTabDoNotDeadlock(t *testing.T) {

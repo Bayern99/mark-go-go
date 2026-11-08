@@ -647,7 +647,7 @@ func (h *documentHost) navSnapshot(w *workspace) NavSnapshot {
 	if idx == nil {
 		return NavSnapshot{Root: w.root, Status: IndexIdle, Entries: []NavEntry{}}
 	}
-	openByPath := map[string]*docSession{}
+	openByRel := map[string]*docSession{}
 	extraTabs := []string{}
 	extraInfo := map[string]DocumentInfo{}
 	h.mu.Lock()
@@ -659,8 +659,8 @@ func (h *documentHost) navSnapshot(w *workspace) NavSnapshot {
 		}
 		info := s.infoLocked()
 		extraInfo[id] = info
-		if info.Path != "" {
-			openByPath[canonicalPath(info.Path)] = s
+		if rel := relSlash(idx.root, info.Path); rel != "" {
+			openByRel[rel] = s
 		}
 	}
 	h.mu.Unlock()
@@ -668,7 +668,7 @@ func (h *documentHost) navSnapshot(w *workspace) NavSnapshot {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 
-	entries := make([]NavEntry, 0, len(idx.files)+len(idx.folders))
+	sortable := make([]navSortEntry, 0, len(idx.files)+len(idx.folders))
 	visible := func(rel string) bool {
 		p := parentSlash(rel)
 		for p != "" {
@@ -697,7 +697,7 @@ func (h *documentHost) navSnapshot(w *workspace) NavSnapshot {
 		if !visible(rel) {
 			continue
 		}
-		entries = append(entries, NavEntry{
+		sortable = append(sortable, navSortEntry{rel: rel, entry: NavEntry{
 			ID:            "folder:" + rel,
 			Kind:          "folder",
 			Name:          folder.name,
@@ -706,7 +706,7 @@ func (h *documentHost) navSnapshot(w *workspace) NavSnapshot {
 			Depth:         depthOf(rel),
 			MarkdownCount: folder.mdCount,
 			FolderState:   state,
-		})
+		}})
 	}
 
 	var fileKeys []string
@@ -717,7 +717,7 @@ func (h *documentHost) navSnapshot(w *workspace) NavSnapshot {
 	seenOpen := map[string]bool{}
 	for _, rel := range fileKeys {
 		file := idx.files[rel]
-		sess := openByPath[canonicalPath(file.path)]
+		sess := openByRel[rel]
 		deleted := file.missing
 		var st DocumentInfo
 		if sess != nil {
@@ -751,11 +751,10 @@ func (h *documentHost) navSnapshot(w *workspace) NavSnapshot {
 		} else if deleted {
 			entry.Deleted = true
 		}
-		entries = append(entries, entry)
+		sortable = append(sortable, navSortEntry{rel: rel, entry: entry})
 	}
 
 	// Open documents that were deleted from disk still have a navigable row.
-	var extra []NavEntry
 	for _, id := range extraTabs {
 		if seenOpen[id] {
 			continue
@@ -769,7 +768,7 @@ func (h *documentHost) navSnapshot(w *workspace) NavSnapshot {
 			continue
 		}
 		rel := relSlash(idx.root, p)
-		extra = append(extra, NavEntry{
+		sortable = append(sortable, navSortEntry{rel: rel, entry: NavEntry{
 			ID:         "open:" + id,
 			Kind:       "file",
 			Name:       snap.Name,
@@ -780,19 +779,15 @@ func (h *documentHost) navSnapshot(w *workspace) NavSnapshot {
 			Conflict:   snap.Conflict,
 			Deleted:    true,
 			DocumentID: id,
-		})
+		}})
 	}
-	entries = append(entries, extra...)
 
-	ordered := make([]navSortEntry, len(entries))
-	for i := range entries {
-		ordered[i] = navSortEntry{entry: entries[i], rel: navRel(idx.root, entries[i])}
-	}
-	sort.SliceStable(ordered, func(i, j int) bool {
-		return navRelLess(ordered[i].rel, ordered[i].entry.Kind, ordered[j].rel, ordered[j].entry.Kind)
+	sort.SliceStable(sortable, func(i, j int) bool {
+		return navRelLess(sortable[i].rel, sortable[i].entry.Kind, sortable[j].rel, sortable[j].entry.Kind)
 	})
-	for i := range ordered {
-		entries[i] = ordered[i].entry
+	entries := make([]NavEntry, len(sortable))
+	for i := range sortable {
+		entries[i] = sortable[i].entry
 	}
 
 	indexed, total := 0, 0
@@ -832,21 +827,12 @@ func depthOf(rel string) int {
 	return strings.Count(rel, "/")
 }
 
-// navSortEntry carries one precomputed workspace-relative path so the tree
-// sort never normalises or splits paths inside the comparator.
+// navSortEntry carries one workspace-relative path, already known from the
+// index key or computed once for an open document, so the tree sort never
+// normalises or splits paths inside the comparator.
 type navSortEntry struct {
 	entry NavEntry
 	rel   string
-}
-
-// navRel is the entry's workspace-relative path used for tree ordering. An
-// entry outside the root falls back to its display name.
-func navRel(root string, e NavEntry) string {
-	rel := relSlash(root, e.Path)
-	if rel == "" || rel == ".." || strings.HasPrefix(rel, "../") {
-		return e.Name
-	}
-	return rel
 }
 
 // navRelLess orders two tree entries depth-first: a folder is followed
@@ -908,20 +894,34 @@ func compareFold(a, b string) int {
 }
 
 func (h *documentHost) searchLockedResult(w *workspace, idx *workspaceIndex, query string) NavSearchResult {
-	open := h.openTexts(w)
-	openIDs := map[string]string{}
+	// Open documents are the routing boundary: resolve each one to the same
+	// workspace-relative key the index stores, once, instead of recanonicalising
+	// every indexed path per filter.
+	openByRel := map[string]string{}
+	for p, text := range h.openTexts(w) {
+		if rel := relSlash(idx.root, p); rel != "" {
+			openByRel[rel] = text
+		}
+	}
+	openIDsByRel := map[string]string{}
 	h.mu.Lock()
 	for _, s := range h.byID {
 		if p := s.currentPath(); p != "" {
-			openIDs[canonicalPath(p)] = s.id
+			if rel := relSlash(idx.root, p); rel != "" {
+				openIDsByRel[rel] = s.id
+			}
 		}
 	}
 	h.mu.Unlock()
 
 	idx.mu.Lock()
 	indexed, total := 0, 0
-	files := make([]*indexedFile, 0, len(idx.files))
-	for _, file := range idx.files {
+	type searchFile struct {
+		rel  string
+		file indexedFile
+	}
+	files := make([]searchFile, 0, len(idx.files))
+	for rel, file := range idx.files {
 		if file.missing {
 			continue
 		}
@@ -931,7 +931,7 @@ func (h *documentHost) searchLockedResult(w *workspace, idx *workspaceIndex, que
 		}
 		copy := *file
 		copy.headings = append([]NavHeading(nil), file.headings...)
-		files = append(files, &copy)
+		files = append(files, searchFile{rel: rel, file: copy})
 	}
 	status := idx.status
 	idx.mu.Unlock()
@@ -950,15 +950,16 @@ func (h *documentHost) searchLockedResult(w *workspace, idx *workspaceIndex, que
 		return result
 	}
 	needle := strings.ToLower(q)
-	sort.Slice(files, func(i, j int) bool { return files[i].path < files[j].path })
-	for _, file := range files {
+	sort.Slice(files, func(i, j int) bool { return files[i].file.path < files[j].file.path })
+	for _, sf := range files {
+		file, rel := &sf.file, sf.rel
 		title, excerpt, headings := file.title, file.excerpt, file.headings
-		if text, ok := open[canonicalPath(file.path)]; ok {
+		if text, ok := openByRel[rel]; ok {
 			m := parseMarkdownMeta(text)
 			title, excerpt, headings = m.Title, m.Excerpt, m.Headings
 		}
 		var headingHits []HeadingHit
-		matched := containsFold(relOf(idx.root, file.path), needle) || containsFold(file.name, needle) || containsFold(title, needle) || containsFold(excerpt, needle)
+		matched := containsFold(rel, needle) || containsFold(file.name, needle) || containsFold(title, needle) || containsFold(excerpt, needle)
 		for _, hd := range headings {
 			if containsFold(hd.Text, needle) {
 				matched = true
@@ -973,17 +974,13 @@ func (h *documentHost) searchLockedResult(w *workspace, idx *workspaceIndex, que
 			Name:       file.name,
 			Title:      title,
 			Excerpt:    excerpt,
-			DocumentID: openIDs[canonicalPath(file.path)],
+			DocumentID: openIDsByRel[rel],
 			Headings:   headingHits,
 		}
 		result.Hits = append(result.Hits, hit)
 	}
 	result.Matched = len(result.Hits)
 	return result
-}
-
-func relOf(root, path string) string {
-	return relSlash(root, path)
 }
 
 func containsFold(hay, needle string) bool {

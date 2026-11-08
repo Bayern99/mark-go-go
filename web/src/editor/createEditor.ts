@@ -44,7 +44,7 @@ import { rebuildBlocks } from './blocks/rebuild'
 import type { LockKind } from './blocks/segment'
 import { noteBlock, noteInsertionOffset, parseNote, withNoteText } from '../markdown/notes'
 import { languages } from './languages'
-import { askForMarkdown, askForNote, cancelNoteComposer } from './noteDialog'
+import { askForMarkdown, askForNote, ComposerScope } from './noteDialog'
 import { createSourceEditor, type SourceEditor } from './source/sourceEditor'
 
 const NOTE_ICON =
@@ -183,6 +183,8 @@ export async function createMarkdownEditor(
   let sourceEditor: SourceEditor | undefined
   /** Text the rich-text editor represented when source mode was entered. */
   let sourceBaseText: string | undefined
+  /** The one composer this editor may have open; other editors have their own. */
+  const composerScope = new ComposerScope()
 
   const composeContext = (current: typeof built): ComposeContext => ({
     schema,
@@ -337,6 +339,7 @@ export async function createMarkdownEditor(
     const anchor = targetPos !== undefined ? (view.nodeDOM(targetPos) as Element | null) : null
     const text = await askForNote('', {
       mount: (composer) => mountComposer(anchor, composer),
+      scope: composerScope,
     })
     if (readonly) return
     if (text === null) {
@@ -403,12 +406,13 @@ export async function createMarkdownEditor(
     const node = view.state.doc.nodeAt(at)
     if (!node) return
     if (action === 'delete') {
-      cancelNoteComposer()
+      composerScope.cancel()
       view.dispatch(view.state.tr.delete(at, at + node.nodeSize))
       return
     }
     void askForNote(parseNote(node.attrs.source as string)?.text ?? '', {
       mount: (composer) => mountComposer(element, composer),
+      scope: composerScope,
     }).then((text) => {
       if (text !== null && view.state.doc.nodeAt(at) === node) setNoteText(at, text)
     })
@@ -424,6 +428,7 @@ export async function createMarkdownEditor(
     void askForMarkdown(node.attrs.source as string, {
       label: `Edit ${kind} as Markdown`,
       mount: (composer) => mountComposer(element, composer),
+      scope: composerScope,
     }).then((markdown) => {
       if (markdown === null) return
       if (view.state.doc.nodeAt(at) !== node) return
@@ -592,7 +597,7 @@ export async function createMarkdownEditor(
   plugins.push(selectionPlugin, lockedViewPlugin, historyWatch)
 
   const load = (text: string) => {
-    cancelNoteComposer()
+    composerScope.cancel()
     suppressChange = true
     try {
       built = buildDocument(text, schema, parser)
@@ -702,7 +707,7 @@ export async function createMarkdownEditor(
 
   const setMode = (next: EditorMode) => {
     if (next === mode) return
-    cancelNoteComposer()
+    composerScope.cancel()
 
     if (next === 'source') {
       const text = compose(view.state.doc)
@@ -742,7 +747,7 @@ export async function createMarkdownEditor(
   const setReadonly = (value: boolean) => {
     if (readonly === value) return
     readonly = value
-    if (value) cancelNoteComposer()
+    if (value) composerScope.cancel()
     builder.setReadonly(value)
     sourceEditor?.setReadonly(value)
     view.dispatch(view.state.tr.setMeta('mgo-readonly', value))
@@ -832,7 +837,7 @@ export async function createMarkdownEditor(
     },
     getView: () => view,
     async destroy() {
-      cancelNoteComposer()
+      composerScope.cancel()
       listeners.clear()
       selectionListeners.clear()
       modeListeners.clear()

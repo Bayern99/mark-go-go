@@ -17,6 +17,7 @@ import type {
   GenerateRequest,
   WorkspaceAdapter,
 } from '../src/host/types'
+import { extractSections } from '../src/markdown/sections'
 
 const DOC_A = `# Alpha\n\nFirst body.\n`
 const DOC_B = `# Beta\n\nSecond body.\n`
@@ -455,5 +456,105 @@ describe('one settings store across documents', () => {
     }
     expect(await a.getSettings()).toEqual(want)
     expect(await b.getSettings()).toEqual(want)
+  })
+})
+
+const ISOLATED_A = `# Overview\n\nA first body.\n\n# Metrics\n\nA second body.\n`
+const ISOLATED_B = `# Overview\n\nB first body.\n\n# Metrics\n\nB second body.\n`
+
+/** A view of `markdown` whose component ids match the other document's view. */
+function isolatedView(markdown: string): string {
+  const sections = extractSections(markdown)
+  const sources: Record<string, { heading: string; occurrence: number; hash: string }> = {}
+  for (const heading of ['Overview', 'Metrics']) {
+    const section = sections.find(
+      (candidate) => candidate.heading.text === heading && candidate.occurrence === 1,
+    )
+    if (!section) throw new Error(`no section ${heading}`)
+    sources[heading.toLowerCase()] = { heading, occurrence: 1, hash: section.hash }
+  }
+  return JSON.stringify({
+    version: 2,
+    sources,
+    a2ui: [
+      {
+        version: '1.0',
+        createSurface: {
+          surfaceId: 'view',
+          catalogId: 'markgogo.dev:genui/v1',
+          components: [
+            { id: 'root', component: 'Column', children: ['overview', 'metrics'] },
+            {
+              id: 'overview',
+              component: 'KeyPoints',
+              title: 'Overview',
+              items: ['One point.'],
+              sources: ['overview'],
+            },
+            {
+              id: 'metrics',
+              component: 'KeyPoints',
+              title: 'Metrics',
+              items: ['One point.'],
+              sources: ['metrics'],
+            },
+          ],
+        },
+      },
+    ],
+  })
+}
+
+describe('GenUI scroll/highlight isolation', () => {
+  it("scrolls and highlights the clicked document's card when another mounted view has the same component ids", async () => {
+    const a = createBrowserHost(ISOLATED_A, 'a.md', { view: isolatedView(ISOLATED_A) })
+    const b = createBrowserHost(ISOLATED_B, 'b.md', { view: isolatedView(ISOLATED_B) })
+    const workspace = createBrowserWorkspace([a, b])
+    const app = await mountWorkspace(workspace)
+    try {
+      await openPaneGenUI(app.container, a)
+      await openPaneGenUI(app.container, b)
+      await workspace.activate(b.id)
+
+      const paneA = paneOf(app.container, a)
+      const paneB = paneOf(app.container, b)
+      await vi.waitFor(() => expect(paneA.hidden).toBe(true))
+      expect(paneA.querySelector('[data-testid="genui-view"]')).not.toBeNull()
+
+      const editedB = ISOLATED_B.replace('B second body.', 'B second body, edited.')
+      b.reload(editedB)
+      const item = await vi.waitFor(
+        () => {
+          const found = paneB.querySelector<HTMLButtonElement>('[data-testid="changed-item-metrics"]')
+          if (!found) throw new Error('changed item missing')
+          return found
+        },
+        { timeout: 3000 },
+      )
+
+      const cardA = paneA.querySelector<HTMLElement>(
+        '[data-testid="genui-view"] [data-component-id="metrics"]',
+      )
+      const cardB = paneB.querySelector<HTMLElement>(
+        '[data-testid="genui-view"] [data-component-id="metrics"]',
+      )
+      if (!cardA || !cardB) throw new Error('metrics cards missing')
+      const scrollA = vi.spyOn(cardA, 'scrollIntoView')
+      const scrollB = vi.spyOn(cardB, 'scrollIntoView')
+
+      flushSync(() => item.click())
+      await vi.waitFor(() => {
+        expect(scrollB).toHaveBeenCalled()
+        expect(cardB.getAttribute('data-highlighted')).toBe('true')
+      })
+      expect(scrollA).not.toHaveBeenCalled()
+      expect(cardA.getAttribute('data-highlighted')).toBeNull()
+
+      // Jumping to a card is navigation only: both documents keep their bytes.
+      expect((await a.load()).text).toBe(ISOLATED_A)
+      expect((await b.load()).text).toBe(editedB)
+    } finally {
+      await app.unmount()
+    }
   })
 })

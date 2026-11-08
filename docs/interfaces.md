@@ -260,7 +260,7 @@ interface PluginContext {
 - `bindFlush` 只注册该面板的原始文本读取器，本身**不写回**；页面读它，`mygoHost` 对每个入口只发一次 `WorkspaceHost.Flush` RPC（公开的 `Flush(documentId, text)` 仍是真实绑定方法）。Save / Save As / Rename / Move / Revert / Duplicate 先交付捕获文档一次再调宿主；`close` 经 `closeDocument` 交付一次；`closeWorkspace` 与 `flushQuit` 对每个**已注册读取器**（即已挂载编辑器）的文档各交付一次。没有注册读取器的文档不写任何内容，绝不合成空缓冲。
 - 绑定时机：只有编辑器已 ready 才 `bindFlush`；已注册的 reader 执行时若 `editorRef` 短暂为空，回落到宿主载入的核心文本；从未挂载编辑器的面板不会提前注册，也不会交付 `''`。
 - 路径变更锁（`DocumentsOptions.PathChange`）：文档的生成槽被占用时，File 菜单禁用它的 `Save As` / `Rename` / `Move To`，仍到达内核的请求在对话框或写入之前被拒绝；普通保存到它自己的文件、Duplicate、编辑与切标签仍可用。锁变化后由 `RefreshDocumentMenus()` 在主线程（非阻塞投递）刷新菜单，页面不阻塞等待对话框。
-- 目标预留（`DocumentsOptions.ReservePath`）：MyGo 在写向另一个文件或移动文件之前先预留目标；文档自己的文件总是允许，另一个文件在文档生成中或已被其他活动会话持有时被拒绝，比较用规范化路径与 `os.SameFile`，全应用互斥。预留保持到返回的 release 执行（成功或失败），所以两个窗口不能取同一目标，被拒绝的目标也不会弹出覆盖询问。
+- 目标预留（`DocumentsOptions.ReservePath`）：MyGo 在写向另一个文件或移动文件之前先预留目标；它在文件/文件夹选择器返回目标之后运行，位于任何 write、`os.Rename`、路径变更或 MyGo 自己的选择后 Move To 覆盖对话框之前。文档自己的文件总是允许，另一个文件在文档生成中或已被其他活动会话持有时被拒绝，比较用规范化路径与 `os.SameFile`，全应用互斥。预留保持到返回的 release 执行（成功或失败），所以两个窗口不能取同一目标。它**不承诺**屏蔽 OS `NSSavePanel` 在 Save As / Rename 选择阶段显示的内建 Replace 确认：该 OS 提示可能先于应用的拒绝出现，但应用拒绝的目标绝不会被写入，也不会产生第二个会话。
 - `release` 为 nil 表示**没有需要释放的认领**：未配置 hook、目标为空或就是文档自己的文件、或没有对应的活动会话；它不是拒绝，也不表示已认领。`Duplicate` 生成独立的未命名副本，创建时不预留新目标；直到该副本首次 Save / Save As 才按路径规则认领。
 - 原生命令失败记录在该文档的 `DocumentInfo.actionError`，由它的窗口以 banner 显示；成功清除，取消对话框不算失败。
 - 恢复按**每条 planned tab** 解析，不按窗口整体解析。会话同时存 `id` 与 `path`，用途不同：先按存储的 `id` 匹配 MyGo 的恢复副本（`OpenByID`，恢复副本承载未保存字节）；否则按规范化路径匹配本次启动已打开的文档（`OpenByPath`）；否则在路径存在且未被更早的标签认领时从该路径打开（从磁盘打开的文档会得到新的 MyGo id）。找不到路径、也没有对应恢复副本时，在该标签上给出 `restoreError`。

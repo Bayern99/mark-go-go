@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-Spec #20 (`integration/spec-20-workspace-portrait`, tickets #21–#31) is implemented and consolidated here. Automated full checks pass at `7b90f1ed2cfa501cde43c3b94e96c0b9348e8847`; packaged-app acceptance is still being exercised, so this entry describes implemented behaviour, not a completed release. Known observed native failures on that source — a normal quit zeroing two unedited files, and restored tabs rendering without an active editor until a tab is clicked — are recorded as FAIL in `docs/acceptance.md` and are being repaired; the entry is not evidence that they are fixed.
+Spec #20 (`integration/spec-20-workspace-portrait`, tickets #21–#31) is implemented and consolidated here. Automated full checks pass at `7b90f1ed2cfa501cde43c3b94e96c0b9348e8847`; packaged-app acceptance is still being exercised, so this entry describes implemented behaviour, not a completed release. Known observed native failures on that source — a normal quit zeroing two unedited files, and restored tabs rendering without an active editor until a tab is clicked — are recorded as FAIL in `docs/acceptance.md`. A prepared fix (`6e7e395`: flush delivers the pane's core document state, restore maps the stored active tab to the document's real new id) is in regression and native re-verification; this entry is not evidence that they are fixed.
 
 ### English
 
@@ -47,7 +47,7 @@ Spec #20 (`integration/spec-20-workspace-portrait`, tickets #21–#31) is implem
 
 ### 中文
 
-规格 #20（`integration/spec-20-workspace-portrait`，任务 #21–#31）已实现并在此汇总。自动化全量检查在 `7b90f1ed2cfa501cde43c3b94e96c0b9348e8847` 通过；打包应用的验收仍在进行，本条描述已实现的行为，不代表已发布。该源码上已观察到两项原生失败：正常退出把两份未编辑文件写成 0 字节，恢复后标签存在但需点击才出现活动编辑器；它们在 `docs/acceptance.md` 中标为 FAIL，正在修复，本条不构成已修复的证据。
+规格 #20（`integration/spec-20-workspace-portrait`，任务 #21–#31）已实现并在此汇总。自动化全量检查在 `7b90f1ed2cfa501cde43c3b94e96c0b9348e8847` 通过；打包应用的验收仍在进行，本条描述已实现的行为，不代表已发布。该源码上已观察到两项原生失败：正常退出把两份未编辑文件写成 0 字节，恢复后标签存在但需点击才出现活动编辑器；它们在 `docs/acceptance.md` 中标为 FAIL。修复候选 `6e7e395`（flush 交付面板的核心文档状态；恢复把存储的 active tab 映射到文档真实的新 id）正在回归与原生复验；本条不构成已修复的证据。
 
 #### 🗂 工作区窗口、文档标签与导航（#21、#22、#23，ADR 0005）
 - **一个文件夹一个窗口、多个文档标签**：工作区窗口以标签承载打开的原文。`documentId` 跨路径、标签、窗口、首次保存与另存为保持稳定；`workspaceId`、`root`、`path` 各自独立。

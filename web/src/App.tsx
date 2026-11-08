@@ -11,7 +11,7 @@ import { ViewRegistry } from './core/ViewRegistry'
 import type { AppPlugin } from './core/types'
 import type { Disposable, DocumentInfo, HostAdapter, RecentWorkspace, WorkspaceAdapter, WorkspaceSnapshot } from './host/types'
 import { wrapHostAsWorkspace } from './host/browserHost'
-import { registerDocumentFlush, reportNativeEditState } from './host/mygoHost'
+import { reportNativeEditState } from './host/mygoHost'
 import { createMarkdownEditor, type EditorMode, type MarkdownEditor } from './editor/createEditor'
 import {
   nativeEditCapabilities,
@@ -390,21 +390,20 @@ export function DocumentPane({
       // What this pane really holds: the text on screen now, else the
       // core document state the host loaded. Never a buffer that only
       // changes were written to, so a pane that was remounted or has not
-      // mounted an editor cannot deliver an invented empty buffer.
+      // mounted an editor cannot deliver an invented empty buffer. The
+      // host's flush is the one layer that writes it back, reading this.
       const currentText = () => editorRef.current?.getMarkdown() ?? services.documents.snapshot().text
-      cleanups.push({
-        dispose: registerDocumentFlush(host.id, async () => {
-          if (debounceTimer !== undefined) {
-            window.clearTimeout(debounceTimer)
-            debounceTimer = undefined
-          }
-          const text = currentText()
-          await host.flush(text)
-          return text
-        }),
-      })
       if (host.bindFlush) {
-        cleanups.push(host.bindFlush(currentText))
+        cleanups.push(
+          host.bindFlush(() => {
+            // The delivery this reader feeds supersedes the debounce.
+            if (debounceTimer !== undefined) {
+              window.clearTimeout(debounceTimer)
+              debounceTimer = undefined
+            }
+            return currentText()
+          }),
+        )
       }
 
       cleanups.push(
@@ -582,6 +581,11 @@ export function DocumentPane({
               </div>
             ) : null}
             {docState?.readOnly ? <div className="banner banner-readonly">Read only</div> : null}
+            {docState?.actionError ? (
+              <div className="banner" role="alert" data-testid="doc-action-error">
+                {docState.actionError}
+              </div>
+            ) : null}
             {docState?.restoreError ? (
               <div className="banner" role="alert" data-testid="doc-restore-error">
                 {docState.restoreError}

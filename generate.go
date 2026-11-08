@@ -146,6 +146,7 @@ func (h *documentHost) generate(ctx context.Context, documentID string, req Gene
 	if win != nil {
 		_ = docState.Emit(win, s.info())
 	}
+	h.refreshPathMenus()
 	defer h.releaseGeneration(s, slot)
 
 	job := generationJob{
@@ -214,6 +215,7 @@ func (h *documentHost) releaseGeneration(s *docSession, slot *generationSlot) {
 	if win != nil {
 		_ = docState.Emit(win, s.info())
 	}
+	h.refreshPathMenus()
 }
 
 func (h *documentHost) rejectPathChange(s *docSession) error {

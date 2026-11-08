@@ -136,6 +136,12 @@ function bindDocument(id: string): HostAdapter {
     async setViewMode(mode: string): Promise<void> {
       await WorkspaceHost.setViewMode(id, mode);
     },
+    bindFlush(getText: () => string): Disposable {
+      flushers.set(id, getText);
+      return disposable(() => {
+        if (flushers.get(id) === getText) flushers.delete(id);
+      });
+    },
     onReload(fn: (snap: HostDocSnapshot) => void): Disposable {
       return disposable(
         events.docReloaded.on((snap) => {
@@ -221,15 +227,8 @@ function bindDocument(id: string): HostAdapter {
 }
 
 
-const flushers = new Map<string, () => Promise<string | undefined>>();
-
-/** DocumentPane registers how to read its current Markdown for native Save/Close. */
-export function registerDocumentFlush(id: string, flush: () => Promise<string | undefined>): () => void {
-  flushers.set(id, flush);
-  return () => {
-    if (flushers.get(id) === flush) flushers.delete(id);
-  };
-}
+/** The mounted pane's current Markdown, by document id. */
+const flushers = new Map<string, () => string>();
 
 /** Tell the native Edit menu whether this document currently can undo/redo. */
 export function reportNativeEditState(id: string, canUndo: boolean, canRedo: boolean): void {
@@ -237,10 +236,15 @@ export function reportNativeEditState(id: string, canUndo: boolean, canRedo: boo
   void WorkspaceHost.setNativeEditState(id, canUndo, canRedo);
 }
 
+/**
+ * The one write-back of a pane's text: read the Markdown it really holds,
+ * then deliver it once. A document with no mounted pane registered no
+ * reader and delivers nothing, never an invented empty buffer.
+ */
 async function flushDocument(id: string): Promise<void> {
-  const flush = flushers.get(id);
-  const text = flush ? await flush() : undefined;
-  if (text !== undefined) await WorkspaceHost.flush(id, text);
+  const read = flushers.get(id);
+  if (!read) return;
+  await WorkspaceHost.flush(id, read());
 }
 /**
  * Workspace adapter backed by MyGo. document(id) is stable for an open
@@ -318,7 +322,9 @@ export function createMyGoHost(): WorkspaceAdapter {
   };
 
   events.nativeCommand.on((cmd: WireNativeCommand) => {
-    void handleNative(workspace, adapters, asNativeCommand(cmd));
+    // A failure is recorded on the captured document's state by the host,
+    // which its window shows; it must not become an unhandled rejection.
+    void handleNative(workspace, adapters, asNativeCommand(cmd)).catch(() => undefined);
   });
   events.workspaceChanged.on((snap) => {
     const live = new Set(snap.documents.map((d) => d.id));
@@ -337,7 +343,7 @@ async function handleNative(
 ): Promise<void> {
   const command = cmd.command as NativeCommandName;
   if (command === "closeWorkspace") {
-    for (const id of [...flushers.keys()]) await flushDocument(id);
+    // closeWorkspace delivers every pane's last input itself, once.
     await workspace.closeWorkspace();
     return;
   }
@@ -350,8 +356,15 @@ async function handleNative(
     applyNativeEdit(cmd.id, command);
     return;
   }
+  if (command === "close") {
+    // closeDocument delivers that pane's last input itself, once.
+    const result = await workspace.closeDocument(cmd.id);
+    if (result.closed) adapters.delete(cmd.id);
+    return;
+  }
+  // Save, Save As, Rename, Move To, Revert and Duplicate deliver the
+  // captured document's last input first, once, then run on the host.
   await flushDocument(cmd.id);
-  const host = adapters.get(cmd.id) ?? workspace.document(cmd.id);
   switch (command) {
     case "save":
       await WorkspaceHost.save(cmd.id);
@@ -359,11 +372,6 @@ async function handleNative(
     case "saveAs":
       await WorkspaceHost.saveAs(cmd.id);
       break;
-    case "close": {
-      const result = await WorkspaceHost.closeDocument(cmd.id);
-      if (result.closed) adapters.delete(cmd.id);
-      break;
-    }
     case "rename":
       await WorkspaceHost.rename(cmd.id);
       break;
@@ -377,6 +385,6 @@ async function handleNative(
       await WorkspaceHost.duplicate(cmd.id);
       break;
     default:
-      void host;
+      break;
   }
 }

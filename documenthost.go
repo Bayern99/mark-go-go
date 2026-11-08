@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/egoist/mygo"
@@ -34,6 +36,10 @@ type documentHost struct {
 	byWindow       map[*mygo.Window]*workspace
 	byID           map[string]*docSession
 	workspaceOrder []string
+	// claims are the files a session has reserved for a path change that
+	// has not touched the disk yet, by canonical path: two windows cannot
+	// both take one target.
+	claims map[string]string
 
 	docs *mygo.Documents[string]
 
@@ -73,6 +79,9 @@ type docSession struct {
 	pathFn       func() string
 	viewMode     string
 	restoreError string
+	// actionError is why the last native command on this document failed,
+	// shown in its window, guarded by documentHost.mu.
+	actionError string
 
 	// The view file the page follows (viewfile.go), guarded by
 	// documentHost.mu: following says the page asked to, viewPath is the
@@ -106,6 +115,7 @@ func newDocumentHost() *documentHost {
 	return &documentHost{
 		byWindow: make(map[*mygo.Window]*workspace),
 		byID:     make(map[string]*docSession),
+		claims:   make(map[string]string),
 		settings: settings,
 		// Recovery opens documents before restoreAfterStart reads the
 		// session. Their windows must not be written over session.json
@@ -163,6 +173,7 @@ func (s *docSession) makeInfo(st mygo.DocumentState, generating bool) DocumentIn
 		ReadOnly:     st.ReadOnly,
 		Generating:   generating,
 		ViewMode:     s.viewMode,
+		ActionError:  s.actionError,
 		RestoreError: s.restoreError,
 	}
 }
@@ -429,21 +440,123 @@ func (h *documentHost) moveTab(s *docSession, dest *workspace) {
 	h.persistSession()
 }
 
-func (h *documentHost) pathTaken(path, exceptID string) bool {
-	if path == "" {
-		return false
-	}
+// pathChangeLock is DocumentsOptions.PathChange: a document whose
+// generation holds it may not change its file now, so MyGo disables Save
+// As, Rename and Move To for it, and refuses a path change that still
+// reaches the kernel. Ordinary Save, the document's own file, is not a
+// path change and stays available.
+func (h *documentHost) pathChangeLock(doc *mygo.Document[string]) error {
+	return h.lockedPathChange(doc.ID())
+}
+
+func (h *documentHost) lockedPathChange(id string) error {
 	h.mu.Lock()
-	defer h.mu.Unlock()
-	for id, s := range h.byID {
-		if id == exceptID {
+	s := h.byID[id]
+	busy := s != nil && s.generating
+	h.mu.Unlock()
+	if busy {
+		return errors.New(errGenerating)
+	}
+	return nil
+}
+
+// refreshPathMenus updates the native Save As / Rename / Move roles after
+// a document's generation lock changed. MyGo reads that lock from this
+// host, but only a state change it knows about makes it look again; the
+// page cannot wait on a menu while a dialog holds the main thread.
+func (h *documentHost) refreshPathMenus() {
+	if !mygo.App.IsReady() {
+		return
+	}
+	mygo.RefreshDocumentMenus()
+}
+
+// reservePath is DocumentsOptions.ReservePath: it runs with the file a
+// document is about to become, before MyGo writes to it or moves the
+// document's file there. It refuses a path change the document's
+// generation locks and a file another live session has, and holds the
+// target until the file operation ends, so two windows cannot both take
+// one file. Nothing on disk changes when it refuses.
+func (h *documentHost) reservePath(doc *mygo.Document[string], target string) (func(), error) {
+	return h.reserveTarget(doc.ID(), doc.Path(), target)
+}
+
+// reserveTarget is reservePath's decision: the document's own file is
+// always available to save to; another file is refused while the
+// document generates, and while another live session has it. A granted
+// target stays claimed until the returned release runs.
+func (h *documentHost) reserveTarget(id, path, target string) (func(), error) {
+	h.mu.Lock()
+	s := h.byID[id]
+	if s == nil {
+		h.mu.Unlock()
+		return nil, nil
+	}
+	if s.generating && !sameFile(target, path) {
+		h.mu.Unlock()
+		return nil, errors.New(errGenerating)
+	}
+	canon := canonicalPath(target)
+	if owner := h.claims[canon]; owner != "" && owner != id {
+		h.mu.Unlock()
+		return nil, errAlreadyOpen
+	}
+	for other, sess := range h.byID {
+		if other == id {
 			continue
 		}
-		if sameFile(s.doc.Path(), path) {
-			return true
+		if sameFile(sess.currentPath(), target) {
+			h.mu.Unlock()
+			return nil, errAlreadyOpen
 		}
 	}
-	return false
+	if h.claims == nil {
+		h.claims = make(map[string]string)
+	}
+	h.claims[canon] = id
+	h.mu.Unlock()
+	return func() {
+		h.mu.Lock()
+		if h.claims[canon] == id {
+			delete(h.claims, canon)
+		}
+		h.mu.Unlock()
+	}, nil
+}
+
+// noteAction records how a native command on s ended: a failure goes on
+// the document's state for its window to show, and a success clears the
+// previous one. A canceled dialog is not a failure.
+func (h *documentHost) noteAction(s *docSession, err error) {
+	msg := ""
+	if err != nil && !errors.Is(err, mygo.ErrCanceled) {
+		msg = actionMessage(err)
+	}
+	h.mu.Lock()
+	changed := s.actionError != msg
+	s.actionError = msg
+	win := s.win
+	w := s.ws
+	h.mu.Unlock()
+	if !changed {
+		return
+	}
+	if win != nil && !win.IsDestroyed() {
+		_ = docState.Emit(win, s.info())
+	}
+	h.emitWorkspace(w)
+}
+
+// actionMessage is err's text as a window shows it, without the package
+// prefix errors carry for logs.
+func actionMessage(err error) string {
+	msg := err.Error()
+	for _, prefix := range []string{"markgogo: ", "mygo: "} {
+		if rest, ok := strings.CutPrefix(msg, prefix); ok {
+			return rest
+		}
+	}
+	return msg
 }
 
 // Load returns the content of the document, including unsaved edits.
@@ -477,17 +590,28 @@ func (h *documentHost) Save(ctx context.Context, documentID string) error {
 	if err != nil {
 		return err
 	}
-	if s.doc.Path() == "" {
-		return h.SaveAs(ctx, documentID)
+	err = h.saveDocument(s)
+	h.noteAction(s, err)
+	return err
+}
+
+// saveDocument saves s as File > Save does. An untitled or read-only
+// document's save asks for another file, which is a path change: a
+// generation in progress refuses it before any dialog, as the kernel
+// would before any write.
+func (h *documentHost) saveDocument(s *docSession) error {
+	path := s.currentPath()
+	readOnly := s.doc != nil && s.doc.IsReadOnly()
+	if path == "" || readOnly {
+		if err := h.rejectPathChange(s); err != nil {
+			return err
+		}
 	}
-	before := s.doc.Path()
-	err = s.doc.Save()
-	if err != nil {
+	if path == "" {
+		return h.saveAsDocument(s)
+	}
+	if err := s.doc.Save(); err != nil {
 		return err
-	}
-	after := s.doc.Path()
-	if after != "" && after != before && h.pathTaken(after, s.id) {
-		return errAlreadyOpen
 	}
 	h.migrateIfNeeded(s)
 	return nil
@@ -498,15 +622,21 @@ func (h *documentHost) SaveAs(ctx context.Context, documentID string) error {
 	if err != nil {
 		return err
 	}
+	err = h.saveAsDocument(s)
+	h.noteAction(s, err)
+	return err
+}
+
+// saveAsDocument writes s to a file the user picks. Uniqueness is the
+// kernel's: it reserves the target before writing, so an open file is
+// refused with nothing on disk changed.
+func (h *documentHost) saveAsDocument(s *docSession) error {
 	if err := h.rejectPathChange(s); err != nil {
 		return err
 	}
 	target, err := h.askSavePath(s)
 	if err != nil {
 		return err
-	}
-	if h.pathTaken(target, s.id) {
-		return errAlreadyOpen
 	}
 	if err := s.doc.SaveAs(target); err != nil {
 		return err
@@ -544,16 +674,19 @@ func (h *documentHost) Rename(ctx context.Context, documentID string) error {
 	if err != nil {
 		return err
 	}
+	err = h.renameDocument(s)
+	h.noteAction(s, err)
+	return err
+}
+
+// renameDocument renames s's file. The kernel reserves the target before
+// it moves anything, so a file another session has is refused there.
+func (h *documentHost) renameDocument(s *docSession) error {
 	if err := h.rejectPathChange(s); err != nil {
 		return err
 	}
-	before := s.doc.Path()
 	if err := s.doc.Rename(""); err != nil {
 		return err
-	}
-	after := s.doc.Path()
-	if after != "" && after != before && h.pathTaken(after, s.id) {
-		return errAlreadyOpen
 	}
 	h.migrateIfNeeded(s)
 	return nil
@@ -564,16 +697,17 @@ func (h *documentHost) MoveTo(ctx context.Context, documentID string) error {
 	if err != nil {
 		return err
 	}
+	err = h.moveDocument(s)
+	h.noteAction(s, err)
+	return err
+}
+
+func (h *documentHost) moveDocument(s *docSession) error {
 	if err := h.rejectPathChange(s); err != nil {
 		return err
 	}
-	before := s.doc.Path()
 	if err := s.doc.MoveTo(""); err != nil {
 		return err
-	}
-	after := s.doc.Path()
-	if after != "" && after != before && h.pathTaken(after, s.id) {
-		return errAlreadyOpen
 	}
 	h.migrateIfNeeded(s)
 	return nil
@@ -584,5 +718,7 @@ func (h *documentHost) Revert(ctx context.Context, documentID string) error {
 	if err != nil {
 		return err
 	}
-	return s.doc.Revert()
+	err = s.doc.Revert()
+	h.noteAction(s, err)
+	return err
 }

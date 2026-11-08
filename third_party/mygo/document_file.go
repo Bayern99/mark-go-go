@@ -68,6 +68,13 @@ func (b *docBase) write(target string, op writeOp) (bool, error) {
 	}
 	known, deleted := b.stamp, b.deleted
 	b.mu.Unlock()
+	release, err := b.claimPath(target)
+	if err != nil {
+		return false, err
+	}
+	if release != nil {
+		defer release()
+	}
 	if op == writeSave || op == writeAutosave {
 		now, exists, err := statStamp(target)
 		if err != nil {

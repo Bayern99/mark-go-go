@@ -222,6 +222,39 @@ describe('App workspace tabs', () => {
     }
   })
 
+  it('shows a failed native command in the captured document window', async () => {
+    const a = createBrowserHost('# A\n', 'a.md')
+    const b = createBrowserHost('# B\n', 'b.md')
+    const workspace = createBrowserWorkspace([a, b])
+    const app = await mountWorkspace(workspace)
+    try {
+      await workspace.activate(b.id)
+      a.patchState({ actionError: 'that file is already open in another document' })
+      await vi.waitFor(() => {
+        const banner = app.container.querySelector(
+          `[data-document-id="${a.id}"] [data-testid="doc-action-error"]`,
+        )
+        if (banner?.textContent !== 'that file is already open in another document') {
+          throw new Error('action error banner missing on the captured document')
+        }
+      })
+      expect(
+        app.container.querySelector(`[data-document-id="${b.id}"] [data-testid="doc-action-error"]`),
+      ).toBeNull()
+
+      a.patchState({ actionError: '' })
+      await vi.waitFor(() => {
+        expect(
+          app.container.querySelector(
+            `[data-document-id="${a.id}"] [data-testid="doc-action-error"]`,
+          ),
+        ).toBeNull()
+      })
+    } finally {
+      await app.unmount()
+    }
+  })
+
   it('activates the next tab with ArrowRight', async () => {
     const a = createBrowserHost('# A\n', 'a.md')
     const b = createBrowserHost('# B\n', 'b.md')

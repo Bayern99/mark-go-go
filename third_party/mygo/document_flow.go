@@ -375,6 +375,15 @@ func (b *docBase) rename(name string) error {
 			return fmt.Errorf("mygo: invalid file name %q", name)
 		}
 		target = filepath.Join(filepath.Dir(path), name)
+	}
+	release, err := b.claimPath(target)
+	if err != nil {
+		return err
+	}
+	if release != nil {
+		defer release()
+	}
+	if name != "" {
 		if _, err := os.Lstat(target); err == nil {
 			return fmt.Errorf("mygo: %s already exists", target)
 		}
@@ -404,6 +413,13 @@ func (b *docBase) moveTo(dir string) error {
 	if target == path {
 		return nil
 	}
+	release, err := b.claimPath(target)
+	if err != nil {
+		return err
+	}
+	if release != nil {
+		defer release()
+	}
 	if _, err := os.Lstat(target); err == nil {
 		tx := menuMessages()
 		r, err := Dialog.Message(MessageOptions{
@@ -418,7 +434,35 @@ func (b *docBase) moveTo(dir string) error {
 	return b.relocate(target)
 }
 
-// relocate moves b's file to target, which the document then is.
+// claimPath applies the app's path rules to target before a document
+// writes to it or moves its file there: PathChange refuses a document
+// whose app holds it back, then ReservePath refuses a file another
+// session already has, before anything touches the disk. It returns the
+// reservation's release, to run once the file operation ends.
+func (b *docBase) claimPath(target string) (func(), error) {
+	if target == "" {
+		return nil, nil
+	}
+	if target == b.Path() {
+		return nil, nil
+	}
+	k := b.kind
+	if k == nil {
+		return nil, nil
+	}
+	if k.pathChange != nil {
+		if err := k.pathChange(b); err != nil {
+			return nil, err
+		}
+	}
+	if k.reservePath != nil {
+		return k.reservePath(b, target)
+	}
+	return nil, nil
+}
+
+// relocate moves b's file to target, which the document then is. Its
+// caller has reserved target with claimPath.
 func (b *docBase) relocate(target string) error {
 	b.io.Lock()
 	path := b.Path()

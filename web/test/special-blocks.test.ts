@@ -52,6 +52,17 @@ describe('special blocks in rich text', () => {
 
       const refs = mounted.root.querySelectorAll<HTMLAnchorElement>('.mgo-fnref')
       expect(Array.from(refs).map((el) => el.dataset.footnoteRef)).toEqual(['1', 'note'])
+      expect(Array.from(refs).map((el) => el.textContent)).toEqual(['1', 'note'])
+      const paragraph = Array.from(mounted.root.querySelectorAll('p')).find((el) =>
+        el.textContent?.includes('Text with a footnote'),
+      )
+      expect(paragraph?.querySelector('sup.mgo-fnref-wrap')).not.toBeNull()
+      const hidden = paragraph?.querySelectorAll('.mgo-fnref-src') ?? []
+      expect(hidden.length).toBe(2)
+      for (const node of hidden) {
+        expect(getComputedStyle(node).fontSize).toBe('0px')
+      }
+      expect(getComputedStyle(refs[0]).fontSize).not.toBe('0px')
       const defs = mounted.root.querySelectorAll('.mgo-footnote')
       expect(defs[0]?.textContent).toContain('First footnote')
       expect(defs[1]?.textContent).toContain('Second footnote')
@@ -63,7 +74,14 @@ describe('special blocks in rich text', () => {
 
       const html = mounted.root.querySelector('[data-kind="raw-html"]')
       expect(html?.classList.contains('mgo-locked-block')).toBe(true)
-      expect(html?.textContent).toContain('<div class="callout">')
+      const kicker = html?.querySelector('.mgo-locked-kicker')
+      const source = html?.querySelector('.mgo-locked-source')
+      if (!(kicker instanceof HTMLElement) || !(source instanceof HTMLElement)) {
+        throw new Error('kept HTML caption missing')
+      }
+      expect(kicker.textContent).toBe('Kept as written')
+      expect(source.textContent).toContain('<div class="callout">')
+      expect(kicker.getBoundingClientRect().bottom).toBeLessThanOrEqual(source.getBoundingClientRect().top + 1)
       expect(html?.querySelector('.callout')).toBeNull()
 
       expect(mounted.editor.getMarkdown()).toBe(corpus)

@@ -23,6 +23,8 @@ export interface DocumentInfo {
   deleted: boolean;
   readOnly: boolean;
   generating: boolean;
+  viewMode?: string;
+  restoreError?: string;
 }
 
 /** FolderState is the collapsed/expanded state of one directory in the tree. */
@@ -243,6 +245,7 @@ export interface WorkspaceSnapshot {
   kind: string;
   documents: DocumentInfo[];
   activeId: string;
+  restoreError?: string;
 }
 
 // ---- Services ----
@@ -334,6 +337,15 @@ export const WorkspaceHost = {
   pickFolder(): Promise<string> {
     return call("WorkspaceHost.PickFolder");
   },
+  /**
+   * PrepareQuit records that the calling window flushed for quit. The
+   * session is written only after every workspace window has acked, then
+   * quit continues. Close events after that must not rewrite an empty
+   * layout over the saved session.
+   */
+  prepareQuit(): Promise<void> {
+    return call("WorkspaceHost.PrepareQuit");
+  },
   /** RecentWorkspaces returns persisted folder workspaces, newest first. */
   recentWorkspaces(): Promise<RecentWorkspace[]> {
     return call("WorkspaceHost.RecentWorkspaces");
@@ -369,6 +381,13 @@ export const WorkspaceHost = {
   /** SetSettings replaces the generation settings. */
   setSettings(s: Settings): Promise<void> {
     return call("WorkspaceHost.SetSettings", s);
+  },
+  /**
+   * SetViewMode stores this document's view mode in the session. Bound to
+   * documentID, never the active tab.
+   */
+  setViewMode(documentID: string, mode: string): Promise<void> {
+    return call("WorkspaceHost.SetViewMode", documentID, mode);
   },
   /** Snapshot is the calling window's workspace. */
   snapshot(): Promise<WorkspaceSnapshot> {

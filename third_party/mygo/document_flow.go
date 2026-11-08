@@ -88,6 +88,11 @@ func startDocuments() {
 		for _, p := range pending {
 			openFileOfKind(p)
 		}
+		for _, k := range docKinds() {
+			if k.afterStart != nil {
+				k.afterStart()
+			}
+		}
 		if k := defaultDocKind(); k != nil && !k.noUntitled && len(allDocuments()) == 0 {
 			k.newUntitled()
 		}

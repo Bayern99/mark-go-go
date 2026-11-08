@@ -31,14 +31,19 @@ var docState = mygo.NewEvent[DocumentInfo]("docState")
 type documentHost struct {
 	mu sync.Mutex
 
-	byWindow map[*mygo.Window]*workspace
-	byID     map[string]*docSession
+	byWindow       map[*mygo.Window]*workspace
+	byID           map[string]*docSession
+	workspaceOrder []string
 
 	docs *mygo.Documents[string]
 
 	settings     *settingsStore
 	runs         sync.WaitGroup
 	disableWatch bool
+	quitting     bool
+	restoring    bool
+	sessionReady bool
+	quitPending  map[*mygo.Window]bool
 
 	// prepareJob, when set, adjusts a generation job after settings and
 	// path are captured. Tests inject a fake agent through it.
@@ -65,7 +70,9 @@ type docSession struct {
 	closed  bool
 	// pathFn, when set, is this session's path for tests without a MyGo
 	// document. Production sessions always have doc and leave this nil.
-	pathFn func() string
+	pathFn       func() string
+	viewMode     string
+	restoreError string
 
 	// The view file the page follows (viewfile.go), guarded by
 	// documentHost.mu: following says the page asked to, viewPath is the
@@ -94,6 +101,10 @@ func newDocumentHost() *documentHost {
 		byWindow: make(map[*mygo.Window]*workspace),
 		byID:     make(map[string]*docSession),
 		settings: &settingsStore{dir: dir},
+		// Recovery opens documents before restoreAfterStart reads the
+		// session. Their windows must not be written over session.json
+		// before the stored layout is planned from it.
+		restoring: true,
 	}
 }
 
@@ -137,14 +148,16 @@ func (s *docSession) currentPath() string {
 
 func (s *docSession) makeInfo(st mygo.DocumentState, generating bool) DocumentInfo {
 	return DocumentInfo{
-		ID:         s.id,
-		Name:       st.Name,
-		Path:       st.Path,
-		Edited:     st.Edited,
-		Conflict:   st.Conflict,
-		Deleted:    st.Deleted,
-		ReadOnly:   st.ReadOnly,
-		Generating: generating,
+		ID:           s.id,
+		Name:         st.Name,
+		Path:         st.Path,
+		Edited:       st.Edited,
+		Conflict:     st.Conflict,
+		Deleted:      st.Deleted,
+		ReadOnly:     st.ReadOnly,
+		Generating:   generating,
+		ViewMode:     s.viewMode,
+		RestoreError: s.restoreError,
 	}
 }
 
@@ -272,6 +285,7 @@ func (h *documentHost) adopt(doc *mygo.Document[string], win *mygo.Window) {
 	}
 	h.emitWorkspace(w)
 	h.reindexOpenDocument(s)
+	h.persistSession()
 }
 
 func (h *documentHost) dropSession(s *docSession) {
@@ -321,6 +335,7 @@ func (h *documentHost) dropSession(s *docSession) {
 		return
 	}
 	h.emitWorkspace(w)
+	h.persistSession()
 }
 
 func (h *documentHost) migrateIfNeeded(s *docSession) {
@@ -395,12 +410,17 @@ func (h *documentHost) moveTab(s *docSession, dest *workspace) {
 	s.ws = dest
 	s.win = dest.win
 	h.mu.Unlock()
+	if h.docs != nil && s.doc != nil {
+		h.docs.Attach(s.doc, dest.win)
+	}
 	h.docs.SetActive(s.doc)
 	h.emitWorkspace(src)
 	h.emitWorkspace(dest)
 	if src != nil && src.root == "" && len(src.tabs) == 0 && src.win != nil && !src.win.IsDestroyed() {
 		src.win.Destroy()
+		return
 	}
+	h.persistSession()
 }
 
 func (h *documentHost) pathTaken(path, exceptID string) bool {

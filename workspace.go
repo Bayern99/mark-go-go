@@ -14,25 +14,28 @@ import (
 
 // WorkspaceSnapshot is one workspace window as the page lists it.
 type WorkspaceSnapshot struct {
-	ID        string         `json:"id"`
-	Root      string         `json:"root"`
-	Name      string         `json:"name"`
-	Kind      string         `json:"kind"`
-	Documents []DocumentInfo `json:"documents"`
-	ActiveID  string         `json:"activeId"`
+	ID           string         `json:"id"`
+	Root         string         `json:"root"`
+	Name         string         `json:"name"`
+	Kind         string         `json:"kind"`
+	Documents    []DocumentInfo `json:"documents"`
+	ActiveID     string         `json:"activeId"`
+	RestoreError string         `json:"restoreError,omitempty"`
 }
 
 // DocumentInfo is one open document in a workspace. ID is stable across
 // path, tab and window.
 type DocumentInfo struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Path       string `json:"path"`
-	Edited     bool   `json:"edited"`
-	Conflict   bool   `json:"conflict"`
-	Deleted    bool   `json:"deleted"`
-	ReadOnly   bool   `json:"readOnly"`
-	Generating bool   `json:"generating"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Path         string `json:"path"`
+	Edited       bool   `json:"edited"`
+	Conflict     bool   `json:"conflict"`
+	Deleted      bool   `json:"deleted"`
+	ReadOnly     bool   `json:"readOnly"`
+	Generating   bool   `json:"generating"`
+	ViewMode     string `json:"viewMode,omitempty"`
+	RestoreError string `json:"restoreError,omitempty"`
 }
 
 // CloseResult is the outcome of CloseDocument or CloseWorkspace.
@@ -61,12 +64,13 @@ var (
 
 // workspace is one window: a folder root, or an untitled window.
 type workspace struct {
-	id     string
-	root   string // empty = untitled window
-	win    *mygo.Window
-	tabs   []string
-	active string
-	index  *workspaceIndex
+	id           string
+	root         string // empty = untitled window
+	win          *mygo.Window
+	tabs         []string
+	active       string
+	index        *workspaceIndex
+	restoreError string
 }
 
 func (w *workspace) kind() string {
@@ -233,12 +237,13 @@ func (h *documentHost) snapshotWorkspaceLocked(w *workspace) WorkspaceSnapshot {
 		docs = append(docs, s.infoLocked())
 	}
 	return WorkspaceSnapshot{
-		ID:        w.id,
-		Root:      w.root,
-		Name:      w.name(),
-		Kind:      w.kind(),
-		Documents: docs,
-		ActiveID:  w.active,
+		ID:           w.id,
+		Root:         w.root,
+		Name:         w.name(),
+		Kind:         w.kind(),
+		Documents:    docs,
+		ActiveID:     w.active,
+		RestoreError: w.restoreError,
 	}
 }
 
@@ -319,6 +324,7 @@ func (h *documentHost) OpenWorkspace(ctx context.Context, root string) error {
 	h.mu.Unlock()
 	win := h.newWorkspaceWindow(abs, filepath.Base(abs))
 	win.Show()
+	h.persistSession()
 	return nil
 }
 
@@ -372,6 +378,7 @@ func (h *documentHost) activate(s *docSession) {
 	w := s.ws
 	h.mu.Unlock()
 	h.emitWorkspace(w)
+	h.persistSession()
 }
 
 // CloseDocument asks to save the document, then drops its tab. Cancel
@@ -534,11 +541,24 @@ func setMenuItemRoleEnabled(it *mygo.MenuItem, role mygo.MenuRole, on bool) {
 }
 
 func (h *documentHost) interceptWindowClose(win *mygo.Window) bool {
+	h.mu.Lock()
+	skip := h.quitting || h.sessionReady || h.quitPending != nil
+	h.mu.Unlock()
+	if skip {
+		return false
+	}
 	_ = nativeCommand.Emit(win, NativeCommand{Command: "closeWorkspace"})
 	return true
 }
 
 func (h *documentHost) newWorkspaceWindow(root, title string) *mygo.Window {
+	if root != "" {
+		root = canonicalPath(root)
+	}
+	return h.openWorkspaceWindow("", root, title)
+}
+
+func (h *documentHost) openWorkspaceWindow(id, root, title string) *mygo.Window {
 	if root != "" {
 		root = canonicalPath(root)
 	}
@@ -549,6 +569,9 @@ func (h *documentHost) newWorkspaceWindow(root, title string) *mygo.Window {
 			title = filepath.Base(root)
 		}
 	}
+	if id == "" {
+		id = newWorkspaceID()
+	}
 	win := mygo.NewWindow(mygo.WindowOptions{
 		Title:     title,
 		URL:       "/",
@@ -557,14 +580,17 @@ func (h *documentHost) newWorkspaceWindow(root, title string) *mygo.Window {
 		MinWidth:  480,
 		MinHeight: 360,
 	})
-	w := &workspace{id: newWorkspaceID(), root: root, win: win}
+	w := &workspace{id: id, root: root, win: win}
 	h.mu.Lock()
 	h.byWindow[win] = w
+	h.workspaceOrder = appendWorkspaceOrder(h.workspaceOrder, w.id)
 	h.mu.Unlock()
 	win.OnClosed(func() { h.forgetWindow(win) })
 	if root != "" {
-		h.rememberRoot(root)
-		h.startIndex(w)
+		if info, err := os.Stat(root); err == nil && info.IsDir() {
+			h.rememberRoot(root)
+			h.startIndex(w)
+		}
 	}
 	return win
 }
@@ -576,6 +602,12 @@ func (h *documentHost) forgetWindow(win *mygo.Window) {
 	var ids []string
 	if w != nil {
 		ids = append([]string{}, w.tabs...)
+		h.workspaceOrder = removeWorkspaceOrder(h.workspaceOrder, w.id)
+	}
+	done := false
+	var file sessionFileData
+	if h.quitPending != nil {
+		done, file = h.ackQuitWindowLocked(win)
 	}
 	h.mu.Unlock()
 	h.forgetIndex(w)
@@ -583,5 +615,9 @@ func (h *documentHost) forgetWindow(win *mygo.Window) {
 		if s, err := h.docSession(id); err == nil {
 			h.dropSession(s)
 		}
+	}
+	h.persistSession()
+	if done {
+		h.persistQuitAndRequit(file)
 	}
 }

@@ -24,9 +24,10 @@ import {
   type DocumentInfo as HostDocumentInfo,
   type GenerateProgress as WireProgress,
   type NativeCommand as WireNativeCommand,
+  type NavEntry as WireNavEntry,
+  type NavSnapshot as WireNavSnapshot,
   type WorkspaceSnapshot as WireWorkspaceSnapshot,
 } from "./generated/mygo";
-import { WorkspaceNav, navEvents } from "./generated/nav";
 import { cancelled, failureOf, GenerationError, isFailureKind } from "./generationError";
 import { applyNativeEdit } from "../editor/nativeEdit";
 
@@ -71,6 +72,17 @@ function workspaceSnapshot(snap: WireWorkspaceSnapshot): WorkspaceSnapshot {
     ...snap,
     kind: snap.kind === 'untitled' ? 'untitled' : 'folder',
     documents: snap.documents.map(documentInfo),
+    restoreError: snap.restoreError,
+  }
+}
+
+function navTree(snap: WireNavSnapshot): NavSnapshot {
+  return {
+    ...snap,
+    entries: snap.entries.map((entry: WireNavEntry) => ({
+      ...entry,
+      kind: entry.kind === 'folder' ? 'folder' : 'file',
+    })),
   }
 }
 
@@ -119,6 +131,9 @@ function bindDocument(id: string): HostAdapter {
     },
     async revert(): Promise<void> {
       await WorkspaceHost.revert(id);
+    },
+    async setViewMode(mode: string): Promise<void> {
+      await WorkspaceHost.setViewMode(id, mode);
     },
     onReload(fn: (snap: HostDocSnapshot) => void): Disposable {
       return disposable(
@@ -271,29 +286,29 @@ export function createMyGoHost(): WorkspaceAdapter {
       adapters.set(id, created);
       return created;
     },
-    navSnapshot(): Promise<NavSnapshot> {
-      return WorkspaceNav.navSnapshot();
+    async navSnapshot(): Promise<NavSnapshot> {
+      return navTree(await WorkspaceHost.navSnapshot());
     },
     subscribeNav(fn: (snap: NavSnapshot) => void): Disposable {
-      return disposable(navEvents.navChanged.on(fn));
+      return disposable(events.navChanged.on((snap) => fn(navTree(snap))));
     },
     setFilter(query: string): Promise<NavSearchResult> {
-      return WorkspaceNav.setFilter(query);
+      return WorkspaceHost.setFilter(query);
     },
     subscribeSearch(fn: (result: NavSearchResult) => void): Disposable {
-      return disposable(navEvents.navSearchReady.on(fn));
+      return disposable(events.navSearchReady.on(fn));
     },
     async toggleFolder(rel: string): Promise<void> {
-      await WorkspaceNav.toggleFolder(rel);
+      await WorkspaceHost.toggleFolder(rel);
     },
     async revealPath(path: string): Promise<void> {
-      await WorkspaceNav.revealPath(path);
+      await WorkspaceHost.revealPath(path);
     },
     pickFolder(): Promise<string> {
-      return WorkspaceNav.pickFolder();
+      return WorkspaceHost.pickFolder();
     },
     recentWorkspaces(): Promise<RecentWorkspace[]> {
-      return WorkspaceNav.recentWorkspaces();
+      return WorkspaceHost.recentWorkspaces();
     },
   };
 
@@ -319,6 +334,11 @@ async function handleNative(
   if (command === "closeWorkspace") {
     for (const id of [...flushers.keys()]) await flushDocument(id);
     await workspace.closeWorkspace();
+    return;
+  }
+  if (command === "flushQuit") {
+    for (const id of [...flushers.keys()]) await flushDocument(id);
+    await WorkspaceHost.prepareQuit();
     return;
   }
   if (command === "undo" || command === "redo") {

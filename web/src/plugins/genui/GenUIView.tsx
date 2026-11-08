@@ -195,6 +195,8 @@ export class GenUISession {
   readonly store: GenUIStore
   readonly generation: GenerationController
   private activeMounts = 0
+  /** This document's mounted center view scroll area; null while it is not shown. */
+  private viewElement: HTMLElement | null = null
   private watchSub: Disposable | undefined
   private readonly docSub: Disposable
   private readonly unsubStore: () => void
@@ -262,7 +264,12 @@ export class GenUISession {
     for (const listener of this.highlightListeners) listener()
     void this.ctx.commands.execute('centerPane.show', 'genui').catch(() => {})
     const scrollToCard = () => {
-      const cards = document.querySelectorAll<HTMLElement>('[data-testid="genui-view"] [data-component-id]')
+      // Another document's GenUI view stays mounted while its tab is hidden and
+      // can carry the same component ids; only this document's center view may
+      // be highlighted or scrolled.
+      const scope = this.viewElement
+      if (!scope) return false
+      const cards = scope.querySelectorAll<HTMLElement>('[data-component-id]')
       for (const el of cards) el.classList.remove('mgo-jump')
       const card = Array.from(cards).find((el) => el.getAttribute('data-component-id') === id)
       if (!card) return false
@@ -274,6 +281,22 @@ export class GenUISession {
       requestAnimationFrame(() => {
         scrollToCard()
       })
+    }
+  }
+
+  /**
+   * Tracks the center view while it is mounted. The session, not the whole
+   * document, is the boundary for highlight and scroll.
+   */
+  retainView(el: HTMLElement): Disposable {
+    this.viewElement = el
+    let released = false
+    return {
+      dispose: () => {
+        if (released) return
+        released = true
+        if (this.viewElement === el) this.viewElement = null
+      },
     }
   }
 
@@ -1044,6 +1067,7 @@ function GenerationProgress({
 export function mountGenUIView(el: HTMLElement, ctx: PluginContext, memory: GenUIMemory): Disposable {
   const session = ensureSession(ctx, memory)
   const watch = session.retainWatch()
+  const view = session.retainView(el)
   const root = createRoot(el)
   root.render(<GenUIView session={session} ctx={ctx} scroller={el} memory={memory} />)
   // Read while mounted: once the view is removed, its element no longer scrolls.
@@ -1054,6 +1078,7 @@ export function mountGenUIView(el: HTMLElement, ctx: PluginContext, memory: GenU
   return {
     dispose() {
       el.removeEventListener('scroll', remember)
+      view.dispose()
       watch.dispose()
       // Defer: React may be committing the host tree when the view is
       // removed, and a nested root must not unmount during that render.

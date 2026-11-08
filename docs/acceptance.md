@@ -246,6 +246,8 @@
 
 运行时验收基线是 `47e3b4a`；其前序红证据来自 `f9237f2` 与 `7b90f1e`。之后对 8 个文档文件的修订（`6f3dba2` 及后续 docs-only 提交）不改变任何运行时代码，因此实机证据只引用真正运行过的 `f9237f2` / `7b90f1e` / `47e3b4a` 包，并不表示某个 docs-only 修订被单独实机运行过。
 
+当前 Root 为 `dbe1a3b`，含静态 UI/index 修复 `3b0923e`（导航索引复用键、UTF-16 计数不再分配）与 `8a6be09`（GenUI 高亮与 composer 取消按文档/编辑器限定），受影响测试通过；这些修复**尚未在新原生包上运行**，不得把 `dbe1a3b` 当作已实机验收的 47e 包。
+
 ### 自动化全量检查（PASS，实际执行）
 
 执行目录 `/private/tmp/mark-go-go-spec20-checks-32`，提交 `7b90f1e`：
@@ -353,7 +355,9 @@
 | Beta 失败告警（47e） | `Regenerate all` 以 `role=alert` 显示 “The agent is not signed in. Run `…/fake-acp-agent acp --login` …”，含 “The agent said:” 与原文 `FAKE-BETA-FAILURE…`，按钮 Retry/Dismiss；原有 `BETA VIEW` / `Up to date` 保留，视图文件 sha256 `39cdc260…d0c7fb` 不变 | **PASS** |
 | 生成中退出、不重放（47e） | alpha 以 pace 60 生成到 “Thinking…” 时 CmdQ：应用退出，无 coresmoke/fake-agent 进程残留；日志以 `session/prompt → session/cancel → cancelled-before-write` 结束，视图不变（`f98d39cd…3bb1`）；重启后 alpha 为 Saved v1、无生成中状态、无 Agent 重放 | **PASS** |
 | 冷启动首次 GenUI 与监听竞态（47e） | 全新进程、全新路径 `cold2.md` + 从未被监听的视图：点击 GenUI 到首个含视图内容的 AX 为 **499 ms**，无 “No view yet” 中间态；运行中把视图改写为 `COLD-RACE-47E first frame` 后视图更新，恢复原文件（sha `2ffb220b…a8ddf`）后视图回退 | **PASS** |
-| Folder 最后标签保留（47e） | workspace2（0 标签）打开 b-doc.md 后，用标签焦点 + Cmd+W 关闭唯一标签：文件夹窗口保留、标签条为空、文件树完整、显示 “Open a Markdown file from this folder.”、标题 b-doc.md；会话随后同时列出 workspace 与 workspace2（空临时窗口关闭变体未执行） | **PASS** |
+| Folder 最后标签保留（47e） | workspace2（0 标签）打开 b-doc.md 后，用标签焦点 + Cmd+W 关闭唯一标签：文件夹窗口保留、标签条为空、文件树完整、显示 “Open a Markdown file from this folder.”、标题 b-doc.md；会话随后同时列出 workspace 与 workspace2 | **PASS** |
+| 空未命名窗口最后标签关闭（47e） | 关闭未命名窗口的唯一标签后窗口关闭，`session.json` 写为 `{}`（无残留工作区） | **PASS** |
+| Agent command 文本字段（47e） | `Locate agent…` 文本字段保存绝对路径后，下一次生成的日志实际使用该绝对路径 | **PASS** |
 | 打包字体（部分，47e） | bundle 只含二进制与图标；嵌入的 `web/dist` 含 IBM Plex Sans/SC、Barlow Semi Condensed、KaTeX、Phosphor `.woff2`，二进制含 Phosphor 字符串，UI 截图使用随包字体；Web Inspector 未启用，严格的离线 `FontFace`/网络证明未取得 | **部分证据**（不作严格离线 PASS） |
 | Model 菜单可见性（47e） | 新截图显示列表 `Agent’s choice / gemini-4-argon / gemini-3.8-flash ✓ / claude-opus-5-5`，设置缓存也含 3 个模型；但点击弹层行会让 CUA 绑定丢失窗口（`noWindowsAvailable`），AX 只暴露 “Agent’s choice”，重绑后模型仍为 `gemini-3.8-flash` | **未验证（CUA 传输限制，不是产品失败结论）** |
 | Duplicate 与目标唯一性（47e） | `File > Duplicate` 对 cold2 生成 `cold2 copy`（Edited，内容相同）；Save As 冲突未被触发（保存表按默认名 `cold2 copy.md` 完成），目标唯一性仍未验证 | **部分（创建 PASS；冲突未验）** |
@@ -366,13 +370,13 @@
 |---|---|---|
 | 生成中的文档，其原生路径菜单与错误提示不完整（`Save As` / `Rename` / `Move` 的禁用与提示没有完整覆盖 `generating` 状态） | SpecReview 硬缺陷 | **待修**：`NativeCommandsFix32`；修复后需定向自动测试与原生复验 |
 | `Save`（只读时回退另存为）、`Rename`、`MoveTo` 的目标唯一性检查发生在 `Save` / `Rename` / `MoveTo` 已写盘、改 `doc.Path()` 并触发状态之后，冲突时可能覆盖已打开文档的磁盘文件并留下两个同路径会话 | Standards P1（同一问题族见 SpecReview） | **待修**：`NativeCommandsFix32`；修复后必须验证“先检查、后写入” |
-| `GenUIView.scrollToCard` 用全局 `document.querySelectorAll('[data-testid="genui-view"] [data-component-id]')` 而没有限定到本视图的挂载元素；隐藏的 A 标签 GenUI 与活动 B 标签组件 id 相同（如 `root`、`summary`）时，B 的 `.changed-list` 点击会命中 A 的卡片，跳过 B 的高亮与滚动 | Standards P2（Tab 与文档隔离） | **待修**：`UIIsolationFix32`（工作树 `-27`），按文档/编辑器限定查询 |
-| `noteDialog.ts` 的 `activeCancel` 是模块级全局：任何后台标签的 `load` / `onReload`（`setMarkdown`）/ `setReadonly` / `destroy` 都会调用 `cancelNoteComposer()`，关闭活动标签正在输入的 Note 或特殊块 `.composer` 并丢弃草稿 | Standards P2（后台面板独立状态） | **待修**：`UIIsolationFix32`（工作树 `-27`），按文档/编辑器限定 |
+| `GenUIView.scrollToCard` 用全局 `document.querySelectorAll('[data-testid="genui-view"] [data-component-id]')` 而没有限定到本视图的挂载元素；隐藏的 A 标签 GenUI 与活动 B 标签组件 id 相同（如 `root`、`summary`）时，B 的 `.changed-list` 点击会命中 A 的卡片，跳过 B 的高亮与滚动 | Standards P2（Tab 与文档隔离） | **已修（静态）**：`8a6be09` 按文档挂载元素限定查询；`genui-isolation` 受影响测试通过；尚未在新原生包复验 |
+| `noteDialog.ts` 的 `activeCancel` 是模块级全局：任何后台标签的 `load` / `onReload`（`setMarkdown`）/ `setReadonly` / `destroy` 都会调用 `cancelNoteComposer()`，关闭活动标签正在输入的 Note 或特殊块 `.composer` 并丢弃草稿 | Standards P2（后台面板独立状态） | **已修（静态）**：`8a6be09` 按编辑器限定取消；`composer-isolation`（216 行新用例）等受影响测试通过；尚未在新原生包复验 |
 | 原生命令对同一文档重复 flush（`App.tsx` 的 `host.flush` 与 `mygoHost` 的 `flushDocument` 各发一次；`closeWorkspace` 路径每标签可达四次），每次都触发 `reindexOpenDocument` | Standards 启发式 P2（重复代码） | **待修**：`NativeCommandsFix32` |
-| `utf16Count` 每行分配 `[]rune` 与 `[]uint16`；`navRel`/`relOf` 在树排序与过滤时对每一项调用 `canonicalPath`（`EvalSymlinks`），而索引里已有相对键 | Standards 启发式 P2（Go 分配/系统调用） | **待修**：`IndexPerfFix32`（工作树 `-22`） |
+| `utf16Count` 每行分配 `[]rune` 与 `[]uint16`；`navRel`/`relOf` 在树排序与过滤时对每一项调用 `canonicalPath`（`EvalSymlinks`），而索引里已有相对键 | Standards 启发式 P2（Go 分配/系统调用） | **已修（静态）**：`3b0923e` 复用索引键、按 UTF-16 单元计数不再分配；`index_test.go` 覆盖，受影响测试通过；尚未原生验证 |
 | 四处相似的 tab 移除 + 活动回退压缩（`documenthost.go` 与 vendored MyGo 的 document group） | Standards P3 启发式 | **暂接受**：按现有 app/kernel authority 保持局部重复，避免为四处小逻辑引入跨模块抽象；不是缺陷关闭，只是不做抽象 |
 
-这些发现与 `47e3b4a` 的实机 PASS 分属不同证据类型；在修复落地并实际复验前，相关原生行仍按未完成处理，也不声称已经修完。
+这些发现与 `47e3b4a` 的实机 PASS 分属不同证据类型；修复状态按 Root `dbe1a3b` 记为“已修（静态）”或“待修”。“已修（静态）”表示修复已合并且受影响自动测试通过，不等于原生复验通过，也不等于总体验收完成。
 
 ### 仍未运行 / 受策略阻塞的原生行
 
@@ -380,13 +384,15 @@
 
 | 范围 | 状态与缺口 |
 |---|---|
-| 空临时窗口关闭生命周期 | folder 最后一个标签保留已 PASS；只含未命名标签的临时窗口关闭未执行；脏关闭保存表的 Delete 分支也未执行 |
+| 脏关闭保存表的 Delete 分支 | Cancel 分支已 PASS；Delete 分支未执行 |
 | 目标唯一性与路径安全（#21） | Duplicate 创建已观察；Save As 冲突、生成中的 `Save As`/`Rename`/`Move` 可用性、只读 Save→Save As、写入前 `pathTaken` 检查均推迟到 `NativeCommandsFix32` 的新包，静态审查见上一小节 |
 | Model 变更的原生传播（#24） | 菜单列表与缓存可见，但 CUA 弹层点击会丢失窗口、AX 只暴露 “Agent's choice”；模型变更 → 空闲 A/B 同步 → 持久化仍未验证，不是产品失败结论，需重新观察 |
 | 原生 Edit 菜单点击 Undo/Redo | 键盘 `⌘Z` / `⇧⌘Z` 已在 47e 验证；菜单项鼠标点击与 `SetNativeEditState` 的菜单可用性未验证（CUA 原生菜单定位限制） |
 | 打包应用严格离线字体证明 | 随包字体嵌入与渲染已观察；Web Inspector 未启用，未取得 `FontFace`/网络关闭的严格证明 |
-| 辅助技术（#31） | **BLOCKED**：VoiceOver 处于关闭（无 VO 进程），开启属于动作时需用户同意的系统设置变更；键盘排序已 PASS，浅层 AX 只看到表头文本与聚焦的 `button Size`，不据此声称 VoiceOver 通过 |
-| reduced motion（#25） | **BLOCKED**：`ReduceMotionEnabled = 0`，开启同样需要动作时确认；不作 PASS |
+| 辅助技术（#31） | **BLOCKED（工具授权）**：用户已允许临时开启 VoiceOver 与 Reduce Motion；但 CUA `getApp` 访问 System Settings 被 host 拒绝（`appnotapproved`），两项系统设置仍为 0/0。这不是再次缺用户同意，而是工具授权限制；Main 另找正式可达 route。键盘排序 PASS，不作 VoiceOver 结论 |
+| reduced motion（#25） | **BLOCKED（工具授权）**：同上，`ReduceMotionEnabled` 仍为 0；需可达的系统设置路径，未获得前不作 PASS |
+
+> 外部 saved file 经 Open 打开时会在父目录建立 `folder` root 并保留 0 个标签；这是 folder 工作区契约的预期行为（见 `docs/workspace-contract.md`），不是 temporary-window 关闭失败。
 
 ### 设置审计（2026-11-08 复核）
 
@@ -404,7 +410,7 @@
 
 - 只有当每一个**适用**的验收行都实际通过——自动化行有真实命令结果、原生行有打包应用上的实际观察——本规格才算完成。静态阅读、代码推断、文档修订或“应已修复”都不构成通过。
 - 未运行的行保持“未运行”，受系统设置或用户同意阻塞的行保持 `BLOCKED`；它们不会因为时间推移、文档完成或同源修复而自动变成 PASS。关闭 issue 也以此为前提。
-- 运行时验收基线是 `47e3b4a`；docs-only 修订不产生新的运行时证据，也不回填或改写已观察事实。VoiceOver 与 reduced motion 需要动作时的用户同意，未获得前不作结论。
+- 运行时验收基线是 `47e3b4a`；docs-only 修订不产生新的运行时证据，也不回填或改写已观察事实。VoiceOver 与 reduced motion 已获用户同意临时开启，但 CUA 访问 System Settings 被 host 拒绝（`appnotapproved`，两项仍为 0/0）；这是工具授权限制，在可达路径与实测之前不作通过结论。
 
 ## 未验证 / 已知问题
 

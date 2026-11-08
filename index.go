@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo"
 )
@@ -782,9 +784,16 @@ func (h *documentHost) navSnapshot(w *workspace) NavSnapshot {
 	}
 	entries = append(entries, extra...)
 
-	sort.SliceStable(entries, func(i, j int) bool {
-		return navOrderLess(idx.root, entries[i], entries[j])
+	ordered := make([]navSortEntry, len(entries))
+	for i := range entries {
+		ordered[i] = navSortEntry{entry: entries[i], rel: navRel(idx.root, entries[i])}
+	}
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return navRelLess(ordered[i].rel, ordered[i].entry.Kind, ordered[j].rel, ordered[j].entry.Kind)
 	})
+	for i := range ordered {
+		entries[i] = ordered[i].entry
+	}
 
 	indexed, total := 0, 0
 	for _, file := range idx.files {
@@ -823,49 +832,79 @@ func depthOf(rel string) int {
 	return strings.Count(rel, "/")
 }
 
-// navOrderLess puts the tree in depth-first order: a folder is followed
-// immediately by its descendants. Siblings list folders before files, then
-// compare names case-insensitively.
-func navOrderLess(root string, a, b NavEntry) bool {
-	as, bs := navSegments(root, a), navSegments(root, b)
-	common := len(as)
-	if len(bs) < common {
-		common = len(bs)
-	}
-	for i := range common {
-		if as[i] == bs[i] {
-			continue
-		}
-		aKind, bKind := "folder", "folder"
-		if i == len(as)-1 {
-			aKind = a.Kind
-		}
-		if i == len(bs)-1 {
-			bKind = b.Kind
-		}
-		if aKind != bKind {
-			return aKind == "folder"
-		}
-		al, bl := strings.ToLower(as[i]), strings.ToLower(bs[i])
-		if al != bl {
-			return al < bl
-		}
-		return as[i] < bs[i]
-	}
-	if len(as) != len(bs) {
-		return len(as) < len(bs)
-	}
-	return false
+// navSortEntry carries one precomputed workspace-relative path so the tree
+// sort never normalises or splits paths inside the comparator.
+type navSortEntry struct {
+	entry NavEntry
+	rel   string
 }
 
-// navSegments splits an entry's workspace-relative path so sibling names
-// compare at the same depth instead of against whole path strings.
-func navSegments(root string, e NavEntry) []string {
+// navRel is the entry's workspace-relative path used for tree ordering. An
+// entry outside the root falls back to its display name.
+func navRel(root string, e NavEntry) string {
 	rel := relSlash(root, e.Path)
 	if rel == "" || rel == ".." || strings.HasPrefix(rel, "../") {
-		rel = e.Name
+		return e.Name
 	}
-	return strings.Split(rel, "/")
+	return rel
+}
+
+// navRelLess orders two tree entries depth-first: a folder is followed
+// immediately by its descendants. Siblings list folders before files, then
+// compare names case-insensitively. It walks the precomputed relative paths
+// with strings.Cut so comparing two entries allocates nothing.
+func navRelLess(arel, aKind, brel, bKind string) bool {
+	for {
+		if arel == brel {
+			return false
+		}
+		aSeg, aRest, aMore := strings.Cut(arel, "/")
+		bSeg, bRest, bMore := strings.Cut(brel, "/")
+		if aSeg != bSeg {
+			aLeaf, bLeaf := "folder", "folder"
+			if !aMore {
+				aLeaf = aKind
+			}
+			if !bMore {
+				bLeaf = bKind
+			}
+			if aLeaf != bLeaf {
+				return aLeaf == "folder"
+			}
+			if c := compareFold(aSeg, bSeg); c != 0 {
+				return c < 0
+			}
+			return aSeg < bSeg
+		}
+		if !aMore || !bMore {
+			return !aMore && bMore
+		}
+		arel, brel = aRest, bRest
+	}
+}
+
+// compareFold orders names case-insensitively without allocating, matching the
+// per-rune lowercasing the tree convention used before.
+func compareFold(a, b string) int {
+	for a != "" && b != "" {
+		ar, an := utf8.DecodeRuneInString(a)
+		br, bn := utf8.DecodeRuneInString(b)
+		if al, bl := unicode.ToLower(ar), unicode.ToLower(br); al != bl {
+			if al < bl {
+				return -1
+			}
+			return 1
+		}
+		a, b = a[an:], b[bn:]
+	}
+	switch {
+	case a == "" && b == "":
+		return 0
+	case a == "":
+		return -1
+	default:
+		return 1
+	}
 }
 
 func (h *documentHost) searchLockedResult(w *workspace, idx *workspaceIndex, query string) NavSearchResult {

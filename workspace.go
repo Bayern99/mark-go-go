@@ -25,13 +25,14 @@ type WorkspaceSnapshot struct {
 // DocumentInfo is one open document in a workspace. ID is stable across
 // path, tab and window.
 type DocumentInfo struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Path     string `json:"path"`
-	Edited   bool   `json:"edited"`
-	Conflict bool   `json:"conflict"`
-	Deleted  bool   `json:"deleted"`
-	ReadOnly bool   `json:"readOnly"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Path       string `json:"path"`
+	Edited     bool   `json:"edited"`
+	Conflict   bool   `json:"conflict"`
+	Deleted    bool   `json:"deleted"`
+	ReadOnly   bool   `json:"readOnly"`
+	Generating bool   `json:"generating"`
 }
 
 // CloseResult is the outcome of CloseDocument or CloseWorkspace.
@@ -65,6 +66,7 @@ type workspace struct {
 	win    *mygo.Window
 	tabs   []string
 	active string
+	index  *workspaceIndex
 }
 
 func (w *workspace) kind() string {
@@ -205,7 +207,7 @@ func (h *documentHost) snapshotWorkspaceLocked(w *workspace) WorkspaceSnapshot {
 		if s == nil {
 			continue
 		}
-		docs = append(docs, s.info())
+		docs = append(docs, s.infoLocked())
 	}
 	return WorkspaceSnapshot{
 		ID:        w.id,
@@ -285,6 +287,7 @@ func (h *documentHost) OpenWorkspace(ctx context.Context, root string) error {
 			h.mu.Unlock()
 			win.Show()
 			win.Focus()
+			h.rememberRoot(abs)
 			return nil
 		}
 	}
@@ -410,31 +413,99 @@ func (h *documentHost) closeWorkspace(w *workspace) (CloseResult, error) {
 	return CloseResult{Closed: true}, nil
 }
 
+func nativeCommandName(role mygo.MenuRole) (string, bool) {
+	switch role {
+	case mygo.RoleSave:
+		return "save", true
+	case mygo.RoleSaveAs:
+		return "saveAs", true
+	case mygo.RoleDuplicate:
+		return "duplicate", true
+	case mygo.RoleRename:
+		return "rename", true
+	case mygo.RoleMoveTo:
+		return "moveTo", true
+	case mygo.RoleRevert:
+		return "revert", true
+	case mygo.RoleClose:
+		return "close", true
+	case mygo.RoleUndo:
+		return "undo", true
+	case mygo.RoleRedo:
+		return "redo", true
+	default:
+		return "", false
+	}
+}
+
 func (h *documentHost) interceptCommand(role mygo.MenuRole, doc *mygo.Document[string], win *mygo.Window) bool {
 	if doc == nil {
 		return false
 	}
-	cmd := ""
-	switch role {
-	case mygo.RoleSave:
-		cmd = "save"
-	case mygo.RoleSaveAs:
-		cmd = "saveAs"
-	case mygo.RoleDuplicate:
-		cmd = "duplicate"
-	case mygo.RoleRename:
-		cmd = "rename"
-	case mygo.RoleMoveTo:
-		cmd = "moveTo"
-	case mygo.RoleRevert:
-		cmd = "revert"
-	case mygo.RoleClose:
-		cmd = "close"
-	default:
+	cmd, ok := nativeCommandName(role)
+	if !ok {
 		return false
 	}
 	_ = nativeCommand.Emit(win, NativeCommand{ID: doc.ID(), Command: cmd})
 	return true
+}
+
+// SetNativeEditState enables native Undo/Redo for the focused window's
+// active document. Reports from a background pane are ignored so they
+// cannot steal menu state. This is editor undo, not UndoView.
+func (h *documentHost) SetNativeEditState(ctx context.Context, documentID string, canUndo, canRedo bool) error {
+	if _, err := h.docSession(documentID); err != nil {
+		return err
+	}
+	win := mygo.CallerWindow(ctx)
+	if win == nil {
+		win = mygo.FocusedWindow()
+	}
+	h.mu.Lock()
+	w := h.byWindow[win]
+	active := ""
+	if w != nil {
+		active = w.active
+	}
+	h.mu.Unlock()
+	if active != "" && active != documentID {
+		return nil
+	}
+	applyNativeEditMenu(canUndo, canRedo)
+	return nil
+}
+
+func applyNativeEditMenu(canUndo, canRedo bool) {
+	m := mygo.App.Menu()
+	if m == nil {
+		return
+	}
+	setMenuRoleEnabled(m, mygo.RoleUndo, canUndo)
+	setMenuRoleEnabled(m, mygo.RoleRedo, canRedo)
+}
+
+func setMenuRoleEnabled(m *mygo.Menu, role mygo.MenuRole, on bool) {
+	if m == nil {
+		return
+	}
+	for _, it := range m.Items() {
+		if it.Role == role {
+			it.SetEnabled(on)
+		}
+		setMenuItemRoleEnabled(it, role, on)
+	}
+}
+
+func setMenuItemRoleEnabled(it *mygo.MenuItem, role mygo.MenuRole, on bool) {
+	if it == nil {
+		return
+	}
+	for _, child := range it.Submenu {
+		if child.Role == role {
+			child.SetEnabled(on)
+		}
+		setMenuItemRoleEnabled(child, role, on)
+	}
 }
 
 func (h *documentHost) interceptWindowClose(win *mygo.Window) bool {
@@ -463,6 +534,10 @@ func (h *documentHost) newWorkspaceWindow(root, title string) *mygo.Window {
 	h.byWindow[win] = w
 	h.mu.Unlock()
 	win.OnClosed(func() { h.forgetWindow(win) })
+	if root != "" {
+		h.rememberRoot(root)
+		h.startIndex(w)
+	}
 	return win
 }
 
@@ -475,6 +550,7 @@ func (h *documentHost) forgetWindow(win *mygo.Window) {
 		ids = append([]string{}, w.tabs...)
 	}
 	h.mu.Unlock()
+	h.forgetIndex(w)
 	for _, id := range ids {
 		if s, err := h.docSession(id); err == nil {
 			h.dropSession(s)

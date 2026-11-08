@@ -2002,6 +2002,25 @@ func registerWindowClasses() {
 
 	registerClipViewClass()
 	classDef("MyGoWebView", "WKWebView", nil, append(append(webViewMethods(), contextMenuMethods()...), []objc.MethodDef{
+		method("undo:", func(self id, _ objc.SEL, sender id) {
+			if handleWebViewEditCommand(self, sender, "undo") {
+				return
+			}
+			sendSuper(self, "MyGoWebView", sel("undo:"), uintptr(sender))
+		}),
+		method("redo:", func(self id, _ objc.SEL, sender id) {
+			if handleWebViewEditCommand(self, sender, "redo") {
+				return
+			}
+			sendSuper(self, "MyGoWebView", sel("redo:"), uintptr(sender))
+		}),
+		method("validateMenuItem:", func(self id, cmd objc.SEL, item id) bool {
+			action := objc.SEL(send(item, "action"))
+			if action == sel("undo:") || action == sel("redo:") {
+				return sendBool(item, "isEnabled")
+			}
+			return byte(sendSuper(self, "MyGoWebView", cmd, uintptr(item))) != 0
+		}),
 		method("mouseDown:", func(self id, cmd objc.SEL, ev id) {
 			if w := theBackend.byWebView[self]; w != nil {
 				if w.host != nil {

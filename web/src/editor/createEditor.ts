@@ -27,6 +27,7 @@ import {
   TextSelection,
 } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
+import { undo as undoRich, redo as redoRich, undoDepth, redoDepth } from '@milkdown/kit/prose/history'
 import { listenerCtx } from '@milkdown/kit/plugin/listener'
 import type { Disposable } from '../host/types'
 import { buildDocument, type BuiltDocument } from './blocks/build'
@@ -105,6 +106,16 @@ export interface MarkdownEditor {
    */
   onSelectionChange(fn: (offset: number) => void): Disposable
   setReadonly(readonly: boolean): void
+  /** Whether the active editor surface has an undoable edit. */
+  canUndo(): boolean
+  /** Whether the active editor surface has a redoable edit. */
+  canRedo(): boolean
+  /** Undo one edit on the active surface. Returns false when there is none. */
+  undo(): boolean
+  /** Redo one edit on the active surface. Returns false when there is none. */
+  redo(): boolean
+  /** Fires after the active surface's undo/redo availability changes. */
+  onHistoryChange(fn: () => void): Disposable
   /** Low-level access for tests and host integrations. */
   getView(): EditorView
   destroy(): Promise<void>
@@ -166,6 +177,7 @@ export async function createMarkdownEditor(
   const listeners = new Set<(markdown: string) => void>()
   const selectionListeners = new Set<(offset: number) => void>()
   const modeListeners = new Set<(mode: EditorMode) => void>()
+  const historyListeners = new Set<() => void>()
   let lastReportedOffset: number | undefined
   let mode: EditorMode = 'wysiwyg'
   let sourceEditor: SourceEditor | undefined
@@ -222,6 +234,10 @@ export async function createMarkdownEditor(
     for (const fn of selectionListeners) fn(offset)
   }
 
+  const emitHistory = () => {
+    for (const fn of historyListeners) fn()
+  }
+
   const reportSelection = (state: EditorState) => {
     if (suppressSelectionReporting || selectionListeners.size === 0) return
     const offset = selectionOffset(state)
@@ -240,6 +256,7 @@ export async function createMarkdownEditor(
       readonly,
       onChange(markdown) {
         for (const fn of listeners) fn(markdown)
+        emitHistory()
       },
       onSelection(offset) {
         if (selectionListeners.size === 0 || offset === lastReportedOffset) return
@@ -562,8 +579,17 @@ export async function createMarkdownEditor(
     return true
   }
 
+  const historyWatch = new Plugin({
+    view: () => ({
+      update(currentView, prevState) {
+        if (currentView.state.doc.eq(prevState.doc) && currentView.state.selection.eq(prevState.selection)) return
+        emitHistory()
+      },
+    }),
+  })
+
   const plugins = view.state.plugins.filter((plugin) => !isIdentityBreaking(plugin))
-  plugins.push(selectionPlugin, lockedViewPlugin)
+  plugins.push(selectionPlugin, lockedViewPlugin, historyWatch)
 
   const load = (text: string) => {
     cancelNoteComposer()
@@ -581,6 +607,7 @@ export async function createMarkdownEditor(
     } finally {
       suppressChange = false
     }
+    emitHistory()
   }
 
   const notify = (markdown: string) => {
@@ -709,6 +736,7 @@ export async function createMarkdownEditor(
     }
 
     for (const fn of modeListeners) fn(mode)
+    emitHistory()
   }
 
   const setReadonly = (value: boolean) => {
@@ -745,6 +773,7 @@ export async function createMarkdownEditor(
         // back to it.
         lastReportedOffset = undefined
         emitSelection(source.getSelection())
+        emitHistory()
         return
       }
       load(text)
@@ -777,12 +806,37 @@ export async function createMarkdownEditor(
       }
     },
     setReadonly,
+    canUndo() {
+      if (mode === 'source') return sourceEditor?.canUndo() ?? false
+      return undoDepth(view.state) > 0
+    },
+    canRedo() {
+      if (mode === 'source') return sourceEditor?.canRedo() ?? false
+      return redoDepth(view.state) > 0
+    },
+    undo() {
+      if (mode === 'source') return sourceEditor?.undo() ?? false
+      return undoRich(view.state, view.dispatch)
+    },
+    redo() {
+      if (mode === 'source') return sourceEditor?.redo() ?? false
+      return redoRich(view.state, view.dispatch)
+    },
+    onHistoryChange(fn) {
+      historyListeners.add(fn)
+      return {
+        dispose() {
+          historyListeners.delete(fn)
+        },
+      }
+    },
     getView: () => view,
     async destroy() {
       cancelNoteComposer()
       listeners.clear()
       selectionListeners.clear()
       modeListeners.clear()
+      historyListeners.clear()
       sourceEditor?.destroy()
       sourceEditor = undefined
       await builder.destroy()

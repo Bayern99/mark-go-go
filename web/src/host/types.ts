@@ -13,6 +13,8 @@ export interface DocState {
   conflict: boolean
   deleted: boolean
   readOnly: boolean
+  /** True while this document's generation slot is occupied. */
+  generating?: boolean
 }
 
 /** One open document as the workspace lists it. `id` is stable across path and window. */
@@ -30,13 +32,73 @@ export interface HostDocSnapshot {
 
 export type WorkspaceKind = 'folder' | 'untitled'
 
-export interface WorkspaceSnapshot {
+export type FolderState = 'open' | 'collapsed' | 'empty'
+export type IndexStatus = 'idle' | 'scanning' | 'indexing' | 'ready' | 'error'
+
+export interface NavHeadingHit {
+  text: string
+  offset: number
+  level: number
+}
+
+export interface NavEntry {
   id: string
+  kind: 'file' | 'folder'
+  name: string
+  path: string
+  parent: string
+  depth: number
+  markdownCount?: number
+  folderState?: FolderState
+  title?: string
+  excerpt?: string
+  modifiedAt?: number
+  notes?: number
+  edited?: boolean
+  conflict?: boolean
+  deleted?: boolean
+  documentId?: string
+}
+
+export interface NavSnapshot {
+  root: string
+  status: IndexStatus
+  indexed: number
+  total: number
+  error?: string
+  entries: NavEntry[]
+  collapsedCount: number
+}
+
+export interface NavSearchHit {
+  path: string
+  name: string
+  title: string
+  excerpt: string
+  documentId?: string
+  headings: NavHeadingHit[]
+}
+
+export interface NavSearchResult {
+  query: string
+  status: IndexStatus
+  matched: number
+  indexed: number
+  total: number
+  incomplete: boolean
+  hits: NavSearchHit[]
+}
+
+export interface RecentWorkspace {
   root: string
   name: string
-  kind: WorkspaceKind
-  documents: DocumentInfo[]
-  activeId: string
+  openedAt: number
+}
+
+export interface Crumb {
+  name: string
+  path: string
+  isFile: boolean
 }
 
 export interface CloseResult {
@@ -53,6 +115,8 @@ export type NativeCommandName =
   | 'revert'
   | 'duplicate'
   | 'closeWorkspace'
+  | 'undo'
+  | 'redo'
 
 /** Native File-menu / key-equivalent command, captured with the document id at click time. */
 export interface NativeCommand {
@@ -217,4 +281,12 @@ export interface WorkspaceAdapter {
   closeWorkspace(): Promise<CloseResult>
   /** Permanently bound to `id` for as long as this window hosts it. */
   document(id: string): HostAdapter
+  navSnapshot(): Promise<NavSnapshot>
+  subscribeNav(fn: (snap: NavSnapshot) => void): Disposable
+  setFilter(query: string): Promise<NavSearchResult>
+  subscribeSearch(fn: (result: NavSearchResult) => void): Disposable
+  toggleFolder(rel: string): Promise<void>
+  revealPath(path: string): Promise<void>
+  pickFolder(): Promise<string>
+  recentWorkspaces(): Promise<RecentWorkspace[]>
 }

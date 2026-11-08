@@ -308,7 +308,7 @@ export class GenUISession {
 
 /**
  * What outlives the GenUI view's mounts: where the reader was in the view,
- * the generation of the window, the request being written, and the shared session.
+ * this document's generation, the request being written, and the shared session.
  */
 export interface GenUIMemory extends ScrollMemory {
   generation: GenerationController | undefined

@@ -26,7 +26,7 @@ Then keep the document-group edits that live in this tree under `third_party/myg
 - `Document.ConfirmClose() error` — ask-to-save this document only; does not detach or finishClose. `ErrCanceled` on cancel.
 - `Document.CloseDocument() error` — ConfirmClose then unregister this document; does not destroy a shared window.
 - `Document.OnClosed(fn) (off func())` — fired after the document is actually closed.
-- `DocumentsOptions.Command` — if set and returns true, documentRole skips default Save/SaveAs/Duplicate/Rename/Move/Revert/Close. The document is the one active at click time.
+- `DocumentsOptions.Command` — if set and returns true, documentRole skips default Save/SaveAs/Duplicate/Rename/Move/Revert/Close and Undo/Redo (the web view's empty undo manager). The document is the one active at click time.
 - `DocumentsOptions.BeforeWindowClose` — if set and returns true, the window close is prevented so the app can Flush then CloseWorkspace.
 
 `DocumentsOptions.Window` may return an existing window. `attach` appends to that window's `docGroup` instead of overwriting a single mapping. `documentFor(w)` returns the active document.
@@ -36,3 +36,5 @@ Then keep the document-group edits that live in this tree under `third_party/myg
 `notify` writes title, represented file, and edited mark only when the document is active. Background documents still fire `OnStateChange`.
 
 Persistence, recovery copies, conflict, and file watches are unchanged.
+
+Undo/Redo of a document window are the page editor's history. `performRole` sends those roles through `DocumentsOptions.Command` instead of `document.execCommand`. On macOS, `MyGoWebView` implements `undo:`/`redo:` so a click or key equivalent on the web view reaches that intercept; an AppKit field that is not a descendant of the web view keeps the system undo manager. `SetEnabled` on the Edit menu items reports the page's real `canUndo`/`canRedo`.

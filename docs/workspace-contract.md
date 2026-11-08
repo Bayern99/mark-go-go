@@ -29,13 +29,14 @@ type WorkspaceSnapshot struct {
 }
 
 type DocumentInfo struct {
-    ID       string `json:"id"`
-    Name     string `json:"name"`
-    Path     string `json:"path"`
-    Edited   bool   `json:"edited"`
-    Conflict bool   `json:"conflict"`
-    Deleted  bool   `json:"deleted"`
-    ReadOnly bool   `json:"readOnly"`
+    ID         string `json:"id"`
+    Name       string `json:"name"`
+    Path       string `json:"path"`
+    Edited     bool   `json:"edited"`
+    Conflict   bool   `json:"conflict"`
+    Deleted    bool   `json:"deleted"`
+    ReadOnly   bool   `json:"readOnly"`
+    Generating bool   `json:"generating"` // this document's generation slot is occupied
 }
 
 type Snapshot struct {
@@ -72,9 +73,18 @@ Revert(ctx, documentId string) error
 WatchView(ctx, documentId string) error
 UnwatchView(ctx, documentId string) error
 UndoView(ctx, documentId string) error
+SetNativeEditState(ctx, documentId string, canUndo, canRedo bool) error  // editor undo, not UndoView
 Generate(ctx, documentId string, req GenerateRequest, progress *Channel[GenerateProgress]) error
 GetSettings() (Settings, error)
 SetSettings(s Settings) error
+
+// Navigation (#22). Opening a workspace does not wait for a full directory scan.
+NavSnapshot(ctx) (NavSnapshot, error)
+SetFilter(ctx, query string) (NavSearchResult, error)
+ToggleFolder(ctx, rel string) error
+RevealPath(ctx, path string) error
+PickFolder(ctx) (string, error)                 // native directory dialog; ErrCanceled if dismissed
+RecentWorkspaces(ctx) ([]RecentWorkspace, error)
 ```
 
 `Flush` is the page's contract for last-input delivery: the editor must send the current Markdown of `documentId` before Save/Close/SaveAs of that document. The host then uses that document's content, not the active tab.
@@ -88,8 +98,10 @@ Emitted to the workspace window that currently hosts the document.
 ```ts
 workspaceChanged: WorkspaceSnapshot
 docReloaded: Snapshot                 // { id, text, version, state }
-docState: DocumentInfo                // { id, name, path, edited, conflict, deleted, readOnly }
+docState: DocumentInfo                // { id, name, path, edited, conflict, deleted, readOnly, generating }
 viewChanged: { id: string } & ViewSnapshot
+navChanged: NavSnapshot               // incremental tree; status scanning|indexing|ready|error
+navSearchReady: NavSearchResult       // incomplete is true until the index is ready
 ```
 
 `workspaceChanged` is the source of truth for tab order, active tab, root, and per-tab badges. Background `docState` updates the matching tab without activating it.
@@ -116,6 +128,8 @@ After a successful first save or Save As:
 ## Native commands
 
 File menu Save / Save As / Duplicate / Rename / Move / Revert act on the **active document of the focused window** (MyGo document group). Close (`Cmd+W`) closes the **active document tab**, not the window. The window close button / File > Close Window runs `CloseWorkspace` (asks every dirty document; cancel keeps the window and every tab).
+
+Edit menu Undo / Redo (`nativeCommand` `undo` / `redo`) capture that same active `documentId` at click time and apply the **editor** history of that document. They are not `UndoView`. A focused in-place Composer (`textarea` inside `.composer`) keeps native field undo; read-only GenUI / ComparisonTable focus does not rewrite the document. `SetNativeEditState(documentId, canUndo, canRedo)` reports real editor availability for the focused window's active document only, so a background pane cannot steal menu state. `DocumentsOptions.Equal` already clears the edited mark when Undo returns the on-disk bytes.
 
 Dialogs use the workspace window as parent. Generation in progress for a document disables that document's Save As / Rename / Move; ordinary Save, edit, and tab switch stay available.
 
@@ -145,6 +159,14 @@ interface WorkspaceAdapter {
   closeDocument(id: string, text?: string): Promise<CloseResult>
   closeWorkspace(): Promise<CloseResult>
   document(id: string): HostAdapter   // permanently bound to id
+  navSnapshot(): Promise<NavSnapshot>
+  subscribeNav(fn: (snap: NavSnapshot) => void): Disposable
+  setFilter(query: string): Promise<NavSearchResult>
+  subscribeSearch(fn: (result: NavSearchResult) => void): Disposable
+  toggleFolder(rel: string): Promise<void>
+  revealPath(path: string): Promise<void>
+  pickFolder(): Promise<string>
+  recentWorkspaces(): Promise<RecentWorkspace[]>
 }
 
 interface HostAdapter extends ViewFileSource, ViewGenerator {
@@ -176,9 +198,10 @@ Generate(documentId, req, progress)
 viewChanged: { id, exists, text, error, canUndo }
 ```
 
-#21 only adds `documentId` to the same call/event boundary. #29 owns read/watch ordering: emit-first (the first snapshot does not wait for WatchFiles), then WatchFiles, then a catch-up snapshot once the watch is running, so there is no unwatched gap after the initial read. A watch that cannot start still returns its error on `WatchView`; the first snapshot already sent is not withdrawn. #24 owns multi-document generation isolation (one slot per `documentId`, concurrent slots across documents). #30 owns native Undo/Redo, not generation UX.
+#21 only adds `documentId` to the same call/event boundary. #29 owns read/watch ordering: emit-first (the first snapshot does not wait for WatchFiles), then WatchFiles, then a catch-up snapshot once the watch is running, so there is no unwatched gap after the initial read. A watch that cannot start still returns its error on `WatchView`; the first snapshot already sent is not withdrawn. #24 owns one generation slot per `documentId` (concurrent slots across documents): settings, text, path and request are captured at start; a finishing run refuses to write if the document closed or its path changed; a cancelled close must not cancel the slot. #30 owns native Undo/Redo, not generation UX.
 
 ## Testing seams (approved)
 
 - Browser: `WorkspaceAdapter` / `HostAdapter` / `App` / `DocumentPane` public operations.
 - Go: real temp files through `workspaceHost` public methods (open/activate/close/save/save-as routing, identity preserved, cancel close). Native menus and file dialogs are verified after integration on macOS, not claimed here.
+- #22: `NavSnapshot` / `SetFilter` / `PickFolder` / `RecentWorkspaces` and the left-pane tree, filter, splitter, crumbs, and welcome/recents. Opening a folder does not wait for WatchFiles or a full scan; `incomplete` stays true until indexing is ready. Native Open Folder / large-dir smoke is the verification owner.

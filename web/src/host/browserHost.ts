@@ -8,12 +8,15 @@ import type {
   GenerationSettings,
   HostAdapter,
   HostDocSnapshot,
+  NavSearchResult,
+  NavSnapshot,
   ViewSnapshot,
   WorkspaceAdapter,
   WorkspaceKind,
   WorkspaceSnapshot,
 } from './types'
 import { cancelled, failureOf, GenerationError } from './generationError'
+import { BrowserNavIndex, liveTexts, type BrowserNavSeed } from '../workspace/nav'
 
 export const DEMO_MARKDOWN = `# Quarterly Report
 
@@ -56,12 +59,13 @@ const INITIAL_STATE: DocState = {
   conflict: false,
   deleted: false,
   readOnly: false,
+  generating: false,
 }
 
 export interface BrowserHost extends HostAdapter {
   /** Simulate an external change (used by tests and the demo reload button). */
   reload(text: string): void
-  getState(): DocState
+  getState(): DocumentInfo
   /** Overlay file-status flags so workspace tests can drive tab badges. */
   patchState(partial: Partial<DocState>): void
   /** Simulate another tool writing (text) or removing (null) the view file; the kept view stays. */
@@ -69,8 +73,14 @@ export interface BrowserHost extends HostAdapter {
   /** The kept view the last generation replaced, or null. */
   keptView(): string | null
   readonly generations: GenerateRequest[]
+  /** Settings (model, agent command) captured at each generate start. */
+  readonly capturedSettings: GenerationSettings[]
   /** Emit the first view snapshot when `holdFirstView` deferred it. */
   releaseFirstView(): void
+  /** Simulate an external path change while a generation is running. */
+  setPath(path: string): void
+  /** Abort an in-flight generation as a real close of this document would. */
+  abandonGeneration(): void
 }
 
 /**
@@ -95,6 +105,8 @@ export interface BrowserHostOptions {
   generator?: FakeGenerator
   /** Stored settings; the defaults of the desktop host when omitted. */
   settings?: GenerationSettings
+  /** Shared settings object, as the desktop host's one settings file. */
+  settingsRef?: GenerationSettings
   /** Open the document as never saved: it has no path, so no view file. */
   untitled?: boolean
   /** Do not emit the first watch snapshot until `releaseFirstView`. */
@@ -120,6 +132,7 @@ export function createBrowserHost(
   options: BrowserHostOptions = {},
 ): BrowserHost {
   let text = initial
+  let saved = initial
   let version = 1
   const id = `browser:${initialName}:${Math.random().toString(36).slice(2, 10)}`
   let state: DocumentInfo = {
@@ -133,13 +146,17 @@ export function createBrowserHost(
   const reloadListeners = new Set<(snap: HostDocSnapshot) => void>()
   const stateListeners = new Set<(state: DocumentInfo) => void>()
   const viewListeners = new Set<(snap: ViewSnapshot) => void>()
-  let settings: GenerationSettings = {
+  let settings: GenerationSettings = options.settingsRef ?? {
     model: options.settings?.model ?? DEFAULT_SETTINGS.model,
     agentCommand: options.settings?.agentCommand || DEFAULT_SETTINGS.agentCommand,
     models: options.settings?.models?.length ? [...options.settings.models] : [...DEFAULT_MODELS],
   }
   let generating = false
+  let capturedPath = ''
+  let abandoned = false
+  let abortInFlight: (() => void) | undefined
   const generations: GenerateRequest[] = []
+  const capturedSettingsLog: GenerationSettings[] = []
 
   const viewSnapshot = (): ViewSnapshot =>
     view === null
@@ -162,32 +179,43 @@ export function createBrowserHost(
   const hostSelf: BrowserHost = {
     id,
     generations,
+    capturedSettings: capturedSettingsLog,
     async load() {
       return snapshot()
     },
     async update(next: string) {
       text = next
-      if (!state.edited) {
-        state = { ...state, edited: true }
+      const edited = next !== saved
+      if (state.edited !== edited) {
+        state = { ...state, edited }
         emitState()
       }
     },
     async flush(next: string) {
       text = next
-      if (!state.edited) {
-        state = { ...state, edited: true }
+      const edited = next !== saved
+      if (state.edited !== edited) {
+        state = { ...state, edited }
         emitState()
       }
     },
     async save() {
-      state = { ...state, edited: false }
-      emitState()
+      saved = text
+      if (state.edited) {
+        state = { ...state, edited: false }
+        emitState()
+      }
     },
     async saveAs() {
+      if (generating) throw new Error('A view is being generated; wait for it to finish, or cancel it.')
       await this.save()
     },
-    async rename() {},
-    async moveTo() {},
+    async rename() {
+      if (generating) throw new Error('A view is being generated; wait for it to finish, or cancel it.')
+    },
+    async moveTo() {
+      if (generating) throw new Error('A view is being generated; wait for it to finish, or cancel it.')
+    },
     async revert() {},
     bindFlush(getText) {
       flushReaders.set(hostSelf, getText)
@@ -209,6 +237,7 @@ export function createBrowserHost(
     },
     reload(next: string) {
       text = next
+      saved = next
       version += 1
       state = { ...state, edited: false }
       const snap = snapshot()
@@ -234,6 +263,14 @@ export function createBrowserHost(
     },
     writeView,
     keptView: () => kept,
+    setPath(path: string) {
+      state = { ...state, path }
+      emitState()
+    },
+    abandonGeneration() {
+      abandoned = true
+      abortInFlight?.()
+    },
     async undoView() {
       if (generating) throw new Error('A view is being generated; wait for it to finish, or cancel it.')
       if (kept === null) throw new Error('There is no earlier view to go back to.')
@@ -252,7 +289,15 @@ export function createBrowserHost(
           hint: 'Wait for it to finish, or cancel it.',
         })
       }
+      const captured: GenerationSettings = {
+        model: settings.model,
+        agentCommand: settings.agentCommand,
+        models: settings.models ? [...settings.models] : [...DEFAULT_MODELS],
+      }
+      capturedPath = state.path
+      abandoned = false
       generations.push(req)
+      capturedSettingsLog.push(captured)
       if (!options.generator) {
         throw new GenerationError({
           kind: 'agent-not-found',
@@ -261,22 +306,36 @@ export function createBrowserHost(
         })
       }
       generating = true
+      state = { ...state, generating: true }
+      emitState()
       try {
         onProgress({ phase: 'starting', text: 'Starting the agent' })
-        const stopped = new Promise<never>((_, reject) => {
-          const stop = () => reject(cancelled())
-          if (signal.aborted) stop()
-          else signal.addEventListener('abort', stop, { once: true })
-        })
+        const { promise: stopped, reject: stop } = Promise.withResolvers<never>()
+        abortInFlight = () => stop(cancelled())
+        if (signal.aborted || abandoned) abortInFlight()
+        else signal.addEventListener('abort', abortInFlight, { once: true })
         const body = await Promise.race([options.generator(req, onProgress, signal), stopped])
         onProgress({ phase: 'checking', text: 'Checking the view' })
+        if (abandoned) throw cancelled()
+        if (state.path === '' || state.path !== capturedPath) {
+          throw new GenerationError({
+            kind: 'agent-error',
+            message: "The document's path changed while the agent worked, so the view was not written.",
+            hint: 'Generate again.',
+          })
+        }
         if (view !== null) kept = view
         writeView(body)
       } catch (error) {
-        if (signal.aborted) throw cancelled()
+        if (signal.aborted || abandoned) throw cancelled()
         throw error instanceof GenerationError ? error : new GenerationError(failureOf(error))
       } finally {
+        abortInFlight = undefined
         generating = false
+        if (state.generating) {
+          state = { ...state, generating: false }
+          emitState()
+        }
       }
     },
     async getSettings() {
@@ -286,11 +345,9 @@ export function createBrowserHost(
       }
     },
     async setSettings(next) {
-      settings = {
-        model: next.model,
-        agentCommand: next.agentCommand || DEFAULT_SETTINGS.agentCommand,
-        models: next.models?.length ? [...next.models] : settings.models,
-      }
+      settings.model = next.model
+      settings.agentCommand = next.agentCommand || DEFAULT_SETTINGS.agentCommand
+      if (next.models?.length) settings.models = [...next.models]
     },
   }
   return hostSelf
@@ -322,6 +379,7 @@ export function wrapHostAsWorkspace(host: HostAdapter, name?: string): Workspace
           conflict: false,
           deleted: false,
           readOnly: false,
+          generating: false,
         }
     return {
       id: host.id,
@@ -331,6 +389,7 @@ export function wrapHostAsWorkspace(host: HostAdapter, name?: string): Workspace
       conflict: state.conflict,
       deleted: state.deleted,
       readOnly: state.readOnly,
+      generating: state.generating ?? false,
     }
   }
   const snap = (): WorkspaceSnapshot => ({
@@ -345,6 +404,23 @@ export function wrapHostAsWorkspace(host: HostAdapter, name?: string): Workspace
   host.onState(() => {
     const current = snap()
     for (const fn of listeners) fn(current)
+  })
+  const idleNav = (): NavSnapshot => ({
+    root: '',
+    status: 'idle',
+    indexed: 0,
+    total: 0,
+    entries: [],
+    collapsedCount: 0,
+  })
+  const idleSearch = (): NavSearchResult => ({
+    query: '',
+    status: 'idle',
+    matched: 0,
+    indexed: 0,
+    total: 0,
+    incomplete: false,
+    hits: [],
   })
   return {
     snapshot: async () => snap(),
@@ -373,6 +449,26 @@ export function wrapHostAsWorkspace(host: HostAdapter, name?: string): Workspace
       if (id !== host.id) throw new Error(`unknown document ${id}`)
       return host
     },
+    async navSnapshot() {
+      return idleNav()
+    },
+    subscribeNav() {
+      return disposable(() => {})
+    },
+    async setFilter() {
+      return idleSearch()
+    },
+    subscribeSearch() {
+      return disposable(() => {})
+    },
+    async toggleFolder() {},
+    async revealPath() {},
+    async pickFolder() {
+      return ''
+    },
+    async recentWorkspaces() {
+      return []
+    },
   }
 }
 
@@ -390,6 +486,7 @@ export interface BrowserWorkspaceOptions {
   /** Close-ask: canceled keeps every tab and the adapter cache. */
   confirmClose?: (id: string) => CloseResult | Promise<CloseResult>
   confirmCloseWorkspace?: () => CloseResult | Promise<CloseResult>
+  nav?: BrowserNavSeed
 }
 
 function isBrowserHost(host: HostAdapter): host is BrowserHost {
@@ -406,7 +503,7 @@ function asSeed(doc: HostAdapter | BrowserWorkspaceSeed): BrowserWorkspaceSeed {
 function infoFrom(seed: BrowserWorkspaceSeed): DocumentInfo {
   const state = isBrowserHost(seed.host)
     ? seed.host.getState()
-    : { name: 'untitled.md', path: '', edited: false, conflict: false, deleted: false, readOnly: false }
+    : { name: 'untitled.md', path: '', edited: false, conflict: false, deleted: false, readOnly: false, generating: false }
   return {
     id: seed.host.id,
     name: seed.name ?? state.name,
@@ -415,6 +512,7 @@ function infoFrom(seed: BrowserWorkspaceSeed): DocumentInfo {
     conflict: state.conflict,
     deleted: state.deleted,
     readOnly: state.readOnly,
+    generating: state.generating ?? false,
   }
 }
 
@@ -453,12 +551,27 @@ export function createBrowserWorkspace(
     activeId,
   })
 
+  const nav = new BrowserNavIndex(root, options.nav)
+
   const emit = () => {
     const current = snap()
     for (const fn of listeners) fn(current)
+    void refreshNav()
+  }
+
+  const refreshNav = async () => {
+    const docs = snap().documents
+    const texts = await liveTexts(docs, (id) => {
+      const host = adapters.get(id)
+      if (!host) throw new Error(`unknown document ${id}`)
+      return host
+    })
+    nav.emit(docs, texts)
   }
 
   const drop = (id: string) => {
+    const host = adapters.get(id)
+    if (host && isBrowserHost(host)) host.abandonGeneration()
     stateSubs.get(id)?.dispose()
     stateSubs.delete(id)
     adapters.delete(id)
@@ -503,6 +616,7 @@ export function createBrowserWorkspace(
           conflict: state.conflict,
           deleted: state.deleted,
           readOnly: state.readOnly,
+          generating: state.generating ?? false,
         })
         emit()
       }),
@@ -592,6 +706,52 @@ export function createBrowserWorkspace(
       const host = adapters.get(id)
       if (!host) throw new Error(`unknown document ${id}`)
       return host
+    },
+    async navSnapshot() {
+      const docs = snap().documents
+      const texts = await liveTexts(docs, (id) => {
+        const host = adapters.get(id)
+        if (!host) throw new Error(`unknown document ${id}`)
+        return host
+      })
+      return nav.snapshot(docs, texts)
+    },
+    subscribeNav(fn) {
+      return disposable(nav.subscribeNav(fn))
+    },
+    async setFilter(query: string) {
+      nav.setQuery(query)
+      const docs = snap().documents
+      const texts = await liveTexts(docs, (id) => {
+        const host = adapters.get(id)
+        if (!host) throw new Error(`unknown document ${id}`)
+        return host
+      })
+      const result = nav.search(docs, texts)
+      nav.emit(docs, texts)
+      return result
+    },
+    subscribeSearch(fn) {
+      return disposable(nav.subscribeSearch(fn))
+    },
+    async toggleFolder(rel: string) {
+      nav.toggleFolder(rel)
+      await refreshNav()
+    },
+    async revealPath(path: string) {
+      nav.reveal(path)
+      await refreshNav()
+    },
+    async pickFolder() {
+      if (nav.pickFolderImpl) {
+        const chosen = await nav.pickFolderImpl()
+        if (chosen) nav.remember(chosen)
+        return chosen
+      }
+      return root
+    },
+    async recentWorkspaces() {
+      return [...nav.recents]
     },
   }
 }

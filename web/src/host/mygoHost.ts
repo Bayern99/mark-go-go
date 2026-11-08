@@ -1,4 +1,4 @@
-import { Channel } from "mygo-runtime";
+import { Channel, isMyGo } from "mygo-runtime";
 import type {
   CloseResult,
   Disposable,
@@ -11,12 +11,33 @@ import type {
   HostDocSnapshot,
   NativeCommand,
   NativeCommandName,
+  NavSearchResult,
+  NavSnapshot,
+  RecentWorkspace,
   ViewSnapshot,
   WorkspaceAdapter,
   WorkspaceSnapshot,
 } from "./types";
-import { WorkspaceHost, events, type GenerateProgress as WireProgress } from "./generated/mygo";
+import {
+  WorkspaceHost,
+  events,
+  type DocumentInfo as HostDocumentInfo,
+  type GenerateProgress as WireProgress,
+  type NativeCommand as WireNativeCommand,
+  type WorkspaceSnapshot as WireWorkspaceSnapshot,
+} from "./generated/mygo";
+import { WorkspaceNav, navEvents } from "./generated/nav";
 import { cancelled, failureOf, GenerationError, isFailureKind } from "./generationError";
+import { applyNativeEdit } from "../editor/nativeEdit";
+
+function asNativeCommand(cmd: WireNativeCommand): NativeCommand {
+  return { id: cmd.id, command: cmd.command as NativeCommandName };
+}
+
+function generatingOf(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || !('generating' in value)) return false
+  return value.generating === true
+}
 
 const PHASES: Record<GeneratePhase, true> = {
   starting: true,
@@ -41,6 +62,18 @@ function disposable(off: () => void): Disposable {
   };
 }
 
+function documentInfo(state: HostDocumentInfo): DocumentInfo {
+  return { ...state, generating: generatingOf(state) }
+}
+
+function workspaceSnapshot(snap: WireWorkspaceSnapshot): WorkspaceSnapshot {
+  return {
+    ...snap,
+    kind: snap.kind === 'untitled' ? 'untitled' : 'folder',
+    documents: snap.documents.map(documentInfo),
+  }
+}
+
 function bindDocument(id: string): HostAdapter {
   const viewListeners = new Set<{ fn: (snap: ViewSnapshot) => void }>();
   let offViewChanged: (() => void) | null = null;
@@ -61,7 +94,10 @@ function bindDocument(id: string): HostAdapter {
   return {
     id,
     load(): Promise<HostDocSnapshot> {
-      return WorkspaceHost.load(id);
+      return WorkspaceHost.load(id).then((snap) => ({
+        ...snap,
+        state: documentInfo(snap.state),
+      }));
     },
     async update(text: string): Promise<void> {
       await WorkspaceHost.update(id, text);
@@ -87,14 +123,14 @@ function bindDocument(id: string): HostAdapter {
     onReload(fn: (snap: HostDocSnapshot) => void): Disposable {
       return disposable(
         events.docReloaded.on((snap) => {
-          if (snap.id === id) fn(snap);
+          if (snap.id === id) fn({ ...snap, state: documentInfo(snap.state) });
         }),
       );
     },
     onState(fn: (state: DocumentInfo) => void): Disposable {
       return disposable(
         events.docState.on((state) => {
-          if (state.id === id) fn(state);
+          if (state.id === id) fn(documentInfo(state));
         }),
       );
     },
@@ -175,6 +211,12 @@ export function registerDocumentFlush(id: string, flush: () => Promise<string | 
   };
 }
 
+/** Tell the native Edit menu whether this document currently can undo/redo. */
+export function reportNativeEditState(id: string, canUndo: boolean, canRedo: boolean): void {
+  if (!isMyGo()) return
+  void WorkspaceHost.setNativeEditState(id, canUndo, canRedo);
+}
+
 async function flushDocument(id: string): Promise<void> {
   const flush = flushers.get(id);
   const text = flush ? await flush() : undefined;
@@ -189,22 +231,22 @@ export function createMyGoHost(): WorkspaceAdapter {
 
   const workspace: WorkspaceAdapter = {
     snapshot(): Promise<WorkspaceSnapshot> {
-      return WorkspaceHost.snapshot();
+      return WorkspaceHost.snapshot().then(workspaceSnapshot);
     },
     subscribe(fn: (snap: WorkspaceSnapshot) => void): Disposable {
-      return disposable(events.workspaceChanged.on(fn));
+      return disposable(events.workspaceChanged.on((snap) => fn(workspaceSnapshot(snap))));
     },
     open(path: string): Promise<DocumentInfo> {
-      return WorkspaceHost.open(path);
+      return WorkspaceHost.open(path).then(documentInfo);
     },
     async openWorkspace(root: string): Promise<void> {
       await WorkspaceHost.openWorkspace(root);
     },
     newDocument(): Promise<DocumentInfo> {
-      return WorkspaceHost.new();
+      return WorkspaceHost.new().then(documentInfo);
     },
     duplicate(id: string): Promise<DocumentInfo> {
-      return WorkspaceHost.duplicate(id);
+      return WorkspaceHost.duplicate(id).then(documentInfo);
     },
     async activate(id: string): Promise<void> {
       await WorkspaceHost.activate(id);
@@ -229,10 +271,34 @@ export function createMyGoHost(): WorkspaceAdapter {
       adapters.set(id, created);
       return created;
     },
+    navSnapshot(): Promise<NavSnapshot> {
+      return WorkspaceNav.navSnapshot();
+    },
+    subscribeNav(fn: (snap: NavSnapshot) => void): Disposable {
+      return disposable(navEvents.navChanged.on(fn));
+    },
+    setFilter(query: string): Promise<NavSearchResult> {
+      return WorkspaceNav.setFilter(query);
+    },
+    subscribeSearch(fn: (result: NavSearchResult) => void): Disposable {
+      return disposable(navEvents.navSearchReady.on(fn));
+    },
+    async toggleFolder(rel: string): Promise<void> {
+      await WorkspaceNav.toggleFolder(rel);
+    },
+    async revealPath(path: string): Promise<void> {
+      await WorkspaceNav.revealPath(path);
+    },
+    pickFolder(): Promise<string> {
+      return WorkspaceNav.pickFolder();
+    },
+    recentWorkspaces(): Promise<RecentWorkspace[]> {
+      return WorkspaceNav.recentWorkspaces();
+    },
   };
 
-  events.nativeCommand.on((cmd: NativeCommand) => {
-    void handleNative(workspace, adapters, cmd);
+  events.nativeCommand.on((cmd: WireNativeCommand) => {
+    void handleNative(workspace, adapters, asNativeCommand(cmd));
   });
   events.workspaceChanged.on((snap) => {
     const live = new Set(snap.documents.map((d) => d.id));
@@ -253,6 +319,10 @@ async function handleNative(
   if (command === "closeWorkspace") {
     for (const id of [...flushers.keys()]) await flushDocument(id);
     await workspace.closeWorkspace();
+    return;
+  }
+  if (command === "undo" || command === "redo") {
+    applyNativeEdit(cmd.id, command);
     return;
   }
   await flushDocument(cmd.id);

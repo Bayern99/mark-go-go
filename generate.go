@@ -82,57 +82,148 @@ var errTimedOut = errors.New("generation timed out")
 // defaultGenerationTimeout is how long a run may take.
 const defaultGenerationTimeout = 5 * time.Minute
 
-// Generate runs the document's view generation: the host starts the
+// Generate runs the named document's view generation: the host starts the
 // user's Antigravity agent over ACP in an isolated temporary folder
-// with the document's text, the agent writes the view as out.json, the
-// host stamps metadata and section hashes onto it and writes the
-// document's view file atomically. The page follows the progress on
-// the channel and sees the new view through the view watch, so
-// Generate only returns an error. The document itself is never
-// written. A failed run sends the page its failure as the last step,
-// then returns it as the error.
+// with the request's captured text, the agent writes the view as out.json,
+// the host stamps metadata and section hashes onto it and writes that
+// document's current view file atomically. One slot per document; other
+// documents may generate at the same time. Settings (model, agent command)
+// are captured at start. A failed run sends the page its failure as the
+// last step, then returns it as the error. Closing the document or the
+// workspace cancels only that document's slot; a cancelled close does not.
 func (h *documentHost) Generate(ctx context.Context, documentID string, req GenerateRequest, progress *mygo.Channel[GenerateProgress]) error {
-	h.runs.Add(1)
-	defer h.runs.Done()
-	send := func(p GenerateProgress) error { return progress.Send(p) }
+	send := func(p GenerateProgress) error {
+		if progress == nil {
+			return nil
+		}
+		return progress.Send(p)
+	}
 	if err := h.generate(ctx, documentID, req, send); err != nil {
 		return reportFailure(err, send)
 	}
 	return nil
 }
 
+var errPathChanged = newFailure(failAgentError, "The document's path changed while the agent worked, so the view was not written.", "Generate again.")
+
+var errAbandoned = newFailure(failCancelled, "Generation was cancelled.", "")
+
+const errGenerating = "A view is being generated; wait for it to finish, or cancel it."
+
 // generate runs Generate for the named document.
 func (h *documentHost) generate(ctx context.Context, documentID string, req GenerateRequest, send func(GenerateProgress) error) error {
+	h.runs.Add(1)
+	defer h.runs.Done()
 	s, err := h.docSession(documentID)
 	if err != nil {
 		return err
 	}
-	docPath := s.doc.State().Path
+	docPath := s.currentPath()
 	if docPath == "" {
 		return newFailure(failUnsaved, "Save the document first: the view is stored next to it.", "")
 	}
+	var settings Settings
+	if h.settings != nil {
+		settings = h.settings.get()
+	}
 	h.mu.Lock()
+	if s.closed {
+		h.mu.Unlock()
+		return errNoDocument
+	}
 	if s.generating {
 		h.mu.Unlock()
 		return newFailure(failBusy, "A view is already being generated.", hintBusy)
 	}
+	runCtx, cancel := context.WithCancel(ctx)
+	slot := &generationSlot{cancel: cancel, path: docPath}
 	s.generating = true
+	s.genSlot = slot
+	w := s.ws
+	win := s.win
 	h.mu.Unlock()
-	defer func() {
-		h.mu.Lock()
-		s.generating = false
-		h.mu.Unlock()
-	}()
+	h.emitWorkspace(w)
+	if win != nil {
+		_ = docState.Emit(win, s.info())
+	}
+	defer h.releaseGeneration(s, slot)
 
-	settings := h.settings.get()
-	return runGeneration(ctx, generationJob{
+	job := generationJob{
 		Req:          req,
 		AgentCommand: settings.AgentCommand,
 		Model:        settings.Model,
 		ViewPath:     viewPath(docPath),
 		Now:          time.Now,
 		Settings:     h.settings,
-	}, send)
+		BeforeWrite: func() error {
+			return h.commitGenerationWrite(s, slot)
+		},
+	}
+	if h.prepareJob != nil {
+		h.prepareJob(&job)
+	}
+	return runGeneration(runCtx, job, send)
+}
+
+// commitGenerationWrite allows the run to write only while this slot is
+// still this document's live job, the document is still open, and its
+// path is still the one captured at start. External rename/move or a
+// real close must not silently write a stale view file.
+func (h *documentHost) commitGenerationWrite(s *docSession, slot *generationSlot) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if s.closed || slot.abandoned || s.genSlot != slot {
+		return errAbandoned
+	}
+	now := s.currentPath()
+	if now == "" || now != slot.path {
+		return errPathChanged
+	}
+	return nil
+}
+
+// cancelGeneration stops this document's in-flight job and marks it so a
+// finishing collect cannot write. It does not wait; Generate's defer
+// still stops the agent and removes the temporary folder.
+func (h *documentHost) cancelGeneration(s *docSession) {
+	h.mu.Lock()
+	slot := s.genSlot
+	if slot != nil {
+		slot.abandoned = true
+		if slot.cancel != nil {
+			slot.cancel()
+		}
+	}
+	h.mu.Unlock()
+}
+
+func (h *documentHost) releaseGeneration(s *docSession, slot *generationSlot) {
+	h.mu.Lock()
+	if s.genSlot == slot {
+		s.genSlot = nil
+		s.generating = false
+	}
+	w := s.ws
+	win := s.win
+	closed := s.closed
+	h.mu.Unlock()
+	if closed {
+		return
+	}
+	h.emitWorkspace(w)
+	if win != nil {
+		_ = docState.Emit(win, s.info())
+	}
+}
+
+func (h *documentHost) rejectPathChange(s *docSession) error {
+	h.mu.Lock()
+	busy := s.generating
+	h.mu.Unlock()
+	if busy {
+		return errors.New(errGenerating)
+	}
+	return nil
 }
 
 // waitForGenerations waits, for at most limit, until no generation
@@ -181,6 +272,10 @@ type generationJob struct {
 	// Env is the environment of the agent process; nil inherits this
 	// process's. Tests run a fake agent through it.
 	Env []string
+
+	// BeforeWrite, when set, runs immediately before the view file is
+	// written. A non-nil error leaves the view file untouched.
+	BeforeWrite func() error
 }
 
 // runGeneration makes one view, as Generate does, with the job's
@@ -823,6 +918,11 @@ func (r *genRun) writeView(sources map[string]agentSource, a2ui json.RawMessage)
 	var expect []byte
 	if r.base != nil {
 		expect = r.base.raw
+	}
+	if r.job.BeforeWrite != nil {
+		if err := r.job.BeforeWrite(); err != nil {
+			return err
+		}
 	}
 	return replaceView(r.job.ViewPath, append(data, '\n'), expect)
 }

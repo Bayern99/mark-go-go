@@ -34,9 +34,7 @@ async function mountWorkspace(workspace: WorkspaceAdapter): Promise<{
     async unmount() {
       root.unmount()
       container.remove()
-      const { promise, resolve } = Promise.withResolvers<void>()
-      setTimeout(resolve, 0)
-      await promise
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
     },
   }
 }

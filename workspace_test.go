@@ -3,7 +3,10 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/egoist/mygo"
 )
 
 func TestDeepestRootPrefersChildWorkspace(t *testing.T) {
@@ -194,5 +197,41 @@ func TestCloseResultCancelDoesNotClose(t *testing.T) {
 	ok := CloseResult{Closed: true}
 	if !ok.Closed || ok.Canceled {
 		t.Fatal("closed result must not also be canceled")
+	}
+}
+
+func TestNativeCommandNameRoutesUndoRedo(t *testing.T) {
+	undo, ok := nativeCommandName(mygo.RoleUndo)
+	if !ok || undo != "undo" {
+		t.Fatalf("undo = %q ok=%v", undo, ok)
+	}
+	redo, ok := nativeCommandName(mygo.RoleRedo)
+	if !ok || redo != "redo" {
+		t.Fatalf("redo = %q ok=%v", redo, ok)
+	}
+	save, ok := nativeCommandName(mygo.RoleSave)
+	if !ok || save != "save" {
+		t.Fatalf("save = %q ok=%v", save, ok)
+	}
+	if _, ok := nativeCommandName(mygo.RoleCut); ok {
+		t.Fatal("cut is not a document native command")
+	}
+}
+
+func TestDocumentInfoGeneratingIsPerDocument(t *testing.T) {
+	a := DocumentInfo{ID: "a", Name: "a.md", Path: "/work/a.md", Generating: true}
+	b := DocumentInfo{ID: "b", Name: "b.md", Path: "/work/b.md"}
+	if !a.Generating || b.Generating {
+		t.Fatal("generating belongs to A only")
+	}
+	a.Path = "/elsewhere/a.md"
+	if a.ID != "a" {
+		t.Fatal("path change must not rewrite identity")
+	}
+}
+
+func TestErrGeneratingExplainsWaitOrCancel(t *testing.T) {
+	if !strings.Contains(errGenerating, "wait") || !strings.Contains(errGenerating, "cancel") {
+		t.Fatalf("errGenerating = %q, want wait-or-cancel wording", errGenerating)
 	}
 }

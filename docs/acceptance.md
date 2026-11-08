@@ -339,15 +339,26 @@
 | 部分来源与全部缺失的实时跟随（7b 构建） | mixed 视图：FRESH、STALE `Source changed`、MISSING `Source not found` 且 `Edit in source`/`Note` 禁用并提示“None of this part's sources are in the document now.”、无哈希不标记；面板 `2 components out of date`、`Regenerate changed (2)`；`state.sh all-missing` 实时变为 MISSING A/B 且均禁用，`state.sh partial` 恢复；原文哈希与 mtime 不变 | **PASS（7b 构建，路径未改动）** |
 | 窄窗右栏浮层（7b 构建） | 约 750 pt 窗口下 `Show right panel` 以浮层盖在文档上，含 Outline/GenUI 分段；GenUI 显示过期摘要；`Hide` 收起 | **PASS（7b 构建，路径未改动）；宽窗未验** |
 
+### 代码审查发现（静态，待修；不是 Native 运行证据）
+
+`SpecReview32` 在审查 head `6f`（文档快照）时提出两项硬缺陷；修复由 `NativeCommandsFix32` 在工作树 `-21` 进行中。它们是**静态代码审查结论**，不是打包应用上的实际观察，因此既不并入上面的 Native PASS，也不因为“修复在途”改判 PASS：
+
+| 发现 | 性质 | 现状 |
+|---|---|---|
+| 生成中的文档，其原生路径菜单与错误提示不完整（`Save As` / `Rename` / `Move` 的禁用与提示没有完整覆盖 `generating` 状态） | 静态审查 FAIL | **待修**：`NativeCommandsFix32` 修复中；修复后需定向自动测试与原生复验 |
+| `Rename` / `Move`、只读保存、关闭时保存的目标唯一性检查发生在写入之后 | 静态审查 FAIL | **待修**：同上；属数据安全路径，修复后必须验证“先检查、后写入”，不得写入第二个会话 |
+
+这两项与 `47e3b4a` 的实机 PASS 分属不同证据类型；在修复落地并实际复验前，相关原生行仍按未完成处理。
+
 ### 仍未运行 / 受策略阻塞的原生行
 
 | 范围 | 状态与缺口 |
 |---|---|
 | 原生 Edit 菜单点击 Undo/Redo | 键盘 `⌘Z` / `⇧⌘Z` 已在 47e 验证；菜单项点击与 `SetNativeEditState` 的菜单可用性未在原生界面点击验证 |
-| 关闭与取消（#21） | 脏关闭/保存的原生 Cancel 与对话框归属、未命名脏关闭、只读文档保存、重复目标唯一性、文件夹最后一个标签 vs 空临时窗口，均未运行 |
+| 关闭与取消（#21） | 脏关闭/保存的原生 Cancel 与对话框归属、未命名脏关闭、只读文档保存、重复目标唯一性、文件夹最后一个标签 vs 空临时窗口，均未运行；其中目标唯一性另有静态审查发现（检查晚于写入），见上一小节 |
 | 恢复剩余项（#23） | 未保存未命名文本、缺失根、显式关闭不复活、Agent 不重放，未运行 |
 | 标签与导航（#21/#22） | 同名标签父目录区分、背景标签徽标、键盘树/过滤/分栏/面包屑、根文件计数换行、最近工作区持久化，未运行 |
-| 并发生成与设置（#24） | 真实原生 ACP fixture 的 A/B 并发生成、切换时 A 冻结、空闲面板 `settingsChanged`、Model / Locate agent 持久化、取消/失败保留旧视图、关闭/退出清理，未运行（fixtures 已备好） |
+| 并发生成与设置（#24） | 真实原生 ACP fixture 的 A/B 并发生成、切换时 A 冻结、空闲面板 `settingsChanged`、取消/失败保留旧视图、关闭/退出清理，未运行（fixtures 已备好）；生成中的原生路径菜单/错误提示另有静态审查发现（不完整），见上一小节。**Model 变更的 Native 传播仍未 PASS**：helper 观察到 A/B 面板都显示 `3.8`；模型缓存本身有效，AX 漏读正在处理；这既不是 fixture 结论，也不是 Go 解析结论，需重新观察 |
 | 特殊块剩余（#26） | 其它特殊块类型、只读控件、批注/Focus Composer 键盘，未运行 |
 | 大目录（#14/#29） | 首次视图就绪时间与监听竞态，未测量 |
 | 视觉与离线资源（#25） | 打包应用离线字体/图标证明、宽窗布局、reduced motion、与同一基准源的 Rich text 对比截图，未运行 |
@@ -358,7 +369,7 @@
 
 | 控件 | 状态 | 依据 |
 |---|---|---|
-| Model（右栏底部 `ModelMenu`） | 已实现；只提交 `{ model }` | `settings.go` 的 `SettingsPatch`；`GenUIView.tsx` 的 `selectModel` |
+| Model（右栏底部 `ModelMenu`） | 已实现；只提交 `{ model }`；跨文档的原生传播尚未验证（见未运行行的 Model 说明） | `settings.go` 的 `SettingsPatch`；`GenUIView.tsx` 的 `selectModel` |
 | Locate agent…（`agent-not-found` 失败内） | 已实现；只提交 `{ agentCommand }`，空值恢复默认 | 同一补丁类型；`GenerationFailure` 的定位输入 |
 | 生成要求 Focus（右栏，原地 Composer） | 已实现；随视图文件保存并在重新生成时沿用 | `view-format.md` 的 `request` |
 | 视图模式（Rich text / Markdown / GenUI） | 已实现；按 `documentId` 随会话保存 | `SetViewMode`、`session.json` |

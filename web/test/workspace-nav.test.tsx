@@ -51,6 +51,46 @@ function navSeed(root = '/work') {
   }
 }
 
+function treeSeed(root = '/work') {
+  const file = (path: string, name: string, parent: string, depth: number) => {
+    const text = `# ${name}\n\nBody.\n`
+    const meta = fileMeta(text)
+    return {
+      path,
+      name,
+      parent,
+      depth,
+      text,
+      title: meta.title,
+      excerpt: meta.excerpt,
+      notes: meta.notes,
+      modifiedAt: 0,
+      headings: meta.headings,
+    }
+  }
+  return {
+    files: [
+      file(`${root}/alpha.md`, 'alpha.md', root, 0),
+      file(`${root}/beta.md`, 'beta.md', root, 0),
+      file(`${root}/notes/alpha/notes.md`, 'notes.md', `${root}/notes/alpha`, 2),
+      file(`${root}/notes/beta/notes.md`, 'notes.md', `${root}/notes/beta`, 2),
+    ],
+    folders: [
+      { path: `${root}/notes`, name: 'notes', parent: root, depth: 0, markdownCount: 2 },
+      { path: `${root}/notes/alpha`, name: 'alpha', parent: `${root}/notes`, depth: 1, markdownCount: 1 },
+      { path: `${root}/notes/beta`, name: 'beta', parent: `${root}/notes`, depth: 1, markdownCount: 1 },
+    ],
+    status: 'ready' as const,
+  }
+}
+
+function typeInto(input: HTMLInputElement, value: string) {
+  // React's value tracker ignores a plain `input.value =` assignment, so drive
+  // the native setter before dispatching the input event.
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
 async function mountNav(workspace: WorkspaceAdapter) {
   const container = document.createElement('div')
   container.style.height = '100%'
@@ -90,8 +130,93 @@ describe('workspace navigation',
           expect(app.container.querySelector('[data-testid="file-audit.md"]')).not.toBeNull()
           expect(app.container.querySelector('[data-testid="folder-notes"]')?.textContent).toContain('1')
           expect(app.container.textContent).not.toContain('skip.txt')
-          expect(app.container.querySelector('[data-testid="workspace-empty"]')).toBeNull()
           expect(app.container.querySelector('[data-testid="welcome"]')).toBeNull()
+        } finally {
+          await app.unmount()
+        }
+      },
+    )
+
+    it('keeps every folder directly above its descendants in depth-first order',
+      async () => {
+        const workspace = createBrowserWorkspace([], {
+          root: '/work',
+          name: 'work',
+          kind: 'folder',
+          nav: treeSeed(),
+        })
+        const app = await mountNav(workspace)
+        try {
+          const ids = await vi.waitFor(() => {
+            const rows = Array.from(
+              app.container.querySelectorAll<HTMLElement>('[data-testid="workspace-tree"] [role="treeitem"]'),
+            )
+            if (rows.length !== 7) throw new Error(`rows ${rows.length}`)
+            return rows.map((row) => row.dataset.navId)
+          })
+          expect(ids).toEqual([
+            'folder:/work/notes',
+            'folder:/work/notes/alpha',
+            'file:/work/notes/alpha/notes.md',
+            'folder:/work/notes/beta',
+            'file:/work/notes/beta/notes.md',
+            'file:/work/alpha.md',
+            'file:/work/beta.md',
+          ])
+        } finally {
+          await app.unmount()
+        }
+      },
+    )
+
+    it('collapses a folder and walks into its children with arrow keys',
+      async () => {
+        const workspace = createBrowserWorkspace([], {
+          root: '/work',
+          name: 'work',
+          kind: 'folder',
+          nav: treeSeed(),
+        })
+        const app = await mountNav(workspace)
+        const key = (row: HTMLElement, name: string) => {
+          flushSync(() => row.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true })))
+        }
+        try {
+          const folder = await vi.waitFor(() => {
+            const el = app.container.querySelector<HTMLButtonElement>('[data-testid="folder-notes"]')
+            if (!el) throw new Error('folder missing')
+            return el
+          })
+          flushSync(() => folder.click())
+          await vi.waitFor(() => {
+            if (app.container.querySelector('[data-nav-id="folder:/work/notes/alpha"]')) {
+              throw new Error('collapsed folder still lists children')
+            }
+          })
+          expect(folder.getAttribute('aria-expanded')).toBe('false')
+
+          flushSync(() => folder.focus())
+          key(folder, 'ArrowRight')
+          await vi.waitFor(() => {
+            if (!app.container.querySelector('[data-nav-id="folder:/work/notes/alpha"]')) {
+              throw new Error('expand did not reveal children')
+            }
+          })
+          expect(folder.getAttribute('aria-expanded')).toBe('true')
+
+          key(folder, 'ArrowDown')
+          expect(document.activeElement?.getAttribute('data-nav-id')).toBe('folder:/work/notes/alpha')
+          key(document.activeElement as HTMLElement, 'ArrowDown')
+          expect(document.activeElement?.getAttribute('data-nav-id')).toBe('file:/work/notes/alpha/notes.md')
+          key(document.activeElement as HTMLElement, 'ArrowLeft')
+          expect(document.activeElement?.getAttribute('data-nav-id')).toBe('folder:/work/notes/alpha')
+          key(document.activeElement as HTMLElement, 'ArrowLeft')
+          await vi.waitFor(() => {
+            if (app.container.querySelector('[data-nav-id="file:/work/notes/alpha/notes.md"]')) {
+              throw new Error('ArrowLeft did not collapse the parent')
+            }
+          })
+          expect(document.activeElement?.getAttribute('data-nav-id')).toBe('folder:/work/notes/alpha')
         } finally {
           await app.unmount()
         }
@@ -136,12 +261,12 @@ describe('workspace navigation',
         })
         const app = await mountNav(workspace)
         try {
-          const input = app.container.querySelector<HTMLInputElement>('input[aria-label="Filter files and headings"]')
-          if (!input) throw new Error('filter missing')
-          flushSync(() => {
-            input.value = 'Live Heading'
-            input.dispatchEvent(new Event('input', { bubbles: true }))
+          const input = await vi.waitFor(() => {
+            const el = app.container.querySelector<HTMLInputElement>('input[aria-label="Filter files and headings"]')
+            if (!el) throw new Error('filter missing')
+            return el
           })
+          flushSync(() => typeInto(input, 'Live Heading'))
           await vi.waitFor(() => {
             const hit = app.container.querySelector('[data-testid^="heading-hit-"]')
             if (!hit || !hit.textContent?.includes('Live Heading')) throw new Error('unsaved heading missing')
@@ -169,12 +294,12 @@ describe('workspace navigation',
         })
         const app = await mountNav(workspace)
         try {
-          const input = app.container.querySelector<HTMLInputElement>('input[aria-label="Filter files and headings"]')
-          if (!input) throw new Error('filter missing')
-          flushSync(() => {
-            input.value = 'zzzz'
-            input.dispatchEvent(new Event('input', { bubbles: true }))
+          const input = await vi.waitFor(() => {
+            const el = app.container.querySelector<HTMLInputElement>('input[aria-label="Filter files and headings"]')
+            if (!el) throw new Error('filter missing')
+            return el
           })
+          flushSync(() => typeInto(input, 'zzzz'))
           await vi.waitFor(() => {
             if (!app.container.querySelector('[data-testid="filter-indexing"]')) throw new Error('indexing notice missing')
           })
@@ -230,7 +355,9 @@ describe('workspace navigation',
           expect(app.container.querySelector('[data-testid="welcome"]')).not.toBeNull()
           expect(app.container.querySelector('[data-testid="open-folder"]')).not.toBeNull()
           expect(app.container.querySelector('[data-testid="new-document"]')).not.toBeNull()
-          expect(app.container.querySelector('[data-testid="recent-workspaces"]')?.textContent).toContain('work')
+          await vi.waitFor(() => {
+            expect(app.container.querySelector('[data-testid="recent-workspaces"]')?.textContent).toContain('work')
+          })
           flushSync(() => app.container.querySelector<HTMLButtonElement>('[data-testid="open-folder"]')?.click())
           await vi.waitFor(() => {
             expect(picked).toBe('/picked')

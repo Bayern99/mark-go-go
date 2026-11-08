@@ -109,6 +109,39 @@ func TestNavSnapshotListsNestedMarkdownAndSkipsEmpty(t *testing.T) {
 	}
 }
 
+func TestNavSnapshotKeepsDescendantsUnderTheirFolder(t *testing.T) {
+	dir := t.TempDir()
+	writeMD(t, dir, "alpha.md", "# Alpha\n\nRoot alpha.\n")
+	writeMD(t, dir, "beta.md", "# Beta\n\nRoot beta.\n")
+	writeMD(t, dir, "notes/alpha/notes.md", "# Alpha notes\n\nNested alpha.\n")
+	writeMD(t, dir, "notes/beta/notes.md", "# Beta notes\n\nNested beta.\n")
+
+	host := newDocumentHost()
+	host.disableWatch = true
+	host.settings = &settingsStore{dir: t.TempDir()}
+	w := &workspace{id: "ws", root: dir}
+	host.startIndex(w)
+	host.waitIndexReady(w, 2*time.Second)
+
+	snap := host.navSnapshot(w)
+	ids := make([]string, 0, len(snap.Entries))
+	for _, e := range snap.Entries {
+		ids = append(ids, e.ID)
+	}
+	want := []string{
+		"folder:notes",
+		"folder:notes/alpha",
+		"file:notes/alpha/notes.md",
+		"folder:notes/beta",
+		"file:notes/beta/notes.md",
+		"file:alpha.md",
+		"file:beta.md",
+	}
+	if strings.Join(ids, "|") != strings.Join(want, "|") {
+		t.Fatalf("entries = %v, want %v", ids, want)
+	}
+}
+
 func TestNavFilterUsesUnsavedOpenText(t *testing.T) {
 	dir := t.TempDir()
 	path := writeMD(t, dir, "notes.md", "# Disk Title\n\nSaved excerpt.\n")

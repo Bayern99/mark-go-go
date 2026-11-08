@@ -228,8 +228,11 @@ describe('App workspace tabs', () => {
     const workspace = createBrowserWorkspace([a, b])
     const app = await mountWorkspace(workspace)
     try {
-      const list = app.container.querySelector('[data-testid="doc-tabs"]')
-      if (!list) throw new Error('tablist missing')
+      const list = await vi.waitFor(() => {
+        const el = app.container.querySelector('[data-testid="doc-tabs"]')
+        if (!el || !el.querySelector(`[data-testid="doc-tab-${b.id}"]`)) throw new Error('tabs missing')
+        return el
+      })
       list.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
       await vi.waitFor(async () => {
         expect((await workspace.snapshot()).activeId).toBe(b.id)

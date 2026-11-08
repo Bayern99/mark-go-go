@@ -783,14 +783,7 @@ func (h *documentHost) navSnapshot(w *workspace) NavSnapshot {
 	entries = append(entries, extra...)
 
 	sort.SliceStable(entries, func(i, j int) bool {
-		ai, aj := entries[i], entries[j]
-		if ai.Parent != aj.Parent {
-			return treeKey(ai) < treeKey(aj)
-		}
-		if ai.Kind != aj.Kind {
-			return ai.Kind == "folder"
-		}
-		return strings.ToLower(ai.Name) < strings.ToLower(aj.Name)
+		return navOrderLess(idx.root, entries[i], entries[j])
 	})
 
 	indexed, total := 0, 0
@@ -830,11 +823,49 @@ func depthOf(rel string) int {
 	return strings.Count(rel, "/")
 }
 
-func treeKey(e NavEntry) string {
-	if e.Parent == "" {
-		return e.Name
+// navOrderLess puts the tree in depth-first order: a folder is followed
+// immediately by its descendants. Siblings list folders before files, then
+// compare names case-insensitively.
+func navOrderLess(root string, a, b NavEntry) bool {
+	as, bs := navSegments(root, a), navSegments(root, b)
+	common := len(as)
+	if len(bs) < common {
+		common = len(bs)
 	}
-	return e.Parent + "/" + e.Name
+	for i := range common {
+		if as[i] == bs[i] {
+			continue
+		}
+		aKind, bKind := "folder", "folder"
+		if i == len(as)-1 {
+			aKind = a.Kind
+		}
+		if i == len(bs)-1 {
+			bKind = b.Kind
+		}
+		if aKind != bKind {
+			return aKind == "folder"
+		}
+		al, bl := strings.ToLower(as[i]), strings.ToLower(bs[i])
+		if al != bl {
+			return al < bl
+		}
+		return as[i] < bs[i]
+	}
+	if len(as) != len(bs) {
+		return len(as) < len(bs)
+	}
+	return false
+}
+
+// navSegments splits an entry's workspace-relative path so sibling names
+// compare at the same depth instead of against whole path strings.
+func navSegments(root string, e NavEntry) []string {
+	rel := relSlash(root, e.Path)
+	if rel == "" || rel == ".." || strings.HasPrefix(rel, "../") {
+		rel = e.Name
+	}
+	return strings.Split(rel, "/")
 }
 
 func (h *documentHost) searchLockedResult(w *workspace, idx *workspaceIndex, query string) NavSearchResult {

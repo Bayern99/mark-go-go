@@ -110,6 +110,27 @@ function containsFold(hay: string, needle: string): boolean {
   return needle !== '' && hay.toLowerCase().includes(needle)
 }
 
+/**
+ * Depth-first tree order: every folder is followed by its descendants.
+ * Siblings list folders before files, then names case-insensitively.
+ */
+function navOrder(root: string, a: NavEntry, b: NavEntry): number {
+  const as = (relativeTo(root, a.path) || a.name).split('/')
+  const bs = (relativeTo(root, b.path) || b.name).split('/')
+  const common = Math.min(as.length, bs.length)
+  for (let i = 0; i < common; i += 1) {
+    if (as[i] === bs[i]) continue
+    const aKind = i === as.length - 1 ? a.kind : 'folder'
+    const bKind = i === bs.length - 1 ? b.kind : 'folder'
+    if (aKind !== bKind) return aKind === 'folder' ? -1 : 1
+    const al = as[i].toLowerCase()
+    const bl = bs[i].toLowerCase()
+    if (al !== bl) return al < bl ? -1 : 1
+    return as[i] < bs[i] ? -1 : 1
+  }
+  return as.length - bs.length
+}
+
 export class BrowserNavIndex {
   files: BrowserNavFile[]
   folders: BrowserNavFolder[]
@@ -138,7 +159,7 @@ export class BrowserNavIndex {
     const byPath = new Map(open.filter((d) => d.path).map((d) => [d.path, d]))
     const entries: NavEntry[] = []
     const visible = (parent: string) => {
-      let p = parent
+      let p = relativeTo(this.root, parent)
       while (p) {
         if (this.collapsed.has(p)) return false
         p = parentOf(p)
@@ -156,7 +177,7 @@ export class BrowserNavIndex {
         parent: folder.parent,
         depth: folder.depth,
         markdownCount: folder.markdownCount,
-        folderState: this.collapsed.has(folder.path) ? 'collapsed' : 'open',
+        folderState: this.collapsed.has(relativeTo(this.root, folder.path)) ? 'collapsed' : 'open',
       })
     }
     const seen = new Set<string>()
@@ -199,14 +220,10 @@ export class BrowserNavIndex {
         documentId: doc.id,
       })
     }
-    entries.sort((a, b) => {
-      if (a.parent !== b.parent) return `${a.parent}/${a.name}`.localeCompare(`${b.parent}/${b.name}`)
-      if (a.kind !== b.kind) return a.kind === 'folder' ? -1 : 1
-      return a.name.localeCompare(b.name)
-    })
+    entries.sort((a, b) => navOrder(this.root, a, b))
     let collapsedCount = 0
-    for (const path of this.collapsed) {
-      const folder = this.folders.find((f) => f.path === path)
+    for (const rel of this.collapsed) {
+      const folder = this.folders.find((f) => relativeTo(this.root, f.path) === rel)
       if (folder) collapsedCount += folder.markdownCount
     }
     return {
@@ -282,7 +299,7 @@ export class BrowserNavIndex {
   }
 
   reveal(path: string) {
-    let p = parentOf(path)
+    let p = parentOf(relativeTo(this.root, path))
     while (p) {
       this.collapsed.delete(p)
       p = parentOf(p)

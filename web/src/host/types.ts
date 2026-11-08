@@ -15,6 +15,8 @@ export interface DocState {
   readOnly: boolean
   /** True while this document's generation slot is occupied. */
   generating?: boolean
+  /** Why the last native command on this document failed, shown in its window. */
+  actionError?: string
   viewMode?: string
   restoreError?: string
 }

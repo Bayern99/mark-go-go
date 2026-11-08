@@ -26,15 +26,18 @@ type WorkspaceSnapshot struct {
 // DocumentInfo is one open document in a workspace. ID is stable across
 // path, tab and window.
 type DocumentInfo struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Path         string `json:"path"`
-	Edited       bool   `json:"edited"`
-	Conflict     bool   `json:"conflict"`
-	Deleted      bool   `json:"deleted"`
-	ReadOnly     bool   `json:"readOnly"`
-	Generating   bool   `json:"generating"`
-	ViewMode     string `json:"viewMode,omitempty"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Path       string `json:"path"`
+	Edited     bool   `json:"edited"`
+	Conflict   bool   `json:"conflict"`
+	Deleted    bool   `json:"deleted"`
+	ReadOnly   bool   `json:"readOnly"`
+	Generating bool   `json:"generating"`
+	ViewMode   string `json:"viewMode,omitempty"`
+	// ActionError is why the last native command on this document failed,
+	// shown in its window. Empty when there is none.
+	ActionError  string `json:"actionError,omitempty"`
 	RestoreError string `json:"restoreError,omitempty"`
 }
 
@@ -347,6 +350,7 @@ func (h *documentHost) Duplicate(ctx context.Context, documentID string) (Docume
 	}
 	copy := s.doc.Duplicate()
 	d, err := h.docSession(copy.ID())
+	h.noteAction(s, err)
 	if err != nil {
 		return DocumentInfo{}, err
 	}
@@ -390,9 +394,11 @@ func (h *documentHost) CloseDocument(ctx context.Context, documentID string) (Cl
 	}
 	err = s.doc.CloseDocument()
 	if errors.Is(err, mygo.ErrCanceled) {
+		h.noteAction(s, nil)
 		return CloseResult{Canceled: true}, nil
 	}
 	if err != nil {
+		h.noteAction(s, err)
 		return CloseResult{}, err
 	}
 	// OnClosed drops the session. Empty untitled windows close there.

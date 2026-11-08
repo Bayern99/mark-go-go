@@ -92,6 +92,19 @@ func openDocumentPath(path string) {
 	}
 }
 
+// RefreshDocumentMenus updates the File menu's document roles from the
+// focused window's document, on the main thread, now or at its next
+// turn. Call it from any goroutine when a state outside MyGo, as
+// DocumentsOptions.PathChange reads, changes what those roles can do.
+func RefreshDocumentMenus() { postMain(refreshDocumentMenus) }
+
+// canChangePath reports whether the app allows b to write to another
+// file or move its file now.
+func (b *docBase) canChangePath() bool {
+	k := b.kind
+	return k == nil || k.pathChange == nil || k.pathChange(b) == nil
+}
+
 // refreshDocumentMenus enables the document roles of the menus for the
 // focused window's document. Main thread only.
 func refreshDocumentMenus() {
@@ -106,8 +119,10 @@ func refreshDocumentMenus() {
 	enable := func(it *MenuItem) {
 		var on bool
 		switch it.Role {
-		case RoleSave, RoleSaveAs, RoleDuplicate, RoleRename, RoleMoveTo, RoleClose:
+		case RoleSave, RoleDuplicate, RoleClose:
 			on = b != nil
+		case RoleSaveAs, RoleRename, RoleMoveTo:
+			on = b != nil && b.canChangePath()
 		case RoleRevert:
 			on = b != nil && s.Edited && s.Path != ""
 		default:

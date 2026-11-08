@@ -452,6 +452,7 @@ export function wrapHostAsWorkspace(host: HostAdapter, name?: string): Workspace
       readOnly: state.readOnly,
       generating: state.generating ?? false,
       viewMode: state.viewMode,
+      actionError: state.actionError,
       restoreError: state.restoreError,
     }
   }
@@ -580,6 +581,7 @@ function infoFrom(seed: BrowserWorkspaceSeed): DocumentInfo {
     readOnly: state.readOnly,
     generating: state.generating ?? false,
     viewMode: state.viewMode,
+    actionError: state.actionError,
     restoreError: state.restoreError,
   }
 }
@@ -695,6 +697,7 @@ export function createBrowserWorkspace(
           readOnly: state.readOnly,
           generating: state.generating ?? false,
           viewMode: state.viewMode,
+          actionError: state.actionError,
           restoreError: state.restoreError,
         })
         emit()

@@ -24,6 +24,11 @@ export interface DocumentInfo {
   readOnly: boolean;
   generating: boolean;
   viewMode?: string;
+  /**
+   * ActionError is why the last native command on this document failed,
+   * shown in its window. Empty when there is none.
+   */
+  actionError?: string;
   restoreError?: string;
 }
 

@@ -103,6 +103,21 @@ type DocumentsOptions[T any] struct {
 	// BeforeWindowClose, when set and returning true, prevents the default
 	// group save-ask so the app can flush then CloseWorkspace.
 	BeforeWindowClose func(win *Window) bool
+	// PathChange, when set, tells MyGo whether doc may write to another
+	// file or move its file now: returning an error refuses that change
+	// with that error before any file is touched, and MyGo disables Save
+	// As, Rename and Move To for the document while it stands. Ordinary
+	// Save, editing and tab switches stay available. It may be called
+	// from any goroutine, so keep it short and free of dialogs.
+	PathChange func(doc *Document[T]) error
+	// ReservePath, when set, is called with the file a document is about
+	// to become, before MyGo writes to it or moves the document's file
+	// there. Returning an error refuses the operation before anything
+	// touches the disk, and MyGo asks no overwrite questions about a
+	// target refused this way. The returned release function, when non
+	// nil, runs once the file operation ends, successful or not. It may
+	// be called from any goroutine, so keep it short and free of dialogs.
+	ReservePath func(doc *Document[T], target string) (release func(), err error)
 	// AfterStart runs after recovery copies and launch files are opened,
 	// and before an untitled document would be created.
 	AfterStart func()
@@ -182,7 +197,19 @@ func NewDocuments[T any](opts DocumentsOptions[T]) *Documents[T] {
 			return opts.Command(role, b.ops.(*Document[T]), win)
 		},
 		beforeClose: opts.BeforeWindowClose,
-		afterStart:  opts.AfterStart,
+		pathChange: func(b *docBase) error {
+			if opts.PathChange == nil {
+				return nil
+			}
+			return opts.PathChange(b.ops.(*Document[T]))
+		},
+		reservePath: func(b *docBase, target string) (func(), error) {
+			if opts.ReservePath == nil {
+				return nil, nil
+			}
+			return opts.ReservePath(b.ops.(*Document[T]), target)
+		},
+		afterStart: opts.AfterStart,
 	})
 	return ds
 }
@@ -788,11 +815,13 @@ type docKindConfig struct {
 	noUntitled    bool
 	// create makes a document with content, untitled with name; read
 	// reads a content; empty is the content of a new document.
-	create func(content any, name string) (*docBase, error)
-	read   func(r io.Reader) (any, error)
-	empty  func() any
+	create      func(content any, name string) (*docBase, error)
+	read        func(r io.Reader) (any, error)
+	empty       func() any
 	command     func(MenuRole, *docBase, *Window) bool
 	beforeClose func(*Window) bool
+	pathChange  func(*docBase) error
+	reservePath func(*docBase, string) (func(), error)
 	afterStart  func()
 }
 

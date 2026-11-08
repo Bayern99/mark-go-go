@@ -34,11 +34,11 @@ func readFile(t *testing.T, path string) string {
 	return string(b)
 }
 
-// TestPathChangeRefusesAFileAnotherSessionHas checks every path change
-// that touches a target: Save As, Rename, Move To, and the Save As a
-// read-only or untitled Save falls back to. All of them reserve the
-// target first, so an open file is refused and both files keep their
-// bytes, their sessions keep their paths and ids, and the tabs stay put.
+// TestPathChangeRefusesAFileAnotherSessionHas checks the reservation
+// Save As, Rename, Move To and the Save As a read-only or untitled Save
+// falls back to all make before touching the disk. An open file is
+// refused, both files keep their bytes, both sessions keep their paths
+// and ids, and neither tab moves.
 func TestPathChangeRefusesAFileAnotherSessionHas(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "b.md")
@@ -65,8 +65,7 @@ func TestPathChangeRefusesAFileAnotherSessionHas(t *testing.T) {
 		t.Fatalf("source bytes = %q, want untouched", got)
 	}
 
-	// MyGo checks its own file's reservation before writing, so even the
-	// document that owns the target keeps it.
+	// The other direction is refused the same way, whichever session asks.
 	if _, err := h.reserveTarget(a.id, a.currentPath(), source); err != errAlreadyOpen {
 		t.Fatalf("target session's own change = %v, want errAlreadyOpen", err)
 	}

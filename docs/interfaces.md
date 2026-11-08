@@ -88,7 +88,7 @@ interface HostAdapter extends ViewFileSource, ViewGenerator {
   moveTo(): Promise<void>; revert(): Promise<void>
   onReload(fn: (snap: HostDocSnapshot) => void): Disposable
   onState(fn: (state: DocumentInfo) => void): Disposable
-  bindFlush?(getText: () => string): Disposable // 该面板唯一的原始文本读取器；由它写回一次
+  bindFlush?(getText: () => string): Disposable // 注册该面板的原始文本读取器；适配器各入口只写回一次
   setViewMode(mode: string): Promise<void> // 绑定 id
 }
 interface SettingsPatch { model?: string; agentCommand?: string }
@@ -219,6 +219,7 @@ interface PluginContext {
 - `sources.ts` 的 `SourceStore`：视图文件的来源表对照当前文档。文档变化后防抖 300ms（与大纲相同）重新提取章节；状态 `fresh` / `changed`（哈希不同）/ `missing`（找不到 heading + occurrence，优先于 changed）/ `unknown`（无记录哈希的手写视图，或组件没有来源）。
 - `SourceFrame.tsx`：所有内容组件都画在同一个框里：底部 `From <标题…>`、状态标记 `Source changed` / `Source not found`（只在这两种状态显示）、`Edit in source` 按钮与 `Note` 入口。状态写在 `data-source-status`。组件经 `useComponentSource(sources)` 取状态与 `edit(text?)`。
 - 部分来源丢失（#28）：卡片仍有来源存在时保留 `Edit in source` 与 `Note`，用第一个仍存在的来源；全部来源都失效时才禁用这两个动作。显示的状态仍如实写出缺失的来源，不用不存在的来源静默替代。
+- 隔离（规范）：`Edit in source` 与右栏 `.changed-list` 的跳转/高亮只在该文档自己的 GenUI 挂载元素内查询卡片，隐藏标签不能截获；每个编辑器持有自己的 Composer 生命周期，后台文档的 `load` / `onReload` / `setReadonly` / `destroy` 只取消它自己的 Note 或特殊块 composer，不关闭其他文档未保存的草稿。
 - `Edit in source`：取组件第一个仍在文档里的来源，先立即刷新章节（不用防抖中的旧偏移），再执行命令 `editor.select(start, end)`。带 `text` 时（Checklist 项）在各来源节里找这段原文，找到就只选它，否则选第一个来源整节。App 切到 Rich text、选中，并在编辑器区显示 `← Back to GenUI`（`data-testid="return-to-view"`）。点它回到 GenUI；在头部选任一模式后这个按钮消失。
 - 滚动位置：GenUI 视图的挂载元素 `.center-view` 就是滚动区。位置按视图文件文本记在插件里（`ScrollMemory`），跨挂载保留；同一份视图文件回来时恢复，换了视图文件从顶部开始。A2UI 首次提交后才渲染组件树，所以恢复时跟随内容增高（`ResizeObserver`，最多 1s）。
 - 生成器（#7）按页面给的章节范围写入每个来源的 `hash`；手写的视图文件不带 `hash` 时不显示状态。
@@ -255,12 +256,15 @@ interface PluginContext {
 - File 菜单的 Save / Save As / Duplicate / Rename / Move / Revert 作用于**聚焦窗口的活动文档**（MyGo 文档组），点击时捕获该窗口的 `documentId`；`Cmd+W` / File > Close 关闭当前文档标签而不是窗口；窗口关闭按钮 / File > Close Window 调 `CloseWorkspace`（逐个询问脏文档，取消保留窗口与全部标签）；退出向每个工作区窗口发 `flushQuit`，每个窗口送完最后一次编辑并调 `PrepareQuit`，全部确认后才写 `session.json` 并继续退出。`AskOnQuit` 保持未设置，未保存字节仍由 MyGo 恢复副本保护。
 - Edit > Undo / Redo（`nativeCommand` 的 `undo` / `redo`）按点击时的活动 `documentId` 应用到**该文档编辑器的历史**，与 `UndoView`（视图文件撤回）无关。`nativeEdit.ts` 维护每文档的目标（ProseMirror 或 CodeMirror），聚焦的原地 Composer `textarea` 保留原生字段撤销；只读 GenUI / ComparisonTable 的焦点不改写文档。`SetNativeEditState(documentId, canUndo, canRedo)` 只为聚焦窗口的活动文档更新菜单可用性。
 - 会话文件：`session.json` 在 `PathUserData`，记录未主动关闭的工作区（`id`、`root`、按顺序的 `tabs[{id, path, viewMode}]`、`activeId`），不复制未保存字节。布局变化（打开、移动标签、激活、关闭、切换视图模式）时写入，退出确认后再写一次；恢复期间跳过写入，避免用半恢复的窗口覆盖已存布局。空的无标题窗口（Welcome）不存；关闭的标签或工作区不复活。
-- `flushQuit` / Save / Save As / Close 的文本来源是**该面板真正持有的文本**：编辑器已挂载时取屏幕上的当前 Markdown（`editor.getMarkdown()`，即当前 compose 文本），否则回落到宿主载入的核心文档状态。未挂载编辑器的面板不注册 flush，所以退出或保存不会把未编辑、外部重载或重新挂载的文档变成空缓冲；用户确实清空文档时，按普通编辑送达 `""`。`bindFlush` 是每面板唯一的原始文本读取器，`mygoHost` 的每个入口只写回一次：Save / Save As / Rename / Move / Revert / Duplicate 先交付捕获文档一次再调宿主，`close`（经 `CloseDocument`）与 `closeWorkspace` 各自负责自己的那一次。
+- `flushQuit` / Save / Save As / Close 的文本来源是**该面板真正持有的文本**：编辑器已挂载时取屏幕上的当前 Markdown（`editor.getMarkdown()`，即当前 compose 文本），否则回落到宿主载入的核心文档状态。用户确实清空文档时，按普通编辑送达 `""`。
+- `bindFlush` 只注册该面板的原始文本读取器，本身**不写回**；页面读它，`mygoHost` 对每个入口只发一次 `WorkspaceHost.Flush` RPC（公开的 `Flush(documentId, text)` 仍是真实绑定方法）。Save / Save As / Rename / Move / Revert / Duplicate 先交付捕获文档一次再调宿主；`close` 经 `closeDocument` 交付一次；`closeWorkspace` 与 `flushQuit` 对每个**已注册读取器**（即已挂载编辑器）的文档各交付一次。没有注册读取器的文档不写任何内容，绝不合成空缓冲。
+- 绑定时机：只有编辑器已 ready 才 `bindFlush`；已注册的 reader 执行时若 `editorRef` 短暂为空，回落到宿主载入的核心文本；从未挂载编辑器的面板不会提前注册，也不会交付 `''`。
 - 路径变更锁（`DocumentsOptions.PathChange`）：文档的生成槽被占用时，File 菜单禁用它的 `Save As` / `Rename` / `Move To`，仍到达内核的请求在对话框或写入之前被拒绝；普通保存到它自己的文件、Duplicate、编辑与切标签仍可用。锁变化后由 `RefreshDocumentMenus()` 在主线程（非阻塞投递）刷新菜单，页面不阻塞等待对话框。
 - 目标预留（`DocumentsOptions.ReservePath`）：MyGo 在写向另一个文件或移动文件之前先预留目标；文档自己的文件总是允许，另一个文件在文档生成中或已被其他活动会话持有时被拒绝，比较用规范化路径与 `os.SameFile`，全应用互斥。预留保持到返回的 release 执行（成功或失败），所以两个窗口不能取同一目标，被拒绝的目标也不会弹出覆盖询问。
+- `release` 为 nil 表示**没有需要释放的认领**：未配置 hook、目标为空或就是文档自己的文件、或没有对应的活动会话；它不是拒绝，也不表示已认领。`Duplicate` 生成独立的未命名副本，创建时不预留新目标；直到该副本首次 Save / Save As 才按路径规则认领。
 - 原生命令失败记录在该文档的 `DocumentInfo.actionError`，由它的窗口以 banner 显示；成功清除，取消对话框不算失败。
 - 恢复按**每条 planned tab** 解析，不按窗口整体解析。会话同时存 `id` 与 `path`，用途不同：先按存储的 `id` 匹配 MyGo 的恢复副本（`OpenByID`，恢复副本承载未保存字节）；否则按规范化路径匹配本次启动已打开的文档（`OpenByPath`）；否则在路径存在且未被更早的标签认领时从该路径打开（从磁盘打开的文档会得到新的 MyGo id）。找不到路径、也没有对应恢复副本时，在该标签上给出 `restoreError`。
-- 活动标签：存储的 `activeId` 先对应到那条 planned tab；恢复时每条 planned tab 记下它解析后真实持有的 id（`resolvedTab{planned, id}`），活动标签取该 planned tab 的真实 id，没有匹配则取第一条恢复成功的标签；绝不使用没有任何打开文档的 id。恢复后当前标签应立即有活动编辑器与选中状态。
+- 活动标签：存储的 `activeId` 先对应到那条 planned tab；恢复时每条 planned tab 记下它解析后真实持有的 id（`resolvedTab{planned, id}`），活动标签取该 planned tab 的真实 id。若 `activeId` 匹配到 planned tab 但该标签没有解析出文档（恢复失败），或根本没有匹配，则退回**第一条恢复成功的标签**；绝不使用没有任何打开文档的 id。恢复后当前标签应立即有活动编辑器与选中状态。
 - 恢复：`restoreAfterStart` 在 MyGo 打开恢复副本与启动参数文件之后、创建未命名窗口之前执行；复用恢复副本而不是再次按路径打开，从不重放 Agent 任务。缺失的根或文件变成 `WorkspaceSnapshot.restoreError` / `DocumentInfo.restoreError`，其余工作区照常恢复；本次启动显式打开的文件在布局放好后获得焦点。
 
 ## GenUI 重新生成与撤回（#12）
@@ -334,4 +338,9 @@ CrepeBuilder features：`cursor, listItem, placeholder, linkTooltip, blockEdit, 
 
 ## 尚未实现（后续阶段）
 
-搜索替换；同一原文的多个同步编辑视图；正式深色主题与外观切换（本轮只有浅色，ADR 0006）；字体、字号和系统提示词等通用偏好设置（本产品不提供，见「生成设置」）。
+搜索替换；同一原文的多个同步编辑视图。
+
+## 设计排除（不是待办）
+
+- 正式深色主题与外观切换：ADR 0006 确定本轮只做浅色界面，样式表残留的 `.dark` 块不受支持；它不是未来待办。
+- 字体、字号与系统提示词等通用偏好设置：本产品不提供这类设置；生成相关的 Model / Locate agent / Focus 见「生成设置」。

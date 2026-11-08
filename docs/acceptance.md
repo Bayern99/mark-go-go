@@ -244,9 +244,14 @@
 
 来源 SHA：`7b90f1ed2cfa501cde43c3b94e96c0b9348e8847`（`integration/spec-20-workspace-portrait`；基线 `4f80bbf094b5cda0cfa642090f5255e050ade587`）。本节区分**已执行的自动化检查**、**已在真实打包应用里实际观察到的原生证据**、**已观察到的原生失败**，以及**仍未运行、等待证据的行**；未运行的行不得当作通过。
 
-运行时验收基线是 `47e3b4a`；其前序红证据来自 `f9237f2` 与 `7b90f1e`。之后对 8 个文档文件的修订（`6f3dba2` 及后续 docs-only 提交）不改变任何运行时代码，因此实机证据只引用真正运行过的 `f9237f2` / `7b90f1e` / `47e3b4a` 包，并不表示某个 docs-only 修订被单独实机运行过。
+各 SHA 的角色不同，不要混用：
 
-当前源冻结为 `6478ceb`（Root 同 SHA；含 `3b0923e` 导航索引、`8a6be09` UI 隔离与 `6478ceb` 原生命令路径守卫）。该 SHA 的完整自动化套件已实际运行并通过（27 文件/275 项 Chromium、typecheck/build、Go build/vet/race、nested MyGo、gofmt、SDK 最新）；新原生包尚未运行这个 SHA，因此不得把 `6478ceb` 当作已在实机上验收的 47e 包。
+| SHA | 角色 | 证据状态 |
+|---|---|---|
+| `f9237f2`、`7b90f1e` | 历史原生包 | `7b90f1e` 的 FAIL 红证据保留（退出清零、恢复空白/错标题、Save As 0 字节、自动保存清零）；`f9237f2` 有早期部分观察 |
+| `47e3b4a` | 原生部分验收基线 | 下列原生表实际 PASS 的场景；其余仍未运行或受策略限制 |
+| `6478ceb` | 源码冻结 | 全量自动化 27 文件/275 项等 PASS；新原生 focused matrix 进行中，尚无新结果 |
+| docs-only 提交（`6f3dba2`、`3a78f31`、`3569cb6`、`ccb09a3`、`8fd09de` 及本次） | 文档修订 | 不改变运行时代码，不产生新的 runtime 证据；文档提交自身的 hash 不作为验收证据，只引用实际运行过的包与源码 SHA |
 
 ### 自动化全量检查（PASS，实际执行）
 
@@ -296,6 +301,17 @@
 | SDK | `go tool mygo generate` 报告已是最新 |
 
 这些结果证明 `6478ceb` 的自动化层面通过；它们不证明原生保存表、Edit 菜单目标归属、WebKit 辅助功能、IME 或退出/恢复行为，也不表示 `6478ceb` 已被原生包运行。
+
+### 两轴 focused 复查（`6478ceb`，PASS）
+
+`Standards` 与 `Spec` 两轴对 `6f3dba2..6478ceb` 的 focused 复查均 PASS，对象是源码冻结 `6478ceb`；这是代码与规格轴结论，不替代原生运行证据。
+
+| 轴 | 结论 | 关键内容 |
+|---|---|---|
+| Standards | **PASS**（`correct`，置信度 0.98） | 3 项硬违规与 2 项可操作启发式全部 resolved；P3 tab 压缩按设计接受；**0** 新违规、**0** 新 smell |
+| Spec | **PASS**（代码符合规格，置信度 0.97） | 2 项原硬缺陷 resolved；**0** 未解决代码缺陷、**0** 新硬缺陷；剩余为原生与文档回填门 |
+
+持久记录：`local://spec20-standards-review.md`、`local://spec20-spec-review.md`。
 
 ### 真实打包应用的部分原生证据（f9237f2，实际观察）
 
@@ -376,11 +392,11 @@
 | Agent command 文本字段（47e） | `Locate agent…` 文本字段保存绝对路径后，下一次生成的日志实际使用该绝对路径 | **PASS** |
 | 打包字体（部分，47e） | bundle 只含二进制与图标；嵌入的 `web/dist` 含 IBM Plex Sans/SC、Barlow Semi Condensed、KaTeX、Phosphor `.woff2`，二进制含 Phosphor 字符串，UI 截图使用随包字体；Web Inspector 未启用，严格的离线 `FontFace`/网络证明未取得 | **部分证据**（不作严格离线 PASS） |
 | Model 菜单可见性（47e） | 新截图显示列表 `Agent’s choice / gemini-4-argon / gemini-3.8-flash ✓ / claude-opus-5-5`，设置缓存也含 3 个模型；但点击弹层行会让 CUA 绑定丢失窗口（`noWindowsAvailable`），AX 只暴露 “Agent’s choice”，重绑后模型仍为 `gemini-3.8-flash` | **未验证（CUA 传输限制，不是产品失败结论）** |
-| Duplicate 与目标唯一性（47e） | `File > Duplicate` 对 cold2 生成 `cold2 copy`（Edited，内容相同）；Save As 冲突未被触发（保存表按默认名 `cold2 copy.md` 完成），目标唯一性仍未验证 | **部分（创建 PASS；冲突未验）** |
+| Duplicate 与目标唯一性（47e） | `File > Duplicate` 对 cold2 生成独立的未保存副本 `cold2 copy`（Edited，内容相同），创建时没有新目标可预留，直到它自身首次保存才按路径规则认领；Save As 冲突未被触发（保存表按默认名 `cold2 copy.md` 完成），目标唯一性仍未在原生验证 | **部分（创建 PASS；冲突未验）** |
 
 ### 代码审查发现与修复状态（不是 Native 运行证据）
 
-`SpecReview32`（spec 轴）与 `Standards`（标准轴）的结论都基于审查 head `6f`（文档快照），是**静态代码审查结论**，不是打包应用上的实际观察；它们不并入上面的 Native PASS，也不因为修复已合并且自动化通过而变成 Native PASS。Standards 总判定为 FAIL，共 6 条（3 条硬违规、3 条启发式）；下列“已修”指源 `6478ceb` 上的修复与全量自动化验证，Native 仍未验。
+初始审查（head `6f`）中，`SpecReview32`（spec 轴）与 `Standards`（标准轴）提出硬缺陷与启发式；下表保留这些发现的解决状态。修复后两轴对 `6f3dba2..6478ceb` 的 focused 复查均 PASS（Standards 0 新违规、Spec 0 新硬缺陷），见上文“两轴 focused 复查”。这些是代码/规格轴结论，不并入 Native PASS；“已修”指 `6478ceb` 上的修复与全量自动化验证，Native 仍未验。
 
 | 发现 | 来源 / 性质 | 现状 |
 |---|---|---|
@@ -405,8 +421,8 @@
 | Model 变更的原生传播（#24） | 菜单列表与缓存可见，但 CUA 弹层点击会丢失窗口、AX 只暴露 “Agent's choice”；模型变更 → 空闲 A/B 同步 → 持久化仍未验证，不是产品失败结论，需重新观察 |
 | 原生 Edit 菜单点击 Undo/Redo | 键盘 `⌘Z` / `⇧⌘Z` 已在 47e 验证；菜单项鼠标点击与 `SetNativeEditState` 的菜单可用性未验证（CUA 原生菜单定位限制） |
 | 打包应用严格离线字体证明 | 随包字体嵌入与渲染已观察；Web Inspector 未启用，未取得 `FontFace`/网络关闭的严格证明 |
-| 辅助技术（#31） | **BLOCKED（工具授权）**：用户已允许临时开启 VoiceOver 与 Reduce Motion；但 CUA `getApp` 访问 System Settings 被 host 拒绝（`appnotapproved`），两项系统设置仍为 0/0。这不是再次缺用户同意，而是工具授权限制；Main 另找正式可达 route。键盘排序 PASS，不作 VoiceOver 结论 |
-| reduced motion（#25） | **BLOCKED（工具授权）**：同上，`ReduceMotionEnabled` 仍为 0；需可达的系统设置路径，未获得前不作 PASS |
+| 辅助技术（#31） | **用户取消本轮系统级验收**：VoiceOver 验证不再进行；未验证、**不计 PASS**，原状态 0/0。历史事实：真实 Cmd+F5 已尝试仍为 VO 0，fn key 不支持，System Settings 与 VoiceOver Utility 两个 target 均被 CUA 拒绝（工具层）。 |
+| reduced motion（#25） | **用户取消本轮系统级验收**：不再申请权限、不再验证；**不计 PASS**，`ReduceMotionEnabled` 原状态 0。 |
 
 > 外部 saved file 经 Open 打开时会在父目录建立 `folder` root 并保留 0 个标签；这是 folder 工作区契约的预期行为（见 `docs/workspace-contract.md`），不是 temporary-window 关闭失败。
 
@@ -425,8 +441,9 @@
 ### 完成门槛
 
 - 只有当每一个**适用**的验收行都实际通过——自动化行有真实命令结果、原生行有打包应用上的实际观察——本规格才算完成。静态阅读、代码推断、文档修订或“应已修复”都不构成通过。
-- 未运行的行保持“未运行”，受系统设置或用户同意阻塞的行保持 `BLOCKED`；它们不会因为时间推移、文档完成或同源修复而自动变成 PASS。关闭 issue 也以此为前提。
-- 运行时验收基线是 `47e3b4a`；docs-only 修订不产生新的运行时证据，也不回填或改写已观察事实。VoiceOver 与 reduced motion 已获用户同意临时开启，但 CUA 访问 System Settings 被 host 拒绝（`appnotapproved`，两项仍为 0/0）；这是工具授权限制，在可达路径与实测之前不作通过结论。
+- 未运行的行保持“未运行”；用户取消或策略受阻的项按取消/阻塞记录。它们不会因为时间推移、文档完成或同源修复而自动变成 PASS。关闭 issue 也以此为前提。
+- 适用范围：用户已取消本轮 VoiceOver 与 reduced motion 的系统级验收，因此它们排除在本轮必过条件之外，但仍**未验证、不计 PASS**（原状态 0/0）；不得据此声称原规格的全部辅助技术验收已通过。历史工具层拒绝（CUA 对 System Settings / VoiceOver Utility 的两个 target denied）仅作事实保留。
+- 运行时验收基线是 `47e3b4a`；docs-only 修订不产生新的运行时证据，也不回填或改写已观察事实；`6478ceb` 的源代码冻结只由全量自动化与两轴复查覆盖，原生矩阵单独记录。
 
 ## 未验证 / 已知问题
 

@@ -1,6 +1,6 @@
 # Workspace and document identity contract (#21)
 
-Slice-specific. Downstream tickets (#22, #24, #30) consume this as the public Go/TS seam. Shared `docs/interfaces.md` is updated by #32 after smoke.
+Slice-specific. Downstream tickets (#22, #24, #30) consume this as the public Go/TS seam. The consolidated, reader-facing reference is now `docs/interfaces.md` (#32); this file stays the normative seam contract for identities, routing and lifecycle, and the two must not diverge.
 
 ## Identities (distinct)
 

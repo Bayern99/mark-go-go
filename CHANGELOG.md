@@ -7,6 +7,80 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [Unreleased]
+
+Spec #20 (`integration/spec-20-workspace-portrait`, tickets #21–#31) is implemented and consolidated here. Automated full checks pass at `7b90f1ed2cfa501cde43c3b94e96c0b9348e8847`; packaged-app acceptance is still being exercised, so this entry describes implemented behaviour, not a completed release. Known observed native failures on that source — a normal quit zeroing two unedited files, and restored tabs rendering without an active editor until a tab is clicked — are recorded as FAIL in `docs/acceptance.md` and are being repaired; the entry is not evidence that they are fixed.
+
+### English
+
+#### 🗂 Workspace Windows, Document Tabs and Navigation (#21, #22, #23, ADR 0005)
+- **One folder, one window, several document tabs**: a workspace window hosts every opened document as a tab. `documentId` stays stable across path, tab, window, first save and Save As; `workspaceId`, `root` and `path` are separate identities.
+- **One editing session per file**: reopening the same file from Finder, the File menu, the file tree or a heading search focuses the existing tab instead of creating a second unsaved copy. Directory aliases (`/tmp` vs `/private/tmp`) reuse one workspace after symlink-prefix canonicalisation.
+- **Routing**: an already open document wins; otherwise the deepest open workspace whose root contains the file; otherwise a new window at the file's parent folder. First save and Save As keep the document identity and move only that tab into the destination workspace; saving onto another open document is refused.
+- **Last-tab behaviour**: closing every tab keeps a folder workspace window (navigation stays usable) and closes an empty untitled window. `⌘W` closes the tab, the window close button asks every dirty document.
+- **Navigation**: left-pane file tree ordered depth-first (a folder's descendants directly after it), honest scan/index status (`Indexing n of m files`), heading/body search that also sees unsaved text, draggable and keyboard-resizable splitter, breadcrumb path bar, Welcome with Open Folder / New Document / recent workspaces.
+- **Session restore**: `session.json` stores workspaces, tab order, active document and each tab's view mode; quit flushes every window's last editor text before the layout is written. Unsaved bytes remain MyGo recovery copies. Missing roots or files restore partially with an explicit error; closed tabs and workspaces do not come back; cancelled Agent jobs are never replayed.
+
+#### 🪟 Per-Document GenUI Jobs and Settings (#24, #27, #29)
+- **One generation slot per document**: documents generate concurrently without blocking each other; settings, text, path and request are captured when a run starts, and a finishing run refuses to write if its document closed or its path changed. Switching tabs never cancels a run; closing that document does.
+- **Watch ordering**: the first view snapshot is delivered before the directory watch is set up, a catch-up snapshot follows once it is running, and a watch that cannot start still reports its error. Entering GenUI shows a loading state instead of a blank centre while the view file is being read.
+- **Reading state**: KeyPoints fold, ComparisonTable sort and horizontal scroll, and Tabs selection live in a per-document store, survive leaving GenUI and replacing one card, persist the saved tab only once after the first render, and never write the document.
+- **One process-wide settings store**: `SetSettings` is an atomic intent patch that writes only the fields present and returns the committed value; a successful write broadcasts `settingsChanged` to every window. Idle panels in any document show the current global model without a remount, Model and Locate-agent write only their own field, and they can no longer revert the other setting or the handshake's cached model list. A run keeps the settings it captured.
+- **Partial sources (#28)**: a card that lost some sources keeps `Edit in source` and `Note` on its first surviving source; only when every source is gone are they disabled.
+
+#### 🎨 Portrait Visual Language, Special Blocks and Reading Components (#25, #26, #27, #31, ADR 0006)
+- **Light-only Portrait with offline fonts**: application status colours stay separate from document content semantics (Warning / Caution carry their own tokens plus text and icon). IBMPlexSans (incl. SC), Barlow Semi Condensed, IBM Plex Mono and the icon font are bundled `.woff2` files loaded without a network request; there is no appearance switch and no `prefers-color-scheme` handling this round.
+- **Special blocks render and edit in place**: frontmatter becomes a key/value table, GitHub alerts a typed and icon-marked callout, footnote definitions a numbered entry with a back-reference, meta code fences a titled and highlighted block, math a source block. `Edit` opens the same in-place `.composer` paper sheet with the block's raw Markdown; save is one undoable transaction, cancel writes nothing, only the edited block's bytes change, and raw HTML / unsupported syntax stay visible as `Kept as written` without executing HTML.
+- **ComparisonTable is keyboard sortable**: column headers are real buttons with `aria-sort`; sorting cycles ascending → descending → original order and never calls `host.update`.
+
+#### ⌨️ Native Edit Menu (#30)
+- Edit > Undo / Redo act on the captured document's real editor history (ProseMirror or CodeMirror) instead of the empty WebKit undo manager, and `SetNativeEditState` reports availability for the focused window's active document only. A focused in-place Composer textarea keeps native field undo.
+
+#### 🧪 Final correction pass
+- Browser `setViewMode` no longer echoes document state, so a view-mode write cannot unlock a read-only document through a stale `readOnly`.
+- A saved GenUI tab index is restored once after the first render instead of on every mutation.
+- Default workspace overrides now stat the directory, so an omitted override cannot hide a missing workspace folder.
+
+#### Supersession notes
+- This entry supersedes the `0.1.0` claim of "full automatic Light and Dark mode styling": only GenUI ever had dark tokens, and ADR 0006 settles this round on a light-only interface. The `0.1.0` entry is kept as written.
+- The `0.1.0` single-document-per-window description is superseded by ADR 0005 and the workspace window model above.
+
+### 中文
+
+规格 #20（`integration/spec-20-workspace-portrait`，任务 #21–#31）已实现并在此汇总。自动化全量检查在 `7b90f1ed2cfa501cde43c3b94e96c0b9348e8847` 通过；打包应用的验收仍在进行，本条描述已实现的行为，不代表已发布。该源码上已观察到两项原生失败：正常退出把两份未编辑文件写成 0 字节，恢复后标签存在但需点击才出现活动编辑器；它们在 `docs/acceptance.md` 中标为 FAIL，正在修复，本条不构成已修复的证据。
+
+#### 🗂 工作区窗口、文档标签与导航（#21、#22、#23，ADR 0005）
+- **一个文件夹一个窗口、多个文档标签**：工作区窗口以标签承载打开的原文。`documentId` 跨路径、标签、窗口、首次保存与另存为保持稳定；`workspaceId`、`root`、`path` 各自独立。
+- **同一文件只有一个编辑会话**：从 Finder、File 菜单、文件树或章节搜索结果重复打开只定位已有标签。目录别名（`/tmp` 与 `/private/tmp`）在规范化符号链接前缀后复用同一个工作区。
+- **路由**：已打开的文档优先；否则进入根目录最深且包含该文件的已打开工作区；再否则在文件父目录新建窗口。首次保存与另存为保留文档身份，只把该标签迁入目标工作区；目标已是另一份打开文档时拒绝保存。
+- **最后一个标签**：文件夹工作区关掉全部标签仍保留窗口（导航可用），未命名窗口则关闭。`⌘W` 关闭标签，窗口关闭按钮逐个询问脏文档。
+- **导航**：左栏文件树按深度优先排列（文件夹的子孙紧跟其后）、如实显示扫描/索引进度（`Indexing n of m files`）、标题与正文搜索并包含未保存文本、可拖拽也可用键盘调整的分栏、面包屑路径栏、含 Open Folder / New Document / 最近工作区的 Welcome。
+- **会话恢复**：`session.json` 保存工作区、标签顺序、活动文档与每个标签的视图模式；退出时先送完每个窗口的最后编辑再写布局。未保存字节仍是 MyGo 恢复副本。缺失的根或文件部分恢复并给出明确错误；已关闭的标签与工作区不复活；取消的 Agent 任务不重放。
+
+#### 🪟 每文档 GenUI 任务与设置（#24、#27、#29）
+- **每份文档一个生成槽**：不同文档可并发生成、互不阻塞；设置、文本、路径与生成要求在开始时捕获，结束时若文档已关闭或路径已变则拒绝写入。切换标签不取消运行，关闭该文档才取消。
+- **监听顺序**：第一份视图快照在目录监听建立前送出，监听建立后再送一份追赶快照，监听无法启动时仍返回错误。进入 GenUI 时若视图文件尚未可读，中央显示加载状态而不是空白。
+- **阅读状态**：KeyPoints 折叠、ComparisonTable 排序与横向滚动、Tabs 选中页保存在每文档的存储里，离开 GenUI 或替换其中一张卡片后仍保留；保存的选中页只在首次渲染后恢复一次；从不写文档。
+- **进程级唯一设置存储**：`SetSettings` 是原子意图补丁，只写出现的字段并返回提交后的值；成功写入向每个窗口广播 `settingsChanged`。任何文档的空闲面板无需重新挂载就显示当前全局模型；Model 与 Locate agent 只写各自字段，不再回退另一个设置或握手表里的模型列表。运行中的任务保留开始时捕获的设置。
+- **部分来源丢失（#28）**：只剩部分来源的卡片仍在第一个仍存在的来源上保留 `Edit in source` 与 `Note`；全部来源失效时才禁用。
+
+#### 🎨 Portrait 视觉语言、特殊块与阅读组件（#25、#26、#27、#31，ADR 0006）
+- **仅浅色的 Portrait 与离线字体**：应用状态色与原文内容语义色分开（Warning / Caution 有独立 Token 并配文字与图标）。IBMPlexSans（含 SC）、Barlow Semi Condensed、IBM Plex Mono 与图标字体都是仓库内 `.woff2`，不请求网络；本轮没有外观切换，也不读取 `prefers-color-scheme`。
+- **特殊块可视呈现并原地编辑**：Frontmatter 变为键值表，GitHub alert 变为带类型文字与图标的提示块，脚注定义显示编号与返回引用，带 meta 的代码块显示语言与高亮，数学块显示源码。`Edit` 在同一位置展开白纸 `.composer`，内容是该块的原始 Markdown；保存是一次可撤销的普通事务，取消不写入，只有被编辑块的字节改变；原始 HTML 与不支持的语法仍以 `Kept as written` 显示且不执行 HTML。
+- **ComparisonTable 可键盘排序**：列头是真正的按钮并带 `aria-sort`；排序按升序 → 降序 → 原顺序循环，从不调用 `host.update`。
+
+#### ⌨️ 原生 Edit 菜单（#30）
+- Edit > Undo / Redo 作用于点击时捕获文档的真实编辑器历史（ProseMirror 或 CodeMirror），而不是空的 WebKit undo manager；`SetNativeEditState` 只为聚焦窗口的活动文档报告可用性。聚焦的原地 Composer `textarea` 保留原生字段撤销。
+
+#### 🧪 最终修正
+- 浏览器端 `setViewMode` 不再回显文档状态，视图模式写入不能经旧 `readOnly` 解锁只读文档。
+- 保存的 GenUI 标签页只在首次渲染后恢复一次，不再在每次变更时覆盖用户点击。
+- 默认工作区覆盖会真正 stat 目录，省略覆盖时不能掩盖缺失的工作区文件夹。
+
+#### 取代说明
+- 本条目取代 `0.1.0` 中“浅色/深色模式全自动适配”的说法：只有 GenUI 曾有过深色 Token，ADR 0006 把本轮确定为仅浅色。`0.1.0` 条目原文保留。
+- `0.1.0` 中“一份原文一个窗口”的描述已被 ADR 0005 与上面的工作区窗口模型取代。
+
 ## [0.1.0] - 2026-11-07
 
 ### English

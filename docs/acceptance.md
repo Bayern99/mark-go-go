@@ -250,7 +250,8 @@
 |---|---|---|
 | `f9237f2`、`7b90f1e` | 历史原生包 | `7b90f1e` 的 FAIL 红证据保留（退出清零、恢复空白/错标题、Save As 0 字节、自动保存清零）；`f9237f2` 有早期部分观察 |
 | `47e3b4a` | 原生部分验收基线 | 下列原生表实际 PASS 的场景；其余仍未运行或受策略限制 |
-| `6478ceb` | 源码冻结 | 全量自动化 27 文件/275 项等 PASS；新原生 focused matrix 进行中，尚无新结果 |
+| `6478ceb` | 源码冻结（64 行为） | 全量自动化 27 文件/275 项等 PASS；原生 focused matrix 已运行，确认项见下；字体诊断完成；该 SHA 上有 Close→Delete 的窗口/会话丢失 FAIL（历史证据保留；`c442` 已修复并在 normal release 实机 PASS 原场景） |
+| `c44239c` | 最终源代码（`1d76` RoleClose 路由 + `9c3` 无文档 fallback + `c442` test-only 清理） | 受影响 Go 检查 PASS（root build/vet/race、nested MyGo、changed Go gofmt）；两轴 focused 复查 PASS（Standards 0.99、Spec 0.98、0 新 hard）；normal release 的关闭回归实机 PASS（Cancel/Delete/quit-relaunch/tab close/0tabs no-op/红关整窗）；前端 275 未作为该 SHA 重跑；standalone untitled 新 route 变体复验中 |
 | docs-only 提交（`6f3dba2`、`3a78f31`、`3569cb6`、`ccb09a3`、`8fd09de` 及本次） | 文档修订 | 不改变运行时代码，不产生新的 runtime 证据；文档提交自身的 hash 不作为验收证据，只引用实际运行过的包与源码 SHA |
 
 ### 自动化全量检查（PASS，实际执行）
@@ -302,16 +303,18 @@
 
 这些结果证明 `6478ceb` 的自动化层面通过；它们不证明原生保存表、Edit 菜单目标归属、WebKit 辅助功能、IME 或退出/恢复行为，也不表示 `6478ceb` 已被原生包运行。
 
-### 两轴 focused 复查（`6478ceb`，PASS）
+> 区分：上述 27 文件/275 项属于 `6478ceb`（64 源行为）。最终源候选 `c44239c` 的受影响 Go 检查已 PASS：root `go build ./...` / `go vet ./...` / `go test -race ./...`、nested MyGo build/vet/test、变更 Go 文件 `gofmt` 干净。前端 275 未作为 `c44239c` 的结果重跑。`c442` 只做 test-only 清理（删掉无效的 fakeWindow 断言），`9c3` 修无文档时先解析 focused window 再关闭；该提交新增的 `close_group_test.go` 锁生命周期，但平台**没有能按原生菜单的 headless seam**，Go 测试不能当作 CmdW 的真实证明。新 normal release 的原生结果尚未观察。
 
-`Standards` 与 `Spec` 两轴对 `6f3dba2..6478ceb` 的 focused 复查均 PASS，对象是源码冻结 `6478ceb`；这是代码与规格轴结论，不替代原生运行证据。
+### 两轴 focused 复查（`6478ceb` → `c44239c`，PASS）
+
+`Standards` 与 `Spec` 两轴先对 `6f3dba2..6478ceb` 复查 PASS，随后对最终源候选 `c44239c` 的 close 修复再次 focused 复查并 PASS；这是代码与规格轴结论，不替代原生运行证据。
 
 | 轴 | 结论 | 关键内容 |
 |---|---|---|
-| Standards | **PASS**（`correct`，置信度 0.98） | 3 项硬违规与 2 项可操作启发式全部 resolved；P3 tab 压缩按设计接受；**0** 新违规、**0** 新 smell |
-| Spec | **PASS**（代码符合规格，置信度 0.97） | 2 项原硬缺陷 resolved；**0** 未解决代码缺陷、**0** 新硬缺陷；剩余为原生与文档回填门 |
+| Standards | **PASS**（`correct`，置信度 0.99 于 `c442`） | `6478` 时 3 项硬违规与 2 项可操作启发式 resolved、P3 接受；对 `1d76`/`9c3`/`c442` 的 close 路由复查 **0 新违规、0 新 smell** |
+| Spec | **PASS**（代码符合规格，置信度 0.98 于 `c442`） | `6478` 时 0 未解决代码缺陷；close 修复复查 **0 新硬缺陷**；剩余为原生与文档门 |
 
-持久记录：`local://spec20-standards-review.md`、`local://spec20-spec-review.md`。
+持久记录：`local://spec20-standards-review.md`、`local://spec20-spec-review.md`（均已更新）。
 
 ### Spec 短裁定（`6478ceb`）
 
@@ -357,7 +360,7 @@
 |---|---|---|
 | 自动回归（目标用例） | 目标回归由 2 项失败转为 **11 项通过**，`tsc` 通过（源码负责人执行并报告） | **PASS（自动）** |
 | 全量自动检查（`47e3b4a`） | 前端 `typecheck`、真实 Chromium 全量 **26 个文件、270 项通过**、`build` 通过；Go 树与 `6e7e395` 字节相同，沿用其 `go vet` + `go test -race` PASS；变更 Go 文件 `gofmt` 干净 | **PASS（自动）** |
-| 退出/保存的空缓冲成因与修复 | 面板此前用一份只记录 `onChange` 的占位缓冲参与 flush，重载或重新挂载后会交付假的 `''`。现在交付面板真正持有的文本：编辑器已挂载时取 `editor.getMarkdown()`，否则回落到宿主载入的核心文档状态；未挂载编辑器的面板不注册 flush；用户主动清空则按普通编辑送达 `""` | 已修复（代码，47e） |
+| 退出/保存的空缓冲成因与修复 | 面板此前用一份只记录 `onChange` 的占位缓冲参与 flush，重载或重新挂载后会交付假的 `''`。现在只有编辑器已 ready 才注册 reader；交付时取 `editor.getMarkdown()`，已注册 reader 执行时若 editor ref 短暂为空则回落到宿主载入的核心文本；从未挂载编辑器的面板从不注册、也从不交付 `''`。用户主动清空则按普通编辑送达 `""` | 已修复（代码，47e/6478） |
 | 恢复后无活动编辑器：成因与修复 | 从磁盘打开的文档在恢复时得到新的 MyGo id，旧实现按会话里存的 id 设置活动标签，活动标签因此指向不存在的 id。现在把存储的 active tab 映射到该文档真实的新 id，再设为活动（6e） | 已修复（代码，6e） |
 | 文档契约 | `docs/workspace-contract.md` 同步为：flush 交付屏幕上的文本（否则核心文档状态）且每入口只写回一次，恢复把存储的 active tab 映射到真实 id，路径变更先锁后写、目标预留至操作结束、失败记入 `actionError` | 已同步（47e + `6478ceb` 文本） |
 
@@ -374,7 +377,7 @@
 | 未命名 Save As 与迁移 | 见上表：精确 50 B、标签迁移、无占位、`Saved v1` | **PASS** |
 | 迁移后的撤销/重做 | 迁移文档内 Cmd+Z 移除输入（Edited）、⇧⌘Z 恢复；alpha/beta 字节不变，历史属于迁移后的文档 | **PASS** |
 | 特殊块与原地 Composer 字节保真（47e 复验保存/撤销；Esc 取消在 7b 观察） | 打开 `baseline-richtext.md` 本身不写盘（169 B `5b377f55…75e6`，mtime 12:30:06）；composer 追加 ` CHK47` 后自动保存为 175 B `1d0f0c44…db28`，diff 只有 alert 行，其余字节一致；Cmd+Z + 自动保存恢复到精确原始 169 B `5b377f55…75e6`。7b 上的 Esc 取消保持文档与文件不变 | **PASS（47e）** |
-| ComparisonTable 键盘排序与不写原文（7b 构建） | 表头 `Option/Size/Notes` 可聚焦，Space 排序 180/12/9（数值降序），再次 Space 恢复；`comparison.md` 哈希与 mtime 不变 | **PASS（7b 构建，路径未改动）** |
+| ComparisonTable 键盘排序与不写原文（7b 构建） | 表头 `Option/Size/Notes` 可聚焦，Space 排序 180/12/9（数值降序），再次 Space 恢复；`comparison.md` 哈希与 mtime 不变。注意：6478 本轮只以鼠标激活取得一次升序，键盘/AT 未复验（见下） | **PASS（7b 构建，路径未改动）** |
 | 部分来源与全部缺失的实时跟随（7b 构建） | mixed 视图：FRESH、STALE `Source changed`、MISSING `Source not found` 且 `Edit in source`/`Note` 禁用并提示“None of this part's sources are in the document now.”、无哈希不标记；面板 `2 components out of date`、`Regenerate changed (2)`；`state.sh all-missing` 实时变为 MISSING A/B 且均禁用，`state.sh partial` 恢复；原文哈希与 mtime 不变 | **PASS（7b 构建，路径未改动）** |
 | 窄窗右栏浮层（7b 构建） | 约 750 pt 窗口下 `Show right panel` 以浮层盖在文档上，含 Outline/GenUI 分段；GenUI 显示过期摘要；`Hide` 收起；宽窗布局已在同名标签场景观察到 | **PASS（7b 构建，路径未改动）** |
 | 未命名脏关闭 Cancel（47e） | 原生保存表“Do you want to keep this new document “Untitled”?…” 含 Save…/Delete/Cancel；Cancel 保留标签与文本 `DIRTY-CLOSE-TEST`，header `Edited`（Delete 分支未执行） | **PASS（Cancel 分支）** |
@@ -396,36 +399,89 @@
 | 空未命名窗口最后标签关闭（47e） | 关闭未命名窗口的唯一标签后窗口关闭，`session.json` 写为 `{}`（无残留工作区） | **PASS** |
 | Agent command 文本字段（47e） | `Locate agent…` 文本字段保存绝对路径后，下一次生成的日志实际使用该绝对路径 | **PASS** |
 | 打包字体（部分，47e） | bundle 只含二进制与图标；嵌入的 `web/dist` 含 IBM Plex Sans/SC、Barlow Semi Condensed、KaTeX、Phosphor `.woff2`，二进制含 Phosphor 字符串，UI 截图使用随包字体；Web Inspector 未启用，严格的离线 `FontFace`/网络证明未取得 | **部分证据**（不作严格离线 PASS） |
-| Model 菜单可见性（47e） | 新截图显示列表 `Agent’s choice / gemini-4-argon / gemini-3.8-flash ✓ / claude-opus-5-5`，设置缓存也含 3 个模型；但点击弹层行会让 CUA 绑定丢失窗口（`noWindowsAvailable`），AX 只暴露 “Agent’s choice”，重绑后模型仍为 `gemini-3.8-flash` | **未验证（CUA 传输限制，不是产品失败结论）** |
+| Model 菜单可见性（47e） | 47e 时列表已显示 `Agent’s choice / gemini-4-argon / gemini-3.8-flash ✓ / claude-opus-5-5`，缓存也含 3 个模型，但弹层点击丢失 CUA 窗口，未能完成变更；6478 已用弹层选项坐标完成实际变更与持久化（见下） | **47e 未验证；6478 已 PASS** |
 | Duplicate 与目标唯一性（47e） | `File > Duplicate` 对 cold2 生成独立的未保存副本 `cold2 copy`（Edited，内容相同），创建时没有新目标可预留，直到它自身首次保存才按路径规则认领；Save As 冲突未被触发（保存表按默认名 `cold2 copy.md` 完成），目标唯一性仍未在原生验证 | **部分（创建 PASS；冲突未验）** |
 
-### 代码审查发现与修复状态（不是 Native 运行证据）
+### `6478ceb` 原生 focused matrix（实际观察）
 
-初始审查（head `6f`）中，`SpecReview32`（spec 轴）与 `Standards`（标准轴）提出硬缺陷与启发式；下表保留这些发现的解决状态。修复后两轴对 `6f3dba2..6478ceb` 的 focused 复查均 PASS（Standards 0 新违规、Spec 0 新硬缺陷），见上文“两轴 focused 复查”。这些是代码/规格轴结论，不并入 Native PASS；“已修”指 `6478ceb` 上的修复与全量自动化验证，Native 仍未验。
+构建与身份：`/private/tmp/mark-go-go-spec20-verify-21/build/darwin-arm64/Mark Go Go CoreSmoke21.app`，**源码 `6478ceb6d48a16d3a9326c4469f5a1c93411d944`**（验证工作树 `git rev-parse HEAD`，运行标记均为 6478；`go version -m` 证实 `vcs.revision=6478ceb…`、tags `mygo_noinspector`，正常 release）。报告早先误写的 7b header 已更正；47e 的详细证据单独保留，不与本节混引。Settings 与 fixtures 仅用 `native32/`，结束后 `settings.json` 移除、应用正常退出。
+
+| 场景 | 实际观察 | 判定 |
+|---|---|---|
+| 输入归属与约 250ms 切换 | A 保存 `F6478-A`，B 哈希不变（`51e40b57…`） | **PASS** |
+| 首次输入后立即 Cmd+S | 键入到保存约 50ms，`Saved v1`，只有 alpha 含 `F6478-SAVE` | **PASS** |
+| Markdown 清空为 0 字节 + Cmd+S | `workspace/Untitled.md` 0 B，sha256 `e3b0c442…b855` | **PASS** |
+| typed untitled SaveAs 迁移 + Undo/Redo | 文件 15 B `F6478-UNTITLED\n`，标签迁移；Cmd+Z 移除、⇧⌘Z 恢复 | **PASS** |
+| SaveAs 到已打开的 alpha | NSSavePanel 内建 Replace 确认后，应用以 “that file is already open in another document” 拒绝；alpha 不变。报告不声称“无 Replace 提示”，OS 面板提示与 SDK 覆盖守卫分属两层 | **PASS（拒绝）** |
+| Rename open beta 到已打开的 alpha | 同样的应用层拒绝；alpha/beta 哈希与 mtime 不变 | **PASS（拒绝）** |
+| Rename 成功 + 恢复 | beta→collide-notes→notes-unknown-attrs→beta；171 B `51e40b57…`，视图伴随文件重新找到 | **PASS** |
+| Move 已打开根目录 notes 到 `bytes/`（已打开） | 写入前拒绝；根 171 B `51e40b57…`、bytes 578 B `7a1596f0…` 不变 | **PASS（拒绝）** |
+| 只读 Save As | 副本 383 B `b2bdc493…` 与原文件一致；原文件仍 0444、mtime 不变 | **PASS** |
+| 脏关闭 → Cancel | 标签与内容完好 | **PASS** |
+| 关闭保存 untitled 到已打开的 alpha | 提示 `The document “Untitled” could not be saved. markgogo: that file is already open in another document`；untitled 保留、alpha 不变 | **PASS（拒绝）** |
+| 带未保存 untitled 的正常 Cmd+Q → 重启 | 恢复 5 个标签与顺序（含无路径活动 untitled）；Recovery 96 B；`QUIT-RESTORE-6478` 存在；磁盘 `Untitled.md` 0 B | **PASS** |
+| Model 控件与持久化 | UI `gemini-3.8-flash`→`gemini-4-argon`；`settings.json` model 4；fake agentCommand 与 3 个模型保留；重启后 B/alpha footer 读 `gemini-4-argon` | **PASS** |
+| A 生成中的 File 菜单 | `Save` 与 `Duplicate` 可用；`Save As…` / `Rename…` / `Move To…` 禁用 | **PASS** |
+| A 生成中切到空闲 B 的 File 菜单 | A 仍 `Saved · generating…`；B 的 `Save As…` / `Rename…` / `Move To…` 全部可用 | **PASS** |
+| 已生成视图的记录 vs 新默认 model | `.alpha.md.genui.json` 的 model 仍为 `gemini-3.8-flash`（request `ALPHA-ONLY focus`、06:01:30Z），之后全局默认改为 model 4 并未重写这个已生成视图；这是“已生成视图 3.8 vs 新默认 4”的记录区分 | **PASS（记录区分）**；不据此声称 Native 的即时 settingsChanged 推送或 mid-run freeze，二者由自动化独立覆盖 |
+| B 用 model 4 实际生成 | B `Regenerate all` 以 `Up to date`、`Generated 06:05:43Z`、Undo 结束；`.beta.md.genui.json` 为 `gemini-4-argon` / `BETA-ONLY focus` | **PASS** |
+| 重启后两文档读取统一默认 model 4 | 持久化 model 4 并重启后，alpha 与 beta 的 footer 都读取 `gemini-4-argon`；A 的已生成视图 JSON 仍为 3.8，B 的新视图为 4。这证明“重启后读取持久化默认 4”，不证明 Native 的即时跨文档推送或 mid-run 捕获（无设置 4 早于 A 完成的时间证据；该点由自动化独立覆盖） | **PASS（重启读取默认 4）** |
+| 全量 Regenerate all（真实 fake ACP 经 Go 边界） | 步骤 Starting/Thinking/Reading/Writing；最终 `Up to date`、Undo；`.alpha.md.genui.json` 的 model/request/来源哈希 `fnv1a32:1b6582ef` 更新 | **PASS** |
+| Regenerate changed（fake agent 的 update 路径） | UI 如实显示 `createSurface` vs `updateComponents` 的错误与 `The agent said: Alpha turn finished.`，Retry/Dismiss；未覆盖视图 | **PASS（错误处理；fixture 不匹配）** |
+| 可重复的取消（paced 60s） | Cancel 回到先前 `Up to date`；无写入；视图哈希不变。Cancel 不是失败、不提示（Spec 规则），旧视图 + 不写入才是要求 | **PASS（规范行为）** |
+| 外部改写后台 beta | 出现 `WATCH-RACE-6478`，`Saved v2`；GenUI 标 `Source changed`/过期；Markdown 显示标记；fixture 已恢复 171 B `51e40b57…` | **PASS** |
+| 部分来源 | fresh + 仅读者批注；stale `Details changed`；missing `Source not found` 且 Edit/Note 禁用；无哈希不标记 | **PASS** |
+| 特殊块与只读呈现 | frontmatter、脚注/回引、warning、code fence、raw HTML、中英文/emoji；`Read only`；Save As 副本可编辑 | **PASS** |
+| 根目录外的 Save As 路由 | `workspace2/route-test-6478.md` 16 B 精确；目标标签出现，源标签保留 | **PASS** |
+| Note 草稿隔离（A 写 Note，B 关闭） | A 的 composer 草稿 `NOTE-DRAFT-6478`、Save 可用；切到 B 并关闭 B 标签后回到 A，草稿仍在且 Save 可用；点击 Save 后 composer 关闭，A 视图 Notes 出现 `03 NOTE-DRAFT-6478`，A Saved | **PASS** |
+| 两个挂载的相同 id GenUI（g1/g2） | g2 变更后 `10 components out of date`、全部 `Source changed`、列表 Summary + Detail 1…9、`Regenerate changed (10)`；点击列表最后一项 `Detail 9`：g2 标签保持选中、列表滚动并高亮 Detail 9、主视图显示可见的 DETAIL 9 卡片（绿框）；g1 仍 `Up to date`、无 Source changed。fixture 恢复后 `verify.sh` 显示 **ALL FIXTURES MATCH MANIFEST** | **PASS** |
+| ComparisonTable 数值排序（6478 补充） | 鼠标点击表头把 Size 标记切到 ↑，行变 9/12/180（按数值而非文字）；降序与第三个循环本轮未能可靠到达；键盘/AT 激活未暴露。7b 已有的完整键盘三态循环证据保留（该代码路径未被 6478 改动），本行只是 6478 的补充观察 | **PARTIAL（不标 PASS）** |
+| Edit 菜单 Undo/Redo 可用状态 | Edit NSMenu 返回空 AX，菜单项 enabled 状态未取得；快捷键撤销/重做证据存在，但菜单状态不作声明 | **BLOCKED（菜单 AX）** |
+| 打包应用本地字体加载（source64 debugInspector 包，明确与 release core 分开） | 实际观察到加载的 FontFace：IBM Plex Sans/SC 与 MGG Condensed 500/600；`baseURI=mygo://localhost/`；body 的计算字体为 Plex Sans/SC。冷启动网络面板显示 12 个资源、全部来自 localhost；本地 woff2 含 SC Medium/Regular、Latin 400/500/600、Barlow 500/600；嵌入的自定义 scheme 传输 0。**这是本地字体加载、无外部字体请求的实际 PASS**。严格“强制 offline / 阻断请求”的 Inspector 控件不存在，该方法 **BLOCKED / 未运行**，不能声称 network-off 已跑；也不能反过来说字体本地加载未验证。无系统网络改动、无 OS 权限操作 | **PASS（本地加载）；严格 offline 方法 BLOCKED** |
+| 脏未命名 Close → 原生 Delete（debugInspector 构建，close 逻辑与 release 相同） | 原 FAIL：genui folder 窗口已有 g1/g2 两个标签时，新建 Untitled 输入 `DISCARD-ONLY-6478`，Cmd+W 选原生 Delete：Untitled 消失，同时整个 genui 窗口消失、`session.json` 不再含 genui；未报告原文件被写 | **已修并 c442 实机 PASS（原场景）**：c442 normal release 上同一路径的 Delete 只移除新的 Untitled，g1/g2、窗口内容与哈希都不变；历史 FAIL 证据保留不删。Standalone untitled 的新 route 变体另见未运行行 |
+
+### `c44239c` 原生关闭回归（normal release，实际观察）
+
+源码 `c44239c8ca5fdee802806dbf47e5bb2fd0ac1f9c`，normal release 构建，`Main` 已验签；Actor 只复验关闭相关路径，不重做 fonts/Model/OS。
+
+| 场景 | 实际观察 | 判定 |
+|---|---|---|
+| 脏未命名 Close → Cancel | Cancel 保留 3 个标签与文本 | **PASS** |
+| 脏未命名 Close → Delete（原 64 FAIL 场景） | Delete 只移除新的 Untitled；g1/g2、窗口内容与文件哈希不变 | **PASS（原场景修复）** |
+| 正常 Quit 与重启 | `session.json` 含 genui 两个标签、active 为 g2；relaunch 恢复两个标签且均可选择 | **PASS** |
+| 已保存的 g2 上 Cmd+W | 只关闭 g2，g1 仍在 | **PASS** |
+| g1 也关闭后 | folder 工作区 0 标签，窗口仍保留 | **PASS** |
+| 0 标签时 Cmd+W / File > Close | `File > Close` 由 `RefreshDocumentMenus` 禁用，原生 Cmd+W 为 no-op；窗口不关闭（既定规则） | **PASS（规则行为）** |
+| 原生红色关闭 alpha 工作区 | 整个窗口关闭；alpha/beta 两个文件哈希不变 | **PASS** |
+| Standalone untitled 最后 tab 关闭（新 route） | 红关剩余测试窗口 → 正常 quit，`session.json` 的 `workspaces` 为 `[]`；relaunch 显示 Welcome `Untitled window · 0 files`；File > New 得到唯一 Untitled，输入 `STANDALONE-C442`，Cmd+W 选 Delete 一次：文档消失且**整个空的 untitled 窗口被销毁**，之后 AX 不再有该窗口；再次正常 quit 后 `session.json` 仍为 0 个 workspace，哈希 `f3696db8…fb266`；settings absent、0 进程。47e 的旧“最后 tab 关闭窗口”PASS 是旧整窗 CmdW 路径的平凡结果、不是新 route 证明，但本行是现在的新证据 | **PASS（new route，非旧 window-close 平凡结果）** |
+
+### 代码审查发现与修复状态
+
+初始审查（head `6f`）中，`SpecReview32`（spec 轴）与 `Standards`（标准轴）提出硬缺陷与启发式；下表保留这些发现的解决状态。修复后两轴对 `6f3dba2..6478ceb` 的 focused 复查均 PASS（Standards 0 新违规、Spec 0 新硬缺陷），见上文“两轴 focused 复查”。“已修”指 `6478ceb` 上的修复与全量自动化验证；其中路径菜单、目标唯一性、GenUI/card 跳转与 Composer 草稿隔离已由 `6478ceb` 原生矩阵覆盖，索引性能等未做原生专项测量。
 
 | 发现 | 来源 / 性质 | 现状 |
 |---|---|---|
-| 生成中的文档，其原生路径菜单与错误提示不完整（`Save As` / `Rename` / `Move` 的禁用与提示没有完整覆盖 `generating` 状态） | SpecReview 硬缺陷 | **已修，自动化通过；Native 未验**：`6478ceb` 用 `PathChange` 锁 + `RefreshDocumentMenus` 刷新 Save As / Rename / Move 的菜单与拒绝路径；完整自动化套件在 `6478ceb` 通过 |
-| `Save`（只读时回退另存为）、`Rename`、`MoveTo` 的目标唯一性检查发生在 `Save` / `Rename` / `MoveTo` 已写盘、改 `doc.Path()` 并触发状态之后，冲突时可能覆盖已打开文档的磁盘文件并留下两个同路径会话 | Standards P1（同一问题族见 SpecReview） | **已修，自动化通过；Native 未验**：`6478ceb` 的 `ReservePath` 在任何写入/改名/移动之前认领目标（规范化路径 + `os.SameFile`，全应用互斥），保留到操作结束；完整自动化套件通过 |
-| `GenUIView.scrollToCard` 用全局 `document.querySelectorAll('[data-testid="genui-view"] [data-component-id]')` 而没有限定到本视图的挂载元素；隐藏的 A 标签 GenUI 与活动 B 标签组件 id 相同（如 `root`、`summary`）时，B 的 `.changed-list` 点击会命中 A 的卡片，跳过 B 的高亮与滚动 | Standards P2（Tab 与文档隔离） | **已修，自动化通过；Native 未验**：`8a6be09` 按文档挂载元素限定查询；`genui-isolation` 与完整自动化套件通过 |
-| `noteDialog.ts` 的 `activeCancel` 是模块级全局：任何后台标签的 `load` / `onReload`（`setMarkdown`）/ `setReadonly` / `destroy` 都会调用 `cancelNoteComposer()`，关闭活动标签正在输入的 Note 或特殊块 `.composer` 并丢弃草稿 | Standards P2（后台面板独立状态） | **已修，自动化通过；Native 未验**：`8a6be09` 按编辑器限定取消；`composer-isolation`（216 行新用例）与完整自动化套件通过 |
-| 原生命令对同一文档重复 flush（`App.tsx` 的 `host.flush` 与 `mygoHost` 的 `flushDocument` 各发一次；`closeWorkspace` 路径每标签可达四次），每次都触发 `reindexOpenDocument` | Standards 启发式 P2（重复代码） | **已修，自动化通过；Native 未验**：`6478ceb` 让 `bindFlush` 成为唯一原始文本读取器，每入口只写回一次（`close` / `closeWorkspace` 各自负责）；完整自动化套件通过 |
-| `utf16Count` 每行分配 `[]rune` 与 `[]uint16`；`navRel`/`relOf` 在树排序与过滤时对每一项调用 `canonicalPath`（`EvalSymlinks`），而索引里已有相对键 | Standards 启发式 P2（Go 分配/系统调用） | **已修，自动化通过；Native 未验**：`3b0923e` 复用索引键、按 UTF-16 单元计数不再分配；`index_test.go` 与完整自动化套件通过 |
+| 生成中的文档，其原生路径菜单与错误提示不完整（`Save As` / `Rename` / `Move` 的禁用与提示没有完整覆盖 `generating` 状态） | SpecReview 硬缺陷 | **已修，自动化通过；Native 6478 PASS**（A 生成中 Save/Duplicate 可用、SaveAs/Rename/Move 禁用；切空闲 B 后三者可用）：`6478ceb` 的 `PathChange` 锁 + `RefreshDocumentMenus` |
+| `Save`（只读时回退另存为）、`Rename`、`MoveTo` 的目标唯一性检查发生在写盘、改 `doc.Path()` 并触发状态之后，冲突时可能覆盖已打开文档的磁盘文件并留下两个同路径会话 | Standards P1（同一问题族见 SpecReview） | **已修，自动化通过；Native 6478 PASS**（SaveAs/Rename/Move/close-save 到已打开目标均应用层拒绝，目标未写、哈希与 mtime 不变；OS 面板 Replace 边界见“Spec 短裁定”）：`ReservePath` 在任何写入/改名/移动之前认领目标 |
+| `GenUIView.scrollToCard` 用全局 `document.querySelectorAll('[data-testid="genui-view"] [data-component-id]')` 而没有限定到本视图的挂载元素；隐藏的 A 标签 GenUI 与活动 B 标签组件 id 相同（如 `root`、`summary`）时，B 的 `.changed-list` 点击会命中 A 的卡片，跳过 B 的高亮与滚动 | Standards P2（Tab 与文档隔离） | **已修，自动化通过；Native 6478 PASS**（g1/g2 相同 id：Detail 9 命中 g2 本卡并高亮，g1 保持 fresh）：`8a6be09` 按文档挂载元素限定查询 |
+| `noteDialog.ts` 的 `activeCancel` 是模块级全局：任何后台标签的 `load` / `onReload`（`setMarkdown`）/ `setReadonly` / `destroy` 都会调用 `cancelNoteComposer()`，关闭活动标签正在输入的 Note 或特殊块 `.composer` 并丢弃草稿 | Standards P2（后台面板独立状态） | **已修，自动化通过；Native 6478 PASS**（A 的 `NOTE-DRAFT-6478` 跨 B 关闭保留，保存后写入 A 的 Notes）：`8a6be09` 按编辑器限定取消 |
+| 原生命令对同一文档重复 flush（`App.tsx` 的 `host.flush` 与 `mygoHost` 的 `flushDocument` 各发一次；`closeWorkspace` 路径每标签可达四次），每次都触发 `reindexOpenDocument` | Standards 启发式 P2（重复代码） | **已修，自动化通过**：`6478ceb` 让 `bindFlush` 成为唯一原始文本读取器，每个文档在每次入口调用中只写回一次；6478 的保存/切换/菜单行为与该实现一致，但 RPC 次数本身不可原生观察，故不单列 Native 次数结论 |
+| `utf16Count` 每行分配 `[]rune` 与 `[]uint16`；`navRel`/`relOf` 在树排序与过滤时对每一项调用 `canonicalPath`（`EvalSymlinks`），而索引里已有相对键 | Standards 启发式 P2（Go 分配/系统调用） | **已修，自动化通过；Native 未验（未做专项测量）**：`3b0923e` 复用索引键、按 UTF-16 单元计数不再分配 |
 | 四处相似的 tab 移除 + 活动回退压缩（`documenthost.go` 与 vendored MyGo 的 document group） | Standards P3 启发式 | **暂接受**：按现有 app/kernel authority 保持局部重复，避免为四处小逻辑引入跨模块抽象；不是缺陷关闭，只是不做抽象 |
 
 这些发现与 `47e3b4a` 的实机 PASS 分属不同证据类型；修复状态按源 `6478ceb` 记为“已修，自动化通过；Native 未验”或“待修”。自动化通过指 `6478ceb` 上的真实运行时验证（真实 Chromium 与 Go race），不等于原生复验通过，也不等于总体验收完成。
 
 ### 仍未运行 / 受策略阻塞的原生行
 
-以下按 NativeAcceptance32 报告的实际缺口保留，未执行的不因相邻场景 PASS 而升级：
+以下按最新报告的实际缺口保留，未执行的不因相邻场景 PASS 而升级：
 
 | 范围 | 状态与缺口 |
 |---|---|
-| 脏关闭保存表的 Delete 分支 | Cancel 分支已 PASS；Delete 分支未执行 |
-| 目标唯一性与路径安全（#21） | 修复已在 `6478ceb` 合并且自动化通过（含 `pathguard_test.go`）；**Native 未验**：新原生包仍需实测已开目标在应用层被拒绝且目标未写、无第二会话（OS Save 面板可能先显示内建 Replace，见“Spec 短裁定”）、生成中 `Save As`/`Rename`/`Move` 菜单禁用与直接拒绝、只读 Save→Save As、`actionError` banner、`RefreshDocumentMenus` 的实际菜单状态 |
-| Model 变更的原生传播（#24） | 菜单列表与缓存可见，但 CUA 弹层点击会丢失窗口、AX 只暴露 “Agent's choice”；模型变更 → 空闲 A/B 同步 → 持久化仍未验证，不是产品失败结论，需重新观察 |
-| 原生 Edit 菜单点击 Undo/Redo | 键盘 `⌘Z` / `⇧⌘Z` 已在 47e 验证；菜单项鼠标点击与 `SetNativeEditState` 的菜单可用性未验证（CUA 原生菜单定位限制） |
-| 打包应用严格离线字体证明 | 随包字体嵌入与渲染已观察；Web Inspector 未启用，未取得 `FontFace`/网络关闭的严格证明 |
+| 生成中绕过菜单直接触发路径变更 | 6478 已观察 A 生成中 `Save As…`/`Rename…`/`Move To…` 菜单禁用、B 空闲时可用；应用层对生成中直接调用的拒绝由自动测试覆盖，本轮未用原生绕过菜单单独触发 |
+| ComparisonTable 完整排序与键盘/AT | 7b 已有完整键盘三态循环证据（该路径未被本轮代码改动），保留原 SHA 已跑结果；6478 只补充了鼠标一次升序（9/12/180 按数值）为 PARTIAL；辅助技术激活未取得，不标 PASS |
+| 原生 Edit 菜单 enabled 状态 | 6478 的 Edit NSMenu 返回空 AX，未取得菜单项状态；快捷键撤销/重做证据存在，菜单状态不作声明 |
+| 严格强制 offline / 请求阻断（字体） | 本地字体加载与“无外部字体请求”的实际 PASS 见上表；Inspector 没有强制 offline/阻断请求控件，因此该方法 **BLOCKED / 未运行**，不声称 network-off 已跑。narrow/wide 已在 47e 观察 PASS，6478 未重复 |
+| 标准 release 包状态 | `c442` normal release 已由 Main 验签并用于关闭回归；字体结果来自 `source64 debugInspector` 诊断包（与 release core 分开），诊断结束已恢复正常 release |
 | 辅助技术（#31） | **用户取消本轮系统级验收**：VoiceOver 验证不再进行；未验证、**不计 PASS**，原状态 0/0。历史事实：真实 Cmd+F5 已尝试仍为 VO 0，fn key 不支持，System Settings 与 VoiceOver Utility 两个 target 均被 CUA 拒绝（工具层）。 |
 | reduced motion（#25） | **用户取消本轮系统级验收**：不再申请权限、不再验证；**不计 PASS**，`ReduceMotionEnabled` 原状态 0。 |
 

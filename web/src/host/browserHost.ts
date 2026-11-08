@@ -10,6 +10,7 @@ import type {
   HostDocSnapshot,
   NavSearchResult,
   NavSnapshot,
+  SettingsPatch,
   ViewSnapshot,
   WorkspaceAdapter,
   WorkspaceKind,
@@ -79,6 +80,8 @@ export interface BrowserHost extends HostAdapter {
   releaseFirstView(): void
   /** Simulate an external path change while a generation is running. */
   setPath(path: string): void
+  /** Read another settings store from now on: a workspace gives its tabs one. */
+  useSettings(store: BrowserSettings): void
   /** Abort an in-flight generation as a real close of this document would. */
   abandonGeneration(): void
 }
@@ -103,10 +106,11 @@ export interface BrowserHostOptions {
   kept?: string
   /** Plays the agent; without one, Generate fails with a message. */
   generator?: FakeGenerator
-  /** Stored settings; the defaults of the desktop host when omitted. */
-  settings?: GenerationSettings
-  /** Shared settings object, as the desktop host's one settings file. */
-  settingsRef?: GenerationSettings
+  /**
+   * The settings file this document reads. Standalone hosts get their own;
+   * a workspace gives every one of its tabs the same store.
+   */
+  settings?: BrowserSettings
   /** Open the document as never saved: it has no path, so no view file. */
   untitled?: boolean
   /** Do not emit the first watch snapshot until `releaseFirstView`. */
@@ -119,6 +123,58 @@ export const DEFAULT_SETTINGS: GenerationSettings = {
   model: 'gemini-3.8-flash',
   agentCommand: 'agy',
   models: [...DEFAULT_MODELS],
+}
+
+/**
+ * The browser's settings file. The desktop app has one store for every
+ * document in every window; in the browser a window's workspace owns one, so
+ * its tabs never drift apart. A store is never module-global: each test and
+ * each workspace gets its own.
+ */
+export interface BrowserSettings {
+  /** The committed settings, read synchronously: a run captures them at its start. */
+  read(): GenerationSettings
+  getSettings(): Promise<GenerationSettings>
+  setSettings(patch: SettingsPatch): Promise<GenerationSettings>
+  onSettings(fn: (settings: GenerationSettings) => void): Disposable
+}
+
+export function createBrowserSettings(initial: Partial<GenerationSettings> = {}): BrowserSettings {
+  let current: GenerationSettings = {
+    model: initial.model ?? DEFAULT_SETTINGS.model,
+    agentCommand: initial.agentCommand || DEFAULT_SETTINGS.agentCommand,
+    models: initial.models?.length ? [...initial.models] : [...DEFAULT_MODELS],
+  }
+  const listeners = new Set<(settings: GenerationSettings) => void>()
+  const snapshot = (): GenerationSettings => ({
+    ...current,
+    models: current.models ? [...current.models] : [...DEFAULT_MODELS],
+  })
+  return {
+    read: snapshot,
+    async getSettings() {
+      return snapshot()
+    },
+    async setSettings(patch) {
+      let changed = false
+      if (patch.model !== undefined) {
+        current.model = patch.model
+        changed = true
+      }
+      if (patch.agentCommand !== undefined) {
+        current.agentCommand = patch.agentCommand || DEFAULT_SETTINGS.agentCommand
+        changed = true
+      }
+      if (!changed) return snapshot()
+      const next = snapshot()
+      for (const fn of listeners) fn(next)
+      return next
+    },
+    onSettings(fn) {
+      listeners.add(fn)
+      return disposable(() => listeners.delete(fn))
+    },
+  }
 }
 
 /**
@@ -146,11 +202,7 @@ export function createBrowserHost(
   const reloadListeners = new Set<(snap: HostDocSnapshot) => void>()
   const stateListeners = new Set<(state: DocumentInfo) => void>()
   const viewListeners = new Set<(snap: ViewSnapshot) => void>()
-  let settings: GenerationSettings = options.settingsRef ?? {
-    model: options.settings?.model ?? DEFAULT_SETTINGS.model,
-    agentCommand: options.settings?.agentCommand || DEFAULT_SETTINGS.agentCommand,
-    models: options.settings?.models?.length ? [...options.settings.models] : [...DEFAULT_MODELS],
-  }
+  let settingsStore = options.settings ?? createBrowserSettings()
   let generating = false
   let capturedPath = ''
   let abandoned = false
@@ -218,8 +270,11 @@ export function createBrowserHost(
     },
     async revert() {},
     async setViewMode(mode: string) {
+      // A view-mode write is not new document state: the native host stores it
+      // in the session and emits only a workspace snapshot. Emitting a whole
+      // document state here would echo stale flags such as readOnly back into
+      // the editor.
       state = { ...state, viewMode: mode }
-      emitState()
     },
     bindFlush(getText) {
       flushReaders.set(hostSelf, getText)
@@ -293,11 +348,9 @@ export function createBrowserHost(
           hint: 'Wait for it to finish, or cancel it.',
         })
       }
-      const captured: GenerationSettings = {
-        model: settings.model,
-        agentCommand: settings.agentCommand,
-        models: settings.models ? [...settings.models] : [...DEFAULT_MODELS],
-      }
+      // Capture the shared store as it is now: a later change in this or
+      // another window must not alter a run that already started.
+      const captured: GenerationSettings = settingsStore.read()
       capturedPath = state.path
       abandoned = false
       generations.push(req)
@@ -345,16 +398,17 @@ export function createBrowserHost(
         }
       }
     },
-    async getSettings() {
-      return {
-        ...settings,
-        models: settings.models ? [...settings.models] : [...DEFAULT_MODELS],
-      }
+    getSettings(): Promise<GenerationSettings> {
+      return settingsStore.getSettings()
     },
-    async setSettings(next) {
-      settings.model = next.model
-      settings.agentCommand = next.agentCommand || DEFAULT_SETTINGS.agentCommand
-      if (next.models?.length) settings.models = [...next.models]
+    setSettings(patch: SettingsPatch): Promise<GenerationSettings> {
+      return settingsStore.setSettings(patch)
+    },
+    onSettings(fn: (settings: GenerationSettings) => void): Disposable {
+      return settingsStore.onSettings(fn)
+    },
+    useSettings(next: BrowserSettings) {
+      settingsStore = next
     },
   }
   return hostSelf
@@ -377,7 +431,7 @@ const flushReaders = new WeakMap<HostAdapter, () => string>()
 /** One-document workspace around a HostAdapter, for existing pane tests. */
 export function wrapHostAsWorkspace(host: HostAdapter, name?: string): WorkspaceAdapter {
   const info = (): DocumentInfo => {
-    const state = isBrowserHost(host)
+    const state: DocState = isBrowserHost(host)
       ? host.getState()
       : {
           name: name ?? 'document',
@@ -497,6 +551,8 @@ export interface BrowserWorkspaceOptions {
   confirmCloseWorkspace?: () => CloseResult | Promise<CloseResult>
   nav?: BrowserNavSeed
   restoreError?: string
+  /** The window's settings file; its tabs share one, created when omitted. */
+  settings?: BrowserSettings
 }
 
 function isBrowserHost(host: HostAdapter): host is BrowserHost {
@@ -511,7 +567,7 @@ function asSeed(doc: HostAdapter | BrowserWorkspaceSeed): BrowserWorkspaceSeed {
 }
 
 function infoFrom(seed: BrowserWorkspaceSeed): DocumentInfo {
-  const state = isBrowserHost(seed.host)
+  const state: DocState = isBrowserHost(seed.host)
     ? seed.host.getState()
     : { name: 'untitled.md', path: '', edited: false, conflict: false, deleted: false, readOnly: false, generating: false }
   return {
@@ -558,11 +614,18 @@ export function createBrowserWorkspace(
     documents: order.map((id) => {
       const info = infos.get(id)
       if (!info) throw new Error(`missing document ${id}`)
-      return { ...info }
+      // The view mode is presentation metadata written through setViewMode;
+      // read it live so a snapshot does not wait for an unrelated state event.
+      const host = adapters.get(id)
+      return { ...info, viewMode: host && isBrowserHost(host) ? host.getState().viewMode : info.viewMode }
     }),
     activeId,
     restoreError: options.restoreError,
   })
+
+  // One settings store for this window's tabs, as the app's one file is:
+  // a document's adapter reads it, and never a private copy.
+  const settings = options.settings ?? createBrowserSettings()
 
   const nav = new BrowserNavIndex(root, options.nav)
 
@@ -610,6 +673,7 @@ export function createBrowserWorkspace(
         }
       }
     }
+    if (isBrowserHost(host)) host.useSettings(settings)
     adapters.set(host.id, host)
     const info = infoFrom(seed)
     const overlayName = seed.name

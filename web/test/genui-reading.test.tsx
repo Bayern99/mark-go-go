@@ -193,6 +193,8 @@ describe('GenUI reading state',
         await page.getByTestId('view-mode-genui').click()
         await vi.waitFor(() => expect(genui()).toHaveAttribute('data-state', 'view'))
 
+        await expect.element(page.getByRole('columnheader', { name: /^Size/ })).toBeVisible()
+        await genui().getByText('Summary').click()
         await expect.element(page.getByRole('button', { name: 'Show fewer' })).toBeVisible()
         expect(mounted.container.querySelectorAll('.genui-keypoints li')).toHaveLength(5)
         await genui().getByText('Details').click()

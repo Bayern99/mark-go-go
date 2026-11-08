@@ -2,6 +2,7 @@ import '../src/styles.css'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { userEvent } from 'vitest/browser'
 import { App } from '../src/App'
 import {
   createBrowserHost,
@@ -42,6 +43,101 @@ async function mountWorkspace(workspace: WorkspaceAdapter): Promise<{
 afterEach(() => {
   window.localStorage.clear()
 })
+
+/** Wait until every document pane has its editor: then it can flush. */
+async function waitForPanes(container: HTMLElement, count: number): Promise<void> {
+  await vi.waitFor(
+    () => {
+      const modes = [...container.querySelectorAll<HTMLButtonElement>('[data-testid="view-mode-genui"]')]
+      const editors = container.querySelectorAll('[data-testid="editor-root"] .ProseMirror')
+      if (modes.length < count || editors.length < count) throw new Error('document panes not ready')
+      if (modes.some((mode) => mode.disabled)) throw new Error('document pane not ready')
+    },
+    { timeout: 5000 },
+  )
+}
+
+async function enterSourceMode(container: HTMLElement): Promise<void> {
+  await userEvent.click(container.querySelector<HTMLButtonElement>('[data-testid="view-mode-markdown"]')!)
+  await vi.waitFor(() => {
+    if (!container.querySelector('.cm-content')) throw new Error('source editor missing')
+  })
+}
+
+describe('restored bytes survive close and quit',
+  () => {
+    it('closes with the bytes the host loaded when nobody edited them',
+      async () => {
+        const alpha = createBrowserHost('# Alpha\n\nA body.\n', 'alpha.md')
+        const beta = createBrowserHost('# Beta\n\nB body.\n', 'beta.md')
+        const workspace = createBrowserWorkspace([alpha, beta], {
+          confirmCloseWorkspace: async () => ({ closed: false, canceled: true }),
+        })
+        const app = await mountWorkspace(workspace)
+        try {
+          await waitForPanes(app.container, 2)
+          await workspace.closeWorkspace()
+          expect((await alpha.load()).text).toBe('# Alpha\n\nA body.\n')
+          expect((await beta.load()).text).toBe('# Beta\n\nB body.\n')
+        } finally {
+          await app.unmount()
+        }
+      },
+    )
+
+    it('keeps a restored GenUI document byte for byte when it is closed',
+      async () => {
+        const host = createBrowserHost('# Hello\n\nBody.\n', 'notes.md')
+        await host.setViewMode('genui')
+        const workspace = createBrowserWorkspace([host], {
+          root: '/work',
+          name: 'work',
+          kind: 'folder',
+          confirmClose: async () => ({ closed: false, canceled: true }),
+        })
+        const app = await mountWorkspace(workspace)
+        try {
+          await waitForPanes(app.container, 1)
+          await workspace.closeDocument(host.id)
+          expect((await host.load()).text).toBe('# Hello\n\nBody.\n')
+        } finally {
+          await app.unmount()
+        }
+      },
+    )
+
+    it('leaves bytes alone while no pane has mounted its editor',
+      async () => {
+        const host = createBrowserHost('# Unmounted\n', 'quiet.md')
+        const workspace = createBrowserWorkspace([host], {
+          confirmCloseWorkspace: async () => ({ closed: false, canceled: true }),
+        })
+        await workspace.closeWorkspace()
+        expect((await host.load()).text).toBe('# Unmounted\n')
+      },
+    )
+
+    it('delivers a deliberate empty document instead of stale bytes',
+      async () => {
+        const host = createBrowserHost('# Clear me\n\nBody.\n', 'clear.md')
+        const workspace = createBrowserWorkspace([host], {
+          confirmClose: async () => ({ closed: false, canceled: true }),
+        })
+        const app = await mountWorkspace(workspace)
+        try {
+          await waitForPanes(app.container, 1)
+          await enterSourceMode(app.container)
+          await userEvent.click(app.container.querySelector<HTMLElement>('.cm-content')!)
+          await userEvent.keyboard('{Meta>}a{/Meta}{Backspace}')
+          await workspace.closeDocument(host.id)
+          expect((await host.load()).text).toBe('')
+        } finally {
+          await app.unmount()
+        }
+      },
+    )
+  },
+)
 
 describe('view mode and restore transport',
   () => {

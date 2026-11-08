@@ -1,8 +1,10 @@
-# 验收结果（2026-11-07，原型）
+# 验收结果
 
-环境：macOS arm64，Go 1.27.3，MyGo v0.7.4，Milkdown 7.23.0，Node 24。
+本文件按时间记录各阶段实际执行的检查。除 2026-11-08 的“工作区、标签与 Portrait 集成”一节外，其余各节记录 2026-11-06/07 原型阶段当时的事实；被后续规格取代的条目已就地标注，历史不重写。
 
-## 自动化
+环境（原型阶段）：macOS arm64，Go 1.27.3，MyGo v0.7.4，Milkdown 7.23.0，Node 24。
+
+## 自动化（2026-11-06/07 原型）
 
 | 检查 | 命令 | 结果 |
 |---|---|---|
@@ -112,7 +114,7 @@
 - 属性写错：错误写明组件与 id（`'MetricGrid' (root)`）和原因（缺 `value`、`trend` 枚举、表格某行单元格数不对、空 `events`、多余属性 `checked`）。
 - 嵌套违规：`Card` 里放 `Tabs` → `UNALLOWED_CHILD: …`；`Row` 里放 `Row` → `UNALLOWED_PARENT: …`；信息里没有占位组件名。
 - 560px 与 1600px 宽：中央区与每个组件都不横向溢出，超长单词换行，宽表只在自己框内滚动。
-- `color-scheme` 切到 dark：组件背景变暗、文字变亮。
+- ~~`color-scheme` 切到 dark：组件背景变暗、文字变亮。~~ **已被 ADR 0006 取代**：本轮仅浅色，该深色用例已从套件删除（套件 267 → 266 项），不再断言深色外观。
 - `catalogDefinition()`：组件列表等于目录、不含占位组件；带 schema（如 `MetricGrid.metrics` 的 `minItems: 1`、字段说明）与嵌套约束。
 
 前端体积：初始代码块 563.26 KB gzip（未变）；GenUI 代码块 139.69 KB gzip（#9 时 136.34）+ CSS 1.67 KB。
@@ -124,7 +126,7 @@
 | GenUI Summary：两张卡片并排（KeyPoints、Checklist 一项已勾），下方 MetricGrid 带单位与 ▲ +4%；`Edit in source` 按钮样式正确 | 通过（自动化 UI 操作 + 截图） |
 | Details：ComparisonTable 与 Timeline；点 `Size (MB)` 列头后为 Tauri 9 → MyGo 12 → Electron 180 | 通过（自动化 UI 操作 + 截图） |
 | 点 Checklist 项：切到 Rich text，`Next steps` 一节被选中（该项文字不在原文，回退到整节），显示 `← Back to GenUI` | 通过（自动化 UI 操作 + 截图） |
-| WebKit 深色：临时把 `:root` 改成 `color-scheme: dark` 打包，组件为深色背景、浅色文字（只验证了 GenUI；其余界面还没有深色样式） | 通过（截图），已改回 |
+| ~~WebKit 深色：临时把 `:root` 改成 `color-scheme: dark` 打包，组件为深色背景、浅色文字（只验证了 GenUI；其余界面还没有深色样式）~~ | 曾通过（截图），已改回；**已被 ADR 0006 取代**：本轮不提供深色外观 |
 | 以上全部操作后 `report.md` sha1 不变 | 通过 |
 
 ## GenUI 生成（#7，ADR 0003）
@@ -159,6 +161,8 @@
 | 运行中 Cmd+Q（AppleScript quit）：退出前 `agy acp` pid 27608 与 `markgogo-genui-*` 存在；退出后 app、`agy` 进程、临时目录都不在，目录里无 `.tmp-*`，`report.md` sha256 不变 | 通过 |
 | 生成中途点 `Cancel` | #7 已检查（同一路径） |
 | 额度耗尽的模型触发额度提示（原样显示） | 未检查：当前账户没有额度耗尽的模型；同一路径由假 agent 的多行额度提示覆盖 |
+
+> 说明（2026-11-08）：上面的 `Open agent settings` 按钮与「Agent settings」自由文本输入属于 2026-11-07 的实现。ADR 0004 与 #24 之后，常规界面不再有该设置面板：改模型用右栏底部 `ModelMenu`；命令只在 `agent-not-found` 失败里经 `Locate agent…` 原地修改。历史行保留当时的实测结论，不再描述当前控件。
 
 ## GenUI 重新生成与撤回（#12）
 
@@ -199,7 +203,7 @@
 | #12 遗留：备份权限 | 视图 0600 时 `Regenerate all`：备份 0600、视图 0600，备份与旧视图逐字节一致；Undo 后视图逐字节恢复，备份删除 |
 | 退出 | 没有 `agy` 进程，没有 `markgogo-genui-*` 临时目录 |
 
-自动化说明：网页内容第一次读取时可能不在辅助功能树里，重读一次就出现。屏幕锁定时 macOS 隐藏所有窗口的辅助功能树，窗口也显示空白，驱动报告 `screen_locked`，解锁后才能继续（#12 时「连不上窗口」可能是这两个原因之一，未确认）。像素点击和键入不一定到达编辑器；AX 按大纲条目会把焦点交给编辑器，之后 ⌘Z、`/` 和方向键可用。`--` 经键盘注入会被系统智能破折号替换成 `—`，测转义时用 AX 直接设值。
+自动化说明（2026-11-07）：网页内容第一次读取时可能不在辅助功能树里，重读一次就出现。屏幕锁定时 macOS 隐藏所有窗口的辅助功能树，窗口也显示空白，驱动报告 `screen_locked`，解锁后才能继续（#12 时「连不上窗口」可能是这两个原因之一，未确认）。像素点击和键入不一定到达编辑器；AX 按大纲条目会把焦点交给编辑器，之后 ⌘Z、`/` 和方向键可用。`--` 经键盘注入会被系统智能破折号替换成 `—`，测转义时用 AX 直接设值。
 
 ## 打包应用手动冒烟（`/tmp/mdws-smoke/report.md`：frontmatter、alert、setext 标题、`+` 列表、CJK 表格、带 meta 的代码块、引用式链接）
 
@@ -223,29 +227,156 @@
   - `ViewLocation` 支持 `'left' | 'center' | 'right'`，`Outline` 注册在 `'right'` 且默认首选高亮。
   - 顶栏移除旧 `Outline: On/Off` 独立按钮，改由右栏切换条与窄窗响应式开关控制。
   - `< 1180px` 窄窗自动收起右栏为 `.r-float` 浮层，点击中央内容画布自动收起浮层。
-  - 全局样式引入 Portrait 语义 Token（浅色/深色模式 `--chrome`、`--paper`、`--raised`、`--code`、`--ink`~`--ink-4`、5 级触觉阴影）。
+  - 全局样式引入 Portrait 语义 Token（`--chrome`、`--paper`、`--raised`、`--code`、`--ink`~`--ink-4`、5 级触觉阴影）。当时还带一份深色 Token 块；**ADR 0006 之后本轮仅浅色**，该块不被任何界面启用。
 - **ModelMenu 与模型列表持久化缓存（#17）**：
   - Go `GetSettings` 在未握手前回退默认模型列表（`gemini-3.8-flash`、`gemini-4-argon`、`claude-opus-5-5`）；ACP `session/new` 握手拿到非空 `configOptions` 时自动更新并持久化 `models`。
   - `ModelMenu` 实现 26px 凸起药丸按钮与向上展开的纸面菜单（`.mmenu.pop`），支持 `Agent’s choice`、当前项勾号，点击外部或按 `Escape`（`document` 级监听）均可关闭，生成运行中自动禁用。常规界面移除自由文本 `Model` 和 `Agent command` 输入框。
+  - **已被 #24 扩展**：`SetSettings` 改为原子意图补丁并返回提交值，成功写入向每个窗口广播 `settingsChanged`；Model 与 Locate agent 只写各自字段；`Agent command` 输入框只在 `agent-not-found` 失败里的 `Locate agent…` 中原地出现。见上文设置审计。
 - **GenUI 视图拆分（#18）**：
   - 中央视图（`location: 'center'`）仅渲染纯净只读 A2UI 组件卡片与来源底座，彻底剥离生成工具栏与错误提示框。
   - 右栏 `genui.panel`（`location: 'right'`）承载 5 种顶部状态与唯一主操作按钮、点击 `Source changed` 列表项平滑滚动并高亮定位中央卡片、Focus 生成要求安静只读与原地编辑、以及固定底部元数据（`Antigravity (agy)`、`ModelMenu`、生成时间、`Undo`）。
 - **原地白纸 Composer（#19）**：
   - 彻底移除居中模态 `<dialog class="mgo-note-dialog">`，Rich text 与 GenUI 卡片内写批注均原地展开自适应增高白纸卡片（`.composer`，`⌘↩` 保存，`Esc` 取消），保持原文逐字节保真，且不触发“原文已改”。
 
+## 工作区、标签与 Portrait 集成（#20/#21–#32，2026-11-08）
+
+来源 SHA：`7b90f1ed2cfa501cde43c3b94e96c0b9348e8847`（`integration/spec-20-workspace-portrait`；基线 `4f80bbf094b5cda0cfa642090f5255e050ade587`）。本节区分**已执行的自动化检查**、**已在真实打包应用里实际观察到的原生证据**、**已观察到的原生失败**，以及**仍未运行、等待证据的行**；未运行的行不得当作通过。
+
+### 自动化全量检查（PASS，实际执行）
+
+执行目录 `/private/tmp/mark-go-go-spec20-checks-32`，提交 `7b90f1e`：
+
+| 检查 | 命令 | 结果 |
+|---|---|---|
+| 依赖 | `npm ci`（`web/`） | 301 个包 |
+| 类型 | `npm run typecheck` | 通过 |
+| 前端测试 | `npx vitest run`（真实 Chromium） | **26 个文件、266 项通过**（修正前为 10 个文件、11 项失败） |
+| 构建 | `npm run build` | 通过（仅既有 chunk 体积警告） |
+| Go 静态检查 | `go vet ./...` | 通过 |
+| Go 测试 | `go test -race ./...` | 通过（修正前 3 项失败） |
+| 文档组接缝 | `go test -race -run 'TestDeepestRoot\|TestFolderContains\|TestSameFile\|TestConfirmClose\|TestDocumentInfo\|TestHostSnapshot' -v .` | 12/12 通过 |
+| vendored MyGo | `cd third_party/mygo && go build ./... && go vet ./... && go test ./...` | 通过（嵌套模块无测试文件，补丁由根测试覆盖） |
+| SDK | `go tool mygo generate` | `web/src/host/generated/mygo.ts` 已是最新（确定性，未手改） |
+| 格式 | `gofmt -l session.go index_test.go` | 无输出 |
+
+这些结果证明自动化层面在当前源码上通过；它们不证明原生保存表、Edit 菜单目标归属、WebKit 辅助功能、IME 或退出/恢复行为。
+
+### 最终候选 `47e3b4a` 全量复检（PASS，实际执行）
+
+同一检查负责人（`FinalCheck32`）在精确 `47e3b4a` 上复跑：
+
+| 检查 | 结果 |
+|---|---|
+| 前端类型 | `npm run typecheck` 通过 |
+| 前端全量测试 | 真实 Chromium，**26 个文件、270 项通过** |
+| 前端构建 | `npm run build` 通过 |
+| Go 树 | 与 `6e7e395` 字节相同，沿用该提交的 `go vet ./...` 与 `go test -race ./...` PASS |
+| Go 变更文件格式 | `gofmt` 无输出 |
+
+未重复无关的 vendored MyGo 检查。这些仍是自动化结果；原生保存表、Edit 菜单归属与退出/恢复行为见下文原生行。
+
+### 真实打包应用的部分原生证据（f9237f2，实际观察）
+
+同一已批准的 Smoke 身份 `dev.markgogo.editor.coresmoke21`（仅验证工作树的 `mygo.json` 使用该身份），构建自 `f9237f2`，通过 `cua_repl` 操作。以下是实际观察，不是推断：
+
+| 场景 | 观察 | 判定 |
+|---|---|---|
+| 冷启动 Welcome | 0 个文档标签，真实的 Open Folder / New Document 与最近工作区 | 通过（该场景） |
+| Open Folder 原生面板 | Go To `/private/tmp/.../native32/workspace` 后得到规范化根，文件数 12 | 通过（该场景） |
+| 文件树 | `bytes` 文件夹可访问名为 `bytes, 8 files`，计数右对齐；8 个子孙连续排在根级 alpha/beta/comparison/partial-sources 之前；折叠只隐藏这 8 行并保留根级行 | 通过（该场景） |
+| 同窗多标签 | 从树打开 Alpha 再打开 Beta，同一原生窗口两个标签，两个正文都显示 | 通过（该场景） |
+| 视图模式 | `⌘/` 在 Rich text / Markdown 间切换并把焦点交给源码编辑器；切换标签各自保留模式 | 通过（该场景） |
+| 输入归属 | `typeText` 分别写入 Alpha `NATIVE-A-INPUTxy`、Beta `NATIVE-B-INPUTwz`，未观察到串写；短暂 Edited 后自动 Saved（v1 不是编辑计数） | 通过（该场景） |
+| 标签键盘 | 标签获得焦点后方向键 Right 激活 Beta | 通过（该场景；CUA 焦点报告仍留在前一个标签，不构成 VoiceOver 结论） |
+| 路由修复（更早 SHA） | `0b226e99` 构建上，同一工作区先开 Alpha 再开 Beta 得到同窗两个标签；此前 `ca95333` 因 `/tmp` 与 `/private/tmp` 别名分裂为两个窗口（已由符号链接前缀规范化修复） | 通过（该场景，非最终验收） |
+
+原生构建来源：`/private/tmp/mark-go-go-spec20-verify-21/build/darwin-arm64/Mark Go Go CoreSmoke21.app`，构建日志 `/private/tmp/mgo-spec20-evidence/coresmoke21-build-7b90f1e.log`。上述会话以正常 Cmd+Q 结束，应用已停止。
+
+### 已观察的原生失败（7b90f1e，FAIL；47e 已复验修复）
+
+`7b90f1e` 上实际观察到的红证据保留在此，不因后续修复删除。最后一列是 `47e3b4a` 新包上的复验结果；未复验的项目不因“同名文件已修复”而转 PASS。
+
+| 场景 | 7b90f1e 实际观察 | 7b 判定 | 47e3b4a 复验 |
+|---|---|---|---|
+| 正常退出后的内容保护 | 正常 Quit 后两份未编辑文档被写成 0 字节（2/2），mtime 等于 CmdQ 时刻，无对话框，会话已保存。证据：`native32/quit-zerodocs-7b90f1e/` | **FAIL** | **PASS（已观察）**：无编辑 CmdQ 前后 alpha 172 B / beta 171 B 的 sha256 与 mtime 完全不变，进程退出，`session.json` 合理 |
+| 退出后重启恢复的呈现 | 重启后活动面板空白；窗口标题 / represented URL 是 `beta.md`，而会话 `activeId` 是 alpha；没有选中标签与编辑器子树，点击标签后才出现内容（2/2）。证据：同目录 + AX transcript | **FAIL** | **PASS（已观察）**：重启后标题与 URL 为 `alpha.md`，alpha 标签选中，alpha 编辑器已挂载并显示 `NATIVE-A-INPUTxy`，视图模式 `Markdown`，`Saved v1`；无空白、无错标签标题 |
+| 未命名 Save As 写入 0 字节并丢内容/历史 | 可见 584 字符、撤销重做正常的未命名文档 Save As 到工作区后为 0 字节，迁移标签只剩占位，历史消失。证据：`native32/quit-zerodocs-7b90f1e/untitled-migrate-0byte.md`、`evidence-7b90f1e/session-midtest.json` | **FAIL** | **PASS（已观察）**：typed untitled 经 Cmd+Z / ⇧⌘Z 后 Save As 为精确 50 B（`SAVEAS47-TYPED-LINE\n\nsecond-line-only-in-untitled\n`，sha256 `f100a808…ec30`），标签迁移到工作区且内容完整；迁移后撤销重做仍有效 |
+| 自动保存把两份打开文档清零（12:30:22） | `comparison.md`、`partial-sources.md` 在 7b 运行期间变为 0 字节（保留于 `evidence-7b90f1e/empty-autosave-1230/` 并从备份恢复） | **FAIL** | 同一交付修复覆盖；这两份文件没有逐一复跑。47e 上的普通编辑自动保存（alpha 181 B）与随后 CmdQ 字节保持已观察 |
+| 期望（不变） | 未编辑文档在退出、恢复、重启后逐字节不变；恢复后当前标签立即可见并可编辑；保存不得丢失内容与历史 | 规范要求 | 规范要求 |
+
+修复根因与自动检查见下一小节；未列入“47e 复验”的场景仍按“未运行”处理。
+
+### 修复 `47e3b4a`：自动检查 PASS
+
+最终原生候选提交 `47e3b4a`（`Flush the text on screen, not a change-only buffer (#23)`，父提交 `6e7e395`，已进入集成分支）。
+
+| 项 | 内容 | 判定 |
+|---|---|---|
+| 自动回归（目标用例） | 目标回归由 2 项失败转为 **11 项通过**，`tsc` 通过（源码负责人执行并报告） | **PASS（自动）** |
+| 全量自动检查（`47e3b4a`） | 前端 `typecheck`、真实 Chromium 全量 **26 个文件、270 项通过**、`build` 通过；Go 树与 `6e7e395` 字节相同，沿用其 `go vet` + `go test -race` PASS；变更 Go 文件 `gofmt` 干净 | **PASS（自动）** |
+| 退出/保存的空缓冲成因与修复 | 面板此前用一份只记录 `onChange` 的占位缓冲参与 flush，重载或重新挂载后会交付假的 `''`。现在交付面板真正持有的文本：编辑器已挂载时取 `editor.getMarkdown()`，否则回落到宿主载入的核心文档状态；未挂载编辑器的面板不注册 flush；用户主动清空则按普通编辑送达 `""` | 已修复（代码，47e） |
+| 恢复后无活动编辑器：成因与修复 | 从磁盘打开的文档在恢复时得到新的 MyGo id，旧实现按会话里存的 id 设置活动标签，活动标签因此指向不存在的 id。现在把存储的 active tab 映射到该文档真实的新 id，再设为活动（6e） | 已修复（代码，6e） |
+| 文档契约 | `docs/workspace-contract.md` 的会话规则同步为：flush 交付屏幕上的文本（否则核心文档状态），恢复把存储的 active tab 映射到真实 id | 已同步（47e 文本） |
+
+### `47e3b4a` 原生复验（部分 PASS，实际观察）
+
+构建：`/private/tmp/mark-go-go-spec20-verify-21/build/darwin-arm64/Mark Go Go CoreSmoke21.app`（`dev.markgogo.editor.coresmoke21`，构建日志 `coresmoke21-build-47e3b4a.log`），fixtures 仅用 `native32/…`。这是**部分报告**，下列之外未执行。
+
+| 场景 | 实际观察 | 判定 |
+|---|---|---|
+| 无编辑 CmdQ 的字节与 mtime | alpha 172 B sha256 `1dc63b4b…9264`、beta 171 B `51e40b57…9f82`，退出后哈希与 mtime 均不变；进程退出，`session.json` 合理 | **PASS** |
+| 编辑与保存后的正常 CmdQ | alpha 181 B `c797c639…7306`、新的 `saveas-typed-47e.md` 50 B `f100a808…ec30`、beta 不变；退出后全部不变，无对话框 | **PASS** |
+| 输入归属与快速切换 | 在 alpha 输入 `R47-ALPHA` 后 119 ms 点击 beta（输入开始后 155 ms）：beta 无该文本，alpha 自动保存为 `NATIVE-A-INPUTxyR47-ALPHA`（181 B），beta 哈希与 mtime 不变 | **PASS** |
+| 首次输入的显式保存 | alpha 上 Cmd+S 写入同一 181 B 内容，编辑器内容保持，无空写入 | **PASS** |
+| 未命名 Save As 与迁移 | 见上表：精确 50 B、标签迁移、无占位、`Saved v1` | **PASS** |
+| 迁移后的撤销/重做 | 迁移文档内 Cmd+Z 移除输入（Edited）、⇧⌘Z 恢复；alpha/beta 字节不变，历史属于迁移后的文档 | **PASS** |
+| 原生 Rich text 特殊块与原地 Composer 字节保真（在 7b 构建观察；相关代码路径未被 6e/47e 改动） | `baseline-richtext.md`：frontmatter 表格、标题、NOTE alert、脚注与批注呈现；alert 的 `Edit` 打开 composer；输入 ` CANCEL-MARK` 后 Esc，文档与文件不变；输入 ` SAVED-MARK` 后 ⌘↩ 保存，仅该行变化（178→180 B，`e6141adb…6942`），其余字节一致；Cmd+Z + 自动保存恢复原始 169 B `5b377f55…75e6` | **PASS（7b 构建，路径未改动）** |
+| ComparisonTable 键盘排序与不写原文（7b 构建） | 表头 `Option/Size/Notes` 可聚焦，Space 排序 180/12/9（数值降序），再次 Space 恢复；`comparison.md` 哈希与 mtime 不变 | **PASS（7b 构建，路径未改动）** |
+| 部分来源与全部缺失的实时跟随（7b 构建） | mixed 视图：FRESH、STALE `Source changed`、MISSING `Source not found` 且 `Edit in source`/`Note` 禁用并提示“None of this part's sources are in the document now.”、无哈希不标记；面板 `2 components out of date`、`Regenerate changed (2)`；`state.sh all-missing` 实时变为 MISSING A/B 且均禁用，`state.sh partial` 恢复；原文哈希与 mtime 不变 | **PASS（7b 构建，路径未改动）** |
+| 窄窗右栏浮层（7b 构建） | 约 750 pt 窗口下 `Show right panel` 以浮层盖在文档上，含 Outline/GenUI 分段；GenUI 显示过期摘要；`Hide` 收起 | **PASS（7b 构建，路径未改动）；宽窗未验** |
+
+### 仍未运行 / 受策略阻塞的原生行
+
+| 范围 | 状态与缺口 |
+|---|---|
+| 原生 Edit 菜单点击 Undo/Redo | 键盘 `⌘Z` / `⇧⌘Z` 已在 47e 验证；菜单项点击与 `SetNativeEditState` 的菜单可用性未在原生界面点击验证 |
+| 关闭与取消（#21） | 脏关闭/保存的原生 Cancel 与对话框归属、未命名脏关闭、只读文档保存、重复目标唯一性、文件夹最后一个标签 vs 空临时窗口，均未运行 |
+| 恢复剩余项（#23） | 未保存未命名文本、缺失根、显式关闭不复活、Agent 不重放，未运行 |
+| 标签与导航（#21/#22） | 同名标签父目录区分、背景标签徽标、键盘树/过滤/分栏/面包屑、根文件计数换行、最近工作区持久化，未运行 |
+| 并发生成与设置（#24） | 真实原生 ACP fixture 的 A/B 并发生成、切换时 A 冻结、空闲面板 `settingsChanged`、Model / Locate agent 持久化、取消/失败保留旧视图、关闭/退出清理，未运行（fixtures 已备好） |
+| 特殊块剩余（#26） | 其它特殊块类型、只读控件、批注/Focus Composer 键盘，未运行 |
+| 大目录（#14/#29） | 首次视图就绪时间与监听竞态，未测量 |
+| 视觉与离线资源（#25） | 打包应用离线字体/图标证明、宽窗布局、reduced motion、与同一基准源的 Rich text 对比截图，未运行 |
+| 辅助技术（#31） | **BLOCKED**：VoiceOver 处于关闭（无 VO 进程），开启属于动作时需用户同意的系统设置变更；键盘排序已 PASS，浅层 AX 只看到表头文本与聚焦的 `button Size`，不据此声称 VoiceOver 通过 |
+| reduced motion（#25） | **BLOCKED**：`ReduceMotionEnabled = 0`，开启同样需要动作时确认；不作 PASS |
+
+### 设置审计（2026-11-08 复核）
+
+| 控件 | 状态 | 依据 |
+|---|---|---|
+| Model（右栏底部 `ModelMenu`） | 已实现；只提交 `{ model }` | `settings.go` 的 `SettingsPatch`；`GenUIView.tsx` 的 `selectModel` |
+| Locate agent…（`agent-not-found` 失败内） | 已实现；只提交 `{ agentCommand }`，空值恢复默认 | 同一补丁类型；`GenerationFailure` 的定位输入 |
+| 生成要求 Focus（右栏，原地 Composer） | 已实现；随视图文件保存并在重新生成时沿用 | `view-format.md` 的 `request` |
+| 视图模式（Rich text / Markdown / GenUI） | 已实现；按 `documentId` 随会话保存 | `SetViewMode`、`session.json` |
+| ACP 模型列表缓存 | 已实现；只由 `session/new` 握手写入 | `settings.go` 的 `setModels` |
+| 字体、字号、主题、外观切换、系统提示词 | **N/A（按设计不提供）**，不是未实现控件 | ADR 0006：本轮固定浅色与离线字体；界面无此类入口 |
+| 原生保存表 / Edit 菜单归属 / VoiceOver | 保存表（首次输入 Cmd+S、typed untitled Save As）已在 47e 原生观察；Edit 菜单点击与 VoiceOver 仍未验证，见上表 | 上文的原生证据与未运行行 |
+
 ## 未验证 / 已知问题
 
-- Edit 菜单的 Undo/Redo 显示为禁用（WKWebView 自身 undo manager 为空，历史在 ProseMirror）。键盘 ⌘Z 不受影响；用鼠标点菜单撤销不可用。需要时让菜单经 IPC 调用编辑器命令。
+以下条目记录 2026-11-07 及更早的行为；被本轮规格取代的条目已就地标注，未删除历史。
+
+- Edit 菜单的 Undo/Redo 显示为禁用（WKWebView 自身 undo manager 为空，历史在 ProseMirror）。键盘 ⌘Z 不受影响；用鼠标点菜单撤销不可用。需要时让菜单经 IPC 调用编辑器命令。**已被 #30 取代**：原生 Edit 菜单现在作用于点击时捕获文档的真实编辑器历史，`SetNativeEditState` 报告可用性；原生复验见上文 BLOCKED 行。
 - 自动化工具注入中文只落下首字，属注入方式限制；真实输入法已人工确认正常。
 - 外部重载会重建编辑器：撤销历史和光标重置（已接受）。
 - 编辑过的块按 Milkdown 规则重写（setext→ATX、表格补齐、块内 CRLF→LF）；新块前面的间隔是 `\n\n`，它后面的块保留自己的间隔（#13）。
 - GenUI 视图由 `agy acp` 生成（#7），失败分类与清理见 #8，局部重新生成与撤回见 #12。A2UI 校验不过的视图显示问题列表（`role="alert"`）和 `Regenerate all`；有备份时也可以撤回。
 - 撤回只有一份备份；视图里已经是局部更新的组件，下一次局部更新后 `a2ui` 继续变长（不压缩）。
 - Agent 隔离只是尽力而为（ADR 0003）：agy 按用户自己的 `~/.gemini/antigravity-cli/settings.json` 运行，可能不请求权限就写目录外文件或运行 shell。宿主看到越界工具调用就停止运行、不写视图，但无法阻止已经发生的那一步。
-- 只有 GenUI 有深色令牌；应用其余部分（头部、大纲、编辑器）还没有深色主题，`:root` 固定为 `color-scheme: light`。
-- ComparisonTable 的列头按钮在 macOS 辅助功能树里不出现（表格行可见），自动化只能用坐标点击。
-- 多来源组件只要有一个来源 `missing` 就禁用 `Edit in source`，即使其他来源还在。
-- 打开 `~/Downloads/SuperCollider 深度分析报告.md`（同目录 516 项，含子目录约 1.6 万个文件）首次切到 GenUI 时，中央区域空白一段时间后才显示视图；浏览器测试中同一文档与视图文件立即渲染。推测（未验证）是宿主在 `WatchFiles` 建好目录监听后才发送第一份视图快照（`viewfile.go` 的 `WatchView` 先 `startViewWatch` 再 `emitView`）。另外 GenUI 在 `loading` 状态什么都不显示，没有“加载中”提示。待查（#14）。
+- ~~只有 GenUI 有深色令牌；应用其余部分（头部、大纲、编辑器）还没有深色主题，`:root` 固定为 `color-scheme: light`。~~ **已被 ADR 0006 取代**：本轮统一为仅浅色界面，没有外观切换；GenUI 与外壳共用浅色 Token。样式表残留的 `.dark` 块不被任何界面启用，也不受支持。
+- ~~ComparisonTable 的列头按钮在 macOS 辅助功能树里不出现（表格行可见），自动化只能用坐标点击。~~ **已由 #31 取代**：列头是真正的按钮，支持键盘操作并暴露 `aria-sort`；Chromium 测试覆盖键盘排序。真实 WebKit/VoiceOver 行为仍待原生复验（见上表 BLOCKED 行）。
+- ~~多来源组件只要有一个来源 `missing` 就禁用 `Edit in source`，即使其他来源还在。~~ **已由 #28 取代**：只要还有来源存在，`Edit in source` 与 `Note` 就用第一个仍存在的来源；只有全部失效才禁用。
+- 打开大目录工作区（同目录 516 项，含子目录约 1.6 万个文件）首次切到 GenUI 时，旧版本中央区域空白一段时间后才显示视图。**已由 #29 修正代码路径**：`WatchView` 先送出第一份快照再建目录监听，随后追赶快照，GenUI 也有明确的加载状态；真实原生首次视图就绪时间与监听竞态仍需在准备好的大目录上测量（见上表 `#14/#29` 行），不得沿用旧推测作为结论。
 - 大纲在 WYSIWYG 模式按顶层块粒度高亮章节：光标在同一顶级块内移动不会改变当前章节。
 - `markdownUpdated` 每次编辑都会在内部整篇序列化（仅耗时，不影响保存内容）。
 - 批注加到父节末尾时，如果父节以子节结束，它也属于这个子节，所以两个组件旁都会显示。

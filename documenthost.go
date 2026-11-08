@@ -97,10 +97,16 @@ type generationSlot struct {
 
 func newDocumentHost() *documentHost {
 	dir, _ := mygo.App.Path(mygo.PathUserData)
+	settings := &settingsStore{dir: dir}
+	// The settings file is the app's one store: tell every window when it
+	// changes, so a panel in another document does not show an old value.
+	settings.onChange = func(s Settings) {
+		_ = settingsChanged.Broadcast(s)
+	}
 	return &documentHost{
 		byWindow: make(map[*mygo.Window]*workspace),
 		byID:     make(map[string]*docSession),
-		settings: &settingsStore{dir: dir},
+		settings: settings,
 		// Recovery opens documents before restoreAfterStart reads the
 		// session. Their windows must not be written over session.json
 		// before the stored layout is planned from it.

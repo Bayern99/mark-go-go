@@ -144,7 +144,7 @@
    - **理由**：避免把“读视图”和“管生成”混在一起，消除中央阅读区上方常驻表单对阅读体验的干扰，并为后续围绕当前文档工作的 Agent 预留自然栏位。
 
 2. **应用状态色与原文内容语义色分开定义**
-   - **要求**：应用状态中，`--warn`（`#9a4d12` / 暗色参考 `#f0a560`）用于 `Source changed`（原文已改）；`--danger`（`#a83a3a` / 暗色参考 `#ef8a80`）用于文件外部冲突、文件被删、生成失败或删除动作；`--accent`（`#2f6f62` / 暗色参考 `#7cc4b2`）用于主操作高亮、活动指示与菜单当前选中勾号。原文内 Warning／Caution 等采用独立内容语义 Token，并配类型文字与图标（见 `docs/adr/0006-preserved-blocks-and-semantic-colors.md`；本轮产品范围仅浅色）。
+   - **要求**：应用状态中，`--warn`（`#9a4d12`）用于 `Source changed`（原文已改）；`--danger`（`#a83a3a`）用于文件外部冲突、文件被删、生成失败或删除动作；`--accent`（`#2f6f62`）用于主操作高亮、活动指示与菜单当前选中勾号。原文内 Warning／Caution 等采用独立内容语义 Token，并配类型文字与图标（见 `docs/adr/0006-preserved-blocks-and-semantic-colors.md`；本轮产品范围仅浅色，没有外观切换）。
    - **理由**：分别表达工作台状态与原文内容含义，避免内容提示被误读成应用错误，并保证颜色之外仍有文字与图标依据。
 
 3. **批注、生成要求与特殊块原地编辑统一使用原地 Composer（禁止模态弹窗）**
@@ -182,8 +182,9 @@
 
 ### 1. 基础值与语义 Token（已实现于 `web/src/styles.css` 与 `web/src/plugins/genui/genui.css`）
 
-- **Portrait 冷灰工作台 + 暖白纸张语义 Token（含 Dark 模式与 `--mgo-*` / `--genui-*` 映射）**：
-  - 字体：`--font-sans`（IBM Plex Sans / SC）、`--font-display`（MGG Condensed / Barlow Semi Condensed）、`--font-mono`（IBM Plex Mono）。
+- **Portrait 冷灰工作台 + 暖白纸张语义 Token（仅浅色；`--mgo-*` / `--genui-*` 映射到同一组 Token）**：
+  - 字体：`--font-sans`（IBM Plex Sans / SC）、`--font-display`（MGG Condensed / Barlow Semi Condensed）、`--font-mono`（IBM Plex Mono）；均为仓库内 `.woff2`，经 `web/src/assets/fonts.css` 离线加载。
+  - 浅色是唯一受支持的外观：`:root` 声明 `color-scheme: light`，没有外观切换入口。样式表里残留的 `.dark` Token 块不被任何界面启用，不要把它当作文档化能力。
   - 表面与墨色：`--chrome`、`--paper`、`--raised`、`--code`、`--ink`、`--ink-2`、`--ink-3`、`--ink-4`、`--accent`、`--warn`、`--danger`、`--fill`、`--fill-hover`、`--fill-strong`、`--line`、`--line-strong`、`--focus`。
   - 触觉阴影：`--raised-shadow`、`--row-shadow`、`--sunken-shadow`、`--sheet-shadow`、`--pop-shadow`。
   - 网格与尺寸：左右栏内边距 `8px`、图文对齐线 `16px`、树/大纲缩进 `16px/级`、顶栏 `46px`、次级栏 `44px`、窄窗右栏收起断点 `1180px`。
@@ -191,25 +192,30 @@
 ### 2. 组件与区块现状（已落地好例，可直接复用）
 
 - **三栏布局与视图宿主机制**：
+  - `web/src/App.tsx`（`App` / `WorkspaceApp` / `DocumentPane` / `Welcome`）：文档标签栏（`doc-tabs`，同名标签用父目录区分，徽标含未保存/生成中/冲突/已删除/只读）、每份文档一个 `DocumentPane`（非活动时 `hidden` 保持挂载）、Welcome 与最近工作区；
   - `web/src/core/types.ts`（`ViewLocation = 'left' | 'center' | 'right'`、`ViewStatusDot` / `ViewStatusSource`）、`web/src/core/ViewRegistry.ts`、`web/src/components/ViewHost.tsx`；
-  - `web/src/components/SidePane.tsx`（左栏工作区容器）与 `web/src/components/RightPane.tsx`（右栏当前文档面板容器，顶部 `Outline` / `GenUI` 分段切换、状态圆点 `.rdot`、`< 1180px` 自动收起为浮层并配遮罩与顶栏开关按钮）；
-  - `web/src/plugins/outline/index.tsx`（`outline.panel` 注册于 `location: 'right'`）。
+  - `web/src/components/SidePane.tsx`（左栏工作区容器：文件树、80ms 防抖过滤、可拖拽/键盘调宽的分栏、`PathCrumbs` 面包屑）与 `web/src/components/RightPane.tsx`（右栏当前文档面板容器，顶部 `Outline` / `GenUI` 分段切换、状态圆点 `.rdot`、`< 1180px` 自动收起为浮层并配遮罩与顶栏开关按钮）；
+  - `web/src/workspace/nav.ts`（浏览器导航索引与面包屑）、`web/src/plugins/outline/index.tsx`（`outline.panel` 注册于 `location: 'right'`）。
 - **A2UI 1.0 基础与高级只读组件目录**：
   - `web/src/plugins/genui/a2ui.tsx`（`Column`/`Row`/`Tabs`/`Card`/`Text`）与 `web/src/plugins/genui/components.tsx`（`KeyPoints`/`MetricGrid`/`ComparisonTable`/`Timeline`/`Checklist`）。
 - **中央只读 GenUI 视图与右栏 GenUI 管理面板**：
-  - `web/src/plugins/genui/index.ts` 与 `web/src/plugins/genui/GenUIView.tsx`：插件按需注册中央视图 `genui`（`location: 'center'`，纯只读 A2UI 组件卡片，无生成表单或横幅；空状态/错误时提供按钮经 `rightPane.show('genui.panel')` 打开右栏）与右栏面板 `genui.panel`（`location: 'right'`，含顶部五态状态卡与唯一主按钮、`.changed-list` 点击联动中央 `[data-component-id]` 卡片滚动定位与高亮、中部 `Focus` 生成要求展示与编辑、底部固定区 `Agent: Antigravity (agy)` / `ModelMenu` / `Generated <generatedAt>` / `Undo`）。
+  - `web/src/plugins/genui/index.tsx` 与 `web/src/plugins/genui/GenUIView.tsx`：插件按需注册中央视图 `genui`（`location: 'center'`，纯只读 A2UI 组件卡片，无生成表单或横幅；空状态/错误时提供按钮经 `rightPane.show('genui.panel')` 打开右栏；视图文件尚未可读时显示加载状态）与右栏面板 `genui.panel`（`location: 'right'`，含顶部五态状态卡与唯一主按钮、`.changed-list` 点击联动中央 `[data-component-id]` 卡片滚动定位与高亮、中部 `Focus` 生成要求展示与编辑、底部固定区 `Agent: Antigravity (agy)` / `ModelMenu` / `Generated <generatedAt>` / `Undo`）。
+  - `web/src/plugins/genui/reading.ts`（`ReadingStore`）：每文档的 KeyPoints 折叠、ComparisonTable 排序与横向滚动、Tabs 选中页，跨挂载保留，从不写文档。
 - **来源引用底座区块**：
-  - `web/src/plugins/genui/SourceFrame.tsx` 与 `web/src/plugins/genui/sources.ts`（`SourceStore` 状态计算，卡片底部 `From`、`Source changed` / `Source not found`、`Edit in source`、`Note`）。
+  - `web/src/plugins/genui/SourceFrame.tsx` 与 `web/src/plugins/genui/sources.ts`（`SourceStore` 状态计算，卡片底部 `From`、`Source changed` / `Source not found`、`Edit in source`、`Note`）。部分来源缺失时仍用第一个存活来源提供 `Edit in source` 与 `Note`，全部缺失才禁用。
 - **统一原地白纸输入块（`.composer`）**：
   - `web/src/editor/noteDialog.ts` 与 `web/src/editor/createEditor.ts`：Rich text 添加/编辑批注在目标块下方原地展开 `<div class="composer mgo-note-composer" role="region" aria-label="Note composer">`（不再使用 `<dialog>`）；
   - `web/src/plugins/genui/SourceFrame.tsx`：GenUI 卡片点击 `Note` 在卡片底座下方原地展开 `.composer.mgo-note-composer`；
-  - `web/src/plugins/genui/GenUIView.tsx`：右栏点击 `Edit` 原地展开 `Focus` `.composer`；
-  - 三处均采用单张白纸样式（`background: var(--paper)`、`border-radius: 8px`、`box-shadow: var(--sheet-shadow)`、聚焦环）、随内容自动增高的 `<textarea>`、`⌘↩` / `Ctrl+↩` 或 `Save` 保存、`Escape` 或 `Cancel` 取消。
+  - `web/src/plugins/genui/GenUIView.tsx`：右栏点击 `Edit` 原地展开 `Focus` `.composer`；`agent-not-found` 失败里的 `Locate agent…` 原地展开 `Agent command` `.composer`；
+  - `web/src/editor/blocks/lockedView.ts` + `web/src/editor/createEditor.ts`：特殊块（frontmatter / alert / footnote / meta code fence / math）的 `Edit` 在块原地展开 `.composer.mgo-block-composer`（`<textarea aria-label="Markdown">`，保存只改写该块原文并保留行尾）；`Kept as written` 块同样可编辑，但 HTML 不执行；
+  - 各处均采用单张白纸样式（`background: var(--paper)`、`border-radius: 8px`、`box-shadow: var(--sheet-shadow)`、聚焦环）、随内容自动增高的 `<textarea>`、`⌘↩` / `Ctrl+↩` 或 `Save` 保存、`Escape` 或 `Cancel` 取消。
 - **ModelMenu 向上弹出菜单组件**：
   - `web/src/plugins/genui/ModelMenu.tsx`：26px 凸起触发钮（`.sel-btn`）+ 向上弹出的白纸菜单（`.mmenu.pop`），展示 `Agent’s choice` 与缓存的 `models` 列表及当前选中勾号（`.chk`），支持点击外部或按 `Escape`（`document` 级监听）关闭，生成中禁用。
 - **生成状态机**：
   - `web/src/plugins/genui/generation.ts`（`GenerationController` 维护生成进度、取消、局部重生成与单步 `Undo`）。
 
-### 3. 数据来源与接口现状（Go ↔ Web `HostAdapter`）
+### 3. 数据来源与接口现状（Go ↔ Web `WorkspaceHost`）
 
-- Go 端 `settings.go` 与 `generate.go` 在 `Settings`（及前端 `web/src/host/types.ts` 的 `GenerationSettings`）中包含 `models?: string[]`（默认 `['gemini-3.8-flash', 'gemini-4-argon', 'claude-opus-5-5']`），每次 ACP `session/new` 握手成功后自动提取 `configOptions` 中的模型列表并持久化到 `settings.json`，随 `getSettings` 一并返回给前端 `ModelMenu`。
+- `main.go` 绑定 `WorkspaceHost`；TS 端为 `web/src/host/generated/mygo.ts`（`go tool mygo generate` 生成）。`WorkspaceAdapter` 提供文档标签、导航与每文档 `HostAdapter`（`web/src/host/types.ts`）；`documentId` 是文档身份，异步调用与事件都不从活动标签重定向。完整清单见 `docs/interfaces.md` 与 `docs/workspace-contract.md`。
+- Go 端 `settings.go` 的 `Settings`（前端 `GenerationSettings`）包含 `model`、`agentCommand`、`models?: string[]`（默认 `['gemini-3.8-flash', 'gemini-4-argon', 'claude-opus-5-5']`）。`SetSettings(SettingsPatch)` 是原子意图补丁，只写出现的字段并返回提交值；成功写入向每个窗口广播 `settingsChanged`（前端 `onSettings`）。每次 ACP `session/new` 握手成功后提取 `configOptions` 的模型列表并持久化到 `settings.json`，该列表不能被补丁写入。
+- 原生菜单走 `nativeCommand`（带点击时捕获的 `documentId`）；`web/src/editor/nativeEdit.ts` 是 Edit > Undo/Redo 的每文档目标。UI 任务不得另起一套保存或菜单通路。

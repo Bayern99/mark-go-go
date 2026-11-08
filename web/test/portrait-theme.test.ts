@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import '../src/styles.css'
+import { describe, expect, it, vi } from 'vitest'
 import { mountEditor } from './helpers/editor'
 
 const DOCUMENT = `# Heading
@@ -18,7 +19,7 @@ describe('Portrait notes', () => {
       if (!note || !actions || !edit) throw new Error('note actions missing')
       expect(getComputedStyle(actions).opacity).toBe('0')
       edit.focus()
-      expect(getComputedStyle(actions).opacity).toBe('1')
+      await vi.waitFor(() => expect(getComputedStyle(actions).opacity).toBe('1'))
     } finally {
       await editor.cleanup()
     }

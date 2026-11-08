@@ -382,28 +382,7 @@ describe('GenUI content components', () => {
       app = undefined
     }
   })
-
-  it('follows the light and dark colour scheme', async () => {
-    const mounted = await showView(EVERY)
-    const block = mounted.container.querySelector<HTMLElement>('.genui-metrics')
-    if (!block) throw new Error('no metric grid')
-    const colours = () => [getComputedStyle(block).backgroundColor, getComputedStyle(block).color]
-
-    document.documentElement.style.colorScheme = 'light'
-    const light = colours()
-    document.documentElement.style.colorScheme = 'dark'
-    const dark = colours()
-    expect(dark[0]).not.toBe(light[0])
-    expect(dark[1]).not.toBe(light[1])
-    expect(luminance(dark[0] ?? '')).toBeLessThan(luminance(light[0] ?? ''))
-    expect(luminance(dark[1] ?? '')).toBeGreaterThan(luminance(dark[0] ?? ''))
-  })
 })
-
-function luminance(colour: string): number {
-  const [r = 0, g = 0, b = 0] = (colour.match(/\d+(\.\d+)?/g) ?? []).map(Number)
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b
-}
 
 describe('catalog definition for agents', () => {
   it('lists every component with its schema and nesting rules', () => {

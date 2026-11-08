@@ -155,7 +155,6 @@ export function DocumentPane({
   const [, refreshPlugins] = useReducer((value: number) => value + 1, 0)
   const restored = useRef(false)
   const reportedMode = useRef(false)
-  const latestMarkdown = useRef('')
   const activeRef = useRef(active)
   const revealBinder = useRef(onReadyReveal)
   activeRef.current = active
@@ -381,7 +380,6 @@ export function DocumentPane({
       cleanups.push(
         editor.onChange((markdown) => {
           services.documents.setText(markdown)
-          latestMarkdown.current = markdown
           if (debounceTimer !== undefined) window.clearTimeout(debounceTimer)
           debounceTimer = window.setTimeout(() => {
             debounceTimer = undefined
@@ -389,19 +387,24 @@ export function DocumentPane({
           }, EDIT_DEBOUNCE_MS)
         }),
       )
+      // What this pane really holds: the text on screen now, else the
+      // core document state the host loaded. Never a buffer that only
+      // changes were written to, so a pane that was remounted or has not
+      // mounted an editor cannot deliver an invented empty buffer.
+      const currentText = () => editorRef.current?.getMarkdown() ?? services.documents.snapshot().text
       cleanups.push({
         dispose: registerDocumentFlush(host.id, async () => {
           if (debounceTimer !== undefined) {
             window.clearTimeout(debounceTimer)
             debounceTimer = undefined
           }
-          const text = latestMarkdown.current
+          const text = currentText()
           await host.flush(text)
           return text
         }),
       })
       if (host.bindFlush) {
-        cleanups.push(host.bindFlush(() => latestMarkdown.current))
+        cleanups.push(host.bindFlush(currentText))
       }
 
       cleanups.push(

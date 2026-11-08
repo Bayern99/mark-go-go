@@ -198,7 +198,13 @@ func planSessionRestore(file sessionFileData, live restoreLive) restorePlan {
 		live.OpenByPath = map[string]restoreDoc{}
 	}
 	if live.RootOK == nil {
-		live.RootOK = func(string) bool { return true }
+		live.RootOK = func(root string) bool {
+			if root == "" {
+				return true
+			}
+			info, err := os.Stat(root)
+			return err == nil && info.IsDir()
+		}
 	}
 	if live.FileOK == nil {
 		live.FileOK = func(p string) bool {

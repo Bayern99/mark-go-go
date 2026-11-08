@@ -1,6 +1,6 @@
 # Workspace and document identity contract (#21)
 
-Slice-specific. Downstream tickets (#22, #24, #30) consume this as the public Go/TS seam. Shared `docs/interfaces.md` is updated by #32 after smoke.
+Slice-specific. Downstream tickets (#22, #24, #30) consume this as the public Go/TS seam. The consolidated, reader-facing reference is now `docs/interfaces.md` (#32); this file stays the normative seam contract for identities, routing and lifecycle, and the two must not diverge.
 
 ## Identities (distinct)
 
@@ -80,8 +80,8 @@ SetNativeEditState(ctx, documentId string, canUndo, canRedo bool) error  // edit
 SetViewMode(ctx, documentId, mode string) error
 PrepareQuit(ctx) error   // ack one window's flushQuit; persist after every window acks
 Generate(ctx, documentId string, req GenerateRequest, progress *Channel[GenerateProgress]) error
-GetSettings() (Settings, error)
-SetSettings(s Settings) error
+GetSettings() (Settings, error)                  // process-wide store, not per document
+SetSettings(p SettingsPatch) (Settings, error)   // writes only the patch's fields; returns the committed value
 
 // Navigation (#22). Opening a workspace does not wait for a full directory scan.
 NavSnapshot(ctx) (NavSnapshot, error)
@@ -110,6 +110,20 @@ navSearchReady: NavSearchResult       // incomplete is true until the index is r
 ```
 
 `workspaceChanged` is the source of truth for tab order, active tab, root, and per-tab badges. Background `docState` updates the matching tab without activating it.
+
+`settingsChanged: Settings` is broadcast to every window, not to one workspace: see Settings below.
+
+## Settings
+
+The generation settings — model, agent command, and the models the agent offered on
+its last ACP handshake — are one process-wide store (`settings.json` in
+`PathUserData`), not a document's or a window's. `SetSettings` takes an intent
+patch: only the fields that are present are written, an empty model means the
+agent's own choice, an empty command restores the default, and the cached model
+list is only ever written by the handshake. A successful write returns the
+committed `Settings` and broadcasts `settingsChanged` to every window, so an idle
+panel in another document shows the current global value without a remount. A
+run captures the store once when it starts; later changes do not alter it.
 
 ## Routing (Open / Finder / menu)
 
@@ -159,6 +173,7 @@ Dialogs use the workspace window as parent. Generation in progress for a documen
 - Only workspaces the user did not close are stored; an empty untitled window (Welcome) is not. Closing a tab or a workspace drops it, and cancel keeps the scene as it was.
 - Unsaved text stays in MyGo's recovery copies, keyed by `documentId`; the session only names the tabs, their order, the active one and the view mode. Restore reuses a recovery document instead of opening its path again, and never starts a generation the user cancelled.
 - A missing root or file becomes `WorkspaceSnapshot.restoreError` / `DocumentInfo.restoreError` and the other workspaces still restore. A file opened by this launch takes focus after the layout is placed.
+- `flushQuit` / Save / Save As / Close ask each mounted pane for what it really holds: the text on screen (`editor.getMarkdown()`), else the core document state the host loaded. A pane that has not mounted an editor registers nothing, so a flush never turns an untouched, reloaded or remounted document into an empty buffer; a document the user did clear is delivered as `""` like any other edit. A document opened from disk gets a new MyGo id at restore, so the stored active tab is mapped to the id its document really has now.
 
 ## MyGo document groups (controlled patch)
 

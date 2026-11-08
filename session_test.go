@@ -130,6 +130,31 @@ func TestSessionFileLayoutKeys(t *testing.T) {
 	}
 }
 
+func TestActiveAfterRestoreUsesTheRealDocumentID(t *testing.T) {
+	// A tab opened from disk gets a new MyGo id; the session's stored id
+	// must point at it instead of dangling.
+	resolved := []resolvedTab{
+		{planned: "saved-alpha", id: "native-alpha"},
+		{planned: "saved-beta", id: "native-beta"},
+	}
+	if got := activeAfterRestore(resolved, "saved-beta"); got != "native-beta" {
+		t.Fatalf("active = %q, want the real id of the stored active tab", got)
+	}
+	if got := activeAfterRestore(resolved, "saved-alpha"); got != "native-alpha" {
+		t.Fatalf("active = %q", got)
+	}
+	// The stored active tab did not come back: the first tab that did.
+	if got := activeAfterRestore(resolved, "saved-gone"); got != "native-alpha" {
+		t.Fatalf("active = %q, want the first restored tab", got)
+	}
+	if got := activeAfterRestore(resolved, ""); got != "native-alpha" {
+		t.Fatalf("active = %q", got)
+	}
+	if got := activeAfterRestore(nil, "saved-alpha"); got != "" {
+		t.Fatalf("active = %q, want empty", got)
+	}
+}
+
 func TestOrderedTabsKeepsPlannedOrderThenLive(t *testing.T) {
 	got := orderedTabs([]string{"b", "a", "b"}, []string{"a", "c", ""})
 	want := []string{"b", "a", "c"}

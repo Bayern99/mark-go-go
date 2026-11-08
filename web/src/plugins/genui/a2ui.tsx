@@ -175,16 +175,28 @@ export function ViewSurface({
     const el = root.current
     if (!el) return
     const tabsOf = () => [...el.querySelectorAll<HTMLElement & { activeIndex: number }>('a2ui-tabs')]
+    let interacted = false
+    // A2UI mounts its tab elements after the first commit, so wait for them.
+    // Restore once, after that first render: applying the saved index on every
+    // later mutation reverts the click still being dispatched, and applying it
+    // during the first commit can render only part of the opened tab.
     const restore = () => {
-      for (const [index, tabs] of tabsOf().entries()) {
-        const saved = reading.tab(`tabs:${index}`)
-        if (saved !== undefined) tabs.activeIndex = saved
-      }
+      const tabs = tabsOf()
+      if (tabs.length === 0) return
+      observer.disconnect()
+      requestAnimationFrame(() => {
+        if (interacted || !el.isConnected) return
+        for (const [index, tabsElement] of tabsOf().entries()) {
+          const saved = reading.tab(`tabs:${index}`)
+          if (saved !== undefined) tabsElement.activeIndex = saved
+        }
+      })
     }
-    restore()
     const observer = new MutationObserver(restore)
     observer.observe(el, { childList: true, subtree: true })
+    restore()
     const remember = () => {
+      interacted = true
       for (const [index, tabs] of tabsOf().entries()) reading.setTab(`tabs:${index}`, tabs.activeIndex)
     }
     el.addEventListener('click', remember)

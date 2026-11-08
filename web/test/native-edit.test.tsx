@@ -79,8 +79,8 @@ describe('MarkdownEditor history', () => {
 
 describe('native Edit command routing', () => {
   it('undoes the captured document after switching tabs, leaving the other document unchanged', async () => {
-    const a = createBrowserHost('# Alpha line\n', 'alpha.md')
-    const b = createBrowserHost('# Beta line\n', 'beta.md')
+    const a = createBrowserHost('Alpha line\n', 'alpha.md')
+    const b = createBrowserHost('Beta line\n', 'beta.md')
     const workspace = createBrowserWorkspace([a, b])
     const container = document.createElement('div')
     container.style.height = '100%'
@@ -125,7 +125,7 @@ describe('native Edit command routing', () => {
 
       expect(applyNativeEdit(a.id, 'undo')).toBe(true)
       await vi.waitFor(async () => {
-        expect((await a.load()).text).toBe('# Alpha line\n')
+        expect((await a.load()).text).toBe('Alpha line\n')
       }, { timeout: 3000 })
       expect((await b.load()).text).toBe(textBBefore)
       await vi.waitFor(() => expect(a.getState().edited).toBe(false), { timeout: 3000 })

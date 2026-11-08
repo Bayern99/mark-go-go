@@ -19,8 +19,18 @@ type mdMeta struct {
 	Headings []NavHeading
 }
 
+// utf16Count is the number of UTF-16 code units in s, the unit editor
+// offsets use. It counts like sliceUTF16 does, without allocating.
 func utf16Count(s string) int {
-	return len(utf16.Encode([]rune(s)))
+	units := 0
+	for _, r := range s {
+		l := utf16.RuneLen(r)
+		if l < 0 {
+			l = 1
+		}
+		units += l
+	}
+	return units
 }
 
 func isFenceOpen(line string) (ok bool, mark byte) {

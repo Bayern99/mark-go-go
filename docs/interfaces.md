@@ -256,7 +256,8 @@ interface PluginContext {
 - Edit > Undo / Redo（`nativeCommand` 的 `undo` / `redo`）按点击时的活动 `documentId` 应用到**该文档编辑器的历史**，与 `UndoView`（视图文件撤回）无关。`nativeEdit.ts` 维护每文档的目标（ProseMirror 或 CodeMirror），聚焦的原地 Composer `textarea` 保留原生字段撤销；只读 GenUI / ComparisonTable 的焦点不改写文档。`SetNativeEditState(documentId, canUndo, canRedo)` 只为聚焦窗口的活动文档更新菜单可用性。
 - 会话文件：`session.json` 在 `PathUserData`，记录未主动关闭的工作区（`id`、`root`、按顺序的 `tabs[{id, path, viewMode}]`、`activeId`），不复制未保存字节。布局变化（打开、移动标签、激活、关闭、切换视图模式）时写入，退出确认后再写一次；恢复期间跳过写入，避免用半恢复的窗口覆盖已存布局。空的无标题窗口（Welcome）不存；关闭的标签或工作区不复活。
 - `flushQuit` / Save / Save As / Close 的文本来源是**该面板真正持有的文本**：编辑器已挂载时取屏幕上的当前 Markdown（`editor.getMarkdown()`，即当前 compose 文本），否则回落到宿主载入的核心文档状态。未挂载编辑器的面板不注册 flush，所以退出或保存不会把未编辑、外部重载或重新挂载的文档变成空缓冲；用户确实清空文档时，按普通编辑送达 `""`。
-- 恢复时从磁盘打开的文档会得到新的 MyGo `documentId`，因此会话里存的 active tab 要映射到该文档**现在真实**的 id 再设为活动标签；绝不使用没有任何打开文档的 id。恢复后当前标签应立即有活动编辑器与选中状态。
+- 恢复按**每条 planned tab** 解析，不按窗口整体解析。会话同时存 `id` 与 `path`，用途不同：先按存储的 `id` 匹配 MyGo 的恢复副本（`OpenByID`，恢复副本承载未保存字节）；否则按规范化路径匹配本次启动已打开的文档（`OpenByPath`）；否则在路径存在且未被更早的标签认领时从该路径打开（从磁盘打开的文档会得到新的 MyGo id）。找不到路径、也没有对应恢复副本时，在该标签上给出 `restoreError`。
+- 活动标签：存储的 `activeId` 先对应到那条 planned tab；恢复时每条 planned tab 记下它解析后真实持有的 id（`resolvedTab{planned, id}`），活动标签取该 planned tab 的真实 id，没有匹配则取第一条恢复成功的标签；绝不使用没有任何打开文档的 id。恢复后当前标签应立即有活动编辑器与选中状态。
 - 恢复：`restoreAfterStart` 在 MyGo 打开恢复副本与启动参数文件之后、创建未命名窗口之前执行；复用恢复副本而不是再次按路径打开，从不重放 Agent 任务。缺失的根或文件变成 `WorkspaceSnapshot.restoreError` / `DocumentInfo.restoreError`，其余工作区照常恢复；本次启动显式打开的文件在布局放好后获得焦点。
 
 ## GenUI 重新生成与撤回（#12）

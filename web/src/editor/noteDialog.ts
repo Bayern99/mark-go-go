@@ -7,27 +7,41 @@ export interface ComposerMount {
   mount?: (composer: HTMLElement) => (() => void) | void
 }
 
-export type NoteComposerOptions = ComposerMount
+/**
+ * The owner of at most one open composer. Each editor has its own scope, so a
+ * background document's reload, read-only switch or teardown can close its own
+ * composer without touching another document's draft.
+ */
+export class ComposerScope {
+  private cancelActive: (() => void) | null = null
+
+  /** Close the one composer this owner has open, if any. */
+  cancel(): void {
+    this.cancelActive?.()
+  }
+
+  /** @internal Claims or releases this owner's open-composer slot. */
+  track(cancel: (() => void) | null): void {
+    this.cancelActive = cancel
+  }
+}
+
+export interface NoteComposerOptions extends ComposerMount {
+  /** The editor this composer belongs to; only that editor may cancel it. */
+  scope: ComposerScope
+}
 
 export interface MarkdownComposerOptions extends ComposerMount {
   /** Accessible name of the region. */
   label?: string
+  /** The editor this composer belongs to; only that editor may cancel it. */
+  scope: ComposerScope
 }
-
-let activeCancel: (() => void) | null = null
-
-export function cancelNoteComposer(): void {
-  activeCancel?.()
-}
-
-export const cancelComposer = cancelNoteComposer
 
 export function autoGrowTextarea(input: HTMLTextAreaElement): void {
   input.style.height = 'auto'
   input.style.height = `${Math.max(38, input.scrollHeight)}px`
 }
-
-export const autoGrowNoteTextarea = autoGrowTextarea
 
 interface OpenComposerConfig extends ComposerMount {
   initial: string
@@ -38,10 +52,11 @@ interface OpenComposerConfig extends ComposerMount {
   allowEmpty: boolean
   trim: boolean
   restoreNewlines?: boolean
+  scope: ComposerScope
 }
 
 function openComposer(config: OpenComposerConfig): Promise<string | null> {
-  cancelNoteComposer()
+  config.scope.cancel()
 
   return new Promise((resolve) => {
     const composer = document.createElement('div')
@@ -84,14 +99,14 @@ function openComposer(config: OpenComposerConfig): Promise<string | null> {
     const finish = (result: string | null) => {
       if (closed) return
       closed = true
-      if (activeCancel === cancelCurrent) activeCancel = null
+      config.scope.track(null)
       if (unmount) unmount()
       composer.remove()
       resolve(result)
     }
 
     const cancelCurrent = () => finish(null)
-    activeCancel = cancelCurrent
+    config.scope.track(cancelCurrent)
 
     const valueOf = () => {
       const raw = config.trim ? input.value.trim() : input.value
@@ -154,14 +169,9 @@ function openComposer(config: OpenComposerConfig): Promise<string | null> {
  * Resolves to the trimmed note text on save (`⌘↩` / `Ctrl+↩` / `Save`), or
  * `null` when cancelled (`Escape` / `Cancel`).
  */
-export function askForNote(
-  initial = '',
-  options?: Element | NoteComposerOptions | null,
-): Promise<string | null> {
-  const opts: NoteComposerOptions =
-    options instanceof Element ? { anchor: options } : (options ?? {})
+export function askForNote(initial: string, options: NoteComposerOptions): Promise<string | null> {
   return openComposer({
-    ...opts,
+    ...options,
     initial,
     className: 'composer mgo-note-composer',
     ariaLabel: 'Note composer',
@@ -180,7 +190,7 @@ export function askForNote(
  */
 export function askForMarkdown(
   initial: string,
-  options: MarkdownComposerOptions = {},
+  options: MarkdownComposerOptions,
 ): Promise<string | null> {
   return openComposer({
     ...options,

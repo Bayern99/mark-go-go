@@ -242,10 +242,13 @@ function renderMath(dom: HTMLElement, source: string, readonly: boolean): void {
 function renderKept(dom: HTMLElement, kind: LockKind, source: string, readonly: boolean): void {
   dom.className = 'mgo-locked-block'
   dom.setAttribute('aria-label', `Kept as written: ${lockedKindLabel(kind)}`)
+  const kicker = document.createElement('span')
+  kicker.className = 'mgo-locked-kicker'
+  kicker.textContent = 'Kept as written'
   const code = document.createElement('code')
   code.className = 'mgo-locked-source'
   code.textContent = source
-  dom.append(code, blockActions(readonly))
+  dom.append(kicker, code, blockActions(readonly))
 }
 
 function blockActions(readonly: boolean): HTMLElement {

@@ -462,23 +462,31 @@ export async function createMarkdownEditor(
             const label = match[1]
             widgets.push(
               Decoration.inline(from, to, {
-                class: 'mgo-fnref',
-                style: 'display:none',
+                nodeName: 'span',
+                class: 'mgo-fnref-src',
+                style: 'font-size:0;width:0;height:0;overflow:hidden;white-space:nowrap',
               }),
             )
             widgets.push(
-              Decoration.widget(from, () => {
-                const link = document.createElement('a')
-                link.className = 'mgo-fnref'
-                link.id = `fnref-${cssSafe(label)}`
-                link.href = `#fn-${cssSafe(label)}`
-                link.dataset.footnoteRef = label
-                link.textContent = label
-                link.setAttribute('aria-label', `Footnote ${label}`)
-                link.tabIndex = 0
-                link.contentEditable = 'false'
-                return link
-              }, { side: -1, ignoreSelection: true, key: `fnref-${from}-${label}` }),
+              Decoration.widget(
+                from,
+                () => {
+                  const link = document.createElement('a')
+                  link.className = 'mgo-fnref'
+                  link.id = `fnref-${cssSafe(label)}`
+                  link.href = `#fn-${cssSafe(label)}`
+                  link.dataset.footnoteRef = label
+                  link.textContent = label
+                  link.setAttribute('aria-label', `Footnote ${label}`)
+                  link.tabIndex = 0
+                  link.contentEditable = 'false'
+                  const wrap = document.createElement('sup')
+                  wrap.className = 'mgo-fnref-wrap'
+                  wrap.append(link)
+                  return wrap
+                },
+                { side: -1, ignoreSelection: true, key: `fnref-${from}-${label}` },
+              ),
             )
           }
           return true

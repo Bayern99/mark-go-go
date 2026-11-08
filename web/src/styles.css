@@ -838,15 +838,10 @@ body {
   user-select: text;
 }
 
-.mgo-locked-block::before {
-  content: 'Kept as written';
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  position: absolute;
-  top: 7px;
-  left: 12px;
+.mgo-locked-kicker {
+  display: block;
   margin: 0;
+  padding: 8px 16px 0;
   font-family: var(--font-display);
   font-size: var(--text-meta-size);
   line-height: var(--text-meta-leading);
@@ -856,20 +851,20 @@ body {
   color: var(--ink-3);
 }
 
-.mgo-locked-block[data-kind='raw-html']::before,
-.mgo-locked-block[data-kind='unsupported']::before {
-  content: 'Kept as written';
-}
-
-.mgo-locked-source {
+.mgo-locked-source,
+.crepe-root .milkdown .ProseMirror .mgo-locked-source {
   display: block;
   margin: 0;
-  padding: 28px 16px 12px;
+  padding: 4px 16px 12px;
   font: inherit;
+  font-size: var(--text-code-size);
+  line-height: var(--text-code-leading);
   white-space: pre-wrap;
   letter-spacing: 0;
   color: var(--ink-2);
   background: none;
+  box-shadow: none;
+  border-radius: 0;
 }
 
 .mgo-note {

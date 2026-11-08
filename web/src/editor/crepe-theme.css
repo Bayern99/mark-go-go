@@ -353,6 +353,20 @@
   text-decoration: none;
 }
 
+sup.mgo-fnref-wrap {
+  font-size: 0.75em;
+  line-height: 0;
+}
+
+.mgo-fnref-src {
+  font-size: 0;
+  line-height: 0;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
 .mgo-footnote-body {
   white-space: pre-wrap;
 }

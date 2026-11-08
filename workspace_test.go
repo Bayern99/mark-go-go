@@ -211,8 +211,9 @@ func TestCanonicalPathAndDeepestRootFollowDirectoryAlias(t *testing.T) {
 	}
 	host := newDocumentHost()
 	host.mu.Lock()
-	w := &workspace{id: "ws-real", root: canonicalPath(realRoot)}
-	host.byWindow[&mygo.Window{}] = w
+	win := &mygo.Window{}
+	w := &workspace{id: "ws-real", root: canonicalPath(realRoot), win: win}
+	host.byWindow[win] = w
 	found := host.folderWorkspaceLocked(aliasFile, false)
 	host.mu.Unlock()
 	if found != w {

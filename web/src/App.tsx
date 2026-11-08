@@ -155,7 +155,6 @@ export function DocumentPane({
   const [, refreshPlugins] = useReducer((value: number) => value + 1, 0)
   const restored = useRef(false)
   const reportedMode = useRef(false)
-  const latestMarkdown = useRef('')
   const activeRef = useRef(active)
   const revealBinder = useRef(onReadyReveal)
   activeRef.current = active
@@ -381,7 +380,6 @@ export function DocumentPane({
       cleanups.push(
         editor.onChange((markdown) => {
           services.documents.setText(markdown)
-          latestMarkdown.current = markdown
           if (debounceTimer !== undefined) window.clearTimeout(debounceTimer)
           debounceTimer = window.setTimeout(() => {
             debounceTimer = undefined
@@ -389,19 +387,24 @@ export function DocumentPane({
           }, EDIT_DEBOUNCE_MS)
         }),
       )
+      // The pane's core document state is the single source of the
+      // bytes to deliver: the text the host loaded, then every edit the
+      // editor made. A pane whose editor has not mounted registers
+      // nothing, so a flush can never invent an empty buffer.
+      const currentText = () => services.documents.snapshot().text
       cleanups.push({
         dispose: registerDocumentFlush(host.id, async () => {
           if (debounceTimer !== undefined) {
             window.clearTimeout(debounceTimer)
             debounceTimer = undefined
           }
-          const text = latestMarkdown.current
+          const text = currentText()
           await host.flush(text)
           return text
         }),
       })
       if (host.bindFlush) {
-        cleanups.push(host.bindFlush(() => latestMarkdown.current))
+        cleanups.push(host.bindFlush(currentText))
       }
 
       cleanups.push(

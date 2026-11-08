@@ -173,6 +173,7 @@ Dialogs use the workspace window as parent. Generation in progress for a documen
 - Only workspaces the user did not close are stored; an empty untitled window (Welcome) is not. Closing a tab or a workspace drops it, and cancel keeps the scene as it was.
 - Unsaved text stays in MyGo's recovery copies, keyed by `documentId`; the session only names the tabs, their order, the active one and the view mode. Restore reuses a recovery document instead of opening its path again, and never starts a generation the user cancelled.
 - A missing root or file becomes `WorkspaceSnapshot.restoreError` / `DocumentInfo.restoreError` and the other workspaces still restore. A file opened by this launch takes focus after the layout is placed.
+- `flushQuit` / Save / Close ask each mounted pane for its **core document state**: the bytes the host loaded, then every edit the editor delivered. A pane that has not mounted an editor registers nothing, so a flush never turns an untouched document into an empty buffer; a document the user did clear is delivered as `""` like any other edit. A document opened from disk gets a new MyGo id at restore, so the stored active tab is mapped to the id its document really has now.
 
 ## MyGo document groups (controlled patch)
 

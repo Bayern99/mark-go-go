@@ -27,6 +27,29 @@ func removeWorkspaceOrder(order []string, id string) []string {
 	return out
 }
 
+// resolvedTab is a planned tab with the id its document has after
+// restore: a file opened from disk gets a new MyGo id, a recovery copy
+// keeps the id the session stored.
+type resolvedTab struct {
+	planned string
+	id      string
+}
+
+// activeAfterRestore picks the window's active document: the real id of
+// the tab the session named active, else the first tab that came back.
+// It never invents an id that no open document has.
+func activeAfterRestore(resolved []resolvedTab, want string) string {
+	for _, r := range resolved {
+		if want != "" && r.planned == want {
+			return r.id
+		}
+	}
+	if len(resolved) > 0 {
+		return resolved[0].id
+	}
+	return ""
+}
+
 // SetViewMode stores this document's view mode in the session. Bound to
 // documentID, never the active tab.
 func (h *documentHost) SetViewMode(ctx context.Context, documentID, mode string) error {
@@ -162,7 +185,10 @@ func (h *documentHost) applyRestorePlan(plan restorePlan) {
 		h.mu.Lock()
 		dest.restoreError = pw.RestoreError
 		h.mu.Unlock()
-		var ordered []string
+		// Stored ids need not survive: a tab opened from disk gets the
+		// MyGo document's new id, so keep each planned id next to the id
+		// the document really has now.
+		var resolved []resolvedTab
 		for _, tab := range pw.Tabs {
 			var s *docSession
 			if tab.ReuseID != "" {
@@ -185,19 +211,13 @@ func (h *documentHost) applyRestorePlan(plan restorePlan) {
 			s.restoreError = tab.RestoreError
 			h.mu.Unlock()
 			h.moveTab(s, dest)
-			ordered = append(ordered, s.id)
+			resolved = append(resolved, resolvedTab{planned: tab.ID, id: s.id})
 		}
-		active := pw.ActiveID
-		for _, tab := range pw.Tabs {
-			id := tab.ReuseID
-			if id == "" {
-				id = tab.ID
-			}
-			if tab.ID == pw.ActiveID || id == pw.ActiveID {
-				active = id
-				break
-			}
+		var ordered []string
+		for _, r := range resolved {
+			ordered = append(ordered, r.id)
 		}
+		active := activeAfterRestore(resolved, pw.ActiveID)
 		h.mu.Lock()
 		if len(ordered) > 0 {
 			// A recovery copy the session did not list is still open;

@@ -1,6 +1,12 @@
 import type { PluginContext } from '../../core/types'
 import { failureOf } from '../../host/generationError'
-import type { GenerateFailure, GenerateProgress, GenerationSettings } from '../../host/types'
+import type {
+  Disposable,
+  GenerateFailure,
+  GenerateProgress,
+  GenerationSettings,
+  SettingsPatch,
+} from '../../host/types'
 import { extractSections } from '../../markdown/sections'
 import { catalogDefinition } from './a2ui'
 import formatDocument from './view-format.md?raw'
@@ -116,8 +122,14 @@ export class GenerationController {
     return this.ctx.viewFile.getSettings()
   }
 
-  setSettings(settings: GenerationSettings): Promise<void> {
-    return this.ctx.viewFile.setSettings(settings)
+  /** Changes the fields the patch carries, in the one settings store every document shares. */
+  setSettings(patch: SettingsPatch): Promise<GenerationSettings> {
+    return this.ctx.viewFile.setSettings(patch)
+  }
+
+  /** Follows the shared settings store; see `ViewGenerator.onSettings`. */
+  onSettings(fn: (settings: GenerationSettings) => void): Disposable {
+    return this.ctx.viewFile.onSettings(fn)
   }
 
   dispose(): void {

@@ -247,9 +247,11 @@ func (h *documentHost) GetSettings() (Settings, error) {
 	return h.settings.get(), nil
 }
 
-// SetSettings replaces the generation settings.
-func (h *documentHost) SetSettings(s Settings) error {
-	return h.settings.set(s)
+// SetSettings writes the fields the patch carries and returns the committed
+// settings. Settings are one process-wide store, so a change from any window
+// is announced to every window through settingsChanged.
+func (h *documentHost) SetSettings(p SettingsPatch) (Settings, error) {
+	return h.settings.apply(p)
 }
 
 // generationJob is one run of the generation, with everything the

@@ -80,8 +80,8 @@ SetNativeEditState(ctx, documentId string, canUndo, canRedo bool) error  // edit
 SetViewMode(ctx, documentId, mode string) error
 PrepareQuit(ctx) error   // ack one window's flushQuit; persist after every window acks
 Generate(ctx, documentId string, req GenerateRequest, progress *Channel[GenerateProgress]) error
-GetSettings() (Settings, error)
-SetSettings(s Settings) error
+GetSettings() (Settings, error)                  // process-wide store, not per document
+SetSettings(p SettingsPatch) (Settings, error)   // writes only the patch's fields; returns the committed value
 
 // Navigation (#22). Opening a workspace does not wait for a full directory scan.
 NavSnapshot(ctx) (NavSnapshot, error)
@@ -110,6 +110,20 @@ navSearchReady: NavSearchResult       // incomplete is true until the index is r
 ```
 
 `workspaceChanged` is the source of truth for tab order, active tab, root, and per-tab badges. Background `docState` updates the matching tab without activating it.
+
+`settingsChanged: Settings` is broadcast to every window, not to one workspace: see Settings below.
+
+## Settings
+
+The generation settings — model, agent command, and the models the agent offered on
+its last ACP handshake — are one process-wide store (`settings.json` in
+`PathUserData`), not a document's or a window's. `SetSettings` takes an intent
+patch: only the fields that are present are written, an empty model means the
+agent's own choice, an empty command restores the default, and the cached model
+list is only ever written by the handshake. A successful write returns the
+committed `Settings` and broadcasts `settingsChanged` to every window, so an idle
+panel in another document shows the current global value without a remount. A
+run captures the store once when it starts; later changes do not alter it.
 
 ## Routing (Open / Finder / menu)
 

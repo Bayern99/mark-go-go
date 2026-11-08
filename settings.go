@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
+
+	"github.com/egoist/mygo"
 )
 
 // Settings is the generation settings the page can read and change:
@@ -24,6 +26,20 @@ type Settings struct {
 	// the default fallback list before any handshake has succeeded.
 	Models []string `json:"models,omitempty"`
 }
+
+// SettingsPatch is the reader's intent: only the fields that are present
+// are written, so two windows changing different settings at once keep both
+// changes. An empty model means the agent's own choice; an empty command
+// means the default command. Cached models are never written this way:
+// they belong to the agent's handshake.
+type SettingsPatch struct {
+	Model        *string `json:"model,omitempty"`
+	AgentCommand *string `json:"agentCommand,omitempty"`
+}
+
+// settingsChanged tells every window's page the committed settings after a
+// write, since the settings file is one process-wide store, not per document.
+var settingsChanged = mygo.NewEvent[Settings]("settingsChanged")
 
 var defaultModels = []string{"gemini-3.8-flash", "gemini-4-argon", "claude-opus-5-5"}
 
@@ -60,6 +76,10 @@ const settingsFile = "settings.json"
 type settingsStore struct {
 	mu  sync.Mutex
 	dir string
+	// onChange, when set, is called with the committed settings after every
+	// successful write, outside the lock: the one store's writes reach every
+	// window's page.
+	onChange func(Settings)
 }
 
 func (st *settingsStore) path() string {
@@ -111,29 +131,49 @@ func (st *settingsStore) get() Settings {
 	return st.getLocked()
 }
 
-// set stores s, writing the file atomically. An empty agent command is
-// stored as the default, and existing cached models on disk are preserved
-// so that only setModels (after an ACP handshake) overwrites them.
-func (st *settingsStore) set(s Settings) error {
-	if s.AgentCommand == "" {
-		s.AgentCommand = defaultSettings().AgentCommand
-	}
+// apply writes the patch's fields, leaving every other setting and the
+// cached models as they are, and returns the committed settings. An empty
+// model resets the choice, an empty agent command restores the default. The
+// write is atomic: two windows changing different fields both keep theirs.
+// The change is announced under the lock, so windows hear writes in the
+// order they were committed.
+func (st *settingsStore) apply(p SettingsPatch) (Settings, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if st.dir == "" {
-		return errors.New("The settings folder is not available.")
+		return Settings{}, errors.New("The settings folder is not available.")
 	}
-	existing := st.getLocked()
-	file := s
-	file.Models = existing.Models
-	data, err := json.MarshalIndent(file, "", "  ")
+	s := st.getLocked()
+	if p.Model != nil {
+		s.Model = *p.Model
+	}
+	if p.AgentCommand != nil {
+		s.AgentCommand = *p.AgentCommand
+	}
+	if s.AgentCommand == "" {
+		s.AgentCommand = defaultSettings().AgentCommand
+	}
+	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
-		return err
+		return Settings{}, err
 	}
-	return writeFileAtomic(st.path(), append(data, '\n'))
+	if err := writeFileAtomic(st.path(), append(data, '\n')); err != nil {
+		return Settings{}, err
+	}
+	st.announceLocked(s)
+	return s, nil
 }
 
-// setModels caches the models offered by the agent on its handshake.
+// announceLocked tells the store's follower the committed settings. The
+// caller holds st.mu, and announcing does not call back into the store.
+func (st *settingsStore) announceLocked(s Settings) {
+	if st.onChange != nil {
+		st.onChange(s)
+	}
+}
+
+// setModels caches the models offered by the agent on its handshake, which
+// is the only writer of the cached list.
 func (st *settingsStore) setModels(models []string) error {
 	cleaned := cleanModels(models)
 	if st == nil || len(cleaned) == 0 {
@@ -150,5 +190,9 @@ func (st *settingsStore) setModels(models []string) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(st.path(), append(data, '\n'))
+	if err := writeFileAtomic(st.path(), append(data, '\n')); err != nil {
+		return err
+	}
+	st.announceLocked(s)
+	return nil
 }

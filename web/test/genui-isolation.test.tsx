@@ -15,7 +15,6 @@ import type {
   GenerateFailure,
   GenerateProgress,
   GenerateRequest,
-  GenerationSettings,
   WorkspaceAdapter,
 } from '../src/host/types'
 
@@ -148,6 +147,37 @@ function generateButton(pane: HTMLElement): HTMLButtonElement {
   return button
 }
 
+function modelTrigger(pane: HTMLElement): HTMLButtonElement {
+  const trigger = pane.querySelector<HTMLButtonElement>('[data-testid="model-menu-trigger"]')
+  if (!trigger) throw new Error('Model menu missing')
+  return trigger
+}
+
+/** Picks a model in this document's footer through its menu, as a reader does. */
+function chooseModel(pane: HTMLElement, model: string): void {
+  flushSync(() => modelTrigger(pane).click())
+  const option = [...pane.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (candidate) => candidate.dataset.model === model,
+  )
+  if (!option) throw new Error(`model ${model} is not offered`)
+  flushSync(() => option.click())
+}
+
+/** Types a command in the Locate agent composer and saves it with Enter. */
+function saveAgentCommand(alert: HTMLElement, command: string): void {
+  const input = alert.querySelector<HTMLInputElement>('input[aria-label="Agent command"]')
+  if (!input) throw new Error('Agent command input missing')
+  const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+  if (!setValue) throw new Error('no input value setter')
+  flushSync(() => {
+    setValue.call(input, command)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  flushSync(() => {
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  })
+}
+
 describe('multi-document generation isolation', () => {
   it('runs A and B together, captures each request, and never mixes output or progress', async () => {
     const agentA = scripted()
@@ -223,21 +253,17 @@ describe('multi-document generation isolation', () => {
 
   it('captures model and request at start; later global settings and edits do not change the in-flight job',
     async () => {
-      const shared: GenerationSettings = {
-        model: 'gemini-3.8-flash',
-        agentCommand: 'agy',
-        models: [...DEFAULT_MODELS],
-      }
       const agentA = scripted()
-      const a = createBrowserHost(DOC_A, 'a.md', { generator: agentA.generator, settingsRef: shared })
-      const b = createBrowserHost(DOC_B, 'b.md', {
-        generator: () => new Promise<string>(() => {}),
-        settingsRef: shared,
-      })
+      const a = createBrowserHost(DOC_A, 'a.md', { generator: agentA.generator })
+      const b = createBrowserHost(DOC_B, 'b.md', { generator: () => new Promise<string>(() => {}) })
+      // One window, one settings store: both tabs read the same values.
+      createBrowserWorkspace([a, b])
       const req: GenerateRequest = { text: DOC_A, mode: 'full', request: 'keep-me', format: '{}', sections: [] }
       const run = a.generate(req, () => {}, new AbortController().signal)
       await vi.waitFor(() => expect(a.capturedSettings[0]?.model).toBe('gemini-3.8-flash'))
-      await b.setSettings({ ...shared, model: 'claude-opus-5-5' })
+      const changed = await b.setSettings({ model: 'claude-opus-5-5' })
+      expect(changed).toMatchObject({ model: 'claude-opus-5-5', agentCommand: 'agy' })
+      expect((await a.getSettings()).model).toBe('claude-opus-5-5')
       await a.update('# Alpha\n\nEdited while running.\n')
       agentA.finish(viewFile('Kept start', 'keep-me', 'gemini-3.8-flash'))
       await run
@@ -327,4 +353,107 @@ describe('multi-document generation isolation', () => {
       expect(closing.keptView()).toBeNull()
     },
   )
+})
+
+describe('one settings store across documents', () => {
+  it('shows in an idle mounted panel a model another document changed, without remounting it', async () => {
+    const a = createBrowserHost(DOC_A, 'a.md', { generator: scripted().generator })
+    const b = createBrowserHost(DOC_B, 'b.md', { generator: scripted().generator })
+    const workspace = createBrowserWorkspace([a, b])
+    const app = await mountWorkspace(workspace)
+    try {
+      await openPaneGenUI(app.container, a)
+      await openPaneGenUI(app.container, b)
+      const paneA = paneOf(app.container, a)
+      const triggerBefore = modelTrigger(paneA)
+      expect(triggerBefore.textContent).toContain('gemini-3.8-flash')
+
+      // B picks a model while A sits idle in the background.
+      chooseModel(paneOf(app.container, b), 'claude-opus-5-5')
+
+      await vi.waitFor(() => {
+        if (!modelTrigger(paneA).textContent?.includes('claude-opus-5-5')) {
+          throw new Error('the idle panel still shows the old model')
+        }
+      })
+      // The same panel and footer control, never remounted.
+      expect(paneOf(app.container, a)).toBe(paneA)
+      expect(modelTrigger(paneA)).toBe(triggerBefore)
+      expect(await a.getSettings()).toMatchObject({ model: 'claude-opus-5-5', agentCommand: 'agy' })
+    } finally {
+      await app.unmount()
+    }
+  })
+
+  it('keeps a command saved in one document when a model is picked in another', async () => {
+    const agentB = scripted()
+    const a = createBrowserHost(DOC_A, 'a.md', { generator: scripted().generator })
+    const b = createBrowserHost(DOC_B, 'b.md', { generator: agentB.generator })
+    const workspace = createBrowserWorkspace([a, b])
+    const app = await mountWorkspace(workspace)
+    try {
+      await openPaneGenUI(app.container, a)
+      await openPaneGenUI(app.container, b)
+      const paneA = paneOf(app.container, a)
+      const paneB = paneOf(app.container, b)
+
+      // B fails on a missing agent and saves the command that does exist.
+      flushSync(() => generateButton(paneB).click())
+      agentB.fail({
+        kind: 'agent-not-found',
+        message: 'Could not find the agent command "agy".',
+        hint: 'Install the agent, or enter the command or path that runs it.',
+      })
+      const alert = await vi.waitFor(() => {
+        const found = paneB.querySelector<HTMLElement>('[role="alert"]')
+        if (!found?.textContent?.includes('Could not find the agent command')) {
+          throw new Error('the failure is not shown')
+        }
+        return found
+      })
+      const locate = [...alert.querySelectorAll<HTMLButtonElement>('button')].find(
+        (button) => button.textContent === 'Locate agent…',
+      )
+      if (!locate) throw new Error('Locate agent… missing')
+      flushSync(() => locate.click())
+      saveAgentCommand(alert, '/opt/bin/agy')
+      await vi.waitFor(async () => {
+        if ((await b.getSettings()).agentCommand !== '/opt/bin/agy') {
+          throw new Error('the command was not saved')
+        }
+      })
+
+      // A's stale panel must not write B's command back to the default.
+      chooseModel(paneA, 'claude-opus-5-5')
+      await vi.waitFor(async () => {
+        if ((await a.getSettings()).model !== 'claude-opus-5-5') {
+          throw new Error('the model was not saved')
+        }
+      })
+      expect(await b.getSettings()).toEqual({
+        model: 'claude-opus-5-5',
+        agentCommand: '/opt/bin/agy',
+        models: [...DEFAULT_MODELS],
+      })
+    } finally {
+      await app.unmount()
+    }
+  })
+
+  it('keeps both fields when two documents write different settings at once', async () => {
+    const a = createBrowserHost(DOC_A, 'a.md')
+    const b = createBrowserHost(DOC_B, 'b.md')
+    createBrowserWorkspace([a, b])
+    await Promise.all([
+      a.setSettings({ model: 'claude-opus-5-5' }),
+      b.setSettings({ agentCommand: '/opt/bin/agy' }),
+    ])
+    const want = {
+      model: 'claude-opus-5-5',
+      agentCommand: '/opt/bin/agy',
+      models: [...DEFAULT_MODELS],
+    }
+    expect(await a.getSettings()).toEqual(want)
+    expect(await b.getSettings()).toEqual(want)
+  })
 })

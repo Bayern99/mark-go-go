@@ -238,6 +238,18 @@ export interface GenerationSettings {
 }
 
 /**
+ * What a reader changes in one gesture. Only the fields that are present are
+ * written: a Model choice never touches the command, a command never touches
+ * the model, and neither ever writes the handshake's cached model list. An
+ * empty `model` is the agent's own choice; an empty `agentCommand` restores
+ * the default command.
+ */
+export interface SettingsPatch {
+  model?: string
+  agentCommand?: string
+}
+
+/**
  * Making a view with the reader's agent. The host writes the view file when
  * the run succeeds, so the new view arrives through `watchView`; a failed
  * or cancelled run leaves the file as it was.
@@ -254,7 +266,15 @@ export interface ViewGenerator {
     signal: AbortSignal,
   ): Promise<void>
   getSettings(): Promise<GenerationSettings>
-  setSettings(settings: GenerationSettings): Promise<void>
+  /** Writes the patch's fields, atomically, and resolves with the committed settings. */
+  setSettings(patch: SettingsPatch): Promise<GenerationSettings>
+  /**
+   * Follows the settings store, which is one process-wide file shared by every
+   * document and window — not this document's own copy. `fn` gets the
+   * committed value after each write. Subscribe before the first read so no
+   * change between the two is missed.
+   */
+  onSettings(fn: (settings: GenerationSettings) => void): Disposable
 }
 
 export interface HostAdapter extends ViewFileSource, ViewGenerator {

@@ -101,7 +101,8 @@ export class PluginRegistry {
         generate: (req, onProgress, signal) => this.viewFile.generate(req, onProgress, signal),
         undo: () => this.viewFile.undoView(),
         getSettings: () => this.viewFile.getSettings(),
-        setSettings: (settings) => this.viewFile.setSettings(settings),
+        setSettings: (patch) => this.viewFile.setSettings(patch),
+        onSettings: (fn) => track(this.viewFile.onSettings(fn)),
       },
       subscriptions,
     }

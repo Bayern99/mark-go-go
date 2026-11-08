@@ -211,6 +211,18 @@ export interface Settings {
 }
 
 /**
+ * SettingsPatch is the reader's intent: only the fields that are present
+ * are written, so two windows changing different settings at once keep both
+ * changes. An empty model means the agent's own choice; an empty command
+ * means the default command. Cached models are never written this way:
+ * they belong to the agent's handshake.
+ */
+export interface SettingsPatch {
+  model?: string;
+  agentCommand?: string;
+}
+
+/**
  * Snapshot is one document at one version. Version starts at 1 when the
  * document opens and grows by one every time its content is read from
  * disk again. ID is the stable document identity.
@@ -378,9 +390,13 @@ export const WorkspaceHost = {
   setNativeEditState(documentID: string, canUndo: boolean, canRedo: boolean): Promise<void> {
     return call("WorkspaceHost.SetNativeEditState", documentID, canUndo, canRedo);
   },
-  /** SetSettings replaces the generation settings. */
-  setSettings(s: Settings): Promise<void> {
-    return call("WorkspaceHost.SetSettings", s);
+  /**
+   * SetSettings writes the fields the patch carries and returns the committed
+   * settings. Settings are one process-wide store, so a change from any window
+   * is announced to every window through settingsChanged.
+   */
+  setSettings(p: SettingsPatch): Promise<Settings> {
+    return call("WorkspaceHost.SetSettings", p);
   },
   /**
    * SetViewMode stores this document's view mode in the session. Bound to
@@ -445,6 +461,11 @@ export const events = {
   docState: event<DocumentInfo>("docState"),
   navChanged: event<NavSnapshot>("navChanged"),
   navSearchReady: event<NavSearchResult>("navSearchReady"),
+  /**
+   * settingsChanged tells every window's page the committed settings after a
+   * write, since the settings file is one process-wide store, not per document.
+   */
+  settingsChanged: event<Settings>("settingsChanged"),
   /**
    * viewChanged tells a page that follows a document's view file that the
    * file changed, appeared or went away.

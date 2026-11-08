@@ -20,6 +20,15 @@ import (
 	"unicode/utf16"
 )
 
+// setStored writes a model and command as one intent patch, for tests
+// that need a store to start from a known value.
+func setStored(t *testing.T, st *settingsStore, model, command string) {
+	t.Helper()
+	if _, err := st.apply(SettingsPatch{Model: &model, AgentCommand: &command}); err != nil {
+		t.Fatalf("apply settings: %v", err)
+	}
+}
+
 // The tests drive the generator through a fake ACP agent: the test
 // binary re-runs itself (TestMain) when MARKGOGO_FAKE_AGENT is set. It
 // then speaks JSON-RPC 2.0 over its stdio like agy acp does, logs
@@ -1115,8 +1124,8 @@ func TestSettingsStore(t *testing.T) {
 	if got := st.get(); !reflect.DeepEqual(got, wantDefaults) {
 		t.Errorf("defaults = %+v, want %+v", got, wantDefaults)
 	}
-	if err := st.set(Settings{Model: "m-1", AgentCommand: "/usr/bin/agy"}); err != nil {
-		t.Fatalf("set: %v", err)
+	if _, err := st.apply(SettingsPatch{Model: new("m-1"), AgentCommand: new("/usr/bin/agy")}); err != nil {
+		t.Fatalf("apply: %v", err)
 	}
 	if got := (&settingsStore{dir: dir}).get(); !reflect.DeepEqual(got, Settings{
 		Model:        "m-1",
@@ -1132,8 +1141,8 @@ func TestSettingsStore(t *testing.T) {
 	if got := (&settingsStore{dir: dir}).get(); !reflect.DeepEqual(got.Models, []string{"claude-opus-5-5", "gemini-3.8-flash"}) {
 		t.Errorf("cached models = %+v", got.Models)
 	}
-	if err := st.set(Settings{Model: "", AgentCommand: "", Models: []string{"frontend-stale-model"}}); err != nil {
-		t.Fatalf("set: %v", err)
+	if _, err := st.apply(SettingsPatch{Model: new(""), AgentCommand: new("")}); err != nil {
+		t.Fatalf("apply: %v", err)
 	}
 	if got := (&settingsStore{dir: dir}).get(); got.Model != "" || got.AgentCommand != "agy" || !reflect.DeepEqual(got.Models, []string{"claude-opus-5-5", "gemini-3.8-flash"}) {
 		t.Errorf("empty model and command with stale frontend models = %+v", got)
@@ -1145,8 +1154,8 @@ func TestSettingsStore(t *testing.T) {
 	if got := empty.get(); !reflect.DeepEqual(got, defaultSettings()) {
 		t.Errorf("store without a directory = %+v", got)
 	}
-	if err := empty.set(defaultSettings()); err == nil {
-		t.Errorf("set without a directory succeeded")
+	if _, err := empty.apply(SettingsPatch{Model: new("m-1")}); err == nil {
+		t.Errorf("apply without a directory succeeded")
 	}
 
 	// The file is written atomically: no leftovers in the directory.
@@ -1158,6 +1167,93 @@ func TestSettingsStore(t *testing.T) {
 		if e.Name() != settingsFile {
 			t.Errorf("stray file %q in the settings directory", e.Name())
 		}
+	}
+}
+
+// TestSettingsPatchKeepsUntouchedFields locks the write-side contract of the
+// two composers: a Model change never writes a command and a command change
+// never writes a model, so changes from different windows both survive, and
+// only the agent's handshake writes the cached models.
+func TestSettingsPatchKeepsUntouchedFields(t *testing.T) {
+	dir := t.TempDir()
+	var announced []Settings
+	st := &settingsStore{dir: dir, onChange: func(s Settings) { announced = append(announced, s) }}
+
+	if _, err := st.apply(SettingsPatch{Model: new("claude-opus-5-5")}); err != nil {
+		t.Fatalf("apply model: %v", err)
+	}
+	committed, err := st.apply(SettingsPatch{AgentCommand: new("/opt/homebrew/bin/agy")})
+	if err != nil {
+		t.Fatalf("apply command: %v", err)
+	}
+	want := Settings{
+		Model:        "claude-opus-5-5",
+		AgentCommand: "/opt/homebrew/bin/agy",
+		Models:       defaultModels,
+	}
+	if !reflect.DeepEqual(committed, want) {
+		t.Errorf("committed = %+v, want %+v", committed, want)
+	}
+	if got := (&settingsStore{dir: dir}).get(); !reflect.DeepEqual(got, want) {
+		t.Errorf("stored = %+v, want %+v", got, want)
+	}
+	if len(announced) != 2 {
+		t.Fatalf("announcements = %d, want 2: %+v", len(announced), announced)
+	}
+	if !reflect.DeepEqual(announced[1], want) {
+		t.Errorf("last announcement = %+v, want %+v", announced[1], want)
+	}
+
+	// The handshake's cached list is announced, and a later model change
+	// keeps it as the handshake left it.
+	if err := st.setModels([]string{"model-alpha", "model-beta"}); err != nil {
+		t.Fatalf("setModels: %v", err)
+	}
+	if _, err := st.apply(SettingsPatch{Model: new("model-beta")}); err != nil {
+		t.Fatalf("apply model: %v", err)
+	}
+	last := announced[len(announced)-1]
+	if last.Model != "model-beta" || !reflect.DeepEqual(last.Models, []string{"model-alpha", "model-beta"}) {
+		t.Errorf("after handshake and model change = %+v", last)
+	}
+	// An empty model is the agent's own choice, an empty command the
+	// default: both are real intents, not "leave alone".
+	empty, err := st.apply(SettingsPatch{Model: new(""), AgentCommand: new("")})
+	if err != nil {
+		t.Fatalf("apply empties: %v", err)
+	}
+	if empty.Model != "" || empty.AgentCommand != "agy" {
+		t.Errorf("empties = %+v", empty)
+	}
+	if last := announced[len(announced)-1]; last.Model != "" || last.AgentCommand != "agy" {
+		t.Errorf("announced empties = %+v", last)
+	}
+}
+
+// TestSettingsPatchesFromTwoWindowsBothSurvive: concurrent patches, one per
+// field, are serialized by the store, so neither overwrites the other.
+func TestSettingsPatchesFromTwoWindowsBothSurvive(t *testing.T) {
+	st := &settingsStore{dir: t.TempDir()}
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			if _, err := st.apply(SettingsPatch{Model: new("claude-opus-5-5")}); err != nil {
+				t.Errorf("apply model: %v", err)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			if _, err := st.apply(SettingsPatch{AgentCommand: new("/opt/bin/agy")}); err != nil {
+				t.Errorf("apply command: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	got := st.get()
+	if got.Model != "claude-opus-5-5" || got.AgentCommand != "/opt/bin/agy" {
+		t.Errorf("after concurrent patches = %+v", got)
 	}
 }
 
@@ -1473,9 +1569,7 @@ func TestHostGenerateOneSlotPerDocumentConcurrentAcrossDocuments(t *testing.T) {
 	aPath := filepath.Join(dir, "a.md")
 	bPath := filepath.Join(dir, "b.md")
 	h := &documentHost{settings: &settingsStore{dir: t.TempDir()}}
-	if err := h.settings.set(Settings{Model: "gemini-3.8-flash", AgentCommand: "agy"}); err != nil {
-		t.Fatal(err)
-	}
+	setStored(t, h.settings, "gemini-3.8-flash", "agy")
 	hostSession(t, h, "a", aPath)
 	hostSession(t, h, "b", bPath)
 
@@ -1565,9 +1659,7 @@ func TestHostGenerateCapturesSettingsAndRefusesStalePath(t *testing.T) {
 	}
 	settingsDir := t.TempDir()
 	h := &documentHost{settings: &settingsStore{dir: settingsDir}}
-	if err := h.settings.set(Settings{Model: "gemini-3.8-flash", AgentCommand: "agy"}); err != nil {
-		t.Fatal(err)
-	}
+	setStored(t, h.settings, "gemini-3.8-flash", "agy")
 	current := path
 	hostSession(t, h, "a", path).pathFn = func() string { return current }
 
@@ -1596,9 +1688,7 @@ func TestHostGenerateCapturesSettingsAndRefusesStalePath(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("run never reached BeforeWrite")
 	}
-	if err := h.settings.set(Settings{Model: "claude-opus-5-5", AgentCommand: "agy"}); err != nil {
-		t.Fatal(err)
-	}
+	setStored(t, h.settings, "claude-opus-5-5", "agy")
 	current = filepath.Join(dir, "renamed.md")
 	close(goOn)
 	err := <-errCh

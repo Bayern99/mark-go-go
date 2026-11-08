@@ -14,6 +14,7 @@ import type {
   NavSearchResult,
   NavSnapshot,
   RecentWorkspace,
+  SettingsPatch,
   ViewSnapshot,
   WorkspaceAdapter,
   WorkspaceSnapshot,
@@ -209,8 +210,12 @@ function bindDocument(id: string): HostAdapter {
     getSettings(): Promise<GenerationSettings> {
       return WorkspaceHost.getSettings();
     },
-    async setSettings(settings: GenerationSettings): Promise<void> {
-      await WorkspaceHost.setSettings(settings);
+    setSettings(patch: SettingsPatch): Promise<GenerationSettings> {
+      return WorkspaceHost.setSettings(patch);
+    },
+    onSettings(fn: (settings: GenerationSettings) => void): Disposable {
+      // One settings file for the whole app: every window's write arrives here.
+      return disposable(events.settingsChanged.on((settings) => fn(settings)));
     },
   };
 }

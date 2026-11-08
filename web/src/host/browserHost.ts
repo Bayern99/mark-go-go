@@ -270,8 +270,11 @@ export function createBrowserHost(
     },
     async revert() {},
     async setViewMode(mode: string) {
+      // A view-mode write is not new document state: the native host stores it
+      // in the session and emits only a workspace snapshot. Emitting a whole
+      // document state here would echo stale flags such as readOnly back into
+      // the editor.
       state = { ...state, viewMode: mode }
-      emitState()
     },
     bindFlush(getText) {
       flushReaders.set(hostSelf, getText)
@@ -611,7 +614,10 @@ export function createBrowserWorkspace(
     documents: order.map((id) => {
       const info = infos.get(id)
       if (!info) throw new Error(`missing document ${id}`)
-      return { ...info }
+      // The view mode is presentation metadata written through setViewMode;
+      // read it live so a snapshot does not wait for an unrelated state event.
+      const host = adapters.get(id)
+      return { ...info, viewMode: host && isBrowserHost(host) ? host.getState().viewMode : info.viewMode }
     }),
     activeId,
     restoreError: options.restoreError,

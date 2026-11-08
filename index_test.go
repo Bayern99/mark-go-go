@@ -154,7 +154,7 @@ func TestNavFilterUsesUnsavedOpenText(t *testing.T) {
 	host.waitIndexReady(w, 2*time.Second)
 
 	rel := relSlash(dir, path)
-	open := map[string]string{filepath.Clean(path): "# Live Heading\n\nUnsaved body.\n"}
+	open := map[string]string{canonicalPath(path): "# Live Heading\n\nUnsaved body.\n"}
 	w.index.mu.Lock()
 	file := w.index.files[rel]
 	if file == nil {
@@ -227,7 +227,7 @@ func TestRememberWorkspacePersists(t *testing.T) {
 		t.Fatal(err)
 	}
 	list := st.recentWorkspaces()
-	if len(list) != 1 || filepath.Clean(list[0].Root) != filepath.Clean(root) {
+	if len(list) != 1 || filepath.Clean(list[0].Root) != filepath.Clean(canonicalPath(root)) {
 		t.Fatalf("recent = %+v", list)
 	}
 }

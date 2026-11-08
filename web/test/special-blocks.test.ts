@@ -1,3 +1,4 @@
+import '../src/styles.css'
 import { undo as undoRich } from '@milkdown/kit/prose/history'
 import { userEvent } from 'vitest/browser'
 import { describe, expect, it, vi } from 'vitest'
@@ -154,7 +155,11 @@ describe('special blocks in rich text', () => {
     try {
       mounted.editor.setReadonly(true)
       const alert = mounted.root.querySelector<HTMLElement>('.mgo-alert')
-      expect(alert?.querySelector('[data-block-action="edit"]')).toBeNull()
+      const edit = alert?.querySelector<HTMLElement>('[data-block-action="edit"]')
+      // Read-only hides the edit entry point and refuses one clicked anyway.
+      expect(edit?.checkVisibility() ?? false).toBe(false)
+      edit?.click()
+      expect(mounted.root.querySelector('.mgo-block-composer')).toBeNull()
       expect(mounted.editor.getMarkdown()).toBe('> [!CAUTION]\n> no edit\n')
     } finally {
       await mounted.cleanup()

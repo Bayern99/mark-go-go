@@ -324,7 +324,7 @@
 
 ### `47e3b4a` 原生复验（部分 PASS，实际观察）
 
-构建：`/private/tmp/mark-go-go-spec20-verify-21/build/darwin-arm64/Mark Go Go CoreSmoke21.app`（`dev.markgogo.editor.coresmoke21`，构建日志 `coresmoke21-build-47e3b4a.log`），fixtures 仅用 `native32/…`。这是**部分报告**，下列之外未执行。
+构建：`/private/tmp/mark-go-go-spec20-verify-21/build/darwin-arm64/Mark Go Go CoreSmoke21.app`（`dev.markgogo.editor.coresmoke21`，构建日志 `coresmoke21-build-47e3b4a.log`），fixtures 仅用 `native32/…`。报告仍为**进行中**：本表只列实际观察过的场景，表后另列未运行项。
 
 | 场景 | 实际观察 | 判定 |
 |---|---|---|
@@ -334,34 +334,57 @@
 | 首次输入的显式保存 | alpha 上 Cmd+S 写入同一 181 B 内容，编辑器内容保持，无空写入 | **PASS** |
 | 未命名 Save As 与迁移 | 见上表：精确 50 B、标签迁移、无占位、`Saved v1` | **PASS** |
 | 迁移后的撤销/重做 | 迁移文档内 Cmd+Z 移除输入（Edited）、⇧⌘Z 恢复；alpha/beta 字节不变，历史属于迁移后的文档 | **PASS** |
-| 原生 Rich text 特殊块与原地 Composer 字节保真（在 7b 构建观察；相关代码路径未被 6e/47e 改动） | `baseline-richtext.md`：frontmatter 表格、标题、NOTE alert、脚注与批注呈现；alert 的 `Edit` 打开 composer；输入 ` CANCEL-MARK` 后 Esc，文档与文件不变；输入 ` SAVED-MARK` 后 ⌘↩ 保存，仅该行变化（178→180 B，`e6141adb…6942`），其余字节一致；Cmd+Z + 自动保存恢复原始 169 B `5b377f55…75e6` | **PASS（7b 构建，路径未改动）** |
+| 特殊块与原地 Composer 字节保真（47e 复验保存/撤销；Esc 取消在 7b 观察） | 打开 `baseline-richtext.md` 本身不写盘（169 B `5b377f55…75e6`，mtime 12:30:06）；composer 追加 ` CHK47` 后自动保存为 175 B `1d0f0c44…db28`，diff 只有 alert 行，其余字节一致；Cmd+Z + 自动保存恢复到精确原始 169 B `5b377f55…75e6`。7b 上的 Esc 取消保持文档与文件不变 | **PASS（47e）** |
 | ComparisonTable 键盘排序与不写原文（7b 构建） | 表头 `Option/Size/Notes` 可聚焦，Space 排序 180/12/9（数值降序），再次 Space 恢复；`comparison.md` 哈希与 mtime 不变 | **PASS（7b 构建，路径未改动）** |
 | 部分来源与全部缺失的实时跟随（7b 构建） | mixed 视图：FRESH、STALE `Source changed`、MISSING `Source not found` 且 `Edit in source`/`Note` 禁用并提示“None of this part's sources are in the document now.”、无哈希不标记；面板 `2 components out of date`、`Regenerate changed (2)`；`state.sh all-missing` 实时变为 MISSING A/B 且均禁用，`state.sh partial` 恢复；原文哈希与 mtime 不变 | **PASS（7b 构建，路径未改动）** |
-| 窄窗右栏浮层（7b 构建） | 约 750 pt 窗口下 `Show right panel` 以浮层盖在文档上，含 Outline/GenUI 分段；GenUI 显示过期摘要；`Hide` 收起 | **PASS（7b 构建，路径未改动）；宽窗未验** |
+| 窄窗右栏浮层（7b 构建） | 约 750 pt 窗口下 `Show right panel` 以浮层盖在文档上，含 Outline/GenUI 分段；GenUI 显示过期摘要；`Hide` 收起；宽窗布局已在同名标签场景观察到 | **PASS（7b 构建，路径未改动）** |
+| 未命名脏关闭 Cancel（47e） | 原生保存表“Do you want to keep this new document “Untitled”?…” 含 Save…/Delete/Cancel；Cancel 保留标签与文本 `DIRTY-CLOSE-TEST`，header `Edited`（Delete 分支未执行） | **PASS（Cancel 分支）** |
+| 两个未命名 A/B，A 首次保存进已有文件夹（47e） | 新建 Untitled A 与 Untitled 2 B；`File > Save As` 后 A 成为 `first-save-A.md` 且内容完整，B 仍是独立的 `Untitled 2` 标签；保存后 A 内 Cmd+Z/⇧⌘Z 有效，B 未受影响 | **PASS** |
+| 只读文档（47e） | `readonly-special-blocks.md` 以 `Read only` 打开并渲染块；输入 `RO-EDIT` 不改变文档；Cmd+S 显示原生提示“The document “readonly-special-blocks.md” can’t be saved because its file is read-only. Save it as another file to keep your changes.”（Cancel / Save As…），Cancel 关闭；文件仍为 0444、字节不变 | **PASS** |
+| 同名标签与导航（47e） | workspace-same 显示 `notes.md — alpha` 与 `notes.md — beta` 两个标签且内容各自不同；面包屑 `workspace-same / beta / notes.md`；过滤 `notes` 显示 “2 of 3 files”；同时观察到宽窗三栏布局 | **PASS** |
+| 主动清空（47e） | Rich text 中 Cmd+A/Backspace 后 Cmd+S：文件为 1 字节 `01ba4719…546b`（单个 `\n`），退出重启后文档恢复为空白、Saved，文件仍 1 字节；Markdown 模式清空后 Cmd+S 为 0 字节 `e3b0c442…`，两种形式都不被退出覆盖 | **PASS** |
+| 并发 A/B 生成（fake ACP，47e） | alpha（paced，pace 15）与 beta（仓库 helper）在 alpha 运行期间先后生成：alpha `ALPHA VIEW` / 请求 `ALPHA-ONLY focus` / `gemini-3.8-flash` / 04:47:44Z；beta `BETA VIEW` / `BETA-ONLY focus` / 同一模型 / 04:47:52Z；两者 `Up to date`，磁盘视图与日志分别匹配各自请求；alpha 运行中 Model 弹层禁用 | **PASS** |
+| 取消生成（47e） | alpha `Regenerate all` 后 Cancel：回到原有 `ALPHA VIEW`，面板 `Up to date`，请求与生成时间保持；视图文件哈希 `f98d39cd…3bb1` 不变；日志以 `session/prompt → session/cancel` 结束（失败告警文字未持久留在 AX，属瞬态） | **PASS** |
+| 大目录与监听竞态（#14/#29，47e） | `large-workspace` 只列 `· 1 file`（`audit.md`；514 个无关目录与 16k txt 不列出）；切换 GenUI 到首个含视图内容的 AX 为 **460 ms**（含单次 getAXState 等待，方法已记录）；运行中原子替换视图文件后运行中的视图更新为新文本（约 1.5 s 内，观察上界），恢复原文件后视图回退；`audit.md` 字节不变 | **PASS** |
+| 全部编辑后的正常 CmdQ（47e） | 退出后会话保留 3 个工作区（workspace 10 个标签、workspace-same 两个 notes、large-workspace 的 audit + `genui` 模式）；重启恢复 audit 的 GenUI 与其视图、以及清空后的 `first-save-A copy`；退出时没有 Agent 运行 | **PASS** |
+| 部分来源的真实同卡片（#28，47e） | `state.sh mixed-card`：单张 `MIXED SOURCES` 卡片显示 `From Removed section, Overview Source not found` 且正文照常渲染，`Edit in source` 与 `Note` 可用；`Edit in source` 落在 Overview 并选中其正文；`Note` 写入 `MIX47-NOTE` 到 Overview 内（`## Details` 之前），卡片仍 `Source not found`、无误报 `Source changed`；对照 `all-missing` 时两者禁用并显示 “None of this part’s sources are in the document now.” | **PASS** |
+| 缺失根恢复（47e） | 打开 `workspace-missing` 后退出，重命名根目录再重启：原生横幅 “The folder … is missing or unreadable.”，工作区名保留、`· 0 files`、`No Markdown files in this folder.`，没有恢复任何标签；其余工作区不受影响；目录随后改回 | **PASS** |
+| 显式关闭的工作区不复活（47e） | 关闭缺失根窗口后退出，`session.json` 只列 workspace、workspace-same、large-workspace；重启 Window 菜单只有 alpha.md/audit.md/notes.md，没有 workspace-missing | **PASS** |
+| Beta 失败告警（47e） | `Regenerate all` 以 `role=alert` 显示 “The agent is not signed in. Run `…/fake-acp-agent acp --login` …”，含 “The agent said:” 与原文 `FAKE-BETA-FAILURE…`，按钮 Retry/Dismiss；原有 `BETA VIEW` / `Up to date` 保留，视图文件 sha256 `39cdc260…d0c7fb` 不变 | **PASS** |
+| 生成中退出、不重放（47e） | alpha 以 pace 60 生成到 “Thinking…” 时 CmdQ：应用退出，无 coresmoke/fake-agent 进程残留；日志以 `session/prompt → session/cancel → cancelled-before-write` 结束，视图不变（`f98d39cd…3bb1`）；重启后 alpha 为 Saved v1、无生成中状态、无 Agent 重放 | **PASS** |
+| 冷启动首次 GenUI 与监听竞态（47e） | 全新进程、全新路径 `cold2.md` + 从未被监听的视图：点击 GenUI 到首个含视图内容的 AX 为 **499 ms**，无 “No view yet” 中间态；运行中把视图改写为 `COLD-RACE-47E first frame` 后视图更新，恢复原文件（sha `2ffb220b…a8ddf`）后视图回退 | **PASS** |
+| Folder 最后标签保留（47e） | workspace2（0 标签）打开 b-doc.md 后，用标签焦点 + Cmd+W 关闭唯一标签：文件夹窗口保留、标签条为空、文件树完整、显示 “Open a Markdown file from this folder.”、标题 b-doc.md；会话随后同时列出 workspace 与 workspace2（空临时窗口关闭变体未执行） | **PASS** |
+| 打包字体（部分，47e） | bundle 只含二进制与图标；嵌入的 `web/dist` 含 IBM Plex Sans/SC、Barlow Semi Condensed、KaTeX、Phosphor `.woff2`，二进制含 Phosphor 字符串，UI 截图使用随包字体；Web Inspector 未启用，严格的离线 `FontFace`/网络证明未取得 | **部分证据**（不作严格离线 PASS） |
+| Model 菜单可见性（47e） | 新截图显示列表 `Agent’s choice / gemini-4-argon / gemini-3.8-flash ✓ / claude-opus-5-5`，设置缓存也含 3 个模型；但点击弹层行会让 CUA 绑定丢失窗口（`noWindowsAvailable`），AX 只暴露 “Agent’s choice”，重绑后模型仍为 `gemini-3.8-flash` | **未验证（CUA 传输限制，不是产品失败结论）** |
+| Duplicate 与目标唯一性（47e） | `File > Duplicate` 对 cold2 生成 `cold2 copy`（Edited，内容相同）；Save As 冲突未被触发（保存表按默认名 `cold2 copy.md` 完成），目标唯一性仍未验证 | **部分（创建 PASS；冲突未验）** |
 
 ### 代码审查发现（静态，待修；不是 Native 运行证据）
 
-`SpecReview32` 在审查 head `6f`（文档快照）时提出两项硬缺陷；修复由 `NativeCommandsFix32` 在工作树 `-21` 进行中。它们是**静态代码审查结论**，不是打包应用上的实际观察，因此既不并入上面的 Native PASS，也不因为“修复在途”改判 PASS：
+`SpecReview32`（spec 轴）与 `Standards`（标准轴）的结论都基于审查 head `6f`（文档快照），是**静态代码审查结论**，不是打包应用上的实际观察；它们不并入上面的 Native PASS，也不因为“修复在途”改判 PASS。Standards 总判定为 FAIL，共 6 条（3 条硬违规、3 条启发式）。
 
-| 发现 | 性质 | 现状 |
+| 发现 | 来源 / 性质 | 现状 |
 |---|---|---|
-| 生成中的文档，其原生路径菜单与错误提示不完整（`Save As` / `Rename` / `Move` 的禁用与提示没有完整覆盖 `generating` 状态） | 静态审查 FAIL | **待修**：`NativeCommandsFix32` 修复中；修复后需定向自动测试与原生复验 |
-| `Rename` / `Move`、只读保存、关闭时保存的目标唯一性检查发生在写入之后 | 静态审查 FAIL | **待修**：同上；属数据安全路径，修复后必须验证“先检查、后写入”，不得写入第二个会话 |
+| 生成中的文档，其原生路径菜单与错误提示不完整（`Save As` / `Rename` / `Move` 的禁用与提示没有完整覆盖 `generating` 状态） | SpecReview 硬缺陷 | **待修**：`NativeCommandsFix32`；修复后需定向自动测试与原生复验 |
+| `Save`（只读时回退另存为）、`Rename`、`MoveTo` 的目标唯一性检查发生在 `Save` / `Rename` / `MoveTo` 已写盘、改 `doc.Path()` 并触发状态之后，冲突时可能覆盖已打开文档的磁盘文件并留下两个同路径会话 | Standards P1（同一问题族见 SpecReview） | **待修**：`NativeCommandsFix32`；修复后必须验证“先检查、后写入” |
+| `GenUIView.scrollToCard` 用全局 `document.querySelectorAll('[data-testid="genui-view"] [data-component-id]')` 而没有限定到本视图的挂载元素；隐藏的 A 标签 GenUI 与活动 B 标签组件 id 相同（如 `root`、`summary`）时，B 的 `.changed-list` 点击会命中 A 的卡片，跳过 B 的高亮与滚动 | Standards P2（Tab 与文档隔离） | **待修**：`UIIsolationFix32`（工作树 `-27`），按文档/编辑器限定查询 |
+| `noteDialog.ts` 的 `activeCancel` 是模块级全局：任何后台标签的 `load` / `onReload`（`setMarkdown`）/ `setReadonly` / `destroy` 都会调用 `cancelNoteComposer()`，关闭活动标签正在输入的 Note 或特殊块 `.composer` 并丢弃草稿 | Standards P2（后台面板独立状态） | **待修**：`UIIsolationFix32`（工作树 `-27`），按文档/编辑器限定 |
+| 原生命令对同一文档重复 flush（`App.tsx` 的 `host.flush` 与 `mygoHost` 的 `flushDocument` 各发一次；`closeWorkspace` 路径每标签可达四次），每次都触发 `reindexOpenDocument` | Standards 启发式 P2（重复代码） | **待修**：`NativeCommandsFix32` |
+| `utf16Count` 每行分配 `[]rune` 与 `[]uint16`；`navRel`/`relOf` 在树排序与过滤时对每一项调用 `canonicalPath`（`EvalSymlinks`），而索引里已有相对键 | Standards 启发式 P2（Go 分配/系统调用） | **待修**：`IndexPerfFix32`（工作树 `-22`） |
+| 四处相似的 tab 移除 + 活动回退压缩（`documenthost.go` 与 vendored MyGo 的 document group） | Standards P3 启发式 | **暂接受**：按现有 app/kernel authority 保持局部重复，避免为四处小逻辑引入跨模块抽象；不是缺陷关闭，只是不做抽象 |
 
-这两项与 `47e3b4a` 的实机 PASS 分属不同证据类型；在修复落地并实际复验前，相关原生行仍按未完成处理。
+这些发现与 `47e3b4a` 的实机 PASS 分属不同证据类型；在修复落地并实际复验前，相关原生行仍按未完成处理，也不声称已经修完。
 
 ### 仍未运行 / 受策略阻塞的原生行
 
+以下按 NativeAcceptance32 报告的实际缺口保留，未执行的不因相邻场景 PASS 而升级：
+
 | 范围 | 状态与缺口 |
 |---|---|
-| 原生 Edit 菜单点击 Undo/Redo | 键盘 `⌘Z` / `⇧⌘Z` 已在 47e 验证；菜单项点击与 `SetNativeEditState` 的菜单可用性未在原生界面点击验证 |
-| 关闭与取消（#21） | 脏关闭/保存的原生 Cancel 与对话框归属、未命名脏关闭、只读文档保存、重复目标唯一性、文件夹最后一个标签 vs 空临时窗口，均未运行；其中目标唯一性另有静态审查发现（检查晚于写入），见上一小节 |
-| 恢复剩余项（#23） | 未保存未命名文本、缺失根、显式关闭不复活、Agent 不重放，未运行 |
-| 标签与导航（#21/#22） | 同名标签父目录区分、背景标签徽标、键盘树/过滤/分栏/面包屑、根文件计数换行、最近工作区持久化，未运行 |
-| 并发生成与设置（#24） | 真实原生 ACP fixture 的 A/B 并发生成、切换时 A 冻结、空闲面板 `settingsChanged`、取消/失败保留旧视图、关闭/退出清理，未运行（fixtures 已备好）；生成中的原生路径菜单/错误提示另有静态审查发现（不完整），见上一小节。**Model 变更的 Native 传播仍未 PASS**：helper 观察到 A/B 面板都显示 `3.8`；模型缓存本身有效，AX 漏读正在处理；这既不是 fixture 结论，也不是 Go 解析结论，需重新观察 |
-| 特殊块剩余（#26） | 其它特殊块类型、只读控件、批注/Focus Composer 键盘，未运行 |
-| 大目录（#14/#29） | 首次视图就绪时间与监听竞态，未测量 |
-| 视觉与离线资源（#25） | 打包应用离线字体/图标证明、宽窗布局、reduced motion、与同一基准源的 Rich text 对比截图，未运行 |
+| 空临时窗口关闭生命周期 | folder 最后一个标签保留已 PASS；只含未命名标签的临时窗口关闭未执行；脏关闭保存表的 Delete 分支也未执行 |
+| 目标唯一性与路径安全（#21） | Duplicate 创建已观察；Save As 冲突、生成中的 `Save As`/`Rename`/`Move` 可用性、只读 Save→Save As、写入前 `pathTaken` 检查均推迟到 `NativeCommandsFix32` 的新包，静态审查见上一小节 |
+| Model 变更的原生传播（#24） | 菜单列表与缓存可见，但 CUA 弹层点击会丢失窗口、AX 只暴露 “Agent's choice”；模型变更 → 空闲 A/B 同步 → 持久化仍未验证，不是产品失败结论，需重新观察 |
+| 原生 Edit 菜单点击 Undo/Redo | 键盘 `⌘Z` / `⇧⌘Z` 已在 47e 验证；菜单项鼠标点击与 `SetNativeEditState` 的菜单可用性未验证（CUA 原生菜单定位限制） |
+| 打包应用严格离线字体证明 | 随包字体嵌入与渲染已观察；Web Inspector 未启用，未取得 `FontFace`/网络关闭的严格证明 |
 | 辅助技术（#31） | **BLOCKED**：VoiceOver 处于关闭（无 VO 进程），开启属于动作时需用户同意的系统设置变更；键盘排序已 PASS，浅层 AX 只看到表头文本与聚焦的 `button Size`，不据此声称 VoiceOver 通过 |
 | reduced motion（#25） | **BLOCKED**：`ReduceMotionEnabled = 0`，开启同样需要动作时确认；不作 PASS |
 

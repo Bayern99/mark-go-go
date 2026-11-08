@@ -190,6 +190,7 @@ export function askForMarkdown(
     inputLabel: 'Markdown',
     placeholder: 'Edit this block as Markdown.',
     allowEmpty: true,
+    trim: false,
     restoreNewlines: true,
   })
 }

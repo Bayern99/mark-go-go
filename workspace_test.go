@@ -178,6 +178,48 @@ func TestSameFileFollowsHardLink(t *testing.T) {
 	}
 }
 
+func TestCanonicalPathAndDeepestRootFollowDirectoryAlias(t *testing.T) {
+	dir := t.TempDir()
+	realRoot, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		realRoot = dir
+	}
+	aliasRoot := filepath.Join(t.TempDir(), "ws-alias")
+	if err := os.Symlink(realRoot, aliasRoot); err != nil {
+		t.Fatal(err)
+	}
+	realFile := filepath.Join(realRoot, "beta.md")
+	if err := os.WriteFile(realFile, []byte("# Beta\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	aliasFile := filepath.Join(aliasRoot, "beta.md")
+	if canonicalPath(aliasRoot) != canonicalPath(realRoot) {
+		t.Fatalf("canonical roots differ: alias %q real %q", canonicalPath(aliasRoot), canonicalPath(realRoot))
+	}
+	if !sameRoot(aliasRoot, realRoot) {
+		t.Fatal("alias directory must be the same workspace root")
+	}
+	if !sameFile(aliasFile, realFile) {
+		t.Fatal("alias file must be the same document")
+	}
+	if !folderContains(aliasRoot, realFile) || !folderContains(realRoot, aliasFile) {
+		t.Fatal("folderContains must see through the directory alias")
+	}
+	got := deepestRoot(aliasFile, []string{realRoot})
+	if !sameRoot(got, realRoot) {
+		t.Fatalf("deepestRoot = %q, want alias of %q", got, realRoot)
+	}
+	host := newDocumentHost()
+	host.mu.Lock()
+	w := &workspace{id: "ws-real", root: canonicalPath(realRoot)}
+	host.byWindow[&mygo.Window{}] = w
+	found := host.folderWorkspaceLocked(aliasFile, false)
+	host.mu.Unlock()
+	if found != w {
+		t.Fatalf("folderWorkspaceLocked via alias = %v, want existing workspace", found)
+	}
+}
+
 func TestUntitledWorkspaceKind(t *testing.T) {
 	w := &workspace{id: "ws", root: ""}
 	if w.kind() != "untitled" || w.name() != "Untitled" {

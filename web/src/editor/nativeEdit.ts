@@ -25,8 +25,8 @@ function nativeFieldAt(node: EventTarget | null): HTMLTextAreaElement | HTMLInpu
   if (node instanceof HTMLTextAreaElement || node instanceof HTMLInputElement) return node
   if (node instanceof Node) {
     const host = node instanceof Element ? node : node.parentElement
-    const field = host?.closest('textarea, input')
-    if (isNativeField(field ?? null)) return field
+    const field = host?.closest('textarea, input') ?? null
+    if (isNativeField(field)) return field
   }
   return null
 }

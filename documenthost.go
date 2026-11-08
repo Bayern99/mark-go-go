@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"path/filepath"
 	"sync"
 
@@ -170,7 +169,7 @@ func (h *documentHost) openWindow(doc *mygo.Document[string]) *mygo.Window {
 	}
 	root := ""
 	if p := doc.Path(); p != "" {
-		root = filepath.Dir(p)
+		root = canonicalPath(filepath.Dir(p))
 	}
 	win := h.newWorkspaceWindow(root, doc.Name())
 	h.adopt(doc, win)
@@ -182,18 +181,8 @@ func (h *documentHost) existingWindow(doc *mygo.Document[string]) *mygo.Window {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if path != "" {
-		var roots []string
-		byRoot := map[string]*workspace{}
-		for _, w := range h.byWindow {
-			if w.root == "" || w.win == nil || w.win.IsDestroyed() {
-				continue
-			}
-			clean := filepath.Clean(w.root)
-			roots = append(roots, w.root)
-			byRoot[clean] = w
-		}
-		if best := deepestRoot(path, roots); best != "" {
-			return byRoot[filepath.Clean(best)].win
+		if w := h.folderWorkspaceLocked(path, false); w != nil {
+			return w.win
 		}
 		return nil
 	}
@@ -208,6 +197,29 @@ func (h *documentHost) existingWindow(doc *mygo.Document[string]) *mygo.Window {
 		if w.root == "" && w.win != nil && !w.win.IsDestroyed() {
 			return w.win
 		}
+	}
+	return nil
+}
+
+// folderWorkspaceLocked finds an open folder workspace for path. deepest
+// containing root wins; if includeParent and none contain the file, a
+// workspace whose root is the parent directory is reused. Roots are
+// compared after canonicalPath so aliases of the same directory match.
+func (h *documentHost) folderWorkspaceLocked(path string, includeParent bool) *workspace {
+	var roots []string
+	byRoot := map[string]*workspace{}
+	for _, w := range h.byWindow {
+		if w.root == "" || w.win == nil || w.win.IsDestroyed() {
+			continue
+		}
+		roots = append(roots, w.root)
+		byRoot[canonicalPath(w.root)] = w
+	}
+	if best := deepestRoot(path, roots); best != "" {
+		return byRoot[canonicalPath(best)]
+	}
+	if includeParent && path != "" {
+		return byRoot[canonicalPath(filepath.Dir(path))]
 	}
 	return nil
 }
@@ -340,20 +352,7 @@ func (h *documentHost) migrateIfNeeded(s *docSession) {
 func (h *documentHost) workspaceForPath(path string) *workspace {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	var roots []string
-	byRoot := map[string]*workspace{}
-	for _, w := range h.byWindow {
-		if w.root == "" || w.win == nil || w.win.IsDestroyed() {
-			continue
-		}
-		roots = append(roots, w.root)
-		byRoot[filepath.Clean(w.root)] = w
-	}
-	if best := deepestRoot(path, roots); best != "" {
-		return byRoot[filepath.Clean(best)]
-	}
-	parent := filepath.Clean(filepath.Dir(path))
-	return byRoot[parent]
+	return h.folderWorkspaceLocked(path, true)
 }
 
 func (h *documentHost) moveTab(s *docSession, dest *workspace) {

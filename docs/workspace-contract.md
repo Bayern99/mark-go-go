@@ -108,11 +108,11 @@ navSearchReady: NavSearchResult       // incomplete is true until the index is r
 
 ## Routing (Open / Finder / menu)
 
-1. If an open document is the same file (`path` equal or `os.SameFile`), activate it in its window and focus that window.
+1. If an open document is the same file (`path` equal, canonical path equal, or `os.SameFile`), activate it in its window and focus that window.
 2. Else if one or more folder workspaces contain the file, open it as a tab in the workspace whose `root` is the deepest prefix.
 3. Else open (or create) a folder workspace at the file's parent directory and add the tab there.
 
-Opening a folder that is already a workspace root focuses that window. Parent and child folders may both be open; they still share one document session per file.
+Opening a folder that is already a workspace root focuses that window. Parent and child folders may both be open; they still share one document session per file. Roots and files are compared after resolving existing symlink prefixes (`canonicalPath`), so aliases of the same directory — including macOS `/tmp` versus `/private/tmp` — reuse the same workspace and keep `documentId`.
 
 Untitled window: `root == ""`, `kind == "untitled"`. It holds untitled documents. Closing its last tab closes the window. A folder workspace with zero tabs stays open.
 

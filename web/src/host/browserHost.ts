@@ -310,7 +310,10 @@ export function createBrowserHost(
       emitState()
       try {
         onProgress({ phase: 'starting', text: 'Starting the agent' })
-        const { promise: stopped, reject: stop } = Promise.withResolvers<never>()
+        let stop!: (error: Error) => void
+        const stopped = new Promise<never>((_, reject) => {
+          stop = reject
+        })
         abortInFlight = () => stop(cancelled())
         if (signal.aborted || abandoned) abortInFlight()
         else signal.addEventListener('abort', abortInFlight, { once: true })

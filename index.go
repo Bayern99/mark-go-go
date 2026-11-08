@@ -184,7 +184,7 @@ func skipDirName(name string) bool {
 }
 
 func relSlash(root, path string) string {
-	rel, err := filepath.Rel(root, path)
+	rel, err := filepath.Rel(canonicalPath(root), canonicalPath(path))
 	if err != nil {
 		return ""
 	}
@@ -459,13 +459,13 @@ func (h *documentHost) openTexts(w *workspace) map[string]string {
 		if p == "" {
 			continue
 		}
-		out[filepath.Clean(p)] = s.doc.Content()
+		out[canonicalPath(p)] = s.doc.Content()
 	}
 	return out
 }
 
 func (h *documentHost) indexOne(file *indexedFile, open map[string]string) {
-	text, ok := open[filepath.Clean(file.path)]
+	text, ok := open[canonicalPath(file.path)]
 	if !ok {
 		data, err := readCapped(file.path, maxIndexBytes)
 		if err != nil {
@@ -658,7 +658,7 @@ func (h *documentHost) navSnapshot(w *workspace) NavSnapshot {
 		extraInfo[id] = s.info()
 		p := s.doc.Path()
 		if p != "" {
-			openByPath[filepath.Clean(p)] = s
+			openByPath[canonicalPath(p)] = s
 		}
 	}
 	h.mu.Unlock()
@@ -715,7 +715,7 @@ func (h *documentHost) navSnapshot(w *workspace) NavSnapshot {
 	seenOpen := map[string]bool{}
 	for _, rel := range fileKeys {
 		file := idx.files[rel]
-		sess := openByPath[filepath.Clean(file.path)]
+		sess := openByPath[canonicalPath(file.path)]
 		deleted := file.missing
 		if sess != nil {
 			seenOpen[sess.id] = true
@@ -843,7 +843,7 @@ func (h *documentHost) searchLockedResult(w *workspace, idx *workspaceIndex, que
 	h.mu.Lock()
 	for _, s := range h.byID {
 		if p := s.doc.Path(); p != "" {
-			openIDs[filepath.Clean(p)] = s.id
+			openIDs[canonicalPath(p)] = s.id
 		}
 	}
 	h.mu.Unlock()
@@ -883,7 +883,7 @@ func (h *documentHost) searchLockedResult(w *workspace, idx *workspaceIndex, que
 	sort.Slice(files, func(i, j int) bool { return files[i].path < files[j].path })
 	for _, file := range files {
 		title, excerpt, headings := file.title, file.excerpt, file.headings
-		if text, ok := open[filepath.Clean(file.path)]; ok {
+		if text, ok := open[canonicalPath(file.path)]; ok {
 			m := parseMarkdownMeta(text)
 			title, excerpt, headings = m.Title, m.Excerpt, m.Headings
 		}
@@ -903,7 +903,7 @@ func (h *documentHost) searchLockedResult(w *workspace, idx *workspaceIndex, que
 			Name:       file.name,
 			Title:      title,
 			Excerpt:    excerpt,
-			DocumentID: openIDs[filepath.Clean(file.path)],
+			DocumentID: openIDs[canonicalPath(file.path)],
 			Headings:   headingHits,
 		}
 		result.Hits = append(result.Hits, hit)
@@ -1093,12 +1093,12 @@ func breadcrumbsFor(root, path string) []Crumb {
 	if path == "" {
 		return nil
 	}
-	abs := filepath.Clean(path)
+	abs := canonicalPath(path)
 	base := root
 	if base == "" {
 		base = filepath.Dir(abs)
 	} else {
-		base = filepath.Clean(base)
+		base = canonicalPath(base)
 	}
 	var crumbs []Crumb
 	cur := abs
@@ -1156,16 +1156,16 @@ func (st *settingsStore) recentPath() string {
 }
 
 func (st *settingsStore) rememberWorkspace(root string) error {
-	root, err := filepath.Abs(root)
-	if err != nil {
-		return err
+	root = canonicalPath(root)
+	if root == "" {
+		return nil
 	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	list := st.recentLocked()
 	next := []RecentWorkspace{{Root: root, Name: filepath.Base(root), OpenedAt: time.Now().UnixMilli()}}
 	for _, item := range list {
-		if filepath.Clean(item.Root) == filepath.Clean(root) {
+		if sameRoot(item.Root, root) {
 			continue
 		}
 		next = append(next, item)

@@ -32,6 +32,15 @@ export interface HostDocSnapshot {
 
 export type WorkspaceKind = 'folder' | 'untitled'
 
+export interface WorkspaceSnapshot {
+  id: string
+  root: string
+  name: string
+  kind: WorkspaceKind
+  documents: DocumentInfo[]
+  activeId: string
+}
+
 export type FolderState = 'open' | 'collapsed' | 'empty'
 export type IndexStatus = 'idle' | 'scanning' | 'indexing' | 'ready' | 'error'
 

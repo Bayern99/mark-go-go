@@ -22,7 +22,11 @@ export interface DocumentInfo {
   conflict: boolean;
   deleted: boolean;
   readOnly: boolean;
+  generating: boolean;
 }
+
+/** FolderState is the collapsed/expanded state of one directory in the tree. */
+export type FolderState = "open" | "collapsed" | "empty";
 
 /**
  * GenerateFailure is why a generation ended without a new view, sent
@@ -87,6 +91,16 @@ export interface GenerateRequest {
   sections: SectionRef[];
 }
 
+/** HeadingHit is a heading that matched a filter. */
+export interface HeadingHit {
+  text: string;
+  offset: number;
+  level: number;
+}
+
+/** IndexStatus is the honest scan/index progress of a workspace root. */
+export type IndexStatus = "idle" | "scanning" | "indexing" | "ready" | "error";
+
 /**
  * NativeCommand asks the page to flush a captured document (or every
  * document, for closeWorkspace) then call the matching host method.
@@ -94,6 +108,66 @@ export interface GenerateRequest {
 export interface NativeCommand {
   id: string;
   command: string;
+}
+
+/** NavEntry is one folder or Markdown file in the workspace tree. */
+export interface NavEntry {
+  id: string;
+  /** "file" | "folder" */
+  kind: string;
+  name: string;
+  path: string;
+  parent: string;
+  depth: number;
+  markdownCount: number;
+  folderState?: FolderState;
+  title?: string;
+  excerpt?: string;
+  modifiedAt?: number;
+  notes?: number;
+  edited?: boolean;
+  conflict?: boolean;
+  deleted?: boolean;
+  documentId?: string;
+}
+
+/** NavSearchHit is one file that matched a filter, with heading hits. */
+export interface NavSearchHit {
+  path: string;
+  name: string;
+  title: string;
+  excerpt: string;
+  documentId?: string;
+  headings: HeadingHit[];
+}
+
+/** NavSearchResult is the current filter result, including incomplete scans. */
+export interface NavSearchResult {
+  query: string;
+  status: IndexStatus;
+  matched: number;
+  indexed: number;
+  total: number;
+  incomplete: boolean;
+  hits: NavSearchHit[];
+}
+
+/** NavSnapshot is the tree as the page lists it. */
+export interface NavSnapshot {
+  root: string;
+  status: IndexStatus;
+  indexed: number;
+  total: number;
+  error?: string;
+  entries: NavEntry[];
+  collapsedCount: number;
+}
+
+/** RecentWorkspace is one remembered folder workspace. */
+export interface RecentWorkspace {
+  root: string;
+  name: string;
+  openedAt: number;
 }
 
 /**
@@ -206,15 +280,15 @@ export const WorkspaceHost = {
     return call("WorkspaceHost.Flush", documentID, text);
   },
   /**
-   * Generate runs the document's view generation: the host starts the
+   * Generate runs the named document's view generation: the host starts the
    * user's Antigravity agent over ACP in an isolated temporary folder
-   * with the document's text, the agent writes the view as out.json, the
-   * host stamps metadata and section hashes onto it and writes the
-   * document's view file atomically. The page follows the progress on
-   * the channel and sees the new view through the view watch, so
-   * Generate only returns an error. The document itself is never
-   * written. A failed run sends the page its failure as the last step,
-   * then returns it as the error.
+   * with the request's captured text, the agent writes the view as out.json,
+   * the host stamps metadata and section hashes onto it and writes that
+   * document's current view file atomically. One slot per document; other
+   * documents may generate at the same time. Settings (model, agent command)
+   * are captured at start. A failed run sends the page its failure as the
+   * last step, then returns it as the error. Closing the document or the
+   * workspace cancels only that document's slot; a cancelled close does not.
    */
   generate(documentID: string, req: GenerateRequest, progress: Channel<GenerateProgress>): Promise<void> {
     return call("WorkspaceHost.Generate", documentID, req, progress);
@@ -229,6 +303,14 @@ export const WorkspaceHost = {
   },
   moveTo(documentID: string): Promise<void> {
     return call("WorkspaceHost.MoveTo", documentID);
+  },
+  /**
+   * NavSnapshot is the calling window's file tree. Opening a workspace does
+   * not wait for a full directory scan: scanning and indexing continue in
+   * the background and arrive through navChanged.
+   */
+  navSnapshot(): Promise<NavSnapshot> {
+    return call("WorkspaceHost.NavSnapshot");
   },
   /**
    * New creates an untitled document. MyGo calls Window, which reuses an
@@ -248,8 +330,20 @@ export const WorkspaceHost = {
   openWorkspace(root: string): Promise<void> {
     return call("WorkspaceHost.OpenWorkspace", root);
   },
+  /** PickFolder opens a native directory dialog and focuses or opens that workspace. */
+  pickFolder(): Promise<string> {
+    return call("WorkspaceHost.PickFolder");
+  },
+  /** RecentWorkspaces returns persisted folder workspaces, newest first. */
+  recentWorkspaces(): Promise<RecentWorkspace[]> {
+    return call("WorkspaceHost.RecentWorkspaces");
+  },
   rename(documentID: string): Promise<void> {
     return call("WorkspaceHost.Rename", documentID);
+  },
+  /** RevealPath expands ancestors so path is visible in the tree. */
+  revealPath(path: string): Promise<void> {
+    return call("WorkspaceHost.RevealPath", path);
   },
   revert(documentID: string): Promise<void> {
     return call("WorkspaceHost.Revert", documentID);
@@ -259,6 +353,10 @@ export const WorkspaceHost = {
   },
   saveAs(documentID: string): Promise<void> {
     return call("WorkspaceHost.SaveAs", documentID);
+  },
+  /** SetFilter starts or clears a tree filter. Open unsaved text is searched. */
+  setFilter(query: string): Promise<NavSearchResult> {
+    return call("WorkspaceHost.SetFilter", query);
   },
   /**
    * SetNativeEditState enables native Undo/Redo for the focused window's
@@ -275,6 +373,10 @@ export const WorkspaceHost = {
   /** Snapshot is the calling window's workspace. */
   snapshot(): Promise<WorkspaceSnapshot> {
     return call("WorkspaceHost.Snapshot");
+  },
+  /** ToggleFolder collapses or expands a directory in the tree. */
+  toggleFolder(rel: string): Promise<void> {
+    return call("WorkspaceHost.ToggleFolder", rel);
   },
   /**
    * UndoView puts back the view the last generation replaced, once: the
@@ -322,6 +424,8 @@ export const events = {
    * activating it.
    */
   docState: event<DocumentInfo>("docState"),
+  navChanged: event<NavSnapshot>("navChanged"),
+  navSearchReady: event<NavSearchResult>("navSearchReady"),
   /**
    * viewChanged tells a page that follows a document's view file that the
    * file changed, appeared or went away.

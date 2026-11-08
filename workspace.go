@@ -93,11 +93,25 @@ func newWorkspaceID() string {
 	return hex.EncodeToString(b[:])
 }
 
+// canonicalPath is an absolute path with existing symlink prefixes
+// resolved. Alias roots such as macOS /tmp versus /private/tmp compare
+// equal so Open reuses the workspace and keeps documentId.
+func canonicalPath(p string) string {
+	if p == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return filepath.Clean(p)
+	}
+	return resolveToolPath(abs, abs)
+}
+
 func sameFile(a, b string) bool {
 	if a == "" || b == "" {
 		return false
 	}
-	if filepath.Clean(a) == filepath.Clean(b) {
+	if ca, cb := canonicalPath(a), canonicalPath(b); ca != "" && ca == cb {
 		return true
 	}
 	ai, err := os.Stat(a)
@@ -111,12 +125,19 @@ func sameFile(a, b string) bool {
 	return os.SameFile(ai, bi)
 }
 
+func sameRoot(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	return canonicalPath(a) == canonicalPath(b)
+}
+
 func folderContains(root, file string) bool {
 	if root == "" || file == "" {
 		return false
 	}
-	root = filepath.Clean(root)
-	file = filepath.Clean(file)
+	root = canonicalPath(root)
+	file = canonicalPath(file)
 	rel, err := filepath.Rel(root, file)
 	if err != nil {
 		return false
@@ -125,13 +146,15 @@ func folderContains(root, file string) bool {
 }
 
 func deepestRoot(file string, roots []string) string {
-	var best string
+	var best, bestCanon string
 	for _, root := range roots {
 		if !folderContains(root, file) {
 			continue
 		}
-		if best == "" || len(filepath.Clean(root)) > len(filepath.Clean(best)) {
+		canon := canonicalPath(root)
+		if best == "" || len(canon) > len(bestCanon) {
 			best = root
+			bestCanon = canon
 		}
 	}
 	return best
@@ -242,6 +265,7 @@ func (h *documentHost) Open(ctx context.Context, path string) (DocumentInfo, err
 	if err != nil {
 		return DocumentInfo{}, err
 	}
+	abs = canonicalPath(abs)
 	h.mu.Lock()
 	for _, s := range h.byID {
 		if sameFile(s.doc.Path(), abs) {
@@ -280,9 +304,10 @@ func (h *documentHost) OpenWorkspace(ctx context.Context, root string) error {
 	if !info.IsDir() {
 		abs = filepath.Dir(abs)
 	}
+	abs = canonicalPath(abs)
 	h.mu.Lock()
 	for _, w := range h.byWindow {
-		if w.root != "" && filepath.Clean(w.root) == filepath.Clean(abs) {
+		if w.root != "" && sameRoot(w.root, abs) {
 			win := w.win
 			h.mu.Unlock()
 			win.Show()
@@ -514,6 +539,9 @@ func (h *documentHost) interceptWindowClose(win *mygo.Window) bool {
 }
 
 func (h *documentHost) newWorkspaceWindow(root, title string) *mygo.Window {
+	if root != "" {
+		root = canonicalPath(root)
+	}
 	if title == "" {
 		if root == "" {
 			title = "Untitled"

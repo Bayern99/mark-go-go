@@ -523,10 +523,18 @@ func (m *Menu) snapshotLocked() *platform.Menu {
 }
 
 func (it *MenuItem) snapshotLocked() *platform.MenuItem {
+	role := string(it.Role)
+	if it.Role == RoleClose && hasDocuments() {
+		// Documents own Close: a press must reach performRole(RoleClose),
+		// whose document role closes the active document through the
+		// app's Command. The window's own performClose would close every
+		// tab of a folder window instead.
+		role = ""
+	}
 	p := &platform.MenuItem{
 		ID:          it.uid,
 		Label:       it.Label,
-		Role:        string(it.Role),
+		Role:        role,
 		Accelerator: it.Accelerator,
 		Enabled:     !it.Disabled,
 		Visible:     !it.Hidden,

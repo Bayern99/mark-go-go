@@ -28,6 +28,11 @@ func documentRole(role MenuRole, win *Window) {
 		b = documentFor(FocusedWindow())
 	}
 	if b == nil {
+		// Close with no document in the window closes the window, as the
+		// item's own performClose did before the group took the role over.
+		if role == RoleClose && win != nil {
+			win.Close()
+		}
 		return
 	}
 	captured := b

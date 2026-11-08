@@ -54,7 +54,7 @@
 |---|---|---|
 | `workspaceChanged` | `WorkspaceSnapshot` | 标签顺序、活动标签、根目录与每个标签的徽标的权威来源 |
 | `docReloaded` | `Snapshot` | MyGo 因外部修改重读文件；`version` +1；带 `id` |
-| `docState` | `DocumentInfo` | 该文档的 edited / conflict / deleted / readOnly / name / path / generating；背景标签只更新对应标签，不激活它 |
+| `docState` | `DocumentInfo` | 该文档的 edited / conflict / deleted / readOnly / name / path / generating / `actionError`；背景标签只更新对应标签，不激活它 |
 | `viewChanged` | `{ id } & ViewSnapshot` | 跟随期间视图文件被写入、替换或删除；文档改名/首次保存/Save As 后改跟随新路径并推送一次 |
 | `navChanged` | `NavSnapshot` | 文件树增量快照；`status` 为 `idle`/`scanning`/`indexing`/`ready`/`error` |
 | `navSearchReady` | `NavSearchResult` | 过滤搜索结果；索引未完成时 `incomplete: true` |
@@ -88,7 +88,7 @@ interface HostAdapter extends ViewFileSource, ViewGenerator {
   moveTo(): Promise<void>; revert(): Promise<void>
   onReload(fn: (snap: HostDocSnapshot) => void): Disposable
   onState(fn: (state: DocumentInfo) => void): Disposable
-  bindFlush?(getText: () => string): Disposable // 原生命令 flush 用
+  bindFlush?(getText: () => string): Disposable // 该面板唯一的原始文本读取器；由它写回一次
   setViewMode(mode: string): Promise<void> // 绑定 id
 }
 interface SettingsPatch { model?: string; agentCommand?: string }
@@ -255,7 +255,10 @@ interface PluginContext {
 - File 菜单的 Save / Save As / Duplicate / Rename / Move / Revert 作用于**聚焦窗口的活动文档**（MyGo 文档组），点击时捕获该窗口的 `documentId`；`Cmd+W` / File > Close 关闭当前文档标签而不是窗口；窗口关闭按钮 / File > Close Window 调 `CloseWorkspace`（逐个询问脏文档，取消保留窗口与全部标签）；退出向每个工作区窗口发 `flushQuit`，每个窗口送完最后一次编辑并调 `PrepareQuit`，全部确认后才写 `session.json` 并继续退出。`AskOnQuit` 保持未设置，未保存字节仍由 MyGo 恢复副本保护。
 - Edit > Undo / Redo（`nativeCommand` 的 `undo` / `redo`）按点击时的活动 `documentId` 应用到**该文档编辑器的历史**，与 `UndoView`（视图文件撤回）无关。`nativeEdit.ts` 维护每文档的目标（ProseMirror 或 CodeMirror），聚焦的原地 Composer `textarea` 保留原生字段撤销；只读 GenUI / ComparisonTable 的焦点不改写文档。`SetNativeEditState(documentId, canUndo, canRedo)` 只为聚焦窗口的活动文档更新菜单可用性。
 - 会话文件：`session.json` 在 `PathUserData`，记录未主动关闭的工作区（`id`、`root`、按顺序的 `tabs[{id, path, viewMode}]`、`activeId`），不复制未保存字节。布局变化（打开、移动标签、激活、关闭、切换视图模式）时写入，退出确认后再写一次；恢复期间跳过写入，避免用半恢复的窗口覆盖已存布局。空的无标题窗口（Welcome）不存；关闭的标签或工作区不复活。
-- `flushQuit` / Save / Save As / Close 的文本来源是**该面板真正持有的文本**：编辑器已挂载时取屏幕上的当前 Markdown（`editor.getMarkdown()`，即当前 compose 文本），否则回落到宿主载入的核心文档状态。未挂载编辑器的面板不注册 flush，所以退出或保存不会把未编辑、外部重载或重新挂载的文档变成空缓冲；用户确实清空文档时，按普通编辑送达 `""`。
+- `flushQuit` / Save / Save As / Close 的文本来源是**该面板真正持有的文本**：编辑器已挂载时取屏幕上的当前 Markdown（`editor.getMarkdown()`，即当前 compose 文本），否则回落到宿主载入的核心文档状态。未挂载编辑器的面板不注册 flush，所以退出或保存不会把未编辑、外部重载或重新挂载的文档变成空缓冲；用户确实清空文档时，按普通编辑送达 `""`。`bindFlush` 是每面板唯一的原始文本读取器，`mygoHost` 的每个入口只写回一次：Save / Save As / Rename / Move / Revert / Duplicate 先交付捕获文档一次再调宿主，`close`（经 `CloseDocument`）与 `closeWorkspace` 各自负责自己的那一次。
+- 路径变更锁（`DocumentsOptions.PathChange`）：文档的生成槽被占用时，File 菜单禁用它的 `Save As` / `Rename` / `Move To`，仍到达内核的请求在对话框或写入之前被拒绝；普通保存到它自己的文件、Duplicate、编辑与切标签仍可用。锁变化后由 `RefreshDocumentMenus()` 在主线程（非阻塞投递）刷新菜单，页面不阻塞等待对话框。
+- 目标预留（`DocumentsOptions.ReservePath`）：MyGo 在写向另一个文件或移动文件之前先预留目标；文档自己的文件总是允许，另一个文件在文档生成中或已被其他活动会话持有时被拒绝，比较用规范化路径与 `os.SameFile`，全应用互斥。预留保持到返回的 release 执行（成功或失败），所以两个窗口不能取同一目标，被拒绝的目标也不会弹出覆盖询问。
+- 原生命令失败记录在该文档的 `DocumentInfo.actionError`，由它的窗口以 banner 显示；成功清除，取消对话框不算失败。
 - 恢复按**每条 planned tab** 解析，不按窗口整体解析。会话同时存 `id` 与 `path`，用途不同：先按存储的 `id` 匹配 MyGo 的恢复副本（`OpenByID`，恢复副本承载未保存字节）；否则按规范化路径匹配本次启动已打开的文档（`OpenByPath`）；否则在路径存在且未被更早的标签认领时从该路径打开（从磁盘打开的文档会得到新的 MyGo id）。找不到路径、也没有对应恢复副本时，在该标签上给出 `restoreError`。
 - 活动标签：存储的 `activeId` 先对应到那条 planned tab；恢复时每条 planned tab 记下它解析后真实持有的 id（`resolvedTab{planned, id}`），活动标签取该 planned tab 的真实 id，没有匹配则取第一条恢复成功的标签；绝不使用没有任何打开文档的 id。恢复后当前标签应立即有活动编辑器与选中状态。
 - 恢复：`restoreAfterStart` 在 MyGo 打开恢复副本与启动参数文件之后、创建未命名窗口之前执行；复用恢复副本而不是再次按路径打开，从不重放 Agent 任务。缺失的根或文件变成 `WorkspaceSnapshot.restoreError` / `DocumentInfo.restoreError`，其余工作区照常恢复；本次启动显式打开的文件在布局放好后获得焦点。

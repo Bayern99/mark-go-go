@@ -246,7 +246,7 @@
 
 运行时验收基线是 `47e3b4a`；其前序红证据来自 `f9237f2` 与 `7b90f1e`。之后对 8 个文档文件的修订（`6f3dba2` 及后续 docs-only 提交）不改变任何运行时代码，因此实机证据只引用真正运行过的 `f9237f2` / `7b90f1e` / `47e3b4a` 包，并不表示某个 docs-only 修订被单独实机运行过。
 
-当前 Root 为 `dbe1a3b`，含静态 UI/index 修复 `3b0923e`（导航索引复用键、UTF-16 计数不再分配）与 `8a6be09`（GenUI 高亮与 composer 取消按文档/编辑器限定），受影响测试通过；这些修复**尚未在新原生包上运行**，不得把 `dbe1a3b` 当作已实机验收的 47e 包。
+当前 Root 候选为 `6478ceb`（docs 分支已合入；含 `3b0923e` 导航索引、`8a6be09` UI 隔离与 `6478ceb` 原生命令路径守卫）。这些提交有定向测试实证（如 `pathguard_test.go`、`genui-isolation`、`composer-isolation`、`index_test.go`），但完整套件与新原生包尚未运行；不得把 `6478ceb` 当作已在实机上验收的 47e 包。
 
 ### 自动化全量检查（PASS，实际执行）
 
@@ -322,7 +322,7 @@
 | 全量自动检查（`47e3b4a`） | 前端 `typecheck`、真实 Chromium 全量 **26 个文件、270 项通过**、`build` 通过；Go 树与 `6e7e395` 字节相同，沿用其 `go vet` + `go test -race` PASS；变更 Go 文件 `gofmt` 干净 | **PASS（自动）** |
 | 退出/保存的空缓冲成因与修复 | 面板此前用一份只记录 `onChange` 的占位缓冲参与 flush，重载或重新挂载后会交付假的 `''`。现在交付面板真正持有的文本：编辑器已挂载时取 `editor.getMarkdown()`，否则回落到宿主载入的核心文档状态；未挂载编辑器的面板不注册 flush；用户主动清空则按普通编辑送达 `""` | 已修复（代码，47e） |
 | 恢复后无活动编辑器：成因与修复 | 从磁盘打开的文档在恢复时得到新的 MyGo id，旧实现按会话里存的 id 设置活动标签，活动标签因此指向不存在的 id。现在把存储的 active tab 映射到该文档真实的新 id，再设为活动（6e） | 已修复（代码，6e） |
-| 文档契约 | `docs/workspace-contract.md` 的会话规则同步为：flush 交付屏幕上的文本（否则核心文档状态），恢复把存储的 active tab 映射到真实 id | 已同步（47e 文本） |
+| 文档契约 | `docs/workspace-contract.md` 同步为：flush 交付屏幕上的文本（否则核心文档状态）且每入口只写回一次，恢复把存储的 active tab 映射到真实 id，路径变更先锁后写、目标预留至操作结束、失败记入 `actionError` | 已同步（47e + `6478ceb` 文本） |
 
 ### `47e3b4a` 原生复验（部分 PASS，实际观察）
 
@@ -368,11 +368,11 @@
 
 | 发现 | 来源 / 性质 | 现状 |
 |---|---|---|
-| 生成中的文档，其原生路径菜单与错误提示不完整（`Save As` / `Rename` / `Move` 的禁用与提示没有完整覆盖 `generating` 状态） | SpecReview 硬缺陷 | **待修**：`NativeCommandsFix32`；修复后需定向自动测试与原生复验 |
-| `Save`（只读时回退另存为）、`Rename`、`MoveTo` 的目标唯一性检查发生在 `Save` / `Rename` / `MoveTo` 已写盘、改 `doc.Path()` 并触发状态之后，冲突时可能覆盖已打开文档的磁盘文件并留下两个同路径会话 | Standards P1（同一问题族见 SpecReview） | **待修**：`NativeCommandsFix32`；修复后必须验证“先检查、后写入” |
+| 生成中的文档，其原生路径菜单与错误提示不完整（`Save As` / `Rename` / `Move` 的禁用与提示没有完整覆盖 `generating` 状态） | SpecReview 硬缺陷 | **已修（静态/定向测试）**：`6478ceb` 用 `PathChange` 锁 + `RefreshDocumentMenus` 刷新 Save As / Rename / Move 的菜单与拒绝路径；`pathguard_test.go` 等定向测试有实证；完整套件与原生复验待跑 |
+| `Save`（只读时回退另存为）、`Rename`、`MoveTo` 的目标唯一性检查发生在 `Save` / `Rename` / `MoveTo` 已写盘、改 `doc.Path()` 并触发状态之后，冲突时可能覆盖已打开文档的磁盘文件并留下两个同路径会话 | Standards P1（同一问题族见 SpecReview） | **已修（静态/定向测试）**：`6478ceb` 的 `ReservePath` 在任何写入/改名/移动之前认领目标（规范化路径 + `os.SameFile`，全应用互斥），保留到操作结束；`pathguard_test.go` 有实证；原生复验待跑 |
 | `GenUIView.scrollToCard` 用全局 `document.querySelectorAll('[data-testid="genui-view"] [data-component-id]')` 而没有限定到本视图的挂载元素；隐藏的 A 标签 GenUI 与活动 B 标签组件 id 相同（如 `root`、`summary`）时，B 的 `.changed-list` 点击会命中 A 的卡片，跳过 B 的高亮与滚动 | Standards P2（Tab 与文档隔离） | **已修（静态）**：`8a6be09` 按文档挂载元素限定查询；`genui-isolation` 受影响测试通过；尚未在新原生包复验 |
 | `noteDialog.ts` 的 `activeCancel` 是模块级全局：任何后台标签的 `load` / `onReload`（`setMarkdown`）/ `setReadonly` / `destroy` 都会调用 `cancelNoteComposer()`，关闭活动标签正在输入的 Note 或特殊块 `.composer` 并丢弃草稿 | Standards P2（后台面板独立状态） | **已修（静态）**：`8a6be09` 按编辑器限定取消；`composer-isolation`（216 行新用例）等受影响测试通过；尚未在新原生包复验 |
-| 原生命令对同一文档重复 flush（`App.tsx` 的 `host.flush` 与 `mygoHost` 的 `flushDocument` 各发一次；`closeWorkspace` 路径每标签可达四次），每次都触发 `reindexOpenDocument` | Standards 启发式 P2（重复代码） | **待修**：`NativeCommandsFix32` |
+| 原生命令对同一文档重复 flush（`App.tsx` 的 `host.flush` 与 `mygoHost` 的 `flushDocument` 各发一次；`closeWorkspace` 路径每标签可达四次），每次都触发 `reindexOpenDocument` | Standards 启发式 P2（重复代码） | **已修（静态/定向测试）**：`6478ceb` 让 `bindFlush` 成为唯一原始文本读取器，每入口只写回一次（`close` / `closeWorkspace` 各自负责）；`workspace-tabs` 等定向测试有实证；原生复验待跑 |
 | `utf16Count` 每行分配 `[]rune` 与 `[]uint16`；`navRel`/`relOf` 在树排序与过滤时对每一项调用 `canonicalPath`（`EvalSymlinks`），而索引里已有相对键 | Standards 启发式 P2（Go 分配/系统调用） | **已修（静态）**：`3b0923e` 复用索引键、按 UTF-16 单元计数不再分配；`index_test.go` 覆盖，受影响测试通过；尚未原生验证 |
 | 四处相似的 tab 移除 + 活动回退压缩（`documenthost.go` 与 vendored MyGo 的 document group） | Standards P3 启发式 | **暂接受**：按现有 app/kernel authority 保持局部重复，避免为四处小逻辑引入跨模块抽象；不是缺陷关闭，只是不做抽象 |
 
@@ -385,7 +385,7 @@
 | 范围 | 状态与缺口 |
 |---|---|
 | 脏关闭保存表的 Delete 分支 | Cancel 分支已 PASS；Delete 分支未执行 |
-| 目标唯一性与路径安全（#21） | Duplicate 创建已观察；Save As 冲突、生成中的 `Save As`/`Rename`/`Move` 可用性、只读 Save→Save As、写入前 `pathTaken` 检查均推迟到 `NativeCommandsFix32` 的新包，静态审查见上一小节 |
+| 目标唯一性与路径安全（#21） | 静态修复已在 `6478ceb` 合入并有定向测试（`pathguard_test.go`）；新原生包仍需实测：冲突目标在写入前被拒绝且不弹覆盖询问、生成中 `Save As`/`Rename`/`Move` 菜单禁用与直接拒绝、只读 Save→Save As、`actionError` banner、`RefreshDocumentMenus` 的实际菜单状态 |
 | Model 变更的原生传播（#24） | 菜单列表与缓存可见，但 CUA 弹层点击会丢失窗口、AX 只暴露 “Agent's choice”；模型变更 → 空闲 A/B 同步 → 持久化仍未验证，不是产品失败结论，需重新观察 |
 | 原生 Edit 菜单点击 Undo/Redo | 键盘 `⌘Z` / `⇧⌘Z` 已在 47e 验证；菜单项鼠标点击与 `SetNativeEditState` 的菜单可用性未验证（CUA 原生菜单定位限制） |
 | 打包应用严格离线字体证明 | 随包字体嵌入与渲染已观察；Web Inspector 未启用，未取得 `FontFace`/网络关闭的严格证明 |

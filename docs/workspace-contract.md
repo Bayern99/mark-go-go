@@ -150,7 +150,11 @@ File menu Save / Save As / Duplicate / Rename / Move / Revert act on the **activ
 
 Edit menu Undo / Redo (`nativeCommand` `undo` / `redo`) capture that same active `documentId` at click time and apply the **editor** history of that document. They are not `UndoView`. A focused in-place Composer (`textarea` inside `.composer`) keeps native field undo; read-only GenUI / ComparisonTable focus does not rewrite the document. `SetNativeEditState(documentId, canUndo, canRedo)` reports real editor availability for the focused window's active document only, so a background pane cannot steal menu state. `DocumentsOptions.Equal` already clears the edited mark when Undo returns the on-disk bytes.
 
-Dialogs use the workspace window as parent. Generation in progress for a document disables that document's Save As / Rename / Move; ordinary Save, edit, and tab switch stay available.
+Dialogs use the workspace window as parent. Path changes are gated before the disk:
+
+- `DocumentsOptions.PathChange(doc)` is the path-change lock: while the document's generation slot is occupied, Save As / Rename / Move To are disabled in the File menu and any attempt that still reaches the kernel is refused before a dialog or a write. Ordinary Save to its own file, Duplicate, editing and tab switching stay available. `RefreshDocumentMenus()` posts a main-thread, non-blocking menu refresh when that lock changes, so the roles reflect it without blocking a dialog.
+- `DocumentsOptions.ReservePath(doc, target)` claims the target before MyGo writes to it or moves the document's file there. The document's own file is always allowed; another file is refused while the document generates or while another live session has it, compared by canonical path and `os.SameFile` across the whole app. The claim is held until the returned release runs, on success or failure, so two windows cannot take one target and a refused target never shows an overwrite prompt.
+- A failed native command is recorded on `DocumentInfo.actionError` and shown as a banner in that document's window; success clears the previous message, and a canceled dialog is not a failure.
 
 ## Session file (#23)
 
@@ -174,6 +178,7 @@ Dialogs use the workspace window as parent. Generation in progress for a documen
 - Unsaved text stays in MyGo's recovery copies, keyed by `documentId`; the session only names the tabs, their order, the active one and the view mode. Restore reuses a recovery document instead of opening its path again, and never starts a generation the user cancelled.
 - A missing root or file becomes `WorkspaceSnapshot.restoreError` / `DocumentInfo.restoreError` and the other workspaces still restore. A file opened by this launch takes focus after the layout is placed.
 - `flushQuit` / Save / Save As / Close ask each mounted pane for what it really holds: the text on screen (`editor.getMarkdown()`), else the core document state the host loaded. A pane that has not mounted an editor registers nothing, so a flush never turns an untouched, reloaded or remounted document into an empty buffer; a document the user did clear is delivered as `""` like any other edit. A document opened from disk gets a new MyGo id at restore, so the stored active tab is mapped to the id its document really has now.
+- `bindFlush` registers that one raw-text reader per pane and is the only layer that writes it back: Save / Save As / Rename / Move / Revert / Duplicate deliver the captured document once and then run on the host; `close` (via `CloseDocument`) and `closeWorkspace` each own their flush once. A document with no mounted pane registered no reader and delivers nothing — never a synthesized empty buffer.
 
 ## MyGo document groups (controlled patch)
 

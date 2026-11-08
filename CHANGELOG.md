@@ -40,6 +40,8 @@ Spec #20 (`integration/spec-20-workspace-portrait`, tickets #21–#31) is implem
 - Browser `setViewMode` no longer echoes document state, so a view-mode write cannot unlock a read-only document through a stale `readOnly`.
 - A saved GenUI tab index is restored once after the first render instead of on every mutation.
 - Default workspace overrides now stat the directory, so an omitted override cannot hide a missing workspace folder.
+- Native path changes are gated before any write (`6478ceb`, static and targeted tests only — full suite and native re-verification pending): a generating document cannot Save As, Rename or Move To; `PathChange` refuses the change and the File menu reflects it via a main-thread menu refresh; `ReservePath` claims a canonical target app-wide until the file operation ends, so two windows cannot take one file and a refused target never prompts to overwrite; a failed native command is reported as `DocumentInfo.actionError` in its window.
+- Last input is written once per native command (`6478ceb`): `bindFlush` is the single raw-text reader, Save-family commands deliver the captured document once, `close` and `closeWorkspace` each own their flush, and an unmounted pane delivers nothing instead of a synthesized empty buffer.
 
 #### Supersession notes
 - This entry supersedes the `0.1.0` claim of "full automatic Light and Dark mode styling": only GenUI ever had dark tokens, and ADR 0006 settles this round on a light-only interface. The `0.1.0` entry is kept as written.
@@ -76,6 +78,8 @@ Spec #20 (`integration/spec-20-workspace-portrait`, tickets #21–#31) is implem
 - 浏览器端 `setViewMode` 不再回显文档状态，视图模式写入不能经旧 `readOnly` 解锁只读文档。
 - 保存的 GenUI 标签页只在首次渲染后恢复一次，不再在每次变更时覆盖用户点击。
 - 默认工作区覆盖会真正 stat 目录，省略覆盖时不能掩盖缺失的工作区文件夹。
+- 原生路径变更在写入前把关（`6478ceb`，目前只有静态审查与定向测试，完整套件与原生复验待跑）：生成中的文档不能 Save As / Rename / Move To；`PathChange` 拒绝该变更，File 菜单经主线程菜单刷新反映状态；`ReservePath` 在全应用范围预留规范化目标直到文件操作结束，两个窗口不能取同一文件，被拒绝的目标不会弹出覆盖询问；失败的原生命令以 `DocumentInfo.actionError` 显示在该文档窗口。
+- 每个原生命令只写回一次最后输入（`6478ceb`）：`bindFlush` 是唯一的原始文本读取器，Save 系列先交付一次捕获文档，`close` 与 `closeWorkspace` 各自负责自己的 flush，未挂载面板不交付任何内容，也不会合成空缓冲。
 
 #### 取代说明
 - 本条目取代 `0.1.0` 中“浅色/深色模式全自动适配”的说法：只有 GenUI 曾有过深色 Token，ADR 0006 把本轮确定为仅浅色。`0.1.0` 条目原文保留。

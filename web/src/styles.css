@@ -942,7 +942,7 @@ body {
 .mgo-locked-kicker {
   display: block;
   margin: 0;
-  padding: 8px 16px 0;
+  padding: 8px 16px 4px;
   font-family: var(--font-display);
   font-size: var(--text-meta-size);
   line-height: var(--text-meta-leading);
@@ -956,7 +956,7 @@ body {
 .crepe-root .milkdown .ProseMirror .mgo-locked-source {
   display: block;
   margin: 0;
-  padding: 4px 16px 12px;
+  padding: 0 16px 12px;
   font: inherit;
   font-size: var(--text-code-size);
   line-height: var(--text-code-leading);

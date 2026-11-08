@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-Spec #20 (`integration/spec-20-workspace-portrait`, tickets #21–#31) is implemented and consolidated here. Automated full checks pass at `7b90f1ed2cfa501cde43c3b94e96c0b9348e8847`; packaged-app acceptance is still being exercised, so this entry describes implemented behaviour, not a completed release. Known observed native failures on that source — a normal quit zeroing two unedited files, and restored tabs rendering without an active editor until a tab is clicked — are recorded as FAIL in `docs/acceptance.md`. They are fixed in `6e7e395` (flush delivers the pane's core document state; restore maps the stored active tab to the document's real new id): the targeted regression went from 2 failing to 11 passing, with Go restore tests, `tsc` and the Go build passing. Packaged-app re-verification is still pending, so those historical FAIL rows stay FAIL until that run is observed.
+Spec #20 (`integration/spec-20-workspace-portrait`, tickets #21–#31) is implemented and consolidated here. Automated full checks pass at `7b90f1ed2cfa501cde43c3b94e96c0b9348e8847`; packaged-app acceptance is still being exercised, so this entry describes implemented behaviour, not a completed release. Known observed native failures on that source — a normal quit zeroing two unedited files, and restored tabs rendering without an active editor until a tab is clicked — are recorded as FAIL in `docs/acceptance.md`. The final native candidate `47e3b4a` (on top of `6e7e395`) fixes both: a flush delivers the text on screen (`editor.getMarkdown()`) or, without a mounted editor, the core document state, never a change-only buffer; and restore maps the stored active tab to the MyGo id the document really has now. Targeted regression went from 2 failing to 11 passing, with `tsc` and the Go restore tests passing. Packaged-app re-verification is still pending, so those historical FAIL rows stay FAIL until that run is observed.
 
 ### English
 
@@ -47,7 +47,7 @@ Spec #20 (`integration/spec-20-workspace-portrait`, tickets #21–#31) is implem
 
 ### 中文
 
-规格 #20（`integration/spec-20-workspace-portrait`，任务 #21–#31）已实现并在此汇总。自动化全量检查在 `7b90f1ed2cfa501cde43c3b94e96c0b9348e8847` 通过；打包应用的验收仍在进行，本条描述已实现的行为，不代表已发布。该源码上已观察到两项原生失败：正常退出把两份未编辑文件写成 0 字节，恢复后标签存在但需点击才出现活动编辑器；它们在 `docs/acceptance.md` 中标为 FAIL。两项已在 `6e7e395` 修复（flush 交付面板的核心文档状态；恢复把存储的 active tab 映射到文档真实的新 id）：目标回归由 2 项失败转为 11 项通过，Go 恢复测试、`tsc` 与 Go build 通过。实际新包复验尚未完成，因此历史 FAIL 行保持 FAIL，直到观察到该复验结果。
+规格 #20（`integration/spec-20-workspace-portrait`，任务 #21–#31）已实现并在此汇总。自动化全量检查在 `7b90f1ed2cfa501cde43c3b94e96c0b9348e8847` 通过；打包应用的验收仍在进行，本条描述已实现的行为，不代表已发布。该源码上已观察到两项原生失败：正常退出把两份未编辑文件写成 0 字节，恢复后标签存在但需点击才出现活动编辑器；它们在 `docs/acceptance.md` 中标为 FAIL。最终原生候选 `47e3b4a`（基于 `6e7e395`）修复了这两项：flush 交付屏幕上的文本（`editor.getMarkdown()`），没有挂载编辑器时回落到核心文档状态，绝不再交付只记录变更的缓冲；恢复把存储的 active tab 映射到文档现在真实持有的 MyGo id。目标回归由 2 项失败转为 11 项通过，`tsc` 与 Go 恢复测试通过。实际新包复验尚未完成，因此历史 FAIL 行保持 FAIL，直到观察到该复验结果。
 
 #### 🗂 工作区窗口、文档标签与导航（#21、#22、#23，ADR 0005）
 - **一个文件夹一个窗口、多个文档标签**：工作区窗口以标签承载打开的原文。`documentId` 跨路径、标签、窗口、首次保存与另存为保持稳定；`workspaceId`、`root`、`path` 各自独立。

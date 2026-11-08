@@ -255,7 +255,7 @@ interface PluginContext {
 - File 菜单的 Save / Save As / Duplicate / Rename / Move / Revert 作用于**聚焦窗口的活动文档**（MyGo 文档组），点击时捕获该窗口的 `documentId`；`Cmd+W` / File > Close 关闭当前文档标签而不是窗口；窗口关闭按钮 / File > Close Window 调 `CloseWorkspace`（逐个询问脏文档，取消保留窗口与全部标签）；退出向每个工作区窗口发 `flushQuit`，每个窗口送完最后一次编辑并调 `PrepareQuit`，全部确认后才写 `session.json` 并继续退出。`AskOnQuit` 保持未设置，未保存字节仍由 MyGo 恢复副本保护。
 - Edit > Undo / Redo（`nativeCommand` 的 `undo` / `redo`）按点击时的活动 `documentId` 应用到**该文档编辑器的历史**，与 `UndoView`（视图文件撤回）无关。`nativeEdit.ts` 维护每文档的目标（ProseMirror 或 CodeMirror），聚焦的原地 Composer `textarea` 保留原生字段撤销；只读 GenUI / ComparisonTable 的焦点不改写文档。`SetNativeEditState(documentId, canUndo, canRedo)` 只为聚焦窗口的活动文档更新菜单可用性。
 - 会话文件：`session.json` 在 `PathUserData`，记录未主动关闭的工作区（`id`、`root`、按顺序的 `tabs[{id, path, viewMode}]`、`activeId`），不复制未保存字节。布局变化（打开、移动标签、激活、关闭、切换视图模式）时写入，退出确认后再写一次；恢复期间跳过写入，避免用半恢复的窗口覆盖已存布局。空的无标题窗口（Welcome）不存；关闭的标签或工作区不复活。
-- `flushQuit` / Save / Close 的文本来源是**该面板的核心文档状态**：宿主载入的字节，加上编辑器随后送达的每一次编辑。未挂载编辑器的面板不注册 flush，所以退出或保存不会把未编辑的文档变成空缓冲；用户确实清空文档时，按普通编辑送达 `""`。
+- `flushQuit` / Save / Save As / Close 的文本来源是**该面板真正持有的文本**：编辑器已挂载时取屏幕上的当前 Markdown（`editor.getMarkdown()`，即当前 compose 文本），否则回落到宿主载入的核心文档状态。未挂载编辑器的面板不注册 flush，所以退出或保存不会把未编辑、外部重载或重新挂载的文档变成空缓冲；用户确实清空文档时，按普通编辑送达 `""`。
 - 恢复时从磁盘打开的文档会得到新的 MyGo `documentId`，因此会话里存的 active tab 要映射到该文档**现在真实**的 id 再设为活动标签；绝不使用没有任何打开文档的 id。恢复后当前标签应立即有活动编辑器与选中状态。
 - 恢复：`restoreAfterStart` 在 MyGo 打开恢复副本与启动参数文件之后、创建未命名窗口之前执行；复用恢复副本而不是再次按路径打开，从不重放 Agent 任务。缺失的根或文件变成 `WorkspaceSnapshot.restoreError` / `DocumentInfo.restoreError`，其余工作区照常恢复；本次启动显式打开的文件在布局放好后获得焦点。
 

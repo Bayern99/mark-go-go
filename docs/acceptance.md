@@ -242,7 +242,7 @@
 
 ## 工作区、标签与 Portrait 集成（#20/#21–#32，2026-11-08）
 
-来源 SHA：`7b90f1ed2cfa501cde43c3b94e96c0b9348e8847`（`integration/spec-20-workspace-portrait`；基线 `4f80bbf094b5cda0cfa642090f5255e050ade587`）。本节区分**已执行的自动化检查**、**已在真实打包应用里实际观察到的原生证据**、**已观察到的原生失败**，以及**仍未运行、等待证据的行**；未运行的行不得当作通过。
+审查基线 `4f80bbf094b5cda0cfa642090f5255e050ade587`。本节记录从 `f9237f2` / `7b90f1e` 到 `47e3b4a`、`6478ceb` 的实际证据；各 SHA 的角色见下表。本节区分**已执行的自动化检查**、**已在真实打包应用里实际观察到的原生证据**、**已观察到的原生失败**，以及**仍未运行、等待证据的行**；未运行的行不得当作通过。
 
 各 SHA 的角色不同，不要混用：
 
@@ -313,6 +313,11 @@
 
 持久记录：`local://spec20-standards-review.md`、`local://spec20-spec-review.md`。
 
+### Spec 短裁定（`6478ceb`）
+
+- **Save As 的 OS 内建 Replace**：原生 Save As 对已打开目标时，OS `NSSavePanel` 在选择阶段先显示内建 Replace 确认；用户确认后应用仍以 already-open 拒绝，**目标不被写入，也不产生第二个会话**。这符合原 #20/#21 与 ADR 0005——原条款只禁止静默覆盖与双会话，并未禁止 OS 选择阶段的确认。`ReservePath` 的承诺边界是：文件/文件夹选择器返回目标之后、任何 write / `os.Rename` / 路径变更 / MyGo 自己的选择后 Move To 覆盖对话框之前；它不承诺屏蔽 OS Save 面板的确认。无需代码修复，也不降低原有的“绝不覆盖、绝无第二会话”要求。
+- **取消**：Cancel 不产生失败、不提示，属于规范行为（接口明确取消不算失败），旧视图与视图文件哈希保持不变；不作为 FAIL 候选。
+
 ### 真实打包应用的部分原生证据（f9237f2，实际观察）
 
 同一已批准的 Smoke 身份 `dev.markgogo.editor.coresmoke21`（仅验证工作树的 `mygo.json` 使用该身份），构建自 `f9237f2`，通过 `cua_repl` 操作。以下是实际观察，不是推断：
@@ -378,7 +383,7 @@
 | 同名标签与导航（47e） | workspace-same 显示 `notes.md — alpha` 与 `notes.md — beta` 两个标签且内容各自不同；面包屑 `workspace-same / beta / notes.md`；过滤 `notes` 显示 “2 of 3 files”；同时观察到宽窗三栏布局 | **PASS** |
 | 主动清空（47e） | Rich text 中 Cmd+A/Backspace 后 Cmd+S：文件为 1 字节 `01ba4719…546b`（单个 `\n`），退出重启后文档恢复为空白、Saved，文件仍 1 字节；Markdown 模式清空后 Cmd+S 为 0 字节 `e3b0c442…`，两种形式都不被退出覆盖 | **PASS** |
 | 并发 A/B 生成（fake ACP，47e） | alpha（paced，pace 15）与 beta（仓库 helper）在 alpha 运行期间先后生成：alpha `ALPHA VIEW` / 请求 `ALPHA-ONLY focus` / `gemini-3.8-flash` / 04:47:44Z；beta `BETA VIEW` / `BETA-ONLY focus` / 同一模型 / 04:47:52Z；两者 `Up to date`，磁盘视图与日志分别匹配各自请求；alpha 运行中 Model 弹层禁用 | **PASS** |
-| 取消生成（47e） | alpha `Regenerate all` 后 Cancel：回到原有 `ALPHA VIEW`，面板 `Up to date`，请求与生成时间保持；视图文件哈希 `f98d39cd…3bb1` 不变；日志以 `session/prompt → session/cancel` 结束（失败告警文字未持久留在 AX，属瞬态） | **PASS** |
+| 取消生成（47e） | alpha `Regenerate all` 后 Cancel：回到原有 `ALPHA VIEW`，面板 `Up to date`，请求与生成时间保持；视图文件哈希 `f98d39cd…3bb1` 不变；日志以 `session/prompt → session/cancel` 结束。取消不产生失败、不提示（接口规则），属规范行为，不是 FAIL 候选 | **PASS（规范行为）** |
 | 大目录与监听竞态（#14/#29，47e） | `large-workspace` 只列 `· 1 file`（`audit.md`；514 个无关目录与 16k txt 不列出）；切换 GenUI 到首个含视图内容的 AX 为 **460 ms**（含单次 getAXState 等待，方法已记录）；运行中原子替换视图文件后运行中的视图更新为新文本（约 1.5 s 内，观察上界），恢复原文件后视图回退；`audit.md` 字节不变 | **PASS** |
 | 全部编辑后的正常 CmdQ（47e） | 退出后会话保留 3 个工作区（workspace 10 个标签、workspace-same 两个 notes、large-workspace 的 audit + `genui` 模式）；重启恢复 audit 的 GenUI 与其视图、以及清空后的 `first-save-A copy`；退出时没有 Agent 运行 | **PASS** |
 | 部分来源的真实同卡片（#28，47e） | `state.sh mixed-card`：单张 `MIXED SOURCES` 卡片显示 `From Removed section, Overview Source not found` 且正文照常渲染，`Edit in source` 与 `Note` 可用；`Edit in source` 落在 Overview 并选中其正文；`Note` 写入 `MIX47-NOTE` 到 Overview 内（`## Details` 之前），卡片仍 `Source not found`、无误报 `Source changed`；对照 `all-missing` 时两者禁用并显示 “None of this part’s sources are in the document now.” | **PASS** |
@@ -417,7 +422,7 @@
 | 范围 | 状态与缺口 |
 |---|---|
 | 脏关闭保存表的 Delete 分支 | Cancel 分支已 PASS；Delete 分支未执行 |
-| 目标唯一性与路径安全（#21） | 修复已在 `6478ceb` 合并且自动化通过（含 `pathguard_test.go`）；**Native 未验**：新原生包仍需实测冲突目标在写入前被拒绝且不弹覆盖询问、生成中 `Save As`/`Rename`/`Move` 菜单禁用与直接拒绝、只读 Save→Save As、`actionError` banner、`RefreshDocumentMenus` 的实际菜单状态 |
+| 目标唯一性与路径安全（#21） | 修复已在 `6478ceb` 合并且自动化通过（含 `pathguard_test.go`）；**Native 未验**：新原生包仍需实测已开目标在应用层被拒绝且目标未写、无第二会话（OS Save 面板可能先显示内建 Replace，见“Spec 短裁定”）、生成中 `Save As`/`Rename`/`Move` 菜单禁用与直接拒绝、只读 Save→Save As、`actionError` banner、`RefreshDocumentMenus` 的实际菜单状态 |
 | Model 变更的原生传播（#24） | 菜单列表与缓存可见，但 CUA 弹层点击会丢失窗口、AX 只暴露 “Agent's choice”；模型变更 → 空闲 A/B 同步 → 持久化仍未验证，不是产品失败结论，需重新观察 |
 | 原生 Edit 菜单点击 Undo/Redo | 键盘 `⌘Z` / `⇧⌘Z` 已在 47e 验证；菜单项鼠标点击与 `SetNativeEditState` 的菜单可用性未验证（CUA 原生菜单定位限制） |
 | 打包应用严格离线字体证明 | 随包字体嵌入与渲染已观察；Web Inspector 未启用，未取得 `FontFace`/网络关闭的严格证明 |

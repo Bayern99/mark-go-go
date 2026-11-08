@@ -387,11 +387,11 @@ export function DocumentPane({
           }, EDIT_DEBOUNCE_MS)
         }),
       )
-      // The pane's core document state is the single source of the
-      // bytes to deliver: the text the host loaded, then every edit the
-      // editor made. A pane whose editor has not mounted registers
-      // nothing, so a flush can never invent an empty buffer.
-      const currentText = () => services.documents.snapshot().text
+      // What this pane really holds: the text on screen now, else the
+      // core document state the host loaded. Never a buffer that only
+      // changes were written to, so a pane that was remounted or has not
+      // mounted an editor cannot deliver an invented empty buffer.
+      const currentText = () => editorRef.current?.getMarkdown() ?? services.documents.snapshot().text
       cleanups.push({
         dispose: registerDocumentFlush(host.id, async () => {
           if (debounceTimer !== undefined) {

@@ -6,6 +6,7 @@ import { catalogDefinition, CATALOG_COMPONENTS } from '../src/plugins/genui/a2ui
 import { extractSections } from '../src/markdown/sections'
 import { SOURCE_DEBOUNCE_MS } from '../src/plugins/genui/sources'
 import { mountApp, type MountedApp } from './helpers/app'
+import { scrollViewport } from './helpers/scroll'
 
 const DOCUMENT = `# Plans
 
@@ -149,6 +150,7 @@ describe('GenUI content components', () => {
   })
 
   it('names the table and headers, sorts from the keyboard, and stays read-only', async () => {
+    await page.viewport(340, 900)
     const mounted = await showView(EVERY)
     const update = vi.spyOn(mounted.host, 'update')
     const order = (expected: string[]) => vi.waitFor(() => expect(firstColumn(mounted)).toEqual(expected))
@@ -163,11 +165,16 @@ describe('GenUI content components', () => {
     }
     await expect.element(page.getByRole('rowheader', { name: 'MyGo' })).toHaveAttribute('scope', 'row')
 
-    const scroller = mounted.container.querySelector<HTMLElement>('.genui-table-scroll')
+    const scrollHost = mounted.container.querySelector<HTMLElement>('.genui-table-scroll')
     const headers = Array.from(mounted.container.querySelectorAll<HTMLButtonElement>('.genui-comparison thead button'))
-    if (!scroller || headers.length !== 3) throw new Error('comparison headers missing')
+    if (!scrollHost || headers.length !== 3) throw new Error('comparison headers missing')
+    const scroller = scrollViewport(scrollHost)
+    expect(scroller.tabIndex).toBe(0)
+    expect(scroller.scrollWidth).toBeGreaterThan(scroller.clientWidth)
     scroller.focus()
     expect(document.activeElement).toBe(scroller)
+    await userEvent.keyboard('{ArrowRight}')
+    await vi.waitFor(() => expect(scroller.scrollLeft).toBeGreaterThan(0))
     await userEvent.keyboard('{Tab}')
     expect(document.activeElement).toBe(headers[0])
     await userEvent.keyboard('{Tab}')
@@ -371,7 +378,8 @@ describe('GenUI content components', () => {
       const pane = mounted.container.querySelector<HTMLElement>('.center-view')
       if (!pane) throw new Error('no center view')
       await vi.waitFor(() => expect(mounted.container.querySelector('.genui-timeline')).not.toBeNull())
-      expect(pane.scrollWidth, `pane at ${width}px`).toBeLessThanOrEqual(pane.clientWidth)
+      const paneViewport = scrollViewport(pane)
+      expect(paneViewport.scrollWidth, `pane at ${width}px`).toBeLessThanOrEqual(paneViewport.clientWidth)
       for (const block of mounted.container.querySelectorAll<HTMLElement>('.genui-block')) {
         // Wide tables scroll inside their own frame; nothing else may overflow.
         expect(block.scrollWidth, `${block.className} at ${width}px`).toBeLessThanOrEqual(block.clientWidth + 1)

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ViewRegistry } from '../core/ViewRegistry'
 import type { ViewLocation, ViewRegistration } from '../core/types'
+import { ScrollArea } from './ScrollArea'
 
 /** Live view registrations at one location, in registration order. */
 export function useViews(views: ViewRegistry, location: ViewLocation): ViewRegistration[] {
@@ -24,18 +25,29 @@ function select(views: ViewRegistry, location: ViewLocation): ViewRegistration[]
 export function ViewHost({
   view,
   className,
+  contentClassName,
+  scrollable = false,
 }: {
   view: ViewRegistration
   className?: string
+  contentClassName?: string
+  scrollable?: boolean
 }): React.ReactElement {
   const host = useRef<HTMLDivElement>(null)
+  const [scrollElement, setScrollElement] = useState<HTMLElement | null>(null)
 
   useEffect(() => {
     const element = host.current
-    if (!element) return
-    const mounted = view.mount(element)
+    if (!element || (scrollable && !scrollElement)) return
+    const mounted = view.mount(element, scrollElement ?? undefined)
     return () => mounted.dispose()
-  }, [view])
+  }, [view, scrollable, scrollElement])
 
-  return <div className={className} ref={host} />
+  const mount = <div className={scrollable ? 'view-mount' : className} ref={host} />
+  if (!scrollable) return mount
+  return (
+    <ScrollArea className={className} contentClassName={contentClassName} onViewport={setScrollElement}>
+      {mount}
+    </ScrollArea>
+  )
 }

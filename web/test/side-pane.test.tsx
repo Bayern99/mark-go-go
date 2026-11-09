@@ -1,6 +1,6 @@
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { RightPane } from '../src/components/RightPane'
 import { SidePane } from '../src/components/SidePane'
 import { ViewRegistry } from '../src/core/ViewRegistry'
@@ -99,7 +99,7 @@ function renderRightPane(
 }
 
 describe('RightPane', () => {
-  it('mounts the first right view by default and ignores left and center views', () => {
+  it('mounts the first right view by default and ignores left and center views', async () => {
     const views = new ViewRegistry()
     const mounts: string[] = []
     views.register(makeView('left.view', 'left', mounts))
@@ -109,7 +109,7 @@ describe('RightPane', () => {
 
     const rendered = renderRightPane(views)
     try {
-      expect(mounts).toEqual(['outline.panel'])
+      await vi.waitFor(() => expect(mounts).toEqual(['outline.panel']))
       const right = rendered.container.querySelector('[data-testid="right-pane"]')
       expect(right).not.toBeNull()
       const tabs = right?.querySelectorAll('[role="tab"]')
@@ -123,7 +123,7 @@ describe('RightPane', () => {
     }
   })
 
-  it('switches between right views when clicking segmented tabs and shows status dots', () => {
+  it('switches between right views when clicking segmented tabs and shows status dots', async () => {
     const views = new ViewRegistry()
     const mounts: string[] = []
     views.register(makeView('outline.panel', 'right', mounts, 'Outline'))
@@ -136,6 +136,7 @@ describe('RightPane', () => {
 
     const rendered = renderRightPane(views)
     try {
+      await vi.waitFor(() => expect(mounts).toEqual(['outline.panel']))
       const right = rendered.container.querySelector('[data-testid="right-pane"]')
       const dot = right?.querySelector('[data-testid="right-tab-dot-genui.panel"]')
       expect(dot).not.toBeNull()

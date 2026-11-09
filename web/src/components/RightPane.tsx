@@ -100,7 +100,13 @@ export function RightPane({
         role="tabpanel"
         aria-label={active.title}
       >
-        <ViewHost key={active.id} view={active} className="right-view-body" />
+        <ViewHost
+          key={active.id}
+          view={active}
+          className="right-view-body"
+          scrollable={active.id !== 'genui.panel'}
+          contentClassName="right-view-content"
+        />
       </div>
     </aside>
   )

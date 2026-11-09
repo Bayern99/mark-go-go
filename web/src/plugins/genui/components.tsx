@@ -3,9 +3,10 @@
  * `sources` and `weight`, has no children, and draws in the shared
  * source frame. `a2ui.tsx` puts them in the catalog.
  */
-import { useContext, useEffect, useRef, useState } from 'react'
+import { useCallback, useContext, useId, useRef, useState } from 'react'
 import { z } from 'zod'
 import { createComponentImplementation } from '@a2ui/react'
+import { ScrollArea } from '../../components/ScrollArea'
 import { SourceFrame, useComponentSource } from './SourceFrame'
 import { ReadingContext } from './reading'
 
@@ -186,8 +187,8 @@ export const ComparisonTable = createComponentImplementation(
     const id = context.componentModel.id
     const reading = useContext(ReadingContext)
     const [sort, setSort] = useState<SortState>(() => reading?.tableSort(id) ?? null)
-    const scroller = useRef<HTMLDivElement>(null)
     const tableName = props.title ? `${props.title} table` : 'Comparison table'
+    const scrollLabelId = useId()
     const order = props.rows.map((_, index) => index)
     if (sort) {
       const sign = sort.direction === 'ascending' ? 1 : -1
@@ -207,13 +208,22 @@ export const ComparisonTable = createComponentImplementation(
         reading?.setTableSort(id, next)
         return next
       })
-    useEffect(() => {
-      const el = scroller.current
-      if (!el) return
-      el.scrollLeft = reading?.tableScrollLeft(id) ?? 0
-      const remember = () => reading?.setTableScrollLeft(id, el.scrollLeft)
-      el.addEventListener('scroll', remember, { passive: true })
-      return () => el.removeEventListener('scroll', remember)
+    // The overlay host itself does not scroll; its viewport does. Restoring on
+    // initialization is what survives the surface remounting in the panel.
+    const viewport = useRef<HTMLElement | null>(null)
+    const onViewport = useCallback(
+      (element: HTMLElement | null) => {
+        viewport.current = element
+        if (!element) return
+        element.tabIndex = 0
+        element.setAttribute('role', 'group')
+        element.setAttribute('aria-labelledby', scrollLabelId)
+        element.scrollLeft = reading?.tableScrollLeft(id) ?? 0
+      },
+      [id, reading, scrollLabelId],
+    )
+    const onViewportScroll = useCallback(() => {
+      if (viewport.current) reading?.setTableScrollLeft(id, viewport.current.scrollLeft)
     }, [id, reading])
     return (
       <SourceFrame
@@ -223,13 +233,14 @@ export const ComparisonTable = createComponentImplementation(
         style={flex(props.weight)}
         title={props.title}
       >
-        <div
+        <ScrollArea
+          axis="x"
           className="genui-table-scroll"
-          role="group"
-          tabIndex={0}
-          aria-label={`${tableName}, scrollable`}
-          ref={scroller}
+          contentClassName="genui-table-scroll-content"
+          onViewport={onViewport}
+          onViewportScroll={onViewportScroll}
         >
+          <span id={scrollLabelId} hidden>{tableName}, scrollable</span>
           <table>
             <caption className="genui-table-caption">{tableName}</caption>
             <thead>
@@ -273,7 +284,7 @@ export const ComparisonTable = createComponentImplementation(
               })}
             </tbody>
           </table>
-        </div>
+        </ScrollArea>
       </SourceFrame>
     )
   },

@@ -159,6 +159,10 @@
    - **要求**：界面文案、组件命名、测试与报告严守 `GLOSSARY.md`（使用 Document/原文、View mode/视图模式、GenUI view/GenUI 视图、Catalog/组件目录、Source reference/来源引用、Source changed/原文已改、Generation request/生成要求、Note/批注）；GenUI 视图只读，修改原文统一走 `Edit in source` 跳转，批注以 `<!-- note: ... -->` 写回原文（见 `docs/adr/0002-genui-derived-center-view.md`）。
    - **理由**：保证“一个文件唯一权威来源”，避免双向同步与概念漂移。
 
+6. **内容滚动区域统一使用低存在感 Overlay Scrollbar**
+   - **要求**：文件树、Rich text、Markdown、中央 GenUI、Outline、GenUI 管理与 ComparisonTable 复用 `web/src/components/ScrollArea.tsx`；滚动位置必须读写组件提供的真实 viewport，不把 OS 宿主当作滚动元素。滑块 4px、命中区 10px、停止交互 600ms 后隐藏，颜色复用 `--scrollbar-thumb*` 语义 Token，动画只涉及透明度与颜色。顶部文档标签只属于 `workspace-main`，不得覆盖左侧工作区栏；标签按实测宽度保留活动标签，其余进入可搜索的溢出菜单；标签不滚动、不显示滚动条，也不得渲染到标签带之外。第三方编辑器、代码块和菜单保留原生滚动所有权，不叠加第二套机制。
+   - **理由**：统一三栏与内部滚动区域的视觉反馈，避免布局跳动、嵌套滚动冲突，以及编辑器光标、选择和阅读位置恢复回归。
+
 ---
 
 ## 按需 Skill：Mark Go Go 界面任务落地

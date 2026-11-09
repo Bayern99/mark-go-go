@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createBrowserHost } from '../src/host/browserHost'
 import type { HostAdapter, HostDocSnapshot } from '../src/host/types'
 import { mountApp } from './helpers/app'
+import { scrollViewport } from './helpers/scroll'
 import { caretLineInSource, sourceLines, visibleSource } from './helpers/source'
 
 const DOCUMENT = `---
@@ -261,8 +262,9 @@ describe('App source mode', () => {
     const source = longDocument()
     const app = await mountApp(source)
     try {
-      const scroller = app.container.querySelector<HTMLElement>('.editor-scroll')
-      expect(scroller).not.toBeNull()
+      const scrollerHost = app.container.querySelector<HTMLElement>('.editor-scroll')
+      expect(scrollerHost).not.toBeNull()
+      const scroller = scrollViewport(scrollerHost as HTMLElement)
       const last = Array.from(
         app.container.querySelectorAll<HTMLElement>('[data-testid="editor-root"] .ProseMirror p'),
       ).find((paragraph) => paragraph.textContent === 'Paragraph 299.')

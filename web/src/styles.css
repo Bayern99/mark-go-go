@@ -1,5 +1,6 @@
 @import './assets/fonts.css';
 @import './assets/icons/phosphor.css';
+@import './scrollbars.css';
 
 :root,
 .mgg {
@@ -25,6 +26,9 @@
   --fill: rgba(0, 0, 0, 0.045);
   --fill-hover: rgba(0, 0, 0, 0.07);
   --fill-strong: rgba(0, 0, 0, 0.11);
+  --scrollbar-thumb: color-mix(in srgb, var(--ink-3) 38%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--ink-3) 54%, transparent);
+  --scrollbar-thumb-active: color-mix(in srgb, var(--ink-3) 68%, transparent);
 
   /* Accents & Status */
   --accent: #2f6f62;
@@ -552,8 +556,10 @@ body {
   position: relative;
   flex: 1;
   min-height: 0;
-  overflow: auto;
   margin: 0 -8px;
+}
+
+.list-content {
   padding: 0 8px;
 }
 
@@ -826,19 +832,28 @@ body {
   display: flex;
 }
 
-/* The element a center view mounts into is its scroll area. */
 .center-view {
   flex: 1;
   min-width: 0;
   min-height: 0;
-  overflow: auto;
+}
+
+.center-view-content {
   padding: 24px;
+}
+
+.view-mount {
+  min-width: 0;
+  min-height: 100%;
 }
 
 .editor-scroll {
   width: 100%;
   max-width: 860px;
-  overflow: auto;
+  min-height: 0;
+}
+
+.editor-scroll-content {
   padding: 0 16px;
 }
 
@@ -926,18 +941,31 @@ body {
 .rp-body {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   margin: 0 -8px;
-  padding: 6px 8px 0;
   display: flex;
   flex-direction: column;
 }
 
 .rp-body[data-view-id='genui.panel'] {
   overflow: visible;
+  padding: 6px 8px 0;
 }
 
 .right-view-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.right-view-content {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px 0;
+}
+
+.right-view-content .view-mount {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -1286,6 +1314,11 @@ body {
   min-width: 0;
 }
 
+.workspace-body > .side-pane,
+.workspace-body > .left-pane {
+  padding-top: 44px;
+}
+
 .workspace-main {
   flex: 1;
   min-width: 0;
@@ -1298,20 +1331,33 @@ body {
   flex: 1;
 }
 
-.doc-tabs {
+.doc-tabs-row {
+  position: relative;
   display: flex;
   flex: none;
   height: 36px;
+  min-width: 0;
   gap: 2px;
   padding: 4px 8px 0;
   background: var(--chrome);
-  overflow-x: auto;
+}
+
+.doc-tabs {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  gap: 2px;
+  overflow: hidden;
 }
 
 .doc-tab {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  flex: none;
+  min-width: 0;
+  max-width: 180px;
   height: 28px;
   padding: 0 8px;
   border: 0;
@@ -1321,6 +1367,129 @@ body {
   font: inherit;
   font-size: 13px;
   cursor: pointer;
+}
+
+.doc-tab .nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-hidden {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  max-width: min(180px, 100%);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.tab-overflow {
+  width: 32px;
+  height: 28px;
+  flex: none;
+  border: 0;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--ink-3);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.tab-overflow:hover {
+  background: var(--fill-hover);
+  color: var(--ink);
+}
+
+.tab-overflow[aria-expanded='true'] {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--row-shadow);
+}
+
+.doc-tab-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 8px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  width: min(320px, calc(100vw - 32px));
+  max-height: min(420px, 60vh);
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--paper);
+  box-shadow: var(--pop-shadow);
+}
+
+.doc-tab-menu-filter {
+  flex: none;
+  width: 100%;
+  height: 30px;
+  margin: 0 0 6px;
+  padding: 0 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.doc-tab-menu-filter:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+.doc-tab-menu-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.doc-tab-menu-empty {
+  margin: 8px;
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.doc-tab-menu-item {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.doc-tab-menu-item .nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-tab-menu-item:hover {
+  background: var(--fill-hover);
+}
+
+.doc-tab-menu-item.sel {
+  background: var(--fill);
 }
 
 .doc-tab.sel {

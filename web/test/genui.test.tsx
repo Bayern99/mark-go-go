@@ -9,6 +9,7 @@ import { CATALOG_COMPONENTS } from '../src/plugins/genui/a2ui'
 import { SOURCE_DEBOUNCE_MS } from '../src/plugins/genui/sources'
 import formatDoc from '../src/plugins/genui/view-format.md?raw'
 import { mountApp } from './helpers/app'
+import { scrollViewport } from './helpers/scroll'
 import { getSourceView, replaceSourceText, visibleSource } from './helpers/source'
 
 const DOCUMENT = `# Overview
@@ -303,12 +304,13 @@ describe('GenUI view mode', () => {
     try {
       const scroller = app.container.querySelector<HTMLElement>('.editor-scroll')
       if (!scroller) throw new Error('editor scroller missing')
-      scroller.scrollTop = 1200
-      await vi.waitFor(() => expect(scroller.scrollTop).toBe(1200))
+      const viewport = scrollViewport(scroller)
+      viewport.scrollTop = 1200
+      await vi.waitFor(() => expect(viewport.scrollTop).toBe(1200))
 
       await showMode('genui')
       await showMode('richtext')
-      await vi.waitFor(() => expect(scroller.scrollTop).toBe(1200))
+      await vi.waitFor(() => expect(viewport.scrollTop).toBe(1200))
     } finally {
       await app.unmount()
     }
@@ -516,7 +518,7 @@ describe('GenUI source references', () => {
       const scroller = app.container.querySelector<HTMLElement>('.center-view')
       if (!scroller) throw new Error('center view scroller missing')
       late.scrollIntoView({ block: 'center' })
-      const top = scroller.scrollTop
+      const top = scrollViewport(scroller).scrollTop
       expect(top).toBeGreaterThan(200)
 
       const edit = late.querySelector<HTMLButtonElement>('.genui-source-edit')
@@ -539,7 +541,8 @@ describe('GenUI source references', () => {
       await vi.waitFor(() => {
         expect(viewMode('genui')).toHaveAttribute('aria-checked', 'true')
         const again = app.container.querySelector<HTMLElement>('.center-view')
-        expect(Math.abs((again?.scrollTop ?? 0) - top)).toBeLessThan(2)
+        if (!again) throw new Error('center view scroller missing')
+        expect(Math.abs(scrollViewport(again).scrollTop - top)).toBeLessThan(2)
         expect(statuses(app.container).late).toBe('Source changed')
         expect(statuses(app.container).filler0).toBe('')
       }, { timeout: SOURCE_DEBOUNCE_MS + 2000 })

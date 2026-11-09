@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { PluginContext, ViewStatusDot } from '../../core/types'
+import { ScrollArea } from '../../components/ScrollArea'
 import { autoGrowTextarea } from '../../editor/noteDialog'
 import type {
   Disposable,
@@ -195,7 +196,7 @@ export class GenUISession {
   readonly store: GenUIStore
   readonly generation: GenerationController
   private activeMounts = 0
-  /** This document's mounted center view scroll area; null while it is not shown. */
+  /** This document's mounted center view element; null while it is not shown. */
   private viewElement: HTMLElement | null = null
   private watchSub: Disposable | undefined
   private readonly docSub: Disposable
@@ -668,7 +669,7 @@ function GenUIPanel({
 
   return (
     <div className="genui-panel gp" data-testid="genui-panel">
-      <div className="genui-panel-scroll r-scroll">
+      <ScrollArea className="genui-panel-scroll r-scroll" contentClassName="genui-panel-scroll-content">
         {running ? (
           <GenerationProgress run={run} onCancel={() => session.generation.cancel()} />
         ) : run.kind === 'failed' ? (
@@ -884,7 +885,7 @@ function GenUIPanel({
             )}
           </div>
         ) : null}
-      </div>
+      </ScrollArea>
 
       <footer className="genui-panel-footer rp-foot r-foot" data-testid="genui-panel-footer">
         <div className="gp-kv">
@@ -1061,23 +1062,30 @@ function GenerationProgress({
 }
 
 /**
- * Shows the document's center GenUI reading view in `el`, which is its scroll
- * area, and follows the view file while mounted.
+ * Shows the document's center GenUI reading view in `el`, the view's own mount
+ * element, and follows the view file while mounted. `scrollElement` is the
+ * element that actually scrolls; `el` itself is not scrollable.
  */
-export function mountGenUIView(el: HTMLElement, ctx: PluginContext, memory: GenUIMemory): Disposable {
+export function mountGenUIView(
+  el: HTMLElement,
+  ctx: PluginContext,
+  memory: GenUIMemory,
+  scrollElement?: HTMLElement,
+): Disposable {
   const session = ensureSession(ctx, memory)
+  const scroller = scrollElement ?? el
   const watch = session.retainWatch()
   const view = session.retainView(el)
   const root = createRoot(el)
-  root.render(<GenUIView session={session} ctx={ctx} scroller={el} memory={memory} />)
+  root.render(<GenUIView session={session} ctx={ctx} scroller={scroller} memory={memory} />)
   // Read while mounted: once the view is removed, its element no longer scrolls.
   const remember = () => {
-    memory.top = el.scrollTop
+    memory.top = scroller.scrollTop
   }
-  el.addEventListener('scroll', remember, { passive: true })
+  scroller.addEventListener('scroll', remember, { passive: true })
   return {
     dispose() {
-      el.removeEventListener('scroll', remember)
+      scroller.removeEventListener('scroll', remember)
       view.dispose()
       watch.dispose()
       // Defer: React may be committing the host tree when the view is

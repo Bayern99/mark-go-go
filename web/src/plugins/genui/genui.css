@@ -88,7 +88,9 @@
 .genui-panel-scroll {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+}
+
+.genui-panel-scroll-content {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -749,10 +751,10 @@
 
 .genui-table-scroll {
   position: relative;
-  overflow-x: auto;
+  min-width: 0;
 }
 
-.genui-table-scroll:focus-visible {
+.genui-table-scroll:has([data-overlayscrollbars-viewport]:focus-visible) {
   outline: 2px solid var(--genui-accent);
   outline-offset: 2px;
 }

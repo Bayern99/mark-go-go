@@ -1,4 +1,5 @@
 import '../src/styles.css'
+import { userEvent } from 'vitest/browser'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
@@ -10,12 +11,16 @@ import {
 } from '../src/host/browserHost'
 import type { WorkspaceAdapter } from '../src/host/types'
 
-async function mountWorkspace(workspace: WorkspaceAdapter): Promise<{
+async function mountWorkspace(
+  workspace: WorkspaceAdapter,
+  width?: number,
+): Promise<{
   container: HTMLDivElement
   unmount(): Promise<void>
 }> {
   const container = document.createElement('div')
   container.style.height = '100%'
+  if (width !== undefined) container.style.width = `${width}px`
   document.body.append(container)
   const root = createRoot(container)
   flushSync(() => {
@@ -116,6 +121,48 @@ describe('createBrowserWorkspace', () => {
 })
 
 describe('App workspace tabs', () => {
+  it('keeps all fitting tabs visible at the full tab bar width', async () => {
+    const documents = [
+      createBrowserHost('# Alpha\n', 'alpha-document-long-name.md'),
+      createBrowserHost('# Beta\n', 'beta-document-long-name.md'),
+      createBrowserHost('# Gamma\n', 'gamma-document-long-name.md'),
+    ]
+    const workspace = createBrowserWorkspace(documents)
+    const app = await mountWorkspace(workspace, 1200)
+    try {
+      const bar = app.container.querySelector<HTMLElement>('[data-testid="doc-tabs"]')
+      const overflow = app.container.querySelector<HTMLButtonElement>('[data-testid="doc-tab-overflow"]')
+      if (!bar || !overflow) throw new Error('tab bar or overflow button missing')
+      await vi.waitFor(() => expect(bar.querySelectorAll('.doc-tab')).toHaveLength(documents.length))
+      await vi.waitFor(() => expect(overflow.hidden).toBe(true))
+
+      const tabs = [...bar.querySelectorAll<HTMLElement>('.doc-tab')]
+      const usedWidth = tabs[tabs.length - 1]!.getBoundingClientRect().right - bar.getBoundingClientRect().left
+      const targetWidth = Math.ceil(usedWidth + 20)
+      const setFullWidth = (width: number) => {
+        const reserved = overflow.hidden ? 0 : overflow.offsetWidth + 2
+        app.container.style.width = `${app.container.getBoundingClientRect().width + width - reserved - bar.clientWidth}px`
+      }
+      setFullWidth(targetWidth)
+
+      await vi.waitFor(() => {
+        expect(overflow.hidden).toBe(true)
+        expect(bar.querySelectorAll('.doc-tab:not(.tab-hidden)')).toHaveLength(documents.length)
+      })
+
+      setFullWidth(targetWidth - 30)
+      await vi.waitFor(() => expect(overflow.hidden).toBe(false))
+
+      setFullWidth(targetWidth)
+      await vi.waitFor(() => {
+        expect(overflow.hidden).toBe(true)
+        expect(bar.querySelectorAll('.doc-tab:not(.tab-hidden)')).toHaveLength(documents.length)
+      })
+    } finally {
+      await app.unmount()
+    }
+  })
+
   it('keeps both document panes mounted across a tab switch', async () => {
     const a = createBrowserHost('# Alpha doc\n', 'alpha.md')
     const b = createBrowserHost('# Beta doc\n', 'beta.md')
@@ -255,6 +302,73 @@ describe('App workspace tabs', () => {
     }
   })
 
+  it('keeps overflowing tabs inside the bar and opens them from a searchable menu', async () => {
+    const documents = Array.from({ length: 10 }, (_, index) =>
+      createBrowserHost(`# Document ${index}\n`, `a-very-long-document-name-${index}.md`),
+    )
+    const workspace = createBrowserWorkspace(documents)
+    const app = await mountWorkspace(workspace, 740)
+    try {
+      const overflow = await vi.waitFor(() => {
+        const button = app.container.querySelector<HTMLButtonElement>('[data-testid="doc-tab-overflow"]')
+        if (!button || button.hidden) throw new Error('overflow menu missing')
+        return button
+      })
+      const bar = app.container.querySelector<HTMLElement>('[data-testid="doc-tabs"]')
+      const row = app.container.querySelector<HTMLElement>('.doc-tabs-row')
+      const leftPane = app.container.querySelector<HTMLElement>('.workspace-body > .side-pane')
+      if (!bar || !row || !leftPane) throw new Error('tab bar or left pane missing')
+      expect(row.getBoundingClientRect().left).toBeGreaterThanOrEqual(leftPane.getBoundingClientRect().right - 1)
+      const visibleTabs = [...bar.querySelectorAll<HTMLElement>('.doc-tab:not(.tab-hidden)')]
+      expect(visibleTabs.length).toBeGreaterThan(0)
+      expect(visibleTabs.length).toBeLessThan(documents.length)
+      for (const tab of visibleTabs) {
+        const tabRect = tab.getBoundingClientRect()
+        const barRect = bar.getBoundingClientRect()
+        expect(tabRect.left).toBeGreaterThanOrEqual(barRect.left - 1)
+        expect(tabRect.right).toBeLessThanOrEqual(barRect.right + 1)
+      }
+
+      await userEvent.click(overflow)
+      const menu = await vi.waitFor(() => {
+        const element = app.container.querySelector<HTMLElement>('[data-testid="doc-tab-menu"]')
+        if (!element) throw new Error('tab menu missing')
+        return element
+      })
+      const hiddenCount = bar.querySelectorAll('.doc-tab.tab-hidden').length
+      expect(menu.querySelectorAll('[role="menuitemradio"]')).toHaveLength(hiddenCount)
+
+      const filter = menu.querySelector<HTMLInputElement>('[data-testid="doc-tab-filter"]')
+      if (!filter) throw new Error('tab filter missing')
+      filter.focus()
+      await userEvent.keyboard('name-9')
+      await vi.waitFor(() => {
+        expect(menu.querySelectorAll('[role="menuitemradio"]')).toHaveLength(1)
+      })
+      const last = documents[documents.length - 1]
+      if (!last) throw new Error('last document missing')
+      const item = menu.querySelector<HTMLButtonElement>(`[data-testid="doc-tab-menu-item-${last.id}"]`)
+      if (!item) throw new Error('last document missing from tab menu')
+      await userEvent.click(item)
+      const activeTab = app.container.querySelector<HTMLElement>(`[data-testid="doc-tab-${last.id}"]`)
+      if (!activeTab) throw new Error('active document tab missing')
+      const barRect = bar.getBoundingClientRect()
+      for (const tab of bar.querySelectorAll<HTMLElement>('.doc-tab:not(.tab-hidden)')) {
+        expect(tab.getBoundingClientRect().right).toBeLessThanOrEqual(barRect.right + 1)
+      }
+      await vi.waitFor(async () => {
+        expect((await workspace.snapshot()).activeId).toBe(last.id)
+      })
+      expect(app.container.querySelector('[data-testid="doc-tab-menu"]')).toBeNull()
+      await vi.waitFor(() => {
+        expect(activeTab?.classList.contains('tab-hidden')).toBe(false)
+        expect(document.activeElement).toBe(activeTab)
+      })
+    } finally {
+      await app.unmount()
+    }
+  })
+
   it('activates the next tab with ArrowRight', async () => {
     const a = createBrowserHost('# A\n', 'a.md')
     const b = createBrowserHost('# B\n', 'b.md')
@@ -269,6 +383,38 @@ describe('App workspace tabs', () => {
       list.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
       await vi.waitFor(async () => {
         expect((await workspace.snapshot()).activeId).toBe(b.id)
+      })
+    } finally {
+      await app.unmount()
+    }
+  })
+
+  it('keeps keyboard focus when ArrowRight hides the previously focused tab', async () => {
+    const documents = Array.from({ length: 6 }, (_, index) =>
+      createBrowserHost(`# Document ${index}\n`, `a-very-long-document-name-${index}.md`),
+    )
+    const workspace = createBrowserWorkspace(documents)
+    const app = await mountWorkspace(workspace, 520)
+    try {
+      await vi.waitFor(() => {
+        expect(app.container.querySelectorAll('.doc-tab')).toHaveLength(documents.length)
+      })
+      const first = documents[0]
+      const next = documents[1]
+      if (!first || !next) throw new Error('documents missing')
+      const firstTab = app.container.querySelector<HTMLButtonElement>(`[data-testid="doc-tab-${first.id}"]`)
+      const nextTab = app.container.querySelector<HTMLButtonElement>(`[data-testid="doc-tab-${next.id}"]`)
+      if (!firstTab || !nextTab) throw new Error('document tabs missing')
+      await vi.waitFor(() => expect(firstTab.classList.contains('tab-hidden')).toBe(false))
+
+      firstTab.focus()
+      await userEvent.keyboard('{ArrowRight}')
+
+      await vi.waitFor(async () => {
+        expect((await workspace.snapshot()).activeId).toBe(next.id)
+        expect(firstTab.classList.contains('tab-hidden')).toBe(true)
+        expect(nextTab.classList.contains('tab-hidden')).toBe(false)
+        expect(document.activeElement).toBe(nextTab)
       })
     } finally {
       await app.unmount()

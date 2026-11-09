@@ -10,6 +10,7 @@ import type {
 } from '../host/types'
 import { breadcrumbs } from '../workspace/nav'
 import { useViews, ViewHost } from './ViewHost'
+import { ScrollArea } from './ScrollArea'
 
 const SIDEBAR_MIN = 190
 const SIDEBAR_MAX = 420
@@ -288,28 +289,29 @@ function FileTree({
 }) {
   if (status === 'error') {
     return (
-      <div className="list" role="tree" aria-label="Files" data-testid="workspace-tree">
+      <ScrollArea className="list" contentClassName="list-content" role="tree" aria-label="Files" data-testid="workspace-tree">
         <p className="nav-empty" role="alert" data-testid="nav-error">Could not read this folder.</p>
-      </div>
+      </ScrollArea>
     )
   }
   if (entries.length === 0 && (status === 'scanning' || status === 'indexing')) {
     return (
-      <div className="list" role="tree" aria-label="Files" data-testid="workspace-tree">
+      <ScrollArea className="list" contentClassName="list-content" role="tree" aria-label="Files" data-testid="workspace-tree">
         <p className="nav-empty" data-testid="nav-loading" role="status">Indexing files…</p>
-      </div>
+      </ScrollArea>
     )
   }
   if (entries.length === 0) {
     return (
-      <div className="list" role="tree" aria-label="Files" data-testid="workspace-tree">
+      <ScrollArea className="list" contentClassName="list-content" role="tree" aria-label="Files" data-testid="workspace-tree">
         <p className="nav-empty" data-testid="nav-empty">No Markdown files in this folder.</p>
-      </div>
+      </ScrollArea>
     )
   }
   return (
-    <div
+    <ScrollArea
       className="list"
+      contentClassName="list-content"
       role="tree"
       aria-label="Files"
       data-testid="workspace-tree"
@@ -380,7 +382,7 @@ function FileTree({
           />
         ),
       )}
-    </div>
+    </ScrollArea>
   )
 }
 

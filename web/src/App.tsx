@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { RightPane } from './components/RightPane'
 import { PathCrumbs, SidePane } from './components/SidePane'
@@ -19,6 +19,7 @@ import {
 } from './editor/nativeEdit'
 import { createGenUIPlugin } from './plugins/genui'
 import { createOutlinePlugin } from './plugins/outline'
+import { ScrollArea } from './components/ScrollArea'
 
 const EDIT_DEBOUNCE_MS = 250
 export const NARROW_WINDOW_WIDTH = 1180
@@ -140,7 +141,7 @@ export function DocumentPane({
   onReadyReveal?: (id: string, reveal: (offset: number) => boolean) => () => void
 }): React.ReactElement {
   const editorRoot = useRef<HTMLDivElement>(null)
-  const editorScroll = useRef<HTMLDivElement>(null)
+  const editorScroll = useRef<HTMLElement | null>(null)
   const editorRef = useRef<MarkdownEditor | null>(null)
   const [docState, setDocState] = useState<DocumentInfo | null>(null)
   const [version, setVersion] = useState(0)
@@ -608,9 +609,15 @@ export function DocumentPane({
                     ← Back to {returnTo.title}
                   </button>
                 ) : null}
-                <div className="editor-scroll" ref={editorScroll}>
+                <ScrollArea
+                  className="editor-scroll"
+                  contentClassName="editor-scroll-content"
+                  onViewport={(viewport) => {
+                    editorScroll.current = viewport
+                  }}
+                >
                   <div className="crepe-root" ref={editorRoot} data-testid="editor-root" />
-                </div>
+                </ScrollArea>
               </main>
               {centerView ? (
                 <section
@@ -619,7 +626,13 @@ export function DocumentPane({
                   data-view-id={centerView.id}
                   aria-label={centerView.title}
                 >
-                  <ViewHost key={centerView.id} view={centerView} className="center-view" />
+                  <ViewHost
+                    key={centerView.id}
+                    view={centerView}
+                    className="center-view"
+                    contentClassName="center-view-content"
+                    scrollable
+                  />
                 </section>
               ) : null}
             </div>
@@ -671,6 +684,20 @@ function tabLabel(docs: { id: string; name: string; path: string }[], doc: { id:
   return parent ? `${doc.name} — ${parent}` : doc.path || doc.name
 }
 
+function TabBadges({ doc }: { doc: DocumentInfo }): React.ReactElement {
+  return (
+    <>
+      {doc.edited ? <span className="edited-dot" title="Unsaved edits" /> : null}
+      {doc.generating ? (
+        <span className="tab-generating" data-testid={`doc-tab-generating-${doc.id}`} title="Generating" />
+      ) : null}
+      {doc.conflict ? <span className="tab-conflict" title="Conflict" /> : null}
+      {doc.deleted ? <span className="tab-deleted" title="Deleted" /> : null}
+      {doc.readOnly ? <span className="tab-readonly" title="Read only" /> : null}
+    </>
+  )
+}
+
 function WorkspaceApp({
   workspace,
   plugins = [],
@@ -701,6 +728,137 @@ function WorkspaceApp({
 
   const documents = snap?.documents ?? []
   const activeId = snap?.activeId ?? documents[0]?.id ?? ''
+  const tabsRef = useRef<HTMLDivElement>(null)
+  const tabRefs = useRef(new Map<string, HTMLButtonElement>())
+  const tabFocusTarget = useRef<string | null>(null)
+  const tabMenuRef = useRef<HTMLDivElement>(null)
+  const tabMenuButtonRef = useRef<HTMLButtonElement>(null)
+  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 0 })
+  const [tabMenuOpen, setTabMenuOpen] = useState(false)
+  const [tabFilter, setTabFilter] = useState('')
+  const hiddenDocuments = useMemo(
+    () => [...documents.slice(0, visibleRange.start), ...documents.slice(visibleRange.end)],
+    [documents, visibleRange],
+  )
+  const filteredHiddenDocuments = useMemo(() => {
+    const query = tabFilter.trim().toLowerCase()
+    if (query === '') return hiddenDocuments
+    return hiddenDocuments.filter((doc) => {
+      const label = tabLabel(documents, doc)
+      return `${label}\n${doc.name}\n${doc.path}`.toLowerCase().includes(query)
+    })
+  }, [documents, hiddenDocuments, tabFilter])
+
+  const measureTabs = useCallback(() => {
+    const bar = tabsRef.current
+    if (!bar || documents.length === 0) {
+      setVisibleRange((current) => (current.start === 0 && current.end === 0 ? current : { start: 0, end: 0 }))
+      return
+    }
+    const widths = documents.map((doc) => tabRefs.current.get(doc.id)?.offsetWidth ?? 0)
+    const gap = 2
+    const overflowButton = tabMenuButtonRef.current
+    const overflowWidth = overflowButton?.offsetWidth || 32
+    const fullBudget = bar.clientWidth + (overflowButton && !overflowButton.hidden ? overflowWidth + gap : 0)
+    const allTabsWidth = widths.reduce((used, width, index) => used + width + (index === 0 ? 0 : gap), 0)
+    if (allTabsWidth <= fullBudget) {
+      setVisibleRange((current) => (current.start === 0 && current.end === documents.length
+        ? current
+        : { start: 0, end: documents.length }))
+      return
+    }
+    const budget = fullBudget - overflowWidth - gap
+    const activeIndex = documents.findIndex((doc) => doc.id === activeId)
+    let start = 0
+    let end = documents.length
+    if (activeIndex >= 0) {
+      const throughActive = widths.slice(0, activeIndex + 1).reduce((sum, width, index) => sum + width + (index === 0 ? 0 : gap), 0)
+      end = activeIndex + 1
+      if (throughActive <= budget) {
+        let used = throughActive
+        while (end < documents.length && used + gap + (widths[end] ?? 0) <= budget) {
+          used += gap + (widths[end] ?? 0)
+          end += 1
+        }
+      } else {
+        start = activeIndex
+        let used = widths[activeIndex] ?? 0
+        while (start > 0 && used + gap + (widths[start - 1] ?? 0) <= budget) {
+          start -= 1
+          used += gap + (widths[start] ?? 0)
+        }
+      }
+    } else {
+      let used = 0
+      end = 0
+      while (end < documents.length && used + (end === 0 ? 0 : gap) + (widths[end] ?? 0) <= budget) {
+        used += (end === 0 ? 0 : gap) + (widths[end] ?? 0)
+        end += 1
+      }
+    }
+    setVisibleRange((current) => (current.start === start && current.end === end ? current : { start, end }))
+  }, [documents, activeId])
+
+  useLayoutEffect(() => {
+    const bar = tabsRef.current
+    if (!bar) return
+    measureTabs()
+    const observer = new ResizeObserver(measureTabs)
+    observer.observe(bar)
+    return () => {
+      observer.disconnect()
+    }
+  }, [measureTabs, visibleRange])
+
+  useLayoutEffect(() => {
+    const target = tabFocusTarget.current
+    if (!target) return
+    if (activeId !== target) {
+      tabFocusTarget.current = null
+      return
+    }
+    const tab = tabRefs.current.get(target)
+    if (!tab || tab.classList.contains('tab-hidden')) return
+    tabFocusTarget.current = null
+    tab.focus()
+  }, [activeId, visibleRange])
+
+  useEffect(() => {
+    let cancelled = false
+    void document.fonts?.ready.then(() => {
+      if (!cancelled) measureTabs()
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [measureTabs])
+
+  useEffect(() => {
+    if (hiddenDocuments.length === 0) setTabMenuOpen(false)
+  }, [hiddenDocuments.length])
+
+  useEffect(() => {
+    if (!tabMenuOpen) return
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (tabMenuRef.current?.contains(target) || tabMenuButtonRef.current?.contains(target)) return
+      setTabMenuOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      setTabMenuOpen(false)
+      tabMenuButtonRef.current?.focus()
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [tabMenuOpen])
+
   for (const doc of documents) {
     if (!panes.current.has(doc.id)) panes.current.set(doc.id, workspace.document(doc.id))
   }
@@ -708,7 +866,8 @@ function WorkspaceApp({
     if (!documents.some((doc) => doc.id === id)) panes.current.delete(id)
   }
 
-  const activate = (id: string) => {
+  const activate = (id: string, focusTab = false) => {
+    tabFocusTarget.current = focusTab ? id : null
     void workspace.activate(id)
   }
 
@@ -721,10 +880,10 @@ function WorkspaceApp({
     const index = documents.findIndex((doc) => doc.id === activeId)
     if (event.key === 'ArrowRight') {
       event.preventDefault()
-      activate(documents[(index + 1) % documents.length].id)
+      activate(documents[(index + 1) % documents.length].id, true)
     } else if (event.key === 'ArrowLeft') {
       event.preventDefault()
-      activate(documents[(index - 1 + documents.length) % documents.length].id)
+      activate(documents[(index - 1 + documents.length) % documents.length].id, true)
     } else if (event.key === 'Delete' || (event.key === 'w' && (event.metaKey || event.ctrlKey))) {
       event.preventDefault()
       closeTab(activeId)
@@ -750,6 +909,111 @@ function WorkspaceApp({
   }
 
   const showWelcome = !snap || (snap.kind !== 'folder' && documents.length === 0)
+  const documentTabs = (
+    <div className="doc-tabs-row">
+      <div
+        className="doc-tabs"
+        role="tablist"
+        aria-label="Documents"
+        onKeyDown={onTabsKey}
+        data-testid="doc-tabs"
+        ref={tabsRef}
+      >
+        {documents.map((doc, index) => {
+          const hidden = index < visibleRange.start || index >= visibleRange.end
+          return (
+            <button
+              key={doc.id}
+              type="button"
+              role="tab"
+              tabIndex={doc.id === activeId ? 0 : -1}
+              data-testid={`doc-tab-${doc.id}`}
+              className={`doc-tab${doc.id === activeId ? ' sel' : ''}${hidden ? ' tab-hidden' : ''}`}
+              aria-selected={doc.id === activeId}
+              aria-hidden={hidden ? true : undefined}
+              title={doc.path || doc.name}
+              ref={(element) => {
+                if (element) tabRefs.current.set(doc.id, element)
+                else tabRefs.current.delete(doc.id)
+              }}
+              onClick={() => activate(doc.id)}
+            >
+              <span className="nm">{tabLabel(documents, doc)}</span>
+              <TabBadges doc={doc} />
+              <span
+                className="tab-close"
+                role="button"
+                aria-label={`Close ${doc.name}`}
+                data-testid={`doc-tab-close-${doc.id}`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  closeTab(doc.id)
+                }}
+              >
+                ×
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      <button
+        type="button"
+        className="tab-overflow"
+        data-testid="doc-tab-overflow"
+        aria-label="More documents"
+        aria-haspopup="menu"
+        aria-expanded={tabMenuOpen}
+        aria-controls="doc-tab-menu"
+        title="More documents"
+        hidden={hiddenDocuments.length === 0}
+        ref={tabMenuButtonRef}
+        onClick={() => {
+          setTabFilter('')
+          setTabMenuOpen((open) => !open)
+        }}
+      >
+        ▾
+      </button>
+      {tabMenuOpen && hiddenDocuments.length > 0 ? (
+        <div className="doc-tab-menu" id="doc-tab-menu" data-testid="doc-tab-menu" ref={tabMenuRef}>
+          <input
+            type="search"
+            className="doc-tab-menu-filter"
+            data-testid="doc-tab-filter"
+            aria-label="Filter open tabs"
+            placeholder="Filter open tabs…"
+            value={tabFilter}
+            onChange={(event) => setTabFilter(event.target.value)}
+            autoFocus
+          />
+          <div className="doc-tab-menu-list" role="menu" aria-label="More documents">
+            {filteredHiddenDocuments.length === 0 ? (
+              <p className="doc-tab-menu-empty" role="status">No matching tabs</p>
+            ) : (
+              filteredHiddenDocuments.map((doc) => (
+                <button
+                  key={doc.id}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={doc.id === activeId}
+                  className={`doc-tab-menu-item${doc.id === activeId ? ' sel' : ''}`}
+                  data-testid={`doc-tab-menu-item-${doc.id}`}
+                  title={doc.path || doc.name}
+                  onClick={() => {
+                    activate(doc.id, true)
+                    setTabMenuOpen(false)
+                  }}
+                >
+                  <span className="nm">{tabLabel(documents, doc)}</span>
+                  <TabBadges doc={doc} />
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
 
   return (
     <div className="workspace-shell">
@@ -758,42 +1022,6 @@ function WorkspaceApp({
           {snap.restoreError}
         </div>
       ) : null}
-      <div className="doc-tabs" role="tablist" aria-label="Documents" onKeyDown={onTabsKey} data-testid="doc-tabs">
-        {documents.map((doc) => (
-          <button
-            key={doc.id}
-            type="button"
-            role="tab"
-            tabIndex={doc.id === activeId ? 0 : -1}
-            data-testid={`doc-tab-${doc.id}`}
-            className={`doc-tab${doc.id === activeId ? ' sel' : ''}`}
-            aria-selected={doc.id === activeId}
-            title={doc.path || doc.name}
-            onClick={() => activate(doc.id)}
-          >
-            <span className="nm">{tabLabel(documents, doc)}</span>
-            {doc.edited ? <span className="edited-dot" title="Unsaved edits" /> : null}
-            {doc.generating ? (
-              <span className="tab-generating" data-testid={`doc-tab-generating-${doc.id}`} title="Generating" />
-            ) : null}
-            {doc.conflict ? <span className="tab-conflict" title="Conflict" /> : null}
-            {doc.deleted ? <span className="tab-deleted" title="Deleted" /> : null}
-            {doc.readOnly ? <span className="tab-readonly" title="Read only" /> : null}
-            <span
-              className="tab-close"
-              role="button"
-              aria-label={`Close ${doc.name}`}
-              data-testid={`doc-tab-close-${doc.id}`}
-              onClick={(event) => {
-                event.stopPropagation()
-                closeTab(doc.id)
-              }}
-            >
-              ×
-            </span>
-          </button>
-        ))}
-      </div>
       <div className="workspace-body">
         <SidePane
           views={emptyViews}
@@ -803,6 +1031,7 @@ function WorkspaceApp({
           onJumpHeading={jumpHeading}
         />
         <div className="workspace-main">
+          {documentTabs}
           {documents.map((doc) => (
             <DocumentPane
               key={doc.id}

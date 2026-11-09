@@ -31,7 +31,7 @@ export function createGenUIPlugin(): AppPlugin {
         id: 'genui',
         title: 'GenUI',
         location: 'center',
-        mount: (el) => mountLazily(el, ctx, memory, 'center'),
+        mount: (el, scrollElement) => mountLazily(el, ctx, memory, 'center', scrollElement),
       })
       ctx.views.register({
         id: 'genui.panel',
@@ -68,13 +68,17 @@ function mountLazily(
   ctx: PluginContext,
   memory: GenUIMemory,
   target: 'center' | 'right',
+  scrollElement?: HTMLElement,
 ): Disposable {
   let inner: Disposable | undefined
   let disposed = false
   void import('./GenUIView').then(
     ({ mountGenUIView, mountGenUIPanel }) => {
       if (disposed) return
-      inner = target === 'center' ? mountGenUIView(el, ctx, memory) : mountGenUIPanel(el, ctx, memory)
+      inner =
+        target === 'center'
+          ? mountGenUIView(el, ctx, memory, scrollElement)
+          : mountGenUIPanel(el, ctx, memory)
     },
     (error: unknown) => {
       if (disposed) return

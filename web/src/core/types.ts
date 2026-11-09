@@ -36,7 +36,8 @@ export interface ViewRegistration {
   title: string
   location: ViewLocation
   status?: ViewStatusSource
-  mount(el: HTMLElement): Disposable
+  /** `scrollElement` is the viewport when the host uses an overlay scrollbar. */
+  mount(el: HTMLElement, scrollElement?: HTMLElement): Disposable
 }
 
 export interface PluginContext {

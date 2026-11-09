@@ -1,6 +1,20 @@
 # 验收结果
 
-本文件按时间记录各阶段实际执行的检查。除 2026-11-08 的“工作区、标签与 Portrait 集成”一节外，其余各节记录 2026-11-06/07 原型阶段当时的事实；被后续规格取代的条目已就地标注，历史不重写。
+本文件按阶段记录实际执行的检查。PR 合并前检查见下节。其余各节保留各自版本的原型与集成证据，被后续规格取代的条目已就地标注。
+
+## PR #33 合并前检查（2026-11-10）
+
+源码候选为 `695e882`。下列结果覆盖本次合并检查，历史原生结果仍按各自的源码版本记录。
+
+| 检查 | 判定 | 证据 |
+|---|---|---|
+| 前端类型、全量测试与构建 | PASS | `npm --prefix web run typecheck`、`npm --prefix web test`、`npm --prefix web run build`。真实 Chromium 28 个文件、280 项通过。 |
+| 文档标签与滚动区域 | PASS（Chromium） | 全量套件覆盖标签随窗口缩窄和放宽进入及退出溢出菜单、通过菜单和方向键切换后的焦点、编辑器滚动位置恢复、每文档 GenUI 跳转和 ComparisonTable 的键盘横向滚动。 |
+| Go 与随包 MyGo | PASS | 应用 `go build ./...`、`go vet ./...`、`go test -race ./...`。`third_party/mygo` 的构建、`vet` 和 `go test ./...` 退出码为 0，该模块当前没有测试文件。 |
+| macOS 应用包 | PASS（构建与签名） | 从 `695e882` 导出的源码运行 `go tool mygo build -skip-dmg`，并用 `codesign --verify --deep --strict` 校验 arm64 应用包。 |
+| 本次滚动和标签改动的原生交互 | BLOCKED | 桌面工具打开独立测试包时超时，按 bundle ID 查询也未解析到应用。已有原生证据仍见下文。 |
+
+#20、#25、#30、#31 和 #32 保持开放，原生验收缺口按对应场景记录。
 
 环境（原型阶段）：macOS arm64，Go 1.27.3，MyGo v0.7.4，Milkdown 7.23.0，Node 24。
 
@@ -399,7 +413,7 @@
 | 空未命名窗口最后标签关闭（47e） | 关闭未命名窗口的唯一标签后窗口关闭，`session.json` 写为 `{}`（无残留工作区） | **PASS** |
 | Agent command 文本字段（47e） | `Locate agent…` 文本字段保存绝对路径后，下一次生成的日志实际使用该绝对路径 | **PASS** |
 | 打包字体（部分，47e） | bundle 只含二进制与图标；嵌入的 `web/dist` 含 IBM Plex Sans/SC、Barlow Semi Condensed、KaTeX、Phosphor `.woff2`，二进制含 Phosphor 字符串，UI 截图使用随包字体；Web Inspector 未启用，严格的离线 `FontFace`/网络证明未取得 | **部分证据**（不作严格离线 PASS） |
-| Model 菜单可见性（47e） | 47e 时列表已显示 `Agent’s choice / gemini-4-argon / gemini-3.8-flash ✓ / claude-opus-5-5`，缓存也含 3 个模型，但弹层点击丢失 CUA 窗口，未能完成变更；6478 已用弹层选项坐标完成实际变更与持久化（见下） | **47e 未验证；6478 已 PASS** |
+| Model 菜单可见性（47e） | 47e 时列表已显示 `Agent’s choice / gemini-4-argon / gemini-3.8-flash (selected) / claude-opus-5-5`，缓存也含 3 个模型，但弹层点击丢失 CUA 窗口，未能完成变更；6478 已用弹层选项坐标完成实际变更与持久化（见下） | **47e 未验证；6478 已 PASS** |
 | Duplicate 与目标唯一性（47e） | `File > Duplicate` 对 cold2 生成独立的未保存副本 `cold2 copy`（Edited，内容相同），创建时没有新目标可预留，直到它自身首次保存才按路径规则认领；Save As 冲突未被触发（保存表按默认名 `cold2 copy.md` 完成），目标唯一性仍未在原生验证 | **部分（创建 PASS；冲突未验）** |
 
 ### `6478ceb` 原生 focused matrix（实际观察）

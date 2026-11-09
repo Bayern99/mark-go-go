@@ -13,3 +13,6 @@ web/dist/
 
 # Vitest browser-mode failure artifacts
 web/.vitest/
+
+# Local research material
+/docs/research/

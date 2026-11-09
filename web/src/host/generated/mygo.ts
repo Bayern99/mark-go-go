@@ -115,6 +115,7 @@ export type IndexStatus = "idle" | "scanning" | "indexing" | "ready" | "error";
 export interface NativeCommand {
   id: string;
   command: string;
+  attempt?: number;
 }
 
 /** NavEntry is one folder or Markdown file in the workspace tree. */
@@ -299,6 +300,10 @@ export const WorkspaceHost = {
   flush(documentID: string, text: string): Promise<void> {
     return call("WorkspaceHost.Flush", documentID, text);
   },
+  /** FlushQuit delivers the editor text while this window still owes a quit ack. */
+  flushQuit(documentID: string, text: string, attempt: number): Promise<void> {
+    return call("WorkspaceHost.FlushQuit", documentID, text, attempt);
+  },
   /**
    * Generate runs the named document's view generation: the host starts the
    * user's Antigravity agent over ACP in an isolated temporary folder
@@ -355,13 +360,11 @@ export const WorkspaceHost = {
     return call("WorkspaceHost.PickFolder");
   },
   /**
-   * PrepareQuit records that the calling window flushed for quit. The
-   * session is written only after every workspace window has acked, then
-   * quit continues. Close events after that must not rewrite an empty
-   * layout over the saved session.
+   * PrepareQuit records one window's flush, or reports why that window
+   * could not flush. The session is written only after every window acks.
    */
-  prepareQuit(): Promise<void> {
-    return call("WorkspaceHost.PrepareQuit");
+  prepareQuit(attempt: number, failure: string): Promise<void> {
+    return call("WorkspaceHost.PrepareQuit", attempt, failure);
   },
   /** RecentWorkspaces returns persisted folder workspaces, newest first. */
   recentWorkspaces(): Promise<RecentWorkspace[]> {

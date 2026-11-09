@@ -2019,7 +2019,16 @@ func registerWindowClasses() {
 			if action == sel("undo:") || action == sel("redo:") {
 				return sendBool(item, "isEnabled")
 			}
-			return byte(sendSuper(self, "MyGoWebView", cmd, uintptr(item))) != 0
+			// Match AppKit's validation order for actions handled by WebKit.
+			webKit := class("WKWebView")
+			if sendBool(webKit, "instancesRespondToSelector:", uintptr(cmd)) {
+				return byte(sendSuper(self, "MyGoWebView", cmd, uintptr(item))) != 0
+			}
+			validate := sel("validateUserInterfaceItem:")
+			if sendBool(webKit, "instancesRespondToSelector:", uintptr(validate)) {
+				return byte(sendSuper(self, "MyGoWebView", validate, uintptr(item))) != 0
+			}
+			return sendBool(self, "respondsToSelector:", uintptr(action))
 		}),
 		method("mouseDown:", func(self id, cmd objc.SEL, ev id) {
 			if w := theBackend.byWebView[self]; w != nil {

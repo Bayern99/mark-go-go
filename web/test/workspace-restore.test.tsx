@@ -276,5 +276,28 @@ describe('view mode and restore transport',
         }
       },
     )
+
+    it('shows a document load failure instead of remaining on Loading',
+      async () => {
+        const base = createBrowserHost('# Hello\n', 'notes.md')
+        const host = {
+          ...base,
+          async load() {
+            throw new Error('disk unavailable')
+          },
+        }
+        const app = await mountWorkspace(wrapHostAsWorkspace(host))
+        try {
+          await vi.waitFor(() => {
+            const error = app.container.querySelector<HTMLElement>('[data-testid="document-bootstrap-error"]')
+            if (!error) throw new Error('document load failure missing')
+            expect(error.textContent).toContain('disk unavailable')
+          })
+          expect(app.container.querySelector<HTMLButtonElement>('[data-testid="view-mode-richtext"]')?.disabled).toBe(true)
+        } finally {
+          await app.unmount()
+        }
+      },
+    )
   },
 )

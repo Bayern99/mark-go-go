@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/egoist/mygo"
 )
@@ -67,64 +70,59 @@ func (h *documentHost) SetViewMode(ctx context.Context, documentID, mode string)
 	return nil
 }
 
-// PrepareQuit records that the calling window flushed for quit. The
-// session is written only after every workspace window has acked, then
-// quit continues. Close events after that must not rewrite an empty
-// layout over the saved session.
-func (h *documentHost) PrepareQuit(ctx context.Context) error {
-	done, file := h.ackQuitWindow(mygo.CallerWindow(ctx))
-	if !done {
-		return nil
+const quitAckTimeout = 20 * time.Second
+
+var errStaleQuitAttempt = errors.New("stale quit attempt")
+
+// FlushQuit delivers the editor text while this window still owes a quit ack.
+func (h *documentHost) FlushQuit(ctx context.Context, documentID, text string, attempt int) error {
+	win := mygo.CallerWindow(ctx)
+	h.mu.Lock()
+	if win == nil || attempt != h.quitAttempt || !h.quitPending[win] {
+		h.mu.Unlock()
+		return errStaleQuitAttempt
 	}
-	h.persistQuitAndRequit(file)
+	s := h.byID[documentID]
+	if s == nil || s.win != win || s.closed {
+		h.mu.Unlock()
+		return errNoDocument
+	}
+	// A retry cannot invalidate the attempt between the check and the write.
+	s.doc.Set(text)
+	h.mu.Unlock()
+	h.reindexOpenDocument(s)
 	return nil
 }
 
-func (h *documentHost) persistQuitAndRequit(file sessionFileData) {
-	if h.settings != nil {
-		_ = h.settings.saveSession(file)
+// PrepareQuit records one window's flush, or reports why that window
+// could not flush. The session is written only after every window acks.
+func (h *documentHost) PrepareQuit(ctx context.Context, attempt int, failure string) error {
+	win := mygo.CallerWindow(ctx)
+	if failure != "" {
+		if win != nil {
+			h.failQuitAttempt(attempt, win, errors.New(failure), false, true)
+		}
+		return nil
 	}
-	go mygo.App.Quit()
+	done, file := h.ackQuitWindow(win, attempt)
+	if !done {
+		return nil
+	}
+	h.completeQuitAttempt(attempt, file, win)
+	return nil
 }
 
-// ackQuitWindow marks win flushed. done is true only when every pending
-// workspace window has acked (or none were pending).
-func (h *documentHost) ackQuitWindow(win *mygo.Window) (done bool, file sessionFileData) {
+func (h *documentHost) beginQuitAttempt() (int, []*mygo.Window, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.ackQuitWindowLocked(win)
-}
-
-func (h *documentHost) ackQuitWindowLocked(win *mygo.Window) (done bool, file sessionFileData) {
-	if h.sessionReady {
-		return false, sessionFileData{}
+	if h.sessionReady || h.quitAttempt != 0 {
+		return 0, nil, false
 	}
-	if h.quitPending != nil {
-		if win != nil {
-			delete(h.quitPending, win)
-		}
-		if len(h.quitPending) > 0 {
-			return false, sessionFileData{}
-		}
+	h.quitSequence++
+	if h.quitSequence == 0 {
+		h.quitSequence++
 	}
-	file = h.captureSessionLocked()
-	h.sessionReady = true
-	h.quitting = true
-	h.quitPending = nil
-	return true, file
-}
-
-func (h *documentHost) onBeforeQuit(e *mygo.QuitEvent) {
-	h.mu.Lock()
-	if h.sessionReady {
-		h.mu.Unlock()
-		return
-	}
-	if h.quitPending != nil {
-		h.mu.Unlock()
-		e.PreventDefault()
-		return
-	}
+	attempt := h.quitSequence
 	pending := make(map[*mygo.Window]bool, len(h.byWindow))
 	wins := make([]*mygo.Window, 0, len(h.byWindow))
 	for win := range h.byWindow {
@@ -133,18 +131,165 @@ func (h *documentHost) onBeforeQuit(e *mygo.QuitEvent) {
 			wins = append(wins, win)
 		}
 	}
+	h.quitAttempt = attempt
 	h.quitPending = pending
+	h.quitSaving = false
+	h.quitTimer = time.AfterFunc(quitAckTimeout, func() {
+		h.failQuitAttempt(attempt, nil, errors.New("timed out waiting for documents to finish flushing"), false, true)
+	})
+	return attempt, wins, true
+}
+
+// ackQuitWindow marks win flushed for attempt. It completes only once,
+// after every window in that attempt has acked.
+func (h *documentHost) ackQuitWindow(win *mygo.Window, attempt int) (done bool, file sessionFileData) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.ackQuitWindowLocked(win, attempt)
+}
+
+func (h *documentHost) ackQuitWindowLocked(win *mygo.Window, attempt int) (done bool, file sessionFileData) {
+	if attempt == 0 || attempt != h.quitAttempt || h.quitPending == nil || h.quitSaving {
+		return false, sessionFileData{}
+	}
+	if win != nil {
+		if !h.quitPending[win] {
+			return false, sessionFileData{}
+		}
+		h.quitPending[win] = false
+	}
+	for _, pending := range h.quitPending {
+		if pending {
+			return false, sessionFileData{}
+		}
+	}
+	for win := range h.byWindow {
+		if _, included := h.quitPending[win]; !included {
+			return false, sessionFileData{}
+		}
+	}
+	h.quitSaving = true
+	if h.quitTimer != nil {
+		h.quitTimer.Stop()
+		h.quitTimer = nil
+	}
+	return true, h.captureSessionLocked()
+}
+
+// saveQuitAttempt leaves the attempt active during the disk write. Tests
+// inject save so failure and retry state do not open a native dialog.
+func (h *documentHost) saveQuitAttempt(
+	attempt int,
+	file sessionFileData,
+	save func(sessionFileData) error,
+) (bool, error) {
+	if err := save(file); err != nil {
+		if !h.abortQuitAttempt(attempt, nil, true) {
+			return false, errStaleQuitAttempt
+		}
+		return false, err
+	}
+	h.mu.Lock()
+	if attempt == 0 || attempt != h.quitAttempt || !h.quitSaving {
+		h.mu.Unlock()
+		h.persistSession()
+		return false, errStaleQuitAttempt
+	}
+	h.sessionReady = true
+	h.quitting = true
+	h.quitPending = nil
+	h.quitSaving = false
+	h.quitAttempt = 0
 	h.mu.Unlock()
+	return true, nil
+}
+
+func (h *documentHost) completeQuitAttempt(attempt int, file sessionFileData, win *mygo.Window) {
+	committed, err := h.saveQuitAttempt(attempt, file, h.saveQuitSession)
+	if errors.Is(err, errStaleQuitAttempt) {
+		return
+	}
+	if err != nil {
+		h.showQuitFailure(win, err)
+	} else if committed {
+		go mygo.App.Quit()
+	}
+}
+
+func (h *documentHost) abortQuitAttempt(attempt int, win *mygo.Window, allowSaving bool) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if attempt == 0 || attempt != h.quitAttempt || h.sessionReady || (h.quitSaving && !allowSaving) {
+		return false
+	}
+	if win != nil && !h.quitPending[win] {
+		return false
+	}
+	if h.quitTimer != nil {
+		h.quitTimer.Stop()
+		h.quitTimer = nil
+	}
+	h.quitAttempt = 0
+	h.quitPending = nil
+	h.quitSaving = false
+	h.quitting = false
+	return true
+}
+
+func (h *documentHost) failQuitAttempt(attempt int, win *mygo.Window, err error, allowSaving, persist bool) {
+	if !h.abortQuitAttempt(attempt, win, allowSaving) {
+		return
+	}
+	if persist {
+		h.persistSession()
+	}
+	h.showQuitFailure(win, err)
+}
+
+func (h *documentHost) showQuitFailure(win *mygo.Window, err error) {
+	if win == nil {
+		win = mygo.FocusedWindow()
+	}
+	detail := "Your documents are still open. Resolve the issue, then choose Quit again."
+	if err != nil {
+		detail = err.Error() + "\n\n" + detail
+	}
+	go func() {
+		_, _ = mygo.Dialog.Message(mygo.MessageOptions{
+			Parent:  win,
+			Type:    mygo.MessageError,
+			Title:   "Could not quit Mark Go Go",
+			Message: "Mark Go Go could not safely prepare all open documents for quitting.",
+			Detail:  detail,
+			Buttons: []string{"OK"},
+		})
+	}()
+}
+
+func (h *documentHost) onBeforeQuit(e *mygo.QuitEvent) {
+	attempt, wins, started := h.beginQuitAttempt()
+	if !started {
+		h.mu.Lock()
+		ready := h.sessionReady
+		h.mu.Unlock()
+		if !ready {
+			e.PreventDefault()
+		}
+		return
+	}
 	e.PreventDefault()
 	if len(wins) == 0 {
-		done, file := h.ackQuitWindow(nil)
+		done, file := h.ackQuitWindow(nil, attempt)
 		if done {
-			h.persistQuitAndRequit(file)
+			h.completeQuitAttempt(attempt, file, nil)
 		}
 		return
 	}
 	for _, win := range wins {
-		_ = nativeCommand.Emit(win, NativeCommand{Command: "flushQuit"})
+		if err := nativeCommand.Emit(win, NativeCommand{Attempt: attempt, Command: "flushQuit"}); err != nil {
+			h.failQuitAttempt(attempt, win, fmt.Errorf("could not ask a window to flush: %w", err), false, true)
+			return
+		}
 	}
 }
 

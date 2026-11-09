@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -128,7 +129,7 @@ func (st *settingsStore) saveSession(file sessionFileData) error {
 	defer st.mu.Unlock()
 	path := st.sessionPath()
 	if path == "" {
-		return nil
+		return errors.New("the session folder is not available")
 	}
 	if file.Workspaces == nil {
 		file.Workspaces = []sessionWorkspace{}
@@ -368,6 +369,8 @@ func (h *documentHost) persistSession() {
 	if h == nil {
 		return
 	}
+	h.sessionWriteMu.Lock()
+	defer h.sessionWriteMu.Unlock()
 	h.mu.Lock()
 	if h.quitting || h.restoring || h.sessionReady || h.quitPending != nil {
 		h.mu.Unlock()
@@ -379,6 +382,13 @@ func (h *documentHost) persistSession() {
 	if st != nil {
 		_ = st.saveSession(file)
 	}
+}
+
+// saveQuitSession lets any normal write captured before quit finish first.
+func (h *documentHost) saveQuitSession(file sessionFileData) error {
+	h.sessionWriteMu.Lock()
+	defer h.sessionWriteMu.Unlock()
+	return h.settings.saveSession(file)
 }
 
 func (h *documentHost) liveRestoreState(launch []string) restoreLive {

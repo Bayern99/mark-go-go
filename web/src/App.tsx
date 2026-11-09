@@ -9,7 +9,7 @@ import { EditorAccess } from './core/EditorAccess'
 import { PluginRegistry } from './core/PluginRegistry'
 import { ViewRegistry } from './core/ViewRegistry'
 import type { AppPlugin } from './core/types'
-import type { Disposable, DocumentInfo, HostAdapter, RecentWorkspace, WorkspaceAdapter, WorkspaceSnapshot } from './host/types'
+import type { Disposable, DocumentInfo, HostAdapter, HostDocSnapshot, RecentWorkspace, WorkspaceAdapter, WorkspaceSnapshot } from './host/types'
 import { wrapHostAsWorkspace } from './host/browserHost'
 import { reportNativeEditState } from './host/mygoHost'
 import { createMarkdownEditor, type EditorMode, type MarkdownEditor } from './editor/createEditor'
@@ -153,6 +153,7 @@ export function DocumentPane({
   const [rightWantOpen, setRightWantOpen] = useState<boolean>(true)
   const [rightFloatOpen, setRightFloatOpen] = useState<boolean>(false)
   const [ready, setReady] = useState(false)
+  const [bootstrapError, setBootstrapError] = useState('')
   const [, refreshPlugins] = useReducer((value: number) => value + 1, 0)
   const restored = useRef(false)
   const reportedMode = useRef(false)
@@ -220,6 +221,16 @@ export function DocumentPane({
     let disposed = false
     const cleanups: Disposable[] = []
     let debounceTimer: number | undefined
+    const startup: {
+      reload: { snapshot: HostDocSnapshot; stateEvents: number } | null
+      state: DocumentInfo | null
+      stateEvents: number
+    } = {
+      reload: null,
+      state: null,
+      stateEvents: 0,
+    }
+    let appliedVersion = 0
 
     const handleShortcuts = (event: KeyboardEvent) => {
       if (!activeRef.current) return
@@ -251,25 +262,65 @@ export function DocumentPane({
       editorRef.current?.setReadonly(state.readOnly)
     }
 
+    const applyReload = (reload: HostDocSnapshot) => {
+      if (!editorRef.current || reload.version <= appliedVersion) return
+      if (debounceTimer !== undefined) {
+        window.clearTimeout(debounceTimer)
+        debounceTimer = undefined
+      }
+      editorRef.current.setMarkdown(reload.text)
+      services.documents.setSnapshot(reload.text, reload.version)
+      setVersion(reload.version)
+      appliedVersion = reload.version
+      applyDocumentState(reload.state)
+    }
+
+    const onReload = (reload: HostDocSnapshot) => {
+      if (disposed || reload.version <= appliedVersion) return
+      if (editorRef.current) {
+        applyReload(reload)
+      } else if (!startup.reload || reload.version > startup.reload.snapshot.version) {
+        startup.reload = { snapshot: reload, stateEvents: startup.stateEvents }
+      }
+    }
+
+    cleanups.push(host.onState((state) => {
+      startup.stateEvents += 1
+      startup.state = state
+      applyDocumentState(state)
+    }))
+    cleanups.push(host.onReload(onReload))
+    setBootstrapError('')
+
     void (async () => {
+      const stateEventsAtLoad = startup.stateEvents
       const snapshot = await host.load()
       if (disposed) return
+      const reloadAtLoad = startup.reload && startup.reload.snapshot.version > snapshot.version ? startup.reload : null
+      const initial = reloadAtLoad?.snapshot ?? snapshot
+      const stateEventsAtInitial = reloadAtLoad?.stateEvents ?? stateEventsAtLoad
+      const initialState = startup.stateEvents > stateEventsAtInitial ? startup.state ?? initial.state : initial.state
 
-      services.documents.setSnapshot(snapshot.text, snapshot.version)
-      services.documents.setPath(snapshot.state.path)
-      setDocState(snapshot.state)
-      setVersion(snapshot.version)
+      appliedVersion = initial.version
+      services.documents.setSnapshot(initial.text, initial.version)
+      applyDocumentState(initialState)
+      setVersion(initial.version)
 
       const root = editorRoot.current
       if (!root) return
-      const editor = await createMarkdownEditor(root, { initialText: snapshot.text })
+      const editor = await createMarkdownEditor(root, { initialText: initial.text })
       if (disposed) {
         await editor.destroy()
         return
       }
       editorRef.current = editor
       services.editor.attach(editor)
-      editor.setReadonly(snapshot.state.readOnly)
+      editor.setReadonly(initialState.readOnly)
+      const reloadAtReady = startup.reload && startup.reload.snapshot.version > appliedVersion ? startup.reload : null
+      if (reloadAtReady) applyReload(reloadAtReady.snapshot)
+      startup.reload = null
+      const stateEventsAtSnapshot = reloadAtReady?.stateEvents ?? stateEventsAtInitial
+      if (startup.stateEvents > stateEventsAtSnapshot && startup.state) applyDocumentState(startup.state)
 
       if (revealBinder.current) {
         cleanups.push({
@@ -407,26 +458,6 @@ export function DocumentPane({
         )
       }
 
-      cleanups.push(
-        host.onState((state) => {
-          applyDocumentState(state)
-        }),
-      )
-
-      cleanups.push(
-        host.onReload((reload) => {
-          if (debounceTimer !== undefined) {
-            window.clearTimeout(debounceTimer)
-            debounceTimer = undefined
-          }
-          editor.setMarkdown(reload.text)
-          editor.setReadonly(reload.state.readOnly)
-          services.documents.setSnapshot(reload.text, reload.version)
-          setVersion(reload.version)
-          applyDocumentState(reload.state)
-        }),
-      )
-
       const appPlugins = [createOutlinePlugin(), createGenUIPlugin(), ...plugins]
       for (const plugin of appPlugins) {
         if (disposed) return
@@ -446,7 +477,9 @@ export function DocumentPane({
       }
       refreshPlugins()
       setReady(true)
-    })()
+    })().catch((error: unknown) => {
+      if (!disposed) setBootstrapError(error instanceof Error ? error.message : String(error))
+    })
 
     return () => {
       disposed = true
@@ -590,6 +623,11 @@ export function DocumentPane({
             {docState?.restoreError ? (
               <div className="banner" role="alert" data-testid="doc-restore-error">
                 {docState.restoreError}
+              </div>
+            ) : null}
+            {bootstrapError ? (
+              <div className="banner" role="alert" data-testid="document-bootstrap-error">
+                Could not open this document: {bootstrapError}
               </div>
             ) : null}
 

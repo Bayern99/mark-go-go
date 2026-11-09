@@ -42,19 +42,35 @@ go tool mygo generate
 
 ## Verification and packaging
 
-```sh
-npm --prefix web run typecheck
-npm --prefix web test
-npm --prefix web run build
-go build ./...
-go vet ./...
-go test -race ./...
+Choose the check that exercises the changed behavior. 日常用相关用例，改到文件、IPC 或窗口生命周期时再扩大验证范围。
 
-# Build the macOS app and DMG / 构建 macOS 应用和 DMG
+```sh
+# Focused checks / 日常定向检查
+go test . -run 'Test.*(Close|Quit)'
+npm --prefix web test -- test/workspace-restore.test.tsx
+
+# After a Go binding change / Go 绑定变更后
+go tool mygo generate
+npm --prefix web run typecheck
+
+# Integration / 集成检查
+npm --prefix web test
+go vet .
+go test -race .
+
+# Release build / 发布构建
 go tool mygo build
 ```
 
-The app and DMG are written under `build/`. 应用和 DMG 输出到 `build/`。
+`go tool mygo doctor` checks the development machine when setting up or diagnosing a build. `go tool mygo build` generates bindings, checks and bundles the frontend, and writes the app and DMG under `build/`.
+
+For changes to the vendored document group, run `(cd third_party/mygo && go test -race . -run TestGroupClose)`.
+
+Use `go tool mygo dev` and its separate development identity for native checks. Copy inputs from `web/test/fixtures/` into a temporary workspace. For an installed build check, use a temporary project copy with its own app name and bundle identifier and run `go tool mygo build -skip-dmg`. Use the native app to check menus, save dialogs, and input methods.
+
+原生检查用开发版和临时文档，可从 `web/test/fixtures/` 复制样文。若需验证打包行为，给临时项目副本单独的应用名和包标识，再用 `go tool mygo build -skip-dmg`。浏览器测试覆盖页面行为，菜单、保存对话框和输入法通过 macOS 应用验证。
+
+The vendored MyGo omits Automation. For a targeted check, copy the v0.7.4 plugin into the temporary project's vendor tree and import it in an `e2e` build-tagged Go file. It can list windows, inspect the WebView and invoke application menu items. Use the native UI for system sheets. [MyGo Automation guide](https://github.com/egoist/mygo/blob/v0.7.4/docs/plugins/automation.md)
 
 ## Documentation
 

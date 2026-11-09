@@ -61,47 +61,6 @@ func TestSameFileFollowsAlias(t *testing.T) {
 	}
 }
 
-func TestConfirmCloseCancelKeepsEveryID(t *testing.T) {
-	items := []pendingClose{
-		{ID: "a", Dirty: true},
-		{ID: "b", Dirty: true},
-		{ID: "c", Dirty: false},
-	}
-	asked := []string{}
-	ids, canceled := confirmClose(items, func(id string) bool {
-		asked = append(asked, id)
-		return id == "b" // cancel on the second dirty document
-	})
-	if !canceled {
-		t.Fatal("expected cancel")
-	}
-	if ids != nil {
-		t.Fatalf("cancel must not return ids to close, got %v", ids)
-	}
-	if len(asked) != 2 || asked[0] != "a" || asked[1] != "b" {
-		t.Fatalf("asked %v, want a then b; c is clean and must not be asked", asked)
-	}
-}
-
-func TestConfirmCloseSuccessReturnsAllTabs(t *testing.T) {
-	items := []pendingClose{
-		{ID: "a", Dirty: true},
-		{ID: "b", Dirty: false},
-	}
-	ids, canceled := confirmClose(items, func(id string) bool {
-		if id == "b" {
-			t.Fatal("must not confirm a clean document")
-		}
-		return false
-	})
-	if canceled {
-		t.Fatal("not canceled")
-	}
-	if len(ids) != 2 || ids[0] != "a" || ids[1] != "b" {
-		t.Fatalf("ids %v", ids)
-	}
-}
-
 func TestDocumentInfoKeepsIdentityAcrossPath(t *testing.T) {
 	info := DocumentInfo{ID: "doc-1", Name: "Untitled", Path: ""}
 	info.Path = "/tmp/notes/a.md"

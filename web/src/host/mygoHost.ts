@@ -33,7 +33,17 @@ import { cancelled, failureOf, GenerationError, isFailureKind } from "./generati
 import { applyNativeEdit } from "../editor/nativeEdit";
 
 function asNativeCommand(cmd: WireNativeCommand): NativeCommand {
-  return { id: cmd.id, command: cmd.command as NativeCommandName };
+  return { id: cmd.id, command: cmd.command as NativeCommandName, attempt: cmd.attempt };
+}
+
+const maxQuitFailureLength = 512;
+
+function quitFlushFailure(id: string, error: unknown): string {
+  const detail = error instanceof Error ? error.message : typeof error === "string" ? error : "Unknown error";
+  const message = `Could not flush document ${id} before quitting: ${detail || "Unknown error"}`;
+  return message.length > maxQuitFailureLength
+    ? `${message.slice(0, maxQuitFailureLength - 1)}…`
+    : message;
 }
 
 function generatingOf(value: unknown): boolean {
@@ -252,6 +262,7 @@ async function flushDocument(id: string): Promise<void> {
  */
 export function createMyGoHost(): WorkspaceAdapter {
   const adapters = new Map<string, HostAdapter>();
+  let latestQuitAttempt = 0;
 
   const workspace: WorkspaceAdapter = {
     snapshot(): Promise<WorkspaceSnapshot> {
@@ -322,9 +333,17 @@ export function createMyGoHost(): WorkspaceAdapter {
   };
 
   events.nativeCommand.on((cmd: WireNativeCommand) => {
+    const native = asNativeCommand(cmd);
+    if (native.command === "flushQuit") {
+      const attempt = native.attempt;
+      if (!Number.isSafeInteger(attempt) || attempt === undefined || attempt <= latestQuitAttempt) return;
+      latestQuitAttempt = attempt;
+      void handleNative(workspace, adapters, native, () => latestQuitAttempt === attempt).catch(() => undefined);
+      return;
+    }
     // A failure is recorded on the captured document's state by the host,
     // which its window shows; it must not become an unhandled rejection.
-    void handleNative(workspace, adapters, asNativeCommand(cmd)).catch(() => undefined);
+    void handleNative(workspace, adapters, native).catch(() => undefined);
   });
   events.workspaceChanged.on((snap) => {
     const live = new Set(snap.documents.map((d) => d.id));
@@ -340,6 +359,7 @@ async function handleNative(
   workspace: WorkspaceAdapter,
   adapters: Map<string, HostAdapter>,
   cmd: NativeCommand,
+  isCurrentQuitAttempt: () => boolean = () => true,
 ): Promise<void> {
   const command = cmd.command as NativeCommandName;
   if (command === "closeWorkspace") {
@@ -348,8 +368,18 @@ async function handleNative(
     return;
   }
   if (command === "flushQuit") {
-    for (const id of [...flushers.keys()]) await flushDocument(id);
-    await WorkspaceHost.prepareQuit();
+    const attempt = cmd.attempt;
+    if (attempt === undefined || !Number.isSafeInteger(attempt) || attempt <= 0) return;
+    let failure = "";
+    for (const [id, read] of [...flushers]) {
+      if (!isCurrentQuitAttempt()) return;
+      try {
+        await WorkspaceHost.flushQuit(id, read(), attempt);
+      } catch (error) {
+        if (!failure) failure = quitFlushFailure(id, error);
+      }
+    }
+    if (isCurrentQuitAttempt()) await WorkspaceHost.prepareQuit(attempt, failure);
     return;
   }
   if (command === "undo" || command === "redo") {

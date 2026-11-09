@@ -52,6 +52,7 @@ type CloseResult struct {
 type NativeCommand struct {
 	ID      string `json:"id"`
 	Command string `json:"command"`
+	Attempt int    `json:"attempt,omitempty"`
 }
 
 var (
@@ -165,30 +166,6 @@ func deepestRoot(file string, roots []string) string {
 		}
 	}
 	return best
-}
-
-// pendingClose is one document considered during a workspace close.
-type pendingClose struct {
-	ID    string
-	Dirty bool
-}
-
-// confirmClose asks about every dirty document without removing any.
-// If confirm reports canceled, no ids are returned.
-func confirmClose(items []pendingClose, confirm func(id string) (canceled bool)) (closeIDs []string, canceled bool) {
-	for _, it := range items {
-		if !it.Dirty {
-			continue
-		}
-		if confirm(it.ID) {
-			return nil, true
-		}
-	}
-	out := make([]string, len(items))
-	for i, it := range items {
-		out[i] = it.ID
-	}
-	return out, false
 }
 
 func (h *documentHost) setDocuments(ds *mygo.Documents[string]) {
@@ -416,37 +393,14 @@ func (h *documentHost) CloseWorkspace(ctx context.Context) (CloseResult, error) 
 }
 
 func (h *documentHost) closeWorkspace(w *workspace) (CloseResult, error) {
-	h.mu.Lock()
-	items := make([]pendingClose, 0, len(w.tabs))
-	for _, id := range w.tabs {
-		s := h.byID[id]
-		if s == nil {
-			continue
-		}
-		items = append(items, pendingClose{ID: id, Dirty: s.doc.IsEdited()})
+	if w.win == nil {
+		return CloseResult{}, errNoWorkspace
 	}
-	h.mu.Unlock()
-	ids, canceled := confirmClose(items, func(id string) bool {
-		s, err := h.docSession(id)
-		if err != nil {
-			return false
-		}
-		err = s.doc.ConfirmClose()
-		return errors.Is(err, mygo.ErrCanceled)
-	})
-	if canceled {
+	if err := h.docs.CloseDocumentGroup(w.win); errors.Is(err, mygo.ErrCanceled) {
 		h.emitWorkspace(w)
 		return CloseResult{Canceled: true}, nil
-	}
-	for _, id := range ids {
-		s, err := h.docSession(id)
-		if err != nil {
-			continue
-		}
-		_ = s.doc.CloseDocument()
-	}
-	if w.win != nil && !w.win.IsDestroyed() {
-		w.win.Destroy()
+	} else if err != nil {
+		return CloseResult{}, err
 	}
 	return CloseResult{Closed: true}, nil
 }
@@ -548,7 +502,7 @@ func setMenuItemRoleEnabled(it *mygo.MenuItem, role mygo.MenuRole, on bool) {
 
 func (h *documentHost) interceptWindowClose(win *mygo.Window) bool {
 	h.mu.Lock()
-	skip := h.quitting || h.sessionReady || h.quitPending != nil
+	skip := h.quitting || h.sessionReady
 	h.mu.Unlock()
 	if skip {
 		return false
@@ -590,8 +544,12 @@ func (h *documentHost) openWorkspaceWindow(id, root, title string) *mygo.Window 
 	h.mu.Lock()
 	h.byWindow[win] = w
 	h.workspaceOrder = appendWorkspaceOrder(h.workspaceOrder, w.id)
+	attempt, saving := h.quitAttempt, h.quitSaving
 	h.mu.Unlock()
 	win.OnClosed(func() { h.forgetWindow(win) })
+	if attempt != 0 {
+		h.failQuitAttempt(attempt, nil, errors.New("a workspace opened while preparing to quit"), saving, !saving)
+	}
 	if root != "" {
 		if info, err := os.Stat(root); err == nil && info.IsDir() {
 			h.rememberRoot(root)
@@ -611,9 +569,11 @@ func (h *documentHost) forgetWindow(win *mygo.Window) {
 		h.workspaceOrder = removeWorkspaceOrder(h.workspaceOrder, w.id)
 	}
 	done := false
+	attempt := 0
 	var file sessionFileData
-	if h.quitPending != nil {
-		done, file = h.ackQuitWindowLocked(win)
+	if h.quitAttempt != 0 && h.quitPending != nil {
+		attempt = h.quitAttempt
+		done, file = h.ackQuitWindowLocked(win, attempt)
 	}
 	h.mu.Unlock()
 	h.forgetIndex(w)
@@ -624,6 +584,6 @@ func (h *documentHost) forgetWindow(win *mygo.Window) {
 	}
 	h.persistSession()
 	if done {
-		h.persistQuitAndRequit(file)
+		h.completeQuitAttempt(attempt, file, win)
 	}
 }

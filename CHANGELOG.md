@@ -13,6 +13,13 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 
 ### English
 
+#### Document reliability
+
+- Canceling a window close keeps every tab and its recovery copy, including a tab whose Delete or Don't Save button was already clicked.
+- Quit waits for each window to flush its editor and for the session to be saved. If either step fails, the app stays open and offers a retry through Quit.
+- The editor catches file reloads during startup. Canceling GenUI generation completes even when a descendant of the ACP agent holds its output pipes open.
+- Fixed a macOS crash when AppKit validated a menu item while the WebView was focused.
+
 #### Workspace Windows, Document Tabs and Navigation (#21, #22, #23, ADR 0005)
 - **One folder, one window, several document tabs**: a workspace window hosts every opened document as a tab. `documentId` stays stable across path, tab, window, first save and Save As; `workspaceId`, `root` and `path` are separate identities.
 - **One editing session per file**: reopening the same file from Finder, the File menu, the file tree or a heading search focuses the existing tab instead of creating a second unsaved copy. Directory aliases (`/tmp` vs `/private/tmp`) reuse one workspace after symlink-prefix canonicalisation.
@@ -51,6 +58,13 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 ### 中文
 
 #20 的工作区与 Portrait 更新。自动化检查、原生验证和待验收项见[验收记录](docs/acceptance.md)。
+
+#### 文档可靠性
+
+- 取消关窗时保留所有标签及其恢复副本，即使其中一份文档已经选了 Delete 或 Don't Save。
+- 退出前等待每个窗口交付最新编辑并写入会话文件。失败时保留窗口，可重新选择退出。
+- 编辑器在启动期间也能接收文件重载。ACP Agent 的子进程继续占用输出管道时，宿主仍能完成 GenUI 取消。
+- 修复 WebView 获得焦点时，AppKit 校验菜单项导致的 macOS 崩溃。
 
 #### 工作区窗口、文档标签与导航（#21、#22、#23，ADR 0005）
 - **一个文件夹一个窗口、多个文档标签**：工作区窗口以标签承载打开的原文。`documentId` 跨路径、标签、窗口、首次保存与另存为保持稳定；`workspaceId`、`root`、`path` 各自独立。

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -35,9 +36,10 @@ func setStored(t *testing.T, st *settingsStore, model, command string) {
 // every message it receives to the file MARKGOGO_FAKE_LOG names, and
 // plays the scenario the JSON in MARKGOGO_FAKE_SPEC describes.
 const (
-	fakeAgentEnv = "MARKGOGO_FAKE_AGENT"
-	fakeSpecEnv  = "MARKGOGO_FAKE_SPEC"
-	fakeLogEnv   = "MARKGOGO_FAKE_LOG"
+	fakeAgentEnv      = "MARKGOGO_FAKE_AGENT"
+	fakeSpecEnv       = "MARKGOGO_FAKE_SPEC"
+	fakeLogEnv        = "MARKGOGO_FAKE_LOG"
+	fakePipeHolderEnv = "MARKGOGO_FAKE_PIPE_HOLDER"
 )
 
 func TestMain(m *testing.M) {
@@ -88,7 +90,9 @@ type fakeSpec struct {
 	OutSymlink string `json:"outSymlink"`
 	// Hang never answers the prompt: the run can only end by
 	// cancellation.
-	Hang bool `json:"hang"`
+	Hang            bool `json:"hang"`
+	HoldPipes       bool `json:"holdPipes"`
+	ExitAfterPrompt bool `json:"exitAfterPrompt"`
 	// Crash writes the text to stderr and exits 1 right away.
 	Crash string `json:"crash"`
 	// Errors answers the requests of these methods with these
@@ -201,6 +205,9 @@ func runFakeAgent() {
 			}
 		case msg.ID != nil && msg.Method == "session/prompt":
 			if spec.Hang {
+				if spec.HoldPipes {
+					startFakePipeHolder(logf)
+				}
 				// Keep running until the client cancels or closes.
 				for in.Scan() {
 					var m struct {
@@ -216,10 +223,41 @@ func runFakeAgent() {
 			fakePlayScenario(&spec, cwd, sessionID, &nextID, send, in, logf)
 			logf(map[string]any{"type": "files", "files": fakeDirList(cwd)})
 			send(map[string]any{"jsonrpc": "2.0", "id": *msg.ID, "result": map[string]any{"stopReason": "end_turn", "usage": map[string]any{}}})
+			if spec.ExitAfterPrompt {
+				os.Exit(0)
+			}
 		case msg.Method == "session/cancel":
 			logf(map[string]any{"type": "cancelled"})
 			os.Exit(0)
 		}
+	}
+}
+
+// startFakePipeHolder re-execs the test binary with the fake-agent
+// variables removed, leaving a child that inherits the agent's pipes.
+func startFakePipeHolder(logf func(map[string]any)) {
+	cmd := exec.Command(os.Args[0], "-test.run=^TestFakeACPDescendantPipeHolder$")
+	cmd.Env = make([]string, 0, len(os.Environ())+1)
+	for _, env := range os.Environ() {
+		if strings.HasPrefix(env, fakeAgentEnv+"=") || strings.HasPrefix(env, fakeSpecEnv+"=") || strings.HasPrefix(env, fakeLogEnv+"=") || strings.HasPrefix(env, fakePipeHolderEnv+"=") {
+			continue
+		}
+		cmd.Env = append(cmd.Env, env)
+	}
+	cmd.Env = append(cmd.Env, fakePipeHolderEnv+"=1")
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := cmd.Start(); err != nil {
+		logf(map[string]any{"type": "descendant-error", "error": err.Error()})
+		return
+	}
+	logf(map[string]any{"type": "descendant-pid", "pid": cmd.Process.Pid})
+}
+
+// TestFakeACPDescendantPipeHolder is run by the fake ACP process to
+// keep inherited stdout and stderr open until its parent test kills it.
+func TestFakeACPDescendantPipeHolder(t *testing.T) {
+	if os.Getenv(fakePipeHolderEnv) == "1" {
+		time.Sleep(30 * time.Second)
 	}
 }
 
@@ -520,6 +558,26 @@ func logEntries(entries []map[string]any, typ string) []map[string]any {
 		}
 	}
 	return out
+}
+
+func killFakeDescendants(t *testing.T, path string) {
+	t.Helper()
+	for _, e := range logEntries(readFakeLog(t, path), "descendant-pid") {
+		pid := int(e["pid"].(float64))
+		if err := syscall.Kill(pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+			t.Errorf("kill fake descendant %d: %v", pid, err)
+		}
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			if errors.Is(syscall.Kill(pid, 0), syscall.ESRCH) {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if err := syscall.Kill(pid, 0); err == nil {
+			t.Errorf("fake descendant %d is still running", pid)
+		}
+	}
 }
 
 // logRecv returns the logged params of the client messages the fake
@@ -1076,6 +1134,119 @@ func TestGenerateCancel(t *testing.T) {
 	err, _ := hangingRun(t, 0, func(cancel context.CancelFunc) { cancel() })
 	if f := failureFrom(t, err); f.Kind != failCancelled || f.Message != "Generation was cancelled." {
 		t.Errorf("failure = %+v, want the cancellation", f)
+	}
+}
+
+func TestACPCancelDoesNotWaitForDescendantPipesOrBlockedWrite(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "fake.log")
+	specData, err := json.Marshal(fakeSpec{Hang: true, HoldPipes: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(os.Args[0], "acp")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		fakeAgentEnv+"=1",
+		fakeSpecEnv+"="+string(specData),
+		fakeLogEnv+"="+logPath,
+	)
+	agent, err := newACPAgent(cmd, newLimitBuffer(4<<10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent.start()
+	t.Cleanup(func() {
+		killFakeDescendants(t, logPath)
+		agent.kill()
+	})
+
+	if err := agent.call("initialize", map[string]any{"protocolVersion": 1}, nil); err != nil {
+		t.Fatal(err)
+	}
+	var opened struct {
+		SessionID string `json:"sessionId"`
+	}
+	if err := agent.call("session/new", map[string]any{}, &opened); err != nil {
+		t.Fatal(err)
+	}
+	promptDone := make(chan error, 1)
+	go func() {
+		promptDone <- agent.call("session/prompt", map[string]any{"sessionId": opened.SessionID}, nil)
+	}()
+	waitForLog(t, logPath, "descendant-pid")
+	waitForLog(t, logPath, "session/prompt")
+
+	agent.writeMu.Lock()
+	writeLocked := true
+	t.Cleanup(func() {
+		if writeLocked {
+			agent.writeMu.Unlock()
+		}
+	})
+	cancelDone := make(chan struct{})
+	started := time.Now()
+	go func() {
+		agent.cancelGracefully(opened.SessionID, 50*time.Millisecond)
+		close(cancelDone)
+	}()
+	select {
+	case <-cancelDone:
+		if elapsed := time.Since(started); elapsed > 2*time.Second {
+			t.Errorf("ACP cancellation took %s with a descendant holding the pipes", elapsed)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("ACP cancellation waited for a descendant holding the pipes")
+	}
+	agent.writeMu.Unlock()
+	writeLocked = false
+	select {
+	case err := <-promptDone:
+		if err == nil {
+			t.Error("the cancelled prompt unexpectedly succeeded")
+		}
+	case <-time.After(time.Second):
+		t.Error("the pending prompt did not observe agent exit")
+	}
+}
+
+func TestACPCallKeepsResponseWhenAgentExits(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "fake.log")
+	specData, err := json.Marshal(fakeSpec{Out: minimalOut, ExitAfterPrompt: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(os.Args[0], "acp")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		fakeAgentEnv+"=1",
+		fakeSpecEnv+"="+string(specData),
+		fakeLogEnv+"="+logPath,
+	)
+	agent, err := newACPAgent(cmd, newLimitBuffer(4<<10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent.start()
+	t.Cleanup(agent.kill)
+	if err := agent.call("initialize", map[string]any{"protocolVersion": 1}, nil); err != nil {
+		t.Fatal(err)
+	}
+	var opened struct {
+		SessionID string `json:"sessionId"`
+	}
+	if err := agent.call("session/new", map[string]any{}, &opened); err != nil {
+		t.Fatal(err)
+	}
+	var turned struct {
+		StopReason string `json:"stopReason"`
+	}
+	if err := agent.call("session/prompt", map[string]any{"sessionId": opened.SessionID}, &turned); err != nil {
+		t.Fatalf("final prompt response was lost on process exit: %v", err)
+	}
+	if turned.StopReason != "end_turn" {
+		t.Errorf("stop reason = %q, want end_turn", turned.StopReason)
 	}
 }
 

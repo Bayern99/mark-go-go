@@ -207,6 +207,15 @@ func saveButtons(save, discard string) (buttons []string, saveAt, discardAt, can
 // askToSave asks whether to save b's changes before it closes, saves or
 // discards them, and reports whether b may close.
 func (b *docBase) askToSave() bool {
+	ok, discard := b.askToSaveDecision()
+	if ok && discard {
+		b.discard()
+	}
+	return ok
+}
+
+// askToSaveDecision asks what to do without committing a discard.
+func (b *docBase) askToSaveDecision() (ok, discard bool) {
 	s := b.State()
 	tx := menuMessages()
 	var opts MessageOptions
@@ -233,16 +242,15 @@ func (b *docBase) askToSave() bool {
 	opts.CancelButton = cancelAt
 	r, err := Dialog.Message(opts)
 	if err != nil {
-		return false
+		return false, false
 	}
 	switch r.Button {
 	case saveAt:
-		return b.saveOrShow() == nil
+		return b.saveOrShow() == nil, false
 	case discardAt:
-		b.discard()
-		return true
+		return true, true
 	}
-	return false
+	return false, false
 }
 
 // saveOrShow saves b as File > Save does, and shows why it failed.

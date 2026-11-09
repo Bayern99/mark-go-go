@@ -19,7 +19,7 @@ graph TD
             DocStore["Document Store<br/>(Raw byte I/O, CRLF/LF preserve, File Watcher)"]
             NavIndex["Navigation Index<br/>(incremental scan, search, honest status)"]
             SessionStore["Session Store<br/>(session.json: workspaces, tabs, view modes)"]
-            AgentRunner["ACP Agent Runner<br/>(Sandboxed temporary directory, timeout, kill-on-quit)"]
+            AgentRunner["ACP Agent Runner<br/>(Temporary working directory, timeout, cancellation)"]
             SettingsStore["Settings Store<br/>(one process-wide patch store, model cache)"]
             ViewTracker["View File Tracker<br/>(.<doc>.md.genui.json & backup)"]
         end
@@ -78,7 +78,7 @@ graph TD
 - **Persistence Authority**: Native Go backend using `purego` bindings to macOS WebKit. Owns filesystem access, raw-byte reading and writing, CRLF/LF line ending preservation, atomic saves, and `fsnotify` file change detection.
 - **Navigation Index**: `index.go` / `navmeta.go` scan the workspace root incrementally, publish honest `scanning` / `indexing` / `ready` progress with `indexed` / `total`, index unsaved text of open documents, and answer `SetFilter` with heading hits.
 - **Session Store**: `session.go` / `restore_host.go` persist `session.json` (workspaces, tab order, active document, view modes) after every window acknowledges the quit flush, then restore it after MyGo's recovery copies and launch files, never replaying generation. A flush delivers what the pane really holds — the text on screen (`editor.getMarkdown()`), else the host-loaded core document state — so an untouched, reloaded or remounted document is never written empty; a disk-opened document gets a new MyGo id at restore, so the stored active tab is mapped to the id its document really has now.
-- **ACP Agent Runner**: Executes external AI agents (such as `agy acp`) using the Agent Client Protocol (ACP). One slot per document, captured settings/text/path at start; runs in an isolated temporary directory containing only a read-only copy of the document, enforcing strict timeouts (5 minutes), atomic view updates, and automatic process tree termination on quit.
+- **ACP Agent Runner**. Each document can run one local ACP agent at a time. The host captures the settings, text and path at the start. The agent works in a temporary directory with a copy of the document and, for partial regeneration, the previous view. The host checks reported tool calls, times out the generation after five minutes by default, and writes the validated view atomically. The agent executable runs with the user's permissions. See [ADR 0003](docs/adr/0003-generate-through-acp.md#局限必须知道的).
 - **Settings & Model Caching**: One process-wide `settings.json` store. `SetSettings` writes only the fields of the intent patch, returns the committed value, and broadcasts `settingsChanged` to every window; model lists are cached from the ACP `session/new` `configOptions` handshake and are never writable by a patch.
 - **Companion View Tracking**: Monitors hidden companion view files (`.<name>.md.genui.json`) and backup files (`.<name>.md.genui.prev.json`). The first snapshot is emitted before the directory watch starts, a catch-up snapshot follows, and the watch follows the document when its path moves.
 
@@ -155,7 +155,7 @@ graph TD
             DocStore["文档存储核心<br/>(原始字节 I/O、CRLF/LF 保真、文件监听)"]
             NavIndex["导航索引<br/>(增量扫描、搜索、如实进度)"]
             SessionStore["会话存储<br/>(session.json：工作区、标签、视图模式)"]
-            AgentRunner["ACP Agent 执行器<br/>(每文档一个任务、临时沙箱、5分钟超时、退出清理)"]
+            AgentRunner["ACP Agent 执行器<br/>(每文档一个任务、临时工作目录、超时与取消)"]
             SettingsStore["设置存储<br/>(进程级唯一补丁存储、模型列表缓存)"]
             ViewTracker["伴随视图文件追踪<br/>(.<doc>.md.genui.json 与备份文件)"]
         end
@@ -214,7 +214,7 @@ graph TD
 - **持久化权威**：基于 `purego` 无 CGO 绑定的 macOS 原生 Go 宿主，拥有磁盘文件的最高读写权威，保证文件按字节原样读写、保留原始换行符（CRLF / LF），提供原子保存、窗口焦点与 `fsnotify` 外部文件变更监听。
 - **导航索引**：`index.go` / `navmeta.go` 增量扫描工作区根目录，如实发布 `scanning` / `indexing` / `ready` 与 `indexed` / `total`；已打开文档的未保存文本也进入索引；`SetFilter` 返回标题与章节命中。
 - **会话存储**：`session.go` / `restore_host.go` 在每个窗口确认退出 flush 后写入 `session.json`（工作区、标签顺序、活动文档、视图模式），并在 MyGo 打开恢复副本与启动文件之后恢复，从不重放生成任务。flush 交付面板真正持有的文本（屏幕上的 `editor.getMarkdown()`，否则宿主载入的核心文档状态），未编辑、被重载或重新挂载的文档不会被写成空；从磁盘打开的文档在恢复时得到新的 MyGo id，因此存储的 active tab 映射到该文档现在真实的 id。
-- **ACP Agent 执行器**：遵循 Agent Client Protocol (ACP) 标准拉起用户本机的外部 AI Agent（如 `agy acp`）。每份文档一个任务槽，开始时捕获设置、文本与路径；任务约束在仅包含原文只读副本的临时沙箱目录内，设置 5 分钟硬超时、进程树退出清理及原子重命名提交。
+- **ACP Agent 执行器**。每份文档可以启动一个本地 ACP Agent。宿主在任务开始时捕获设置、文本和路径，将文档副本放入临时工作目录。局部重新生成时也提供上一份视图。宿主检查 Agent 报告的工具调用，生成默认超时为 5 分钟，校验后原子写入视图。Agent 进程拥有当前用户的权限。见 [ADR 0003](docs/adr/0003-generate-through-acp.md#局限必须知道的)。
 - **设置与模型缓存**：进程级唯一的 `settings.json`。`SetSettings` 只写意图补丁里出现的字段，返回提交后的值，并向每个窗口广播 `settingsChanged`；模型列表来自 `session/new` 握手的 `configOptions` 缓存，补丁永远不能写入它。
 - **伴随视图追踪**：监听原文同级隐藏文件 `.<name>.md.genui.json` 及其备份文件 `.<name>.md.genui.prev.json`。第一份快照在目录监听建立前送出，随后再送一份追赶快照；文档路径移动时跟随新路径。
 
@@ -266,8 +266,8 @@ graph TD
    - 尊重作者的排版习惯。未修改的行末空格、代码缩进和标点符号在保存时绝不被格式化脚本篡改。
 3. **同一文件一个编辑会话、一切按文档身份执行**：
    - `documentId` 在生命周期内拥有自己的内容、视图跟随与生成槽；原生命令、flush、保存、跟随与生成都指名这个身份，绝不按当前活动标签重定向。
-4. **强隔离沙箱运行**：
-   - 外部 Agent 只能在隔离临时目录中访问原文副本，无权遍历或直接读写宿主工程目录。
+4. **Agent 工作目录和输出检查**
+   - 宿主将文档副本交给临时目录中的 Agent，按 ACP 权限请求及工具通知检查路径，校验并提交生成的视图。
 5. **阅读与控制严格分离**：
    - 阅读区中央只负责读写内容；生成触发、配置与生命周期管理统一归于右栏面板。
 6. **唯一设置存储、唯一提交顺序**：

@@ -30,7 +30,7 @@
 | `Duplicate(documentId)` | `→ DocumentInfo` | 复制为新的未命名原文 |
 | `Activate(documentId)` | `→ void` | 激活标签，不改文件 |
 | `CloseDocument(documentId)` | `→ CloseResult` | 关闭一个文档标签；脏文档逐字询问。`{closed:false, canceled:true}` 时窗口与其余标签不变 |
-| `CloseWorkspace()` | `→ CloseResult` | 窗口关闭按钮 / File > Close Window：按顺序询问每个脏文档；取消保留整个窗口与全部标签 |
+| `CloseWorkspace()` | `→ CloseResult` | 窗口关闭按钮：逐个确认脏文档。全部同意关闭后才丢弃恢复副本；取消保留窗口、标签与未保存的恢复副本。已经成功写入的保存仍有效 |
 | `NavSnapshot()` / `SetFilter(query)` / `ToggleFolder(rel)` / `RevealPath(path)` / `PickFolder()` / `RecentWorkspaces()` | 见「工作区导航」 | 打开工作区不等整目录扫描；`PickFolder` 取消时以 `ErrCanceled` 拒绝 |
 
 ### 文档级
@@ -40,12 +40,13 @@
 | `Load(documentId)` | `→ Snapshot` | 该文档当前内容（含未保存编辑）；`Snapshot = { id, text, version, state: DocumentInfo }` |
 | `Update(documentId, text)` | `→ void` | 页面 compose 出的全文 → 该文档 `doc.Set`；冲突状态下仍写入，保存时由 MyGo 询问 |
 | `Flush(documentId, text)` | `→ void` | 保存/关闭/另存为该文档前送达最后一次未去抖的编辑文本；宿主据此使用该文档内容而不是活动标签 |
+| `FlushQuit(documentId, text, attempt)` | `→ void` | 退出前交付编辑文本。宿主只接受当前尝试中尚待回执的窗口写入其所属文档 |
 | `Save` / `SaveAs` / `Rename` / `MoveTo` / `Revert(documentId)` | `→ void` | 作用于该文档；原生对话框以工作区窗口为父；取消返回 `mygo.ErrCanceled`。生成中的文档禁用 Save As / Rename / Move |
 | `WatchView` / `UnwatchView` / `UndoView(documentId)` | `→ void` | 见「视图文件跟随」。`UndoView` 把上一次生成前保留的 `.<name>.genui.prev.json` 改名回视图文件（一次，之后不再有备份）；没有备份或正在生成时拒绝；页面经 `viewChanged` 看到 |
 | `SetViewMode(documentId, mode)` | `→ void` | 把该文档的视图模式写入会话；与标签绑定，删除标签前不失效 |
 | `SetNativeEditState(documentId, canUndo, canRedo)` | `→ void` | 只为聚焦窗口的活动文档报告编辑器撤销/重做可用性，背景面板不能偷菜单状态 |
 | `Generate(documentId, req, progress)` | `GenerateRequest`、`Channel<GenerateProgress>` `→ void` | 经 ACP 为该文档运行一次生成（见「GenUI 生成」）；成功后视图文件已原子写入，页面经 `viewChanged` 看到。失败时最后一步是 `{phase: "failed", text, failure: GenerateFailure}`，再以 `message`（+ 空格 + `hint`）拒绝。页面关闭通道、关闭该文档、退出 app 都是取消 |
-| `PrepareQuit()` | `→ void` | 每个工作区窗口在 `flushQuit` 后确认；全部确认后写 `session.json` 再继续退出 |
+| `PrepareQuit(attempt, failure)` | `→ void` | 报告本窗口交付编辑的结果。全部成功后写 `session.json` 再继续退出 |
 | `GetSettings()` / `SetSettings(patch)` | `Settings` / `SettingsPatch` | 进程级唯一 `settings.json`，见「生成设置」 |
 
 ### 事件
@@ -58,7 +59,7 @@
 | `viewChanged` | `{ id } & ViewSnapshot` | 跟随期间视图文件被写入、替换或删除；文档改名/首次保存/Save As 后改跟随新路径并推送一次 |
 | `navChanged` | `NavSnapshot` | 文件树增量快照；`status` 为 `idle`/`scanning`/`indexing`/`ready`/`error` |
 | `navSearchReady` | `NavSearchResult` | 过滤搜索结果；索引未完成时 `incomplete: true` |
-| `nativeCommand` | `NativeCommand { id, command }` | 原生 File/Edit 菜单与 `Cmd+W`、`flushQuit`，点击时捕获目标 `documentId` |
+| `nativeCommand` | `NativeCommand { id, command, attempt? }` | 原生 File/Edit 菜单和 `Cmd+W` 捕获目标 `documentId`。`flushQuit` 携带退出尝试编号 |
 | `settingsChanged` | `Settings` | 设置写入成功后广播到**每个窗口**，见「生成设置」 |
 
 `version` 从 1 开始，每次从磁盘重载 +1，不是编辑计数。`ViewSnapshot = { exists, text, error, canUndo }`，`canUndo` = 备份存在（监听同时看视图文件与备份）。
@@ -238,7 +239,7 @@ interface PluginContext {
 - 页面（`generation.ts` 的 `GenerationController`，每份文档一个，随 `DocumentPane` 生命周期，跨 GenUI 挂载保留）：点 Generate 时取该文档的 `documents.snapshot().text`（含未保存修改）和它的章节（共享章节模块，UTF-16 偏移），`format` = `view-format.md` + 「Catalog definition」JSON（`catalogDefinition()`），`request` = 生成要求（去首尾空白，空则不发）。同一文档一次只跑一个，不同文档互不阻塞；运行中 GenUI 显示进度（`role="status"` 最新一步 + 已完成的步骤列表）和骨架，旧视图暂时隐藏；只剩 Cancel。生成期间可以离开 GenUI 或切换标签继续编辑。
 - 生成要求输入框预填当前视图文件的 `request`；未保存的文档 Generate 禁用并提示 `Save the document first: the view is stored next to it.`。失败时 `role="alert"` 显示 `message`、`hint`（该做什么）、`model-invalid` 的可用模型列表、`detail`（「The agent said:」下原样的 `<pre>`），按钮：`Retry`（用失败那次的请求重跑）、`Locate agent…`（仅 `agent-not-found`，原地打开 `.composer` 的命令输入框，`Enter` / `Save` 写入 `{ agentCommand }`，即 ADR 0004 的定位动作）、`Dismiss`；旧视图不变。`Cancel` 只在运行中出现；取消不算失败、不提示。
 - 失败分类（Go `failure.go`，`GenerateFailure.kind`）：`agent-not-found`（找不到或启动不了命令）、`auth-required`（任一调用的 JSON-RPC -32000 或含 “authentication required”，包括 stderr；提示 ``Run `<命令> acp --login` in Terminal, then retry.``）、`model-invalid`（`set_config_option` 失败且 `session/new` 列出了模型）、`agent-message`（这一轮结束但没有 `out.json` 而有回复，或 `session/prompt` 返回错误；`detail` 为原话，最多 4000 字符）、`invalid-output`（缺失、过大、符号链接、非 JSON、`a2ui` / `sources` 不合格；有回复时附为 `detail`）、`agent-error`（Agent 提前退出附 stderr、其他 RPC 错误、越界工具调用、内部错误）、`timeout`（默认 5 分钟，`generationJob.Timeout`）、`cancelled`、`unsaved`、`busy`。超时与取消同样 `session/cancel` → 2 秒 → 杀进程 → 删临时目录。
-- 退出：关窗口取消调用的 ctx；退出 app 时 `main` 在 `App.Run` 返回后 `waitForGenerations(5s)`，等每个运行结束 Agent、删除临时目录再退出进程。
+- 退出：关窗口取消调用的 ctx。Agent 主进程退出后，宿主给 stdout 和 stderr 留出有限的读取时间，避免继承管道的子进程拖住清理。退出 app 时 `main` 在 `App.Run` 返回后最多等生成任务清理 5 秒。
 - 模型选择与设置（#17/#24，ADR 0004）：面板底部固定区展示只读 `Agent: Antigravity (agy)` 与向上弹出菜单 `ModelMenu`（`.sel-btn` 26px 凸起触发钮 + `.mmenu.pop` 10px 圆角白纸弹层 + `Agent’s choice` 与缓存的 `models` 列表 + 右侧勾号 `.chk`）；点选模型后只提交 `{ model }` 并立即经 `setSettings` 持久化、关闭弹层，支持点击外部或按 `Escape`（`document` 级监听）关闭、生成中禁用。`agent-not-found` 错误里的 `Locate agent…` 只提交 `{ agentCommand }`。常规界面不暴露自由文本 `Model` 输入框，`Agent command` 输入框只在定位失败时原地出现。
 - 宿主（Go）：临时目录里只有 `source.md`；`<agentCommand> acp`，无其他参数；`initialize` → `session/new` → `set_config_option(model)`（模型非空时）→ `session/prompt`。权限与工具调用按同一条路径规则检查（读 `source.md`、写 `out.json`、思考），越界即取消本次运行。`out.json` ≤ 1 MiB、普通文件、JSON 对象、非空 `a2ui`、合法 `sources`；宿主写 `version: 2`、`generatedAt`、`model`、`request`、带 `hash` 的 `sources`、原样的 `a2ui`，丢弃其他字段，原子替换视图文件；临时目录总是删除。进度：`starting`（启动、Agent 就绪）、`thinking`、`reading` / `writing`（工具标题）、`checking`。
 - 共享测试向量 `web/test/fixtures/section-vectors.json` 增加了章节的 UTF-16 `start` / `end` 与标题规范化（`normalize`），TS 与 Go 两边都用它验证。
@@ -253,11 +254,13 @@ interface PluginContext {
 
 ## 原生菜单、撤销重做与会话恢复（#21、#23、#30）
 
-- File 菜单的 Save / Save As / Duplicate / Rename / Move / Revert 作用于**聚焦窗口的活动文档**（MyGo 文档组），点击时捕获该窗口的 `documentId`；`Cmd+W` / File > Close（`RoleClose`）关闭**捕获的活动文档**：有文档时修补后的菜单把 `RoleClose` 交给 `performRole(RoleClose)` 而非平台 `performClose`，文档角色经应用的 `Command`（`nativeCommand close`）关闭该文档。窗口关闭按钮 / File > Close Window 调 `CloseWorkspace`（逐个询问脏文档，取消保留窗口与全部标签），关闭整个文档组。文件夹工作区没有标签时保留窗口：`RefreshDocumentMenus` 在该状态禁用 File > Close，因此原生 `Cmd+W` 是 no-op，而不是关窗。独立未命名窗口的最后一份文档关闭仍销毁窗口。若 Go 文档角色在无文档时被调用 `RoleClose`（窗口/菜单竞态），它解析给定或聚焦窗口并关闭；`BeforeWindowClose` 仍把它转为 `CloseWorkspace`——这个内部回退不是“空文件夹窗口下 Cmd+W 会关窗”的 UI 承诺。无文档支持的应用保留平台 `performClose`。退出向每个工作区窗口发 `flushQuit`，每个窗口送完最后一次编辑并调 `PrepareQuit`，全部确认后才写 `session.json` 并继续退出。`AskOnQuit` 保持未设置，未保存字节仍由 MyGo 恢复副本保护。
+- File 菜单的 Save / Save As / Duplicate / Rename / Move / Revert 作用于**聚焦窗口的活动文档**（MyGo 文档组），点击时捕获该窗口的 `documentId`；`Cmd+W` / File > Close（`RoleClose`）关闭**捕获的活动文档**：有文档时修补后的菜单把 `RoleClose` 交给 `performRole(RoleClose)` 而非平台 `performClose`，文档角色经应用的 `Command`（`nativeCommand close`）关闭该文档。窗口关闭按钮调用 `CloseWorkspace`（逐个确认脏文档，取消保留标签及恢复副本），关闭整个文档组。文件夹工作区没有标签时保留窗口：`RefreshDocumentMenus` 在该状态禁用 File > Close，因此原生 `Cmd+W` 是 no-op，而不是关窗。独立未命名窗口的最后一份文档关闭仍销毁窗口。若 Go 文档角色在无文档时被调用 `RoleClose`（窗口/菜单竞态），它解析给定或聚焦窗口并关闭；`BeforeWindowClose` 仍把它转为 `CloseWorkspace`——这个内部回退不是“空文件夹窗口下 Cmd+W 会关窗”的 UI 承诺。无文档支持的应用保留平台 `performClose`。
+
+- 退出时宿主向工作区窗口发送带尝试编号的 `flushQuit`。窗口通过 `PrepareQuit(attempt, failure)` 报告结果。全部窗口成功交付编辑且 `session.json` 写入成功后才继续退出。交付失败、确认超时或写入失败时，应用保留窗口并显示提示，用户可再次选择退出。未保存内容由 MyGo 恢复副本保存。
 - Edit > Undo / Redo（`nativeCommand` 的 `undo` / `redo`）按点击时的活动 `documentId` 应用到**该文档编辑器的历史**，与 `UndoView`（视图文件撤回）无关。`nativeEdit.ts` 维护每文档的目标（ProseMirror 或 CodeMirror），聚焦的原地 Composer `textarea` 保留原生字段撤销；只读 GenUI / ComparisonTable 的焦点不改写文档。`SetNativeEditState(documentId, canUndo, canRedo)` 只为聚焦窗口的活动文档更新菜单可用性。
 - 会话文件：`session.json` 在 `PathUserData`，记录未主动关闭的工作区（`id`、`root`、按顺序的 `tabs[{id, path, viewMode}]`、`activeId`），不复制未保存字节。布局变化（打开、移动标签、激活、关闭、切换视图模式）时写入，退出确认后再写一次；恢复期间跳过写入，避免用半恢复的窗口覆盖已存布局。空的无标题窗口（Welcome）不存；关闭的标签或工作区不复活。
 - `flushQuit` / Save / Save As / Close 的文本来源是**该面板真正持有的文本**：编辑器已挂载时取屏幕上的当前 Markdown（`editor.getMarkdown()`，即当前 compose 文本），否则回落到宿主载入的核心文档状态。用户确实清空文档时，按普通编辑送达 `""`。
-- `bindFlush` 只注册该面板的原始文本读取器，本身**不写回**；页面读它，`mygoHost` 在每次入口调用中**对每个文档**只发一次 `WorkspaceHost.Flush` RPC（公开的 `Flush(documentId, text)` 仍是真实绑定方法）。Save / Save As / Rename / Move / Revert / Duplicate 先交付捕获文档一次再调宿主；`close` 经 `closeDocument` 交付该文档一次；`closeWorkspace` 与 `flushQuit` 对**每个已注册读取器**（即已挂载编辑器）的文档**各交付一次**。没有注册读取器的文档不写任何内容，绝不合成空缓冲。
+- `bindFlush` 注册面板的原始文本读取器。Save、Save As、Rename、Move、Revert、Duplicate 和关闭标签各对捕获的文档调用一次 `Flush`。关闭工作区对每个已注册的读取器调用一次 `Flush`。退出时对每个已注册的读取器调用一次 `FlushQuit`，带上当前尝试编号。没有注册读取器的文档不会产生写入。
 - 绑定时机：只有编辑器已 ready 才 `bindFlush`；已注册的 reader 执行时若 `editorRef` 短暂为空，回落到宿主载入的核心文本；从未挂载编辑器的面板不会提前注册，也不会交付 `''`。
 - 路径变更锁（`DocumentsOptions.PathChange`）：文档的生成槽被占用时，File 菜单禁用它的 `Save As` / `Rename` / `Move To`，仍到达内核的请求在对话框或写入之前被拒绝；普通保存到它自己的文件、Duplicate、编辑与切标签仍可用。锁变化后由 `RefreshDocumentMenus()` 在主线程（非阻塞投递）刷新菜单，页面不阻塞等待对话框。
 - 目标预留（`DocumentsOptions.ReservePath`）：MyGo 在写向另一个文件或移动文件之前先预留目标；它在文件/文件夹选择器返回目标之后运行，位于任何 write、`os.Rename`、路径变更或 MyGo 自己的选择后 Move To 覆盖对话框之前。文档自己的文件总是允许，另一个文件在文档生成中或已被其他活动会话持有时被拒绝，比较用规范化路径与 `os.SameFile`，全应用互斥。预留保持到返回的 release 执行（成功或失败），所以两个窗口不能取同一目标。它**不承诺**屏蔽 OS `NSSavePanel` 在 Save As / Rename 选择阶段显示的内建 Replace 确认：该 OS 提示可能先于应用的拒绝出现，但应用拒绝的目标绝不会被写入，也不会产生第二个会话。

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/egoist/mygo"
 )
@@ -32,6 +33,8 @@ var docState = mygo.NewEvent[DocumentInfo]("docState")
 // as the only authority.
 type documentHost struct {
 	mu sync.Mutex
+	// sessionWriteMu serializes snapshots and writes, including the final quit save.
+	sessionWriteMu sync.Mutex
 
 	byWindow       map[*mygo.Window]*workspace
 	byID           map[string]*docSession
@@ -50,6 +53,10 @@ type documentHost struct {
 	restoring    bool
 	sessionReady bool
 	quitPending  map[*mygo.Window]bool
+	quitAttempt  int
+	quitSequence int
+	quitSaving   bool
+	quitTimer    *time.Timer
 
 	// prepareJob, when set, adjusts a generation job after settings and
 	// path are captured. Tests inject a fake agent through it.
@@ -126,13 +133,12 @@ func newDocumentHost() *documentHost {
 
 func (s *docSession) info() DocumentInfo {
 	st := s.documentState()
-	generating := false
-	if s.host != nil {
-		s.host.mu.Lock()
-		generating = s.generating
-		s.host.mu.Unlock()
+	if s.host == nil {
+		return s.makeInfo(st, false)
 	}
-	return s.makeInfo(st, generating)
+	s.host.mu.Lock()
+	defer s.host.mu.Unlock()
+	return s.makeInfo(st, s.generating)
 }
 
 // infoLocked is info while documentHost.mu is already held.
@@ -162,6 +168,7 @@ func (s *docSession) currentPath() string {
 	return ""
 }
 
+// makeInfo reads the session fields with documentHost.mu held for hosted documents.
 func (s *docSession) makeInfo(st mygo.DocumentState, generating bool) DocumentInfo {
 	return DocumentInfo{
 		ID:           s.id,

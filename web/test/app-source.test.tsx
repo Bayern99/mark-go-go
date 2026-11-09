@@ -233,6 +233,30 @@ describe('App source mode', () => {
     }
   })
 
+  it('uses a reload delivered before the initial host load resolves', async () => {
+    const base = createBrowserHost(DOCUMENT)
+    const reloaded = DOCUMENT.replace('Paragraph two.', 'Paragraph two, externally changed.')
+    const host: HostAdapter = {
+      ...base,
+      async load(): Promise<HostDocSnapshot> {
+        const stale = await base.load()
+        base.reload(reloaded)
+        return stale
+      },
+    }
+    const app = await mountApp(DOCUMENT, host)
+    try {
+      await vi.waitFor(() => {
+        const paragraphs = [...app.container.querySelectorAll<HTMLElement>('.ProseMirror p')]
+        expect(paragraphs.some((paragraph) => paragraph.textContent === 'Paragraph two, externally changed.')).toBe(true)
+        expect(paragraphs.some((paragraph) => paragraph.textContent === 'Paragraph two.')).toBe(false)
+      })
+      expect(app.container.querySelector('.version-chip')?.textContent).toBe('v2')
+    } finally {
+      await app.unmount()
+    }
+  })
+
   it('ignores typing when the document is read-only', async () => {
     const base = createBrowserHost(DOCUMENT)
     const host: HostAdapter = {

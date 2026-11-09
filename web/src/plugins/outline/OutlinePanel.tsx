@@ -100,7 +100,11 @@ export function OutlinePanel({
           No headings in this document.
         </p>
       ) : (
-        <ul className="outline-list" data-testid="outline-list">
+        <>
+          <p className="outline-count" data-testid="outline-count">
+            {headings.length === 1 ? '1 heading' : `${headings.length} headings`}
+          </p>
+          <ul className="outline-list" data-testid="outline-list">
           {headings.map((heading, index) => (
             <li key={heading.offset} className="outline-item">
               <button
@@ -123,6 +127,7 @@ export function OutlinePanel({
             </li>
           ))}
         </ul>
+        </>
       )}
     </nav>
   )

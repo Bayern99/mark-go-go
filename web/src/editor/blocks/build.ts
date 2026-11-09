@@ -32,24 +32,8 @@ export function buildDocument(text: string, schema: Schema, parser: Parser): Bui
   const { segments, prefix, trailing } = segmentMarkdown(text)
   const origins = new WeakMap<PMNode, BlockOrigin>()
   const nodes: PMNode[] = []
-
   for (const segment of segments) {
-    let lock: LockKind | null = segment.lock
-    let node: PMNode | null = null
-
-    if (lock === null) {
-      const parsed = tryParse(parser, segment.source)
-      if (parsed && parsed.childCount === 1) {
-        node = parsed.child(0)
-      } else {
-        lock = 'unsupported'
-      }
-    }
-
-    if (lock !== null || node === null) {
-      node = schema.nodes[LOCKED_NODE].create({ source: segment.source, kind: lock ?? 'unsupported' })
-    }
-
+    const node = nodeFromSegment(segment, schema, parser)
     nodes.push(node)
     origins.set(node, { segment, source: segment.source, node })
   }
@@ -62,6 +46,27 @@ export function buildDocument(text: string, schema: Schema, parser: Parser): Bui
 
   const doc = schema.nodes.doc.create(null, nodes)
   return { doc, origins, segments, prefix, trailing }
+}
+
+/** Parse one source segment into a top-level ProseMirror node. */
+export function nodeFromSegment(segment: SourceSegment, schema: Schema, parser: Parser): PMNode {
+  let lock: LockKind | null = segment.lock
+  let node: PMNode | null = null
+
+  if (lock === null) {
+    const parsed = tryParse(parser, segment.source)
+    if (parsed && parsed.childCount === 1) {
+      node = parsed.child(0)
+    } else {
+      lock = 'unsupported'
+    }
+  }
+
+  if (lock !== null || node === null) {
+    node = schema.nodes[LOCKED_NODE].create({ source: segment.source, kind: lock ?? 'unsupported' })
+  }
+
+  return node
 }
 
 function tryParse(parser: Parser, source: string): PMNode | null {

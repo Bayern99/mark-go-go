@@ -14,14 +14,17 @@ export interface SourceActions {
   store: SourceStore
   /** Component ID currently highlighted by the right-pane out-of-date list. */
   highlightedId?: string | null
+  /** Component ids whose bodies are being regenerated in place. */
+  replacing?: ReadonlySet<string>
   /**
    * Show a component's source in rich text, selected: where `text` is in its
-   * source sections when given and found, otherwise its first source section.
+   * remaining source sections when given and found, otherwise its first
+   * remaining source section.
    */
   edit(ids: readonly string[], text?: string): void
   /**
-   * Add `text` as a note to the end of the component's first source section.
-   * False when it could not be added.
+   * Add `text` as a note to the end of the component's first remaining source
+   * section. False when it could not be added.
    */
   addNote(ids: readonly string[], text: string): Promise<boolean>
 }
@@ -35,8 +38,10 @@ const STATUS_LABEL: Partial<Record<SourceStatus, string>> = {
 
 const STATUS_HINT: Partial<Record<SourceStatus, string>> = {
   changed: 'The document changed here since this view was made.',
-  missing: 'The heading this part was made from is no longer in the document.',
+  missing: 'A heading this part was made from is no longer in the document.',
 }
+
+const NONE_LEFT = "None of this part's sources are in the document now."
 
 const noSubscription = () => () => {}
 const noRevision = () => 0
@@ -52,10 +57,20 @@ export interface ComponentSource {
   addNote: ((text: string) => Promise<boolean>) | undefined
 }
 
+function CardSkeleton(): React.ReactElement {
+  return (
+    <div className="genui-card-skeleton" data-testid="genui-card-skeleton" aria-hidden="true">
+      <div className="genui-skeleton-line" />
+      <div className="genui-skeleton-block" />
+    </div>
+  )
+}
+
 /**
  * What a component's `sources` say now, re-read whenever the document's
- * sections are; `edit` and `addNote` are absent without sources or when one is
- * missing.
+ * sections are. Aggregate `status` is still `missing` when any source is gone;
+ * `edit` and `addNote` are absent without sources or when none of them is still
+ * in the document.
  */
 export function useComponentSource(sources: readonly string[] | undefined): ComponentSource {
   const actions = useContext(SourceContext)
@@ -68,12 +83,13 @@ export function useComponentSource(sources: readonly string[] | undefined): Comp
     return { status: 'unknown', headings: [], notes: [], edit: undefined, addNote: undefined }
   }
   const status = actions.store.status(ids)
+  const available = actions.store.hasSource(ids)
   return {
     status,
     headings: actions.store.headings(ids),
     notes: actions.store.notes(ids),
-    edit: status === 'missing' ? undefined : (text) => actions.edit(ids, text),
-    addNote: status === 'missing' ? undefined : (text) => actions.addNote(ids, text),
+    edit: available ? (text) => actions.edit(ids, text) : undefined,
+    addNote: available ? (text) => actions.addNote(ids, text) : undefined,
   }
 }
 
@@ -99,6 +115,7 @@ export function SourceFrame({
 }): React.ReactElement {
   const actions = useContext(SourceContext)
   const highlighted = Boolean(componentId && actions?.highlightedId === componentId)
+  const replacing = Boolean(componentId && actions?.replacing?.has(componentId))
   const label = STATUS_LABEL[source.status]
   const [composingNote, setComposingNote] = useState(false)
   const [noteDraft, setNoteDraft] = useState('')
@@ -129,15 +146,16 @@ export function SourceFrame({
 
   return (
     <article
-      className={`genui-block ${className}${highlighted ? ' is-highlighted' : ''}`}
+      className={`genui-block ${className}${highlighted ? ' is-highlighted' : ''}${replacing ? ' is-replacing' : ''}`}
       style={style}
       data-source-status={source.status}
       data-component-id={componentId}
       data-highlighted={highlighted ? 'true' : undefined}
+      aria-busy={replacing || undefined}
     >
       {title ? <h4>{title}</h4> : null}
-      {children}
-      {source.notes.length > 0 ? (
+      {replacing ? <CardSkeleton /> : children}
+      {!replacing && source.notes.length > 0 ? (
         <ul className="genui-notes" aria-label="Notes">
           {source.notes.map((note, index) => (
             <li key={index} className="genui-note">
@@ -151,6 +169,10 @@ export function SourceFrame({
           <span className="genui-source-from">From {source.headings.join(', ')}</span>
           {label ? (
             <span className="genui-source-status" title={STATUS_HINT[source.status]}>
+              <i
+                className={`ph ${source.status === 'missing' ? 'ph-warning-circle' : 'ph-warning'}`}
+                aria-hidden="true"
+              />
               {label}
             </span>
           ) : null}
@@ -159,10 +181,14 @@ export function SourceFrame({
               The note could not be added: the document is read only.
             </span>
           ) : null}
+          {!source.edit && source.status === 'missing' ? (
+            <span className="genui-source-unavailable">{NONE_LEFT}</span>
+          ) : null}
           <button
             type="button"
             className="genui-source-edit"
             disabled={!source.edit}
+            title={!source.edit ? NONE_LEFT : undefined}
             onClick={() => source.edit?.()}
           >
             Edit in source
@@ -171,6 +197,7 @@ export function SourceFrame({
             type="button"
             className="genui-source-note"
             disabled={!source.addNote}
+            title={!source.addNote ? NONE_LEFT : undefined}
             onClick={() => {
               setNoteFailed(false)
               setNoteDraft('')

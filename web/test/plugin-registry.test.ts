@@ -12,7 +12,8 @@ const noGeneration: ViewGenerator & Pick<ViewFileSource, 'undoView'> = {
   generate: () => Promise.reject(new Error('not in these tests')),
   undoView: () => Promise.reject(new Error('not in these tests')),
   getSettings: () => Promise.resolve({ model: '', agentCommand: 'agy' }),
-  setSettings: () => Promise.resolve(),
+  setSettings: () => Promise.resolve({ model: '', agentCommand: 'agy' }),
+  onSettings: () => ({ dispose() {} }),
 }
 
 interface Effects {

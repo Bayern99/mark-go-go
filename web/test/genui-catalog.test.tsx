@@ -1,10 +1,12 @@
 import '../src/styles.css'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createBrowserHost, type BrowserHost } from '../src/host/browserHost'
 import { catalogDefinition, CATALOG_COMPONENTS } from '../src/plugins/genui/a2ui'
 import { extractSections } from '../src/markdown/sections'
+import { SOURCE_DEBOUNCE_MS } from '../src/plugins/genui/sources'
 import { mountApp, type MountedApp } from './helpers/app'
+import { scrollViewport } from './helpers/scroll'
 
 const DOCUMENT = `# Plans
 
@@ -135,14 +137,93 @@ describe('GenUI content components', () => {
     await expect.element(page.getByRole('columnheader', { name: /^Size/ })).toHaveAttribute('aria-sort', 'ascending')
     await size.click()
     await order(['Electron', 'MyGo', 'Tauri'])
+    await expect.element(page.getByRole('columnheader', { name: /^Size/ })).toHaveAttribute('aria-sort', 'descending')
     await size.click()
     await order(['MyGo', 'Electron', 'Tauri'])
+    await expect.element(page.getByRole('columnheader', { name: /^Size/ })).toHaveAttribute('aria-sort', 'none')
 
     await page.getByRole('button', { name: /^Option/ }).click()
     await order(['Electron', 'MyGo', 'Tauri'])
 
     await new Promise((resolve) => setTimeout(resolve, 350))
     expect(update).not.toHaveBeenCalled()
+  })
+
+  it('names the table and headers, sorts from the keyboard, and stays read-only', async () => {
+    await page.viewport(340, 900)
+    const mounted = await showView(EVERY)
+    const update = vi.spyOn(mounted.host, 'update')
+    const order = (expected: string[]) => vi.waitFor(() => expect(firstColumn(mounted)).toEqual(expected))
+    await order(['MyGo', 'Electron', 'Tauri'])
+
+    await expect.element(page.getByRole('table', { name: 'Options table' })).toBeVisible()
+    await expect.element(page.getByRole('group', { name: 'Options table, scrollable' })).toBeVisible()
+    for (const name of ['Option', 'Size', 'Notes']) {
+      await expect.element(page.getByRole('columnheader', { name })).toHaveAttribute('scope', 'col')
+      await expect.element(page.getByRole('columnheader', { name })).toHaveAttribute('aria-sort', 'none')
+      await expect.element(page.getByRole('button', { name })).toBeVisible()
+    }
+    await expect.element(page.getByRole('rowheader', { name: 'MyGo' })).toHaveAttribute('scope', 'row')
+
+    const scrollHost = mounted.container.querySelector<HTMLElement>('.genui-table-scroll')
+    const headers = Array.from(mounted.container.querySelectorAll<HTMLButtonElement>('.genui-comparison thead button'))
+    if (!scrollHost || headers.length !== 3) throw new Error('comparison headers missing')
+    const scroller = scrollViewport(scrollHost)
+    expect(scroller.tabIndex).toBe(0)
+    expect(scroller.scrollWidth).toBeGreaterThan(scroller.clientWidth)
+    scroller.focus()
+    expect(document.activeElement).toBe(scroller)
+    await userEvent.keyboard('{ArrowRight}')
+    await vi.waitFor(() => expect(scroller.scrollLeft).toBeGreaterThan(0))
+    await userEvent.keyboard('{Tab}')
+    expect(document.activeElement).toBe(headers[0])
+    await userEvent.keyboard('{Tab}')
+    expect(document.activeElement).toBe(headers[1])
+    await userEvent.keyboard('{Tab}')
+    expect(document.activeElement).toBe(headers[2])
+
+    headers[1].focus()
+    await userEvent.keyboard('{Enter}')
+    await order(['Tauri', 'MyGo', 'Electron'])
+    await expect.element(page.getByRole('columnheader', { name: 'Size' })).toHaveAttribute('aria-sort', 'ascending')
+    await expect.element(page.getByRole('columnheader', { name: 'Option' })).toHaveAttribute('aria-sort', 'none')
+    expect(document.activeElement).toBe(headers[1])
+    await expect.element(page.getByRole('rowheader', { name: 'Tauri' })).toHaveAttribute('scope', 'row')
+
+    await userEvent.keyboard('{Enter}')
+    await order(['Electron', 'MyGo', 'Tauri'])
+    await expect.element(page.getByRole('columnheader', { name: 'Size' })).toHaveAttribute('aria-sort', 'descending')
+
+    await userEvent.keyboard('{Enter}')
+    await order(['MyGo', 'Electron', 'Tauri'])
+    await expect.element(page.getByRole('columnheader', { name: 'Size' })).toHaveAttribute('aria-sort', 'none')
+
+    headers[0].focus()
+    await userEvent.keyboard(' ')
+    await order(['Electron', 'MyGo', 'Tauri'])
+    await expect.element(page.getByRole('columnheader', { name: 'Option' })).toHaveAttribute('aria-sort', 'ascending')
+    expect(document.activeElement).toBe(headers[0])
+
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    expect(update).not.toHaveBeenCalled()
+    expect(lastHost?.getState().edited).toBe(false)
+  })
+
+  it('names an untitled comparison table', async () => {
+    await showView([
+      {
+        id: 'root',
+        component: 'ComparisonTable',
+        columns: ['A', 'B'],
+        rows: [
+          ['x', '1'],
+          ['y', '2'],
+        ],
+      },
+    ])
+    await expect.element(page.getByRole('table', { name: 'Comparison table' })).toBeVisible()
+    await expect.element(page.getByRole('group', { name: 'Comparison table, scrollable' })).toBeVisible()
+    await expect.element(page.getByRole('columnheader', { name: 'A' })).toHaveAttribute('aria-sort', 'none')
   })
 
   it('shows checklist state read-only, and a click selects the item in the document', async () => {
@@ -168,6 +249,74 @@ describe('GenUI content components', () => {
     ])
     expect(viewError(mounted)).toBe('')
     await expect.element(page.getByRole('checkbox', { name: 'Ship the editor' })).toBeDisabled()
+  })
+
+  it('selects an exact quote in a remaining source when another source is gone', async () => {
+    const host = createBrowserHost(DOCUMENT, 'plans.md', {
+      view: viewOf([
+        {
+          id: 'root',
+          component: 'Checklist',
+          title: 'Tasks',
+          items: [{ text: 'Generation', quote: 'Ship generation' }],
+          sources: ['history', 'plans'],
+        },
+      ]),
+    })
+    const mounted = await mountApp(DOCUMENT, host)
+    app = mounted
+    lastHost = host
+    await page.getByTestId('view-mode-genui').click()
+    await vi.waitFor(() => expect(mounted.container.querySelector('.genui-checklist')).not.toBeNull())
+
+    host.reload(DOCUMENT.replace('# History', '# Timeline'))
+    const item = await vi.waitFor(() => {
+      const card = mounted.container.querySelector('.genui-checklist')
+      expect(card?.querySelector('.genui-source-status')?.textContent).toBe('Source not found')
+      const checkbox = page.getByRole('checkbox', { name: 'Generation' }).element()
+      expect(checkbox).not.toBeDisabled()
+      return checkbox
+    }, { timeout: SOURCE_DEBOUNCE_MS + 2000 })
+    await userEvent.click(item)
+    await vi.waitFor(() => {
+      expect(page.getByTestId('view-mode-richtext').element().getAttribute('aria-checked')).toBe('true')
+      expect(window.getSelection()?.toString()).toContain('Ship generation')
+      expect(window.getSelection()?.toString()).not.toContain('History')
+    })
+  })
+
+  it('falls back to the first remaining section when the quote is gone', async () => {
+    const host = createBrowserHost(DOCUMENT, 'plans.md', {
+      view: viewOf([
+        {
+          id: 'root',
+          component: 'Checklist',
+          title: 'Tasks',
+          items: [{ text: 'Generation', quote: 'Ship generation' }],
+          sources: ['plans', 'history'],
+        },
+      ]),
+    })
+    const mounted = await mountApp(DOCUMENT, host)
+    app = mounted
+    lastHost = host
+    await page.getByTestId('view-mode-genui').click()
+    await vi.waitFor(() => expect(mounted.container.querySelector('.genui-checklist')).not.toBeNull())
+
+    host.reload(DOCUMENT.replace('- [ ] Ship generation', '- [ ] Ship the view'))
+    const item = await vi.waitFor(() => {
+      const checkbox = page.getByRole('checkbox', { name: 'Generation' }).element()
+      expect(checkbox).not.toBeDisabled()
+      return checkbox
+    }, { timeout: SOURCE_DEBOUNCE_MS + 2000 })
+    await userEvent.click(item)
+    await vi.waitFor(() => {
+      expect(page.getByTestId('view-mode-richtext').element().getAttribute('aria-checked')).toBe('true')
+      const selected = window.getSelection()?.toString() ?? ''
+      expect(selected).toContain('Plans')
+      expect(selected).toContain('We compare three options.')
+      expect(selected).not.toContain('It began in March.')
+    })
   })
 
   it('names the component and the reason when properties are wrong', async () => {
@@ -229,7 +378,8 @@ describe('GenUI content components', () => {
       const pane = mounted.container.querySelector<HTMLElement>('.center-view')
       if (!pane) throw new Error('no center view')
       await vi.waitFor(() => expect(mounted.container.querySelector('.genui-timeline')).not.toBeNull())
-      expect(pane.scrollWidth, `pane at ${width}px`).toBeLessThanOrEqual(pane.clientWidth)
+      const paneViewport = scrollViewport(pane)
+      expect(paneViewport.scrollWidth, `pane at ${width}px`).toBeLessThanOrEqual(paneViewport.clientWidth)
       for (const block of mounted.container.querySelectorAll<HTMLElement>('.genui-block')) {
         // Wide tables scroll inside their own frame; nothing else may overflow.
         expect(block.scrollWidth, `${block.className} at ${width}px`).toBeLessThanOrEqual(block.clientWidth + 1)
@@ -240,28 +390,7 @@ describe('GenUI content components', () => {
       app = undefined
     }
   })
-
-  it('follows the light and dark colour scheme', async () => {
-    const mounted = await showView(EVERY)
-    const block = mounted.container.querySelector<HTMLElement>('.genui-metrics')
-    if (!block) throw new Error('no metric grid')
-    const colours = () => [getComputedStyle(block).backgroundColor, getComputedStyle(block).color]
-
-    document.documentElement.style.colorScheme = 'light'
-    const light = colours()
-    document.documentElement.style.colorScheme = 'dark'
-    const dark = colours()
-    expect(dark[0]).not.toBe(light[0])
-    expect(dark[1]).not.toBe(light[1])
-    expect(luminance(dark[0] ?? '')).toBeLessThan(luminance(light[0] ?? ''))
-    expect(luminance(dark[1] ?? '')).toBeGreaterThan(luminance(dark[0] ?? ''))
-  })
 })
-
-function luminance(colour: string): number {
-  const [r = 0, g = 0, b = 0] = (colour.match(/\d+(\.\d+)?/g) ?? []).map(Number)
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b
-}
 
 describe('catalog definition for agents', () => {
   it('lists every component with its schema and nesting rules', () => {

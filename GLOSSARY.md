@@ -8,6 +8,32 @@
 用户打开的那份 `.md` 文件，内容唯一的权威来源。
 _Avoid_: 源文件、底稿、主版本
 
+## 工作区与文档导航
+
+**工作区（Workspace）**：
+以一个文件夹为根的原文集合与导航范围。
+_Avoid_: 项目（指工作区时）、工作目录（指工作区时）
+
+**工作区窗口（Workspace window）**：
+以一个文件夹为根、用顶部文档标签切换原文的那个窗口；未绑定文件夹时是临时窗口。
+_Avoid_: 主窗口、编辑器窗口
+
+**文件树（File tree）**：
+左栏中一个工作区的 Markdown 文件与文件夹导航；它不是 GenUI 视图，也不是大纲。
+_Avoid_: 侧栏列表、项目浏览器
+
+**文档标签（Document tab）**：
+窗口顶部代表一份已打开原文的导航项；与同一份原文的视图模式分开。
+_Avoid_: 视图模式、GenUI 组件内的 Tabs
+
+**未命名原文（Untitled document）**：
+尚未首次保存、没有磁盘路径的原文。
+_Avoid_: 临时文件
+
+**临时窗口（Untitled window）**：
+尚未绑定工作区、用于承载未命名原文的窗口。
+_Avoid_: 空工作区、无根工作区
+
 ## 视图模式
 
 **视图模式（View mode）**：
@@ -25,6 +51,10 @@ _Avoid_: 源码模式、Source mode、MarkdownView
 **GenUI**：
 显示 GenUI 视图的视图模式。
 _Avoid_: GenUI 面板、Generated UI 侧栏
+
+**原地 Markdown 编辑（In-place Markdown editing）**：
+在 Rich text 中只为一个特殊块展开原文编辑区，完成后回到该块的可视呈现；这是局部编辑操作，不是第四种视图模式。
+_Avoid_: 源码模式（指该操作时）、结构化可视编辑
 
 ## GenUI
 

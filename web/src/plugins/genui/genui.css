@@ -1,22 +1,21 @@
 /*
- * GenUI colours are tokens with a light and a dark value; which one shows
- * follows the inherited `color-scheme`, so the view matches whatever theme
- * the app is in. A2UI's layout components read the same tokens.
+ * GenUI colours map onto the shared Portrait tokens so the view, paper and
+ * chrome stay one light system. A2UI layout components read the same names.
  */
 .genui-view {
-  --genui-text: light-dark(#1c1c1c, #e8e6e3);
-  --genui-muted: light-dark(#6b6b6b, #a39f99);
-  --genui-surface: light-dark(#ffffff, #23272a);
-  --genui-surface-soft: light-dark(#faf8f5, #1c1f22);
-  --genui-border: light-dark(#e2ded7, #3a3f44);
-  --genui-accent: light-dark(#2f6f62, #7cc4b2);
-  --genui-accent-soft: light-dark(#e7f0ed, #20372f);
-  --genui-warning: light-dark(#8a5a12, #e0b36a);
-  --genui-warning-soft: light-dark(#fbf1dc, #3a2f1a);
-  --genui-danger: light-dark(#9a3b3b, #e89a9a);
-  --genui-danger-soft: light-dark(#fdf4f4, #3a2222);
-  --genui-up: light-dark(#2f7a45, #79c98f);
-  --genui-down: light-dark(#a54141, #e89a9a);
+  --genui-text: var(--ink);
+  --genui-muted: var(--ink-3);
+  --genui-surface: var(--paper);
+  --genui-surface-soft: var(--code);
+  --genui-border: var(--line-strong);
+  --genui-accent: var(--accent);
+  --genui-accent-soft: var(--accent-soft);
+  --genui-warning: var(--content-warning);
+  --genui-warning-soft: var(--content-warning-soft);
+  --genui-danger: var(--danger);
+  --genui-danger-soft: var(--danger-soft);
+  --genui-up: var(--accent);
+  --genui-down: var(--danger);
 
   --a2ui-color-surface: var(--genui-surface);
   --a2ui-color-on-surface: var(--genui-text);
@@ -34,8 +33,10 @@
   flex-direction: column;
   gap: 14px;
   min-height: 100%;
-  font-size: 14px;
-  line-height: 1.5;
+  font-family: var(--font-sans);
+  font-size: var(--text-reading-size);
+  line-height: var(--text-reading-leading);
+  letter-spacing: var(--text-reading-tracking);
   color: var(--genui-text);
 }
 
@@ -87,7 +88,9 @@
 .genui-panel-scroll {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+}
+
+.genui-panel-scroll-content {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -168,13 +171,17 @@
 }
 
 .gp-item .t {
-  font-size: 13px;
-  line-height: 18px;
+  font-size: var(--text-ui-size);
+  line-height: var(--text-ui-leading);
   font-weight: 500;
   color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 .gp-item .s {
@@ -189,12 +196,20 @@
 
 .gp-acts {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  align-items: center;
+  align-items: stretch;
+  min-width: 0;
 }
 
-.gp-acts .pill.full {
-  flex: 1;
+.gp-acts .pill {
+  flex: 1 1 100%;
+  min-width: 0;
+  white-space: normal;
+  height: auto;
+  min-height: 28px;
+  padding-block: 5px;
+  text-align: center;
 }
 
 .gp-req {
@@ -547,6 +562,17 @@
   flex-basis: 100%;
 }
 
+.genui-card-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.genui-card-skeleton .genui-skeleton-block {
+  height: 72px;
+  flex-basis: auto;
+}
+
 @keyframes genui-pulse {
   50% {
     opacity: 0.45;
@@ -599,13 +625,17 @@
   padding: 12px;
   background: var(--genui-surface);
   overflow-wrap: anywhere;
-  transition: box-shadow 180ms var(--ease-out);
+  transition: box-shadow var(--duration-enter) var(--ease-out);
 }
 
 .genui-block.is-highlighted {
   box-shadow:
     0 0 0 1px var(--accent),
     0 0 0 3px var(--focus);
+}
+
+.genui-block.is-replacing {
+  background: var(--genui-surface-soft);
 }
 
 /* A card already frames its content. */
@@ -616,10 +646,12 @@
 
 .genui-block h4 {
   margin: 0 0 8px;
-  font-size: 11px;
+  font-family: var(--font-display);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-leading);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.07em;
   color: var(--genui-muted);
 }
 
@@ -628,11 +660,40 @@
   margin: 0;
 }
 
-.genui-keypoints ul {
-  padding-left: 18px;
+.genui-keypoints ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  counter-reset: keypoints;
+}
+
+.genui-keypoints li {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: start;
+  font-size: var(--text-reading-size);
+  line-height: var(--text-reading-leading);
+  letter-spacing: var(--text-reading-tracking);
+}
+
+.genui-keypoints li::before {
+  counter-increment: keypoints;
+  content: counter(keypoints, decimal-leading-zero);
+  font-family: var(--font-display);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-leading);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--genui-muted);
+  padding-top: 4px;
+}
+
+.genui-keypoints-more {
+  margin-top: 8px;
 }
 
 .genui-metrics dl {
@@ -662,10 +723,11 @@
 }
 
 .genui-metric-value {
-  font-size: 22px;
+  font-family: var(--font-display);
+  font-size: var(--text-title-size);
+  line-height: var(--text-title-leading);
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.2;
+  font-variant-numeric: lining-nums tabular-nums;
 }
 
 .genui-metric-unit {
@@ -688,7 +750,26 @@
 }
 
 .genui-table-scroll {
-  overflow-x: auto;
+  position: relative;
+  min-width: 0;
+}
+
+.genui-table-scroll:has([data-overlayscrollbars-viewport]:focus-visible) {
+  outline: 2px solid var(--genui-accent);
+  outline-offset: 2px;
+}
+
+.genui-table-caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .genui-comparison table {
@@ -727,6 +808,11 @@
   font-weight: 600;
   text-align: left;
   cursor: pointer;
+}
+
+.genui-comparison thead button:focus-visible {
+  outline: 2px solid var(--genui-accent);
+  outline-offset: -2px;
 }
 
 .genui-comparison thead th[aria-sort='ascending'] button,
@@ -864,10 +950,13 @@
 }
 
 .genui-source-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border-radius: 999px;
   padding: 1px 8px;
-  background: var(--genui-warning-soft);
-  color: var(--genui-warning);
+  background: var(--warn-soft);
+  color: var(--warn);
 }
 
 [data-source-status='missing'] .genui-source-status {
@@ -884,12 +973,35 @@
   background: var(--genui-surface);
   color: var(--genui-accent);
   cursor: pointer;
+  transition:
+    background var(--duration-press) var(--ease-out),
+    transform var(--duration-press) var(--ease-out);
+}
+
+.genui-source-edit:hover:not(:disabled),
+.genui-source-note:hover:not(:disabled) {
+  background: var(--fill-hover);
+}
+
+.genui-source-edit:active:not(:disabled),
+.genui-source-note:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.genui-source-edit:focus-visible,
+.genui-source-note:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
 }
 
 .genui-source-edit:disabled,
 .genui-source-note:disabled {
   color: var(--genui-muted);
   cursor: not-allowed;
+}
+
+.genui-source-unavailable {
+  flex: 1 0 100%;
 }
 
 .genui-notes {

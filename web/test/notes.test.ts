@@ -104,7 +104,7 @@ describe('notes in rich text', () => {
     const mounted = await mountEditor(source)
     try {
       expect(noteElements(mounted).map(noteText)).toEqual(['Mine'])
-      expect(mounted.root.querySelector('[data-kind="raw-html"]')?.textContent).toBe('<!-- plain -->')
+      expect(mounted.root.querySelector('[data-kind="raw-html"] .mgo-locked-source')?.textContent).toBe('<!-- plain -->')
       expect(mounted.editor.getMarkdown()).toBe(source)
     } finally {
       await mounted.cleanup()

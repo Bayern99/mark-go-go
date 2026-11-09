@@ -1,6 +1,15 @@
 .outline-panel {
-  font-size: 13px;
-  line-height: 18px;
+  font-family: var(--font-sans);
+  font-size: var(--text-ui-size);
+  line-height: var(--text-ui-leading);
+}
+
+.outline-count {
+  margin: 0 0 6px;
+  padding: 0 8px;
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-leading);
+  color: var(--ink-3);
 }
 
 .outline-list {

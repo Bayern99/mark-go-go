@@ -41,12 +41,16 @@
 
 数据流：打开/外部重载时 Go → 页面（`Load` / `docReloaded`）；编辑后页面 compose 出全文 → `Update` → `doc.Set`。页面不保存第二份脏状态，只显示 Go 推送的 `DocState`。
 
+2026-11-08 补充：工作区、文档标签与窗口归属已由 [ADR 0005](0005-workspace-document-window-model.md) 确定，文档持久化继续保留上述 Go 侧单一权威。
+
 ### D3 Markdown 保真定义
 
 - 未触碰的块：**字节保真**（含 CRLF、空行、标记风格）。
 - 编辑过的块：允许 Milkdown 文本规范化（标记风格等）。
 - 任何语义损坏：缺陷。
 - Milkdown 无法语义往返的块（frontmatter、GitHub alert、脚注定义、带 meta 的围栏代码、引用式链接定义等）作为**锁定块**按原文显示与写回，不可视化编辑。
+
+2026-11-08 补充：特殊块的展示与编辑方式由 [ADR 0006](0006-preserved-blocks-and-semantic-colors.md) 修订为可视呈现与原地 Markdown 编辑，原始 HTML／未知语法继续按 `Kept as written` 展示；本节的字节保真与单一文档权威约束保持适用。
 
 实现：保存路径永不整篇序列化；按顶层块合成（originNode → 原文片段）。
 
@@ -77,4 +81,3 @@ GenUI 使用内部小型判别联合 schema + 组件白名单（借鉴 A2UI cata
 ## 未决
 
 - 打字延迟与超长文档（>1MB）的增量策略。
-- 多窗口/标签页模型。

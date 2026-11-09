@@ -9,7 +9,7 @@ import { placeholder } from '@milkdown/crepe/feature/placeholder'
 import { table } from '@milkdown/crepe/feature/table'
 import { toolbar } from '@milkdown/crepe/feature/toolbar'
 import '@milkdown/crepe/theme/common/style.css'
-import '@milkdown/crepe/theme/classic.css'
+import './crepe-theme.css'
 import {
   commandsCtx,
   editorViewCtx,
@@ -26,7 +26,8 @@ import {
   Selection,
   TextSelection,
 } from '@milkdown/kit/prose/state'
-import type { EditorView } from '@milkdown/kit/prose/view'
+import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
+import { undo as undoRich, redo as redoRich, undoDepth, redoDepth } from '@milkdown/kit/prose/history'
 import { listenerCtx } from '@milkdown/kit/plugin/listener'
 import type { Disposable } from '../host/types'
 import { buildDocument, type BuiltDocument } from './blocks/build'
@@ -38,9 +39,12 @@ import {
   type ComposeContext,
 } from './blocks/compose'
 import { LOCKED_NODE, lockedBlockSchema } from './blocks/locked'
+import { footnoteReferenceView, lockedBlockView } from './blocks/lockedView'
+import { rebuildBlocks } from './blocks/rebuild'
+import type { LockKind } from './blocks/segment'
 import { noteBlock, noteInsertionOffset, parseNote, withNoteText } from '../markdown/notes'
 import { languages } from './languages'
-import { askForNote, cancelNoteComposer } from './noteDialog'
+import { askForMarkdown, askForNote, ComposerScope } from './noteDialog'
 import { createSourceEditor, type SourceEditor } from './source/sourceEditor'
 
 const NOTE_ICON =
@@ -102,6 +106,16 @@ export interface MarkdownEditor {
    */
   onSelectionChange(fn: (offset: number) => void): Disposable
   setReadonly(readonly: boolean): void
+  /** Whether the active editor surface has an undoable edit. */
+  canUndo(): boolean
+  /** Whether the active editor surface has a redoable edit. */
+  canRedo(): boolean
+  /** Undo one edit on the active surface. Returns false when there is none. */
+  undo(): boolean
+  /** Redo one edit on the active surface. Returns false when there is none. */
+  redo(): boolean
+  /** Fires after the active surface's undo/redo availability changes. */
+  onHistoryChange(fn: () => void): Disposable
   /** Low-level access for tests and host integrations. */
   getView(): EditorView
   destroy(): Promise<void>
@@ -163,11 +177,14 @@ export async function createMarkdownEditor(
   const listeners = new Set<(markdown: string) => void>()
   const selectionListeners = new Set<(offset: number) => void>()
   const modeListeners = new Set<(mode: EditorMode) => void>()
+  const historyListeners = new Set<() => void>()
   let lastReportedOffset: number | undefined
   let mode: EditorMode = 'wysiwyg'
   let sourceEditor: SourceEditor | undefined
   /** Text the rich-text editor represented when source mode was entered. */
   let sourceBaseText: string | undefined
+  /** The one composer this editor may have open; other editors have their own. */
+  const composerScope = new ComposerScope()
 
   const composeContext = (current: typeof built): ComposeContext => ({
     schema,
@@ -219,6 +236,10 @@ export async function createMarkdownEditor(
     for (const fn of selectionListeners) fn(offset)
   }
 
+  const emitHistory = () => {
+    for (const fn of historyListeners) fn()
+  }
+
   const reportSelection = (state: EditorState) => {
     if (suppressSelectionReporting || selectionListeners.size === 0) return
     const offset = selectionOffset(state)
@@ -237,6 +258,7 @@ export async function createMarkdownEditor(
       readonly,
       onChange(markdown) {
         for (const fn of listeners) fn(markdown)
+        emitHistory()
       },
       onSelection(offset) {
         if (selectionListeners.size === 0 || offset === lastReportedOffset) return
@@ -295,11 +317,9 @@ export async function createMarkdownEditor(
     view.dispatch(state.tr.delete(pos, pos + $from.node(1).nodeSize))
   }
 
-  const mountNoteComposer = (anchor: Element | null, composer: HTMLElement): (() => void) => {
-    const domObserver = (
-      view as unknown as { domObserver?: { stop(): void; start(): void } }
-    ).domObserver
-    domObserver?.stop()
+  const mountComposer = (anchor: Element | null, composer: HTMLElement): (() => void) => {
+    const observer = (view as { domObserver?: { stop(): void; start(): void } }).domObserver
+    observer?.stop()
     if (anchor && anchor.parentElement === view.dom) {
       anchor.after(composer)
     } else {
@@ -307,7 +327,7 @@ export async function createMarkdownEditor(
     }
     return () => {
       composer.remove()
-      domObserver?.start()
+      observer?.start()
     }
   }
 
@@ -318,7 +338,8 @@ export async function createMarkdownEditor(
     const targetPos = $from.depth >= 1 ? $from.before(1) : undefined
     const anchor = targetPos !== undefined ? (view.nodeDOM(targetPos) as Element | null) : null
     const text = await askForNote('', {
-      mount: (composer) => mountNoteComposer(anchor, composer),
+      mount: (composer) => mountComposer(anchor, composer),
+      scope: composerScope,
     })
     if (readonly) return
     if (text === null) {
@@ -365,59 +386,177 @@ export async function createMarkdownEditor(
     view.dispatch(tr)
   }
 
+  const writeLockedSource = (pos: number, previous: PMNode, markdown: string) => {
+    if (markdown === (previous.attrs.source as string)) return
+    const rebuilt = rebuildBlocks(markdown, schema, parser)
+    const nodes = rebuilt.map((block) => block.node)
+    const tr = view.state.tr.replaceWith(pos, pos + previous.nodeSize, nodes)
+    const origin = built.origins.get(previous)
+    if (origin && rebuilt.length === 1) {
+      const placed = tr.doc.nodeAt(pos)
+      if (placed) built.origins.set(placed, { ...origin, source: rebuilt[0].source, node: placed })
+    }
+    view.dispatch(tr)
+  }
+
   const handleNoteAction = (action: string, element: Element) => {
     if (readonly) return
-    let pos: number | undefined
-    view.state.doc.forEach((_node, offset) => {
-      if (view.nodeDOM(offset) === element) pos = offset
-    })
-    if (pos === undefined) return
-    const at = pos
+    const at = positionOfDom(element)
+    if (at === undefined) return
     const node = view.state.doc.nodeAt(at)
     if (!node) return
     if (action === 'delete') {
-      cancelNoteComposer()
+      composerScope.cancel()
       view.dispatch(view.state.tr.delete(at, at + node.nodeSize))
       return
     }
     void askForNote(parseNote(node.attrs.source as string)?.text ?? '', {
-      mount: (composer) => mountNoteComposer(element, composer),
+      mount: (composer) => mountComposer(element, composer),
+      scope: composerScope,
     }).then((text) => {
       if (text !== null && view.state.doc.nodeAt(at) === node) setNoteText(at, text)
     })
   }
 
-  const isInsideNoteComposer = (event: Event): boolean =>
-    event.target instanceof Element && event.target.closest('.mgo-note-composer') !== null
+  const handleBlockEdit = (element: Element) => {
+    if (readonly) return
+    const at = positionOfDom(element)
+    if (at === undefined) return
+    const node = view.state.doc.nodeAt(at)
+    if (!node || node.type.name !== LOCKED_NODE) return
+    const kind = node.attrs.kind as LockKind
+    void askForMarkdown(node.attrs.source as string, {
+      label: `Edit ${kind} as Markdown`,
+      mount: (composer) => mountComposer(element, composer),
+      scope: composerScope,
+    }).then((markdown) => {
+      if (markdown === null) return
+      if (view.state.doc.nodeAt(at) !== node) return
+      writeLockedSource(at, node, markdown)
+    })
+  }
 
-  const notePlugin = new Plugin({
+  const positionOfDom = (element: Element): number | undefined => {
+    let pos: number | undefined
+    view.state.doc.forEach((_node, offset) => {
+      if (view.nodeDOM(offset) === element) pos = offset
+    })
+    return pos
+  }
+
+  const hopFootnote = (target: Element): boolean => {
+    const back = target.closest<HTMLElement>('[data-footnote-back]')
+    if (back) {
+      const label = back.dataset.footnoteBack ?? ''
+      const dest = view.dom.querySelector<HTMLElement>(`[data-footnote-ref="${cssAttr(label)}"]`)
+      dest?.scrollIntoView({ block: 'center' })
+      dest?.focus()
+      return true
+    }
+    const ref = target.closest<HTMLElement>('[data-footnote-ref]')
+    if (ref) {
+      const label = ref.dataset.footnoteRef ?? ''
+      const dest = view.dom.querySelector<HTMLElement>(`[data-footnote-label="${cssAttr(label)}"]`)
+      dest?.scrollIntoView({ block: 'start' })
+      dest?.focus()
+      return true
+    }
+    return false
+  }
+
+  const isInsideComposer = (event: Event): boolean =>
+    event.target instanceof Element && event.target.closest('.composer') !== null
+
+  const lockedViewPlugin = new Plugin({
     props: {
+      decorations(state) {
+        const widgets: Decoration[] = []
+        const mark = /\[\^([^\]]+)\]/g
+        state.doc.descendants((node, pos) => {
+          if (node.type.name === LOCKED_NODE) return false
+          if (!node.isTextblock) return true
+          const text = node.textContent
+          mark.lastIndex = 0
+          let match: RegExpExecArray | null
+          while ((match = mark.exec(text))) {
+            const from = pos + 1 + match.index
+            const to = from + match[0].length
+            const label = match[1]
+            widgets.push(
+              Decoration.inline(from, to, {
+                nodeName: 'span',
+                class: 'mgo-fnref-src',
+                style: 'font-size:0;width:0;height:0;overflow:hidden;white-space:nowrap',
+              }),
+            )
+            widgets.push(
+              Decoration.widget(
+                from,
+                () => {
+                  const link = document.createElement('a')
+                  link.className = 'mgo-fnref'
+                  link.id = `fnref-${cssSafe(label)}`
+                  link.href = `#fn-${cssSafe(label)}`
+                  link.dataset.footnoteRef = label
+                  link.textContent = label
+                  link.setAttribute('aria-label', `Footnote ${label}`)
+                  link.tabIndex = 0
+                  link.contentEditable = 'false'
+                  const wrap = document.createElement('sup')
+                  wrap.className = 'mgo-fnref-wrap'
+                  wrap.append(link)
+                  return wrap
+                },
+                { side: -1, ignoreSelection: true, key: `fnref-${from}-${label}` },
+              ),
+            )
+          }
+          return true
+        })
+        return DecorationSet.create(state.doc, widgets)
+      },
+      nodeViews: {
+        [LOCKED_NODE]: (node, editorView) => lockedBlockView(node, editorView),
+        footnote_reference: (node) => footnoteReferenceView(node),
+      },
       handleDOMEvents: {
         keydown(_view, event) {
-          return isInsideNoteComposer(event)
+          return isInsideComposer(event)
         },
         keypress(_view, event) {
-          return isInsideNoteComposer(event)
+          return isInsideComposer(event)
         },
         keyup(_view, event) {
-          return isInsideNoteComposer(event)
+          return isInsideComposer(event)
         },
         beforeinput(_view, event) {
-          return isInsideNoteComposer(event)
+          return isInsideComposer(event)
         },
         input(_view, event) {
-          return isInsideNoteComposer(event)
+          return isInsideComposer(event)
         },
         mousedown(_view, event) {
-          return isInsideNoteComposer(event)
+          return isInsideComposer(event)
         },
         mouseup(_view, event) {
-          return isInsideNoteComposer(event)
+          return isInsideComposer(event)
         },
         click(_view, event) {
-          if (isInsideNoteComposer(event)) return true
+          if (isInsideComposer(event)) return true
           const target = event.target instanceof Element ? event.target : null
-          const button = target?.closest<HTMLElement>('[data-note-action]')
+          if (!target) return false
+          if (hopFootnote(target)) {
+            event.preventDefault()
+            return true
+          }
+          const blockButton = target.closest<HTMLElement>('[data-block-action]')
+          const locked = blockButton?.closest('[data-locked-block]')
+          if (blockButton && locked && blockButton.dataset.blockAction === 'edit') {
+            event.preventDefault()
+            handleBlockEdit(locked)
+            return true
+          }
+          const button = target.closest<HTMLElement>('[data-note-action]')
           const note = button?.closest('[data-note]')
           if (!button || !note) return false
           event.preventDefault()
@@ -445,11 +584,20 @@ export async function createMarkdownEditor(
     return true
   }
 
+  const historyWatch = new Plugin({
+    view: () => ({
+      update(currentView, prevState) {
+        if (currentView.state.doc.eq(prevState.doc) && currentView.state.selection.eq(prevState.selection)) return
+        emitHistory()
+      },
+    }),
+  })
+
   const plugins = view.state.plugins.filter((plugin) => !isIdentityBreaking(plugin))
-  plugins.push(selectionPlugin, notePlugin)
+  plugins.push(selectionPlugin, lockedViewPlugin, historyWatch)
 
   const load = (text: string) => {
-    cancelNoteComposer()
+    composerScope.cancel()
     suppressChange = true
     try {
       built = buildDocument(text, schema, parser)
@@ -464,6 +612,7 @@ export async function createMarkdownEditor(
     } finally {
       suppressChange = false
     }
+    emitHistory()
   }
 
   const notify = (markdown: string) => {
@@ -558,6 +707,7 @@ export async function createMarkdownEditor(
 
   const setMode = (next: EditorMode) => {
     if (next === mode) return
+    composerScope.cancel()
 
     if (next === 'source') {
       const text = compose(view.state.doc)
@@ -591,14 +741,16 @@ export async function createMarkdownEditor(
     }
 
     for (const fn of modeListeners) fn(mode)
+    emitHistory()
   }
 
   const setReadonly = (value: boolean) => {
     if (readonly === value) return
     readonly = value
-    if (value) cancelNoteComposer()
+    if (value) composerScope.cancel()
     builder.setReadonly(value)
     sourceEditor?.setReadonly(value)
+    view.dispatch(view.state.tr.setMeta('mgo-readonly', value))
   }
 
   return {
@@ -626,6 +778,7 @@ export async function createMarkdownEditor(
         // back to it.
         lastReportedOffset = undefined
         emitSelection(source.getSelection())
+        emitHistory()
         return
       }
       load(text)
@@ -658,12 +811,37 @@ export async function createMarkdownEditor(
       }
     },
     setReadonly,
+    canUndo() {
+      if (mode === 'source') return sourceEditor?.canUndo() ?? false
+      return undoDepth(view.state) > 0
+    },
+    canRedo() {
+      if (mode === 'source') return sourceEditor?.canRedo() ?? false
+      return redoDepth(view.state) > 0
+    },
+    undo() {
+      if (mode === 'source') return sourceEditor?.undo() ?? false
+      return undoRich(view.state, view.dispatch)
+    },
+    redo() {
+      if (mode === 'source') return sourceEditor?.redo() ?? false
+      return redoRich(view.state, view.dispatch)
+    },
+    onHistoryChange(fn) {
+      historyListeners.add(fn)
+      return {
+        dispose() {
+          historyListeners.delete(fn)
+        },
+      }
+    },
     getView: () => view,
     async destroy() {
-      cancelNoteComposer()
+      composerScope.cancel()
       listeners.clear()
       selectionListeners.clear()
       modeListeners.clear()
+      historyListeners.clear()
       sourceEditor?.destroy()
       sourceEditor = undefined
       await builder.destroy()
@@ -673,6 +851,14 @@ export async function createMarkdownEditor(
 
 function isEmptyParagraph(node: PMNode): boolean {
   return node.type.name === 'paragraph' && node.content.size === 0
+}
+
+function cssAttr(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+function cssSafe(label: string): string {
+  return encodeURIComponent(label).replace(/%/g, '_')
 }
 
 function isIdentityBreaking(plugin: Plugin): boolean {

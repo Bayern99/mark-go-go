@@ -1,54 +1,77 @@
-export interface NoteComposerOptions {
+export interface ComposerMount {
   /** Block element after which the inline composer is placed when no custom mount is given. */
   anchor?: Element | null
-  /** Fallback container when no anchor element is given. */
+  /** Fallback container when no custom mount is given. */
   container?: Element | null
-  /** Custom mount hook (e.g. ProseMirror widget decoration) returning an optional cleanup. */
+  /** Custom mount hook (e.g. ProseMirror widget) returning an optional cleanup. */
   mount?: (composer: HTMLElement) => (() => void) | void
 }
 
-let activeCancel: (() => void) | null = null
+/**
+ * The owner of at most one open composer. Each editor has its own scope, so a
+ * background document's reload, read-only switch or teardown can close its own
+ * composer without touching another document's draft.
+ */
+export class ComposerScope {
+  private cancelActive: (() => void) | null = null
 
-export function cancelNoteComposer(): void {
-  activeCancel?.()
+  /** Close the one composer this owner has open, if any. */
+  cancel(): void {
+    this.cancelActive?.()
+  }
+
+  /** @internal Claims or releases this owner's open-composer slot. */
+  track(cancel: (() => void) | null): void {
+    this.cancelActive = cancel
+  }
+}
+
+export interface NoteComposerOptions extends ComposerMount {
+  /** The editor this composer belongs to; only that editor may cancel it. */
+  scope: ComposerScope
+}
+
+export interface MarkdownComposerOptions extends ComposerMount {
+  /** Accessible name of the region. */
+  label?: string
+  /** The editor this composer belongs to; only that editor may cancel it. */
+  scope: ComposerScope
 }
 
 export function autoGrowTextarea(input: HTMLTextAreaElement): void {
   input.style.height = 'auto'
-  input.style.height = `${Math.min(160, Math.max(40, input.scrollHeight))}px`
+  input.style.height = `${Math.max(38, input.scrollHeight)}px`
 }
 
-export const autoGrowNoteTextarea = autoGrowTextarea
+interface OpenComposerConfig extends ComposerMount {
+  initial: string
+  className: string
+  ariaLabel: string
+  inputLabel: string
+  placeholder: string
+  allowEmpty: boolean
+  trim: boolean
+  restoreNewlines?: boolean
+  scope: ComposerScope
+}
 
-/**
- * Opens an in-place paper composer (`<div class="composer mgo-note-composer">`,
- * never a `<dialog>`) anchored right after the target block in the editor.
- * Resolves to the trimmed note text on save (`⌘↩` / `Ctrl+↩` / `Save`), or
- * `null` when cancelled (`Escape` / `Cancel`).
- */
-export function askForNote(
-  initial = '',
-  options?: Element | NoteComposerOptions | null,
-): Promise<string | null> {
-  cancelNoteComposer()
-
-  const opts: NoteComposerOptions =
-    options instanceof Element ? { anchor: options } : (options ?? {})
+function openComposer(config: OpenComposerConfig): Promise<string | null> {
+  config.scope.cancel()
 
   return new Promise((resolve) => {
     const composer = document.createElement('div')
-    composer.className = 'composer mgo-note-composer'
+    composer.className = config.className
     composer.setAttribute('role', 'region')
-    composer.setAttribute('aria-label', 'Note composer')
+    composer.setAttribute('aria-label', config.ariaLabel)
     composer.contentEditable = 'false'
 
     const input = document.createElement('textarea')
     input.className = 'mgo-note-input'
     input.rows = 2
-    input.value = initial
-    input.placeholder =
-      'Write a note. It is saved in the document, out of sight in other Markdown viewers.'
-    input.setAttribute('aria-label', 'Note')
+    input.value = config.initial
+    input.placeholder = config.placeholder
+    input.setAttribute('aria-label', config.inputLabel)
+    input.spellcheck = false
 
     const foot = document.createElement('div')
     foot.className = 'composer-foot composer-bar'
@@ -76,24 +99,29 @@ export function askForNote(
     const finish = (result: string | null) => {
       if (closed) return
       closed = true
-      if (activeCancel === cancelCurrent) activeCancel = null
+      config.scope.track(null)
       if (unmount) unmount()
       composer.remove()
       resolve(result)
     }
 
     const cancelCurrent = () => finish(null)
-    activeCancel = cancelCurrent
+    config.scope.track(cancelCurrent)
+
+    const valueOf = () => {
+      const raw = config.trim ? input.value.trim() : input.value
+      return config.restoreNewlines ? restoreNewlines(config.initial, raw) : raw
+    }
 
     const syncSave = () => {
-      save.disabled = input.value.trim() === ''
+      save.disabled = config.allowEmpty ? false : valueOf() === ''
       autoGrowTextarea(input)
     }
 
     const submit = () => {
-      const trimmed = input.value.trim()
-      if (trimmed === '') return
-      finish(trimmed)
+      const next = valueOf()
+      if (!config.allowEmpty && next === '') return
+      finish(next)
     }
 
     input.addEventListener('input', syncSave)
@@ -119,13 +147,13 @@ export function askForNote(
       finish(null)
     })
 
-    if (opts.mount) {
-      unmount = opts.mount(composer)
-    } else if (opts.anchor?.parentElement) {
-      opts.anchor.after(composer)
+    if (config.mount) {
+      unmount = config.mount(composer)
+    } else if (config.anchor?.parentElement) {
+      config.anchor.after(composer)
       unmount = () => composer.remove()
     } else {
-      ;(opts.container ?? document.body).append(composer)
+      ;(config.container ?? document.body).append(composer)
       unmount = () => composer.remove()
     }
 
@@ -133,4 +161,67 @@ export function askForNote(
     input.focus()
     input.setSelectionRange(input.value.length, input.value.length)
   })
+}
+
+/**
+ * Opens an in-place paper composer (`<div class="composer mgo-note-composer">`,
+ * never a `<dialog>`) anchored right after the target block in the editor.
+ * Resolves to the trimmed note text on save (`⌘↩` / `Ctrl+↩` / `Save`), or
+ * `null` when cancelled (`Escape` / `Cancel`).
+ */
+export function askForNote(initial: string, options: NoteComposerOptions): Promise<string | null> {
+  return openComposer({
+    ...options,
+    initial,
+    className: 'composer mgo-note-composer',
+    ariaLabel: 'Note composer',
+    inputLabel: 'Note',
+    placeholder:
+      'Write a note. It is saved in the document, out of sight in other Markdown viewers.',
+    allowEmpty: false,
+    trim: true,
+  })
+}
+
+/**
+ * Opens the same paper composer for a special block's raw Markdown. The saved
+ * string is the textarea contents as typed, including whitespace; cancel returns
+ * null and writes nothing.
+ */
+export function askForMarkdown(
+  initial: string,
+  options: MarkdownComposerOptions,
+): Promise<string | null> {
+  return openComposer({
+    ...options,
+    initial,
+    className: 'composer mgo-block-composer',
+    ariaLabel: options.label ?? 'Markdown composer',
+    inputLabel: 'Markdown',
+    placeholder: 'Edit this block as Markdown.',
+    allowEmpty: true,
+    trim: false,
+    restoreNewlines: true,
+  })
+}
+
+/**
+ * Textarea.value always stores LF. Map those LFs back onto the original
+ * block's CR / CRLF / LF endings so an in-place edit does not rewrite
+ * untouched line breaks inside the same source span.
+ */
+function restoreNewlines(original: string, typed: string): string {
+  const originalLines = original.split(/\r\n|\n|\r/)
+  const typedLines = typed.split(/\n/)
+  const endings: string[] = []
+  const ending = /\r\n|\n|\r/g
+  let match: RegExpExecArray | null
+  while ((match = ending.exec(original))) endings.push(match[0])
+  let out = ''
+  const count = Math.max(originalLines.length, typedLines.length)
+  for (let i = 0; i < count; i += 1) {
+    if (i > 0) out += endings[i - 1] ?? (endings[endings.length - 1] ?? '\n')
+    if (i < typedLines.length) out += typedLines[i]
+  }
+  return out
 }

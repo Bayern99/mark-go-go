@@ -3,10 +3,15 @@
  * `sources` and `weight`, has no children, and draws in the shared
  * source frame. `a2ui.tsx` puts them in the catalog.
  */
-import { useState } from 'react'
+import { useCallback, useContext, useId, useRef, useState } from 'react'
 import { z } from 'zod'
 import { createComponentImplementation } from '@a2ui/react'
+import { ScrollArea } from '../../components/ScrollArea'
 import { SourceFrame, useComponentSource } from './SourceFrame'
+import { ReadingContext } from './reading'
+
+/** Fold only when there are more points than this. */
+const KEYPOINTS_FOLD_AFTER = 4
 
 /** Props every content component accepts besides its own. */
 const common = {
@@ -34,21 +39,44 @@ export const KeyPoints = createComponentImplementation(
       .strict()
       .describe('The few points a reader should take away.'),
   },
-  ({ props, context }) => (
-    <SourceFrame
-      source={useComponentSource(props.sources)}
-      componentId={context.componentModel.id}
-      className="genui-keypoints"
-      style={flex(props.weight)}
-      title={props.title}
-    >
-      <ul>
-        {props.items.map((item, index) => (
-          <li key={index}>{item}</li>
-        ))}
-      </ul>
-    </SourceFrame>
-  ),
+  ({ props, context }) => {
+    const id = context.componentModel.id
+    const reading = useContext(ReadingContext)
+    const [expanded, setExpanded] = useState(() => reading?.keypointsExpanded(id) ?? false)
+    const foldable = props.items.length > KEYPOINTS_FOLD_AFTER
+    const visible = foldable && !expanded ? props.items.slice(0, KEYPOINTS_FOLD_AFTER) : props.items
+    return (
+      <SourceFrame
+        source={useComponentSource(props.sources)}
+        componentId={id}
+        className="genui-keypoints"
+        style={flex(props.weight)}
+        title={props.title}
+      >
+        <ol>
+          {visible.map((item, index) => (
+            <li key={index} value={index + 1}>
+              {item}
+            </li>
+          ))}
+        </ol>
+        {foldable ? (
+          <button
+            type="button"
+            className="pill xs quiet genui-keypoints-more"
+            aria-expanded={expanded}
+            onClick={() => {
+              const next = !expanded
+              setExpanded(next)
+              reading?.setKeypointsExpanded(id, next)
+            }}
+          >
+            {expanded ? 'Show fewer' : `Show all ${props.items.length}`}
+          </button>
+        ) : null}
+      </SourceFrame>
+    )
+  },
 )
 
 const Metric = z
@@ -156,7 +184,11 @@ export const ComparisonTable = createComponentImplementation(
       .describe('Items compared side by side. Readers can sort by any column; sorting changes only the display.'),
   },
   ({ props, context }) => {
-    const [sort, setSort] = useState<SortState>(null)
+    const id = context.componentModel.id
+    const reading = useContext(ReadingContext)
+    const [sort, setSort] = useState<SortState>(() => reading?.tableSort(id) ?? null)
+    const tableName = props.title ? `${props.title} table` : 'Comparison table'
+    const scrollLabelId = useId()
     const order = props.rows.map((_, index) => index)
     if (sort) {
       const sign = sort.direction === 'ascending' ? 1 : -1
@@ -166,23 +198,51 @@ export const ComparisonTable = createComponentImplementation(
       )
     }
     const toggle = (column: number) =>
-      setSort((current) =>
-        current?.column !== column
-          ? { column, direction: 'ascending' }
-          : current.direction === 'ascending'
-            ? { column, direction: 'descending' }
-            : null,
-      )
+      setSort((current) => {
+        const next =
+          current?.column !== column
+            ? { column, direction: 'ascending' as const }
+            : current.direction === 'ascending'
+              ? { column, direction: 'descending' as const }
+              : null
+        reading?.setTableSort(id, next)
+        return next
+      })
+    // The overlay host itself does not scroll; its viewport does. Restoring on
+    // initialization is what survives the surface remounting in the panel.
+    const viewport = useRef<HTMLElement | null>(null)
+    const onViewport = useCallback(
+      (element: HTMLElement | null) => {
+        viewport.current = element
+        if (!element) return
+        element.tabIndex = 0
+        element.setAttribute('role', 'group')
+        element.setAttribute('aria-labelledby', scrollLabelId)
+        element.scrollLeft = reading?.tableScrollLeft(id) ?? 0
+      },
+      [id, reading, scrollLabelId],
+    )
+    const onViewportScroll = useCallback(() => {
+      if (viewport.current) reading?.setTableScrollLeft(id, viewport.current.scrollLeft)
+    }, [id, reading])
     return (
       <SourceFrame
         source={useComponentSource(props.sources)}
-        componentId={context.componentModel.id}
+        componentId={id}
         className="genui-comparison"
         style={flex(props.weight)}
         title={props.title}
       >
-        <div className="genui-table-scroll">
+        <ScrollArea
+          axis="x"
+          className="genui-table-scroll"
+          contentClassName="genui-table-scroll-content"
+          onViewport={onViewport}
+          onViewportScroll={onViewportScroll}
+        >
+          <span id={scrollLabelId} hidden>{tableName}, scrollable</span>
           <table>
+            <caption className="genui-table-caption">{tableName}</caption>
             <thead>
               <tr>
                 {props.columns.map((column, index) => (
@@ -191,7 +251,11 @@ export const ComparisonTable = createComponentImplementation(
                     scope="col"
                     aria-sort={sort?.column === index ? sort.direction : 'none'}
                   >
-                    <button type="button" onClick={() => toggle(index)}>
+                    <button
+                      type="button"
+                      onClick={() => toggle(index)}
+                      aria-label={column.trim() === '' ? `Column ${index + 1}` : undefined}
+                    >
                       {column}
                       <span className="genui-sort-mark" aria-hidden="true">
                         {sort?.column === index ? (sort.direction === 'ascending' ? '↑' : '↓') : '↕'}
@@ -220,7 +284,7 @@ export const ComparisonTable = createComponentImplementation(
               })}
             </tbody>
           </table>
-        </div>
+        </ScrollArea>
       </SourceFrame>
     )
   },

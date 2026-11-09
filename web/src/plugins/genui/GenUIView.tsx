@@ -1,14 +1,22 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { PluginContext, ViewStatusDot } from '../../core/types'
+import { ScrollArea } from '../../components/ScrollArea'
 import { autoGrowTextarea } from '../../editor/noteDialog'
-import type { Disposable, GenerateFailure, GenerationSettings, ViewSnapshot } from '../../host/types'
+import type {
+  Disposable,
+  GenerateFailure,
+  GenerationSettings,
+  SettingsPatch,
+  ViewSnapshot,
+} from '../../host/types'
 import { loadSurface, ViewSurface, type LoadedSurface } from './a2ui'
 import { GenerationController, type GenerationRun, type GenerationState } from './generation'
 import { ModelMenu } from './ModelMenu'
 import type { SourceActions } from './SourceFrame'
 import { SourceStore } from './sources'
 import { parseViewFile, type ViewFile } from './viewFile'
+import { ReadingStore } from './reading'
 import './genui.css'
 
 /** `canUndo`: the view the last generation replaced is kept, to go back to once. */
@@ -170,6 +178,16 @@ function LoadingSkeleton(): React.ReactElement {
   )
 }
 
+function InitialLoading(): React.ReactElement {
+  return (
+    <div className="gen-empty genui-empty" data-testid="genui-loading" role="status" aria-live="polite">
+      <h2>Loading the GenUI view</h2>
+      <p>Reading the view file for this document.</p>
+      <LoadingSkeleton />
+    </div>
+  )
+}
+
 /**
  * Shared state between the center GenUI view (`genui`) and the right-column
  * GenUI management panel (`genui.panel`).
@@ -178,6 +196,8 @@ export class GenUISession {
   readonly store: GenUIStore
   readonly generation: GenerationController
   private activeMounts = 0
+  /** This document's mounted center view element; null while it is not shown. */
+  private viewElement: HTMLElement | null = null
   private watchSub: Disposable | undefined
   private readonly docSub: Disposable
   private readonly unsubStore: () => void
@@ -245,17 +265,39 @@ export class GenUISession {
     for (const listener of this.highlightListeners) listener()
     void this.ctx.commands.execute('centerPane.show', 'genui').catch(() => {})
     const scrollToCard = () => {
-      const card = Array.from(
-        document.querySelectorAll<HTMLElement>('[data-testid="genui-view"] [data-component-id]'),
-      ).find((el) => el.getAttribute('data-component-id') === id)
+      // Another document's GenUI view stays mounted while its tab is hidden and
+      // can carry the same component ids; only this document's center view may
+      // be highlighted or scrolled.
+      const scope = this.viewElement
+      if (!scope) return false
+      const cards = scope.querySelectorAll<HTMLElement>('[data-component-id]')
+      for (const el of cards) el.classList.remove('mgo-jump')
+      const card = Array.from(cards).find((el) => el.getAttribute('data-component-id') === id)
       if (!card) return false
-      card.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      card.classList.add('mgo-jump')
+      card.scrollIntoView({ block: 'center', behavior: 'auto' })
       return true
     }
     if (!scrollToCard()) {
       requestAnimationFrame(() => {
         scrollToCard()
       })
+    }
+  }
+
+  /**
+   * Tracks the center view while it is mounted. The session, not the whole
+   * document, is the boundary for highlight and scroll.
+   */
+  retainView(el: HTMLElement): Disposable {
+    this.viewElement = el
+    let released = false
+    return {
+      dispose: () => {
+        if (released) return
+        released = true
+        if (this.viewElement === el) this.viewElement = null
+      },
     }
   }
 
@@ -296,16 +338,18 @@ export class GenUISession {
 
 /**
  * What outlives the GenUI view's mounts: where the reader was in the view,
- * the generation of the window, the request being written, and the shared session.
+ * this document's generation, the request being written, and the shared session.
  */
 export interface GenUIMemory extends ScrollMemory {
   generation: GenerationController | undefined
   draft: string | undefined
   session: GenUISession | undefined
+  reading: ReadingStore
   statusListeners: Set<() => void>
 }
 
 function ensureSession(ctx: PluginContext, memory: GenUIMemory): GenUISession {
+  memory.reading ??= new ReadingStore()
   memory.session ??= new GenUISession(ctx, memory)
   return memory.session
 }
@@ -375,6 +419,10 @@ function GenUIView({
   const highlightedId = useSyncExternalStore(session.subscribeHighlight, session.getHighlightedId)
   const content = useRef<HTMLDivElement>(null)
   const running = run.kind === 'running'
+  const replacing =
+    running && run.run.mode === 'update' ? new Set(run.run.replaceIds) : undefined
+  const awaitingFirstView = state.kind === 'loading'
+  const generatingWithoutView = running && state.kind !== 'view' && !awaitingFirstView
   useScrollMemory(scroller, memory, state.kind === 'view' && !running ? state.text : null, content)
 
   const sources = state.kind === 'view' ? state.sources : null
@@ -383,6 +431,7 @@ function GenUIView({
       sources && {
         store: sources,
         highlightedId,
+        replacing,
         edit(ids, text) {
           const target = sources.target(ids, text)
           if (!target) return
@@ -397,7 +446,7 @@ function GenUIView({
           return target !== undefined && (await ctx.commands.execute('editor.addNote', target.end, trimmed)) === true
         },
       },
-    [sources, highlightedId, ctx, scroller, memory],
+    [sources, highlightedId, replacing, ctx, scroller, memory],
   )
 
   const openPanel = () => {
@@ -405,8 +454,15 @@ function GenUIView({
   }
 
   return (
-    <div className="genui-view" data-testid="genui-view" data-state={state.kind} ref={content}>
-      {running && state.kind !== 'view' ? <LoadingSkeleton /> : null}
+    <div
+      className="genui-view"
+      data-testid="genui-view"
+      data-state={state.kind}
+      aria-busy={awaitingFirstView || generatingWithoutView || undefined}
+      ref={content}
+    >
+      {awaitingFirstView ? <InitialLoading /> : null}
+      {generatingWithoutView ? <LoadingSkeleton /> : null}
 
       {!running && state.kind === 'none' ? (
         <div className="gen-empty genui-empty" data-testid="genui-empty">
@@ -434,7 +490,7 @@ function GenUIView({
 
       {state.kind === 'view' && actions ? (
         /* A new file is a new surface: remount rather than diff across surfaces. */
-        <ViewSurface key={state.revision} surface={state.surface} sources={actions} />
+        <ViewSurface key={state.revision} surface={state.surface} sources={actions} reading={memory.reading} />
       ) : null}
     </div>
   )
@@ -479,12 +535,26 @@ function GenUIPanel({
   const focusTextareaRef = useRef<HTMLTextAreaElement>(null)
   const inlineTextareaRef = useRef<HTMLTextAreaElement>(null)
 
+  // The one settings store's committed value. Placeholders until the first
+  // read: the host's defaults are what it answers with anyway.
   const [settings, setSettings] = useState<GenerationSettings>({
     model: 'gemini-3.8-flash',
     agentCommand: 'agy',
     models: DEFAULT_MODELS,
   })
+  // Bumped by every applied read or change, so a slow initial read cannot
+  // overwrite a newer value that already arrived.
+  const settingsRevision = useRef(0)
   const [undoError, setUndoError] = useState('')
+
+  const applySettings = useCallback((next: GenerationSettings) => {
+    settingsRevision.current += 1
+    setSettings({
+      model: next.model,
+      agentCommand: next.agentCommand || 'agy',
+      models: next.models?.length ? next.models : DEFAULT_MODELS,
+    })
+  }, [])
 
   // Sync request when a new view file arrives and the user hasn't drafted a separate request.
   const viewKey = state.kind === 'view' ? state.text : state.kind
@@ -499,23 +569,28 @@ function GenUIPanel({
     }
   }, [viewKey, memory.draft, savedRequest])
 
+  // Settings are one store shared by every document and window, so this panel
+  // follows it: subscribing first means a change made in another panel while
+  // the first read is in flight is not missed, and the revision guard keeps
+  // that read from landing on top of it.
   useEffect(() => {
     let live = true
+    const followed = session.generation.onSettings((next) => {
+      if (live) applySettings(next)
+    })
+    const at = settingsRevision.current
     session.generation.getSettings().then(
       (loaded) => {
-        if (!live) return
-        setSettings({
-          model: loaded.model,
-          agentCommand: loaded.agentCommand || 'agy',
-          models: loaded.models?.length ? loaded.models : DEFAULT_MODELS,
-        })
+        if (!live || settingsRevision.current !== at) return
+        applySettings(loaded)
       },
       () => {},
     )
     return () => {
       live = false
+      followed.dispose()
     }
-  }, [session.generation, run.kind])
+  }, [session.generation, applySettings])
 
   useEffect(() => {
     if (!editingFocus) return
@@ -578,24 +653,23 @@ function GenUIPanel({
     })
   }
 
-  const updateSettings = (nextSettings: GenerationSettings) => {
-    setSettings(nextSettings)
-    session.generation.setSettings(nextSettings).catch((error: unknown) => {
+  // Sends only what the reader changed: the other window's command and the
+  // handshake's cached models are not this panel's to write. The committed
+  // value arrives through the store's announcement, in write order, so a
+  // write's own echo cannot land on a newer one.
+  const changeSettings = (patch: SettingsPatch) => {
+    session.generation.setSettings(patch).catch((error: unknown) => {
       setUndoError(error instanceof Error ? error.message : String(error))
     })
   }
 
   const selectModel = (nextModel: string) => {
-    updateSettings({
-      ...settings,
-      model: nextModel,
-      models,
-    })
+    changeSettings({ model: nextModel })
   }
 
   return (
     <div className="genui-panel gp" data-testid="genui-panel">
-      <div className="genui-panel-scroll r-scroll">
+      <ScrollArea className="genui-panel-scroll r-scroll" contentClassName="genui-panel-scroll-content">
         {running ? (
           <GenerationProgress run={run} onCancel={() => session.generation.cancel()} />
         ) : run.kind === 'failed' ? (
@@ -603,8 +677,15 @@ function GenUIPanel({
             failure={run.failure}
             generation={session.generation}
             settings={settings}
-            onSetSettings={updateSettings}
+            onSetSettings={changeSettings}
           />
+        ) : state.kind === 'loading' ? (
+          <div className="gp-block" data-testid="genui-status-loading">
+            <div className="gp-status">
+              <b>Loading view</b>
+              <span>Reading the view file for this document.</span>
+            </div>
+          </div>
         ) : !hasView ? (
           <div className="gp-block" data-testid="genui-status-empty">
             <div className={`gp-status${state.kind === 'error' ? ' bad' : ''}`}>
@@ -676,8 +757,14 @@ function GenUIPanel({
                   data-component-id={item.id}
                   onClick={() => session.highlightComponent(item.id)}
                 >
-                  <span className="rdot" aria-hidden="true" />
-                  <span className="t">{item.title}</span>
+                  <span className={`rdot${item.status === 'missing' ? ' bad' : ''}`} aria-hidden="true" />
+                  <span className="t">
+                    <i
+                      className={`ph ${item.status === 'missing' ? 'ph-warning-circle' : 'ph-warning'}`}
+                      aria-hidden="true"
+                    />
+                    {item.title}
+                  </span>
                   <span className="s">{item.subtitle}</span>
                 </button>
               ))}
@@ -798,7 +885,7 @@ function GenUIPanel({
             )}
           </div>
         ) : null}
-      </div>
+      </ScrollArea>
 
       <footer className="genui-panel-footer rp-foot r-foot" data-testid="genui-panel-footer">
         <div className="gp-kv">
@@ -836,7 +923,7 @@ function GenerationFailure({
   failure: GenerateFailure
   generation: GenerationController
   settings: GenerationSettings
-  onSetSettings: (next: GenerationSettings) => void
+  onSetSettings: (patch: SettingsPatch) => void
 }): React.ReactElement {
   const [locatingAgent, setLocatingAgent] = useState(false)
   const [agentCommandDraft, setAgentCommandDraft] = useState(settings.agentCommand || 'agy')
@@ -857,10 +944,7 @@ function GenerationFailure({
 
   const saveAgentCommand = () => {
     const trimmed = agentCommandDraft.trim() || 'agy'
-    onSetSettings({
-      ...settings,
-      agentCommand: trimmed,
-    })
+    onSetSettings({ agentCommand: trimmed })
     setLocatingAgent(false)
   }
 
@@ -978,22 +1062,31 @@ function GenerationProgress({
 }
 
 /**
- * Shows the document's center GenUI reading view in `el`, which is its scroll
- * area, and follows the view file while mounted.
+ * Shows the document's center GenUI reading view in `el`, the view's own mount
+ * element, and follows the view file while mounted. `scrollElement` is the
+ * element that actually scrolls; `el` itself is not scrollable.
  */
-export function mountGenUIView(el: HTMLElement, ctx: PluginContext, memory: GenUIMemory): Disposable {
+export function mountGenUIView(
+  el: HTMLElement,
+  ctx: PluginContext,
+  memory: GenUIMemory,
+  scrollElement?: HTMLElement,
+): Disposable {
   const session = ensureSession(ctx, memory)
+  const scroller = scrollElement ?? el
   const watch = session.retainWatch()
+  const view = session.retainView(el)
   const root = createRoot(el)
-  root.render(<GenUIView session={session} ctx={ctx} scroller={el} memory={memory} />)
+  root.render(<GenUIView session={session} ctx={ctx} scroller={scroller} memory={memory} />)
   // Read while mounted: once the view is removed, its element no longer scrolls.
   const remember = () => {
-    memory.top = el.scrollTop
+    memory.top = scroller.scrollTop
   }
-  el.addEventListener('scroll', remember, { passive: true })
+  scroller.addEventListener('scroll', remember, { passive: true })
   return {
     dispose() {
-      el.removeEventListener('scroll', remember)
+      scroller.removeEventListener('scroll', remember)
+      view.dispose()
       watch.dispose()
       // Defer: React may be committing the host tree when the view is
       // removed, and a nested root must not unmount during that render.

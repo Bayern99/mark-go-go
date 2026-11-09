@@ -1,6 +1,12 @@
 import type { PluginContext } from '../../core/types'
 import { failureOf } from '../../host/generationError'
-import type { GenerateFailure, GenerateProgress, GenerationSettings } from '../../host/types'
+import type {
+  Disposable,
+  GenerateFailure,
+  GenerateProgress,
+  GenerationSettings,
+  SettingsPatch,
+} from '../../host/types'
 import { extractSections } from '../../markdown/sections'
 import { catalogDefinition } from './a2ui'
 import formatDocument from './view-format.md?raw'
@@ -28,10 +34,11 @@ export type GenerationState =
   | { kind: 'failed'; failure: GenerateFailure; run: GenerationRun }
 
 /**
- * One window's generation: at most one run at a time, its progress, and the
- * error of the last run that failed. It outlives the GenUI view's mounts, so
- * leaving GenUI while a run goes on does not lose it. The view file itself
- * comes through the view watch.
+ * One document's generation: at most one run at a time, its progress, and the
+ * error of the last run that failed. Bound to this pane's PluginContext, so
+ * it never retargets through the active tab. It outlives the GenUI view's
+ * mounts, so leaving GenUI while a run goes on does not lose it. The view
+ * file itself comes through the view watch.
  */
 export class GenerationController {
   private state: GenerationState = { kind: 'idle' }
@@ -115,8 +122,14 @@ export class GenerationController {
     return this.ctx.viewFile.getSettings()
   }
 
-  setSettings(settings: GenerationSettings): Promise<void> {
-    return this.ctx.viewFile.setSettings(settings)
+  /** Changes the fields the patch carries, in the one settings store every document shares. */
+  setSettings(patch: SettingsPatch): Promise<GenerationSettings> {
+    return this.ctx.viewFile.setSettings(patch)
+  }
+
+  /** Follows the shared settings store; see `ViewGenerator.onSettings`. */
+  onSettings(fn: (settings: GenerationSettings) => void): Disposable {
+    return this.ctx.viewFile.onSettings(fn)
   }
 
   dispose(): void {

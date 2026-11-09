@@ -1,7 +1,7 @@
-import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { RightPane } from './components/RightPane'
-import { SidePane } from './components/SidePane'
+import { PathCrumbs, SidePane } from './components/SidePane'
 import { useViews, ViewHost } from './components/ViewHost'
 import { CommandRegistry } from './core/CommandRegistry'
 import { DocumentService } from './core/DocumentService'
@@ -9,10 +9,17 @@ import { EditorAccess } from './core/EditorAccess'
 import { PluginRegistry } from './core/PluginRegistry'
 import { ViewRegistry } from './core/ViewRegistry'
 import type { AppPlugin } from './core/types'
-import type { Disposable, DocState, HostAdapter } from './host/types'
+import type { Disposable, DocumentInfo, HostAdapter, RecentWorkspace, WorkspaceAdapter, WorkspaceSnapshot } from './host/types'
+import { wrapHostAsWorkspace } from './host/browserHost'
+import { reportNativeEditState } from './host/mygoHost'
 import { createMarkdownEditor, type EditorMode, type MarkdownEditor } from './editor/createEditor'
+import {
+  nativeEditCapabilities,
+  registerNativeEditTarget,
+} from './editor/nativeEdit'
 import { createGenUIPlugin } from './plugins/genui'
 import { createOutlinePlugin } from './plugins/outline'
+import { ScrollArea } from './components/ScrollArea'
 
 const EDIT_DEBOUNCE_MS = 250
 export const NARROW_WINDOW_WIDTH = 1180
@@ -118,18 +125,25 @@ class ViewModeController {
   }
 }
 
-export function App({
+export function DocumentPane({
   host,
   plugins = [],
+  active = true,
+  workspaceRoot = '',
+  onOpenPath,
+  onReadyReveal,
 }: {
   host: HostAdapter
-  /** Extra plugins registered after the built-ins (test seam). */
   plugins?: AppPlugin[]
+  active?: boolean
+  workspaceRoot?: string
+  onOpenPath?: (path: string, isFile: boolean) => void
+  onReadyReveal?: (id: string, reveal: (offset: number) => boolean) => () => void
 }): React.ReactElement {
   const editorRoot = useRef<HTMLDivElement>(null)
-  const editorScroll = useRef<HTMLDivElement>(null)
+  const editorScroll = useRef<HTMLElement | null>(null)
   const editorRef = useRef<MarkdownEditor | null>(null)
-  const [docState, setDocState] = useState<DocState | null>(null)
+  const [docState, setDocState] = useState<DocumentInfo | null>(null)
   const [version, setVersion] = useState(0)
   const [editorMode, setEditorMode] = useState<EditorMode>('wysiwyg')
   const [centerViewId, setCenterViewId] = useState<string | null>(null)
@@ -141,6 +155,11 @@ export function App({
   const [ready, setReady] = useState(false)
   const [, refreshPlugins] = useReducer((value: number) => value + 1, 0)
   const restored = useRef(false)
+  const reportedMode = useRef(false)
+  const activeRef = useRef(active)
+  const revealBinder = useRef(onReadyReveal)
+  activeRef.current = active
+  revealBinder.current = onReadyReveal
 
   const services = useMemo(() => {
     const documents = new DocumentService()
@@ -203,6 +222,7 @@ export function App({
     let debounceTimer: number | undefined
 
     const handleShortcuts = (event: KeyboardEvent) => {
+      if (!activeRef.current) return
       if (event.repeat) return
       if ((event.metaKey || event.ctrlKey) && event.altKey && event.code === 'Digit0') {
         event.preventDefault()
@@ -224,7 +244,7 @@ export function App({
       },
     })
 
-    const applyDocumentState = (state: DocState) => {
+    const applyDocumentState = (state: DocumentInfo) => {
       if (disposed) return
       setDocState(state)
       services.documents.setPath(state.path)
@@ -250,6 +270,51 @@ export function App({
       editorRef.current = editor
       services.editor.attach(editor)
       editor.setReadonly(snapshot.state.readOnly)
+
+      if (revealBinder.current) {
+        cleanups.push({
+          dispose: revealBinder.current(host.id, (offset) => {
+            modes.showSource()
+            return editor.reveal(offset)
+          }),
+        })
+      }
+      const reportHistory = () => {
+        if (!activeRef.current) return
+        const caps = nativeEditCapabilities(host.id)
+        reportNativeEditState(host.id, caps.canUndo, caps.canRedo)
+      }
+      cleanups.push(
+        registerNativeEditTarget(
+          host.id,
+          {
+            capabilities: () => ({ canUndo: editor.canUndo(), canRedo: editor.canRedo() }),
+            editorVisible: () => {
+              const pane = editorRoot.current?.closest('.editor-pane')
+              return pane instanceof HTMLElement && !pane.hidden
+            },
+            perform(command) {
+              const acted = command === 'undo' ? editor.undo() : editor.redo()
+              if (acted && activeRef.current) reportHistory()
+              return acted
+            },
+          },
+          editorRoot.current?.closest('.app') ?? editorRoot.current,
+        ),
+      )
+      cleanups.push(editor.onHistoryChange(reportHistory))
+      reportHistory()
+      const onFocus = () => {
+        if (activeRef.current) reportHistory()
+      }
+      document.addEventListener('focusin', onFocus, true)
+      document.addEventListener('focusout', onFocus, true)
+      cleanups.push({
+        dispose() {
+          document.removeEventListener('focusin', onFocus, true)
+          document.removeEventListener('focusout', onFocus, true)
+        },
+      })
 
       cleanups.push(
         services.commands.register('editor.reveal', (offset) => {
@@ -323,6 +388,24 @@ export function App({
           }, EDIT_DEBOUNCE_MS)
         }),
       )
+      // What this pane really holds: the text on screen now, else the
+      // core document state the host loaded. Never a buffer that only
+      // changes were written to, so a pane that was remounted or has not
+      // mounted an editor cannot deliver an invented empty buffer. The
+      // host's flush is the one layer that writes it back, reading this.
+      const currentText = () => editorRef.current?.getMarkdown() ?? services.documents.snapshot().text
+      if (host.bindFlush) {
+        cleanups.push(
+          host.bindFlush(() => {
+            // The delivery this reader feeds supersedes the debounce.
+            if (debounceTimer !== undefined) {
+              window.clearTimeout(debounceTimer)
+              debounceTimer = undefined
+            }
+            return currentText()
+          }),
+        )
+      }
 
       cleanups.push(
         host.onState((state) => {
@@ -380,7 +463,7 @@ export function App({
   useLayoutEffect(() => {
     if (!ready || restored.current || !docState) return
     restored.current = true
-    const saved = rememberedViewMode(docState.path)
+    const saved = docState.viewMode || rememberedViewMode(docState.path)
     if (saved === 'markdown') editorRef.current?.setMode('source')
     else if (saved && services.views.getAll().some((v) => v.location === 'center' && v.id === saved)) {
       modes.showCenter(saved)
@@ -388,8 +471,23 @@ export function App({
   }, [ready, docState, services, modes])
 
   useEffect(() => {
-    if (restored.current && docState) rememberViewMode(docState.path, viewMode)
-  }, [viewMode, docState])
+    if (!restored.current || !docState) return
+    rememberViewMode(docState.path, viewMode)
+    // The first run is the mode being restored, which the session already
+    // holds. Writing it back would race the restore with the default.
+    if (!reportedMode.current) {
+      reportedMode.current = true
+      return
+    }
+    if (docState.viewMode === viewMode) return
+    void host.setViewMode(viewMode)
+  }, [viewMode, docState, host])
+
+  useEffect(() => {
+    if (!active) return
+    const caps = nativeEditCapabilities(host.id)
+    reportNativeEditState(host.id, caps.canUndo, caps.canRedo)
+  }, [active, host.id, centerViewId, editorMode])
 
   const modeChoices = [
     { id: 'richtext', label: 'Rich text', title: 'Rich text (⌘/)' },
@@ -412,21 +510,32 @@ export function App({
   return (
     <div
       className={`app mgg win${rightShown && !rightFloating ? ' rp-dock' : ''}${rightFloating ? ' rp-float' : ''}`}
+      hidden={!active}
+      data-document-id={host.id}
     >
       <div className="app-body">
-        <SidePane views={services.views} doc={docState} />
-
         <div className="main center-column">
           <section className="sheet">
             <header className="app-header docbar">
               <div className="doc-title crumbs">
-                <span className="doc-name last">{docState?.name ?? 'Loading…'}</span>
+                {docState?.path ? (
+                  <PathCrumbs
+                    root={workspaceRoot}
+                    path={docState.path}
+                    onOpen={(path, isFile) => onOpenPath?.(path, isFile)}
+                  />
+                ) : (
+                  <span className="doc-name last">{docState?.name ?? 'Loading…'}</span>
+                )}
                 {docState?.edited ? <span className="edited-dot" title="Unsaved edits" /> : null}
               </div>
               <div className="header-actions">
                 <span className="status meta">
                   {docState?.edited ? 'Edited' : 'Saved'}
                   {docState?.conflict ? ' · conflict' : ''}
+                  {docState?.generating
+                    ? ' · generating — wait or cancel in the GenUI panel'
+                    : ''}
                 </span>
                 <span className="version-chip meta">v{version}</span>
                 <div className="view-modes seg" role="radiogroup" aria-label="View mode">
@@ -473,6 +582,16 @@ export function App({
               </div>
             ) : null}
             {docState?.readOnly ? <div className="banner banner-readonly">Read only</div> : null}
+            {docState?.actionError ? (
+              <div className="banner" role="alert" data-testid="doc-action-error">
+                {docState.actionError}
+              </div>
+            ) : null}
+            {docState?.restoreError ? (
+              <div className="banner" role="alert" data-testid="doc-restore-error">
+                {docState.restoreError}
+              </div>
+            ) : null}
 
             <div
               className="center-stage"
@@ -490,9 +609,15 @@ export function App({
                     ← Back to {returnTo.title}
                   </button>
                 ) : null}
-                <div className="editor-scroll" ref={editorScroll}>
+                <ScrollArea
+                  className="editor-scroll"
+                  contentClassName="editor-scroll-content"
+                  onViewport={(viewport) => {
+                    editorScroll.current = viewport
+                  }}
+                >
                   <div className="crepe-root" ref={editorRoot} data-testid="editor-root" />
-                </div>
+                </ScrollArea>
               </main>
               {centerView ? (
                 <section
@@ -501,7 +626,13 @@ export function App({
                   data-view-id={centerView.id}
                   aria-label={centerView.title}
                 >
-                  <ViewHost key={centerView.id} view={centerView} className="center-view" />
+                  <ViewHost
+                    key={centerView.id}
+                    view={centerView}
+                    className="center-view"
+                    contentClassName="center-view-content"
+                    scrollable
+                  />
                 </section>
               ) : null}
             </div>
@@ -522,8 +653,469 @@ export function App({
         <span className="status-state">
           {docState?.edited ? 'Edited' : 'Saved'}
           {docState?.conflict ? ' · conflict' : ''}
+          {docState?.generating ? ' · generating' : ''}
         </span>
       </footer>
+    </div>
+  )
+}
+
+
+export function App({
+  host,
+  workspace,
+  plugins = [],
+}: {
+  host?: HostAdapter
+  workspace?: WorkspaceAdapter
+  plugins?: AppPlugin[]
+}): React.ReactElement {
+  const resolved =
+    workspace ??
+    (host ? wrapHostAsWorkspace(host) : null)
+  if (!resolved) throw new Error('App needs a workspace or a document host')
+  return <WorkspaceApp workspace={resolved} plugins={plugins} />
+}
+
+function tabLabel(docs: { id: string; name: string; path: string }[], doc: { id: string; name: string; path: string }): string {
+  const same = docs.filter((other) => other.name === doc.name)
+  if (same.length < 2) return doc.name
+  const parent = doc.path.replace(/\\/g, '/').split('/').slice(-2, -1)[0]
+  return parent ? `${doc.name} — ${parent}` : doc.path || doc.name
+}
+
+function TabBadges({ doc }: { doc: DocumentInfo }): React.ReactElement {
+  return (
+    <>
+      {doc.edited ? <span className="edited-dot" title="Unsaved edits" /> : null}
+      {doc.generating ? (
+        <span className="tab-generating" data-testid={`doc-tab-generating-${doc.id}`} title="Generating" />
+      ) : null}
+      {doc.conflict ? <span className="tab-conflict" title="Conflict" /> : null}
+      {doc.deleted ? <span className="tab-deleted" title="Deleted" /> : null}
+      {doc.readOnly ? <span className="tab-readonly" title="Read only" /> : null}
+    </>
+  )
+}
+
+function WorkspaceApp({
+  workspace,
+  plugins = [],
+}: {
+  workspace: WorkspaceAdapter
+  plugins?: AppPlugin[]
+}): React.ReactElement {
+  const [snap, setSnap] = useState<WorkspaceSnapshot | null>(null)
+  const [recents, setRecents] = useState<RecentWorkspace[]>([])
+  const panes = useRef(new Map<string, HostAdapter>())
+  const reveals = useRef(new Map<string, (offset: number) => boolean>())
+  const emptyViews = useMemo(() => new ViewRegistry(), [])
+
+  useEffect(() => {
+    let disposed = false
+    void workspace.snapshot().then((next) => {
+      if (!disposed) setSnap(next)
+    })
+    void workspace.recentWorkspaces().then((list) => {
+      if (!disposed) setRecents(list)
+    })
+    const sub = workspace.subscribe((next) => setSnap(next))
+    return () => {
+      disposed = true
+      sub.dispose()
+    }
+  }, [workspace])
+
+  const documents = snap?.documents ?? []
+  const activeId = snap?.activeId ?? documents[0]?.id ?? ''
+  const tabsRef = useRef<HTMLDivElement>(null)
+  const tabRefs = useRef(new Map<string, HTMLButtonElement>())
+  const tabFocusTarget = useRef<string | null>(null)
+  const tabMenuRef = useRef<HTMLDivElement>(null)
+  const tabMenuButtonRef = useRef<HTMLButtonElement>(null)
+  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 0 })
+  const [tabMenuOpen, setTabMenuOpen] = useState(false)
+  const [tabFilter, setTabFilter] = useState('')
+  const hiddenDocuments = useMemo(
+    () => [...documents.slice(0, visibleRange.start), ...documents.slice(visibleRange.end)],
+    [documents, visibleRange],
+  )
+  const filteredHiddenDocuments = useMemo(() => {
+    const query = tabFilter.trim().toLowerCase()
+    if (query === '') return hiddenDocuments
+    return hiddenDocuments.filter((doc) => {
+      const label = tabLabel(documents, doc)
+      return `${label}\n${doc.name}\n${doc.path}`.toLowerCase().includes(query)
+    })
+  }, [documents, hiddenDocuments, tabFilter])
+
+  const measureTabs = useCallback(() => {
+    const bar = tabsRef.current
+    if (!bar || documents.length === 0) {
+      setVisibleRange((current) => (current.start === 0 && current.end === 0 ? current : { start: 0, end: 0 }))
+      return
+    }
+    const widths = documents.map((doc) => tabRefs.current.get(doc.id)?.offsetWidth ?? 0)
+    const gap = 2
+    const overflowButton = tabMenuButtonRef.current
+    const overflowWidth = overflowButton?.offsetWidth || 32
+    const fullBudget = bar.clientWidth + (overflowButton && !overflowButton.hidden ? overflowWidth + gap : 0)
+    const allTabsWidth = widths.reduce((used, width, index) => used + width + (index === 0 ? 0 : gap), 0)
+    if (allTabsWidth <= fullBudget) {
+      setVisibleRange((current) => (current.start === 0 && current.end === documents.length
+        ? current
+        : { start: 0, end: documents.length }))
+      return
+    }
+    const budget = fullBudget - overflowWidth - gap
+    const activeIndex = documents.findIndex((doc) => doc.id === activeId)
+    let start = 0
+    let end = documents.length
+    if (activeIndex >= 0) {
+      const throughActive = widths.slice(0, activeIndex + 1).reduce((sum, width, index) => sum + width + (index === 0 ? 0 : gap), 0)
+      end = activeIndex + 1
+      if (throughActive <= budget) {
+        let used = throughActive
+        while (end < documents.length && used + gap + (widths[end] ?? 0) <= budget) {
+          used += gap + (widths[end] ?? 0)
+          end += 1
+        }
+      } else {
+        start = activeIndex
+        let used = widths[activeIndex] ?? 0
+        while (start > 0 && used + gap + (widths[start - 1] ?? 0) <= budget) {
+          start -= 1
+          used += gap + (widths[start] ?? 0)
+        }
+      }
+    } else {
+      let used = 0
+      end = 0
+      while (end < documents.length && used + (end === 0 ? 0 : gap) + (widths[end] ?? 0) <= budget) {
+        used += (end === 0 ? 0 : gap) + (widths[end] ?? 0)
+        end += 1
+      }
+    }
+    setVisibleRange((current) => (current.start === start && current.end === end ? current : { start, end }))
+  }, [documents, activeId])
+
+  useLayoutEffect(() => {
+    const bar = tabsRef.current
+    if (!bar) return
+    measureTabs()
+    const observer = new ResizeObserver(measureTabs)
+    observer.observe(bar)
+    return () => {
+      observer.disconnect()
+    }
+  }, [measureTabs, visibleRange])
+
+  useLayoutEffect(() => {
+    const target = tabFocusTarget.current
+    if (!target) return
+    if (activeId !== target) {
+      tabFocusTarget.current = null
+      return
+    }
+    const tab = tabRefs.current.get(target)
+    if (!tab || tab.classList.contains('tab-hidden')) return
+    tabFocusTarget.current = null
+    tab.focus()
+  }, [activeId, visibleRange])
+
+  useEffect(() => {
+    let cancelled = false
+    void document.fonts?.ready.then(() => {
+      if (!cancelled) measureTabs()
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [measureTabs])
+
+  useEffect(() => {
+    if (hiddenDocuments.length === 0) setTabMenuOpen(false)
+  }, [hiddenDocuments.length])
+
+  useEffect(() => {
+    if (!tabMenuOpen) return
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (tabMenuRef.current?.contains(target) || tabMenuButtonRef.current?.contains(target)) return
+      setTabMenuOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      setTabMenuOpen(false)
+      tabMenuButtonRef.current?.focus()
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [tabMenuOpen])
+
+  for (const doc of documents) {
+    if (!panes.current.has(doc.id)) panes.current.set(doc.id, workspace.document(doc.id))
+  }
+  for (const id of [...panes.current.keys()]) {
+    if (!documents.some((doc) => doc.id === id)) panes.current.delete(id)
+  }
+
+  const activate = (id: string, focusTab = false) => {
+    tabFocusTarget.current = focusTab ? id : null
+    void workspace.activate(id)
+  }
+
+  const closeTab = (id: string) => {
+    void workspace.closeDocument(id)
+  }
+
+  const onTabsKey = (event: React.KeyboardEvent) => {
+    if (!documents.length) return
+    const index = documents.findIndex((doc) => doc.id === activeId)
+    if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      activate(documents[(index + 1) % documents.length].id, true)
+    } else if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      activate(documents[(index - 1 + documents.length) % documents.length].id, true)
+    } else if (event.key === 'Delete' || (event.key === 'w' && (event.metaKey || event.ctrlKey))) {
+      event.preventDefault()
+      closeTab(activeId)
+    }
+  }
+
+  const openPath = (path: string, isFile: boolean) => {
+    if (isFile) void workspace.open(path)
+    else void workspace.revealPath(path)
+  }
+
+  const jumpHeading = (documentId: string | undefined, path: string, offset: number) => {
+    void (async () => {
+      const info = documentId ? { id: documentId } : await workspace.open(path)
+      const id = documentId ?? info.id
+      await workspace.activate(id)
+      const tryReveal = () => reveals.current.get(id)?.(offset)
+      if (tryReveal()) return
+      window.setTimeout(() => {
+        tryReveal()
+      }, 80)
+    })()
+  }
+
+  const showWelcome = !snap || (snap.kind !== 'folder' && documents.length === 0)
+  const documentTabs = (
+    <div className="doc-tabs-row">
+      <div
+        className="doc-tabs"
+        role="tablist"
+        aria-label="Documents"
+        onKeyDown={onTabsKey}
+        data-testid="doc-tabs"
+        ref={tabsRef}
+      >
+        {documents.map((doc, index) => {
+          const hidden = index < visibleRange.start || index >= visibleRange.end
+          return (
+            <button
+              key={doc.id}
+              type="button"
+              role="tab"
+              tabIndex={doc.id === activeId ? 0 : -1}
+              data-testid={`doc-tab-${doc.id}`}
+              className={`doc-tab${doc.id === activeId ? ' sel' : ''}${hidden ? ' tab-hidden' : ''}`}
+              aria-selected={doc.id === activeId}
+              aria-hidden={hidden ? true : undefined}
+              title={doc.path || doc.name}
+              ref={(element) => {
+                if (element) tabRefs.current.set(doc.id, element)
+                else tabRefs.current.delete(doc.id)
+              }}
+              onClick={() => activate(doc.id)}
+            >
+              <span className="nm">{tabLabel(documents, doc)}</span>
+              <TabBadges doc={doc} />
+              <span
+                className="tab-close"
+                role="button"
+                aria-label={`Close ${doc.name}`}
+                data-testid={`doc-tab-close-${doc.id}`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  closeTab(doc.id)
+                }}
+              >
+                ×
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      <button
+        type="button"
+        className="tab-overflow"
+        data-testid="doc-tab-overflow"
+        aria-label="More documents"
+        aria-haspopup="menu"
+        aria-expanded={tabMenuOpen}
+        aria-controls="doc-tab-menu"
+        title="More documents"
+        hidden={hiddenDocuments.length === 0}
+        ref={tabMenuButtonRef}
+        onClick={() => {
+          setTabFilter('')
+          setTabMenuOpen((open) => !open)
+        }}
+      >
+        ▾
+      </button>
+      {tabMenuOpen && hiddenDocuments.length > 0 ? (
+        <div className="doc-tab-menu" id="doc-tab-menu" data-testid="doc-tab-menu" ref={tabMenuRef}>
+          <input
+            type="search"
+            className="doc-tab-menu-filter"
+            data-testid="doc-tab-filter"
+            aria-label="Filter open tabs"
+            placeholder="Filter open tabs…"
+            value={tabFilter}
+            onChange={(event) => setTabFilter(event.target.value)}
+            autoFocus
+          />
+          <div className="doc-tab-menu-list" role="menu" aria-label="More documents">
+            {filteredHiddenDocuments.length === 0 ? (
+              <p className="doc-tab-menu-empty" role="status">No matching tabs</p>
+            ) : (
+              filteredHiddenDocuments.map((doc) => (
+                <button
+                  key={doc.id}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={doc.id === activeId}
+                  className={`doc-tab-menu-item${doc.id === activeId ? ' sel' : ''}`}
+                  data-testid={`doc-tab-menu-item-${doc.id}`}
+                  title={doc.path || doc.name}
+                  onClick={() => {
+                    activate(doc.id, true)
+                    setTabMenuOpen(false)
+                  }}
+                >
+                  <span className="nm">{tabLabel(documents, doc)}</span>
+                  <TabBadges doc={doc} />
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+
+  return (
+    <div className="workspace-shell">
+      {snap?.restoreError ? (
+        <div className="banner" role="alert" data-testid="restore-error">
+          {snap.restoreError}
+        </div>
+      ) : null}
+      <div className="workspace-body">
+        <SidePane
+          views={emptyViews}
+          workspace={workspace}
+          workspaceSnap={snap}
+          doc={documents.find((d) => d.id === activeId) ?? null}
+          onJumpHeading={jumpHeading}
+        />
+        <div className="workspace-main">
+          {documentTabs}
+          {documents.map((doc) => (
+            <DocumentPane
+              key={doc.id}
+              host={panes.current.get(doc.id)!}
+              plugins={plugins}
+              active={doc.id === activeId}
+              workspaceRoot={snap?.root ?? ''}
+              onOpenPath={openPath}
+              onReadyReveal={(id, reveal) => {
+                reveals.current.set(id, reveal)
+                return () => {
+                  if (reveals.current.get(id) === reveal) reveals.current.delete(id)
+                }
+              }}
+            />
+          ))}
+          {documents.length === 0 ? (
+            showWelcome ? (
+              <Welcome
+                recents={recents}
+                onOpenFolder={() => {
+                  void workspace.pickFolder().then(() => workspace.recentWorkspaces().then(setRecents))
+                }}
+                onNew={() => {
+                  void workspace.newDocument()
+                }}
+                onOpenRecent={(root) => {
+                  void workspace.openWorkspace(root)
+                }}
+              />
+            ) : (
+              <div className="workspace-empty" data-testid="workspace-empty">
+                Open a Markdown file from this folder.
+              </div>
+            )
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Welcome({
+  recents,
+  onOpenFolder,
+  onNew,
+  onOpenRecent,
+}: {
+  recents: RecentWorkspace[]
+  onOpenFolder: () => void
+  onNew: () => void
+  onOpenRecent: (root: string) => void
+}): React.ReactElement {
+  return (
+    <div className="welcome" data-testid="welcome">
+      <h1>Welcome</h1>
+      <p>Open a folder to browse Markdown files, or start an untitled document.</p>
+      <div className="welcome-actions">
+        <button type="button" className="pill primary" data-testid="open-folder" onClick={onOpenFolder}>
+          Open Folder
+        </button>
+        <button type="button" className="pill" data-testid="new-document" onClick={onNew}>
+          New Document
+        </button>
+      </div>
+      <section className="recent-workspaces" aria-label="Recent workspaces">
+        <h2>Recent Workspaces</h2>
+        {recents.length === 0 ? (
+          <p className="nav-empty" data-testid="recent-empty">No recent workspaces yet.</p>
+        ) : (
+          <ul data-testid="recent-workspaces">
+            {recents.map((item) => (
+              <li key={item.root}>
+                <button type="button" className="row file" onClick={() => onOpenRecent(item.root)}>
+                  <span className="body">
+                    <span className="l1"><span className="nm">{item.name}</span></span>
+                    <span className="l2"><span className="s">{item.root}</span></span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   )
 }

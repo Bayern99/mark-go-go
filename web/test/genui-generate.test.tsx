@@ -1,7 +1,12 @@
 import '../src/styles.css'
 import { page, userEvent } from 'vitest/browser'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createBrowserHost, type BrowserHost, type FakeGenerator } from '../src/host/browserHost'
+import {
+  createBrowserHost,
+  createBrowserSettings,
+  type BrowserHost,
+  type FakeGenerator,
+} from '../src/host/browserHost'
 import { GenerationError } from '../src/host/generationError'
 import type { GenerateFailure, GenerateProgress } from '../src/host/types'
 import { extractSections } from '../src/markdown/sections'
@@ -379,11 +384,11 @@ describe('GenUI generation', () => {
     const agent = scripted()
     const host = createBrowserHost(DOCUMENT, 'report.md', {
       generator: agent.generator,
-      settings: {
+      settings: createBrowserSettings({
         model: '',
         agentCommand: 'agy',
         models: ['gemini-3.8-flash', 'gemini-4-argon', 'claude-opus-5-5'],
-      },
+      }),
     })
     await openGenUI(host)
 

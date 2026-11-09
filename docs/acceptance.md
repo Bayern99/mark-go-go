@@ -562,4 +562,4 @@
 | 旧退出回执未返回时重试 | Chromium 回归让首次 flush 一直等待，第二次退出尝试仍完成写入和回执。原生调试包拒绝了过期的退出写入，正常退出并重启后，两份草稿仍可读取。 |
 | 关窗确认与应用退出 | Go 回归确认重复的关窗请求仍等待原有确认，已经准备好的应用退出可以关闭该窗口。单窗口原生确认框挡住了 Quit 操作。取消确认后，原生退出与草稿恢复通过。 |
 
-自动化检查包括 Go 静态检查与竞态测试、TypeScript 检查，以及 Chromium 的 29 个测试文件、285 个用例。 vendored MyGo 在关闭 cgo 的情况下通过 macOS arm64、Linux amd64 和 Windows amd64 编译。常规 macOS arm64 `.app` 在隔离副本中构建成功并通过本地签名校验，常规构建的 Go 依赖图中没有 Automation。文档组关闭入口移到 `Documents` 后，MyGo 的无文档 `hello` 示例在同一构建配置下仍是 9,562,434 字节。
+自动化检查包括 Go 静态检查与竞态测试、TypeScript 检查，以及 Chromium 的 29 个测试文件、285 个用例。仓库内的 MyGo 在关闭 cgo 的情况下通过 macOS arm64、Linux amd64 和 Windows amd64 编译。常规 macOS arm64 `.app` 在隔离副本中构建成功并通过本地签名校验，常规构建的 Go 依赖图中没有 Automation。MyGo 的 `hello` 和 `counter-native` 示例在相同生产构建参数下与基线大小一致，分别为 9,578,386 和 9,406,290 字节。

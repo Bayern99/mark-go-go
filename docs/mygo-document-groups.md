@@ -25,6 +25,7 @@ Then keep the document-group edits that live in this tree under `third_party/myg
 - `Documents.Detach(d)` — `d` leaves its window without closing; the window stays.
 - `Document.ConfirmClose() error` — ask-to-save this document only; does not detach or finishClose. `ErrCanceled` on cancel.
 - `Document.CloseDocument() error` — ConfirmClose then unregister this document; does not destroy a shared window.
+- `Documents.CloseDocumentGroup(w) error` — confirms the documents together and closes the window. The group must still contain the same documents when confirmation finishes. A canceled attempt keeps the tabs and their unsaved recovery copies.
 - `Document.OnClosed(fn) (off func())` — fired after the document is actually closed.
 - `DocumentsOption.Command` — if set and returns true, documentRole skips default Save/SaveAs/Duplicate/Rename/Move/Revert/Close and Undo/Redo (the web view's empty undo manager). The document is the one active at click time.
 - Doc-aware `RoleClose`: when documents exist, the menu snapshot clears the platform role for a `RoleClose` item so a press reaches `performRole(RoleClose)`; the document role asks `DocumentsOptions.Command` (the app's `nativeCommand "close"` for the captured document). If that role is invoked with no document (a window/menu race), it resolves the given or focused window and closes it, which `BeforeWindowClose` still turns into closing the workspace; that internal fallback is not a UI promise for an empty folder window, whose File > Close is disabled by `RefreshDocumentMenus`. A folder window with no tabs stays; a standalone untitled window's last document close destroys the window. Apps without document support, the window close button and explicit `CloseWorkspace` keep the platform `performClose` / whole-window behaviour.
@@ -40,6 +41,8 @@ Then keep the document-group edits that live in this tree under `third_party/myg
 
 `notify` writes title, represented file, and edited mark only when the document is active. Background documents still fire `OnStateChange`.
 
-Persistence, recovery copies, conflict, and file watches are unchanged.
+The group applies Delete or Don't Save only after every document has confirmed. Saves that completed before a later cancellation remain on disk.
 
 Undo/Redo of a document window are the page editor's history. `performRole` sends those roles through `DocumentsOptions.Command` instead of `document.execCommand`. On macOS, `MyGoWebView` implements `undo:`/`redo:` so a click or key equivalent on the web view reaches that intercept; an AppKit field that is not a descendant of the web view keeps the system undo manager. `SetEnabled` on the Edit menu items reports the page's real `canUndo`/`canRedo`.
+
+For other menu items, `MyGoWebView` follows AppKit's validation order. It calls the WebKit superclass validator only if the superclass implements it and falls back to whether the target handles the action. [AppKit menu validation](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/MenuList/Articles/EnablingMenuItems.html)

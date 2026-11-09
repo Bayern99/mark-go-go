@@ -7,10 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
+)
+
+const (
+	acpPipeDrainGrace = 250 * time.Millisecond
+	acpPipeCloseGrace = 100 * time.Millisecond
 )
 
 // acpError is a JSON-RPC error object, as an error.
@@ -73,9 +79,10 @@ type acpResponse struct {
 // through handleRequest and handing its notifications to
 // handleNotification; call sends a request and waits for the answer.
 type acpAgent struct {
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	stdout io.ReadCloser
+	cmd        *exec.Cmd
+	stdin      io.WriteCloser
+	stdout     io.ReadCloser
+	stderrPipe io.ReadCloser
 
 	writeMu sync.Mutex
 
@@ -87,8 +94,8 @@ type acpAgent struct {
 	handleNotification func(method string, params json.RawMessage)
 
 	exited     chan struct{} // closed once the process has been waited for
-	exitedOnce sync.Once
 	readDone   chan struct{} // closed when readLoop has ended
+	stderrDone chan struct{} // closed when stderr has been drained
 	killOnce   sync.Once
 
 	stderr *limitBuffer
@@ -102,36 +109,87 @@ func newACPAgent(cmd *exec.Cmd, stderr *limitBuffer) (*acpAgent, error) {
 	if err != nil {
 		return nil, err
 	}
-	stdout, err := cmd.StdoutPipe()
+	// Direct file pipes let Wait reap the process without waiting for
+	// descendants that inherited its output descriptors.
+	stdout, stdoutWriter, err := os.Pipe()
 	if err != nil {
+		_ = stdin.Close()
 		return nil, err
 	}
-	cmd.Stderr = stderr
+	stderrPipe, stderrWriter, err := os.Pipe()
+	if err != nil {
+		_ = stdin.Close()
+		_ = stdout.Close()
+		_ = stdoutWriter.Close()
+		return nil, err
+	}
+	cmd.Stdout = stdoutWriter
+	cmd.Stderr = stderrWriter
 	if err := cmd.Start(); err != nil {
+		_ = stdin.Close()
+		_ = stdout.Close()
+		_ = stdoutWriter.Close()
+		_ = stderrPipe.Close()
+		_ = stderrWriter.Close()
 		return nil, err
 	}
+	// The child has its own copies. Leaving the parent's writers open
+	// would prevent the readers from seeing EOF when the agent exits.
+	_ = stdoutWriter.Close()
+	_ = stderrWriter.Close()
 	return &acpAgent{
-		cmd:      cmd,
-		stdin:    stdin,
-		stdout:   stdout,
-		pending:  make(map[int64]chan acpResponse),
-		exited:   make(chan struct{}),
-		readDone: make(chan struct{}),
-		stderr:   stderr,
+		cmd:        cmd,
+		stdin:      stdin,
+		stdout:     stdout,
+		stderrPipe: stderrPipe,
+		pending:    make(map[int64]chan acpResponse),
+		exited:     make(chan struct{}),
+		readDone:   make(chan struct{}),
+		stderrDone: make(chan struct{}),
+		stderr:     stderr,
 	}, nil
 }
 
-// start reads the agent's messages and reaps the process, each in a
-// goroutine of its own. The reaper waits for the reading to be over:
-// Wait closes the pipes, so it is only correct once the read loop is
-// done; killing the process ends the read loop.
+// start reads protocol messages, drains stderr and reaps the process on
+// independent goroutines.
 func (a *acpAgent) start() {
 	go a.readLoop()
 	go func() {
-		<-a.readDone
 		_ = a.cmd.Wait()
-		a.exitedOnce.Do(func() { close(a.exited) })
+		if !a.waitForPipes(acpPipeDrainGrace) {
+			// shortcut: agent descendants can outlive pipe cleanup, add process-tree control if they must exit too.
+			_ = a.stdout.Close()
+			_ = a.stderrPipe.Close()
+			a.waitForPipes(acpPipeCloseGrace)
+		}
+		_ = a.stdin.Close()
+		_ = a.stdout.Close()
+		_ = a.stderrPipe.Close()
+		close(a.exited)
 	}()
+	go func() {
+		defer close(a.stderrDone)
+		_, _ = io.Copy(a.stderr, a.stderrPipe)
+	}()
+}
+
+// waitForPipes lets completed output readers finish, but never waits
+// beyond the supplied duration for inherited descriptors to close.
+func (a *acpAgent) waitForPipes(timeout time.Duration) bool {
+	stdoutDone, stderrDone := a.readDone, a.stderrDone
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for stdoutDone != nil || stderrDone != nil {
+		select {
+		case <-stdoutDone:
+			stdoutDone = nil
+		case <-stderrDone:
+			stderrDone = nil
+		case <-timer.C:
+			return false
+		}
+	}
+	return true
 }
 
 // readLoop delivers every message of the agent until its output ends.
@@ -213,21 +271,27 @@ func (a *acpAgent) call(method string, params any, result any) error {
 	if err := a.write(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params}); err != nil {
 		return fmt.Errorf("could not send %s to the agent: %v", method, err)
 	}
+	var resp acpResponse
 	select {
-	case resp := <-ch:
-		if resp.err != nil {
-			return resp.err
-		}
-		if result == nil || resp.result == nil {
-			return nil
-		}
-		if err := json.Unmarshal(resp.result, result); err != nil {
-			return fmt.Errorf("the answer to %s is malformed: %v", method, err)
-		}
-		return nil
+	case resp = <-ch:
 	case <-a.exited:
-		return errors.New(a.goneMessage(method))
+		// readLoop may have buffered the final response just before exit.
+		select {
+		case resp = <-ch:
+		default:
+			return errors.New(a.goneMessage(method))
+		}
 	}
+	if resp.err != nil {
+		return resp.err
+	}
+	if result == nil || resp.result == nil {
+		return nil
+	}
+	if err := json.Unmarshal(resp.result, result); err != nil {
+		return fmt.Errorf("the answer to %s is malformed: %v", method, err)
+	}
+	return nil
 }
 
 // notify sends a JSON-RPC notification, which no answer follows.
@@ -270,13 +334,18 @@ func (a *acpAgent) kill() {
 // cancelGracefully asks the agent to cancel its turn, gives it grace
 // to stop on its own, then kills it and waits for it to exit.
 func (a *acpAgent) cancelGracefully(sessionID string, grace time.Duration) {
+	timer := time.NewTimer(grace)
+	defer timer.Stop()
 	if sessionID != "" {
-		_ = a.notify("session/cancel", map[string]any{"sessionId": sessionID})
+		// A child that stopped reading can block this write; do not delay the timer.
+		go func() {
+			_ = a.notify("session/cancel", map[string]any{"sessionId": sessionID})
+		}()
 	}
 	select {
 	case <-a.exited:
 		return
-	case <-time.After(grace):
+	case <-timer.C:
 	}
 	a.kill()
 }

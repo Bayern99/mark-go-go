@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -539,24 +540,138 @@ func TestAckQuitWindowWaitsForEveryWindow(t *testing.T) {
 			"doc-a": {id: "doc-a", pathFn: func() string { return "a.md" }, viewMode: "markdown"},
 			"doc-b": {id: "doc-b", pathFn: func() string { return "b.md" }, viewMode: "genui"},
 		},
-		settings:    &settingsStore{dir: dir},
-		quitPending: map[*mygo.Window]bool{a: true, b: true},
+		settings:     &settingsStore{dir: dir},
+		quitAttempt:  1,
+		quitSequence: 1,
+		quitPending:  map[*mygo.Window]bool{a: true, b: true},
 	}
-	done, _ := h.ackQuitWindow(a)
+	done, _ := h.ackQuitWindow(a, 1)
 	if done {
 		t.Fatal("first window must not persist or requit")
 	}
 	if _, err := os.Stat(filepath.Join(dir, sessionFile)); !os.IsNotExist(err) {
 		t.Fatalf("partial ack wrote session: %v", err)
 	}
-	done, file := h.ackQuitWindow(b)
+	done, file := h.ackQuitWindow(b, 1)
 	if !done {
 		t.Fatal("last window must capture the session")
 	}
 	if len(file.Workspaces) != 2 {
 		t.Fatalf("captured %d workspaces", len(file.Workspaces))
 	}
-	if !h.quitting || !h.sessionReady {
-		t.Fatal("last ack must mark quitting so close cannot erase the session")
+	if !h.quitSaving || h.quitting || h.sessionReady {
+		t.Fatal("last ack must wait for a successful session write before marking quit ready")
+	}
+	committed, err := h.saveQuitAttempt(1, file, func(sessionFileData) error {
+		if h.sessionReady || h.quitting {
+			t.Fatal("quit was marked ready before the session write")
+		}
+		return nil
+	})
+	if err != nil || !committed {
+		t.Fatalf("saveQuitAttempt = committed %v, err %v", committed, err)
+	}
+	if !h.quitting || !h.sessionReady || h.quitAttempt != 0 || h.quitPending != nil {
+		t.Fatal("successful session write must make quit ready and clear the attempt")
+	}
+}
+
+func TestQuitAttemptRejectsStaleAckAfterRetry(t *testing.T) {
+	a := &mygo.Window{}
+	b := &mygo.Window{}
+	other := &mygo.Window{}
+	h := &documentHost{
+		byWindow: map[*mygo.Window]*workspace{
+			a: {id: "ws-a"},
+			b: {id: "ws-b"},
+		},
+		byID:         map[string]*docSession{},
+		quitAttempt:  2,
+		quitSequence: 2,
+		quitPending:  map[*mygo.Window]bool{a: true, b: true},
+	}
+
+	if done, _ := h.ackQuitWindow(a, 1); done {
+		t.Fatal("an ack from the previous attempt completed a retry")
+	}
+	if len(h.quitPending) != 2 {
+		t.Fatalf("stale ack changed pending windows: %d", len(h.quitPending))
+	}
+	if h.abortQuitAttempt(2, other, false) {
+		t.Fatal("a failure from a window outside the attempt must be ignored")
+	}
+	if h.quitAttempt != 2 {
+		t.Fatal("foreign failure changed the current attempt")
+	}
+	if done, _ := h.ackQuitWindow(a, 2); done {
+		t.Fatal("first current ack must wait for the other window")
+	}
+	if done, _ := h.ackQuitWindow(b, 2); !done {
+		t.Fatal("last current ack did not complete the attempt")
+	}
+}
+
+func TestQuitAttemptIsBoundedAndDoesNotCaptureNewWindows(t *testing.T) {
+	a := &mygo.Window{}
+	b := &mygo.Window{}
+	h := &documentHost{
+		byWindow: map[*mygo.Window]*workspace{
+			a: {id: "ws-a"},
+		},
+		byID: map[string]*docSession{},
+	}
+	attempt, windows, started := h.beginQuitAttempt()
+	if !started || len(windows) != 1 || h.quitTimer == nil {
+		if h.quitTimer != nil {
+			h.quitTimer.Stop()
+		}
+		t.Fatal("quit attempt must start a bounded ack timer for every current window")
+	}
+
+	// A workspace opened after the attempt began is not in its flush set.
+	h.mu.Lock()
+	h.byWindow[b] = &workspace{id: "ws-b"}
+	h.mu.Unlock()
+	done, _ := h.ackQuitWindow(a, attempt)
+	if done || h.quitSaving {
+		h.quitTimer.Stop()
+		t.Fatal("quit captured a workspace that never acknowledged its flush")
+	}
+	if !h.abortQuitAttempt(attempt, nil, false) {
+		h.quitTimer.Stop()
+		t.Fatal("changed workspace should invalidate the attempt")
+	}
+	if done, _ := h.ackQuitWindow(a, attempt); done {
+		t.Fatal("late ack from an invalidated attempt must be ignored")
+	}
+}
+
+func TestQuitAttemptSaveFailureLeavesAppOpenAndRetryable(t *testing.T) {
+	a := &mygo.Window{}
+	h := &documentHost{
+		byWindow:     map[*mygo.Window]*workspace{a: {id: "ws-a"}},
+		byID:         map[string]*docSession{},
+		quitAttempt:  4,
+		quitSequence: 4,
+		quitPending:  map[*mygo.Window]bool{},
+		quitSaving:   true,
+	}
+
+	committed, err := h.saveQuitAttempt(4, sessionFileData{}, func(sessionFileData) error {
+		return errors.New("disk full")
+	})
+	if err == nil || committed {
+		t.Fatalf("save failure = committed %v, err %v", committed, err)
+	}
+	if h.sessionReady || h.quitting || h.quitSaving || h.quitPending != nil || h.quitAttempt != 0 {
+		t.Fatal("failed session write must leave the app open and clear the failed attempt")
+	}
+	if attempt, wins, started := h.beginQuitAttempt(); !started || attempt != 5 || len(wins) != 1 {
+		if h.quitTimer != nil {
+			h.quitTimer.Stop()
+		}
+		t.Fatalf("retry = attempt %d, windows %d, started %v", attempt, len(wins), started)
+	} else if h.quitTimer != nil {
+		h.quitTimer.Stop()
 	}
 }

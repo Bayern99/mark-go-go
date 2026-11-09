@@ -109,6 +109,39 @@ func (d *Document[T]) ConfirmClose() error {
 	return d.docBase.confirmClose()
 }
 
+// CloseDocumentGroup asks to save the documents w shows, then closes w.
+// A canceled confirmation leaves every document open.
+func (ds *Documents[T]) CloseDocumentGroup(w *Window) error {
+	if ds == nil {
+		return ErrCanceled
+	}
+	if w == nil {
+		return nil
+	}
+	g := groupOf(w)
+	if g == nil {
+		return onMainValue(func() error {
+			if w.native == nil || w.IsDestroyed() || groupOf(w) != nil {
+				return ErrCanceled
+			}
+			w.destroy()
+			return nil
+		})
+	}
+	if !g.beginClosing() {
+		return ErrCanceled
+	}
+	defer g.endClosing()
+	docs := documentsFor(w)
+	discarded, err := g.confirmCloseDocuments(docs)
+	if err != nil {
+		return err
+	}
+	return onMainValue(func() error {
+		return g.commitCloseDocuments(w, docs, discarded)
+	})
+}
+
 // OnClosed is called on the main thread after the document is closed.
 func (b *docBase) OnClosed(fn func()) (off func()) {
 	return b.onClosed.add(fn, false)
@@ -250,11 +283,11 @@ func (g *docGroup) hook() {
 }
 
 func (g *docGroup) windowClosing(e *CloseEvent) {
-	if g.closing {
-		e.PreventDefault()
+	if e.DefaultPrevented() || App.quitting {
 		return
 	}
-	if e.DefaultPrevented() || App.quitting {
+	if g.isClosing() {
+		e.PreventDefault()
 		return
 	}
 	seen := map[*docKind]struct{}{}
@@ -296,33 +329,73 @@ func (g *docGroup) windowClosing(e *CloseEvent) {
 		return
 	}
 	e.PreventDefault()
-	g.closing = true
+	if !g.beginClosing() {
+		return
+	}
 	go func() {
-		ok := true
-		for _, b := range docs {
-			if b.confirmClose() != nil {
-				ok = false
-				break
-			}
-		}
+		discarded, err := g.confirmCloseDocuments(docs)
 		onMain(func() {
-			g.closing = false
-			if !ok {
-				// Cancel leaves every document attached, including ones
-				// whose ask already saved. Don't Save during this attempt
-				// must not stick: the next close should ask again.
-				for _, b := range docs {
-					b.mu.Lock()
-					b.discarded = false
-					b.mu.Unlock()
-				}
-				return
+			if err == nil {
+				err = g.commitCloseDocuments(e.Window, docs, discarded)
 			}
-			if w := e.Window; w != nil && w.native != nil {
-				w.destroy()
-			}
+			g.endClosing()
 		})
 	}()
+}
+
+func (g *docGroup) isClosing() bool {
+	docRegistry.Lock()
+	defer docRegistry.Unlock()
+	return g.closing
+}
+
+func (g *docGroup) beginClosing() bool {
+	docRegistry.Lock()
+	defer docRegistry.Unlock()
+	if g.closing {
+		return false
+	}
+	g.closing = true
+	return true
+}
+
+func (g *docGroup) endClosing() {
+	docRegistry.Lock()
+	g.closing = false
+	docRegistry.Unlock()
+}
+
+func (g *docGroup) confirmCloseDocuments(docs []*docBase) ([]*docBase, error) {
+	return confirmCloseGroup(docs, func(b *docBase) (bool, error) {
+		return b.confirmCloseDeferred()
+	})
+}
+
+func (g *docGroup) commitCloseDocuments(w *Window, docs, discarded []*docBase) error {
+	if w == nil || w.native == nil || w.IsDestroyed() || groupOf(w) != g || !slices.Equal(docs, documentsFor(w)) {
+		return ErrCanceled
+	}
+	for _, b := range discarded {
+		b.mu.Lock()
+		b.discarded = true
+		b.mu.Unlock()
+	}
+	w.destroy()
+	return nil
+}
+
+func confirmCloseGroup(docs []*docBase, confirm func(*docBase) (bool, error)) ([]*docBase, error) {
+	var discarded []*docBase
+	for _, b := range docs {
+		discard, err := confirm(b)
+		if err != nil {
+			return nil, err
+		}
+		if discard {
+			discarded = append(discarded, b)
+		}
+	}
+	return discarded, nil
 }
 
 func (g *docGroup) windowClosed() {
@@ -336,29 +409,43 @@ func (g *docGroup) windowClosed() {
 }
 
 func (b *docBase) confirmClose() error {
+	discard, err := b.confirmCloseDeferred()
+	if err != nil {
+		return err
+	}
+	if discard {
+		b.discard()
+	}
+	return nil
+}
+
+// confirmCloseDeferred records a discard decision for a group close to
+// commit only after every document has confirmed.
+func (b *docBase) confirmCloseDeferred() (discard bool, err error) {
 	b.mu.Lock()
 	if b.closed {
 		b.mu.Unlock()
-		return nil
+		return false, nil
 	}
 	if b.discarded {
 		b.mu.Unlock()
-		return nil
+		return false, nil
 	}
 	edited, autosaves, path := b.edited, b.autosavesLocked(), b.path
 	b.mu.Unlock()
 	if !edited {
-		return nil
+		return false, nil
 	}
 	if autosaves {
 		if _, err := b.write(path, writeAutosave); err == nil {
-			return nil
+			return false, nil
 		}
 	}
-	if !b.askToSave() {
-		return ErrCanceled
+	ok, discard := b.askToSaveDecision()
+	if !ok {
+		return false, ErrCanceled
 	}
-	return nil
+	return discard, nil
 }
 
 func (b *docBase) closeDocument() error {

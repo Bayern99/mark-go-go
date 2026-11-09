@@ -137,6 +137,7 @@ export type NativeCommandName =
 export interface NativeCommand {
   id: string
   command: NativeCommandName
+  attempt?: number
 }
 
 export interface Disposable {

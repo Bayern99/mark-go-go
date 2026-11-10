@@ -17,6 +17,7 @@ import type {
   WorkspaceSnapshot,
 } from './types'
 import { cancelled, failureOf, GenerationError } from './generationError'
+import { validateGeneratedView } from '../plugins/genui/a2ui'
 import { BrowserNavIndex, liveTexts, type BrowserNavSeed } from '../workspace/nav'
 
 export const DEMO_MARKDOWN = `# Quarterly Report
@@ -382,6 +383,16 @@ export function createBrowserHost(
             kind: 'agent-error',
             message: "The document's path changed while the agent worked, so the view was not written.",
             hint: 'Generate again.',
+          })
+        }
+        // The same strict check the Go host makes before it writes a view:
+        // an invalid view must not replace the current one or its Undo.
+        const verdict = validateGeneratedView(body)
+        if (!verdict.ok) {
+          throw new GenerationError({
+            kind: 'invalid-output',
+            message: `The generated view is not valid: ${verdict.error}`,
+            hint: 'Generate again; rephrasing the request may help.',
           })
         }
         if (view !== null) kept = view

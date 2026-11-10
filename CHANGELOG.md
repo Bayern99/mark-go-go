@@ -13,6 +13,16 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 
 ### English
 
+#### GenUI generation and architecture evidence
+
+- ACP initialization reports the client identity and checks the negotiated protocol. Generation prompts name canonical absolute input/output paths, avoiding AGY's observed interpretation of `./source.md` as `/source.md`.
+- **ACP process reuse**: the app keeps at most one idle agent process under an exclusive per-run lease, with a two-minute idle timeout. Busy documents use independent transient processes, and only a process whose fresh session was closed and acknowledged returns to idle. Each run still gets its own session, working directory and source snapshots; executable/environment changes or any uncertain state discard the process without retry. Measured first sessions on three new processes were 3.16–3.51 s versus 0.25–0.70 s for fresh sessions on one warm process, and `session/close` was acknowledged in 0.18–0.20 ms.
+- **Cancellation no longer waits for process exit**: an acknowledged `session/cancel` completes the run on the prompt turn's answer, with a one-second bound before a stuck process is killed. Private run directories are removed for every result; the process directory lasts until the cache closes at teardown. A tool-call scope violation still discards the process.
+- **Terminology**: the generation content rule keeps the source's technical terms as written even in translation, without a dictionary or post-processing.
+- Added opt-in, `readbench`-tagged native tracing of actual agent processes, ACP sessions/configuration, raw artifacts and commit results. The independent ReadBench runner records real WebView observations and source-grounded answer reviews; model benchmarks are explicit runs, separate from fast deterministic checks.
+- Documented the actual UAX #31 component-id constraint in the generation format and corrected historical source-id coverage claims. ADR 0002/0003 distinguish the default ACP generator from replaceable evidence selectors and inference formats.
+- Added a build-tagged, app-owned controlled GenUI experiment: real Jev component/structure decisions, Gemini content-only generation over the same ACP path, and deterministic A2UI assembly. Twelve native runs and source reviews are recorded in the [decision report](docs/research/readbench/controlled-genui-decision.md); production generation remains unchanged.
+
 #### Document reliability
 
 - Canceling a window close keeps every tab and its recovery copy, including a tab whose Delete or Don't Save button was already clicked.
@@ -58,6 +68,16 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 ### 中文
 
 #20 的工作区与 Portrait 更新。自动化检查、原生验证和待验收项见[验收记录](docs/acceptance.md)。
+
+#### GenUI 生成与架构证据
+
+- ACP 初始化报告客户端身份并核对协商的协议版本；生成要求明确使用规范化后的绝对输入/输出路径，避免 AGY 把 `./source.md` 解释成 `/source.md`。
+- **ACP 进程复用**：应用保留至多一个空闲 Agent 进程，每次运行独占租约，空闲两分钟过期；忙碌文档各自使用临时独立进程，只有新会话已关闭且关闭被确认的进程才回到空闲。每次运行仍有自己的会话、工作目录和来源快照；可执行文件或环境变化、任何不确定状态都丢弃进程且不重试。实测三个新进程的首次会话为 3.16–3.51 s，同一热进程上的全新会话为 0.25–0.70 s；`session/close` 约 0.18–0.20 ms 应答。
+- **取消不再等待进程退出**：已应答的 `session/cancel` 在提示轮应答时结束本次运行，最多等 1 秒，之后有界杀死卡住的进程。私有运行目录无论结果都删除；进程目录保留到退出时关闭缓存。工具调用越界仍丢弃进程。
+- **术语**：生成内容规则要求即使翻译也保留原文的技术术语，不引入词典，也不对生成结果做事后替换。
+- 新增显式启用的 `readbench` 构建观测，记录真实 Agent 进程、ACP 会话及配置、原始产物和提交结果。独立 ReadBench 保存真实 WebView 行为和逐条原文审阅；完整模型基准与日常快速确定性检查分开运行。
+- 新增仅在实验构建启用的应用内受控 GenUI：真实 Jev 决定组件与结构，同一 ACP/Gemini 仅填内容槽，由代码装配 A2UI。[决策报告](docs/research/readbench/controlled-genui-decision.md)记录 12 次原生运行与逐条原文审阅；生产默认生成方式不变。
+- 格式说明补上实际 UAX #31 组件 ID 约束，研究入口更正历史来源 ID 覆盖率的解释；ADR 0002/0003 区分默认 ACP 生成执行器、可替换证据选择与推理格式。
 
 #### 文档可靠性
 

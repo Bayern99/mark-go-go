@@ -31,6 +31,7 @@ import {
 } from "./generated/mygo";
 import { cancelled, failureOf, GenerationError, isFailureKind } from "./generationError";
 import { applyNativeEdit } from "../editor/nativeEdit";
+import { validateGeneratedView, type GeneratedViewVerdict } from "../plugins/genui/a2ui";
 
 function asNativeCommand(cmd: WireNativeCommand): NativeCommand {
   return { id: cmd.id, command: cmd.command as NativeCommandName, attempt: cmd.attempt };
@@ -245,6 +246,25 @@ export function reportNativeEditState(id: string, canUndo: boolean, canRedo: boo
   if (!isMyGo()) return
   void WorkspaceHost.setNativeEditState(id, canUndo, canRedo);
 }
+
+declare global {
+  interface Window {
+    /** The view validator the Go host calls before it writes a generated view. */
+    __mgoValidateGeneratedView?: (raw: string) => Promise<GeneratedViewVerdict>
+  }
+}
+
+/**
+ * Installs the page-side validator the Go host asks before it writes a view
+ * file. It is pure: it reads only its argument, uses the app's own A2UI
+ * catalog and message processor, and needs no mounted document or component.
+ * An absent bridge, a throw or a rejection all fail closed in the host.
+ */
+export function installGeneratedViewValidator(): void {
+  window.__mgoValidateGeneratedView = async (raw: string) => validateGeneratedView(raw)
+}
+
+installGeneratedViewValidator()
 
 /**
  * The one write-back of a pane's text: read the Markdown it really holds,

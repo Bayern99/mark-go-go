@@ -145,7 +145,7 @@ describe('GenUI view mode', () => {
       await showMode('genui')
       await genui().getByText('Details').click()
       await genui().getByRole('button', { name: /Size \(MB\)/ }).click()
-      await expect.element(genui().getByText('History')).toBeVisible()
+      await expect.element(genui().getByRole('heading', { name: 'History', exact: true })).toBeVisible()
       await genui().getByText('Summary').click()
       await expect.element(genui().getByText('In short')).toBeVisible()
 
@@ -727,6 +727,121 @@ describe('GenUI source references', () => {
         "None of this part's sources are in the document now.",
       )
     } finally {
+      await app.unmount()
+    }
+  })
+
+  it('edits the exact source whose heading is clicked, including repeated headings', async () => {
+    const view = sourcedView(SOURCED, [{ id: 'summaries', sources: ['earlySummary', 'lateSummary'] }], {
+      earlySummary: { heading: 'Summary', occurrence: 1 },
+      lateSummary: { heading: 'Summary', occurrence: 2 },
+    })
+    const app = await mountApp(SOURCED, createBrowserHost(SOURCED, 'report.md', { view }))
+    try {
+      await showMode('genui')
+      const card = await vi.waitFor(() => block(app.container, 'summaries'))
+      const early = card.querySelector<HTMLButtonElement>(
+        '.genui-source-heading[data-source-id="earlySummary"]',
+      )
+      const late = card.querySelector<HTMLButtonElement>(
+        '.genui-source-heading[data-source-id="lateSummary"]',
+      )
+      if (!early || !late) throw new Error('source heading buttons missing')
+      expect(early.textContent).toBe('Summary')
+      expect(late.textContent).toBe('Summary')
+      expect(early.disabled).toBe(false)
+      expect(late.disabled).toBe(false)
+
+      late.click()
+      await vi.waitFor(() => {
+        expect(viewMode('richtext')).toHaveAttribute('aria-checked', 'true')
+        expect(richSelection(app.container)).toBe('Summary|Late summary.')
+      })
+
+      await showMode('genui')
+      const again = await vi.waitFor(() => block(app.container, 'summaries'))
+      again
+        .querySelector<HTMLButtonElement>('.genui-source-heading[data-source-id="earlySummary"]')
+        ?.click()
+      await vi.waitFor(() => {
+        expect(viewMode('richtext')).toHaveAttribute('aria-checked', 'true')
+        expect(richSelection(app.container)).toBe('Summary|Early summary.')
+      })
+    } finally {
+      await app.unmount()
+    }
+  })
+
+  it('moves with the keyboard to the source heading it picked', async () => {
+    const host = createBrowserHost(SOURCED, 'report.md', { view: sourcedView(SOURCED, POINTS, TABLE) })
+    const app = await mountApp(SOURCED, host)
+    try {
+      await showMode('genui')
+      const both = await vi.waitFor(() => block(app.container, 'both'))
+      const metrics = both.querySelector<HTMLButtonElement>(
+        '.genui-source-heading[data-source-id="metrics"]',
+      )
+      if (!metrics) throw new Error('metrics heading button missing')
+      metrics.focus()
+      await userEvent.keyboard('{Enter}')
+      await vi.waitFor(() => {
+        expect(viewMode('richtext')).toHaveAttribute('aria-checked', 'true')
+        expect(richSelection(app.container)).toBe('Metrics|Second body.')
+      })
+    } finally {
+      await app.unmount()
+    }
+  })
+
+  it('keeps a missing source heading disabled instead of redirecting to a surviving sibling', async () => {
+    const view = sourcedView(SOURCED, POINTS, TABLE)
+    const host = createBrowserHost(SOURCED, 'report.md', { view })
+    let viewText = ''
+    const stop = host.watchView((snapshot) => {
+      viewText = snapshot.text
+    })
+    const app = await mountApp(SOURCED, host)
+    try {
+      await showMode('genui')
+      await vi.waitFor(() => expect(viewText).toBe(view))
+      expect((await host.load()).text).toBe(SOURCED)
+
+      host.reload(SOURCED.replace('# Overview', '# Intro'))
+      const both = await vi.waitFor(
+        () => {
+          const card = block(app.container, 'both')
+          expect(
+            card.querySelector<HTMLButtonElement>('.genui-source-heading[data-source-id="overview"]')
+              ?.disabled,
+          ).toBe(true)
+          return card
+        },
+        { timeout: SOURCE_DEBOUNCE_MS + 2000 },
+      )
+      const missing = both.querySelector<HTMLButtonElement>(
+        '.genui-source-heading[data-source-id="overview"]',
+      )
+      const loaded = both.querySelector<HTMLButtonElement>(
+        '.genui-source-heading[data-source-id="metrics"]',
+      )
+      if (!missing || !loaded) throw new Error('source heading buttons missing')
+      expect(missing.getAttribute('data-source-available')).toBe('false')
+      expect(loaded.disabled).toBe(false)
+
+      // The reference is gone, so it does nothing at all rather than open Metrics.
+      missing.click()
+      expect(viewMode('genui')).toHaveAttribute('aria-checked', 'true')
+      expect(viewMode('richtext')).toHaveAttribute('aria-checked', 'false')
+
+      loaded.click()
+      await vi.waitFor(() => {
+        expect(viewMode('richtext')).toHaveAttribute('aria-checked', 'true')
+        expect(richSelection(app.container)).toBe('Metrics|Second body.')
+      })
+      expect((await host.load()).text).toBe(SOURCED.replace('# Overview', '# Intro'))
+      expect(viewText).toBe(view)
+    } finally {
+      stop.dispose()
       await app.unmount()
     }
   })

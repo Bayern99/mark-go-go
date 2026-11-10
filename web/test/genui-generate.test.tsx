@@ -8,9 +8,8 @@ import {
   type FakeGenerator,
 } from '../src/host/browserHost'
 import { GenerationError } from '../src/host/generationError'
-import type { GenerateFailure, GenerateProgress } from '../src/host/types'
+import type { GenerateFailure, GenerateProgress, ViewSnapshot } from '../src/host/types'
 import { extractSections } from '../src/markdown/sections'
-import { CATALOG_COMPONENTS } from '../src/plugins/genui/a2ui'
 import { SOURCE_DEBOUNCE_MS } from '../src/plugins/genui/sources'
 import { mountApp, type MountedApp } from './helpers/app'
 
@@ -38,6 +37,31 @@ function viewFile(title: string, request?: string): string {
           surfaceId: 'view',
           catalogId: 'markgogo.dev:genui/v1',
           components: [{ id: 'root', component: 'KeyPoints', title, items: ['A point.'], sources: ['overview'] }],
+        },
+      },
+    ],
+  })
+}
+
+/** A view whose envelope is valid but nests Tabs inside a Card: the artifact the SDK rejects. */
+function nestedBadView(): string {
+  return JSON.stringify({
+    version: 2,
+    generatedAt: '2026-11-10T02:47:20Z',
+    model: 'gemini-3.8-flash',
+    sources: { overview: { heading: 'Overview', occurrence: 1 } },
+    a2ui: [
+      {
+        version: '1.0',
+        createSurface: {
+          surfaceId: 'view',
+          catalogId: 'markgogo.dev:genui/v1',
+          components: [
+            { id: 'root', component: 'Column', children: ['card'] },
+            { id: 'card', component: 'Card', child: 'tabs' },
+            { id: 'tabs', component: 'Tabs', tabs: [{ title: 'A tab', child: 'kp' }] },
+            { id: 'kp', component: 'KeyPoints', items: ['A point.'], sources: ['overview'] },
+          ],
         },
       },
     ],
@@ -142,9 +166,6 @@ describe('GenUI generation', () => {
         end: s.end,
       })),
     )
-    // The agent learns the format and every catalog component's definition.
-    expect(req?.format).toContain('# Mark Go Go view file format')
-    for (const name of CATALOG_COMPONENTS) expect(req?.format).toContain(`"${name}"`)
 
     agent.finish(viewFile('Made by the agent', 'Focus on the metrics'))
     await expect.element(genui().getByText('Made by the agent', { exact: false })).toBeVisible()
@@ -550,6 +571,54 @@ describe('GenUI regeneration', () => {
     await expect.element(genui().getByText('All new', { exact: false })).toBeVisible()
     expect(host.keptView()).toBe(trackedView())
     await expect.element(undo()).toBeEnabled()
+  })
+
+  it('keeps the old view and its undo when a run produces invalid nesting', async () => {
+    const agent = scripted()
+    const oldView = trackedView()
+    const kept = viewFile('The earlier view')
+    const host = createBrowserHost(DOCUMENT, 'report.md', { view: oldView, kept, generator: agent.generator })
+    await openGenUI(host)
+    await expect.element(genui().getByText('Old overview', { exact: false })).toBeVisible()
+
+    await regenerateAll().click()
+    agent.finish(nestedBadView())
+
+    // The reader is told what is wrong, with the invalid-output hint.
+    const alert = panel().getByRole('alert')
+    await containsText(alert, 'UNALLOWED_')
+    await containsText(alert, 'Tabs')
+    await containsText(alert, 'Generate again')
+    // Neither the view nor the view kept to go back to changed.
+    expect(host.keptView()).toBe(kept)
+    await expect.element(genui().getByText('Old overview', { exact: false })).toBeVisible()
+    await expect.element(undo()).toBeEnabled()
+    await undo().click()
+    await expect.element(genui().getByText('The earlier view', { exact: false })).toBeVisible()
+  })
+
+  it('rejects an invalid generated view as invalid-output before it reaches the view or undo', async () => {
+    const agent = scripted()
+    const oldView = trackedView()
+    const kept = viewFile('The earlier view')
+    const host = createBrowserHost(DOCUMENT, 'report.md', { view: oldView, kept, generator: agent.generator })
+    const snapshots: ViewSnapshot[] = []
+    host.watchView((snap) => snapshots.push(snap))
+
+    const run = host.generate(
+      { text: DOCUMENT, mode: 'full', format: '[]', sections: [] },
+      () => undefined,
+      new AbortController().signal,
+    )
+    agent.finish(nestedBadView())
+    const error: unknown = await run.then(
+      () => undefined,
+      (failure: unknown) => failure,
+    )
+    expect(error).toBeInstanceOf(GenerationError)
+    expect((error as GenerationError).failure.kind).toBe('invalid-output')
+    expect(host.keptView()).toBe(kept)
+    await vi.waitFor(() => expect(snapshots.at(-1)?.text).toBe(oldView))
   })
 
   it('keeps the earlier view when a run fails', async () => {

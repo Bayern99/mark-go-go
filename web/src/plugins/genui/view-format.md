@@ -28,7 +28,7 @@ the document:
 
 | Field        | Type   | Required | Meaning |
 |--------------|--------|----------|---------|
-| `heading`    | string | yes      | The heading's plain text exactly as it reads in the document, without `#` marks or inline formatting (`## **Q3** results` → `Q3 results`). Matching ignores case and repeated spaces. |
+| `heading`    | string | yes      | The heading's plain text exactly as it reads in the document, including its numbering and punctuation, without `#` marks or inline formatting (`## **Q3** results` → `Q3 results`). Matching ignores case and repeated spaces. |
 | `occurrence` | number | no       | Which heading with that text, counting from 1 in document order, when the document repeats a heading. Default `1`. |
 | `hash`       | string | no       | Hash of the section's source text when the view was made. Written by Mark Go Go; leave it out. |
 
@@ -50,12 +50,16 @@ Each component with sources shows where it came from, and is marked when its
 source moved on since the view was made: **Source changed** when a section's
 hash no longer matches, **Source not found** when a heading is gone (this wins
 over changed). A source without a `hash` is never marked. **Source not found**
-still shows when only some of a component's sources are gone. **Edit in source**
-and **Note** then use the first of those sources that is still in the document;
-they are disabled only when none is, and the frame says so. An exact quote is
-selected where it still occurs in a remaining source; if it is gone, the first
-remaining source section is selected. A missing heading is never replaced by
-another heading that happens to share its text.
+still shows when only some of a component's sources are gone. The frame lists
+one entry per source id, in the order the component names them: each entry is
+a button naming that source's heading and targeting that heading's occurrence,
+so an occurrence that is gone disables its own entry and never redirects the
+reader to a sibling; entries whose section is still there stay usable.
+**Edit in source** and **Note** then use the first of those sources that is
+still in the document; they are disabled only when none is, and the frame says
+so. An exact quote is selected where it still occurs in a remaining source; if
+it is gone, the first remaining source section is selected. A missing heading
+is never replaced by another heading that happens to share its text.
 
 ## Messages
 
@@ -68,11 +72,16 @@ messages replace components by id. Other message types are not allowed.
   reference must name a component that exists.
 - A component is an object with an `id`, a `component` naming a catalog
   component, and that component's properties, nothing else.
+- Every component `id` must be a valid Unicode UAX #31 identifier. ASCII
+  letters followed by letters, digits or underscores are a safe choice
+  (`principlesTable`, `key_points`); do not use hyphens (`key-points`).
 
 A component the catalog does not have is shown as an error where it is; the
-rest of the view still renders. Anything else that is wrong (a message that is
-not A2UI 1.0, a property of the wrong type, a missing or extra property, a
-reference to no component, a missing `root`, a component placed where the
+rest of the view still renders. A view the app generates is checked this way
+before it is written: an unknown component or any other error rejects that
+generated view and the previous view stays. Anything else that is wrong (a
+message that is not A2UI 1.0, a property of the wrong type, a missing or extra
+property, a reference to no component, a missing `root`, a component placed where the
 nesting rules below do not allow it) makes the whole view one error, which
 names the component and the reason.
 
@@ -95,7 +104,7 @@ Layout and text come from the A2UI basic catalog, with its properties:
   top or in a `Column` only.
 - `Card`: `child` (one component id): a `Column`, a `Text` or a content
   component.
-- `Text`: `text`, optional `variant` (`h1`–`h5`, `caption`, `body`). Body
+- `Text`: `text`, optional `variant` (`caption` or `body`). Body
   text is Markdown: bold, italic, code, lists and quotes are shown; links show
   as their text only, images and HTML are not shown.
 

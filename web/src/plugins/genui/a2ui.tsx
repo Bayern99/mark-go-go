@@ -91,6 +91,113 @@ function required<T>(value: T | undefined, name: string): T {
   return value
 }
 
+/** The only messages a generated view may hold. */
+const GENERATED_MESSAGES = ['createSurface', 'updateComponents']
+
+export type GeneratedViewVerdict = { ok: true } | { ok: false; error: string }
+
+function rejected(error: string): GeneratedViewVerdict {
+  return { ok: false, error }
+}
+
+/**
+ * Checks a complete view file before the host writes it or keeps it to go
+ * back to. Unlike `loadSurface`, which keeps reading a hand-written view
+ * with an unknown component shown in place, a generated view is strict:
+ * the catalog, props, message kinds and version, single surface, root,
+ * references, nesting, cycles and every component source id are checked.
+ * A whole new view rejects orphans; merged updates may retain retired
+ * children in history. The processor is disposed after every check and
+ * no mounted component or document is needed.
+ */
+export function validateGeneratedView(raw: string): GeneratedViewVerdict {
+  let file: unknown
+  try {
+    file = JSON.parse(raw)
+  } catch {
+    return rejected('The view is not valid JSON.')
+  }
+  if (!isRecord(file)) return rejected('The view is not a JSON object.')
+  if (file.version !== 2) return rejected('The view is not a version 2 view file.')
+  if (!isRecord(file.sources)) return rejected("The view's sources are not an object.")
+  const messages = file.a2ui
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return rejected('The view has no A2UI messages.')
+  }
+  const unknown = unknownComponent(messages)
+  if (unknown) return rejected(unknown)
+
+  // An update is merged into the current view's messages, and A2UI has no
+  // way to delete a component: replacing a container with a leaf retires its
+  // old children, which stay in the history. That is the same reachable
+  // reading `loadSurface` has always had for a view file. A whole new view
+  // has no history, so an unreachable component there is still refused.
+  const merged = messages.some((message) => isRecord(message) && isRecord(message.updateComponents))
+  const processor = new MessageProcessor<ReactCatalogComponent>([catalog], undefined, {
+    validationConfig: {
+      ...STRICT_VALIDATION,
+      allowOrphanComponents: merged,
+      allowedMessages: GENERATED_MESSAGES,
+      targetVersion: '1.0',
+    },
+  })
+  try {
+    // The processor validates the props, message kinds, version and the
+    // whole component graph: root, references, nesting, cycles, orphans.
+    processor.processMessages(messages as Parameters<typeof processor.processMessages>[0])
+    const surfaces = [...processor.model.surfacesMap.values()]
+    if (surfaces.length !== 1) {
+      return rejected(`The view must create exactly one surface; it creates ${surfaces.length}.`)
+    }
+    const missing = missingSource(messages, file.sources)
+    if (missing) return rejected(missing)
+    return { ok: true }
+  } catch (error) {
+    return rejected(describe(error))
+  } finally {
+    processor.dispose()
+  }
+}
+
+/** The first generated component the catalog cannot show, if any. */
+function unknownComponent(messages: unknown[]): string | undefined {
+  for (const component of componentsOf(messages)) {
+    if (typeof component.component !== 'string') continue
+    if (KNOWN.has(component.component)) continue
+    const id = typeof component.id === 'string' ? component.id : '(no id)'
+    return `Component '${id}' uses '${component.component}', which is not a component this app can show.`
+  }
+  return undefined
+}
+
+/** The first source id a component uses that the view does not define. */
+function missingSource(messages: unknown[], sources: Record<string, unknown>): string | undefined {
+  for (const component of componentsOf(messages)) {
+    if (!Array.isArray(component.sources)) continue
+    for (const source of component.sources) {
+      if (typeof source === 'string' && !Object.hasOwn(sources, source)) {
+        const id = typeof component.id === 'string' ? component.id : '(no id)'
+        return `Component '${id}' uses the source '${source}', which the view does not have.`
+      }
+    }
+  }
+  return undefined
+}
+
+/** Every component object of every createSurface and updateComponents message. */
+function* componentsOf(messages: unknown[]): Generator<Record<string, unknown>> {
+  for (const message of messages) {
+    if (!isRecord(message)) continue
+    for (const key of GENERATED_MESSAGES as Array<'createSurface' | 'updateComponents'>) {
+      const body = message[key]
+      if (!isRecord(body) || !Array.isArray(body.components)) continue
+      for (const component of body.components) {
+        if (isRecord(component)) yield component
+      }
+    }
+  }
+}
+
 export type LoadedSurface =
   | { ok: true; surface: SurfaceModel<ReactCatalogComponent>; dispose(): void }
   | { ok: false; error: string }

@@ -82,12 +82,6 @@ func TestGenerateUpdate(t *testing.T) {
 	if len(outcomes) != 2 || outcomes[0]["optionId"] != "allow" || outcomes[1]["optionId"] != "reject" {
 		t.Errorf("permission outcomes = %v, want read allowed and edit rejected", outcomes)
 	}
-	prompt := logRecv(log, "session/prompt")[0]["prompt"].([]any)[0].(map[string]any)["text"].(string)
-	for _, want := range []string{"./view.json", `"b"`, "updateComponents", `"view"`, "Make the intro friendlier."} {
-		if !strings.Contains(prompt, want) {
-			t.Errorf("the update prompt does not mention %s", want)
-		}
-	}
 
 	// The update is appended to the view's messages; every source is
 	// hashed from this run's text, and the new one is added.

@@ -10,6 +10,7 @@ import {
   wrapHostAsWorkspace,
 } from '../src/host/browserHost'
 import type { WorkspaceAdapter } from '../src/host/types'
+import { MOD } from './helpers/platform'
 
 async function mountWorkspace(workspace: WorkspaceAdapter): Promise<{
   container: HTMLDivElement
@@ -128,7 +129,7 @@ describe('restored bytes survive close and quit',
           await waitForPanes(app.container, 1)
           await enterSourceMode(app.container)
           await userEvent.click(app.container.querySelector<HTMLElement>('.cm-content')!)
-          await userEvent.keyboard('{Meta>}a{/Meta}{Backspace}')
+          await userEvent.keyboard(`{${MOD}>}a{/${MOD}}{Backspace}`)
           await workspace.closeDocument(host.id)
           expect((await host.load()).text).toBe('')
         } finally {

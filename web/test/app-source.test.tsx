@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createBrowserHost } from '../src/host/browserHost'
 import type { HostAdapter, HostDocSnapshot } from '../src/host/types'
 import { mountApp } from './helpers/app'
+import { IS_MAC, MOD } from './helpers/platform'
 import { scrollViewport } from './helpers/scroll'
 import { caretLineInSource, sourceLines, visibleSource } from './helpers/source'
 
@@ -104,21 +105,30 @@ describe('App source mode', () => {
     }
   })
 
-  it('toggles with ⌘/ and Ctrl+/', async () => {
+  it('toggles with the platform shortcut', async () => {
     const app = await mountApp(DOCUMENT)
     try {
-      await toggleShortcut('Meta')
+      await toggleShortcut(MOD)
       await vi.waitFor(() => {
         expect(checkedMode(app.container)).toBe('markdown')
         expect(visibleSource(app.container)).toBe(DOCUMENT)
       })
 
-      await toggleShortcut('Control')
+      await toggleShortcut(MOD)
       await vi.waitFor(() => {
         expect(checkedMode(app.container)).toBe('richtext')
         expect(app.container.querySelector<HTMLElement>('.mgo-wysiwyg-root')?.hidden).toBe(false)
         expect(app.container.querySelector<HTMLElement>('.mgo-source-root')?.hidden).toBe(true)
       })
+
+      // macOS also accepts Ctrl, like the rest of the app's shortcuts.
+      if (IS_MAC) {
+        await toggleShortcut('Control')
+        await vi.waitFor(() => {
+          expect(checkedMode(app.container)).toBe('markdown')
+          expect(visibleSource(app.container)).toBe(DOCUMENT)
+        })
+      }
     } finally {
       await app.unmount()
     }
@@ -206,7 +216,7 @@ describe('App source mode', () => {
         { timeout: 3000 },
       )
 
-      await userEvent.keyboard('{Meta>}z{/Meta}')
+      await userEvent.keyboard(`{${MOD}>}z{/${MOD}}`)
       await vi.waitFor(() => expect(visibleSource(app.container)).toBe(DOCUMENT))
       await vi.waitFor(() => expect(update).toHaveBeenLastCalledWith(DOCUMENT), {
         timeout: 3000,

@@ -60,17 +60,12 @@ type acpInitializeHandshake struct {
 // acpLease is one exclusive use of a cached process. The run opens its
 // own session on it; the lease returns the process to the cache only
 // when the run proved the session closed and the process is healthy.
+// The process metadata and its initialize answer live in the embedded
+// cachedAgentProcess, so a reused lease carries them without copying.
 type acpLease struct {
-	cache          *acpProcessCache
-	agent          *acpAgent
-	reused         bool
-	executable     string
-	args           []string
-	cwd            string
-	startedAt      time.Time
-	idleSince      time.Time
-	envFingerprint string
-	initialize     acpInitializeHandshake
+	cache *acpProcessCache
+	*cachedAgentProcess
+	reused bool
 
 	// priorSessionID is the session ID the process already had before
 	// this lease; a session/new answer must be a different, non-empty
@@ -124,17 +119,10 @@ func (c *acpProcessCache) lease(executable string, env []string) (*acpLease, err
 	if proc != nil {
 		if proc.executable == executable && proc.envFingerprint == fingerprint && !proc.agent.hasExited() {
 			return &acpLease{
-				cache:          c,
-				agent:          proc.agent,
-				reused:         true,
-				executable:     proc.executable,
-				args:           proc.args,
-				cwd:            proc.cwd,
-				startedAt:      proc.startedAt,
-				idleSince:      proc.idleSince,
-				envFingerprint: proc.envFingerprint,
-				initialize:     proc.initialize,
-				priorSessionID: proc.lastSessionID,
+				cache:              c,
+				cachedAgentProcess: proc,
+				reused:             true,
+				priorSessionID:     proc.lastSessionID,
 			}, nil
 		}
 		// A different executable or environment, or a process that
@@ -161,13 +149,15 @@ func (c *acpProcessCache) startLease(executable string, env []string, fingerprin
 	}
 	c.watchProcess(agent)
 	return &acpLease{
-		cache:          c,
-		agent:          agent,
-		executable:     executable,
-		args:           cmd.Args,
-		cwd:            dir,
-		startedAt:      time.Now(),
-		envFingerprint: fingerprint,
+		cache: c,
+		cachedAgentProcess: &cachedAgentProcess{
+			agent:          agent,
+			executable:     executable,
+			args:           cmd.Args,
+			cwd:            dir,
+			startedAt:      time.Now(),
+			envFingerprint: fingerprint,
+		},
 	}, nil
 }
 
@@ -235,17 +225,9 @@ func (l *acpLease) release(keep bool) {
 			return
 		}
 		c := l.cache
-		proc := &cachedAgentProcess{
-			agent:          l.agent,
-			executable:     l.executable,
-			args:           l.args,
-			cwd:            l.cwd,
-			startedAt:      l.startedAt,
-			envFingerprint: l.envFingerprint,
-			initialize:     l.initialize,
-			lastSessionID:  l.acceptedSessionID,
-			idleSince:      time.Now(),
-		}
+		proc := l.cachedAgentProcess
+		proc.lastSessionID = l.acceptedSessionID
+		proc.idleSince = time.Now()
 		c.mu.Lock()
 		if c.closed {
 			c.mu.Unlock()

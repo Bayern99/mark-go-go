@@ -513,7 +513,9 @@ func (r *genRun) execute(ctx context.Context) error {
 	} else {
 		var initRaw json.RawMessage
 		var initRawPtr *json.RawMessage
-		if r.trace != nil {
+		// A cached cold process keeps its real initialize answer for
+		// every later lease, even when this first run has no observer.
+		if r.trace != nil || r.lease != nil {
 			initRawPtr = &initRaw
 		}
 		if err := r.callAgent(ctx, "initialize", acpInitializeParams, &initialized, initRawPtr); err != nil {

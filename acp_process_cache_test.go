@@ -184,6 +184,102 @@ func TestAgentCacheDiscardsIdleProcessOnExecutableChange(t *testing.T) {
 	}
 }
 
+func TestAgentCacheKeepsCachedInitializeRawForLaterObservedRun(t *testing.T) {
+	c := newCacheHarness(t, fakeSpec{Out: minimalOut, SessionClose: true, UniqueSessions: true})
+	// The cold run has no observer; its real initialize answer must
+	// still be kept for the process's later leases.
+	if err := c.generate(t, "cold"); err != nil {
+		t.Fatalf("cold generation: %v", err)
+	}
+
+	type recorded struct {
+		event   string
+		payload any
+	}
+	var events []recorded
+	base := c.host.prepareJob
+	c.host.prepareJob = func(job *generationJob) {
+		base(job)
+		job.Observe = func(event string, payload any) {
+			events = append(events, recorded{event, payload})
+		}
+	}
+	if err := c.generate(t, "warm"); err != nil {
+		t.Fatalf("warm generation: %v", err)
+	}
+
+	pids := logPids(t, c.logPath)
+	if len(pids) != 1 {
+		t.Fatalf("processes = %v, want one reused process", pids)
+	}
+	initializeSent := 0
+	count := func(name string) int {
+		n := 0
+		for _, e := range events {
+			if e.event == name {
+				n++
+			}
+		}
+		return n
+	}
+	var cached *traceInitializeCachedPayload
+	for _, e := range events {
+		switch payload := e.payload.(type) {
+		case *traceInitializeCachedPayload:
+			cached = payload
+		case *traceACPPayload:
+			if payload.Direction != acpSent {
+				continue
+			}
+			var msg struct {
+				Method string `json:"method"`
+			}
+			if json.Unmarshal(payload.Line, &msg) == nil && msg.Method == "initialize" {
+				initializeSent++
+			}
+		}
+	}
+	if got := count(traceAgentStart); got != 0 {
+		t.Errorf("agent.start events on the warm run = %d, want none", got)
+	}
+	if got := count(traceInitialize); got != 0 {
+		t.Errorf("initialize events on the warm run = %d, want none", got)
+	}
+	if got := count(traceAgentReused); got != 1 {
+		t.Errorf("agent.reused events = %d, want one", got)
+	}
+	if got := count(traceInitCached); got != 1 || cached == nil {
+		t.Fatalf("initialize.cached = %d (%+v), want one", got, cached)
+	}
+	if len(cached.Result) == 0 {
+		t.Fatal("initialize.cached kept no raw answer from the unobserved cold run")
+	}
+	var result struct {
+		ProtocolVersion   int `json:"protocolVersion"`
+		AgentCapabilities struct {
+			SessionCapabilities map[string]json.RawMessage `json:"sessionCapabilities"`
+		} `json:"agentCapabilities"`
+	}
+	if err := json.Unmarshal(cached.Result, &result); err != nil {
+		t.Fatalf("cached raw initialize answer is malformed: %v", err)
+	}
+	if result.ProtocolVersion != acpProtocolVersion {
+		t.Errorf("cached protocolVersion = %d, want %d", result.ProtocolVersion, acpProtocolVersion)
+	}
+	if _, ok := result.AgentCapabilities.SessionCapabilities["close"]; !ok {
+		t.Errorf("cached capabilities = %+v, want sessionCapabilities.close", result.AgentCapabilities)
+	}
+	if cached.ProcessPID != pids[0] {
+		t.Errorf("initialize.cached processPid = %d, want %d", cached.ProcessPID, pids[0])
+	}
+	if cached.ProcessCwd == "" || cached.ProcessStartedAt == "" || cached.ClientInfo["name"] != acpClientName {
+		t.Errorf("initialize.cached provenance = %+v, want client, cwd and start", cached)
+	}
+	if initializeSent != 0 {
+		t.Errorf("the warm run sent %d initialize requests; reuse must not repeat the handshake", initializeSent)
+	}
+}
+
 func TestAgentCacheConcurrentRunsRetainOneIdleProcess(t *testing.T) {
 	c := newCacheHarness(t, fakeSpec{Out: minimalOut, SessionClose: true, UniqueSessions: true})
 	hostSession(t, c.host, "b", filepath.Join(c.dir, "b.md"))

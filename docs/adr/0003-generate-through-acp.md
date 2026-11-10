@@ -7,8 +7,8 @@ Generate 默认通过 Agent Client Protocol（ACP，JSON-RPC 2.0，按行读写�
 
 ## 决定
 
-- **协议与命令。** 宿主用 Go 标准库实现最小 ACP 客户端：`initialize`（不声明 fs 与 terminal 能力）→ `session/new` → 设置了模型时 `session/set_config_option`（`configId: "model"`）→ `session/prompt`；处理 `session/update` 通知和 `session/request_permission` 请求，取消时发 `session/cancel`；Agent 发来的其他请求一律回 method-not-found。命令是设置里的 `agentCommand`（默认 `agy`），只加一个参数 `acp`，从不加 `--dangerously-skip-permissions` 之类的参数。
-- **隔离。** 每次运行一个新的临时目录，里面只有 `source.md`（点 Generate 那一刻页面上的文本，含未保存的修改；局部更新另有当时视图的 `view.json`），工作目录就是它。提示词把这份完整文本（局部更新再加当前视图原文）直接内联一次，说明两个快照文件只是副本、不要读，并给出经符号链接解析后的绝对输出路径：只准写该 `out.json`、不联网、不用其他工具。2026-11-10 的真实 AGY 运行曾把 `./source.md` 当作 `/source.md` 报告；绝对路径消除这处契约歧义，权限检查仍使用同一规范化路径规则。运行结束（成功、失败、取消）后删除整个目录。
+- **协议与命令。** 宿主用 Go 标准库实现最小 ACP 客户端。每个进程只做一次 `initialize`：报告客户端身份与版本，不声明 fs 与 terminal 能力，并核对 Agent 协商的协议版本；该次应答的 `agentInfo`、`authMethods` 与 capabilities（含 `sessionCapabilities.close`）随进程保留，复用进程时沿用这份真实握手结果，不重复 initialize，也不伪造 ACP 行。每次运行在独占租约上，以新的运行目录调用 `session/new`，得到非空且不同于该进程此前用过的 Session ID；再按本次运行捕获的设置 `session/set_config_option`（模型非空时 `configId: "model"`；思考级别只在 `session/new` 的 `configOptions` 确实提供该值时才发）→ `session/prompt`。处理 `session/update` 通知和 `session/request_permission` 请求，取消时发 `session/cancel`；Agent 发来的其他请求一律回 method-not-found。取消在提示轮应答时结束；1 秒内没有应答则有界杀死进程，不等固定 2 秒或进程自然退出。只有 Agent 声明 `sessionCapabilities.close` 且 `session/close` 在限期内应答的会话才算关闭，进程才可能回到空闲缓存。命令是设置里的 `agentCommand`（默认 `agy`），只加一个参数 `acp`，从不加 `--dangerously-skip-permissions` 之类的参数。
+- **隔离。** 每次运行一个新的临时目录，里面只有 `source.md`（点 Generate 那一刻页面上的文本，含未保存的修改；局部更新另有当时视图的 `view.json`），`session/new` 的 `cwd` 就是它。ACP 进程在缓存自己的稳定私有目录（`markgogo-acp-*`）里启动；进程目录不随运行创建或删除，也不与任何运行的来源快照共用。提示词把这份完整文本（局部更新再加当前视图原文）直接内联一次，说明两个快照文件只是副本、不要读，并给出经符号链接解析后的绝对输出路径：只准写该 `out.json`、不联网、不用其他工具。2026-11-10 的真实 AGY 运行曾把 `./source.md` 当作 `/source.md` 报告；绝对路径消除这处契约歧义，权限检查仍使用同一规范化路径规则。运行结束（成功、失败、取消）后删除整个运行目录；进程目录保留到缓存关闭（应用退出、生成任务清理完成后）时删除。
 - **两道防线，同一条规则。** 允许的只有：读 `source.md` 或这个目录本身，写 `out.json`，以及思考。规则对路径先规范化（`../`、目录符号链接、指向外部的文件符号链接都解析后再比）。
   1. `session/request_permission`：符合规则选 allow_once，否则选 reject_once。
   2. 每个 `tool_call` / `tool_call_update` 通知都过一遍同一规则；一旦不符合，立刻 `session/cancel` 并结束 Agent 进程，这次运行失败，视图文件不变。
@@ -19,6 +19,16 @@ Generate 默认通过 Agent Client Protocol（ACP，JSON-RPC 2.0，按行读写�
 - **从 Finder 启动的 PATH。** 打包后的 app 从 Finder 启动时 PATH 很短，命令先按 PATH 找，再找 `~/.local/bin`、`/opt/homebrew/bin`、`/usr/local/bin`；也可以在设置里填绝对路径。
 - **局部重新生成（#12）。** 临时目录里多放一份 `view.json`（当前视图原样），只读。Agent 只写一条 `updateComponents`；合并由宿主完成：追加到 `a2ui` 末尾，来源只增不改，哈希全部重算。这是宿主的外层与合并检查，不是第二套组件规则：宿主核对更新只动了被要求替换的 id 和新 id、是视图的 surface。否则 Agent 可以借「局部」之名改掉整个视图，而页面已经无法区分。组件属性与目录的深层校验仍由页面完成：宿主把合并后的整份候选交给同一个校验器，通过才提交。
 - **撤回一次（#12）。** 候选校验通过后、写入新视图前，把当前视图保留为 `.<name>.genui.prev.json`（权限与视图相同），撤回是一次 `rename`。校验失败或写入失败时备份保持原样。局部更新在写入前核对视图文件还是 Agent 开始时的那份，变了就不写。
+
+## 进程复用（2026-11-10 实测）
+
+应用内最多保留一个空闲 ACP 进程，每次运行以独占租约使用一个进程。忙碌时已有文档可各自启动临时独立进程；每次运行结束时缓存仍只保留一个空闲进程。空闲默认两分钟，没有后台保活、心跳或可复用对话。可执行文件或环境改变（按环境指纹比较）、进程已退出、会话 ID 为空或重复、会话关闭未获确认、工具调用越界或其他不确定状态都会丢弃进程，不做静默重试。
+
+缓存只保留进程和它的真实握手。每次运行仍建立自己的会话、运行目录与来源快照，模型与思考级别按该运行捕获下发；主要实测收益来自新 Session 的热连接准备。观测记录 `agent.reused` 与 `initialize.cached`（带原进程 PID、启动时间与真实握手答案），本次 `session/new`、配置与 `session/prompt` 仍是实际线上交换。
+
+选择依据（同一机器、同一 `agy acp`、真实 ACP 链路）：三个新进程的首次会话为 3.16–3.51 s，同一进程上的六次全新会话为 0.25–0.70 s；`session/close` 被声明并在约 0.18–0.20 ms 内应答，且不结束进程。取消同样不等待进程退出：提示轮应答后，只有会话关闭被证明才把进程放回缓存；1 秒内无应答则有界杀死进程。每个运行的临时目录无论结果都删除，进程目录到缓存关闭时删除。详见[完成报告](../acp-genui-completion.md)。
+
+最终三题两次对照中，实际冷连接 7 次、热连接 5 次的设置阶段均值为 3.347 s 与 0.974 s；但包含首次冷启动的复用策略六次完整生成均值为 21.673 s，高于逐次冷启动六次的 16.383 s。本决定保留缓存以降低已重复测得的连接准备代价，不据此宣称整体生成更快；LLM/工具阶段的耗时需独立判断。该次真实取消未及时应答，1.015 s 后丢弃进程，符合不复用不确定会话的规则。
 
 ## 2026-11-10 重评：执行方式与智能能力分开
 

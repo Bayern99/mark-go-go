@@ -147,14 +147,17 @@
 
 ## GenUI 生成（#7，ADR 0003）
 
-自动化（`generate_test.go`：测试二进制自己充当假 agent，走真实 ACP 管道；`web/test/genui-generate.test.tsx` 在 App + `createBrowserHost` 接缝；`web/test/sections.test.ts` 与 Go 共用 `section-vectors.json`）：
+自动化（`generate_test.go`：测试二进制自己充当假 agent，走真实 ACP 管道；`acp_process_cache_test.go` 覆盖空闲进程复用、过期、并发与关闭；`web/test/genui-generate.test.tsx` 在 App + `createBrowserHost` 接缝；`web/test/sections.test.ts` 与 Go 共用 `section-vectors.json`）：
 
-- 运行：agent 只带 `acp` 参数，临时目录开始时只有 `source.md`；提示里有格式文档与读者的请求；模型经 `session/set_config_option` 选择；进度按阶段变化逐步上报。
-- 成功：视图文件键顺序为 `version` / `generatedAt` / `model` / `request` / `sources` / `a2ui`；`a2ui` 原样、多余字段丢弃；`sources` 哈希由宿主按原文计算（与页面共享向量一致），找不到的标题不带哈希；新文件为 0644，替换时保留原权限。
-- 权限请求：读 `source.md` / 写 `out.json` 允许，其余拒绝；agent 汇报的工具调用越界（shell、未知的调用）→ 停止运行、视图不变；只带 id 的 `tool_call_update` 沿用其 `tool_call` 的类型与路径。
+- 运行：agent 只带 `acp` 参数；进程在缓存私有目录启动，`initialize` 每个进程一次；每次运行新建运行目录，开始时只有 `source.md`，`session/new` 的 `cwd` 指向它；提示里有格式文档与读者的请求；模型经 `session/set_config_option` 选择；进度按阶段变化逐步上报。
+- 进程缓存（`acp_process_cache_test.go`）：空闲两分钟过期，环境变化不复用，并发运行结束后只保留一个空闲进程；`session/close` 未确认、空或重复 Session ID 或握手中取消都丢弃进程；关闭缓存会停止空闲进程并删除进程目录。
+- 成功：视图文件键顺序为 `version` / `generatedAt` / `model` / `request` / `sources` / `a2ui`；`model` 只写 Agent 配置应答确认的实际值；`a2ui` 原样、多余字段丢弃；`sources` 哈希由宿主按原文计算（与页面共享向量一致），找不到的标题不带哈希；新文件为 0644，替换时保留原权限。
+- 权限请求：读 `source.md` / 写 `out.json` 允许，其余按既有类型、路径与符号链接规则拒绝。通知按 toolCallId 合并已知类型与路径；pending、仅状态、缺少 kind/locations、尚未知 id 或 `other` 的观测不凭信息缺失中止，后续补全后继续检查；已报告的越界路径、execute 等不支持操作立即停止，视图不变。通知兼容性不放宽权限批准规则。
 - 失败（#8，每类断言 `kind` / `message` / `hint`，并检查视图不变、临时目录删除）：命令找不到、完整路径不存在 → `agent-not-found`；`session/new` 返回 -32000、提示里含 “authentication required”、stderr 里含 → `auth-required`（登录提示带配置的命令）；未知模型 → `model-invalid` 带模型列表；这一轮无 `out.json` 但有回复、`session/prompt` 返回错误 → `agent-message`，`detail` 原样（含换行的额度提示）；`out.json` 缺失 / 非 JSON / 超大 / 符号链接 / 缺 `a2ui` 或为空 / `sources` 格式错误 → `invalid-output`；agent 启动即退出 → `agent-error` 附 stderr；`reportFailure` 发出 `failed` 步骤并以 message + hint 拒绝。“同一窗口只跑一次”与“未保存文档”的 Go 端检查依赖窗口会话，没有单元测试（页面在运行中和未保存时本就禁用 `Generate`）。
-- 取消与超时（`hangingRun`）：页面关闭通道（ctx 取消，关窗口与退出走同一条路）/ 300ms 超时 → agent 收到 `session/cancel`，进程已退出，临时目录删除，视图文件字节不变；超时文字 `Generation timed out after 5 minutes.`（默认值）。
+- 取消与超时（`hangingRun`、`TestGenerateCancelAcknowledgedWithoutProcessExit`、`TestACPCancelDoesNotWaitForDescendantPipesOrBlockedWrite`、`TestAgentCacheCancelAcknowledgedClosesSessionAndReusesProcess`、`TestGenerateTimeout`）：页面关闭通道（ctx 取消，关窗口与退出走同一条路）/ 300ms 超时 → agent 收到 `session/cancel`；提示轮应答即完成，不再等固定 2 秒或进程退出，1 秒内无应答则杀死进程。运行目录删除、视图文件字节不变；缓存路径在会话关闭被证明后复用进程，否则丢弃。超时文字 `Generation timed out after 5 minutes.`（默认值）。
 - 页面：生成中显示步骤列表与骨架、隐藏旧视图、请求与设置禁用；生成中继续编辑，视图按发起时的文本生成；失败保留旧视图，显示 message、hint、原样的 agent 原话、模型列表，`Retry` 用同一请求重跑并可成功、`Open agent settings` 打开设置、`Dismiss` 关闭；失败时没有 `Cancel`；非 `GenerationError` 的错误显示为 agent-error；未保存文档禁用 `Generate`；`Agent settings` 改模型与命令并持久化。
+
+> 2026-11-10 收尾实测见 [ACP 与 GenUI 报告](acp-genui-completion.md)：12 次初始生成均通过 Go 校验与提交，11 次即时页面观测通过、1 次观测器选错活动文档（原失败与 TTU 缺口保留；同一已提交视图补观测通过）；最终修正提交另跑三题，3/3 生成与渲染通过。真实取消、重生成、跨文档/模型隔离、崩溃恢复与退出清理均有原始记录；真实未确认取消走 1 秒丢弃退路，不记作热复用成功。
 
 前端体积：初始代码块 563.80 KB gzip；GenUI 代码块 144.21 KB gzip（#11 时 139.69）+ CSS 2.05 KB。
 
@@ -179,6 +182,8 @@
 | 额度耗尽的模型触发额度提示（原样显示） | 未检查：当前账户没有额度耗尽的模型；同一路径由假 agent 的多行额度提示覆盖 |
 
 > 说明（2026-11-08）：上面的 `Open agent settings` 按钮与「Agent settings」自由文本输入属于 2026-11-07 的实现。ADR 0004 与 #24 之后，常规界面不再有该设置面板：改模型用右栏底部 `ModelMenu`；命令只在 `agent-not-found` 失败里经 `Locate agent…` 原地修改。历史行保留当时的实测结论，不再描述当前控件。
+
+> 说明（2026-11-10）：以上 2026-11-06/07 表格记录当时的进程策略；当前的空闲进程复用与取消语义已取代旧的“生成成功或取消后一定没有 `agy` 进程”期望。历史观察保留原样；新的真实 cohort 另见[完成报告](acp-genui-completion.md)。
 
 ## GenUI 重新生成与撤回（#12）
 

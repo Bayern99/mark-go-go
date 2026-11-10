@@ -1,5 +1,6 @@
 import {
   createContext,
+  Fragment,
   useContext,
   useEffect,
   useRef,
@@ -8,7 +9,7 @@ import {
   type ReactNode,
 } from 'react'
 import { autoGrowTextarea } from '../../editor/noteDialog'
-import type { SourceStatus, SourceStore } from './sources'
+import type { SourceReference, SourceStatus, SourceStore } from './sources'
 
 export interface SourceActions {
   store: SourceStore
@@ -43,12 +44,15 @@ const STATUS_HINT: Partial<Record<SourceStatus, string>> = {
 
 const NONE_LEFT = "None of this part's sources are in the document now."
 
+const MISSING_REFERENCE = 'This heading is no longer in the document.'
+
 const noSubscription = () => () => {}
 const noRevision = () => 0
 
 export interface ComponentSource {
   status: SourceStatus
-  headings: string[]
+  /** Its recorded sources, one per id, in the view's order. */
+  references: SourceReference[]
   /** The notes in its source sections. */
   notes: string[]
   /** Opens the source in the editor; absent when there is nowhere to go. */
@@ -80,13 +84,13 @@ export function useComponentSource(sources: readonly string[] | undefined): Comp
   )
   const ids = sources ?? []
   if (!actions || ids.length === 0) {
-    return { status: 'unknown', headings: [], notes: [], edit: undefined, addNote: undefined }
+    return { status: 'unknown', references: [], notes: [], edit: undefined, addNote: undefined }
   }
   const status = actions.store.status(ids)
   const available = actions.store.hasSource(ids)
   return {
     status,
-    headings: actions.store.headings(ids),
+    references: actions.store.references(ids),
     notes: actions.store.notes(ids),
     edit: available ? (text) => actions.edit(ids, text) : undefined,
     addNote: available ? (text) => actions.addNote(ids, text) : undefined,
@@ -164,9 +168,28 @@ export function SourceFrame({
           ))}
         </ul>
       ) : null}
-      {source.headings.length > 0 ? (
+      {source.references.length > 0 ? (
         <footer className="genui-source">
-          <span className="genui-source-from">From {source.headings.join(', ')}</span>
+          <span className="genui-source-from">
+            From{' '}
+            {source.references.map((reference, index) => (
+              <Fragment key={`${reference.id}:${index}`}>
+                {index > 0 ? ', ' : null}
+                <button
+                  type="button"
+                  className="genui-source-heading"
+                  data-source-id={reference.id}
+                  data-source-occurrence={reference.occurrence}
+                  data-source-available={reference.present ? 'true' : 'false'}
+                  disabled={!reference.present || !actions}
+                  title={reference.present ? `Edit ${reference.heading} in source` : MISSING_REFERENCE}
+                  onClick={() => actions?.edit([reference.id])}
+                >
+                  {reference.heading}
+                </button>
+              </Fragment>
+            ))}
+          </span>
           {label ? (
             <span className="genui-source-status" title={STATUS_HINT[source.status]}>
               <i

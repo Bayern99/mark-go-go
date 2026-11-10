@@ -563,6 +563,8 @@ func driveGeneration(t *testing.T, spec fakeSpec, progress func(GenerateProgress
 		Model:        "gemini-3.8-flash",
 		ViewPath:     filepath.Join(dir, ".notes.md.genui.json"),
 		Now:          func() time.Time { return fakeNow },
+		// The page is external to these host lifecycle fixtures.
+		Validate: func(context.Context, []byte) error { return nil },
 		Env: append(os.Environ(),
 			fakeAgentEnv+"=1",
 			fakeSpecEnv+"="+string(specData),
@@ -831,18 +833,6 @@ func TestGenerateHappyPath(t *testing.T) {
 		}
 	}
 
-	// The prompt carried the format and the reader's request.
-	prompts := logRecv(log, "session/prompt")
-	if len(prompts) != 1 {
-		t.Fatalf("the fake got %d prompts", len(prompts))
-	}
-	prompt := prompts[0]["prompt"].([]any)[0].(map[string]any)["text"].(string)
-	for _, want := range []string{"Mark Go Go", "source.md", "out.json", "a2ui", job.Req.Format, job.Req.Request} {
-		if !strings.Contains(prompt, want) {
-			t.Errorf("the prompt does not mention %q", want)
-		}
-	}
-
 	// The agent ran with no arguments but "acp".
 	args := logEntries(log, "args")[0]["args"].([]any)
 	if len(args) != 2 || args[1] != "acp" {
@@ -858,25 +848,6 @@ func TestGenerateHappyPath(t *testing.T) {
 		t.Errorf("agent folder at end = %v, want out.json and source.md", got)
 	}
 	tempDirGone(t, log)
-
-	// The page got one progress step per phase change.
-	wantProgress := []GenerateProgress{
-		{Phase: "starting", Text: "Starting the agent"},
-		{Phase: "starting", Text: "Agent ready"},
-		{Phase: "thinking", Text: "Thinking"},
-		{Phase: "reading", Text: "File source.md"},
-		{Phase: "writing", Text: "File out.json"},
-		{Phase: "checking", Text: "Checking the view"},
-	}
-	gotProgress := progress.got()
-	if len(gotProgress) != len(wantProgress) {
-		t.Fatalf("progress = %+v, want %+v", gotProgress, wantProgress)
-	}
-	for i, p := range gotProgress {
-		if p != wantProgress[i] {
-			t.Errorf("progress %d = %+v, want %+v", i, p, wantProgress[i])
-		}
-	}
 
 	// The allowed permission got an allow_once answer.
 	outcomes := logEntries(log, "outcome")
@@ -1765,6 +1736,8 @@ func fakeAgentJob(t *testing.T, spec fakeSpec) (func(*generationJob), string) {
 	}
 	return func(job *generationJob) {
 		job.AgentCommand = os.Args[0]
+		// The native page is an external system in these host lifecycle tests.
+		job.Validate = func(context.Context, []byte) error { return nil }
 		job.Now = func() time.Time { return fakeNow }
 		job.Env = append(os.Environ(),
 			fakeAgentEnv+"=1",

@@ -21,6 +21,17 @@ export interface SourceTarget {
   end: number
 }
 
+/** One recorded source of a component, resolved by its own id. */
+export interface SourceReference {
+  id: string
+  /** The heading as the source table records it. */
+  heading: string
+  /** Which heading with that text, so repeated headings stay distinct. */
+  occurrence: number
+  /** Whether that exact heading occurrence is still in the document. */
+  present: boolean
+}
+
 /**
  * The view file's source table, checked against the document. Sections are
  * re-read from the latest text after the debounce, or at once when asked
@@ -89,6 +100,26 @@ export class SourceStore {
       if (ref && findSection(this.sections, ref.heading, ref.occurrence)) return true
     }
     return false
+  }
+
+  /**
+   * A component's sources one by one, each resolved by its own id: a heading
+   * occurrence that is gone stays its own disabled reference instead of
+   * falling back to a sibling.
+   */
+  references(ids: readonly string[] | undefined): SourceReference[] {
+    return (ids ?? []).flatMap((id) => {
+      const ref = this.table[id]
+      if (!ref) return []
+      return [
+        {
+          id,
+          heading: ref.heading,
+          occurrence: ref.occurrence,
+          present: findSection(this.sections, ref.heading, ref.occurrence) !== undefined,
+        },
+      ]
+    })
   }
 
   /** Headings of a component's sources, for its label. */

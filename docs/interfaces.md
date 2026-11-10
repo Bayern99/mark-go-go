@@ -12,7 +12,7 @@
 | Application Core | `web/src/core/` | `DocumentService`、`CommandRegistry`、`ViewRegistry`、`PluginRegistry`、`EditorAccess`（插件侧编辑器选择源） |
 | 工作区壳（TS） | `web/src/App.tsx`、`web/src/components/SidePane.tsx`、`web/src/components/RightPane.tsx`、`web/src/workspace/nav.ts` | 文档标签与每文档一个 `DocumentPane`、左栏文件树/筛选/分栏/面包屑、Welcome 与最近工作区、右栏与窄窗浮层 |
 | Markdown 标题/章节 | `web/src/markdown/headings.ts`、`sections.ts` | 共享标题提取：ATX + setext，排除代码块/HTML/frontmatter，去内联格式，带源偏移；章节范围与 `fnv1a32` 哈希 |
-| GenUI 插件 | `web/src/plugins/genui/` | 中央视图模式 `GenUI`（读取 v2 视图文件，经 A2UI 1.0 适配模块 `a2ui.tsx` 用组件目录渲染只读卡片）与右侧栏管理面板 `genui.panel`（生成触发、进度、过期组件列表跳转、生成要求 `Focus` 与 `ModelMenu`）；按需加载 |
+| GenUI 插件 | `web/src/plugins/genui/` | 中央视图模式 `GenUI`（读取 v2 视图文件，经 A2UI 1.0 适配模块 `a2ui.tsx` 用组件目录渲染只读卡片）与右侧栏管理面板 `genui.panel`（生成触发、进度、过期组件列表跳转、生成要求 `Focus` 与 `ModelMenu`）；渲染与管理面板按需加载，A2UI 校验模块随宿主适配器启动加载 |
 | Outline 插件 | `web/src/plugins/outline/` | 右侧栏文档大纲（`location: 'right'`）：共享标题模块 + 光标所在章节高亮 + 点击跳转 |
 
 ## Go ↔ 页面 IPC（服务 `WorkspaceHost`）
@@ -125,8 +125,9 @@ type GenerateFailureKind = 'unsaved' | 'busy' | 'agent-not-found' | 'auth-requir
 
 - `mygoHost.watchView` 按 `documentId` 对多个监听者计数：首个监听者调用 `WatchView(id)`，最后一个释放时调用 `UnwatchView(id)`。
 - `mygoHost.generate` 用 `mygo-runtime` 的 `Channel` 接进度，`signal` 中止时关闭通道（取消 Go 端的 ctx）。`failed` 步骤里的 `failure` 在调用被拒绝之前到达，变成 `GenerationError`；未知 kind 当作 `agent-error`，没有 failure 的拒绝也是 `agent-error`；中止的是 `cancelled`。
+- `mygoHost.ts` 在模块加载时（不是首次生成时）安装 `window.__mgoValidateGeneratedView = validateGeneratedView`：Go 端写入前的候选校验调用这个全局函数，所以 `a2ui.tsx` 被宿主适配器静态 import 并随页面启动加载（见「GenUI 视图模式」的按需说明）；未进入 GenUI 时只是不挂载视图，校验器已经可用。
 - 原生菜单：`nativeCommand` 事件按点击时捕获的 `id` 分派。Save / Save As / Rename / Move / Revert / Duplicate / Close 先 `flush` 该文档再调用对应 `WorkspaceHost` 方法；`closeWorkspace` 与 `flushQuit` 先 flush 本窗口全部文档（后者再 `PrepareQuit`）；`undo` / `redo` 交给 `nativeEdit.applyNativeEdit(id, …)`，不经过 `UndoView`。
-- `createBrowserHost(text, name, { view?, kept?, generator?, settings?, untitled? })` 用内存视图文件；`host.writeView(text | null)` 模拟写入/删除；`generator(req, progress, signal) → Promise<视图文件文本>` 扮演 Agent（`update` 时也返回完整视图文件，合并只在 Go 端），抛 `GenerationError` 即扮演那种失败，其他错误为 `agent-error`；`host.generations` 记录收到的请求，`host.keptView()` 返回备份（测试用）。规则与 Go 端相同：未保存的文档（`unsaved`）、正在生成时（`busy`）都拒绝；只有成功才写视图文件，被替换的视图成为备份。`setViewMode` 只写视图模式、不推送文档状态（与原生只在 `workspaceChanged` 中反映一致），避免用旧的 `readOnly` 回显解锁只读文档。
+- `createBrowserHost(text, name, { view?, kept?, generator?, settings?, untitled? })` 用内存视图文件；`host.writeView(text | null)` 模拟写入/删除；`generator(req, progress, signal) → Promise<视图文件文本>` 扮演 Agent（`update` 时也返回合并好的完整视图文件），抛 `GenerationError` 即扮演那种失败，其他错误为 `agent-error`；`host.generations` 记录收到的请求，`host.keptView()` 返回备份（测试用）。规则与 Go 端相同：未保存的文档（`unsaved`）、正在生成时（`busy`）都拒绝；生成的整份视图文本先经同一个 `validateGeneratedView` 检查，不合格以 `invalid-output` 拒绝，通过才写视图文件，被替换的视图成为备份。`setViewMode` 只写视图模式、不推送文档状态（与原生只在 `workspaceChanged` 中反映一致），避免用旧的 `readOnly` 回显解锁只读文档。
 - `createBrowserWorkspace(docs)` 是多文档浏览器适配器：一个 `BrowserSettings` 存储由它的所有标签共享（`HostAdapter.useSettings`），每个 `BrowserHost` 的生成开始时同步读取一次。`App` 接受 `{ workspace }` 或单个 `host`（内部包成单文档工作区），`DocumentPane` 接受 `{ host }`，是既有编辑器 / GenUI / Outline 测试的接缝。
 
 ## 插件契约（`web/src/core/types.ts`）
@@ -196,7 +197,7 @@ interface PluginContext {
 ## GenUI 视图模式（#9，取代 #6 的右侧栏与 v1 格式）
 
 - 位置：文档 `<dir>/<name>.md` 的视图文件是同目录隐藏文件 `<dir>/.<name>.md.genui.json`；未保存的新文档没有视图文件。页面不直接读文件，只经 `ctx.viewFile.watch`；超过 1 MiB 或读失败作为 `error` 送达。
-- 按需：插件注册两个视图：中央视图 `genui`（`location: 'center'`，纯只读 A2UI 组件卡片与来源引用底座）与右栏管理面板 `genui.panel`（`location: 'right'`，附带 `status: ViewStatusSource` 供右栏 `GenUI` 标签圆点提示）；任一视图首次 `mount` 时才 `import('./GenUIView')`（独立代码块，含 A2UI 与 zod）并开始引用计数的 `ctx.viewFile.watch`，两处视图都卸载时停止跟随文件。未进入 GenUI 时不加载该代码块，也没有 `WatchView` 调用。每份文档的 GenUI 状态、`GenerationController` 与 `ReadingStore` 各自独立，标签切换不共享。
+- 按需：插件注册两个视图：中央视图 `genui`（`location: 'center'`，纯只读 A2UI 组件卡片与来源引用底座）与右栏管理面板 `genui.panel`（`location: 'right'`，附带 `status: ViewStatusSource` 供右栏 `GenUI` 标签圆点提示）；任一视图首次 `mount` 时才 `import('./GenUIView')` 并开始引用计数的 `ctx.viewFile.watch`，两处视图都卸载时停止跟随文件。未进入 GenUI 时不挂载渲染代码块，也没有 `WatchView` 调用。但 `a2ui.tsx`（A2UI 目录、`MessageProcessor` 与生成校验 `validateGeneratedView`）由宿主适配器静态 import，`mygoHost.ts` 在模块加载时把校验器装到 `window.__mgoValidateGeneratedView`（`ts-no-dynamic-import`）：所以 A2UI 与 zod 随页面启动加载，而不是等到第一次进入 GenUI；这不等于渲染视图。每份文档的 GenUI 状态、`GenerationController` 与 `ReadingStore` 各自独立，标签切换不共享。
 - 视图文件跟随（#29）：`WatchView(documentId)` 先读并送出第一份快照（不等目录监听），再 `WatchFiles` 建监听，随后再送一份追赶快照；中间没有“已读但未监听”的空档，监听无法启动时错误仍由 `WatchView` 返回，已送出的第一份快照不撤回。首次进入 GenUI 早于视图文件可读时显示加载状态而不是空白；视图文件被写入、替换或删除时以 `viewChanged` 更新。
 - 阅读状态（#27）：`ReadingStore` 按文档保存 KeyPoints 折叠、ComparisonTable 排序与横向滚动位置、Tabs 选中页；离开 GenUI 再回来、或替换其中一张卡片都不会重置其余卡片。保存的 Tabs 选中页只在首次渲染后恢复一次，之后的用户点击不会被覆盖。它从不写文档。
 - 生成槽（#24）：每份文档最多一个任务，不同文档可并发生成；设置、文本、路径与生成要求在开始时捕获，结束的运行若文档已关闭或路径已变则拒绝写入。生成中标签显示 `doc-tab-generating-<id>` 圆点，关闭该标签取消该任务，切换标签不取消。
@@ -207,9 +208,10 @@ interface PluginContext {
   - 底部固定区（钉在滚动容器外）：常驻只读 `Agent: Antigravity (agy)`、`ModelMenu`（只写 `{ model }`）、生成时间 `Generated <generatedAt>` 以及 `canUndo` 时按需显示的 `Undo` 按钮。`agent-not-found` 失败时错误块另给 `Locate agent…`，原地展开 `.composer` 的 `<input aria-label="Agent command">`（`Enter` / `Save` 只写 `{ agentCommand }`，空值恢复默认 `agy`，`Escape` / `Cancel` 取消）。两个控件都只提交自己那一个字段，不覆盖另一个或握手表里的模型列表。
   - 设置传播：面板先订阅 `onSettings` 再首次 `getSettings`，异步读取被版本守卫，只接受有序的 `settingsChanged` 公告。任何窗口的写入都会让空闲面板显示当前全局值，无需重新挂载；本文档正在运行的任务仍使用开始时捕获的值。常规界面没有字体、字号、主题或系统提示词偏好设置——这些不是缺失的控件，而是本产品不提供的设置（浅色界面与固定字体由 ADR 0006 确定）。
   - 右栏顶部分段标签状态圆点（`.rdot`）：生成失败时 `tone: 'danger'`，存在 `Source changed` / `Source not found` 组件时 `tone: 'warn'`，其余为 `null`。
-- 格式唯一说明：`web/src/plugins/genui/view-format.md`（`version: 2`；`generatedAt?`、`model?`、`request?`、`sources{ id: { heading, occurrence?, hash? } }`、`a2ui[]` A2UI 1.0 消息）。测试直接渲染其中的 JSON 示例，文档与实现不会分叉。
+- 格式唯一说明：`web/src/plugins/genui/view-format.md`（`version: 2`；`generatedAt?`、`model?`、`request?`、`sources{ id: { heading, occurrence?, hash? } }`、`a2ui[]` A2UI 1.0 消息）。它是读者可见的唯一格式文档；生成时页面发给 Agent 的是更短的模型契约加实际 Catalog 的紧凑 JSON（见「GenUI 生成」），不附本文档的示例与散文。测试直接渲染其中的 JSON 示例，文档与实现不会分叉。
 - 外层解析（`viewFile.ts` 的 `parseViewFile`）：非 JSON、非对象、版本不是 2、缺 `a2ui` 数组、`sources` 条目不合法 → 一条 `role="alert"` 消息；`version: 1` → `This view was made by an older version of Mark Go Go. Generate it again.`（不迁移）。
 - A2UI 适配（`a2ui.tsx`，唯一 import `@a2ui/*` 的模块，版本精确锁定 0.15.0）：组件目录 `markgogo.dev:genui/v1` = 基础目录的 `Column` / `Row` / `Tabs` / `Card` / `Text` + 内容组件（见 #11）。`MessageProcessor` 以严格校验运行（必须有 `root`、引用必须存在、属性按 zod schema 严格校验、嵌套约束、只允许 `createSurface` / `updateComponents`、只能一个 surface）；任一失败 → 整个视图一条错误，写明组件和原因（嵌套违规以 `UNALLOWED_PARENT:` / `UNALLOWED_CHILD:` 开头）。目录外的组件名在加载前替换为占位组件，只在该处显示 `“<名字>” is not a component this app can show.`，其余照常。
+- 生成的校验（同一模块、同一套规则）：`validateGeneratedView(raw)` 是宿主写视图前调用的唯一校验者，用同一个 `Catalog` 与 `MessageProcessor` 的严格配置检查整份候选，并在处理器之外另查 `version: 2`、`sources` 是对象、`a2ui` 非空、目录外的组件名（生成输出里直接拒绝，不用占位组件）、组件引用的 source id 都存在。整份 `createSurface` 不允许孤儿组件；含 `updateComponents` 历史时允许被替换容器退休下来的旧子组件（A2UI 没有删除组件），与 `loadSurface` 的既有可达读法一致。`loadSurface` 仍是渲染前的检查，手写视图里的未知组件照旧原位显示占位。组件规则只有这一份，Go 不复制。
 - `Text` 的 Markdown 由 `SafeMarkdown.tsx` 用应用自己的 mdast 解析器渲染为 React 元素：粗体、斜体、删除线、行内代码、代码块、列表、引用；链接只显示文字（`.genui-link`），图片和原始 HTML 不显示。没有 `innerHTML`。（`@a2ui/markdown-it` 0.2.2 的 peer 依赖是 web_core ^0.14，与 0.15 冲突，未采用。）
 - 视图里的交互（切换标签页等）只改变显示，不调用 `host.update`。
 - 章节（`sections.ts`）与 `fnv1a32` 哈希不变。
@@ -218,10 +220,10 @@ interface PluginContext {
 ## GenUI 来源状态与“去原文修改”（#10）
 
 - `sources.ts` 的 `SourceStore`：视图文件的来源表对照当前文档。文档变化后防抖 300ms（与大纲相同）重新提取章节；状态 `fresh` / `changed`（哈希不同）/ `missing`（找不到 heading + occurrence，优先于 changed）/ `unknown`（无记录哈希的手写视图，或组件没有来源）。
-- `SourceFrame.tsx`：所有内容组件都画在同一个框里：底部 `From <标题…>`、状态标记 `Source changed` / `Source not found`（只在这两种状态显示）、`Edit in source` 按钮与 `Note` 入口。状态写在 `data-source-status`。组件经 `useComponentSource(sources)` 取状态与 `edit(text?)`。
-- 部分来源丢失（#28）：卡片仍有来源存在时保留 `Edit in source` 与 `Note`，用第一个仍存在的来源；全部来源都失效时才禁用这两个动作。显示的状态仍如实写出缺失的来源，不用不存在的来源静默替代。
+- `SourceFrame.tsx`：所有内容组件都画在同一个框里：底部 `From` 后按组件 `sources` 的顺序，每个来源 id 一个按钮（文本是来源表记录的 `heading`，带 `data-source-id` / `data-source-occurrence` / `data-source-available`），点击只定位该来源自身的 heading + occurrence；另有状态标记 `Source changed` / `Source not found`（只在这两种状态显示）、整体 `Edit in source` 按钮与 `Note` 入口。状态写在 `data-source-status`。组件经 `useComponentSource(sources)` 取状态、逐条 `references` 与 `edit(text?)`。
+- 部分来源丢失（#28）：某个 heading + occurrence 已不在文档时，只有那一个按钮禁用并提示该标题已不在，不回退到同名或兄弟来源；其余来源仍可点。整体 `Edit in source` 与 `Note` 在还有来源存在时用第一个仍存在的来源，全部失效时才禁用并写明。聚合状态仍如实为 `missing`，精确引语、行与 checkbox 的定位行为不变。
 - 隔离（规范）：`Edit in source` 与右栏 `.changed-list` 的跳转/高亮只在该文档自己的 GenUI 挂载元素内查询卡片，隐藏标签不能截获；每个编辑器持有自己的 Composer 生命周期，后台文档的 `load` / `onReload` / `setReadonly` / `destroy` 只取消它自己的 Note 或特殊块 composer，不关闭其他文档未保存的草稿。
-- `Edit in source`：取组件第一个仍在文档里的来源，先立即刷新章节（不用防抖中的旧偏移），再执行命令 `editor.select(start, end)`。带 `text` 时（Checklist 项）在各来源节里找这段原文，找到就只选它，否则选第一个来源整节。App 切到 Rich text、选中，并在编辑器区显示 `← Back to GenUI`（`data-testid="return-to-view"`）。点它回到 GenUI；在头部选任一模式后这个按钮消失。
+- `Edit in source`：取组件第一个仍在文档里的来源，先立即刷新章节（不用防抖中的旧偏移），再执行命令 `editor.select(start, end)`；底部每个来源按钮则只用自己那个 id 定位（`edit([该 id])`），不换到别的来源。带 `text` 时（Checklist 项）在各来源节里找这段原文，找到就只选它，否则选第一个来源整节。App 切到 Rich text、选中，并在编辑器区显示 `← Back to GenUI`（`data-testid="return-to-view"`）。点它回到 GenUI；在头部选任一模式后这个按钮消失。
 - 滚动位置：GenUI 视图的挂载元素 `.center-view` 就是滚动区。位置按视图文件文本记在插件里（`ScrollMemory`），跨挂载保留；同一份视图文件回来时恢复，换了视图文件从顶部开始。A2UI 首次提交后才渲染组件树，所以恢复时跟随内容增高（`ResizeObserver`，最多 1s）。
 - 生成器（#7）按页面给的章节范围写入每个来源的 `hash`；手写的视图文件不带 `hash` 时不显示状态。
 
@@ -236,12 +238,13 @@ interface PluginContext {
 
 ## GenUI 生成（#7，ADR 0003）
 
-- 页面（`generation.ts` 的 `GenerationController`，每份文档一个，随 `DocumentPane` 生命周期，跨 GenUI 挂载保留）：点 Generate 时取该文档的 `documents.snapshot().text`（含未保存修改）和它的章节（共享章节模块，UTF-16 偏移），`format` = `view-format.md` + 「Catalog definition」JSON（`catalogDefinition()`），`request` = 生成要求（去首尾空白，空则不发）。同一文档一次只跑一个，不同文档互不阻塞；运行中 GenUI 显示进度（`role="status"` 最新一步 + 已完成的步骤列表）和骨架，旧视图暂时隐藏；只剩 Cancel。生成期间可以离开 GenUI 或切换标签继续编辑。
+- 页面（`generation.ts` 的 `GenerationController`，每份文档一个，随 `DocumentPane` 生命周期，跨 GenUI 挂载保留）：点 Generate 时取该文档的 `documents.snapshot().text`（含未保存修改）和它的章节（共享章节模块，UTF-16 偏移），`format` = `agentFormat()`：模型契约（消息与来源形状）后接 `catalogDefinition()` 的紧凑 JSON，不含 `view-format.md` 的示例与散文；`request` = 生成要求（去首尾空白，空则不发）。同一文档一次只跑一个，不同文档互不阻塞；运行中 GenUI 显示进度（`role="status"` 最新一步 + 已完成的步骤列表）和骨架，旧视图暂时隐藏；只剩 Cancel。生成期间可以离开 GenUI 或切换标签继续编辑。
 - 生成要求输入框预填当前视图文件的 `request`；未保存的文档 Generate 禁用并提示 `Save the document first: the view is stored next to it.`。失败时 `role="alert"` 显示 `message`、`hint`（该做什么）、`model-invalid` 的可用模型列表、`detail`（「The agent said:」下原样的 `<pre>`），按钮：`Retry`（用失败那次的请求重跑）、`Locate agent…`（仅 `agent-not-found`，原地打开 `.composer` 的命令输入框，`Enter` / `Save` 写入 `{ agentCommand }`，即 ADR 0004 的定位动作）、`Dismiss`；旧视图不变。`Cancel` 只在运行中出现；取消不算失败、不提示。
-- 失败分类（Go `failure.go`，`GenerateFailure.kind`）：`agent-not-found`（找不到或启动不了命令）、`auth-required`（任一调用的 JSON-RPC -32000 或含 “authentication required”，包括 stderr；提示 ``Run `<命令> acp --login` in Terminal, then retry.``）、`model-invalid`（`set_config_option` 失败且 `session/new` 列出了模型）、`agent-message`（这一轮结束但没有 `out.json` 而有回复，或 `session/prompt` 返回错误；`detail` 为原话，最多 4000 字符）、`invalid-output`（缺失、过大、符号链接、非 JSON、`a2ui` / `sources` 不合格；有回复时附为 `detail`）、`agent-error`（Agent 提前退出附 stderr、其他 RPC 错误、越界工具调用、内部错误）、`timeout`（默认 5 分钟，`generationJob.Timeout`）、`cancelled`、`unsaved`、`busy`。超时与取消同样 `session/cancel` → 2 秒 → 杀进程 → 删临时目录。
+- 失败分类（Go `failure.go`，`GenerateFailure.kind`）：`agent-not-found`（找不到或启动不了命令）、`auth-required`（任一调用的 JSON-RPC -32000 或含 “authentication required”，包括 stderr；提示 ``Run `<命令> acp --login` in Terminal, then retry.``）、`model-invalid`（`set_config_option` 失败且 `session/new` 列出了模型）、`agent-message`（这一轮结束但没有 `out.json` 而有回复，或 `session/prompt` 返回错误；`detail` 为原话，最多 4000 字符）、`invalid-output`（缺失、过大、符号链接、非 JSON、`a2ui` / `sources` 不合格、页面校验拒绝：深层规则、未知组件、孤儿组件、未定义的 source id；有回复时附为 `detail`）、`agent-error`（Agent 提前退出附 stderr、其他 RPC 错误、越界工具调用、内部错误）、`timeout`（默认 5 分钟，`generationJob.Timeout`）、`cancelled`、`unsaved`、`busy`。超时与取消同样 `session/cancel` → 2 秒 → 杀进程 → 删临时目录。
 - 退出：关窗口取消调用的 ctx。Agent 主进程退出后，宿主给 stdout 和 stderr 留出有限的读取时间，避免继承管道的子进程拖住清理。退出 app 时 `main` 在 `App.Run` 返回后最多等生成任务清理 5 秒。
 - 模型选择与设置（#17/#24，ADR 0004）：面板底部固定区展示只读 `Agent: Antigravity (agy)` 与向上弹出菜单 `ModelMenu`（`.sel-btn` 26px 凸起触发钮 + `.mmenu.pop` 10px 圆角白纸弹层 + `Agent’s choice` 与缓存的 `models` 列表 + 右侧勾号 `.chk`）；点选模型后只提交 `{ model }` 并立即经 `setSettings` 持久化、关闭弹层，支持点击外部或按 `Escape`（`document` 级监听）关闭、生成中禁用。`agent-not-found` 错误里的 `Locate agent…` 只提交 `{ agentCommand }`。常规界面不暴露自由文本 `Model` 输入框，`Agent command` 输入框只在定位失败时原地出现。
-- 宿主（Go）：临时目录里只有 `source.md`；`<agentCommand> acp`，无其他参数；`initialize` → `session/new` → `set_config_option(model)`（模型非空时）→ `session/prompt`。权限与工具调用按同一条路径规则检查（读 `source.md`、写 `out.json`、思考），越界即取消本次运行。`out.json` ≤ 1 MiB、普通文件、JSON 对象、非空 `a2ui`、合法 `sources`；宿主写 `version: 2`、`generatedAt`、`model`、`request`、带 `hash` 的 `sources`、原样的 `a2ui`，丢弃其他字段，原子替换视图文件；临时目录总是删除。进度：`starting`（启动、Agent 就绪）、`thinking`、`reading` / `writing`（工具标题）、`checking`。
+- 宿主（Go，提示词在 `generationprompt.go`）：整份捕获的文档文本只内联一次（`<source>` 标记之间）；局部更新再内联一次当前视图原文（`<view>`）。`source.md` 与 `view.json` 仍写进临时目录作为私有快照，路径权限规则不变；提示词说明它们只是快照、不要读，唯一允许写的是 `out.json` 的精确路径，且不联网、不用其他工具。`<agentCommand> acp`，无其他参数；`initialize` → `session/new` → `set_config_option(model)`（模型非空时）→ `session/prompt`。权限与工具调用按同一条路径规则检查（读 `source.md`、写 `out.json`、思考），越界即取消本次运行。内容规则是通用的，不按具体文档写死：保留名称与拼写/大小写、日期、数值、单位、条件与 if/else 分支优先级，覆盖全文相关材料（包括分散在不同章节的对照行），共享属性用 ComparisonTable、有序阶段用 Timeline；Checklist 只用于文档明说完成状态的条目（不臆造、不重复同一摘要）；来源 heading 照抄原文（含编号与标点），指向精确章节。`out.json` ≤ 1 MiB、普通文件、JSON 对象、非空 `a2ui`、合法 `sources`；宿主写 `version: 2`、`generatedAt`、`model`、`request`、带 `hash` 的 `sources`、原样的 `a2ui`，丢弃其他字段。临时目录总是删除。进度：`starting`（启动、Agent 就绪）、`thinking`、`reading` / `writing`（工具标题）、`checking`。
+- 写入前校验（ADR 0002）：`generationJob.Validate` 在 Go 端由 `validateGeneratedCandidate` 实现，把**将被写入的完整候选**（已盖好 `version` / `generatedAt` / `model` / `request` / `sources` + `hash`；局部更新是合并后的整份历史，含末尾换行）作为单个字符串参数交给页面 `window.__mgoValidateGeneratedView`（`mygoHost.ts` 安装，`browserHost.ts` 直接调用同一函数）。通过后才原子替换视图文件并把旧视图留成 Undo 备份；页面拒绝 → 普通 `invalid-output`（附 Agent 回复为 `detail`）；桥缺失、窗口或页面不可用、页面抛错、取消 → 视图与备份同样不变，message 说明未能检查因而没有保存。失败不会改写视图或备份；没有 Go 端的第二份组件规则，也没有新增 IPC 或格式字段。
 - 共享测试向量 `web/test/fixtures/section-vectors.json` 增加了章节的 UTF-16 `start` / `end` 与标题规范化（`normalize`），TS 与 Go 两边都用它验证。
 
 ## 生成设置（进程级，`settings.go`）
@@ -273,8 +276,8 @@ interface PluginContext {
 ## GenUI 重新生成与撤回（#12）
 
 - 页面：有视图时按钮是 `Regenerate changed (N)` 与 `Regenerate all`；没有视图时是 `Generate`。N = 表面上 `sources` 状态为「原文已改」的组件数（随来源刷新）；N = 0 时 `Regenerate changed` 禁用。`Regenerate changed` 发 `mode: 'update'`、`replaceIds` = 这些组件 id；两种都带生成要求，失败后 `Retry` 按同一种方式重跑。有备份时显示 `Undo last generation`（生成中禁用）。
-- 宿主（`update.go`）：局部生成前先读当前视图（版本 2、有 surface、`replaceIds` 非空且都是视图里的组件），否则不启动 Agent，`agent-error`「The current view cannot be updated: …」。临时目录里放 `source.md` 和 `view.json`（当前视图原样）；权限策略允许读 `view.json`，只允许写 `out.json`。提示词列出要替换的 id 和 surface。`out.json` 的 `a2ui` 必须是**恰好一条** `updateComponents`（只有 `version` 与 `updateComponents` 两个键），是视图的 surface，组件 id 只能是要替换的或视图里没有的，不重复；`sources` 只能新增，或与视图里同名的完全一致。任何一条不符合 → `invalid-output`，视图和备份不变。通过后这条消息追加到 `a2ui` 末尾，所有来源按本次文本重算哈希，`generatedAt` / `model` / `request` 取本次。写入前再读一次视图文件，如果 Agent 工作期间被改过，不写入（`agent-error`）。
-- 备份：每次成功写入新视图（全部或局部）前，把当前视图原子写到 `.<name>.genui.prev.json`，权限与视图相同；写视图失败时把备份恢复原样。生成失败不动备份。撤回 = `rename(prev, view)`，只有一份。
+- 宿主（`update.go`）：局部生成前先读当前视图（版本 2、有 surface、`replaceIds` 非空且都是视图里的组件），否则不启动 Agent，`agent-error`「The current view cannot be updated: …」。临时目录里放 `source.md` 和 `view.json`（当前视图原样）；权限策略允许读 `view.json`，只允许写 `out.json`。提示词列出要替换的 id 和 surface。`out.json` 的 `a2ui` 必须是**恰好一条** `updateComponents`（只有 `version` 与 `updateComponents` 两个键），是视图的 surface，组件 id 只能是要替换的或视图里没有的，不重复；`sources` 只能新增，或与视图里同名的完全一致。任何一条不符合 → `invalid-output`，视图和备份不变。通过后这条消息追加到 `a2ui` 末尾，所有来源按本次文本重算哈希，`generatedAt` / `model` / `request` 取本次；合并后的整份候选（含历史里已不可达的旧组件）再交页面校验，通过才写入。写入前再读一次视图文件，如果 Agent 工作期间被改过，不写入（`agent-error`）。
+- 备份：每次成功写入新视图（全部或局部）前、且在候选校验通过之后，把当前视图原子写到 `.<name>.genui.prev.json`，权限与视图相同；写视图失败时把备份恢复原样。生成失败或校验拒绝不动备份。撤回 = `rename(prev, view)`，只有一份。
 
 ## 批注（#13，#19 原地 Composer）
 

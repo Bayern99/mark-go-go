@@ -9,14 +9,27 @@ import type {
 } from '../../host/types'
 import { extractSections } from '../../markdown/sections'
 import { catalogDefinition } from './a2ui'
-import formatDocument from './view-format.md?raw'
 
 /**
- * What the agent is given to know the format: the format document, then the
- * catalog definition with every component's schema and nesting rules.
+ * The model-only format: the message and source contract, then the actual
+ * catalog as compact JSON with every component's schema and nesting rules.
+ * view-format.md stays the reader-facing description; its example and
+ * property prose would only repeat what the schemas already say.
  */
+const formatContract = `A2UI 1.0 view contract.
+
+out.json: {"sources":{"<id>":{"heading":"<plain heading>","occurrence":<n>}},"a2ui":[<messages>]}. occurrence counts repeated headings from 1 and may be left out when it is 1. Leave out "hash": the app writes it.
+
+sources: each component names the sections it draws on in "sources", a list of ids. heading is the heading's plain text exactly as it reads, without # marks or inline formatting; matching ignores case and repeated spaces. A section runs from its heading to the next heading of the same or a higher level, so it includes sub-sections. Reader notes (top-level HTML comment blocks) are not document content.
+
+a2ui: one surface, catalogId "markgogo.dev:genui/v1", message "version" "1.0". A full view is one createSurface whose component tree starts at "root"; an update is one updateComponents for the existing surface. Every component is an object with only "id", "component" and that component's properties. A reference must name a component of the view. ids must be valid Unicode UAX #31 identifiers; ASCII letters, digits and underscores are safe, and hyphens are not. Text content is Markdown; content components take plain text and contain no other component.
+
+Full-view message shape: {"version":"1.0","createSurface":{"surfaceId":"view","catalogId":"markgogo.dev:genui/v1","components":[{"id":"root","component":"KeyPoints","items":["A fact from the document"],"sources":["s1"]}]}}. Update message shape: {"version":"1.0","updateComponents":{"surfaceId":"view","components":[<replacement components>]}}. Use the actual source id and existing surface id for the run.
+
+Catalog definition (every component's JSON Schema and allowed parents and children):`
+
 export function agentFormat(): string {
-  return `${formatDocument.trim()}\n\n## Catalog definition\n\n\`\`\`json\n${JSON.stringify(catalogDefinition(), null, 2)}\n\`\`\`\n`
+  return `${formatContract}\n${JSON.stringify(catalogDefinition())}\n`
 }
 
 /**

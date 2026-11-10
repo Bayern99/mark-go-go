@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 )
 
 // The events a generation observer receives. run.end is the terminal
@@ -12,9 +13,11 @@ import (
 const (
 	traceRunStart      = "run.start"
 	traceAgentStart    = "agent.start"
+	traceAgentReused   = "agent.reused"
 	traceACPSent       = "acp.sent"
 	traceACPReceived   = "acp.received"
 	traceInitialize    = "initialize"
+	traceInitCached    = "initialize.cached"
 	traceSessionNew    = "session.new"
 	traceConfigOptions = "config.options"
 	traceConfigSet     = "config.set"
@@ -59,6 +62,18 @@ type traceAgentStartPayload struct {
 	Cwd  string   `json:"cwd"`
 }
 
+// traceAgentReusePayload is the idle process a run leased instead of
+// starting one. Its StartedAt and Cwd are the original process's; the
+// run's own session and working folder are separate.
+type traceAgentReusePayload struct {
+	Path      string   `json:"path"`
+	Args      []string `json:"args"`
+	PID       int      `json:"pid"`
+	Cwd       string   `json:"cwd"`
+	StartedAt string   `json:"startedAt"`
+	IdleMS    int64    `json:"idleMs"`
+}
+
 // traceACPPayload is one full JSON-RPC line as it crossed a pipe.
 type traceACPPayload struct {
 	Direction string          `json:"direction"`
@@ -67,11 +82,28 @@ type traceACPPayload struct {
 
 // traceInitializePayload is the complete initialize answer.
 type traceInitializePayload struct {
-	ClientInfo      map[string]string `json:"clientInfo"`
-	RequestProtocol int               `json:"requestProtocolVersion"`
-	AgentProtocol   int               `json:"agentProtocolVersion"`
-	AgentInfo       json.RawMessage   `json:"agentInfo,omitempty"`
-	Result          json.RawMessage   `json:"result"`
+	ClientInfo        map[string]string `json:"clientInfo"`
+	RequestProtocol   int               `json:"requestProtocolVersion"`
+	AgentProtocol     int               `json:"agentProtocolVersion"`
+	AgentInfo         json.RawMessage   `json:"agentInfo,omitempty"`
+	AgentCapabilities json.RawMessage   `json:"agentCapabilities,omitempty"`
+	AuthMethods       json.RawMessage   `json:"authMethods,omitempty"`
+	Result            json.RawMessage   `json:"result"`
+}
+
+// traceInitializeCachedPayload is the real initialize answer a reused
+// process gave when it was started, with that process's provenance.
+type traceInitializeCachedPayload struct {
+	ClientInfo        map[string]string `json:"clientInfo"`
+	RequestProtocol   int               `json:"requestProtocolVersion"`
+	AgentProtocol     int               `json:"agentProtocolVersion"`
+	AgentInfo         json.RawMessage   `json:"agentInfo,omitempty"`
+	AgentCapabilities json.RawMessage   `json:"agentCapabilities,omitempty"`
+	AuthMethods       json.RawMessage   `json:"authMethods,omitempty"`
+	Result            json.RawMessage   `json:"result"`
+	ProcessPID        int               `json:"processPid"`
+	ProcessStartedAt  string            `json:"processStartedAt"`
+	ProcessCwd        string            `json:"processCwd"`
 }
 
 // traceSessionNewPayload is the complete session/new answer.
@@ -198,6 +230,7 @@ type generationTrace struct {
 	mu            sync.Mutex
 	sessionID     string
 	viewCommitted bool
+	ended         bool
 	model         traceOptionState
 	thought       traceOptionState
 }
@@ -223,6 +256,9 @@ func (t *generationTrace) emit(event string, payload any) {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.ended {
+		return
+	}
 	t.observe(event, payload)
 }
 
@@ -362,18 +398,84 @@ func (t *generationTrace) agentStart(path string, cmdArgs []string, pid int, cwd
 	t.emit(traceAgentStart, &traceAgentStartPayload{Path: path, Args: cmdArgs, PID: pid, Cwd: cwd})
 }
 
+// agentReused records the idle process a run leased instead of
+// starting one. It is never emitted for a process this run started.
+func (t *generationTrace) agentReused(path string, cmdArgs []string, pid int, cwd string, startedAt, idleSince time.Time) {
+	if t == nil {
+		return
+	}
+	payload := &traceAgentReusePayload{
+		Path:      path,
+		Args:      cmdArgs,
+		PID:       pid,
+		Cwd:       cwd,
+		StartedAt: startedAt.UTC().Format(time.RFC3339Nano),
+	}
+	if !idleSince.IsZero() {
+		payload.IdleMS = time.Since(idleSince).Milliseconds()
+	}
+	t.emit(traceAgentReused, payload)
+}
+
 // initialize records the complete handshake answer.
-func (t *generationTrace) initialized(result json.RawMessage, clientInfo map[string]string, requestVersion, agentVersion int, agentInfo json.RawMessage) {
+func (t *generationTrace) initialized(result json.RawMessage, clientInfo map[string]string, requestVersion, agentVersion int, agentInfo, capabilities, authMethods json.RawMessage) {
 	if t == nil {
 		return
 	}
 	t.emit(traceInitialize, &traceInitializePayload{
-		ClientInfo:      clientInfo,
-		RequestProtocol: requestVersion,
-		AgentProtocol:   agentVersion,
-		AgentInfo:       agentInfo,
-		Result:          result,
+		ClientInfo:        clientInfo,
+		RequestProtocol:   requestVersion,
+		AgentProtocol:     agentVersion,
+		AgentInfo:         agentInfo,
+		AgentCapabilities: capabilities,
+		AuthMethods:       authMethods,
+		Result:            result,
 	})
+}
+
+// initializeCached records the real initialize answer a reused process
+// gave when it was started, with that process's provenance. It never
+// fabricates an ACP line: the cached answer crossed the pipes once, in
+// the run that started the process.
+func (t *generationTrace) initializeCached(clientInfo map[string]string, requestVersion, agentVersion int, agentInfo, capabilities, authMethods, result json.RawMessage, pid int, startedAt time.Time, cwd string) {
+	if t == nil {
+		return
+	}
+	t.emit(traceInitCached, &traceInitializeCachedPayload{
+		ClientInfo:        clientInfo,
+		RequestProtocol:   requestVersion,
+		AgentProtocol:     agentVersion,
+		AgentInfo:         agentInfo,
+		AgentCapabilities: capabilities,
+		AuthMethods:       authMethods,
+		Result:            result,
+		ProcessPID:        pid,
+		ProcessStartedAt:  startedAt.UTC().Format(time.RFC3339Nano),
+		ProcessCwd:        cwd,
+	})
+}
+
+// acceptsInbound says whether an inbound line belongs to this run's
+// session. Sparse notifications without a session ID are kept; a
+// session-scoped message for another session is dropped so a reused
+// process's late old events cannot contaminate this run's trace.
+func (t *generationTrace) acceptsInbound(line []byte) bool {
+	if t == nil {
+		return true
+	}
+	var msg struct {
+		Method string `json:"method"`
+		Params struct {
+			SessionID string `json:"sessionId"`
+		} `json:"params"`
+	}
+	if json.Unmarshal(line, &msg) != nil || msg.Params.SessionID == "" {
+		return true
+	}
+	t.mu.Lock()
+	current := t.sessionID
+	t.mu.Unlock()
+	return current != "" && msg.Params.SessionID == current
 }
 
 // session respects the handshake's actual configOptions and keeps the
@@ -638,6 +740,7 @@ func (t *generationTrace) end(err error) {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.ended = true
 	payload := &traceRunEndPayload{
 		OK:                    err == nil,
 		SessionID:             t.sessionID,

@@ -58,6 +58,10 @@ type documentHost struct {
 	quitSaving   bool
 	quitTimer    *time.Timer
 
+	// agentCache, when non-nil, keeps at most one idle ACP agent process
+	// for sequential generations; nil starts one process per run.
+	agentCache *acpProcessCache
+
 	// prepareJob, when set, adjusts a generation job after settings and
 	// path are captured. Tests inject a fake agent through it.
 	prepareJob func(*generationJob)
@@ -120,14 +124,23 @@ func newDocumentHost() *documentHost {
 		_ = settingsChanged.Broadcast(s)
 	}
 	return &documentHost{
-		byWindow: make(map[*mygo.Window]*workspace),
-		byID:     make(map[string]*docSession),
-		claims:   make(map[string]string),
-		settings: settings,
+		byWindow:   make(map[*mygo.Window]*workspace),
+		byID:       make(map[string]*docSession),
+		claims:     make(map[string]string),
+		settings:   settings,
+		agentCache: newACPProcessCache(),
 		// Recovery opens documents before restoreAfterStart reads the
 		// session. Their windows must not be written over session.json
 		// before the stored layout is planned from it.
 		restoring: true,
+	}
+}
+
+// closeAgentCache stops the idle agent process and removes its private
+// folder. Active runs are stopped through their contexts first.
+func (h *documentHost) closeAgentCache() {
+	if h.agentCache != nil {
+		h.agentCache.close()
 	}
 }
 

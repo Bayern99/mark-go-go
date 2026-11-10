@@ -40,6 +40,7 @@ func configureReadBench(h *documentHost) {
 			Condition    string `json:"condition"`
 			ThoughtLevel string `json:"thoughtLevel"`
 			Strategy     string `json:"strategy"`
+			FreshAgent   bool   `json:"freshAgent"`
 		}
 		data, err := os.ReadFile(filepath.Join(root, "active.json"))
 		if err != nil {
@@ -109,6 +110,9 @@ func configureReadBench(h *documentHost) {
 		}
 		job.Observe = observe
 		job.ThoughtLevel = active.ThoughtLevel
+		if active.FreshAgent {
+			job.AgentCache = nil
+		}
 		switch active.Strategy {
 		case "", "full":
 		case "jev-controlled":

@@ -81,6 +81,7 @@ func main() {
 	})
 	err := mygo.App.Run()
 	host.waitForGenerations(5 * time.Second)
+	host.closeAgentCache()
 	if err != nil {
 		log.Fatal(err)
 	}

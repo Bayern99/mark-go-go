@@ -37,7 +37,7 @@ func generationPrompt(req GenerateRequest, base *baseView, dir string) string {
 	}
 
 	b.WriteString("Content rules:\n")
-	b.WriteString("- Preserve every fact the document and the reader's request call for, exactly: names and their spelling and case, dates, numbers, units, percentages, qualifiers, conditions, and the precedence of if/else branches. Do not round, merge or drop details when condensing.\n")
+	b.WriteString("- Preserve facts exactly: names and case, dates, numbers, units, percentages, qualifiers, conditions and if/else precedence. Keep the source's technical terms as written, even in translation. Do not round, merge or drop required details.\n")
 	b.WriteString("- Cover every item and detail directly needed to answer the reader's request, including rows spread across different sections; do not stop after the first matching section. Do not widen the question to adjacent topics or append background audits, summaries, evaluations or recommendations unless requested.\n")
 	b.WriteString("- When subjects are compared on shared attributes, use ComparisonTable with one row per subject and one column per shared attribute, keeping every relevant subject and attribute.\n")
 	b.WriteString("- For an ordered sequence such as phases, events or route steps, use Timeline in the order the document gives, keeping each stage's condition or duration.\n")

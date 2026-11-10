@@ -94,6 +94,16 @@ var errTimedOut = errors.New("generation timed out")
 // defaultGenerationTimeout is how long a run may take.
 const defaultGenerationTimeout = 5 * time.Minute
 
+// acpPromptCancelAckTimeout bounds how long a cancelled prompt turn may
+// take to answer its session/cancel. The answer is the turn's own end,
+// so a prompt that acknowledges the cancellation completes the run
+// at once; a process that stays silent is discarded after this bound.
+const acpPromptCancelAckTimeout = time.Second
+
+// acpSessionCloseTimeout bounds the session/close exchange that ends a
+// settled run's session before its process may be leased again.
+const acpSessionCloseTimeout = time.Second
+
 // Generate runs the named document's view generation: the host starts the
 // user's Antigravity agent over ACP in an isolated temporary folder
 // with the request's captured text, the agent writes the view as out.json,
@@ -169,6 +179,7 @@ func (h *documentHost) generate(ctx context.Context, documentID string, req Gene
 		Now:          time.Now,
 		Settings:     h.settings,
 		Validate:     validateGeneratedCandidate,
+		AgentCache:   h.agentCache,
 		BeforeWrite: func() error {
 			return h.commitGenerationWrite(s, slot)
 		},
@@ -313,6 +324,11 @@ type generationJob struct {
 	// nothing and keeps the agent's current level.
 	ThoughtLevel string
 
+	// AgentCache, when non-nil, lets the run lease one idle ACP agent
+	// process and open a fresh session on it. Nil is the ordinary
+	// one-shot process: started for the run and stopped with it.
+	AgentCache *acpProcessCache
+
 	// Prepare is an optional in-process experiment: it supplies a prompt and
 	// compiles content-only output into the ordinary view contract. Ordinary
 	// builds leave it nil and use the full A2UI generation path.
@@ -402,20 +418,38 @@ func runGeneration(ctx context.Context, job generationJob, progress func(Generat
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(resolved, "acp")
-	cmd.Dir = dir
-	cmd.Env = job.Env
 
 	run := &genRun{job: job, dir: dir, send: send, base: base, trace: trace, promptText: promptText, assembleOutput: assembleOutput, abortCh: make(chan struct{}), toolCalls: make(map[string]toolCallState)}
-	agent, err := newACPAgent(cmd, newLimitBuffer(4<<10))
-	if err != nil {
-		return newFailure(failAgentNotFound, fmt.Sprintf("Could not start the agent command %q: %v.", job.AgentCommand, err), hintAgentNotFound)
+	var agent *acpAgent
+	if job.AgentCache != nil {
+		lease, err := job.AgentCache.lease(resolved, job.Env)
+		if err != nil {
+			return newFailure(failAgentNotFound, fmt.Sprintf("Could not start the agent command %q: %v.", job.AgentCommand, err), hintAgentNotFound)
+		}
+		run.lease = lease
+		agent = lease.agent
+		if lease.reused {
+			trace.agentReused(resolved, lease.args, agent.cmd.Process.Pid, lease.cwd, lease.startedAt, lease.idleSince)
+		} else {
+			trace.agentStart(resolved, lease.args, agent.cmd.Process.Pid, lease.cwd)
+		}
+	} else {
+		cmd := exec.Command(resolved, "acp")
+		cmd.Dir = dir
+		cmd.Env = job.Env
+		agent, err = newACPAgent(cmd, newLimitBuffer(4<<10))
+		if err != nil {
+			return newFailure(failAgentNotFound, fmt.Sprintf("Could not start the agent command %q: %v.", job.AgentCommand, err), hintAgentNotFound)
+		}
+		trace.agentStart(resolved, cmd.Args, agent.cmd.Process.Pid, dir)
 	}
 	run.agent = agent
-	agent.handleRequest = run.handleRequest
-	agent.handleNotification = run.handleNotification
+	var observe func(direction string, line []byte)
 	if trace != nil {
-		agent.observe = func(direction string, line []byte) {
+		observe = func(direction string, line []byte) {
+			if direction == acpReceived && !trace.acceptsInbound(line) {
+				return
+			}
 			event := traceACPSent
 			if direction == acpReceived {
 				event = traceACPReceived
@@ -423,37 +457,73 @@ func runGeneration(ctx context.Context, job generationJob, progress func(Generat
 			trace.emit(event, &traceACPPayload{Direction: direction, Line: json.RawMessage(line)})
 		}
 	}
-	trace.agentStart(resolved, cmd.Args, agent.cmd.Process.Pid, dir)
-	agent.start()
-	defer agent.kill()
+	agent.setHandlers(run.handleRequest, run.handleNotification, observe)
+	if run.lease == nil || !run.lease.reused {
+		// A leased or one-shot process starts its readers here; an idle
+		// cached process already has them.
+		agent.start()
+	}
+	defer run.finishAgent()
 
 	err = run.execute(ctx)
 	if err == nil {
 		return nil
 	}
 	if errors.Is(err, errCancelled) {
-		run.cancelGracefully(2 * time.Second)
+		run.stopAfterCancel()
 		return interrupted()
 	}
 	return err
+}
+
+// finishAgent ends the run's use of its process: a cache lease returns
+// a healthy, closed process to the cache, and everything else is
+// stopped. The one-shot path stops its process as before.
+func (r *genRun) finishAgent() {
+	if r.agent != nil {
+		// The run is over: a late event of its session must not reach
+		// its handlers, and an idle process answers no request of it.
+		r.agent.setHandlers(nil, nil, nil)
+	}
+	if r.lease != nil {
+		r.lease.release(r.sessionClosed)
+		return
+	}
+	if r.agent != nil {
+		r.agent.kill()
+	}
 }
 
 // execute runs the whole conversation with the agent: the handshake,
 // the prompt turn, and the view it produced.
 func (r *genRun) execute(ctx context.Context) error {
 	var initialized struct {
-		ProtocolVersion int             `json:"protocolVersion"`
-		AgentInfo       json.RawMessage `json:"agentInfo"`
+		ProtocolVersion   int             `json:"protocolVersion"`
+		AgentInfo         json.RawMessage `json:"agentInfo"`
+		AgentCapabilities json.RawMessage `json:"agentCapabilities"`
+		AuthMethods       json.RawMessage `json:"authMethods"`
 	}
-	var initRaw json.RawMessage
-	var initRawPtr *json.RawMessage
-	if r.trace != nil {
-		initRawPtr = &initRaw
+	if r.lease != nil && r.lease.reused {
+		handshake := r.lease.initialize
+		initialized.ProtocolVersion = handshake.protocolVersion
+		initialized.AgentInfo = handshake.agentInfo
+		initialized.AgentCapabilities = handshake.agentCapabilities
+		initialized.AuthMethods = handshake.authMethods
+		r.trace.initializeCached(acpClientInfo, acpProtocolVersion, handshake.protocolVersion, handshake.agentInfo, handshake.agentCapabilities, handshake.authMethods, handshake.raw, r.lease.agent.cmd.Process.Pid, r.lease.startedAt, r.lease.cwd)
+	} else {
+		var initRaw json.RawMessage
+		var initRawPtr *json.RawMessage
+		if r.trace != nil {
+			initRawPtr = &initRaw
+		}
+		if err := r.callAgent(ctx, "initialize", acpInitializeParams, &initialized, initRawPtr); err != nil {
+			return err
+		}
+		r.trace.initialized(initRaw, acpClientInfo, acpProtocolVersion, initialized.ProtocolVersion, initialized.AgentInfo, initialized.AgentCapabilities, initialized.AuthMethods)
+		if r.lease != nil {
+			r.lease.storeInitialize(initRaw, initialized.ProtocolVersion, initialized.AgentInfo, initialized.AgentCapabilities, initialized.AuthMethods)
+		}
 	}
-	if err := r.callAgent(ctx, "initialize", acpInitializeParams, &initialized, initRawPtr); err != nil {
-		return err
-	}
-	r.trace.initialized(initRaw, acpClientInfo, acpProtocolVersion, initialized.ProtocolVersion, initialized.AgentInfo)
 	if initialized.ProtocolVersion != acpProtocolVersion {
 		return agentErrorf("The agent speaks ACP protocol version %d, but this app speaks version %d.", initialized.ProtocolVersion, acpProtocolVersion)
 	}
@@ -473,8 +543,13 @@ func (r *genRun) execute(ctx context.Context) error {
 	}, &opened, openedRawPtr); err != nil {
 		return err
 	}
-	r.sessionID = opened.SessionID
-	r.trace.sessionNew(openedRaw, r.sessionID)
+	if r.lease != nil {
+		if err := r.lease.acceptSession(opened.SessionID); err != nil {
+			return err
+		}
+	}
+	r.setSessionID(opened.SessionID)
+	r.trace.sessionNew(openedRaw, opened.SessionID)
 	if models := configValues(opened.ConfigOptions, "model"); len(models) > 0 && r.job.Settings != nil {
 		_ = r.job.Settings.setModels(models)
 	}
@@ -484,15 +559,12 @@ func (r *genRun) execute(ctx context.Context) error {
 
 	if r.job.Model != "" {
 		var setRaw json.RawMessage
-		var setRawPtr *json.RawMessage
-		if r.trace != nil {
-			setRawPtr = &setRaw
-		}
+		r.markModelRequested()
 		if err := r.callAgent(ctx, "session/set_config_option", map[string]any{
-			"sessionId": r.sessionID,
+			"sessionId": r.session(),
 			"configId":  traceModelOption,
 			"value":     r.job.Model,
-		}, nil, setRawPtr); err != nil {
+		}, nil, &setRaw); err != nil {
 			r.trace.configSetError(traceModelOption, r.job.Model, err)
 			var ge *genError
 			if models := configValues(opened.ConfigOptions, "model"); len(models) > 0 && errors.As(err, &ge) && ge.Kind == failAgentError {
@@ -503,6 +575,10 @@ func (r *genRun) execute(ctx context.Context) error {
 			return err
 		}
 		r.trace.configSetResponse(traceModelOption, r.job.Model, setRaw)
+		r.noteModelOptions(configOptionsField(setRaw))
+		if err := r.modelProblem(); err != nil {
+			return err
+		}
 	}
 
 	if err := r.applyThoughtLevel(ctx, opened.ConfigOptions); err != nil {
@@ -523,18 +599,56 @@ func (r *genRun) execute(ctx context.Context) error {
 		turnedRawPtr = &turnedRaw
 	}
 	if err := r.callAgent(ctx, "session/prompt", map[string]any{
-		"sessionId": r.sessionID,
+		"sessionId": r.session(),
 		"prompt":    []map[string]any{{"type": "text", "text": promptText}},
 	}, &turned, turnedRawPtr); err != nil {
+		if errors.Is(err, errCancelled) && r.turnWasAcknowledged() {
+			// The cancelled turn answered: end its session so the
+			// process can be reused.
+			r.settleSession()
+		}
 		return err
 	}
 	r.trace.promptResult(turnedRaw)
+	switch turned.StopReason {
+	case "", "end_turn":
+		// The turn completed; the view may follow.
+	case "cancelled":
+		r.settleSession()
+		return errCancelled
+	case "refusal":
+		r.settleSession()
+		refused := newFailure(failAgentMessage, "The agent declined to make the view.", hintAgentMessage)
+		refused.Detail = cutRunes(strings.TrimSpace(r.lastReply()), maxDetailRunes)
+		return refused
+	case "max_tokens", "max_turn_requests":
+		r.settleSession()
+		stopped := newFailure(failAgentMessage, "The agent stopped before finishing the view.", hintAgentMessage)
+		stopped.Detail = cutRunes(strings.TrimSpace(r.lastReply()), maxDetailRunes)
+		return stopped
+	default:
+		r.settleSession()
+		stopped := newFailure(failAgentMessage, fmt.Sprintf("The agent stopped before finishing the view (%s).", turned.StopReason), hintAgentMessage)
+		stopped.Detail = cutRunes(strings.TrimSpace(r.lastReply()), maxDetailRunes)
+		return stopped
+	}
+	if err := r.modelProblem(); err != nil {
+		r.settleSession()
+		return err
+	}
 	if err := r.send.step("checking", "Checking the view"); err != nil {
+		r.settleSession()
 		return err
 	}
 
-	// The agent keeps running after its answer; stop it before reading.
-	r.agent.kill()
+	if r.lease == nil {
+		// The agent keeps running after its answer; stop it before reading.
+		r.agent.kill()
+	} else if !r.settleSession() {
+		// Closure of the fresh session cannot be proven: discard the
+		// process and fall back to the old stop-before-reading path.
+		r.agent.kill()
+	}
 	return r.collect(ctx)
 }
 
@@ -570,7 +684,7 @@ func (r *genRun) applyThoughtLevel(ctx context.Context, optionsRaw json.RawMessa
 		setRawPtr = &setRaw
 	}
 	if err := r.callAgent(ctx, "session/set_config_option", map[string]any{
-		"sessionId": r.sessionID,
+		"sessionId": r.session(),
 		"configId":  opt.ID,
 		"value":     requested,
 	}, nil, setRawPtr); err != nil {
@@ -597,8 +711,31 @@ type genRun struct {
 	promptText     string
 	assembleOutput func([]byte) ([]byte, error)
 
-	agent     *acpAgent
-	sessionID string
+	agent *acpAgent
+	// lease is the cached process lease; nil for a one-shot process.
+	lease *acpLease
+
+	// sessionMu guards sessionID, which the agent's reader goroutine
+	// reads while the run sets it. sessionClosed records that the fresh
+	// session's bounded session/close succeeded; only then may the lease
+	// return the process to the cache.
+	sessionMu     sync.RWMutex
+	sessionID     string
+	sessionClosed bool
+
+	// cancelMu guards cancelAcknowledged: a cancelled prompt turn
+	// answered its session/cancel, so no turn is running any more.
+	cancelMu           sync.Mutex
+	cancelAcknowledged bool
+
+	// modelMu guards the model the agent actually reported for this
+	// run: only a confirmed match may be stamped on the view, and a
+	// reported mismatch fails the run instead of silently succeeding.
+	modelMu        sync.Mutex
+	modelRequested bool
+	modelActual    string
+	modelConfirmed bool
+	modelMismatch  string
 
 	// toolCalls remembers the kind and locations of each tool call by
 	// id, so that a tool_call_update, whose fields are optional, is
@@ -623,47 +760,147 @@ type genRun struct {
 // that is not signed in, the agent's error answer to the prompt (its
 // own words, as a quota running out), or an agent-error.
 func (r *genRun) callAgent(ctx context.Context, method string, params any, result any, raw *json.RawMessage) error {
+	if ctx.Err() != nil {
+		return errCancelled
+	}
 	ch := make(chan error, 1)
 	go func() { ch <- r.agent.callCapturing(method, params, result, raw) }()
 	select {
 	case err := <-ch:
-		if err == nil {
-			return nil
-		}
-		var rpc *acpError
-		if !errors.As(err, &rpc) {
-			// The agent exited or its answer was malformed; an agent
-			// that is not signed in may say so on its error output.
-			if isAuthError(0, err.Error()) {
-				return authRequired(r.job.AgentCommand, err.Error())
-			}
-			return agentError(err.Error())
-		}
-		switch {
-		case isAuthError(rpc.Code, rpc.Message):
-			return authRequired(r.job.AgentCommand, rpc.Message)
-		case method == "session/prompt":
-			stopped := newFailure(failAgentMessage, "The agent stopped with an error.", hintAgentMessage)
-			stopped.Detail = cutRunes(rpc.Message, maxDetailRunes)
-			return stopped
-		default:
-			return agentErrorf("The agent answered %s with an error: %s", method, rpc.Message)
-		}
+		return r.agentCallResult(method, err)
 	case <-ctx.Done():
+		r.cancelPromptTurn(method, ch)
 		return errCancelled
 	case <-r.abortCh:
 		return agentError(r.abortReason)
 	}
 }
 
-// cancelGracefully asks the agent to cancel its turn, gives it a
-// moment to stop on its own, then kills it: the page or its window
-// went away.
-func (r *genRun) cancelGracefully(grace time.Duration) {
+// agentCallResult turns one answer of the agent into the run's error.
+func (r *genRun) agentCallResult(method string, err error) error {
+	if err == nil {
+		return nil
+	}
+	var rpc *acpError
+	if !errors.As(err, &rpc) {
+		// The agent exited or its answer was malformed; an agent
+		// that is not signed in may say so on its error output.
+		if isAuthError(0, err.Error()) {
+			return authRequired(r.job.AgentCommand, err.Error())
+		}
+		return agentError(err.Error())
+	}
+	switch {
+	case isAuthError(rpc.Code, rpc.Message):
+		return authRequired(r.job.AgentCommand, rpc.Message)
+	case method == "session/prompt":
+		stopped := newFailure(failAgentMessage, "The agent stopped with an error.", hintAgentMessage)
+		stopped.Detail = cutRunes(rpc.Message, maxDetailRunes)
+		return stopped
+	default:
+		return agentErrorf("The agent answered %s with an error: %s", method, rpc.Message)
+	}
+}
+
+// cancelPromptTurn asks the agent to cancel the prompt turn the run's
+// context just ended and waits, for at most acpPromptCancelAckTimeout,
+// for that turn to answer. The answer is the turn's own end: an agent
+// that acknowledges the cancellation completes the run at once instead
+// of holding it until a process exit that may never come. The report of
+// a broken process is not an acknowledgement; neither is silence, which
+// runGeneration resolves by discarding the process.
+func (r *genRun) cancelPromptTurn(method string, done <-chan error) {
+	sessionID := r.session()
+	if method != "session/prompt" || sessionID == "" || r.agent == nil {
+		return
+	}
+	// A child that stopped reading can block this write; it must not
+	// delay the bounded wait below.
+	r.agent.cancelTurn(sessionID)
+	timer := time.NewTimer(acpPromptCancelAckTimeout)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		if err == nil {
+			r.markCancelAcknowledged()
+		}
+	case <-r.abortCh:
+		// abort kills the process; the pending call ends with it.
+	case <-timer.C:
+		// Silent or stuck: runGeneration discards the process.
+	}
+}
+
+// markCancelAcknowledged records that the cancelled prompt turn ended.
+func (r *genRun) markCancelAcknowledged() {
+	r.cancelMu.Lock()
+	r.cancelAcknowledged = true
+	r.cancelMu.Unlock()
+}
+
+// turnWasAcknowledged reports whether the cancelled prompt turn answered.
+func (r *genRun) turnWasAcknowledged() bool {
+	r.cancelMu.Lock()
+	defer r.cancelMu.Unlock()
+	return r.cancelAcknowledged
+}
+
+// settleSession ends this run's fresh session so the process may be
+// reused: it closes the session when the agent advertised the close
+// capability and the bounded close answer arrived. It reports whether
+// closure was proven; false means the process must be discarded.
+func (r *genRun) settleSession() bool {
+	if r.lease == nil {
+		return true
+	}
+	if r.sessionClosed {
+		return true
+	}
+	sessionID := r.session()
+	if sessionID == "" || !r.lease.supportsClose() {
+		return false
+	}
+	if !r.closeSessionBounded(sessionID) {
+		return false
+	}
+	r.sessionClosed = true
+	return true
+}
+
+// closeSessionBounded sends session/close and waits, for at most
+// acpSessionCloseTimeout, for its answer. A stuck write or answer is
+// bounded; the process is then discarded and killed.
+func (r *genRun) closeSessionBounded(sessionID string) bool {
+	done := make(chan error, 1)
+	go func() {
+		done <- r.agent.call("session/close", map[string]any{"sessionId": sessionID}, nil)
+	}()
+	timer := time.NewTimer(acpSessionCloseTimeout)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		return err == nil
+	case <-timer.C:
+		return false
+	}
+}
+
+// stopAfterCancel tears a cancelled run's agent down without waiting
+// for the agent to exit on its own. A cancelled prompt turn that
+// answered is settled (and, with a cache, its session closed so the
+// process can be reused); an unresponsive or uncertain turn is
+// discarded, so the page completes within a bound in every case.
+func (r *genRun) stopAfterCancel() {
 	if r.agent == nil {
 		return
 	}
-	r.agent.cancelGracefully(r.sessionID, grace)
+	if r.sessionClosed {
+		return
+	}
+	if r.turnWasAcknowledged() && r.settleSession() {
+		return
+	}
+	r.agent.kill()
 }
 
 // abort stops the run from inside a notification handler: it cancels
@@ -676,9 +913,7 @@ func (r *genRun) abort(msg string) {
 		r.abortReason = msg
 		close(r.abortCh)
 		if r.agent != nil {
-			if r.sessionID != "" {
-				_ = r.agent.notify("session/cancel", map[string]any{"sessionId": r.sessionID})
-			}
+			r.agent.cancelTurn(r.session())
 			go r.agent.kill()
 		}
 	})
@@ -691,10 +926,114 @@ func (r *genRun) lastReply() string {
 	return r.reply.String()
 }
 
+func (r *genRun) setSessionID(id string) {
+	r.sessionMu.Lock()
+	r.sessionID = id
+	r.sessionMu.Unlock()
+}
+
+func (r *genRun) session() string {
+	r.sessionMu.RLock()
+	defer r.sessionMu.RUnlock()
+	return r.sessionID
+}
+
+// noteModelOptions reads the model currentValue the agent reported in
+// session/new configOptions, a config answer, or a config update. A
+// value different from the requested model is a mismatch the run may
+// not silently pass; a match confirms the value the view may carry. No
+// currentValue leaves it unconfirmed, and the view then names no model.
+func (r *genRun) noteModelOptions(options json.RawMessage) {
+	if r.job.Model == "" || len(options) == 0 {
+		return
+	}
+	r.modelMu.Lock()
+	requested := r.modelRequested
+	r.modelMu.Unlock()
+	if !requested {
+		// A config notice before this run asked for its model describes
+		// the session's default, not the outcome of the request.
+		return
+	}
+	opt, ok := findConfigOption(options, traceModelOption)
+	if !ok {
+		return
+	}
+	current, ok := opt.current()
+	if !ok {
+		return
+	}
+	actual, ok := configString(current)
+	if !ok {
+		return
+	}
+	r.modelMu.Lock()
+	defer r.modelMu.Unlock()
+	if actual != r.job.Model {
+		if r.modelMismatch == "" {
+			r.modelMismatch = fmt.Sprintf("The agent reports the model %q, not the requested %q, so the view was not changed.", actual, r.job.Model)
+		}
+		return
+	}
+	if r.modelMismatch == "" {
+		r.modelActual = actual
+		r.modelConfirmed = true
+	}
+}
+
+// markModelRequested records that the run has sent its model request;
+// config notices from before it describe the agent's default.
+func (r *genRun) markModelRequested() {
+	r.modelMu.Lock()
+	r.modelRequested = true
+	r.modelMu.Unlock()
+}
+
+// modelProblem is the failure of a reported model mismatch, if any.
+func (r *genRun) modelProblem() error {
+	if r.job.Model == "" {
+		return nil
+	}
+	r.modelMu.Lock()
+	defer r.modelMu.Unlock()
+	if r.modelMismatch != "" {
+		return agentError(r.modelMismatch)
+	}
+	return nil
+}
+
+// modelStamp is the model the view may claim: the confirmed actual
+// model only, never the requested value merely because it was asked for.
+func (r *genRun) modelStamp() string {
+	r.modelMu.Lock()
+	defer r.modelMu.Unlock()
+	if r.modelConfirmed && r.modelActual == r.job.Model {
+		return r.modelActual
+	}
+	return ""
+}
+
+// notificationBelongsToSession drops a session-scoped message for
+// another session, such as a late old-session event of a reused
+// process. A message without a session ID is kept: sparse updates are
+// matched by their tool call instead.
+func (r *genRun) notificationBelongsToSession(params json.RawMessage) bool {
+	var p struct {
+		SessionID string `json:"sessionId"`
+	}
+	if json.Unmarshal(params, &p) != nil || p.SessionID == "" {
+		return true
+	}
+	return p.SessionID == r.session()
+}
+
 // handleNotification reacts to the agent's notifications: it keeps the
 // agent's last reply, sends the page the progress of the turn, and
 // stops the run when a tool call goes outside the working folder.
 func (r *genRun) handleNotification(method string, params json.RawMessage) {
+	if !r.notificationBelongsToSession(params) {
+		return
+	}
 	if method == "session/config_option_update" {
 		var p struct {
 			ConfigOptions json.RawMessage `json:"configOptions"`
@@ -711,6 +1050,7 @@ func (r *genRun) handleNotification(method string, params json.RawMessage) {
 			opts = upd.Update.ConfigOptions
 		}
 		r.trace.configOptionUpdate(method, params, opts)
+		r.noteModelOptions(opts)
 		return
 	}
 	if method != "session/update" {
@@ -750,8 +1090,9 @@ func (r *genRun) handleNotification(method string, params json.RawMessage) {
 			opts = configOptionsField(params)
 		}
 		r.trace.configOptionUpdate(method, params, opts)
+		r.noteModelOptions(opts)
 	case "tool_call", "tool_call_update":
-		r.handleToolCall(u.SessionUpdate == "tool_call_update", u.ToolCallID, u.Kind, u.Title, u.Name, u.Locations)
+		r.handleToolCall(u.ToolCallID, u.Kind, u.Title, u.Name, u.Locations)
 	}
 }
 
@@ -763,27 +1104,82 @@ type toolCallState struct {
 	locations []acpLocation
 }
 
-// handleToolCall checks one tool call against the isolation policy,
-// stops the run when it goes outside the folder, and otherwise sends
-// the page the phase of the work it shows. A tool_call_update falls
-// back to the kind and locations its tool_call carried, which the
-// update may omit; one for an unknown id, with no kind of its own, is
-// checked as it is, and denied.
-func (r *genRun) handleToolCall(isUpdate bool, id, kind, title, name string, locations []acpLocation) {
-	if isUpdate {
-		if state, ok := r.toolCalls[id]; ok {
-			if kind == "" {
-				kind = state.kind
-			}
-			if len(locations) == 0 {
-				locations = state.locations
+// notificationToolAllowed judges only what a tool notification really
+// reports. A missing kind or missing locations is an observation, not a
+// violation; a reported path outside the folder, or a reported kind
+// outside the allowed operations, still stops the run.
+func notificationToolAllowed(dir, kind string, locations []string) bool {
+	if kind == "" {
+		// No operation to judge, but a reported path outside the folder
+		// is explicit and unsafe.
+		for _, loc := range locations {
+			if !notificationPathInside(dir, loc) {
+				return false
 			}
 		}
-	} else if id != "" {
-		r.toolCalls[id] = toolCallState{kind: kind, locations: locations}
+		return true
 	}
-	paths := make([]string, len(locations))
-	for i, loc := range locations {
+	switch kind {
+	case "think":
+		return true
+	case "read", "search", "edit":
+		for _, loc := range locations {
+			if !agentToolAllowed(dir, kind, []string{loc}) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+// notificationPathInside says whether a reported location resolves to
+// the working folder or below it.
+func notificationPathInside(dir, loc string) bool {
+	resolved := resolveToolPath(dir, loc)
+	rel, err := filepath.Rel(dir, resolved)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// handleToolCall treats one tool notification as an observation: it
+// remembers the kind and locations a call reports, lets a sparse update
+// fall back to them, and sends the page the phase of the work. Only an
+// explicitly reported illegal operation or path stops the run; missing
+// kind or locations, an unknown id and any status are accepted, and no
+// notification grants a permission. Permission requests keep their own
+// conservative policy in handleRequest.
+func (r *genRun) handleToolCall(id, kind, title, name string, locations []acpLocation) {
+	prior := r.toolCalls[id]
+	effectiveKind := kind
+	if effectiveKind == "" {
+		effectiveKind = prior.kind
+	}
+	effectiveLocations := locations
+	if len(effectiveLocations) == 0 && (kind == "" || kind == prior.kind) {
+		// A status-only update omits both fields; the call's own earlier
+		// report still describes it. A new kind without paths does not
+		// inherit locations that described another operation.
+		effectiveLocations = prior.locations
+	}
+	state := prior
+	if kind != "" {
+		state.kind = kind
+	}
+	if len(locations) > 0 {
+		state.locations = locations
+	} else if kind != "" && kind != prior.kind {
+		state.locations = nil
+	}
+	if id != "" {
+		r.toolCalls[id] = state
+	}
+
+	paths := make([]string, len(effectiveLocations))
+	for i, loc := range effectiveLocations {
 		paths[i] = loc.Path
 	}
 	label := title
@@ -793,9 +1189,9 @@ func (r *genRun) handleToolCall(isUpdate bool, id, kind, title, name string, loc
 	if label == "" {
 		label = id
 	}
-	if !agentToolAllowed(r.dir, kind, paths) {
+	if !notificationToolAllowed(r.dir, effectiveKind, paths) {
 		if label == "" {
-			label = kind
+			label = effectiveKind
 		}
 		if label == "" {
 			label = "a tool call"
@@ -803,7 +1199,7 @@ func (r *genRun) handleToolCall(isUpdate bool, id, kind, title, name string, loc
 		r.abort(fmt.Sprintf("The agent tried to use %q outside its folder, so the run was stopped and the view was not changed.", label))
 		return
 	}
-	switch kind {
+	switch effectiveKind {
 	case "read", "search":
 		if label != "" {
 			_ = r.send.step("reading", label)
@@ -821,6 +1217,12 @@ func (r *genRun) handleToolCall(isUpdate bool, id, kind, title, name string, loc
 func (r *genRun) handleRequest(method string, params json.RawMessage) (any, *acpError) {
 	if method != "session/request_permission" {
 		return nil, &acpError{Code: -32601, Message: "method not found"}
+	}
+	if !r.notificationBelongsToSession(params) {
+		// A request that names another session is a late old-session
+		// event on a reused process: do not judge it with this run's
+		// policy, and do not let it work.
+		return map[string]any{"outcome": map[string]any{"outcome": "cancelled"}}, nil
 	}
 	var req struct {
 		ToolCall struct {
@@ -1067,10 +1469,13 @@ type viewOut struct {
 // writes the view file atomically, keeping the view it replaces as the
 // backup.
 func (r *genRun) writeView(ctx context.Context, sources map[string]agentSource, a2ui json.RawMessage) error {
+	if err := r.modelProblem(); err != nil {
+		return err
+	}
 	view := viewOut{
 		Version:     2,
 		GeneratedAt: r.job.Now().UTC().Format(time.RFC3339),
-		Model:       r.job.Model,
+		Model:       r.modelStamp(),
 		Request:     r.job.Req.Request,
 		Sources:     make(map[string]sourceOut, len(sources)),
 		A2UI:        a2ui,
@@ -1110,6 +1515,9 @@ func (r *genRun) writeView(ctx context.Context, sources map[string]agentSource, 
 	}
 	if ctx.Err() != nil {
 		return errCancelled
+	}
+	if err := r.modelProblem(); err != nil {
+		return err
 	}
 	var expect []byte
 	if r.base != nil {

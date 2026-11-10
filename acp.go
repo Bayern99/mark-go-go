@@ -101,6 +101,10 @@ type acpAgent struct {
 	nextID  int64
 	pending map[int64]chan acpResponse
 
+	// handlerMu guards the callbacks below: a cached process's reader
+	// is already running when a later lease installs its own run's
+	// handlers.
+	handlerMu          sync.RWMutex
 	handleRequest      func(method string, params json.RawMessage) (any, *acpError)
 	handleNotification func(method string, params json.RawMessage)
 
@@ -169,6 +173,38 @@ func newACPAgent(cmd *exec.Cmd, stderr *limitBuffer) (*acpAgent, error) {
 	}, nil
 }
 
+// setHandlers installs the callbacks of the run that owns the process
+// now. Safe while the reader runs, as it does when a cached process is
+// leased again; the previous run's callbacks are replaced atomically.
+func (a *acpAgent) setHandlers(request func(method string, params json.RawMessage) (any, *acpError), notification func(method string, params json.RawMessage), observe func(direction string, line []byte)) {
+	a.handlerMu.Lock()
+	a.handleRequest = request
+	a.handleNotification = notification
+	a.observe = observe
+	a.handlerMu.Unlock()
+}
+
+// notifyHandler returns the installed notification callback.
+func (a *acpAgent) notifyHandler() func(method string, params json.RawMessage) {
+	a.handlerMu.RLock()
+	defer a.handlerMu.RUnlock()
+	return a.handleNotification
+}
+
+// requestHandler returns the installed request callback.
+func (a *acpAgent) requestHandler() func(method string, params json.RawMessage) (any, *acpError) {
+	a.handlerMu.RLock()
+	defer a.handlerMu.RUnlock()
+	return a.handleRequest
+}
+
+// observeLine returns the installed trace callback.
+func (a *acpAgent) observeLine() func(direction string, line []byte) {
+	a.handlerMu.RLock()
+	defer a.handlerMu.RUnlock()
+	return a.observe
+}
+
 // start reads protocol messages, drains stderr and reaps the process on
 // independent goroutines.
 func (a *acpAgent) start() {
@@ -218,10 +254,10 @@ func (a *acpAgent) readLoop() {
 	scanner.Buffer(make([]byte, 0, 64<<10), 16<<20)
 	for scanner.Scan() {
 		if line := bytes.TrimSpace(scanner.Bytes()); len(line) > 0 {
-			if a.observe != nil {
+			if observe := a.observeLine(); observe != nil {
 				// The scanner reuses its buffer: the observer gets its
 				// own copy of the line.
-				a.observe(acpReceived, append([]byte(nil), line...))
+				observe(acpReceived, append([]byte(nil), line...))
 			}
 			a.dispatch(line)
 		}
@@ -258,8 +294,8 @@ func (a *acpAgent) dispatch(line []byte) {
 			ch <- resp
 		}
 	case msg.Method != "":
-		if a.handleNotification != nil {
-			a.handleNotification(msg.Method, msg.Params)
+		if handle := a.notifyHandler(); handle != nil {
+			handle(msg.Method, msg.Params)
 		}
 	}
 }
@@ -268,10 +304,10 @@ func (a *acpAgent) dispatch(line []byte) {
 func (a *acpAgent) answer(id int64, method string, params json.RawMessage) {
 	var result any
 	var rpcErr *acpError
-	if a.handleRequest == nil {
+	if handle := a.requestHandler(); handle == nil {
 		rpcErr = &acpError{Code: -32601, Message: "method not found"}
 	} else {
-		result, rpcErr = a.handleRequest(method, params)
+		result, rpcErr = handle(method, params)
 	}
 	resp := map[string]any{"jsonrpc": "2.0", "id": id}
 	if rpcErr != nil {
@@ -344,10 +380,10 @@ func (a *acpAgent) write(v any) error {
 	if _, err := a.stdin.Write(append(data, '\n')); err != nil {
 		return err
 	}
-	if a.observe != nil {
+	if observe := a.observeLine(); observe != nil {
 		// The write succeeded: the line is what the agent got. data is
 		// not reused after this point, so it needs no copy.
-		a.observe(acpSent, data)
+		observe(acpSent, data)
 	}
 	return nil
 }
@@ -361,6 +397,19 @@ func (a *acpAgent) goneMessage(method string) string {
 	return msg
 }
 
+// cancelTurn asks the agent to cancel its turn without waiting for the
+// write: a child that stopped reading must not delay the caller. The
+// caller still owns teardown, and a blocked write ends when the process
+// is killed and its stdin closed.
+func (a *acpAgent) cancelTurn(sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	go func() {
+		_ = a.notify("session/cancel", map[string]any{"sessionId": sessionID})
+	}()
+}
+
 // kill stops the agent: it closes its stdin, kills the process, and
 // waits for it to exit. Safe to call more than once, and from any
 // goroutine.
@@ -372,21 +421,12 @@ func (a *acpAgent) kill() {
 	<-a.exited
 }
 
-// cancelGracefully asks the agent to cancel its turn, gives it grace
-// to stop on its own, then kills it and waits for it to exit.
-func (a *acpAgent) cancelGracefully(sessionID string, grace time.Duration) {
-	timer := time.NewTimer(grace)
-	defer timer.Stop()
-	if sessionID != "" {
-		// A child that stopped reading can block this write; do not delay the timer.
-		go func() {
-			_ = a.notify("session/cancel", map[string]any{"sessionId": sessionID})
-		}()
-	}
+// hasExited reports whether the process has already been waited for.
+func (a *acpAgent) hasExited() bool {
 	select {
 	case <-a.exited:
-		return
-	case <-timer.C:
+		return true
+	default:
+		return false
 	}
-	a.kill()
 }

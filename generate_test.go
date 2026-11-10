@@ -99,9 +99,38 @@ type fakeSpec struct {
 	OutSymlink string `json:"outSymlink"`
 	// Hang never answers the prompt: the run can only end by
 	// cancellation.
-	Hang            bool `json:"hang"`
-	HoldPipes       bool `json:"holdPipes"`
-	ExitAfterPrompt bool `json:"exitAfterPrompt"`
+	Hang      bool `json:"hang"`
+	HoldPipes bool `json:"holdPipes"`
+	// AnswerCancel answers session/cancel with the pending prompt's
+	// result (stopReason "cancelled") after CancelReplyDelayMS, and
+	// keeps running instead of exiting. It is the agent that
+	// acknowledges a cancellation without ending its process.
+	AnswerCancel       bool `json:"answerCancel"`
+	CancelReplyDelayMS int  `json:"cancelReplyDelayMs"`
+	ExitAfterPrompt    bool `json:"exitAfterPrompt"`
+	// UniqueSessions answers each session/new with a new session ID,
+	// numbered in order, so that session identity can be told apart.
+	UniqueSessions bool `json:"uniqueSessions"`
+	// SessionClose advertises agentCapabilities.sessionCapabilities.close
+	// and answers session/close with an empty result.
+	SessionClose bool `json:"sessionClose"`
+	// Silent names a request method the fake never answers; it keeps
+	// reading until the client closes its stdin.
+	Silent string `json:"silent"`
+	// EmptySessionID answers session/new with an empty sessionId.
+	EmptySessionID bool `json:"emptySessionId"`
+	// ModelMismatch accepts a model set but reports the previous
+	// currentValue in the answer.
+	ModelMismatch bool `json:"modelMismatch"`
+	// BareConfigResponse answers set_config_option with no configOptions.
+	BareConfigResponse bool `json:"bareConfigResponse"`
+	// ConfigUpdateModel overrides the model currentValue of the
+	// config_option_update notification.
+	ConfigUpdateModel string `json:"configUpdateModel"`
+	// ForeignSessionEvents, on the second and later session/new of a
+	// unique-session run, emits late notification, config update,
+	// unsafe tool call and permission request of the previous session.
+	ForeignSessionEvents bool `json:"foreignSessionEvents"`
 	// Crash writes the text to stderr and exits 1 right away.
 	Crash string `json:"crash"`
 	// Errors answers the requests of these methods with these
@@ -128,6 +157,7 @@ func runFakeAgent() {
 	defer closeLog()
 
 	cwd, _ := os.Getwd()
+	sessionCwd := cwd
 	logf(map[string]any{"type": "args", "args": os.Args})
 	logf(map[string]any{"type": "cwd", "cwd": cwd})
 	logf(map[string]any{"type": "pid", "pid": os.Getpid()})
@@ -150,8 +180,10 @@ func runFakeAgent() {
 		thoughtCurrent = thoughtValues[0]
 	}
 	currentModel := models[0]
-	const sessionID = "fake-session"
+	sessionID := "fake-session"
+	sessionSeq := 0
 	nextID := int64(100)
+	pendingPermissions := make(map[int64]bool) // foreign-session permission requests awaiting an answer
 
 	send := func(v any) {
 		data, _ := json.Marshal(v)
@@ -171,12 +203,13 @@ func runFakeAgent() {
 		}
 		return opts
 	}
-	configOptions := func() []map[string]any {
+	optionSet := func(model, thought string) []map[string]any {
 		return []map[string]any{
-			{"id": "model", "type": "select", "currentValue": currentModel, "options": modelOptions()},
-			{"id": "thought_level", "type": "select", "currentValue": thoughtCurrent, "options": thoughtOptions()},
+			{"id": "model", "type": "select", "currentValue": model, "options": modelOptions()},
+			{"id": "thought_level", "type": "select", "currentValue": thought, "options": thoughtOptions()},
 		}
 	}
+	configOptions := func() []map[string]any { return optionSet(currentModel, thoughtCurrent) }
 
 	in := bufio.NewScanner(os.Stdin)
 	in.Buffer(make([]byte, 0, 64<<10), 16<<20)
@@ -189,6 +222,7 @@ func runFakeAgent() {
 			ID     *int64          `json:"id"`
 			Method string          `json:"method"`
 			Params json.RawMessage `json:"params"`
+			Result json.RawMessage `json:"result"`
 		}
 		if json.Unmarshal(line, &msg) != nil {
 			continue
@@ -196,24 +230,76 @@ func runFakeAgent() {
 		if msg.Method != "" {
 			logf(map[string]any{"type": "recv", "method": msg.Method, "params": msg.Params})
 		}
+		if msg.ID != nil && msg.Method == "" {
+			// A reply of the client, such as to a foreign-session
+			// permission request.
+			if pendingPermissions[*msg.ID] {
+				var res struct {
+					Outcome struct {
+						Outcome  string `json:"outcome"`
+						OptionID string `json:"optionId"`
+					} `json:"outcome"`
+				}
+				_ = json.Unmarshal(msg.Result, &res)
+				logf(map[string]any{"type": "foreign-permission-answer", "outcome": res.Outcome.Outcome, "optionId": res.Outcome.OptionID})
+				delete(pendingPermissions, *msg.ID)
+			}
+			continue
+		}
+		if spec.Silent != "" && msg.Method == spec.Silent {
+			logf(map[string]any{"type": "silent", "method": msg.Method})
+			for in.Scan() {
+			}
+			os.Exit(0)
+		}
 		if e, ok := spec.Errors[msg.Method]; ok && msg.ID != nil {
 			send(map[string]any{"jsonrpc": "2.0", "id": *msg.ID, "error": e})
 			continue
 		}
 		switch {
 		case msg.ID != nil && msg.Method == "initialize":
+			capabilities := map[string]any{}
+			if spec.SessionClose {
+				capabilities["sessionCapabilities"] = map[string]any{"close": map[string]any{}}
+			}
 			send(map[string]any{"jsonrpc": "2.0", "id": *msg.ID, "result": map[string]any{
 				"protocolVersion":   1,
-				"agentCapabilities": map[string]any{},
+				"agentCapabilities": capabilities,
 				"authMethods":       []any{},
 			}})
 		case msg.ID != nil && msg.Method == "session/new":
+			var params struct {
+				CWD string `json:"cwd"`
+			}
+			_ = json.Unmarshal(msg.Params, &params)
+			if params.CWD != "" {
+				sessionCwd = params.CWD
+			}
+			previousSessionID := sessionID
+			if spec.UniqueSessions {
+				sessionSeq++
+				sessionID = fmt.Sprintf("fake-session-%d", sessionSeq)
+			}
+			answeredSessionID := sessionID
+			if spec.EmptySessionID {
+				answeredSessionID = ""
+			}
 			send(map[string]any{"jsonrpc": "2.0", "id": *msg.ID, "result": map[string]any{
-				"sessionId":     sessionID,
+				"sessionId":     answeredSessionID,
 				"modes":         []any{},
 				"models":        []any{},
 				"configOptions": configOptions(),
 			}})
+			if spec.ForeignSessionEvents && spec.UniqueSessions && sessionSeq >= 2 && previousSessionID != "" {
+				fakeEmitForeignSession(previousSessionID, &nextID, pendingPermissions, send, logf)
+			}
+		case msg.ID != nil && msg.Method == "session/close":
+			var params struct {
+				SessionID string `json:"sessionId"`
+			}
+			_ = json.Unmarshal(msg.Params, &params)
+			logf(map[string]any{"type": "session-closed", "sessionId": params.SessionID})
+			send(map[string]any{"jsonrpc": "2.0", "id": *msg.ID, "result": map[string]any{}})
 		case msg.ID != nil && msg.Method == "session/set_config_option":
 			var params struct {
 				ConfigID string `json:"configId"`
@@ -228,7 +314,7 @@ func runFakeAgent() {
 						known = true
 					}
 				}
-				if known {
+				if known && !spec.ModelMismatch {
 					currentModel = params.Value
 				}
 			case "thought_level":
@@ -242,13 +328,21 @@ func runFakeAgent() {
 				}
 			}
 			if known {
-				send(map[string]any{"jsonrpc": "2.0", "id": *msg.ID, "result": map[string]any{"configOptions": configOptions()}})
+				result := map[string]any{}
+				if !spec.BareConfigResponse {
+					result["configOptions"] = configOptions()
+				}
+				send(map[string]any{"jsonrpc": "2.0", "id": *msg.ID, "result": result})
 				if spec.ConfigUpdate {
+					updateModel := currentModel
+					if params.ConfigID == "model" && spec.ConfigUpdateModel != "" {
+						updateModel = spec.ConfigUpdateModel
+					}
 					send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
 						"sessionId": sessionID,
 						"update": map[string]any{
 							"sessionUpdate": "config_option_update",
-							"configOptions": configOptions(),
+							"configOptions": optionSet(updateModel, thoughtCurrent),
 						},
 					}})
 				}
@@ -260,20 +354,38 @@ func runFakeAgent() {
 				if spec.HoldPipes {
 					startFakePipeHolder(logf)
 				}
+				promptID := *msg.ID
+				answered := false
 				// Keep running until the client cancels or closes.
 				for in.Scan() {
 					var m struct {
 						Method string `json:"method"`
 					}
-					if json.Unmarshal(bytes.TrimSpace(in.Bytes()), &m) == nil && m.Method == "session/cancel" {
-						logf(map[string]any{"type": "cancelled"})
+					if json.Unmarshal(bytes.TrimSpace(in.Bytes()), &m) != nil || m.Method != "session/cancel" {
+						continue
+					}
+					logf(map[string]any{"type": "cancelled"})
+					if !spec.AnswerCancel {
 						os.Exit(0)
 					}
+					// The agent acknowledges the cancellation by
+					// answering the turn, and stays alive: only the
+					// client's own teardown ends the process.
+					if spec.CancelReplyDelayMS > 0 {
+						time.Sleep(time.Duration(spec.CancelReplyDelayMS) * time.Millisecond)
+					}
+					logf(map[string]any{"type": "cancel-reply", "stopReason": "cancelled"})
+					send(map[string]any{"jsonrpc": "2.0", "id": promptID, "result": map[string]any{"stopReason": "cancelled", "usage": map[string]any{}}})
+					answered = true
+					break
 				}
-				os.Exit(0)
+				if !answered {
+					os.Exit(0)
+				}
+				continue
 			}
-			fakePlayScenario(&spec, cwd, sessionID, &nextID, send, in, logf)
-			logf(map[string]any{"type": "files", "files": fakeDirList(cwd)})
+			fakePlayScenario(&spec, sessionCwd, sessionID, &nextID, send, in, logf)
+			logf(map[string]any{"type": "files", "files": fakeDirList(sessionCwd)})
 			send(map[string]any{"jsonrpc": "2.0", "id": *msg.ID, "result": map[string]any{"stopReason": "end_turn", "usage": map[string]any{}}})
 			if spec.ExitAfterPrompt {
 				os.Exit(0)
@@ -311,6 +423,55 @@ func TestFakeACPDescendantPipeHolder(t *testing.T) {
 	if os.Getenv(fakePipeHolderEnv) == "1" {
 		time.Sleep(30 * time.Second)
 	}
+}
+
+// fakeEmitForeignSession sends late events of a previous session on a
+// reused connection: a message chunk, a config update naming another
+// model, an unsafe tool call, and an outside permission request. A
+// client that keeps sessions apart must drop all of them; the
+// permission answer is logged so the test can see it was cancelled.
+func fakeEmitForeignSession(sessionID string, nextID *int64, pending map[int64]bool, send func(any), logf func(map[string]any)) {
+	send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
+		"sessionId": sessionID,
+		"update": map[string]any{
+			"sessionUpdate": "agent_message_chunk",
+			"content":       map[string]any{"type": "text", "text": "foreign-late"},
+		},
+	}})
+	send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
+		"sessionId": sessionID,
+		"update": map[string]any{
+			"sessionUpdate": "tool_call",
+			"toolCallId":    "foreign-tool",
+			"name":          "write_file",
+			"kind":          "edit",
+			"title":         "Foreign write",
+			"status":        "in_progress",
+			"locations":     []map[string]any{{"path": "/etc/hosts"}},
+		},
+	}})
+	send(map[string]any{"jsonrpc": "2.0", "method": "session/config_option_update", "params": map[string]any{
+		"sessionId": sessionID,
+		"configOptions": []map[string]any{
+			{"id": "model", "type": "select", "currentValue": "claude-opus-5-5", "options": []map[string]string{{"value": "claude-opus-5-5", "name": "claude-opus-5-5"}}},
+		},
+	}})
+	*nextID++
+	id := *nextID
+	pending[id] = true
+	logf(map[string]any{"type": "foreign-permission", "id": id, "sessionId": sessionID})
+	send(map[string]any{"jsonrpc": "2.0", "id": id, "method": "session/request_permission", "params": map[string]any{
+		"sessionId": sessionID,
+		"toolCall": map[string]any{
+			"kind":      "edit",
+			"title":     "Foreign write",
+			"locations": []map[string]any{{"path": "/etc/hosts"}},
+		},
+		"options": []map[string]any{
+			{"optionId": "allow", "name": "Allow once", "kind": "allow_once"},
+			{"optionId": "reject", "name": "Reject once", "kind": "reject_once"},
+		},
+	}})
 }
 
 // fakePlayScenario plays a prompt turn: a thought, the tool calls, the
@@ -621,16 +782,35 @@ func killFakeDescendants(t *testing.T, path string) {
 		if err := syscall.Kill(pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
 			t.Errorf("kill fake descendant %d: %v", pid, err)
 		}
-		deadline := time.Now().Add(2 * time.Second)
-		for time.Now().Before(deadline) {
-			if errors.Is(syscall.Kill(pid, 0), syscall.ESRCH) {
-				break
-			}
-			time.Sleep(10 * time.Millisecond)
+		waitForFakeDeath(t, pid)
+	}
+}
+
+// killFakeProcesses kills every fake agent process the log names, such
+// as an idle cached process a test did not shut down itself.
+func killFakeProcesses(t *testing.T, path string) {
+	t.Helper()
+	for _, e := range logEntries(readFakeLog(t, path), "pid") {
+		pid := int(e["pid"].(float64))
+		if err := syscall.Kill(pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+			t.Errorf("kill fake agent %d: %v", pid, err)
 		}
-		if err := syscall.Kill(pid, 0); err == nil {
-			t.Errorf("fake descendant %d is still running", pid)
+		waitForFakeDeath(t, pid)
+	}
+}
+
+// waitForFakeDeath waits until pid is gone.
+func waitForFakeDeath(t *testing.T, pid int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if errors.Is(syscall.Kill(pid, 0), syscall.ESRCH) {
+			return
 		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err := syscall.Kill(pid, 0); err == nil {
+		t.Errorf("fake process %d is still running", pid)
 	}
 }
 
@@ -960,6 +1140,58 @@ func TestGenerateModel(t *testing.T) {
 	}
 }
 
+func TestGenerateModelMustBeConfirmed(t *testing.T) {
+	// The answer reports another currentValue than the requested model:
+	// the run fails before the prompt and the view is untouched.
+	viewPath, sentinel := writeSentinelView(t)
+	err, _, log := driveGeneration(t, fakeSpec{Out: minimalOut, ModelMismatch: true}, nil, func(job *generationJob) { job.ViewPath = viewPath })
+	f := failureFrom(t, err)
+	if f.Kind != failAgentError || !strings.Contains(f.Message, "not the requested") || f.Hint != hintAgentError {
+		t.Errorf("failure = %+v, want the model mismatch", f)
+	}
+	if prompts := logRecv(log, "session/prompt"); len(prompts) != 0 {
+		t.Errorf("session/prompt = %v; a mismatched model must not run the turn", prompts)
+	}
+	sentinelKept(t, viewPath, sentinel)
+
+	// An answer without configOptions confirms nothing: the run goes on
+	// and the view names no model, rather than claiming the requested one.
+	err, job, _ := driveGeneration(t, fakeSpec{Out: minimalOut, BareConfigResponse: true}, nil, nil)
+	if err != nil {
+		t.Fatalf("runGeneration: %v", err)
+	}
+	view, err := os.ReadFile(job.ViewPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(view, []byte(`"model"`)) {
+		t.Errorf("view = %s, want no unconfirmed model", view)
+	}
+
+	// A later config update can confirm the requested model.
+	err, job, _ = driveGeneration(t, fakeSpec{Out: minimalOut, BareConfigResponse: true, ConfigUpdate: true}, nil, nil)
+	if err != nil {
+		t.Fatalf("runGeneration with a confirmed update: %v", err)
+	}
+	view, err = os.ReadFile(job.ViewPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(view, []byte(`"model": "gemini-3.8-flash"`)) {
+		t.Errorf("view = %s, want the confirmed model", view)
+	}
+
+	// A config update reporting another model fails the run instead of
+	// stamping either value.
+	viewPath, sentinel = writeSentinelView(t)
+	err, _, _ = driveGeneration(t, fakeSpec{Out: minimalOut, ConfigUpdate: true, ConfigUpdateModel: "claude-opus-5-5"}, nil, func(job *generationJob) { job.ViewPath = viewPath })
+	f = failureFrom(t, err)
+	if f.Kind != failAgentError || !strings.Contains(f.Message, "not the requested") {
+		t.Errorf("failure = %+v, want the update's model mismatch", f)
+	}
+	sentinelKept(t, viewPath, sentinel)
+}
+
 // failureFrom returns the failure of a run's error, which must be one.
 func failureFrom(t *testing.T, err error) GenerateFailure {
 	t.Helper()
@@ -1031,13 +1263,20 @@ func TestGenerateAgentWords(t *testing.T) {
 func TestGenerateToolCallUpdate(t *testing.T) {
 	// A tool_call_update that carries everything, and one that carries
 	// only its id and status, falling back to what its tool_call
-	// carried, both pass the policy.
+	// carried, both pass the policy. Sparse observations, an unknown id
+	// and a kind change without paths are accepted, not treated as
+	// violations.
 	spec := fakeSpec{
 		ToolCalls: []fakeToolCallSpec{
 			{Name: "read_file", Kind: "read", Title: "File source.md", Locations: []string{"source.md"}},
 			{Update: true, ToolCallID: "tool-0", Status: "completed"},
 			{Name: "write_file", Kind: "edit", Title: "File out.json", Locations: []string{"out.json"}},
 			{Update: true, ToolCallID: "tool-1", Kind: "edit", Title: "File out.json", Locations: []string{"out.json"}, Status: "completed"},
+			{Update: true, ToolCallID: "unknown", Status: "pending"},
+			{Name: "unlabeled", Title: "No kind"},
+			{Name: "collect", ToolCallID: "tool-2", Kind: "read", Title: "Read source", Locations: []string{"source.md"}},
+			{Update: true, ToolCallID: "tool-2", Kind: "edit", Status: "in_progress"},
+			{Update: true, ToolCallID: "tool-2", Status: "completed"},
 		},
 		Out: minimalOut,
 	}
@@ -1045,22 +1284,51 @@ func TestGenerateToolCallUpdate(t *testing.T) {
 		t.Fatalf("runGeneration: %v", err)
 	}
 
-	// An update for an unknown id, with no kind of its own, is outside
-	// the policy and stops the run with the view untouched.
+	// A reported path outside the folder still stops the run, with the
+	// view untouched, even for an id first seen in the update.
 	dir := t.TempDir()
 	viewPath := filepath.Join(dir, ".notes.md.genui.json")
 	sentinel := []byte("the view that was")
 	if err := os.WriteFile(viewPath, sentinel, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	spec.ToolCalls = append(spec.ToolCalls, fakeToolCallSpec{Update: true, ToolCallID: "unknown", Status: "completed"})
-	err, _, _ := driveGeneration(t, spec, nil, func(job *generationJob) { job.ViewPath = viewPath })
-	if err == nil || !strings.Contains(err.Error(), `The agent tried to use "unknown" outside its folder`) {
+	badPath := fakeSpec{
+		ToolCalls: []fakeToolCallSpec{
+			{Update: true, ToolCallID: "bad", Kind: "edit", Title: "Outside write", Locations: []string{"/etc/hosts"}, Status: "in_progress"},
+		},
+		Out: minimalOut,
+	}
+	err, _, _ := driveGeneration(t, badPath, nil, func(job *generationJob) { job.ViewPath = viewPath })
+	if err == nil || !strings.Contains(err.Error(), `The agent tried to use "Outside write" outside its folder`) {
 		t.Fatalf("error = %v, want the outside-folder abort", err)
 	}
 	got, err := os.ReadFile(viewPath)
 	if err != nil || string(got) != string(sentinel) {
 		t.Errorf("view file = %q, %v; want the sentinel untouched", got, err)
+	}
+
+	// A reported operation the policy does not allow stops the run even
+	// when it names no path.
+	badKind := fakeSpec{
+		ToolCalls: []fakeToolCallSpec{{Name: "run", Kind: "execute", Title: "Run a command"}},
+		Out:       minimalOut,
+	}
+	err, _, _ = driveGeneration(t, badKind, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), `The agent tried to use "Run a command" outside its folder`) {
+		t.Fatalf("error = %v, want the outside-folder abort for the operation", err)
+	}
+
+	// A reported path outside is unsafe even when the notification names
+	// no operation kind.
+	badNoKind := fakeSpec{
+		ToolCalls: []fakeToolCallSpec{
+			{Update: true, ToolCallID: "where", Title: "Outside unknown", Locations: []string{"/etc/hosts"}, Status: "in_progress"},
+		},
+		Out: minimalOut,
+	}
+	err, _, _ = driveGeneration(t, badNoKind, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), `The agent tried to use "Outside unknown" outside its folder`) {
+		t.Fatalf("error = %v, want the outside-folder abort for the path", err)
 	}
 }
 
@@ -1160,6 +1428,70 @@ func TestGenerateCancel(t *testing.T) {
 	}
 }
 
+// TestGenerateCancelAcknowledgedWithoutProcessExit pins the cancellation
+// contract: after session/cancel the run completes on the prompt turn's
+// answer, not on the agent process's exit. The fake acknowledges the
+// cancellation with stopReason "cancelled", after a short delay that
+// proves the answer was really awaited, and keeps running; waiting for
+// its exit would cost the full grace period.
+func TestGenerateCancelAcknowledgedWithoutProcessExit(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "fake.log")
+	specData, err := json.Marshal(fakeSpec{Hang: true, AnswerCancel: true, CancelReplyDelayMS: 150})
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewPath, sentinel := writeSentinelView(t)
+	job := generationJob{
+		Req:          GenerateRequest{Text: "hello", Mode: "full", Format: "{}"},
+		AgentCommand: os.Args[0],
+		Model:        "gemini-3.8-flash",
+		ViewPath:     viewPath,
+		Env: append(os.Environ(),
+			fakeAgentEnv+"=1",
+			fakeSpecEnv+"="+string(specData),
+			fakeLogEnv+"="+logPath,
+		),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- runGeneration(ctx, job, func(GenerateProgress) error { return nil }) }()
+	waitForLog(t, logPath, "session/prompt")
+
+	started := time.Now()
+	cancel()
+	var runErr error
+	select {
+	case runErr = <-errCh:
+	case <-time.After(10 * time.Second):
+		t.Fatal("runGeneration never returned after cancellation")
+	}
+	elapsed := time.Since(started)
+
+	if elapsed < 100*time.Millisecond {
+		t.Errorf("the run ended %s after cancel, before the agent answered the turn; cancellation must wait for the prompt-turn answer", elapsed)
+	}
+	if elapsed > 1500*time.Millisecond {
+		t.Errorf("cancellation took %s; an acknowledged cancel must complete on the prompt-turn answer, not wait for the process to exit", elapsed)
+	}
+	if f := failureFrom(t, runErr); f.Kind != failCancelled || f.Message != "Generation was cancelled." {
+		t.Errorf("failure = %+v, want the cancellation", f)
+	}
+	log := readFakeLog(t, logPath)
+	if got := len(logEntries(log, "cancelled")); got != 1 {
+		t.Errorf("the agent got session/cancel %d times, want once", got)
+	}
+	if got := len(logEntries(log, "cancel-reply")); got != 1 {
+		t.Errorf("the agent answered the cancelled turn %d times, want once", got)
+	}
+	pid := int(logEntries(log, "pid")[0]["pid"].(float64))
+	if syscall.Kill(pid, 0) == nil {
+		t.Errorf("the one-shot run left its agent process %d running", pid)
+	}
+	sentinelKept(t, viewPath, sentinel)
+}
+
 func TestACPCancelDoesNotWaitForDescendantPipesOrBlockedWrite(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "fake.log")
@@ -1207,19 +1539,26 @@ func TestACPCancelDoesNotWaitForDescendantPipesOrBlockedWrite(t *testing.T) {
 			agent.writeMu.Unlock()
 		}
 	})
-	cancelDone := make(chan struct{})
+	// The surviving cancellation seam: asking for the turn's cancel
+	// never waits for the write, and teardown is bounded even while the
+	// write is blocked and a descendant holds the inherited pipes.
 	started := time.Now()
+	agent.cancelTurn(opened.SessionID)
+	if elapsed := time.Since(started); elapsed > 100*time.Millisecond {
+		t.Errorf("cancelTurn waited %s for a blocked write", elapsed)
+	}
+	killDone := make(chan struct{})
 	go func() {
-		agent.cancelGracefully(opened.SessionID, 50*time.Millisecond)
-		close(cancelDone)
+		agent.kill()
+		close(killDone)
 	}()
 	select {
-	case <-cancelDone:
+	case <-killDone:
 		if elapsed := time.Since(started); elapsed > 2*time.Second {
-			t.Errorf("ACP cancellation took %s with a descendant holding the pipes", elapsed)
+			t.Errorf("agent teardown took %s with a descendant holding the pipes", elapsed)
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("ACP cancellation waited for a descendant holding the pipes")
+		t.Fatal("agent teardown waited for a descendant holding the pipes")
 	}
 	agent.writeMu.Unlock()
 	writeLocked = false
@@ -1844,6 +2183,263 @@ func TestHostGenerateOneSlotPerDocumentConcurrentAcrossDocuments(t *testing.T) {
 		t.Fatal("requests crossed documents")
 	}
 	_ = logPath
+}
+
+// TestHostGenerateReusesOneProcessWithFreshSessionsAndSources pins the
+// cache contract at the host: two sequential generations lease one idle
+// process, each opening its own session in its own run folder, closing
+// it after the settled turn, and carrying its own source text. The
+// process's own working folder outlives both runs.
+func TestHostGenerateReusesOneProcessWithFreshSessionsAndSources(t *testing.T) {
+	dir := t.TempDir()
+	docPath := filepath.Join(dir, "a.md")
+	h := &documentHost{settings: &settingsStore{dir: t.TempDir()}}
+	setStored(t, h.settings, "gemini-3.8-flash", "agy")
+	hostSession(t, h, "a", docPath)
+	h.agentCache = &acpProcessCache{}
+
+	prepare, logPath := fakeAgentJob(t, fakeSpec{Out: minimalOut, UniqueSessions: true, SessionClose: true})
+	var traceMu sync.Mutex
+	type recorded struct {
+		event   string
+		payload any
+	}
+	var events []recorded
+	h.prepareJob = func(job *generationJob) {
+		prepare(job)
+		job.Observe = func(event string, payload any) {
+			traceMu.Lock()
+			events = append(events, recorded{event, payload})
+			traceMu.Unlock()
+		}
+	}
+	t.Cleanup(func() {
+		h.agentCache.close()
+		killFakeProcesses(t, logPath)
+	})
+
+	texts := []string{"# First source\n", "# Second source\n"}
+	for i, text := range texts {
+		req := GenerateRequest{Text: text, Mode: "full", Request: fmt.Sprintf("request-%d", i+1), Format: "{}"}
+		if err := h.generate(context.Background(), "a", req, func(GenerateProgress) error { return nil }); err != nil {
+			t.Fatalf("generation %d: %v", i+1, err)
+		}
+	}
+
+	log := readFakeLog(t, logPath)
+	pids := logEntries(log, "pid")
+	if len(pids) != 1 {
+		t.Fatalf("the agent started %d processes, want one reused process", len(pids))
+	}
+	pid := int(pids[0]["pid"].(float64))
+	if err := syscall.Kill(pid, 0); err != nil {
+		t.Errorf("the reused process %d is not alive after the settled runs: %v", pid, err)
+	}
+	processCwd, _ := logEntries(log, "cwd")[0]["cwd"].(string)
+
+	news := logRecv(log, "session/new")
+	if len(news) != 2 {
+		t.Fatalf("session/new count = %d, want two fresh sessions", len(news))
+	}
+	cwds := []string{}
+	for _, params := range news {
+		cwd, _ := params["cwd"].(string)
+		cwds = append(cwds, cwd)
+	}
+	if cwds[0] == "" || cwds[0] == cwds[1] {
+		t.Errorf("session working folders = %q, want two different run folders", cwds)
+	}
+	for _, cwd := range cwds {
+		if cwd == processCwd {
+			t.Errorf("the process folder %q is a run folder; it must outlive the lease", processCwd)
+		}
+		if _, err := os.Stat(cwd); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("run folder %s still exists (%v)", cwd, err)
+		}
+	}
+	if info, err := os.Stat(processCwd); err != nil || !info.IsDir() {
+		t.Errorf("the process folder %q did not outlive the leases: %v", processCwd, err)
+	}
+
+	prompts := logRecv(log, "session/prompt")
+	if len(prompts) != 2 {
+		t.Fatalf("session/prompt count = %d, want two", len(prompts))
+	}
+	ids := []string{}
+	for _, params := range prompts {
+		id, _ := params["sessionId"].(string)
+		ids = append(ids, id)
+	}
+	if ids[0] != "fake-session-1" || ids[1] != "fake-session-2" {
+		t.Errorf("prompt sessions = %q, want two fresh sessions", ids)
+	}
+	promptText := func(params map[string]any) string {
+		blocks, _ := params["prompt"].([]any)
+		for _, b := range blocks {
+			if block, ok := b.(map[string]any); ok {
+				if text, ok := block["text"].(string); ok {
+					return text
+				}
+			}
+		}
+		return ""
+	}
+	first, second := promptText(prompts[0]), promptText(prompts[1])
+	if !strings.Contains(first, texts[0]) || strings.Contains(first, texts[1]) {
+		t.Errorf("first prompt does not carry only its own source")
+	}
+	if !strings.Contains(second, texts[1]) || strings.Contains(second, texts[0]) {
+		t.Errorf("second prompt does not carry only its own source")
+	}
+	if !strings.Contains(first, fmt.Sprintf("%q", cwds[0])) || !strings.Contains(second, fmt.Sprintf("%q", cwds[1])) {
+		t.Errorf("prompts do not name their own run folders")
+	}
+
+	closes := logRecv(log, "session/close")
+	if len(closes) != 2 || closes[0]["sessionId"] != ids[0] || closes[1]["sessionId"] != ids[1] {
+		t.Errorf("session/close = %v, want each run's session %q", closes, ids)
+	}
+
+	view, err := os.ReadFile(viewPath(docPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(view, []byte(`"request": "request-2"`)) || bytes.Contains(view, []byte("request-1")) {
+		t.Errorf("view = %s, want only the last run's request", view)
+	}
+
+	// The trace shows one real cold start, one distinct reuse, and the
+	// real initialize answer cached from the cold process. The wire has
+	// exactly one initialize request and each settled session's close.
+	traceMu.Lock()
+	defer traceMu.Unlock()
+	count := func(name string) int {
+		n := 0
+		for _, e := range events {
+			if e.event == name {
+				n++
+			}
+		}
+		return n
+	}
+	if got := count(traceAgentStart); got != 1 {
+		t.Errorf("agent.start events = %d, want one cold start", got)
+	}
+	if got := count(traceAgentReused); got != 1 {
+		t.Errorf("agent.reused events = %d, want one reuse", got)
+	}
+	if got := count(traceInitialize); got != 1 {
+		t.Errorf("initialize events = %d, want the cold process's one", got)
+	}
+	if got := count(traceInitCached); got != 1 {
+		t.Errorf("initialize.cached events = %d, want one", got)
+	}
+	if got := count(traceSessionNew); got != 2 {
+		t.Errorf("session.new events = %d, want two fresh sessions", got)
+	}
+	var reused *traceAgentReusePayload
+	var cached *traceInitializeCachedPayload
+	var started *traceAgentStartPayload
+	initializeSent, closeSent := 0, 0
+	for _, e := range events {
+		switch payload := e.payload.(type) {
+		case *traceAgentStartPayload:
+			started = payload
+		case *traceAgentReusePayload:
+			reused = payload
+		case *traceInitializeCachedPayload:
+			cached = payload
+		case *traceACPPayload:
+			if payload.Direction != acpSent {
+				continue
+			}
+			var msg struct {
+				Method string `json:"method"`
+			}
+			if json.Unmarshal(payload.Line, &msg) != nil {
+				continue
+			}
+			switch msg.Method {
+			case "initialize":
+				initializeSent++
+			case "session/close":
+				closeSent++
+			}
+		}
+	}
+	if started == nil || started.PID != pid || started.Cwd != processCwd {
+		t.Errorf("agent.start = %+v, want the cold process %d in %q", started, pid, processCwd)
+	}
+	if reused == nil || reused.PID != pid || reused.Cwd != processCwd || reused.StartedAt == "" {
+		t.Errorf("agent.reused = %+v, want process %d in %q with its start", reused, pid, processCwd)
+	}
+	if cached == nil || cached.ProcessPID != pid || cached.ProcessCwd != processCwd || cached.ProcessStartedAt == "" || len(cached.Result) == 0 {
+		t.Errorf("initialize.cached = %+v, want the cached answer of process %d in %q", cached, pid, processCwd)
+	}
+	if cached != nil && !bytes.Contains(cached.AgentCapabilities, []byte(`"close"`)) {
+		t.Errorf("initialize.cached capabilities = %s, want the advertised close capability", cached.AgentCapabilities)
+	}
+	if initializeSent != 1 {
+		t.Errorf("initialize wire requests = %d, want only the cold process's real one", initializeSent)
+	}
+	if closeSent != 2 {
+		t.Errorf("session/close wire requests = %d, want one per settled session", closeSent)
+	}
+}
+
+// TestHostGenerateDiscardsReusedProcessOnRepeatedSessionID pins the
+// freshness invariant: a reused process that answers session/new with
+// the session ID it already had is not a fresh context. The run fails
+// and the process is discarded; the prompt never runs and the view
+// stays as the first run left it.
+func TestHostGenerateDiscardsReusedProcessOnRepeatedSessionID(t *testing.T) {
+	dir := t.TempDir()
+	docPath := filepath.Join(dir, "a.md")
+	h := &documentHost{settings: &settingsStore{dir: t.TempDir()}}
+	setStored(t, h.settings, "gemini-3.8-flash", "agy")
+	hostSession(t, h, "a", docPath)
+	h.agentCache = &acpProcessCache{}
+
+	// The fake answers every session/new with the same session ID.
+	prepare, logPath := fakeAgentJob(t, fakeSpec{Out: minimalOut, SessionClose: true})
+	h.prepareJob = prepare
+	t.Cleanup(func() {
+		h.agentCache.close()
+		killFakeProcesses(t, logPath)
+	})
+
+	req := func(request string) GenerateRequest {
+		return GenerateRequest{Text: "# Source\n", Mode: "full", Request: request, Format: "{}"}
+	}
+	if err := h.generate(context.Background(), "a", req("first"), func(GenerateProgress) error { return nil }); err != nil {
+		t.Fatalf("first generation: %v", err)
+	}
+	err := h.generate(context.Background(), "a", req("second"), func(GenerateProgress) error { return nil })
+	if err == nil {
+		t.Fatal("the second generation accepted a process that repeated its old session ID")
+	}
+	if f := failureFrom(t, err); f.Kind != failAgentError || !strings.Contains(strings.ToLower(f.Message), "session") {
+		t.Errorf("failure = %+v, want an agent-error about the repeated session", f)
+	}
+
+	log := readFakeLog(t, logPath)
+	if got := len(logEntries(log, "pid")); got != 1 {
+		t.Errorf("the agent started %d processes, want only the reused one", got)
+	}
+	if got := len(logRecv(log, "session/prompt")); got != 1 {
+		t.Errorf("session/prompt count = %d; the rejected session must not run the prompt", got)
+	}
+	pid := int(logEntries(log, "pid")[0]["pid"].(float64))
+	if err := syscall.Kill(pid, 0); err == nil {
+		t.Errorf("the process with the repeated session ID %d is still running", pid)
+	}
+	view, err := os.ReadFile(viewPath(docPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(view, []byte(`"request": "first"`)) || bytes.Contains(view, []byte("second")) {
+		t.Errorf("view = %s, want the first run's view untouched", view)
+	}
 }
 
 func TestHostGenerateCapturesSettingsAndRefusesStalePath(t *testing.T) {

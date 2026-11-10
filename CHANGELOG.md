@@ -13,6 +13,13 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 
 ### English
 
+#### GenUI generation and architecture evidence
+
+- ACP initialization reports the client identity and checks the negotiated protocol. Generation prompts name canonical absolute input/output paths, avoiding AGY's observed interpretation of `./source.md` as `/source.md`.
+- Added opt-in, `readbench`-tagged native tracing of actual agent processes, ACP sessions/configuration, raw artifacts and commit results. The independent ReadBench runner records real WebView observations and source-grounded answer reviews; model benchmarks are explicit runs, separate from fast deterministic checks.
+- Documented the actual UAX #31 component-id constraint in the generation format and corrected historical source-id coverage claims. ADR 0002/0003 distinguish the default ACP generator from replaceable evidence selectors and inference formats.
+- Added a build-tagged, app-owned controlled GenUI experiment: real Jev component/structure decisions, Gemini content-only generation over the same ACP path, and deterministic A2UI assembly. Twelve native runs and source reviews are recorded in the [decision report](docs/research/readbench/controlled-genui-decision.md); production generation remains unchanged.
+
 #### Document reliability
 
 - Canceling a window close keeps every tab and its recovery copy, including a tab whose Delete or Don't Save button was already clicked.
@@ -58,6 +65,13 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 ### 中文
 
 #20 的工作区与 Portrait 更新。自动化检查、原生验证和待验收项见[验收记录](docs/acceptance.md)。
+
+#### GenUI 生成与架构证据
+
+- ACP 初始化报告客户端身份并核对协商的协议版本；生成要求明确使用规范化后的绝对输入/输出路径，避免 AGY 把 `./source.md` 解释成 `/source.md`。
+- 新增显式启用的 `readbench` 构建观测，记录真实 Agent 进程、ACP 会话及配置、原始产物和提交结果。独立 ReadBench 保存真实 WebView 行为和逐条原文审阅；完整模型基准与日常快速确定性检查分开运行。
+- 新增仅在实验构建启用的应用内受控 GenUI：真实 Jev 决定组件与结构，同一 ACP/Gemini 仅填内容槽，由代码装配 A2UI。[决策报告](docs/research/readbench/controlled-genui-decision.md)记录 12 次原生运行与逐条原文审阅；生产默认生成方式不变。
+- 格式说明补上实际 UAX #31 组件 ID 约束，研究入口更正历史来源 ID 覆盖率的解释；ADR 0002/0003 区分默认 ACP 生成执行器、可替换证据选择与推理格式。
 
 #### 文档可靠性
 

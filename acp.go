@@ -17,6 +17,17 @@ import (
 const (
 	acpPipeDrainGrace = 250 * time.Millisecond
 	acpPipeCloseGrace = 100 * time.Millisecond
+
+	// acpSent and acpReceived are the directions observe reports.
+	acpSent     = "sent"
+	acpReceived = "received"
+
+	// acpProtocolVersion is the ACP version this client speaks; the
+	// initialize answer is checked against it. The client identity is
+	// what the agent sees in the handshake.
+	acpProtocolVersion = 1
+	acpClientName      = "MarkGoGo"
+	acpClientVersion   = "0.1.0"
 )
 
 // acpError is a JSON-RPC error object, as an error.
@@ -92,6 +103,14 @@ type acpAgent struct {
 
 	handleRequest      func(method string, params json.RawMessage) (any, *acpError)
 	handleNotification func(method string, params json.RawMessage)
+
+	// observe, when set, gets every JSON-RPC message that crossed the
+	// pipes, with its direction, for tracing. It is called for an
+	// inbound message before dispatch, with bytes that are already
+	// copied (the scanner reuses its buffer), and for an outbound
+	// message only after the write to stdin succeeded, with the exact
+	// marshaled bytes.
+	observe func(direction string, line []byte)
 
 	exited     chan struct{} // closed once the process has been waited for
 	readDone   chan struct{} // closed when readLoop has ended
@@ -199,6 +218,11 @@ func (a *acpAgent) readLoop() {
 	scanner.Buffer(make([]byte, 0, 64<<10), 16<<20)
 	for scanner.Scan() {
 		if line := bytes.TrimSpace(scanner.Bytes()); len(line) > 0 {
+			if a.observe != nil {
+				// The scanner reuses its buffer: the observer gets its
+				// own copy of the line.
+				a.observe(acpReceived, append([]byte(nil), line...))
+			}
 			a.dispatch(line)
 		}
 	}
@@ -261,6 +285,13 @@ func (a *acpAgent) answer(id int64, method string, params json.RawMessage) {
 // call sends a JSON-RPC request and waits for its answer or the end of
 // the agent, and unmarshals the answer into result when one is given.
 func (a *acpAgent) call(method string, params any, result any) error {
+	return a.callCapturing(method, params, result, nil)
+}
+
+// callCapturing is call with an optional copy of the raw result for
+// tracing. raw stays nil, with no copy at all, when the caller does
+// not ask for it.
+func (a *acpAgent) callCapturing(method string, params any, result any, raw *json.RawMessage) error {
 	a.mu.Lock()
 	a.nextID++
 	id := a.nextID
@@ -285,6 +316,9 @@ func (a *acpAgent) call(method string, params any, result any) error {
 	if resp.err != nil {
 		return resp.err
 	}
+	if raw != nil {
+		*raw = resp.result
+	}
 	if result == nil || resp.result == nil {
 		return nil
 	}
@@ -307,8 +341,15 @@ func (a *acpAgent) write(v any) error {
 	}
 	a.writeMu.Lock()
 	defer a.writeMu.Unlock()
-	_, err = a.stdin.Write(append(data, '\n'))
-	return err
+	if _, err := a.stdin.Write(append(data, '\n')); err != nil {
+		return err
+	}
+	if a.observe != nil {
+		// The write succeeded: the line is what the agent got. data is
+		// not reused after this point, so it needs no copy.
+		a.observe(acpSent, data)
+	}
+	return nil
 }
 
 // goneMessage says why the agent's answer to method never came.

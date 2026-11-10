@@ -68,6 +68,9 @@ messages replace components by id. Other message types are not allowed.
   reference must name a component that exists.
 - A component is an object with an `id`, a `component` naming a catalog
   component, and that component's properties, nothing else.
+- Every component `id` must be a valid Unicode UAX #31 identifier. ASCII
+  letters followed by letters, digits or underscores are a safe choice
+  (`principlesTable`, `key_points`); do not use hyphens (`key-points`).
 
 A component the catalog does not have is shown as an error where it is; the
 rest of the view still renders. Anything else that is wrong (a message that is

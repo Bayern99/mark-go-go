@@ -82,6 +82,15 @@ type fakeSpec struct {
 	// Models are the model IDs the fake offers; empty offers the
 	// default three.
 	Models []string `json:"models"`
+	// ThoughtValues are the thought_level values the fake offers;
+	// empty offers only "high". ThoughtCurrent is its currentValue,
+	// models[0] when empty.
+	ThoughtValues  []string `json:"thoughtValues"`
+	ThoughtCurrent string   `json:"thoughtCurrent"`
+	// ConfigUpdate, when set, makes the fake send a
+	// config_option_update notification after a successful
+	// set_config_option.
+	ConfigUpdate bool `json:"configUpdate"`
 	// Out is written to out.json in the fake's working directory
 	// before the turn ends; OutSize writes that many bytes instead,
 	// and OutSymlink makes out.json a symbolic link to its target.
@@ -132,6 +141,15 @@ func runFakeAgent() {
 	if len(models) == 0 {
 		models = []string{"gemini-4-argon", "gemini-3.8-flash", "claude-opus-5-5"}
 	}
+	thoughtValues := spec.ThoughtValues
+	if len(thoughtValues) == 0 {
+		thoughtValues = []string{"high"}
+	}
+	thoughtCurrent := spec.ThoughtCurrent
+	if thoughtCurrent == "" {
+		thoughtCurrent = thoughtValues[0]
+	}
+	currentModel := models[0]
 	const sessionID = "fake-session"
 	nextID := int64(100)
 
@@ -145,6 +163,19 @@ func runFakeAgent() {
 			opts[i] = map[string]string{"value": m, "name": m}
 		}
 		return opts
+	}
+	thoughtOptions := func() []map[string]string {
+		opts := make([]map[string]string, len(thoughtValues))
+		for i, v := range thoughtValues {
+			opts[i] = map[string]string{"value": v, "name": strings.ToUpper(v)}
+		}
+		return opts
+	}
+	configOptions := func() []map[string]any {
+		return []map[string]any{
+			{"id": "model", "type": "select", "currentValue": currentModel, "options": modelOptions()},
+			{"id": "thought_level", "type": "select", "currentValue": thoughtCurrent, "options": thoughtOptions()},
+		}
 	}
 
 	in := bufio.NewScanner(os.Stdin)
@@ -178,13 +209,10 @@ func runFakeAgent() {
 			}})
 		case msg.ID != nil && msg.Method == "session/new":
 			send(map[string]any{"jsonrpc": "2.0", "id": *msg.ID, "result": map[string]any{
-				"sessionId": sessionID,
-				"modes":     []any{},
-				"models":    []any{},
-				"configOptions": []map[string]any{
-					{"id": "model", "type": "select", "currentValue": models[0], "options": modelOptions()},
-					{"id": "thought_level", "type": "select", "currentValue": "high", "options": []map[string]string{{"value": "high", "name": "High"}}},
-				},
+				"sessionId":     sessionID,
+				"modes":         []any{},
+				"models":        []any{},
+				"configOptions": configOptions(),
 			}})
 		case msg.ID != nil && msg.Method == "session/set_config_option":
 			var params struct {
@@ -193,15 +221,39 @@ func runFakeAgent() {
 			}
 			_ = json.Unmarshal(msg.Params, &params)
 			known := false
-			for _, m := range models {
-				if m == params.Value {
-					known = true
+			switch params.ConfigID {
+			case "model":
+				for _, m := range models {
+					if m == params.Value {
+						known = true
+					}
+				}
+				if known {
+					currentModel = params.Value
+				}
+			case "thought_level":
+				for _, v := range thoughtValues {
+					if v == params.Value {
+						known = true
+					}
+				}
+				if known {
+					thoughtCurrent = params.Value
 				}
 			}
-			if params.ConfigID == "model" && known {
-				send(map[string]any{"jsonrpc": "2.0", "id": *msg.ID, "result": map[string]any{"configOptions": []any{}}})
+			if known {
+				send(map[string]any{"jsonrpc": "2.0", "id": *msg.ID, "result": map[string]any{"configOptions": configOptions()}})
+				if spec.ConfigUpdate {
+					send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
+						"sessionId": sessionID,
+						"update": map[string]any{
+							"sessionUpdate": "config_option_update",
+							"configOptions": configOptions(),
+						},
+					}})
+				}
 			} else {
-				send(map[string]any{"jsonrpc": "2.0", "id": *msg.ID, "error": map[string]any{"code": -32602, "message": "Unknown model ID: " + params.Value}})
+				send(map[string]any{"jsonrpc": "2.0", "id": *msg.ID, "error": map[string]any{"code": -32602, "message": "Unknown " + params.ConfigID + " value: " + params.Value}})
 			}
 		case msg.ID != nil && msg.Method == "session/prompt":
 			if spec.Hang {

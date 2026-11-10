@@ -19,6 +19,7 @@ import (
 
 func main() {
 	host := newDocumentHost()
+	configureReadBench(host)
 	mygo.App.OnBeforeQuit(host.onBeforeQuit)
 
 	ds := mygo.NewDocuments(mygo.DocumentsOptions[string]{

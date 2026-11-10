@@ -20,6 +20,18 @@ import (
 	"github.com/egoist/mygo"
 )
 
+// These initialize parameters are shared read-only by every ACP session.
+var acpClientInfo = map[string]string{"name": acpClientName, "version": acpClientVersion}
+
+var acpInitializeParams = map[string]any{
+	"protocolVersion": acpProtocolVersion,
+	"clientInfo":      acpClientInfo,
+	"clientCapabilities": map[string]any{
+		"fs":       map[string]any{"readTextFile": false, "writeTextFile": false},
+		"terminal": false,
+	},
+}
+
 // GenerateRequest is what the page sends when the reader clicks
 // Generate: the editor text at that moment, the generation mode, the
 // format definition, and the page's sections of the text.
@@ -280,12 +292,36 @@ type generationJob struct {
 	// BeforeWrite, when set, runs immediately before the view file is
 	// written. A non-nil error leaves the view file untouched.
 	BeforeWrite func() error
+
+	// Observe, when set, gets the run's evidence as it happens: the raw
+	// JSON-RPC lines both ways, the handshake and config answers, the
+	// phases, the exact files, and one terminal run.end event. The
+	// observer owns the run ID and elapsed time. Nil costs the run
+	// nothing but a nil check: no extra marshal or copy.
+	Observe func(event string, payload any)
+
+	// ThoughtLevel, when non-empty, is the thought_level config option
+	// this run asks the agent for. It is sent only when the agent's own
+	// session/new configOptions offer that exact value; otherwise the
+	// run records that it was not supported and continues. Empty sends
+	// nothing and keeps the agent's current level.
+	ThoughtLevel string
+
+	// Prepare is an optional in-process experiment: it supplies a prompt and
+	// compiles content-only output into the ordinary view contract. Ordinary
+	// builds leave it nil and use the full A2UI generation path.
+	Prepare func(context.Context, GenerateRequest, string) (string, func([]byte) ([]byte, error), error)
 }
 
 // runGeneration makes one view, as Generate does, with the job's
 // injections. On any error, a *genError, the view file is untouched,
 // the agent process is stopped and the temporary folder is gone.
-func runGeneration(ctx context.Context, job generationJob, progress func(GenerateProgress) error) error {
+func runGeneration(ctx context.Context, job generationJob, progress func(GenerateProgress) error) (err error) {
+	trace := newGenerationTrace(&job)
+	if trace != nil {
+		defer func() { trace.end(err) }()
+	}
+
 	var base *baseView
 	switch job.Req.Mode {
 	case "full":
@@ -326,8 +362,12 @@ func runGeneration(ctx context.Context, job generationJob, progress func(Generat
 		return agentErrorf("Could not make the agent's folder: %v.", err)
 	}
 
+	trace.runStart(&job, dir)
 	if err := os.WriteFile(filepath.Join(dir, "source.md"), []byte(job.Req.Text), 0o644); err != nil {
 		return agentErrorf("Could not write the agent's source file: %v.", err)
+	}
+	if trace != nil {
+		trace.artifact("source.md", filepath.Join(dir, "source.md"), job.Req.Text)
 	}
 	if base != nil {
 		if err := os.WriteFile(filepath.Join(dir, "view.json"), base.raw, 0o644); err != nil {
@@ -335,9 +375,21 @@ func runGeneration(ctx context.Context, job generationJob, progress func(Generat
 		}
 	}
 
-	send := &progressSender{send: progress}
+	send := &progressSender{send: progress, trace: trace}
 	if err := send.step("starting", "Starting the agent"); err != nil {
 		return interrupted()
+	}
+
+	var promptText string
+	var assembleOutput func([]byte) ([]byte, error)
+	if job.Prepare != nil {
+		promptText, assembleOutput, err = job.Prepare(ctx, job.Req, dir)
+		if err != nil {
+			if ctx.Err() != nil {
+				return interrupted()
+			}
+			return agentErrorf("Could not prepare the controlled reading view: %v.", err)
+		}
 	}
 
 	resolved, err := resolveAgentCommand(job.AgentCommand)
@@ -348,7 +400,7 @@ func runGeneration(ctx context.Context, job generationJob, progress func(Generat
 	cmd.Dir = dir
 	cmd.Env = job.Env
 
-	run := &genRun{job: job, dir: dir, send: send, base: base, abortCh: make(chan struct{}), toolCalls: make(map[string]toolCallState)}
+	run := &genRun{job: job, dir: dir, send: send, base: base, trace: trace, promptText: promptText, assembleOutput: assembleOutput, abortCh: make(chan struct{}), toolCalls: make(map[string]toolCallState)}
 	agent, err := newACPAgent(cmd, newLimitBuffer(4<<10))
 	if err != nil {
 		return newFailure(failAgentNotFound, fmt.Sprintf("Could not start the agent command %q: %v.", job.AgentCommand, err), hintAgentNotFound)
@@ -356,6 +408,16 @@ func runGeneration(ctx context.Context, job generationJob, progress func(Generat
 	run.agent = agent
 	agent.handleRequest = run.handleRequest
 	agent.handleNotification = run.handleNotification
+	if trace != nil {
+		agent.observe = func(direction string, line []byte) {
+			event := traceACPSent
+			if direction == acpReceived {
+				event = traceACPReceived
+			}
+			trace.emit(event, &traceACPPayload{Direction: direction, Line: json.RawMessage(line)})
+		}
+	}
+	trace.agentStart(resolved, cmd.Args, agent.cmd.Process.Pid, dir)
 	agent.start()
 	defer agent.kill()
 
@@ -373,27 +435,40 @@ func runGeneration(ctx context.Context, job generationJob, progress func(Generat
 // execute runs the whole conversation with the agent: the handshake,
 // the prompt turn, and the view it produced.
 func (r *genRun) execute(ctx context.Context) error {
-	if err := r.callAgent(ctx, "initialize", map[string]any{
-		"protocolVersion": 1,
-		"clientCapabilities": map[string]any{
-			"fs":       map[string]any{"readTextFile": false, "writeTextFile": false},
-			"terminal": false,
-		},
-	}, nil); err != nil {
+	var initialized struct {
+		ProtocolVersion int             `json:"protocolVersion"`
+		AgentInfo       json.RawMessage `json:"agentInfo"`
+	}
+	var initRaw json.RawMessage
+	var initRawPtr *json.RawMessage
+	if r.trace != nil {
+		initRawPtr = &initRaw
+	}
+	if err := r.callAgent(ctx, "initialize", acpInitializeParams, &initialized, initRawPtr); err != nil {
 		return err
+	}
+	r.trace.initialized(initRaw, acpClientInfo, acpProtocolVersion, initialized.ProtocolVersion, initialized.AgentInfo)
+	if initialized.ProtocolVersion != acpProtocolVersion {
+		return agentErrorf("The agent speaks ACP protocol version %d, but this app speaks version %d.", initialized.ProtocolVersion, acpProtocolVersion)
 	}
 
 	var opened struct {
 		SessionID     string          `json:"sessionId"`
 		ConfigOptions json.RawMessage `json:"configOptions"`
 	}
+	var openedRaw json.RawMessage
+	var openedRawPtr *json.RawMessage
+	if r.trace != nil {
+		openedRawPtr = &openedRaw
+	}
 	if err := r.callAgent(ctx, "session/new", map[string]any{
 		"cwd":        r.dir,
 		"mcpServers": []any{},
-	}, &opened); err != nil {
+	}, &opened, openedRawPtr); err != nil {
 		return err
 	}
 	r.sessionID = opened.SessionID
+	r.trace.sessionNew(openedRaw, r.sessionID)
 	if models := configValues(opened.ConfigOptions, "model"); len(models) > 0 && r.job.Settings != nil {
 		_ = r.job.Settings.setModels(models)
 	}
@@ -402,11 +477,17 @@ func (r *genRun) execute(ctx context.Context) error {
 	}
 
 	if r.job.Model != "" {
+		var setRaw json.RawMessage
+		var setRawPtr *json.RawMessage
+		if r.trace != nil {
+			setRawPtr = &setRaw
+		}
 		if err := r.callAgent(ctx, "session/set_config_option", map[string]any{
 			"sessionId": r.sessionID,
-			"configId":  "model",
+			"configId":  traceModelOption,
 			"value":     r.job.Model,
-		}, nil); err != nil {
+		}, nil, setRawPtr); err != nil {
+			r.trace.configSetError(traceModelOption, r.job.Model, err)
 			var ge *genError
 			if models := configValues(opened.ConfigOptions, "model"); len(models) > 0 && errors.As(err, &ge) && ge.Kind == failAgentError {
 				invalid := newFailure(failModelInvalid, fmt.Sprintf("The agent does not know the model %q.", r.job.Model), hintModelInvalid)
@@ -415,17 +496,33 @@ func (r *genRun) execute(ctx context.Context) error {
 			}
 			return err
 		}
+		r.trace.configSetResponse(traceModelOption, r.job.Model, setRaw)
 	}
 
+	if err := r.applyThoughtLevel(ctx, opened.ConfigOptions); err != nil {
+		return err
+	}
+
+	promptText := r.promptText
+	if promptText == "" {
+		promptText = generationPrompt(r.job.Req, r.base, r.dir)
+	}
+	r.trace.prompt(promptText)
 	var turned struct {
 		StopReason string `json:"stopReason"`
 	}
+	var turnedRaw json.RawMessage
+	var turnedRawPtr *json.RawMessage
+	if r.trace != nil {
+		turnedRawPtr = &turnedRaw
+	}
 	if err := r.callAgent(ctx, "session/prompt", map[string]any{
 		"sessionId": r.sessionID,
-		"prompt":    []map[string]any{{"type": "text", "text": generationPrompt(r.job.Req, r.base)}},
-	}, &turned); err != nil {
+		"prompt":    []map[string]any{{"type": "text", "text": promptText}},
+	}, &turned, turnedRawPtr); err != nil {
 		return err
 	}
+	r.trace.promptResult(turnedRaw)
 	if err := r.send.step("checking", "Checking the view"); err != nil {
 		return err
 	}
@@ -433,6 +530,49 @@ func (r *genRun) execute(ctx context.Context) error {
 	// The agent keeps running after its answer; stop it before reading.
 	r.agent.kill()
 	return r.collect()
+}
+
+// applyThoughtLevel asks for the job's thought level only when the
+// agent's own session/new configOptions offer that exact value. An
+// agent without the option, or without the value, is recorded as not
+// supporting it and the run goes on with the agent's current level.
+func (r *genRun) applyThoughtLevel(ctx context.Context, optionsRaw json.RawMessage) error {
+	requested := r.job.ThoughtLevel
+	if requested == "" {
+		return nil
+	}
+	opt, ok := findConfigOption(optionsRaw, traceThoughtID, "thoughtLevel")
+	if !ok {
+		r.trace.configSetSkipped(traceThoughtID, requested, "the agent's session/new configOptions have no thought_level option")
+		return nil
+	}
+	offered := opt.values()
+	supported := false
+	for _, v := range offered {
+		if v == requested {
+			supported = true
+			break
+		}
+	}
+	if !supported {
+		r.trace.configSetSkipped(opt.ID, requested, fmt.Sprintf("the agent's %s option does not offer %q; it offers %s", opt.ID, requested, strings.Join(quoteAll(offered), ", ")))
+		return nil
+	}
+	var setRaw json.RawMessage
+	var setRawPtr *json.RawMessage
+	if r.trace != nil {
+		setRawPtr = &setRaw
+	}
+	if err := r.callAgent(ctx, "session/set_config_option", map[string]any{
+		"sessionId": r.sessionID,
+		"configId":  opt.ID,
+		"value":     requested,
+	}, nil, setRawPtr); err != nil {
+		r.trace.configSetError(opt.ID, requested, err)
+		return err
+	}
+	r.trace.configSetResponse(opt.ID, requested, setRaw)
+	return nil
 }
 
 // genRun is the state of one running generation.
@@ -443,6 +583,13 @@ type genRun struct {
 	// base is the current view an update replaces components of; nil
 	// for a full generation.
 	base *baseView
+
+	// trace, when the job has an observer, gets this run's evidence;
+	// it is nil otherwise.
+	trace *generationTrace
+
+	promptText     string
+	assembleOutput func([]byte) ([]byte, error)
 
 	agent     *acpAgent
 	sessionID string
@@ -469,9 +616,9 @@ type genRun struct {
 // notification handler. Every other failure is a *genError: an agent
 // that is not signed in, the agent's error answer to the prompt (its
 // own words, as a quota running out), or an agent-error.
-func (r *genRun) callAgent(ctx context.Context, method string, params any, result any) error {
+func (r *genRun) callAgent(ctx context.Context, method string, params any, result any, raw *json.RawMessage) error {
 	ch := make(chan error, 1)
-	go func() { ch <- r.agent.call(method, params, result) }()
+	go func() { ch <- r.agent.callCapturing(method, params, result, raw) }()
 	select {
 	case err := <-ch:
 		if err == nil {
@@ -542,6 +689,24 @@ func (r *genRun) lastReply() string {
 // agent's last reply, sends the page the progress of the turn, and
 // stops the run when a tool call goes outside the working folder.
 func (r *genRun) handleNotification(method string, params json.RawMessage) {
+	if method == "session/config_option_update" {
+		var p struct {
+			ConfigOptions json.RawMessage `json:"configOptions"`
+		}
+		_ = json.Unmarshal(params, &p)
+		opts := p.ConfigOptions
+		if len(opts) == 0 {
+			var upd struct {
+				Update struct {
+					ConfigOptions json.RawMessage `json:"configOptions"`
+				} `json:"update"`
+			}
+			_ = json.Unmarshal(params, &upd)
+			opts = upd.Update.ConfigOptions
+		}
+		r.trace.configOptionUpdate(method, params, opts)
+		return
+	}
 	if method != "session/update" {
 		return
 	}
@@ -551,12 +716,13 @@ func (r *genRun) handleNotification(method string, params json.RawMessage) {
 			Content       *struct {
 				Text string `json:"text"`
 			} `json:"content"`
-			ToolCallID string        `json:"toolCallId"`
-			Name       string        `json:"name"`
-			Kind       string        `json:"kind"`
-			Title      string        `json:"title"`
-			Status     string        `json:"status"`
-			Locations  []acpLocation `json:"locations"`
+			ConfigOptions json.RawMessage `json:"configOptions"`
+			ToolCallID    string          `json:"toolCallId"`
+			Name          string          `json:"name"`
+			Kind          string          `json:"kind"`
+			Title         string          `json:"title"`
+			Status        string          `json:"status"`
+			Locations     []acpLocation   `json:"locations"`
 		} `json:"update"`
 	}
 	if json.Unmarshal(params, &upd) != nil {
@@ -572,6 +738,12 @@ func (r *genRun) handleNotification(method string, params json.RawMessage) {
 		}
 	case "agent_thought_chunk":
 		_ = r.send.step("thinking", "Thinking")
+	case "config_option_update":
+		opts := u.ConfigOptions
+		if len(opts) == 0 {
+			opts = configOptionsField(params)
+		}
+		r.trace.configOptionUpdate(method, params, opts)
 	case "tool_call", "tool_call_update":
 		r.handleToolCall(u.SessionUpdate == "tool_call_update", u.ToolCallID, u.Kind, u.Title, u.Name, u.Locations)
 	}
@@ -692,9 +864,14 @@ func choosePermissionOption(options []acpPermissionOption, allowed bool) string 
 // with the document's format definition and, when the reader asked for
 // one, the reader's request, both delimited. An update gets the
 // current view to read and the components to replace.
-func generationPrompt(req GenerateRequest, base *baseView) string {
+func generationPrompt(req GenerateRequest, base *baseView, dir string) string {
 	var b strings.Builder
 	b.WriteString("You are making a reading view of a Markdown document for Mark Go Go, a local-first Markdown editor for macOS.\n\n")
+	fmt.Fprintf(&b, "Workspace directory: %q. Always pass absolute paths to file tools. The relative names in the format below refer to these exact files:\nsource.md: %q\nout.json: %q\n", dir, filepath.Join(dir, "source.md"), filepath.Join(dir, "out.json"))
+	if base != nil {
+		fmt.Fprintf(&b, "view.json: %q\n", filepath.Join(dir, "view.json"))
+	}
+	b.WriteString("\n")
 	if base == nil {
 		b.WriteString("Read only ./source.md. Write exactly one file, ./out.json, and nothing else. Do not use the network, a browser, a shell or any other tool. out.json is a JSON object with \"sources\" and \"a2ui\", as the format below describes. Leave out version, generatedAt, model and hash: the app writes them. Use only the components of the format's catalog. When you are done, reply with one short sentence.\n\n")
 	} else {
@@ -818,6 +995,18 @@ func (r *genRun) collect() error {
 	if err != nil {
 		return r.outputError("The agent's out.json could not be read.")
 	}
+	if r.trace != nil {
+		r.trace.artifact("out.json", outPath, string(data))
+	}
+	if r.assembleOutput != nil {
+		data, err = r.assembleOutput(data)
+		if err != nil {
+			return r.outputError(fmt.Sprintf("The content slots could not be assembled: %v.", err))
+		}
+		if r.trace != nil {
+			r.trace.artifact("assembled.json", "", string(data))
+		}
+	}
 
 	var top map[string]json.RawMessage
 	if err := json.Unmarshal(data, &top); err != nil || top == nil {
@@ -928,7 +1117,12 @@ func (r *genRun) writeView(sources map[string]agentSource, a2ui json.RawMessage)
 			return err
 		}
 	}
-	return replaceView(r.job.ViewPath, append(data, '\n'), expect)
+	content := append(data, '\n')
+	if err := replaceView(r.job.ViewPath, content, expect); err != nil {
+		return err
+	}
+	r.trace.viewWritten(r.job.ViewPath, content)
+	return nil
 }
 
 // sectionHash finds the request section a source names, by its
@@ -1054,6 +1248,7 @@ func cutRunes(s string, max int) string {
 type progressSender struct {
 	mu    sync.Mutex
 	send  func(GenerateProgress) error
+	trace *generationTrace
 	phase string
 	text  string
 }
@@ -1065,6 +1260,7 @@ func (ps *progressSender) step(phase, text string) error {
 		return nil
 	}
 	ps.phase, ps.text = phase, text
+	ps.trace.phase(phase, text)
 	if err := ps.send(GenerateProgress{Phase: phase, Text: text}); err != nil {
 		return errCancelled
 	}

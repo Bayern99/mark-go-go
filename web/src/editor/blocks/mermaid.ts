@@ -1,0 +1,286 @@
+import type { Mermaid, MermaidConfig } from 'mermaid'
+import { parseCodeFence } from './present'
+import './mermaid.css'
+
+const SVG_NS = 'http://www.w3.org/2000/svg'
+
+/** Elements that could run code, load a resource, or nest an HTML document. */
+const FORBIDDEN_ELEMENTS: Record<string, true> = {
+  script: true,
+  foreignobject: true,
+  iframe: true,
+  object: true,
+  embed: true,
+  image: true,
+  audio: true,
+  video: true,
+  link: true,
+  meta: true,
+  base: true,
+  form: true,
+  input: true,
+  textarea: true,
+  button: true,
+}
+
+/** CSS that reaches outside the diagram, or evaluates code in old engines. */
+const UNSAFE_CSS = /@import|expression\s*\(|javascript:|url\(\s*(?!['"]?#)/i
+
+/** Presentation attributes whose `url(...)` must stay inside this SVG. */
+const PAINT_ATTRIBUTES: Record<string, true> = {
+  fill: true,
+  stroke: true,
+  filter: true,
+  'clip-path': true,
+  mask: true,
+  'marker-start': true,
+  'marker-mid': true,
+  'marker-end': true,
+}
+
+interface MermaidRun {
+  run: number
+}
+
+/**
+ * The async render belongs to one node view's DOM. A newer fill, removal or
+ * editor teardown bumps the run, so an older promise can never paint another
+ * block or a stale document.
+ */
+const runs = new WeakMap<HTMLElement, MermaidRun>()
+
+let mermaidPromise: Promise<Mermaid> | undefined
+let renderChain: Promise<void> = Promise.resolve()
+let renderSerial = 0
+
+/**
+ * Mermaid keeps diagram config in shared module state while it renders, so
+ * parallel renders of different blocks can leak settings into each other.
+ * Queue them like `mermaid.run` does; one failure never stalls the queue.
+ */
+function renderSerially<T>(task: () => Promise<T>): Promise<T> {
+  const result = renderChain.then(task, task)
+  renderChain = result.then(
+    () => undefined,
+    () => undefined,
+  )
+  return result
+}
+
+function cssToken(name: string, fallback: string): string {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return value || fallback
+}
+
+function loadMermaid(): Promise<Mermaid> {
+  if (!mermaidPromise) {
+    mermaidPromise = import('mermaid')
+      .then(({ default: mermaid }) => {
+        const config: MermaidConfig = {
+          startOnLoad: false,
+          securityLevel: 'strict',
+          suppressErrorRendering: true,
+          htmlLabels: false,
+          theme: 'neutral',
+          fontFamily: cssToken('--font-sans', 'sans-serif'),
+          maxTextSize: 50_000,
+          flowchart: { htmlLabels: false, useMaxWidth: true, curve: 'basis' },
+          sequence: { useMaxWidth: true },
+          gantt: { useMaxWidth: true },
+        }
+        mermaid.initialize(config)
+        return mermaid
+      })
+      .catch((error: unknown) => {
+        mermaidPromise = undefined
+        throw error
+      })
+  }
+  return mermaidPromise
+}
+
+function errorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error)
+  return raw.replace(/\s+/g, ' ').trim().slice(0, 320) || 'Unknown Mermaid error.'
+}
+
+/**
+ * Turn Mermaid's SVG string into DOM without trusting it as HTML. Parsing as
+ * XML does not run scripts; forbidden elements and external references are
+ * removed before the tree is imported into the editor's document.
+ */
+function sanitizeSvg(markup: string): SVGSVGElement {
+  const parsed = new DOMParser().parseFromString(markup, 'image/svg+xml')
+  if (parsed.querySelector('parsererror')) throw new Error('Mermaid returned malformed SVG.')
+  const root = parsed.documentElement
+  if (root.namespaceURI !== SVG_NS || root.localName !== 'svg') {
+    throw new Error('Mermaid did not return an SVG diagram.')
+  }
+
+  const elements = [root, ...Array.from(root.querySelectorAll('*'))]
+  for (const element of elements) {
+    if (!element.parentNode && element !== root) continue
+    if (FORBIDDEN_ELEMENTS[element.localName.toLowerCase()]) {
+      element.remove()
+      continue
+    }
+    if (element.localName.toLowerCase() === 'style' && UNSAFE_CSS.test(element.textContent ?? '')) {
+      element.remove()
+      continue
+    }
+    for (const attribute of Array.from(element.attributes)) {
+      const name = attribute.name.toLowerCase()
+      const value = attribute.value
+      const unsafe =
+        name.startsWith('on') ||
+        name === 'src' ||
+        name === 'action' ||
+        name === 'formaction' ||
+        name === 'srcdoc' ||
+        ((name === 'href' || name.endsWith(':href')) && !value.trim().startsWith('#')) ||
+        (name === 'style' && UNSAFE_CSS.test(value)) ||
+        (PAINT_ATTRIBUTES[name] === true && /url\(\s*(?!['"]?#)/i.test(value))
+      if (unsafe) element.removeAttributeNode(attribute)
+    }
+  }
+
+  const svg = document.importNode(root, true)
+  if (!(svg instanceof SVGSVGElement)) throw new Error('Mermaid did not return an SVG diagram.')
+  return svg
+}
+
+function actionButton(): HTMLButtonElement {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'pill xs'
+  button.dataset.blockAction = 'edit'
+  button.textContent = 'Edit'
+  return button
+}
+
+/**
+ * Render one Mermaid fence in place. `source` is the locked block's original
+ * bytes; the diagram is a presentation of its body, never a rewrite of it.
+ */
+export function renderMermaidBlock(dom: HTMLElement, source: string, readonly: boolean): void {
+  const state = runs.get(dom) ?? { run: 0 }
+  state.run += 1
+  const run = state.run
+  runs.set(dom, state)
+
+  dom.className = 'mgo-mermaid'
+  dom.dataset.mermaid = 'pending'
+  dom.setAttribute('aria-busy', 'true')
+  dom.removeAttribute('aria-label')
+  dom.replaceChildren()
+
+  const chrome = document.createElement('div')
+  chrome.className = 'mgo-mermaid-chrome'
+  const label = document.createElement('span')
+  label.className = 'mgo-code-lang'
+  label.textContent = 'Mermaid'
+  const status = document.createElement('span')
+  status.className = 'mgo-mermaid-status'
+  status.textContent = 'Rendering…'
+  chrome.append(label, status)
+
+  const view = document.createElement('div')
+  view.className = 'mgo-mermaid-view'
+  view.setAttribute('role', 'img')
+  view.setAttribute('aria-label', 'Mermaid diagram')
+
+  const error = document.createElement('div')
+  error.className = 'mgo-mermaid-error'
+  error.setAttribute('role', 'alert')
+  error.hidden = true
+
+  const raw = document.createElement('pre')
+  raw.className = 'mgo-mermaid-source'
+  raw.hidden = true
+
+  const actions = document.createElement('span')
+  actions.className = 'mgo-block-actions'
+  if (!readonly) actions.append(actionButton())
+
+  dom.append(chrome, view, error, raw, actions)
+
+  const fail = (detail: string) => {
+    if (state.run !== run) return
+    dom.dataset.mermaid = 'error'
+    dom.removeAttribute('aria-busy')
+    dom.setAttribute('aria-label', 'Mermaid diagram could not be rendered')
+    status.hidden = true
+    view.hidden = true
+    error.hidden = false
+    error.textContent = `Mermaid could not render this diagram. ${detail}`
+    raw.hidden = false
+    raw.textContent = source
+  }
+
+  const code = parseCodeFence(source)?.code ?? ''
+  if (code.trim() === '') {
+    fail('The diagram source is empty.')
+    return
+  }
+  // Directives and frontmatter can change Mermaid's own config (including
+  // styles and security). They are presentation only, so render without them:
+  // the locked source keeps their bytes untouched.
+  const diagram = code
+    .replace(/%%\{[\s\S]*?\}%%/g, '')
+    .replace(/^\s*---\r?\n[\s\S]*?\r?\n---\r?\n/, '')
+  if (diagram.trim() === '') {
+    fail('The diagram has no content besides Mermaid configuration.')
+    return
+  }
+  // Static capability limit: Mermaid can create image/icon shapes and raw
+  // HTML labels. Refuse those before rendering, because a temporary SVG may be
+  // attached to the page and start the request before any later cleanup.
+  if (
+    /<img\b|!\[[^\]]*\]\(|@\{[^}]*\b(?:img|icon)\s*:|\b(?:href|src)\s*=|url\(\s*(?!['"]?#)/i.test(
+      diagram,
+    )
+  ) {
+    fail('This diagram references an external resource. Rich text renders diagrams offline.')
+    return
+  }
+
+  void renderSerially(async () => {
+    await document.fonts?.ready
+    const mermaid = await loadMermaid()
+    await mermaid.parse(diagram)
+    const id = `mgo-mermaid-${++renderSerial}`
+    const host = document.createElement('div')
+    host.setAttribute('aria-hidden', 'true')
+    host.style.cssText =
+      'position:fixed;left:-10000px;top:0;width:1200px;visibility:hidden;pointer-events:none;'
+    document.body.append(host)
+    try {
+      return await mermaid.render(id, diagram, host)
+    } finally {
+      // Mermaid appends temporary scaffolding for layout; never leave it in
+      // the page, and never render it in the visible flow first.
+      host.remove()
+      document.getElementById(`d${id}`)?.remove()
+    }
+  })
+    .then((result) => {
+      if (state.run !== run) return
+      const svg = sanitizeSvg(result.svg)
+      if (state.run !== run) return
+      view.replaceChildren(svg)
+      view.hidden = false
+      dom.dataset.mermaid = 'rendered'
+      dom.removeAttribute('aria-busy')
+      dom.setAttribute('aria-label', 'Mermaid diagram')
+      status.hidden = true
+    })
+    .catch((error: unknown) => fail(errorMessage(error)))
+}
+
+/** Invalidate a pending render when ProseMirror removes the node view. */
+export function disposeMermaidBlock(dom: HTMLElement): void {
+  const state = runs.get(dom)
+  if (!state) return
+  state.run += 1
+  runs.delete(dom)
+}

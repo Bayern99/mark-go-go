@@ -2,6 +2,57 @@
 
 本文件按阶段记录实际执行的检查。PR 合并前检查见下节。其余各节保留各自版本的原型与集成证据，被后续规格取代的条目已就地标注。
 
+## 窄窗口、触控与节流网络 QA（2026-11-11）
+
+本节记录发布前针对本轮 UI 改动的浏览器实测：宽度 1280 / 1024 / 768 / 620 / 560 / 480（应用最小窗口），Chromium CDP 触控仿真与约 400kbps、400ms 延迟的网络节流。发现两处实际问题并就地修复。
+
+| 检查 | 判定 | 证据 |
+|---|---|---|
+| 侧栏在窄窗口挤压正文 | 已修复 | 480px 窗口下 248px 侧栏使 sheet 仅剩约 218px：头栏溢出、右栏开关不可点、正文逐字换行，Markdown 与 GenUI 视图同样挤坏。修复后侧栏让位至 170px、sheet 296px、头栏零溢出，各视图可用；700px 窗口内 420px 侧栏同样被压至 390px。 |
+| 分隔条触控热区 | 已修复 | 6px 透明分隔条的外缘被中央栏覆盖（elementFromPoint 实测），鼠标与触控均无法从边缘拖动；热区扩至 14px（负边距 + `z-index` + `touch-action: none`）后，鼠标从外缘拖至 383px、CDP 触控拖至 420px。 |
+| 节流 3G 加载 | PASS | 约 400kbps、400ms 延迟下 <800ms 完成渲染，无 FOUC 或破碎中间态；字体与图标随包加载，无外部请求。 |
+| 其余宽度回归 | PASS | 1024 / 768 / 620 / 560 宽度下右栏按 `< 1180px` 断点浮层化，头栏与文档无横向溢出；1280 默认布局与基线一致。 |
+| 触控可操作性 | PASS | 三选一分段、标签关闭、文件树行、触控拖动分隔条均可操作；仅分隔条热区需要修复（见上）。 |
+| 自动检查 | PASS | `npm --prefix web run typecheck`；`npm --prefix web test` 真实 Chromium 31 个文件、304 项通过；`go vet ./...`；`go test -race .`。 |
+| 原生 WebView 窗口几何 | PASS（`go tool mygo dev` 实际窗口） | 新窗口实测 1280×820；请求 400×300 被窗口最小尺寸钳制至约 482×362（`minWindowWidth/Height` 生效）。482×362 下侧栏让位、docbar 三选一切换与右栏开关完整可用、保存态退至底部状态栏；620×600 布局无溢出。 |
+
+## 导航视觉方向与原生验收（2026-11-11）
+
+| 检查 | 判定 | 证据 |
+|---|---|---|
+| 选定视觉方向 | PASS | 用户比较 A/B/C 后选定 B 的结构与图标、A 的拟物材质、C 的 `+N`；完整方案见[组件规划](design/ui-component-gaps.md)。 |
+| 原生文件树与 Model 菜单 | PASS（macOS WebView 实际截图） | 桌面 App 显示 Phosphor folder/folder-open/file-text、凸起活动标签、`MODEL` 标题、Agent/模型图标、当前项勾号与细焦点态；没有 Unicode 黑色三角形。 |
+| 真实文档命令菜单 | PASS（App + BrowserWorkspace 实际截图） | 12 文档时溢出按钮显示 `+8`；菜单有 8 条文件图标＋路径行，搜索框为细内描边，末项选择后正确激活。 |
+| 全量前端验证 | PASS | 移除原型入口后执行 `npm --prefix web run typecheck && npm --prefix web test && npm --prefix web run build`；31 个文件、304 项通过。 |
+| Go 集成 | PASS | `go test ./...` 通过；启动期导航索引 map 并发问题另以 `go test -race .` 验证通过。 |
+| 原型清理 | PASS | `prototype/workspace-navigation` 分支提交 `ccc8c71` 保存三个方案；`main` 工作区没有原型目录或入口。 |
+
+## UI primitives 与短时通知（2026-11-11）
+
+| 检查 | 判定 | 证据 |
+|---|---|---|
+| 类型、全量测试与构建 | PASS | `npm --prefix web run typecheck && npm --prefix web test && npm --prefix web run build`；Chromium 31 个文件、304 项通过。构建完成，保留大于 500kB chunk 警告。 |
+| Tooltip、文档菜单与 Model 菜单 | PASS（Chromium + 实际页面） | `workspace-tabs`、`genui-generate`、`genui-isolation` 覆盖溢出搜索、焦点恢复、键盘切换、Escape、外部点击、模型选择和跨文档设置。实际页面显示文件树完整路径、向上 Model 菜单，并成功切换模型；Portal 不影响标签测量。 |
+| 复制通知 | PASS（实际页面） | 点击代码块 `Copy` 显示 `Code copied`；连续复制后仍为一个 `data-testid="copy-toast"`，页面只有一个 `data-sonner-toaster`。持续错误与生成状态未迁移。 |
+| 键盘 Tooltip | PASS（实际页面） | 文件树行获得键盘焦点后显示唯一完整路径 `/demo/welcome.md`，无重复摘要文本。 |
+| Go 集成 | PASS | `go test ./...` 通过。 |
+| 滚动区域 | N/A | 用户明确排除；现有 `ScrollArea` 与 OverlayScrollbars 未改。 |
+| 原生 WebView 检查 | BLOCKED | 本轮验证在真实 Chromium App/BrowserHost 完成，未运行原生 macOS WebView。 |
+
+## 窗口、Mermaid 与工作区文字（2026-11-10）
+
+本节记录本轮工作区改动；不以浏览器结果代替原生窗口几何验收。
+
+| 检查 | 判定 | 证据 |
+|---|---|---|
+| 前端类型、测试、生产构建 | PASS | `npm --prefix web run typecheck && npm --prefix web test && npm --prefix web run build`；真实 Chromium 31 个文件、303 项通过。构建保留大于 500kB 的 chunk 提示，未调整阈值或压制警告。 |
+| Mermaid 的原文保真与编辑 | PASS（Chromium） | `mermaid.test.ts` 覆盖有效图、无效图原文与错误、CRLF 原地修改与撤销、外部资源拒绝及只读入口；既有 roundtrip 与特殊块套件一并通过。 |
+| Mermaid 实际工作台 | PASS（浏览器） | 在 App + BrowserWorkspace 接缝同时显示中文流程图和时序图；Save 只改目标块，Undo 恢复全文，Cancel 不写入，Markdown / Rich text 切换保留全文；最终串行渲染版再次显示两图、原文字节一致，资源记录无外部地址。 |
+| 深层文件树与标签 | PASS（浏览器） | 16 文档、深度 8 文件树；248/190/420px 侧栏的深层摘要实测约 95/74/175px，日期先让位、批注数随后让位；标签关闭区均 20px，溢出菜单搜索末项并激活、方向键切换与 Delete 关闭后剩余 15 文档。 |
+| Go 集成 | PASS | `go test ./...`，应用包通过；未执行本轮原生打包。 |
+| 默认窗口实际启动尺寸与小屏适配 | BLOCKED | 唯一工作区窗口创建入口已设 1280×820，未请求全屏/最大化；1280×820 浏览器布局有真实截图。原生工具按名称/路径选择应用时超时，Dev 应用随后被自动审批拒绝（`Computer Use was not approved`），未读取原生启动 bounds，也未验证较小屏幕工作区。 |
+| 组件盘点 | PASS（静态） | [UI 组件缺口与文字规划](design/ui-component-gaps.md)区分已有组件、Tooltip/菜单底座、未来 GenUI Diagram 和可选临时通知；桌面摘要残留 Markdown 标记作为提取语义差异记录。 |
+
 ## PR #33 合并前检查（2026-11-10）
 
 源码候选为 `695e882`。下列结果覆盖本次合并检查，历史原生结果仍按各自的源码版本记录。

@@ -155,12 +155,15 @@ function modelTrigger(pane: HTMLElement): HTMLButtonElement {
 }
 
 /** Picks a model in this document's footer through its menu, as a reader does. */
-function chooseModel(pane: HTMLElement, model: string): void {
-  flushSync(() => modelTrigger(pane).click())
-  const option = [...pane.querySelectorAll<HTMLElement>('[role="option"]')].find(
-    (candidate) => candidate.dataset.model === model,
-  )
-  if (!option) throw new Error(`model ${model} is not offered`)
+async function chooseModel(pane: HTMLElement, model: string): Promise<void> {
+  modelTrigger(pane).dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }))
+  const option = await vi.waitFor(() => {
+    const match = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (candidate) => candidate.dataset.model === model,
+    )
+    if (!match) throw new Error(`model ${model} is not offered`)
+    return match
+  })
   flushSync(() => option.click())
 }
 
@@ -370,7 +373,7 @@ describe('one settings store across documents', () => {
       expect(triggerBefore.textContent).toContain('gemini-3.8-flash')
 
       // B picks a model while A sits idle in the background.
-      chooseModel(paneOf(app.container, b), 'claude-opus-5-5')
+      await chooseModel(paneOf(app.container, b), 'claude-opus-5-5')
 
       await vi.waitFor(() => {
         if (!modelTrigger(paneA).textContent?.includes('claude-opus-5-5')) {
@@ -425,7 +428,7 @@ describe('one settings store across documents', () => {
       })
 
       // A's stale panel must not write B's command back to the default.
-      chooseModel(paneA, 'claude-opus-5-5')
+      await chooseModel(paneA, 'claude-opus-5-5')
       await vi.waitFor(async () => {
         if ((await a.getSettings()).model !== 'claude-opus-5-5') {
           throw new Error('the model was not saved')

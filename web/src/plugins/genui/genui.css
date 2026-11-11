@@ -418,8 +418,8 @@
 }
 
 .mmenu {
-  min-width: 208px;
-  padding: 5px;
+  min-width: 240px;
+  padding: 7px;
   border-radius: 10px;
   background: var(--paper);
   box-shadow: var(--pop-shadow);
@@ -431,11 +431,33 @@
   background: var(--raised);
 }
 
+.mmenu-head {
+  padding: 3px 8px 7px;
+  color: var(--ink-3);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-leading);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.mmenu .mi-icon {
+  flex: none;
+  width: 16px;
+  color: var(--ink-3);
+  font-size: 13px;
+  text-align: center;
+}
+
+.mmenu .mi.on .mi-icon {
+  color: var(--accent);
+}
+
 .mmenu.pop {
-  position: absolute;
-  bottom: calc(100% + 4px);
-  right: 0;
-  z-index: 30;
+  z-index: 50;
+  max-height: var(--radix-dropdown-menu-content-available-height, min(320px, 60vh));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .mmenu .mi {
@@ -453,8 +475,23 @@
   cursor: pointer;
 }
 
-.mmenu .mi:hover {
+.mmenu .mi:hover,
+.mmenu .mi[data-highlighted] {
   background: var(--fill-hover);
+}
+
+.mmenu .mi {
+  min-height: 32px;
+}
+
+.mmenu .mi.on {
+  background: var(--fill);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.mmenu .mi:focus-visible {
+  outline: 1.5px solid var(--focus);
+  outline-offset: -2px;
 }
 
 .mmenu .mi .t {
@@ -464,9 +501,20 @@
 }
 
 .mmenu .mi .chk {
+  display: none;
   margin-left: auto;
-  font-size: 14px;
+  align-items: center;
   color: var(--accent);
+  font-size: 14px;
+}
+
+.mmenu .mi .chk[data-state='checked'] {
+  display: inline-flex;
+}
+
+.mmenu .mi .chk .ph {
+  display: block;
+  font-size: 12px;
 }
 
 .genui-run-error {

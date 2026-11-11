@@ -13,6 +13,15 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 
 ### English
 
+#### Window size, diagrams and workspace text
+
+- Workspace windows now start at 1280×820 instead of 940×720, above the three-column layout breakpoint, without requesting fullscreen or maximization.
+- Rich text renders Mermaid fences locally as byte-preserving special blocks. In-place Markdown editing, cancel, undo and read-only behavior use the existing editor path; invalid diagrams retain visible source and an error.
+- Document tabs use bundled file/close icons, tactile active states and an explicit `+N` overflow count. The command-style document menu includes a heading, quiet search, file icons, paths and selection checks. The file tree uses real folder/file icons and parent-folder context; Model menus include model icons and a section heading. Deep rows keep bounded indentation and progressive metadata reduction.
+- The sidebar yields on narrow windows, rendering at most `window width − 310px` down to a 140px floor, so the document sheet stays usable at the 480px minimum window; widening the window restores the user's sidebar width. Inside the sheet, container queries drop the docbar's save status and version chip below 380px and the path crumbs below 300px. The sidebar splitter keeps a 14px pointer/touch target inside its 6px visual slot.
+- Recorded the bounded [UI component gaps and typography plan](docs/design/ui-component-gaps.md), including the desktop/browser excerpt mismatch and the future GenUI Diagram contract. Added only Radix Tooltip/DropdownMenu primitives and Sonner copy feedback; no full UI suite or Catalog expansion is included.
+
+
 #### GenUI generation and architecture evidence
 
 - ACP initialization reports the client identity and checks the negotiated protocol. Generation prompts name canonical absolute input/output paths, avoiding AGY's observed interpretation of `./source.md` as `/source.md`.
@@ -68,6 +77,15 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 ### 中文
 
 #20 的工作区与 Portrait 更新。自动化检查、原生验证和待验收项见[验收记录](docs/acceptance.md)。
+
+#### 窗口尺寸、图表与工作区文字
+
+- 工作区窗口默认尺寸由 940×720 调整为 1280×820，高于三栏布局断点，不请求全屏或最大化。
+- Rich text 本地渲染 Mermaid 围栏，沿用保真特殊块、原地 Markdown 编辑、取消、撤销和只读规则；无效图保留可见原文与错误说明。
+- 文档标签使用内置文件/关闭图标、拟物活动态和明确的 `+N` 溢出计数；文档命令菜单包含标题、安静搜索、文件图标、路径与选中勾号。文件树使用真实文件夹/文件图标和父目录上下文；Model 菜单包含模型图标与分组标题。深层行保留缩进边界和逐级元信息让位。
+- 窄窗口下侧栏主动让位：渲染宽度不超过 `窗口宽 − 310px`（下限 140px），保证最小窗口 480px 时正文仍可用，窗口放宽后恢复用户设定宽度。文档头栏按 sheet 容器查询逐级让位：小于 380px 收起保存状态与版本号，小于 300px 收起路径面包屑。侧栏分隔条在 6px 视觉槽内保留 14px 触控热区。
+- 记录有界的 [UI 组件缺口与文字规划](docs/design/ui-component-gaps.md)，包括桌面与浏览器摘要提取差异、未来 GenUI Diagram 的契约。仅引入 Radix Tooltip / DropdownMenu primitives 与 Sonner 复制反馈，不引入完整 UI 套件或扩充 Catalog。
+
 
 #### GenUI 生成与架构证据
 

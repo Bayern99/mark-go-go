@@ -338,11 +338,16 @@ body {
 }
 
 .sidebar-splitter {
-  width: 6px;
+  /* 6px visual slot, 14px grab area: the negative margins keep the layout
+   *  footprint unchanged while leaving a reachable touch target. */
+  width: 14px;
+  margin: 0 -4px;
   flex: none;
   cursor: col-resize;
   background: transparent;
   position: relative;
+  z-index: 6;
+  touch-action: none;
 }
 
 .sidebar-splitter:focus-visible {
@@ -383,11 +388,13 @@ body {
 }
 
 .row .badge {
+  flex: none;
   font-size: 11px;
   line-height: 14px;
   padding: 0 5px;
   border-radius: 999px;
   text-transform: lowercase;
+  white-space: nowrap;
 }
 
 .row .badge.conflict {
@@ -403,6 +410,11 @@ body {
 .row .notes,
 .row .mtime {
   flex: none;
+  white-space: nowrap;
+}
+
+.row .mtime {
+  font-variant-numeric: tabular-nums;
 }
 
 .nav-empty,
@@ -581,8 +593,44 @@ body {
   cursor: pointer;
 }
 
+.tree-section {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 4px 8px 6px;
+  color: var(--ink-3);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-leading);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tree-section span:last-child {
+  font-weight: 500;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.tree-folder-icon,
+.tree-file-icon {
+  color: var(--ink-3);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.tree-folder-icon {
+  margin-top: 0 !important;
+}
+
+.tree-file-icon {
+  margin-top: 6px;
+  justify-self: center;
+}
+
 .row.file {
   min-height: 42px;
+  grid-template-columns: 16px 16px minmax(0, 1fr);
   align-items: start;
 }
 
@@ -609,7 +657,7 @@ body {
 }
 
 .row.file .body {
-  padding-left: 6px;
+  padding-left: 4px;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -641,6 +689,7 @@ body {
   font-size: 12px;
   line-height: 16px;
   color: var(--ink-3);
+  overflow: hidden;
 }
 
 .row .l2 .s {
@@ -691,6 +740,8 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  container-type: inline-size;
+  container-name: sheet;
 }
 
 .app-header {
@@ -1335,31 +1386,46 @@ body {
   position: relative;
   display: flex;
   flex: none;
-  height: 36px;
+  align-items: center;
+  height: 42px;
   min-width: 0;
-  gap: 2px;
-  padding: 4px 8px 0;
+  gap: 3px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--line);
   background: var(--chrome);
 }
 
 .doc-tabs {
   position: relative;
   display: flex;
+  align-items: center;
   flex: 1;
   min-width: 0;
-  height: 28px;
-  gap: 2px;
+  height: 32px;
+  gap: 3px;
   overflow: hidden;
+}
+
+.doc-tab-icon {
+  flex: none;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.doc-tab:hover {
+  background: var(--fill);
+  color: var(--ink);
 }
 
 .doc-tab {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   flex: none;
   min-width: 0;
   max-width: 180px;
   height: 28px;
-  padding: 0 8px;
+  padding: 0 6px 0 8px;
   border: 0;
   border-radius: 8px 8px 0 0;
   background: transparent;
@@ -1386,15 +1452,20 @@ body {
 }
 
 .tab-overflow {
-  width: 32px;
-  height: 28px;
+  min-width: 32px;
+  height: 26px;
   flex: none;
+  padding: 0 7px;
   border: 0;
-  border-radius: 8px 8px 0 0;
-  background: transparent;
-  color: var(--ink-3);
+  border-radius: 7px;
+  background: var(--raised);
+  box-shadow: var(--raised-shadow);
+  color: var(--ink-2);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-leading);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
   cursor: pointer;
 }
 
@@ -1410,29 +1481,68 @@ body {
 }
 
 .doc-tab-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 8px;
   z-index: 50;
   display: flex;
   flex-direction: column;
-  width: min(320px, calc(100vw - 32px));
-  max-height: min(420px, 60vh);
-  padding: 6px;
+  width: min(340px, calc(100vw - 32px));
+  max-height: min(480px, 72vh);
+  padding: 8px;
   border-radius: 10px;
   background: var(--paper);
   box-shadow: var(--pop-shadow);
 }
 
-.doc-tab-menu-filter {
+.doc-tab-menu-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px 8px;
+  color: var(--ink-3);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-leading);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.doc-tab-menu-head span:last-child {
+  font-weight: 500;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.doc-tab-menu-search {
+  display: flex;
+  align-items: center;
   flex: none;
-  width: 100%;
-  height: 30px;
-  margin: 0 0 6px;
+  gap: 7px;
+  height: 32px;
+  margin-bottom: 6px;
   padding: 0 9px;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  border-radius: 7px;
+  background: var(--fill);
+  box-shadow: var(--sunken-shadow);
+  color: var(--ink-3);
+}
+
+.doc-tab-menu-search > .ph {
+  flex: none;
+  font-size: 12px;
+}
+
+.doc-tab-menu-search:focus-within {
   background: var(--paper);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 32%, var(--line-strong));
+}
+
+.doc-tab-menu-filter {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--ink);
   font: inherit;
   font-size: 13px;
@@ -1440,13 +1550,16 @@ body {
 }
 
 .doc-tab-menu-filter:focus-visible {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--focus);
+  outline: none;
 }
 
 .doc-tab-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   flex: 1;
   min-height: 0;
+  margin-top: 4px;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) transparent;
@@ -1463,13 +1576,14 @@ body {
   display: flex;
   width: 100%;
   min-width: 0;
+  min-height: 44px;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   padding: 6px 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   background: transparent;
-  color: var(--ink);
+  color: var(--ink-2);
   font: inherit;
   font-size: 13px;
   line-height: 18px;
@@ -1477,7 +1591,49 @@ body {
   cursor: pointer;
 }
 
+.doc-tab-menu-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--fill);
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.doc-tab-menu-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.doc-tab-menu-path {
+  overflow: hidden;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-leading);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-tab-menu-check {
+  flex: none;
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.doc-tab-menu-item[data-highlighted],
+.doc-tab-menu-item:focus-visible {
+  outline: 1.5px solid var(--focus);
+  outline-offset: -2px;
+}
+
 .doc-tab-menu-item .nm {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1490,12 +1646,15 @@ body {
 
 .doc-tab-menu-item.sel {
   background: var(--fill);
+  box-shadow: inset 2px 0 0 var(--accent);
+  color: var(--ink);
 }
 
 .doc-tab.sel {
-  background: var(--paper);
+  background: var(--raised);
   color: var(--ink);
-  box-shadow: var(--row-shadow);
+  box-shadow: var(--raised-shadow);
+  font-weight: 500;
 }
 
 .doc-tab:focus-visible {
@@ -1504,7 +1663,25 @@ body {
 }
 
 .tab-close {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1;
+  color: inherit;
   opacity: 0.55;
+}
+
+.doc-tab:hover .tab-close,
+.tab-close:hover {
+  opacity: 1;
+}
+
+.tab-close:hover {
+  background: var(--fill-hover);
 }
 
 .tab-conflict,
@@ -1571,4 +1748,19 @@ body {
   list-style: none;
   padding: 0;
   margin: 0;
+}
+
+/* ─── Narrow sheet: the footer status bar already carries the save state,
+     so the docbar yields secondary meta, then crumbs, to the mode switch. ─── */
+@container sheet (max-width: 380px) {
+  .docbar .status,
+  .docbar .version-chip {
+    display: none;
+  }
+}
+
+@container sheet (max-width: 300px) {
+  .docbar .doc-title {
+    display: none;
+  }
 }

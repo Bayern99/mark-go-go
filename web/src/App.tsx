@@ -20,6 +20,10 @@ import {
 import { createGenUIPlugin } from './plugins/genui'
 import { createOutlinePlugin } from './plugins/outline'
 import { ScrollArea } from './components/ScrollArea'
+import { AppTooltip } from './components/Tooltip'
+import './components/ui.css'
+import { DropdownMenu, Tooltip } from 'radix-ui'
+import { Toaster } from 'sonner'
 
 const EDIT_DEBOUNCE_MS = 250
 export const NARROW_WINDOW_WIDTH = 1180
@@ -712,7 +716,17 @@ export function App({
     workspace ??
     (host ? wrapHostAsWorkspace(host) : null)
   if (!resolved) throw new Error('App needs a workspace or a document host')
-  return <WorkspaceApp workspace={resolved} plugins={plugins} />
+  return (
+    <Tooltip.Provider delayDuration={400} skipDelayDuration={250}>
+      <WorkspaceApp workspace={resolved} plugins={plugins} />
+      <Toaster
+        theme="light"
+        position="bottom-center"
+        offset={28}
+        toastOptions={{ unstyled: true, classNames: { toast: 'mgo-toast', title: 'mgo-toast-title' } }}
+      />
+    </Tooltip.Provider>
+  )
 }
 
 function tabLabel(docs: { id: string; name: string; path: string }[], doc: { id: string; name: string; path: string }): string {
@@ -722,16 +736,22 @@ function tabLabel(docs: { id: string; name: string; path: string }[], doc: { id:
   return parent ? `${doc.name} — ${parent}` : doc.path || doc.name
 }
 
+function StatusTooltip({ label, className, testId }: { label: string; className: string; testId?: string }) {
+  return (
+    <AppTooltip label={label}>
+      <span className={className} data-testid={testId} tabIndex={0} role="img" aria-label={label} />
+    </AppTooltip>
+  )
+}
+
 function TabBadges({ doc }: { doc: DocumentInfo }): React.ReactElement {
   return (
     <>
-      {doc.edited ? <span className="edited-dot" title="Unsaved edits" /> : null}
-      {doc.generating ? (
-        <span className="tab-generating" data-testid={`doc-tab-generating-${doc.id}`} title="Generating" />
-      ) : null}
-      {doc.conflict ? <span className="tab-conflict" title="Conflict" /> : null}
-      {doc.deleted ? <span className="tab-deleted" title="Deleted" /> : null}
-      {doc.readOnly ? <span className="tab-readonly" title="Read only" /> : null}
+      {doc.edited ? <StatusTooltip label="Unsaved edits" className="edited-dot" /> : null}
+      {doc.generating ? <StatusTooltip label="Generating" className="tab-generating" testId={`doc-tab-generating-${doc.id}`} /> : null}
+      {doc.conflict ? <StatusTooltip label="Conflict" className="tab-conflict" /> : null}
+      {doc.deleted ? <StatusTooltip label="Deleted" className="tab-deleted" /> : null}
+      {doc.readOnly ? <StatusTooltip label="Read only" className="tab-readonly" /> : null}
     </>
   )
 }
@@ -769,8 +789,8 @@ function WorkspaceApp({
   const tabsRef = useRef<HTMLDivElement>(null)
   const tabRefs = useRef(new Map<string, HTMLButtonElement>())
   const tabFocusTarget = useRef<string | null>(null)
-  const tabMenuRef = useRef<HTMLDivElement>(null)
   const tabMenuButtonRef = useRef<HTMLButtonElement>(null)
+  const tabMenuSelectedId = useRef<string | null>(null)
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 0 })
   const [tabMenuOpen, setTabMenuOpen] = useState(false)
   const [tabFilter, setTabFilter] = useState('')
@@ -875,28 +895,6 @@ function WorkspaceApp({
     if (hiddenDocuments.length === 0) setTabMenuOpen(false)
   }, [hiddenDocuments.length])
 
-  useEffect(() => {
-    if (!tabMenuOpen) return
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target
-      if (!(target instanceof Node)) return
-      if (tabMenuRef.current?.contains(target) || tabMenuButtonRef.current?.contains(target)) return
-      setTabMenuOpen(false)
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      setTabMenuOpen(false)
-      tabMenuButtonRef.current?.focus()
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-  }, [tabMenuOpen])
-
   for (const doc of documents) {
     if (!panes.current.has(doc.id)) panes.current.set(doc.id, workspace.document(doc.id))
   }
@@ -976,7 +974,10 @@ function WorkspaceApp({
               }}
               onClick={() => activate(doc.id)}
             >
-              <span className="nm">{tabLabel(documents, doc)}</span>
+              <i className="ph ph-file-text doc-tab-icon" aria-hidden="true" />
+              <AppTooltip label={doc.path || doc.name} disabled={hidden}>
+                <span className="nm">{tabLabel(documents, doc)}</span>
+              </AppTooltip>
               <TabBadges doc={doc} />
               <span
                 className="tab-close"
@@ -988,68 +989,118 @@ function WorkspaceApp({
                   closeTab(doc.id)
                 }}
               >
-                ×
+                <i className="ph ph-x" aria-hidden="true" />
               </span>
             </button>
           )
         })}
       </div>
-      <button
-        type="button"
-        className="tab-overflow"
-        data-testid="doc-tab-overflow"
-        aria-label="More documents"
-        aria-haspopup="menu"
-        aria-expanded={tabMenuOpen}
-        aria-controls="doc-tab-menu"
-        title="More documents"
-        hidden={hiddenDocuments.length === 0}
-        ref={tabMenuButtonRef}
-        onClick={() => {
+      <DropdownMenu.Root
+        modal={false}
+        open={tabMenuOpen && hiddenDocuments.length > 0}
+        onOpenChange={(open) => {
           setTabFilter('')
-          setTabMenuOpen((open) => !open)
+          setTabMenuOpen(open)
         }}
       >
-        ▾
-      </button>
-      {tabMenuOpen && hiddenDocuments.length > 0 ? (
-        <div className="doc-tab-menu" id="doc-tab-menu" data-testid="doc-tab-menu" ref={tabMenuRef}>
-          <input
-            type="search"
-            className="doc-tab-menu-filter"
-            data-testid="doc-tab-filter"
-            aria-label="Filter open tabs"
-            placeholder="Filter open tabs…"
-            value={tabFilter}
-            onChange={(event) => setTabFilter(event.target.value)}
-            autoFocus
-          />
-          <div className="doc-tab-menu-list" role="menu" aria-label="More documents">
-            {filteredHiddenDocuments.length === 0 ? (
-              <p className="doc-tab-menu-empty" role="status">No matching tabs</p>
-            ) : (
-              filteredHiddenDocuments.map((doc) => (
-                <button
-                  key={doc.id}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={doc.id === activeId}
-                  className={`doc-tab-menu-item${doc.id === activeId ? ' sel' : ''}`}
-                  data-testid={`doc-tab-menu-item-${doc.id}`}
-                  title={doc.path || doc.name}
-                  onClick={() => {
-                    activate(doc.id, true)
-                    setTabMenuOpen(false)
-                  }}
-                >
-                  <span className="nm">{tabLabel(documents, doc)}</span>
-                  <TabBadges doc={doc} />
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-      ) : null}
+        <AppTooltip label={`${hiddenDocuments.length} more documents`}>
+          <DropdownMenu.Trigger asChild>
+            <button
+              type="button"
+              className="tab-overflow"
+              data-testid="doc-tab-overflow"
+              aria-label={`${hiddenDocuments.length} more documents`}
+              hidden={hiddenDocuments.length === 0}
+              ref={tabMenuButtonRef}
+            >
+              +{hiddenDocuments.length}
+            </button>
+          </DropdownMenu.Trigger>
+        </AppTooltip>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            className="doc-tab-menu"
+            id="doc-tab-menu"
+            data-testid="doc-tab-menu"
+            aria-label="More documents"
+            side="bottom"
+            align="end"
+            sideOffset={4}
+            collisionPadding={8}
+            onCloseAutoFocus={(event) => {
+              const selectedId = tabMenuSelectedId.current
+              if (!selectedId) return
+              event.preventDefault()
+              tabMenuSelectedId.current = null
+              requestAnimationFrame(() => {
+                const tab = tabRefs.current.get(selectedId)
+                if (tab && !tab.classList.contains('tab-hidden')) tab.focus()
+              })
+            }}
+          >
+            <div className="doc-tab-menu-head">
+              <span>Open documents</span>
+              <span>{hiddenDocuments.length}</span>
+            </div>
+            <div className="doc-tab-menu-search">
+              <i className="ph ph-magnifying-glass" aria-hidden="true" />
+            <input
+              type="search"
+              className="doc-tab-menu-filter"
+              data-testid="doc-tab-filter"
+              aria-label="Filter open tabs"
+              placeholder="Filter open tabs…"
+              value={tabFilter}
+              onChange={(event) => setTabFilter(event.target.value)}
+              onKeyDownCapture={(event) => {
+                if (['ArrowUp', 'Home', 'End'].includes(event.key)) event.stopPropagation()
+                if (event.key === 'ArrowDown') {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  event.currentTarget.closest('[data-testid="doc-tab-menu"]')?.querySelector<HTMLElement>('[role="menuitemradio"]')?.focus()
+                }
+              }}
+              autoFocus
+            />
+            </div>
+            <DropdownMenu.RadioGroup
+              className="doc-tab-menu-list"
+              value={activeId}
+              onValueChange={(id) => {
+                tabMenuSelectedId.current = id
+                activate(id, true)
+              }}
+            >
+              {filteredHiddenDocuments.length === 0 ? (
+                <p className="doc-tab-menu-empty" role="status">No matching tabs</p>
+              ) : (
+                filteredHiddenDocuments.map((doc) => (
+                  <DropdownMenu.RadioItem
+                    key={doc.id}
+                    value={doc.id}
+                    className={`doc-tab-menu-item${doc.id === activeId ? ' sel' : ''}`}
+                    data-testid={`doc-tab-menu-item-${doc.id}`}
+                  >
+                    <span className="doc-tab-menu-icon" aria-hidden="true">
+                      <i className="ph ph-file-text" />
+                    </span>
+                    <AppTooltip label={doc.path || doc.name}>
+                      <span className="doc-tab-menu-copy">
+                        <span className="nm">{tabLabel(documents, doc)}</span>
+                        <span className="doc-tab-menu-path">{doc.path || 'Untitled'}</span>
+                      </span>
+                    </AppTooltip>
+                    <TabBadges doc={doc} />
+                    <DropdownMenu.ItemIndicator className="doc-tab-menu-check">
+                      <i className="ph ph-check" aria-hidden="true" />
+                    </DropdownMenu.ItemIndicator>
+                  </DropdownMenu.RadioItem>
+                ))
+              )}
+            </DropdownMenu.RadioGroup>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
     </div>
   )
 

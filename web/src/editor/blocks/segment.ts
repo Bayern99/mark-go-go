@@ -12,6 +12,7 @@ export type LockKind =
   | 'footnote-definition'
   | 'link-reference-definition'
   | 'code-fence-meta'
+  | 'mermaid'
   | 'raw-html'
   | 'note'
   | 'math'
@@ -103,6 +104,9 @@ export function classifyMdast(node: MdastNode): LockKind | null {
   if (node.type === 'definition') return 'link-reference-definition'
   if (node.type === 'math') return 'math'
   if (node.type === 'html') return parseNote(node.value ?? '') ? 'note' : 'raw-html'
+  if (node.type === 'code' && (node.lang ?? '').trim().toLowerCase() === 'mermaid') {
+    return 'mermaid'
+  }
   if (node.type === 'code' && typeof node.meta === 'string' && node.meta.trim() !== '') {
     return 'code-fence-meta'
   }

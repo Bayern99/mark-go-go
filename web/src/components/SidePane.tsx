@@ -11,10 +11,46 @@ import type {
 import { breadcrumbs } from '../workspace/nav'
 import { useViews, ViewHost } from './ViewHost'
 import { ScrollArea } from './ScrollArea'
+import { AppTooltip } from './Tooltip'
 
 const SIDEBAR_MIN = 190
 const SIDEBAR_MAX = 420
 const SIDEBAR_DEFAULT = 248
+/** The document column keeps at least this much room; the sidebar yields
+ *  below it instead of squeezing the sheet past its usable minimum. */
+const CENTER_MIN = 310
+/** Narrowest the sidebar can go when the window itself is very small. */
+const SIDEBAR_FLOOR = 140
+
+/** Tree indent: 8px/16px geometry, but never more than 40% of the row so deep
+ *  nesting in a narrow sidebar still leaves room for name and summary. */
+const TREE_INDENT = 16
+const TREE_INDENT_BASE = 8
+const TREE_INDENT_MAX = 0.4
+/** Row chrome to the right of the text: end padding + marker slot + body padding. */
+const ROW_TEXT_CHROME = 46
+/** The date yields before the summary does; notes are smaller and yield last.
+ *  Each threshold keeps roughly a readable summary beside the remaining meta. */
+const META_DATE_MIN_TEXT = 160
+const META_NOTES_MIN_TEXT = 96
+
+function treeIndent(depth: number, contentWidth: number): number {
+  return Math.min(TREE_INDENT_BASE + Math.max(0, depth) * TREE_INDENT, contentWidth * TREE_INDENT_MAX)
+}
+
+function indentStyle(depth: number): React.CSSProperties {
+  return {
+    paddingInlineStart: `min(${TREE_INDENT_BASE + Math.max(0, depth) * TREE_INDENT}px, ${TREE_INDENT_MAX * 100}%)`,
+  }
+}
+
+/** Which row metadata fits next to the summary at this depth and pane width. */
+function metaRoom(depth: number, paneWidth?: number): { date: boolean; notes: boolean } {
+  if (paneWidth === undefined) return { date: true, notes: true }
+  const contentWidth = Math.max(0, paneWidth - 16)
+  const text = contentWidth - treeIndent(depth, contentWidth) - ROW_TEXT_CHROME
+  return { date: text >= META_DATE_MIN_TEXT, notes: text >= META_NOTES_MIN_TEXT }
+}
 
 function AppLogo() {
   return (
@@ -90,6 +126,20 @@ export function SidePane({
   const [nav, setNav] = useState<NavSnapshot | null>(null)
   const [search, setSearch] = useState<NavSearchResult | null>(null)
   const [width, setWidth] = useState(SIDEBAR_DEFAULT)
+  const [winWidth, setWinWidth] = useState(() =>
+    typeof window === 'undefined' ? SIDEBAR_DEFAULT : window.innerWidth,
+  )
+
+  useEffect(() => {
+    const onResize = () => setWinWidth(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  /** Rendered width: the user's size, capped so the document column keeps
+   *  CENTER_MIN in a narrow window. The stored width is kept, so widening the
+   *  window restores the user's setting. */
+  const paneWidth = Math.min(width, Math.max(SIDEBAR_FLOOR, winWidth - CENTER_MIN))
 
   useEffect(() => {
     if (!workspace) return
@@ -148,7 +198,7 @@ export function SidePane({
         className="side-pane left-pane side"
         data-testid="left-pane"
         aria-label="Workspace"
-        style={{ width, maxWidth: width, minWidth: width }}
+        style={{ width: paneWidth, maxWidth: paneWidth, minWidth: paneWidth }}
       >
         <div className="ws">
           <div className="ws-name">
@@ -189,6 +239,7 @@ export function SidePane({
             query={query}
             search={search}
             nav={nav}
+            paneWidth={paneWidth}
             onOpenFile={onOpenFile}
             onJumpHeading={onJumpHeading}
           />
@@ -198,6 +249,7 @@ export function SidePane({
             activePath={activePath}
             collapsedCount={nav?.collapsedCount ?? 0}
             status={nav?.status ?? 'idle'}
+            paneWidth={paneWidth}
             onOpenFile={onOpenFile}
             onToggle={onToggle}
           />
@@ -214,7 +266,7 @@ export function SidePane({
                 edited: doc.edited,
                 conflict: doc.conflict,
                 deleted: doc.deleted,
-              }} selected query="" onOpen={() => {}} />
+              }} selected query="" paneWidth={paneWidth} onOpen={() => {}} />
             ) : (
               <p className="nav-empty" data-testid="untitled-empty">Write a new document, or open a folder.</p>
             )}
@@ -232,9 +284,9 @@ export function SidePane({
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize workspace sidebar"
-        aria-valuemin={SIDEBAR_MIN}
+        aria-valuemin={SIDEBAR_FLOOR}
         aria-valuemax={SIDEBAR_MAX}
-        aria-valuenow={width}
+        aria-valuenow={paneWidth}
         tabIndex={0}
         data-testid="sidebar-splitter"
         onPointerDown={(event) => {
@@ -277,6 +329,7 @@ function FileTree({
   activePath,
   collapsedCount,
   status,
+  paneWidth,
   onOpenFile,
   onToggle,
 }: {
@@ -284,6 +337,7 @@ function FileTree({
   activePath: string
   collapsedCount: number
   status: string
+  paneWidth: number
   onOpenFile: (path: string) => void
   onToggle: (entry: NavEntry) => void
 }) {
@@ -366,6 +420,10 @@ function FileTree({
         }
       }}
     >
+      <div className="tree-section" aria-hidden="true">
+        <span>Workspace</span>
+        <span>{entries.filter((entry) => entry.kind === 'file').length}</span>
+      </div>
       {collapsedCount > 0 ? (
         <p className="nav-collapsed meta" data-testid="collapsed-count">{collapsedCount} files hidden</p>
       ) : null}
@@ -378,6 +436,7 @@ function FileTree({
             entry={entry}
             selected={entry.path === activePath}
             query=""
+            paneWidth={paneWidth}
             onOpen={() => onOpenFile(entry.path)}
           />
         ),
@@ -399,10 +458,12 @@ function FolderRow({ entry, onToggle }: { entry: NavEntry; onToggle: () => void 
       data-testid={`folder-${entry.name}`}
       data-nav-id={entry.id}
       data-depth={entry.depth}
-      style={{ paddingLeft: 8 + entry.depth * 16 }}
+      style={indentStyle(entry.depth)}
       onClick={onToggle}
     >
-      <span className="ed-slot" aria-hidden="true">{collapsed ? '▸' : '▾'}</span>
+      <span className="ed-slot tree-folder-icon" aria-hidden="true">
+        <i className={`ph ${collapsed ? 'ph-folder' : 'ph-folder-open'}`} />
+      </span>
       <span className="body">
         <span className="l1">
           <span className="nm">{entry.name}</span>
@@ -418,14 +479,23 @@ function FileRow({
   selected,
   query,
   onOpen,
+  paneWidth,
 }: {
   entry: NavEntry
   selected: boolean
   query: string
   onOpen: () => void
+  paneWidth?: number
 }) {
-  const subtitle = entry.title && entry.title !== entry.name ? entry.title : entry.excerpt || entry.path || 'Untitled'
+  const subtitle = query
+    ? entry.title && entry.title !== entry.name ? entry.title : entry.excerpt || entry.path || 'Untitled'
+    : relativeFolder(entry.parent) || entry.path || 'Untitled'
+  const room = metaRoom(entry.depth, paneWidth)
+  const fullModified = entry.modifiedAt ? new Date(entry.modifiedAt).toLocaleString() : ''
+  const rowTitle =
+    !room.date && fullModified ? `${entry.path || entry.name} · ${fullModified}` : entry.path || entry.name
   return (
+    <AppTooltip label={<><span className="mgo-tooltip-path">{rowTitle}</span>{subtitle === rowTitle ? null : <span>{subtitle}</span>}</>}>
     <button
       type="button"
       className={`row file${selected ? ' sel' : ''}${entry.deleted ? ' deleted' : ''}${entry.conflict ? ' conflict' : ''}`}
@@ -434,13 +504,13 @@ function FileRow({
       data-testid={selected ? 'workspace-current-file' : `file-${entry.name}`}
       data-nav-id={entry.id}
       data-depth={entry.depth}
-      title={entry.path || entry.name}
-      style={{ paddingLeft: 8 + entry.depth * 16 }}
+      style={indentStyle(entry.depth)}
       onClick={onOpen}
     >
       <span className="ed-slot">
         {entry.edited ? <span className="edited" title="Unsaved edits" /> : null}
       </span>
+      <i className="ph ph-file-text tree-file-icon" aria-hidden="true" />
       <span className="body">
         <span className="l1">
           <span className="nm">{highlight(entry.name, query)}</span>
@@ -449,11 +519,14 @@ function FileRow({
         </span>
         <span className="l2">
           <span className="s">{highlight(subtitle, query)}</span>
-          {entry.notes ? <span className="notes meta" title="Notes">{entry.notes}</span> : null}
-          {entry.modifiedAt ? <span className="mtime meta">{formatModified(entry.modifiedAt)}</span> : null}
+          {entry.notes && room.notes ? <span className="notes meta" title="Notes">{entry.notes}</span> : null}
+          {entry.modifiedAt && room.date ? (
+            <span className="mtime meta" title={fullModified}>{formatModified(entry.modifiedAt)}</span>
+          ) : null}
         </span>
       </span>
     </button>
+    </AppTooltip>
   )
 }
 
@@ -461,12 +534,14 @@ function FilterResults({
   query,
   search,
   nav,
+  paneWidth,
   onOpenFile,
   onJumpHeading,
 }: {
   query: string
   search: NavSearchResult | null
   nav: NavSnapshot | null
+  paneWidth: number
   onOpenFile: (path: string) => void
   onJumpHeading?: (documentId: string | undefined, path: string, offset: number) => void
 }) {
@@ -502,6 +577,7 @@ function FilterResults({
             }}
             selected={false}
             query={query}
+            paneWidth={paneWidth}
             onOpen={() => onOpenFile(hit.path)}
           />
           {hit.headings.map((heading) => (

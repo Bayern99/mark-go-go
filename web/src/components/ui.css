@@ -1,0 +1,46 @@
+/* Shared shell feedback surfaces: hover labels and transient copy toasts. */
+
+.mgo-tooltip {
+  z-index: 60;
+  max-width: 320px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: var(--paper);
+  box-shadow: var(--pop-shadow);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-leading);
+  overflow-wrap: anywhere;
+  user-select: none;
+  pointer-events: none;
+}
+
+.mgo-tooltip-arrow {
+  fill: var(--paper);
+}
+
+.mgo-tooltip-path {
+  display: block;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+}
+
+.mgo-toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 7px 12px;
+  border-radius: 9px;
+  background: var(--paper);
+  box-shadow: var(--pop-shadow);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-leading);
+}
+
+.mgo-toast-title {
+  font-weight: 500;
+}

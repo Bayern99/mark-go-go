@@ -60,6 +60,20 @@ var (
 	nativeCommand    = mygo.NewEvent[NativeCommand]("nativeCommand")
 )
 
+// defaultWindowWidth and defaultWindowHeight size a new workspace window
+// in logical points. They are the window MyGo creates for every workspace:
+// new folders, restored sessions and the Welcome window alike. A window's
+// geometry is not stored in the app session, so these values never override
+// a size the user chose at runtime; MyGo's own StateKey persistence stays
+// unused.
+const (
+	defaultWindowWidth  = 1280
+	defaultWindowHeight = 820
+
+	minWindowWidth  = 480
+	minWindowHeight = 360
+)
+
 var (
 	errNoDocument  = errors.New("markgogo: no Markdown document with that id")
 	errAlreadyOpen = errors.New("markgogo: that file is already open in another document")
@@ -535,10 +549,10 @@ func (h *documentHost) openWorkspaceWindow(id, root, title string) *mygo.Window 
 	win := mygo.NewWindow(mygo.WindowOptions{
 		Title:     title,
 		URL:       "/",
-		Width:     940,
-		Height:    720,
-		MinWidth:  480,
-		MinHeight: 360,
+		Width:     defaultWindowWidth,
+		Height:    defaultWindowHeight,
+		MinWidth:  minWindowWidth,
+		MinHeight: minWindowHeight,
 	})
 	w := &workspace{id: id, root: root, win: win}
 	h.mu.Lock()

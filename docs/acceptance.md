@@ -14,7 +14,7 @@
 | 其余宽度回归 | PASS | 1024 / 768 / 620 / 560 宽度下右栏按 `< 1180px` 断点浮层化，头栏与文档无横向溢出；1280 默认布局与基线一致。 |
 | 触控可操作性 | PASS | 三选一分段、标签关闭、文件树行、触控拖动分隔条均可操作；仅分隔条热区需要修复（见上）。 |
 | 自动检查 | PASS | `npm --prefix web run typecheck`；`npm --prefix web test` 真实 Chromium 31 个文件、304 项通过；`go vet ./...`；`go test -race .`。 |
-| 原生 WebView 窗口几何 | BLOCKED | 本轮验证在真实 Chromium 的浏览器预览完成，未运行原生 macOS WebView；窗口几何仍需原生复验。 |
+| 原生 WebView 窗口几何 | PASS（`go tool mygo dev` 实际窗口） | 新窗口实测 1280×820；请求 400×300 被窗口最小尺寸钳制至约 482×362（`minWindowWidth/Height` 生效）。482×362 下侧栏让位、docbar 三选一切换与右栏开关完整可用、保存态退至底部状态栏；620×600 布局无溢出。 |
 
 ## 导航视觉方向与原生验收（2026-11-11）
 

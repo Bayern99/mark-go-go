@@ -13,7 +13,7 @@ Mark Go Go is a local-first, native macOS Markdown editor and AI reader prototyp
 
 ```mermaid
 graph TD
-    subgraph macOS Desktop ["macOS Native Shell (purego / WebKit)"]
+    subgraph macOmerS Desktop ["macOS Native Shell (purego / WebKit)"]
         subgraph HostLayer ["1. Host Layer (Go / MyGo)"]
             Workspaces["Workspace Host<br/>(one folder = one window, document groups, per-document IPC)"]
             DocStore["Document Store<br/>(Raw byte I/O, CRLF/LF preserve, File Watcher)"]
@@ -103,7 +103,7 @@ graph TD
   - **Rich Text (WYSIWYG)**: Milkdown 7.23 with custom `CrepeBuilder`.
   - **Source Mode**: CodeMirror 6 for byte-exact plain text Markdown editing with instant toggle (`⌘/`).
 - **Block-Preserving Composition**: Unlike standard Markdown serializers that reformat the entire document on save, Mark Go Go parses documents into discrete ProseMirror block nodes. Unedited blocks retain their exact original source bytes.
-- **Special Blocks (ADR 0006)**: Frontmatter, GitHub alerts, footnote definitions, meta code fences and math render as designed blocks while staying atomically byte-preserving; raw HTML and unsupported syntax remain visible as `Kept as written`. `Edit` opens an in-place Markdown composer for that block only, and saving rewrites just that block's source with its original line endings.
+- **Special Blocks (ADR 0006)**: Frontmatter, GitHub alerts, footnote definitions, meta code fences, Mermaid diagrams and math stay atomically byte-preserving. Mermaid renders locally; invalid diagrams retain visible source and an error. Raw HTML and unsupported syntax remain visible as `Kept as written`. `Edit` opens an in-place Markdown composer for that block only, and saving rewrites just that block's source with its original line endings.
 - **Native Edit Target**: `nativeEdit.ts` registers each document's editor (ProseMirror or CodeMirror) as the target of Edit > Undo/Redo, so the native menu acts on the captured document's real history instead of WebKit's empty undo manager.
 - **Section Hashing**: Computes normalized `fnv1a32` hashes of section bodies across ATX/setext headings to detect whether a section changed in source, while deliberately excluding note comments.
 
@@ -115,7 +115,7 @@ graph TD
   - **Right Column**: Document-scoped panels with a top segmented switcher:
     - `Outline`: Real-time heading tree with bi-directional cursor synchronization.
     - `GenUI Management Panel`: Generation state, primary action, out-of-date component list, Focus request editor, and pinned footer (read-only Agent, Model menu, generated time, Undo).
-  - **Narrow-Window Responsive Behavior**: Windows `< 1180px` automatically collapse the right column into an overlay sheet (`.r-float`).
+  - **Narrow-Window Responsive Behavior**: Windows `< 1180px` automatically collapse the right column into an overlay sheet (`.r-float`). As the window keeps narrowing, the left sidebar yields to the document: it renders at most `window width − 310px` down to a 140px floor, so the sheet stays usable at the 480px minimum window, and the user's width returns as the window widens. Sheet container queries drop the docbar's save status and version chip below 380px and the path crumbs below 300px. The sidebar splitter keeps a 14px pointer/touch target inside its 6px visual slot.
 - **A2UI 1.0 GenUI Viewer**: Renders AI-structured reading views combining 5 layout primitives (`Column`, `Row`, `Tabs`, `Card`, `Text`) and 5 custom high-density components (`KeyPoints`, `MetricGrid`, `ComparisonTable`, `Timeline`, `Checklist`). KeyPoints folding, ComparisonTable sorting (keyboard-operable headers with `aria-sort`), table scroll and tab selection are per-document reading state that never writes the document.
 - **Light-only Portrait with Offline Assets**: Semantic surfaces, ink tiers, tactile shadows, status colours and separate content-semantic colours are fixed light tokens; `color-scheme` is light with no appearance switch. Fonts and icons ship as bundled `.woff2` and load without network access.
 - **ModelMenu**: Upward tactile popover menu styled with paper surface, 10px radius, pop shadow, and checkmark indicators; selecting a model writes only the model field.
@@ -240,21 +240,26 @@ graph TD
   - **源码模式**：基于 CodeMirror 6，支持精确光标偏移定位与 `⌘/` 瞬间无损切换。
 - **逐块保真组装（Block-Preserving Composition）**：
   - 将 Markdown 解析为 ProseMirror 顶层块节点。保存时只重新序列化用户真实改动过的块，未改动的块直接拼接原字节，从根本上杜绝传统 Markdown 编辑器保存时格式全面跑飞（全篇缩进重排、列表符号变异、空行丢失）的通病。
-- **特殊块（ADR 0006）**：YAML frontmatter、GitHub alert、脚注定义、带 meta 的代码块与数学块按设计呈现，但仍是原子保真的顶层节点；原始 HTML 与不支持的语法继续以 `Kept as written` 显示且不执行。点击 `Edit` 只在该块原地展开 Markdown 编辑区，保存只改写该块的原文（保留它自己的行尾）。
+- **特殊块（ADR 0006）**：YAML frontmatter、GitHub alert、脚注定义、带 meta 的代码块、Mermaid 图表与数学块仍是原子保真的顶层节点。Mermaid 本地渲染，无效图保留可见源码与错误；原始 HTML 与不支持的语法继续以 `Kept as written` 显示且不执行。点击 `Edit` 只在该块原地展开 Markdown 编辑区，保存只改写该块的原文（保留它自己的行尾）。
 - **原生 Edit 目标**：`nativeEdit.ts` 把每份文档的编辑器（ProseMirror 或 CodeMirror）注册为 Edit > Undo/Redo 的目标，原生菜单作用于该文档的真实历史，而不是 WebKit 空撤销栈。
 - **章节哈希与哈希防抖**：提取 ATX / setext 标题章节，计算 `fnv1a32` 正文哈希以精准判定“原文已改（`Source changed`）”，计算时自动剔除批注注释块。
 
 #### 5. 交互与表现层（React 19 & Portrait 设计系统）
-- **工作区外框**：工作区主体上方的文档标签栏（同名标签用父目录区分；带未保存、生成中、冲突、已删除、只读徽标），以及左栏的文件树、筛选、分栏、面包屑与 Welcome/最近工作区。
-- **Portrait 极简三栏工作区**：
-  - **左栏**：工作区文件导航与筛选。
-  - **中央栏**：当前标签纯粹的内容画布（Rich text / Markdown / GenUI 视图），顶部仅保留 44px 路径栏与凹陷分段三模式切换器，彻底剔除生成表单与干扰元素。
-  - **右栏**：当前文档的专属面板，顶部凹陷分段切换 `Outline`（默认首位）与 `GenUI`（带状态圆点）。
-  - **窄窗自适应**：窗口宽度 `< 1180px` 时右栏自动收起，手动点开时以浮层（`.r-float`）形式贴在右侧，点击中央正文自动收起。
-- **A2UI 1.0 GenUI 阅读视图**：支持 5 种基础布局组件与 5 种高级卡片组件（`KeyPoints` 要点、`MetricGrid` 指标网格、`ComparisonTable` 对比表、`Timeline` 时间线、`Checklist` 只读清单），每个组件底座配备来源引用条（`From` 标题、`Source changed` 标记、`Edit in source` 一键定位修改、`Note` 原地加批注）。KeyPoints 折叠、ComparisonTable 排序（列头为可键盘操作的按钮并带 `aria-sort`）、表格滚动与标签页选择都是每文档的阅读状态，从不写文档。
-- **仅浅色的 Portrait 与离线资源**：表面、墨色、触觉阴影、应用状态色与原文内容语义色都是固定的浅色 Token；`color-scheme` 为 light，没有外观切换。字体与图标是随包 `.woff2`，不请求网络。
-- **ModelMenu 弹出菜单**：26px 触觉微凸起按钮，在按钮正上方弹出 10px 圆角白纸菜单（`.mmenu.pop`），支持外部点击与 `Escape` 关闭，生成时禁用；选择模型只写模型字段。
-- **原地白纸 Composer**：正文批注、卡片批注、右栏生成要求（Focus）与特殊块 Markdown 都在目标落位处原地展开为白纸卡片（`.composer`），输入高度自适应，支持 `⌘↩` 提交与 `Esc` 取消，坚决不使用任何居中模态 `<dialog>` 弹窗。
+
+* <br />
+
+  ![1.00](blob:http://localhost:5173/e764ba82-9d09-4598-b6b9-3ca3310573d0)
+
+  **工作区外框**：工作区主体上方的文档标签栏（同名标签用父目录区分；带未保存、生成中、冲突、已删除、只读徽标），以及左栏的文件树、筛选、分栏、面包屑与 Welcome/最近工作区。
+* **Portrait 极简三栏工作区**：
+  * **左栏**：工作区文件导航与筛选。
+  * **中央栏**：当前标签纯粹的内容画布（Rich text / Markdown / GenUI 视图），顶部仅保留 44px 路径栏与凹陷分段三模式切换器，彻底剔除生成表单与干扰元素。
+  * **右栏**：当前文档的专属面板，顶部凹陷分段切换 `Outline`（默认首位）与 `GenUI`（带状态圆点）。
+  * **窄窗自适应**：窗口宽度 `< 1180px` 时右栏自动收起，手动点开时以浮层（`.r-float`）形式贴在右侧，点击中央正文自动收起。窗口继续变窄时左栏主动让位：渲染宽度不超过 `窗口宽 − 310px`（下限 140px），保证最小窗口 480px 时正文仍可用，放宽后恢复用户设定宽度；sheet 容器查询在 380px 以下收起头栏保存状态与版本号、300px 以下收起路径面包屑；侧栏分隔条在 6px 视觉槽内保留 14px 触控热区。
+* **A2UI 1.0 GenUI 阅读视图**：支持 5 种基础布局组件与 5 种高级卡片组件（`KeyPoints` 要点、`MetricGrid` 指标网格、`ComparisonTable` 对比表、`Timeline` 时间线、`Checklist` 只读清单），每个组件底座配备来源引用条（`From` 标题、`Source changed` 标记、`Edit in source` 一键定位修改、`Note` 原地加批注）。KeyPoints 折叠、ComparisonTable 排序（列头为可键盘操作的按钮并带 `aria-sort`）、表格滚动与标签页选择都是每文档的阅读状态，从不写文档。
+* **仅浅色的 Portrait 与离线资源**：表面、墨色、触觉阴影、应用状态色与原文内容语义色都是固定的浅色 Token；`color-scheme` 为 light，没有外观切换。字体与图标是随包 `.woff2`，不请求网络。
+* **ModelMenu 弹出菜单**：26px 触觉微凸起按钮，在按钮正上方弹出 10px 圆角白纸菜单（`.mmenu.pop`），支持外部点击与 `Escape` 关闭，生成时禁用；选择模型只写模型字段。
+* **原地白纸 Composer**：正文批注、卡片批注、右栏生成要求（Focus）与特殊块 Markdown 都在目标落位处原地展开为白纸卡片（`.composer`），输入高度自适应，支持 `⌘↩` 提交与 `Esc` 取消，坚决不使用任何居中模态 `<dialog>` 弹窗。
 
 ---
 

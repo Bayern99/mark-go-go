@@ -16,6 +16,12 @@ Frontmatter、GitHub alert、脚注及带元信息的代码块使用对应的可
 
 SoloMD 的参考实现固定于 [219a6ba](https://github.com/zhitongblog/solomd/commit/219a6baafccbe7d50776a1a41909189141dfea4b)：其 [实时编辑扩展](https://github.com/zhitongblog/solomd/blob/219a6baafccbe7d50776a1a41909189141dfea4b/app/src/lib/cm-live-render.ts)、[展示渲染器](https://github.com/zhitongblog/solomd/blob/219a6baafccbe7d50776a1a41909189141dfea4b/app/src/lib/markdown.ts)与[直接写出文本的保存路径](https://github.com/zhitongblog/solomd/blob/219a6baafccbe7d50776a1a41909189141dfea4b/app/src/composables/useFiles.ts)提供交互参考；其换行规范化和属性面板写入方式不替代本项目的逐块保真约束。
 
+### Mermaid 图表（2026-11-10）
+
+Rich text 将 `mermaid` 围栏作为保真特殊块显示为图表，复用现有锁定节点与原地 Composer。流程图、时序图等由本地打包的 Mermaid 渲染，展示结果不写入原文；`Edit` 仅修改该围栏，保存、取消、撤销与只读规则沿用现有特殊块。无效图保留错误说明和原始 Markdown，不让一张图的失败阻断其他图或正文。
+
+Markdown 视图继续展示原文；GenUI Catalog 本次不增加 Diagram 组件，`Text` 中的代码围栏仍按代码显示。GenUI 的图表能力缺口及工作台组件规划见 [UI 组件缺口与文字规划](../design/ui-component-gaps.md)。
+
 ## 部分来源丢失
 
 多来源 GenUI 卡片只丢失部分来源时，仍显示来源缺失提示，但 `Edit in source` 与 `Note` 可以使用第一个仍存在的来源。全部来源都失效时才禁用这些动作。保留只读 GenUI 与修改原文的单向关系，不用不存在的来源静默替代实际依据。

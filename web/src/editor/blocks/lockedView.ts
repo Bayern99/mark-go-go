@@ -4,6 +4,7 @@ import { highlightCode, classHighlighter } from '@lezer/highlight'
 import { parseNote } from '../../markdown/notes'
 import { languages } from '../languages'
 import { LOCKED_NODE, lockedKindLabel, type LockedAttrs } from './locked'
+import { disposeMermaidBlock, renderMermaidBlock } from './mermaid'
 import {
   codeLanguageLabel,
   parseAlert,
@@ -33,6 +34,9 @@ export function lockedBlockView(node: PMNode, view: EditorView): NodeView {
       return true
     },
     ignoreMutation: () => true,
+    destroy() {
+      disposeMermaidBlock(dom)
+    },
     stopEvent(event) {
       const target = event.target
       if (!(target instanceof Element)) return false
@@ -73,11 +77,16 @@ export function footnoteReferenceView(node: PMNode): NodeView {
 function fill(dom: HTMLElement, node: PMNode, readonly: boolean): void {
   const attrs = node.attrs as LockedAttrs
   const kind = (attrs.kind in kindSet ? attrs.kind : 'unsupported') as LockKind
+  disposeMermaidBlock(dom)
   dom.className = ''
   dom.replaceChildren()
   applyLockedDataset(dom, kind, attrs.source)
   if (kind === 'note') {
     renderNote(dom, attrs.source, readonly)
+    return
+  }
+  if (kind === 'mermaid') {
+    renderMermaidBlock(dom, attrs.source, readonly)
     return
   }
   if (kind === 'yaml-frontmatter' && renderFrontmatter(dom, attrs.source, readonly)) return
@@ -97,6 +106,7 @@ const kindSet: Record<LockKind, true> = {
   'footnote-definition': true,
   'link-reference-definition': true,
   'code-fence-meta': true,
+  mermaid: true,
   'raw-html': true,
   note: true,
   math: true,

@@ -331,7 +331,7 @@ describe('App workspace tabs', () => {
 
       await userEvent.click(overflow)
       const menu = await vi.waitFor(() => {
-        const element = app.container.querySelector<HTMLElement>('[data-testid="doc-tab-menu"]')
+        const element = document.querySelector<HTMLElement>('[data-testid="doc-tab-menu"]')
         if (!element) throw new Error('tab menu missing')
         return element
       })
@@ -359,10 +359,49 @@ describe('App workspace tabs', () => {
       await vi.waitFor(async () => {
         expect((await workspace.snapshot()).activeId).toBe(last.id)
       })
-      expect(app.container.querySelector('[data-testid="doc-tab-menu"]')).toBeNull()
+      expect(document.querySelector('[data-testid="doc-tab-menu"]')).toBeNull()
       await vi.waitFor(() => {
         expect(activeTab?.classList.contains('tab-hidden')).toBe(false)
         expect(document.activeElement).toBe(activeTab)
+      })
+    } finally {
+      await app.unmount()
+    }
+  })
+
+  it('shows a full path on hover and restores menu focus after Escape', async () => {
+    const documents = Array.from({ length: 10 }, (_, index) =>
+      createBrowserHost(`# Document ${index}\n`, `a-very-long-document-name-${index}.md`),
+    )
+    const workspace = createBrowserWorkspace(documents)
+    const app = await mountWorkspace(workspace, 740)
+    try {
+      const tab = await vi.waitFor(() => {
+        const element = app.container.querySelector<HTMLButtonElement>(`[data-testid="doc-tab-${documents[0].id}"]`)
+        if (!element || element.classList.contains('tab-hidden')) throw new Error('first tab not visible')
+        return element
+      })
+      const label = tab.querySelector<HTMLElement>('.nm')
+      if (!label) throw new Error('tab label missing')
+      await userEvent.hover(label)
+      await vi.waitFor(() => {
+        const tooltip = document.querySelector('[role="tooltip"]')
+        if (tooltip?.textContent !== '/demo/a-very-long-document-name-0.md') throw new Error('full path tooltip missing')
+      })
+      await userEvent.keyboard('{Escape}')
+      await vi.waitFor(() => expect(document.querySelector('[role="tooltip"]')).toBeNull())
+
+      const overflow = app.container.querySelector<HTMLButtonElement>('[data-testid="doc-tab-overflow"]')
+      if (!overflow) throw new Error('overflow missing')
+      await userEvent.click(overflow)
+      await vi.waitFor(() => {
+        const input = document.querySelector<HTMLInputElement>('[data-testid="doc-tab-filter"]')
+        if (document.activeElement !== input) throw new Error('menu filter not focused')
+      })
+      await userEvent.keyboard('{Escape}')
+      await vi.waitFor(() => {
+        expect(document.querySelector('[data-testid="doc-tab-menu"]')).toBeNull()
+        expect(document.activeElement).toBe(overflow)
       })
     } finally {
       await app.unmount()
@@ -411,10 +450,10 @@ describe('App workspace tabs', () => {
       await userEvent.keyboard('{ArrowRight}')
 
       await vi.waitFor(async () => {
-        expect((await workspace.snapshot()).activeId).toBe(next.id)
-        expect(firstTab.classList.contains('tab-hidden')).toBe(true)
-        expect(nextTab.classList.contains('tab-hidden')).toBe(false)
-        expect(document.activeElement).toBe(nextTab)
+        if ((await workspace.snapshot()).activeId !== next.id) throw new Error('next tab not active')
+        if (!firstTab.classList.contains('tab-hidden') || nextTab.classList.contains('tab-hidden') || document.activeElement !== nextTab) {
+          throw new Error(`tab state not settled: ${firstTab.className}; ${nextTab.className}; focus ${document.activeElement?.textContent}`)
+        }
       })
     } finally {
       await app.unmount()

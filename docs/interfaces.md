@@ -8,7 +8,7 @@
 | 导航索引（Go） | `index.go`、`navmeta.go` | 工作区文件树的增量扫描与索引（`NavSnapshot` 的 `status`/`indexed`/`total` 如实报告未完成）、`SetFilter` 搜索（标题 + 预览 + 章节命中）、已打开文档的未保存文本也参与索引 |
 | 会话恢复（Go） | `session.go`、`restore_host.go` | `session.json` 布局（工作区、标签顺序、活动文档、视图模式）、退出前逐窗口 flush 确认后的持久化、启动恢复与缺失路径的部分恢复（#23） |
 | Host Adapter（TS） | `web/src/host/` | `WorkspaceAdapter` / `HostAdapter` 契约；`mygoHost.ts`（MyGo IPC）、`browserHost.ts`（纯浏览器内存实现，`createBrowserWorkspace` / `createBrowserHost`） |
-| Editor Adapter | `web/src/editor/` | CrepeBuilder 装配；块级分段、锁定块与特殊块呈现、原地 Markdown 编辑、`compose`、源码偏移映射（`reveal` / `onSelectionChange`）、原生 Edit 撤销重做目标（`nativeEdit.ts`） |
+| Editor Adapter | `web/src/editor/` | CrepeBuilder 装配；块级分段、锁定块与特殊块呈现（含本地 Mermaid 图表与失败时保留源码）、原地 Markdown 编辑、`compose`、源码偏移映射（`reveal` / `onSelectionChange`）、原生 Edit 撤销重做目标（`nativeEdit.ts`） |
 | Application Core | `web/src/core/` | `DocumentService`、`CommandRegistry`、`ViewRegistry`、`PluginRegistry`、`EditorAccess`（插件侧编辑器选择源） |
 | 工作区壳（TS） | `web/src/App.tsx`、`web/src/components/SidePane.tsx`、`web/src/components/RightPane.tsx`、`web/src/workspace/nav.ts` | 文档标签与每文档一个 `DocumentPane`、左栏文件树/筛选/分栏/面包屑、Welcome 与最近工作区、右栏与窄窗浮层 |
 | Markdown 标题/章节 | `web/src/markdown/headings.ts`、`sections.ts` | 共享标题提取：ATX + setext，排除代码块/HTML/frontmatter，去内联格式，带源偏移；章节范围与 `fnv1a32` 哈希 |
@@ -170,6 +170,8 @@ interface PluginContext {
 - 未命名窗口（`kind: 'untitled'`，`root` 为空）承载未命名原文；关掉最后一个标签即关闭窗口。绑定文件夹的工作区关掉最后一个标签仍保留窗口，中央显示空状态。
 - 首次保存 / Save As 后：文档保留 `documentId`、内容、版本、视图跟随与生成槽；标签离开原窗口，按路由加入包含新路径的工作区（取根目录最深的已打开工作区，否则在父目录新开窗口）；同一未命名窗口里的其他未命名原文留在原处；目标路径已是另一份打开文档时拒绝保存，不静默覆盖。
 - 标签栏：`role="tablist"`，每个标签 `role="tab"` 与 `aria-selected`，显示文件名（同名标签追加父目录名，如 `notes.md — alpha`）、未保存圆点、生成中、冲突、已删除、只读徽标与关闭按钮。方向键移动，`Delete` / `⌘W` 关闭当前标签。
+- 共享提示与通知：`components/Tooltip.tsx` 用 `radix-ui@1.8.1` 为文件树、标签和状态提供完整路径/说明；`App` 根部只有一个 `Tooltip.Provider` 与浅色 Sonner `Toaster`。`components/feedback.ts` 在 Crepe 代码块和链接复制成功后用固定 ID 显示 `Code copied` / `Link copied`，不叠加重复 toast；持续错误和生成进度仍原位呈现。
+- 文档溢出菜单：触发钮直接显示 `+N`，`DropdownMenu` Portal 承载带标题、搜索图标、文件图标、路径次级行和当前项勾号的命令菜单；活动标签与触发钮保留拟物 `--raised` 材质，搜索焦点为细内描边。Radix 管理焦点、键盘导航、Escape、外部点击和碰撞定位；标签的测量 ref 直接挂按钮，选择后焦点返回活动标签，Escape 返回溢出触发钮。文件树使用 Phosphor folder/folder-open/file-text，普通行次级文字为父目录，过滤结果保留标题/摘要。
 - 生成中则禁用该文档的 Save As / Rename / Move（提示先取消或等待），普通保存、继续编辑与标签切换仍可用，其他文档不受影响。
 
 ## 工作区导航（#22）
@@ -185,7 +187,8 @@ interface PluginContext {
 
 ## 侧边栏、右侧栏与大纲插件（#4，#16 三栏布局）
 
-- `web/src/components/SidePane.tsx`：渲染 `location: 'left'` 的注册（`aside.side-pane`，测试钩子 `left-pane`）；`web/src/components/RightPane.tsx`：渲染 `location: 'right'` 的注册（`aside.right-pane`，测试钩子 `right-pane`，顶部分段标签 `right-tab-<id>`，支持 `rightPane.show(viewId)` 命令与 `< 1180px` 窄窗浮层开关 `right-pane-toggle`）。视图挂载/卸载沿用 `mount(el)` / `Disposable` 语义，由 `ViewHost.tsx` 的 `ViewHost` 完成（中央视图同用）。
+- `web/src/components/SidePane.tsx`：渲染 `location: 'left'` 的注册（`aside.side-pane`，测试钩子 `left-pane`），分隔条测试钩子 `sidebar-splitter`；`web/src/components/RightPane.tsx`：渲染 `location: 'right'` 的注册（`aside.right-pane`，测试钩子 `right-pane`，顶部分段标签 `right-tab-<id>`，支持 `rightPane.show(viewId)` 命令与 `< 1180px` 窄窗浮层开关 `right-pane-toggle`）。视图挂载/卸载沿用 `mount(el)` / `Disposable` 语义，由 `ViewHost.tsx` 的 `ViewHost` 完成（中央视图同用）。
+- 左栏宽度 190–420px 可调（默认 248px），但渲染宽度随窗口收窄让位：不超过 `窗口宽 − 310px`（下限 140px），窗口放宽后恢复用户设定；分隔条在 6px 视觉槽内提供 14px 触控热区（`aria-valuenow` 报告实际渲染宽度）。
 - Outline 插件（`createOutlinePlugin()`）注册视图 `outline.panel`（`location: 'right'`，标题 `Outline`），与 `genui.panel` 并列在右侧栏顶部分段标签中切换。
 - 条目来自 `extractHeadings(ctx.documents.snapshot().text)`，按 `level` 缩进；文档变更经 `OUTLINE_DEBOUNCE_MS`（300ms，导出自 `OutlinePanel.tsx`）防抖后重新解析。
 - 当前章节 = 最后一个 `offset ≤ 光标偏移` 的标题；光标在第一个标题之前时不高亮任何条目；光标偏移来自 `ctx.editor.onSelectionChange`（WYSIWYG 为顶层块起始偏移，源码为精确偏移），高亮条目标 `aria-current="true"`。
@@ -242,7 +245,7 @@ interface PluginContext {
 - 生成要求输入框预填当前视图文件的 `request`；未保存的文档 Generate 禁用并提示 `Save the document first: the view is stored next to it.`。失败时 `role="alert"` 显示 `message`、`hint`（该做什么）、`model-invalid` 的可用模型列表、`detail`（「The agent said:」下原样的 `<pre>`），按钮：`Retry`（用失败那次的请求重跑）、`Locate agent…`（仅 `agent-not-found`，原地打开 `.composer` 的命令输入框，`Enter` / `Save` 写入 `{ agentCommand }`，即 ADR 0004 的定位动作）、`Dismiss`；旧视图不变。`Cancel` 只在运行中出现；取消不算失败、不提示。
 - 失败分类（Go `failure.go`，`GenerateFailure.kind`）：`agent-not-found`（找不到或启动不了命令）、`auth-required`（任一调用的 JSON-RPC -32000 或含 “authentication required”，包括 stderr；提示 ``Run `<命令> acp --login` in Terminal, then retry.``）、`model-invalid`（`set_config_option` 失败且 `session/new` 列出了模型）、`agent-message`（这一轮结束但没有 `out.json` 而有回复，或 `session/prompt` 返回错误；`detail` 为原话，最多 4000 字符）、`invalid-output`（缺失、过大、符号链接、非 JSON、`a2ui` / `sources` 不合格、页面校验拒绝：深层规则、未知组件、孤儿组件、未定义的 source id；有回复时附为 `detail`）、`agent-error`（Agent 提前退出附 stderr、其他 RPC 错误、越界工具调用、内部错误）、`timeout`（默认 5 分钟，`generationJob.Timeout`）、`cancelled`、`unsaved`、`busy`。超时与取消都发 `session/cancel`；提示轮应答即结束本次运行，不再等固定 2 秒或进程退出，1 秒内无应答则有界杀死进程。每次运行的临时目录无论结果都删除。
 - 退出：关窗口取消调用的 ctx。Agent 主进程退出后，宿主给 stdout 和 stderr 留出有限的读取时间，避免继承管道的子进程拖住清理。退出 app 时 `main` 在 `App.Run` 返回后最多等生成任务清理 5 秒，随后关闭 ACP 进程缓存并删除它的进程目录。
-- 模型选择与设置（#17/#24，ADR 0004）：面板底部固定区展示只读 `Agent: Antigravity (agy)` 与向上弹出菜单 `ModelMenu`（`.sel-btn` 26px 凸起触发钮 + `.mmenu.pop` 10px 圆角白纸弹层 + `Agent’s choice` 与缓存的 `models` 列表 + 右侧勾号 `.chk`）；点选模型后只提交 `{ model }` 并立即经 `setSettings` 持久化、关闭弹层，支持点击外部或按 `Escape`（`document` 级监听）关闭、生成中禁用。`agent-not-found` 错误里的 `Locate agent…` 只提交 `{ agentCommand }`。常规界面不暴露自由文本 `Model` 输入框，`Agent command` 输入框只在定位失败时原地出现。
+- 模型选择与设置（#17/#24，ADR 0004）：面板底部固定区展示只读 `Agent: Antigravity (agy)` 与向上弹出菜单 `ModelMenu`（`.sel-btn` 26px 凸起触发钮 + `.mmenu.pop` 10px 圆角白纸弹层 + `Agent’s choice` 与缓存的 `models` 列表 + 右侧勾号 `.chk`）；点选模型后只提交 `{ model }` 并立即经 `setSettings` 持久化、关闭弹层，支持 Radix 管理的键盘导航、点击外部或按 `Escape` 关闭及焦点返回、生成中禁用。`agent-not-found` 错误里的 `Locate agent…` 只提交 `{ agentCommand }`。常规界面不暴露自由文本 `Model` 输入框，`Agent command` 输入框只在定位失败时原地出现。
 - 宿主（Go，提示词在 `generationprompt.go`）：整份捕获的文档文本只内联一次（`<source>` 标记之间）；局部更新再内联一次当前视图原文（`<view>`）。`source.md` 与 `view.json` 仍写进临时目录作为私有快照，路径权限规则不变；提示词说明它们只是快照、不要读，唯一允许写的是 `out.json` 的精确路径，且不联网、不用其他工具。`<agentCommand> acp`，无其他参数；进程在缓存私有目录里启动，`initialize`（客户端身份、协议版本、不声明 fs 与 terminal 能力）每个进程只做一次，其 `agentInfo`、`authMethods` 与 capabilities 随进程保留，复用进程沿用真实握手结果（观测记 `agent.reused` / `initialize.cached`，不伪造 ACP 行）。每次运行在独占租约上，以新的运行目录调用 `session/new`，会话 ID 必须非空且不同于该进程此前用过的 ID；再按本次运行捕获的设置 `set_config_option(model)`（模型非空时）与思考级别（仅当 Agent 在本轮 `session/new` 的 `configOptions` 提供该值，用其 configId）→ `session/prompt`；只有 Agent 声明 `session/close` 且限期内应答才把进程放回空闲缓存，否则丢弃。权限与工具调用按同一条路径规则检查（读 `source.md`、写 `out.json`、思考），越界即取消本次运行。内容规则是通用的，不按具体文档写死：保留名称与拼写/大小写、日期、数值、单位、条件与 if/else 分支优先级，覆盖全文相关材料（包括分散在不同章节的对照行），共享属性用 ComparisonTable、有序阶段用 Timeline；Checklist 只用于文档明说完成状态的条目（不臆造、不重复同一摘要）；来源 heading 照抄原文（含编号与标点），指向精确章节。`out.json` ≤ 1 MiB、普通文件、JSON 对象、非空 `a2ui`、合法 `sources`；宿主写 `version: 2`、`generatedAt`、`model`（只写 Agent 在配置应答或更新里确认的实际模型；报告值与请求不符则该次失败，未确认则留空）、`request`、带 `hash` 的 `sources`、原样的 `a2ui`，丢弃其他字段。运行临时目录总是删除；进程目录保留到缓存关闭。进度：`starting`（启动、Agent 就绪）、`thinking`、`reading` / `writing`（工具标题）、`checking`。
 - ACP 工具通知是逐步补全的观测：按 toolCallId 合并 kind 与 locations；pending、缺失字段、仅状态和 `other` 不单凭信息不全而中止。已报告的越界路径（即使没有 kind）与不支持的明确操作仍立即取消；权限请求继续使用严格的类型、路径与符号链接规则。视图 `model` 只记录服务端确认值；应答没有实际值时省略，已知值与请求不符时拒绝提交。
 - 写入前校验（ADR 0002）：`generationJob.Validate` 在 Go 端由 `validateGeneratedCandidate` 实现，把**将被写入的完整候选**（已盖好 `version` / `generatedAt` / `model` / `request` / `sources` + `hash`；局部更新是合并后的整份历史，含末尾换行）作为单个字符串参数交给页面 `window.__mgoValidateGeneratedView`（`mygoHost.ts` 安装，`browserHost.ts` 直接调用同一函数）。通过后才原子替换视图文件并把旧视图留成 Undo 备份；页面拒绝 → 普通 `invalid-output`（附 Agent 回复为 `detail`）；桥缺失、窗口或页面不可用、页面抛错、取消 → 视图与备份同样不变，message 说明未能检查因而没有保存。失败不会改写视图或备份；没有 Go 端的第二份组件规则，也没有新增 IPC 或格式字段。
@@ -332,8 +335,8 @@ interface MarkdownEditor {
 
 ## 特殊块（可视呈现与原地 Markdown 编辑，ADR 0006）
 
-- 种类（`segment.ts` 的 `LockKind`）：`yaml-frontmatter`、`github-alert`、`footnote-definition`、`link-reference-definition`、`code-fence-meta`、`raw-html`、`note`（批注，见「批注」）、`math`（`$$` 块）、`unsupported`（单片段解析结果 ≠ 1 个顶层节点或解析失败）。
-- 呈现（`lockedView.ts` + `blocks/present.ts`）：Frontmatter 显示为键值表；GitHub alert 显示为带语义图标与类型文字（Note / Tip / Important / Warning / Caution）的提示块；脚注定义显示为编号与正文，并有返回引用的 ↩；带语言/元信息的围栏代码块显示语言标签、meta 与高亮代码；数学块显示 `Math` 与源码。`raw-html`、引用式链接定义与 `unsupported` 显示为 `Kept as written` 保真块，HTML 不执行。每个可视块仍是一个原子顶层节点，`data-kind` / `data-source` / `data-label` 保留原文。
+- 种类（`segment.ts` 的 `LockKind`）：`yaml-frontmatter`、`github-alert`、`footnote-definition`、`link-reference-definition`、`mermaid`、`code-fence-meta`、`raw-html`、`note`（批注，见「批注」）、`math`（`$$` 块）、`unsupported`（单片段解析结果 ≠ 1 个顶层节点或解析失败）。
+- 呈现（`lockedView.ts` + `blocks/present.ts` + `blocks/mermaid.ts`）：Frontmatter 显示为键值表；GitHub alert 显示为带语义图标与类型文字（Note / Tip / Important / Warning / Caution）的提示块；脚注定义显示为编号与正文，并有返回引用的 ↩；带语言/元信息的围栏代码块显示语言标签、meta 与高亮代码；Mermaid 围栏本地按需加载并串行渲染为图表，错误时显示说明与完整围栏，外部资源被拒绝；数学块显示 `Math` 与源码。`raw-html`、引用式链接定义与 `unsupported` 显示为 `Kept as written` 保真块，HTML 不执行。每个可视块仍是一个原子顶层节点，`data-kind` / `data-source` / `data-label` 保留原文。
 - 原地编辑：非只读时，可视块上的 `Edit`（`data-block-action="edit"`，批注另有 `Edit` / `Delete`）在**该块原地**展开 `.composer.mgo-block-composer`（`<textarea aria-label="Markdown">`，内容是该块的原始 Markdown，`⌘↩` / `Save` 保存、`Escape` / `Cancel` 取消），不切换整份原文的视图模式、不弹 `<dialog>`。保存是一次普通编辑器事务，可以撤销；只读原文不显示编辑入口，程序化点击也被拒绝。
 - 字节规则：呈现不改任何字节；保存只重写被编辑块自己的 `source`，未触碰块、块间空白与换行保持原样（textarea 的 LF 会按原块的行尾映射回去，CR / CRLF 不被改写）；取消不调用 `host.update`。编辑过的块按 Milkdown 规则重写其内部文本（例如 setext → ATX），这与“未触碰块逐字节”的既有规则一致。
 

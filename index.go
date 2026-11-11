@@ -920,7 +920,9 @@ func (h *documentHost) searchLockedResult(w *workspace, idx *workspaceIndex, que
 		rel  string
 		file indexedFile
 	}
-	files := make([]searchFile, 0, len(idx.files))
+	// Allocate without reading the map before taking idx.mu; concurrent
+	// reindexing may add or remove entries while this filter result builds.
+	files := make([]searchFile, 0)
 	for rel, file := range idx.files {
 		if file.missing {
 			continue

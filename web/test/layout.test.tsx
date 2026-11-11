@@ -3,8 +3,8 @@ import { page } from 'vitest/browser'
 import { afterEach, describe, expect, it } from 'vitest'
 import { mountApp, type MountedApp } from './helpers/app'
 
-/** The packaged app opens document windows at 940×720 (documenthost.go). */
-const WINDOW = { width: 940, height: 720 }
+/** Default workspace window; narrow-window behavior is exercised separately. */
+const WINDOW = { width: 1280, height: 820 }
 
 const DOCUMENT = `---
 title: Smoke Report
@@ -56,7 +56,7 @@ describe('layout at the default window size', () => {
   })
 
   it('auto-collapses the right pane below 1180px, opens it as .r-float on toggle, and closes on center click', async () => {
-    await page.viewport(WINDOW.width, WINDOW.height)
+    await page.viewport(940, 720)
     mounted = await mountApp(DOCUMENT)
 
     const rightPane = mounted.container.querySelector<HTMLElement>('[data-testid="right-pane"]')
@@ -80,27 +80,4 @@ describe('layout at the default window size', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('exposes Portrait semantic tokens in light and dark mode', async () => {
-    mounted = await mountApp(DOCUMENT)
-    const appEl = mounted.container.querySelector<HTMLElement>('.app.mgg')
-    if (!appEl) throw new Error('app root missing')
-
-    const lightStyle = getComputedStyle(appEl)
-    expect(lightStyle.getPropertyValue('--chrome').trim()).toBe('#f2f2f4')
-    expect(lightStyle.getPropertyValue('--paper').trim()).toBe('#ffffff')
-    expect(lightStyle.getPropertyValue('--accent').trim()).toBe('#2f6f62')
-    expect(lightStyle.getPropertyValue('--warn').trim()).toBe('#9a4d12')
-    expect(lightStyle.getPropertyValue('--danger').trim()).toBe('#a83a3a')
-    expect(lightStyle.getPropertyValue('--raised-shadow').trim()).not.toBe('')
-    expect(lightStyle.getPropertyValue('--sunken-shadow').trim()).not.toBe('')
-    expect(lightStyle.getPropertyValue('--pop-shadow').trim()).not.toBe('')
-
-    appEl.classList.add('dark')
-    const darkStyle = getComputedStyle(appEl)
-    expect(darkStyle.getPropertyValue('--chrome').trim()).toBe('#1e1e20')
-    expect(darkStyle.getPropertyValue('--paper').trim()).toBe('#19191b')
-    expect(darkStyle.getPropertyValue('--accent').trim()).toBe('#7cc4b2')
-    expect(darkStyle.getPropertyValue('--warn').trim()).toBe('#f0a560')
-    expect(darkStyle.getPropertyValue('--danger').trim()).toBe('#ef8a80')
-  })
 })

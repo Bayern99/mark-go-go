@@ -15,6 +15,7 @@ const KIND_LABEL: Record<LockKind, string> = {
   'footnote-definition': 'footnote definition',
   'link-reference-definition': 'link reference definition',
   'code-fence-meta': 'code fence with meta',
+  mermaid: 'Mermaid diagram',
   'raw-html': 'raw HTML',
   note: 'note',
   math: 'math block',

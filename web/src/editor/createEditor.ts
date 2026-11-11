@@ -30,6 +30,7 @@ import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/
 import { undo as undoRich, redo as redoRich, undoDepth, redoDepth } from '@milkdown/kit/prose/history'
 import { listenerCtx } from '@milkdown/kit/plugin/listener'
 import type { Disposable } from '../host/types'
+import { notifyCopied } from '../components/feedback'
 import { buildDocument, type BuiltDocument } from './blocks/build'
 import {
   blockAtOffset,
@@ -144,7 +145,7 @@ export async function createMarkdownEditor(
     .addFeature(cursor)
     .addFeature(listItem)
     .addFeature(placeholder, { text: 'Start writing…', mode: 'doc' })
-    .addFeature(linkTooltip)
+    .addFeature(linkTooltip, { onCopyLink: () => notifyCopied('Link') })
     .addFeature(blockEdit, {
       buildMenu: (menu) => {
         menu.addGroup('review', 'Review').addItem('note', {
@@ -160,7 +161,7 @@ export async function createMarkdownEditor(
     .addFeature(table)
     .addFeature(imageBlock)
     .addFeature(toolbar)
-    .addFeature(codeMirror, { languages })
+    .addFeature(codeMirror, { languages, onCopy: () => notifyCopied('Code') })
 
   builder.editor.use(lockedBlockSchema)
 

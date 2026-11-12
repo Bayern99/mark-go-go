@@ -191,6 +191,7 @@ export async function createMarkdownEditor(
     schema,
     serializer,
     origins: current.origins,
+    loaded: current.loaded,
     segments: current.segments,
     prefix: current.prefix,
     trailing: current.trailing,
@@ -594,8 +595,64 @@ export async function createMarkdownEditor(
     }),
   })
 
+  // Milkdown #2495: Crepe's table node view answers the first click into a
+  // cell with a deferred rAF/setTimeout dispatch that selects the whole cell
+  // paragraph. The transaction is built from state captured at click time,
+  // so it can overwrite a newer selection — and typing or IME after one
+  // click replaces the cell's text. Nothing else creates that selection
+  // shape (prosemirror-tables uses CellSelection; allowTableNodeSelection
+  // selects the table node), so drop it unconditionally. The same view
+  // flags pointer drags and Escape so the toolbar CSS can stay hidden until
+  // the selection settles.
+  const tableCaretPlugin = new Plugin({
+    filterTransaction(tr) {
+      if (
+        tr.docChanged ||
+        !tr.selectionSet ||
+        !(tr.selection instanceof NodeSelection) ||
+        tr.selection.node.type.name !== 'paragraph' ||
+        (tr.selection.$from.parent.type.name !== 'table_cell' &&
+          tr.selection.$from.parent.type.name !== 'table_header')
+      ) {
+        return true
+      }
+      return false
+    },
+    view(editorView) {
+      const onPointerDown = () => {
+        wysiwygRoot.classList.add('mgo-pointer-selecting')
+        wysiwygRoot.classList.remove('mgo-toolbar-dismissed')
+      }
+      const onKeyDown = (event: KeyboardEvent) => {
+        if (event.key === 'Escape' && !editorView.state.selection.empty) {
+          wysiwygRoot.classList.add('mgo-toolbar-dismissed')
+        }
+      }
+      const endPointerSelect = () => wysiwygRoot.classList.remove('mgo-pointer-selecting')
+      editorView.dom.addEventListener('pointerdown', onPointerDown, true)
+      editorView.dom.addEventListener('keydown', onKeyDown)
+      window.addEventListener('pointerup', endPointerSelect)
+      window.addEventListener('pointercancel', endPointerSelect)
+      window.addEventListener('blur', endPointerSelect)
+      return {
+        update(currentView, prevState) {
+          if (!currentView.state.selection.eq(prevState.selection)) {
+            wysiwygRoot.classList.remove('mgo-toolbar-dismissed')
+          }
+        },
+        destroy() {
+          editorView.dom.removeEventListener('pointerdown', onPointerDown, true)
+          editorView.dom.removeEventListener('keydown', onKeyDown)
+          window.removeEventListener('pointerup', endPointerSelect)
+          window.removeEventListener('pointercancel', endPointerSelect)
+          window.removeEventListener('blur', endPointerSelect)
+        },
+      }
+    },
+  })
+
   const plugins = view.state.plugins.filter((plugin) => !isIdentityBreaking(plugin))
-  plugins.push(selectionPlugin, lockedViewPlugin, historyWatch)
+  plugins.push(selectionPlugin, lockedViewPlugin, historyWatch, tableCaretPlugin)
 
   const load = (text: string) => {
     composerScope.cancel()

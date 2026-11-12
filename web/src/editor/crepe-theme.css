@@ -71,7 +71,11 @@
 .crepe-root .milkdown .ProseMirror h1 {
   font-size: var(--text-display-size);
   line-height: var(--text-display-leading);
-  margin: 0 0 20px;
+  margin: 48px 0 20px;
+}
+
+.crepe-root .milkdown .ProseMirror .mgo-frontmatter-block + h1 {
+  margin-top: 0;
 }
 
 .crepe-root .milkdown .ProseMirror h2 {
@@ -80,14 +84,21 @@
   margin: 40px 0 12px;
 }
 
-.crepe-root .milkdown .ProseMirror h3,
+.crepe-root .milkdown .ProseMirror h3 {
+  font-family: var(--font-sans);
+  font-size: var(--text-reading-size);
+  line-height: var(--text-reading-leading);
+  margin: 28px 0 8px;
+}
+
 .crepe-root .milkdown .ProseMirror h4,
 .crepe-root .milkdown .ProseMirror h5,
 .crepe-root .milkdown .ProseMirror h6 {
   font-family: var(--font-sans);
   font-size: var(--text-reading-size);
   line-height: var(--text-reading-leading);
-  margin: 28px 0 8px;
+  color: var(--ink-2);
+  margin: 24px 0 4px;
 }
 
 .crepe-root .milkdown .ProseMirror p {
@@ -162,8 +173,8 @@
   content: none;
 }
 
-.crepe-root .milkdown .ProseMirror blockquote p {
-  margin: 0;
+.crepe-root .milkdown .ProseMirror blockquote > :last-child {
+  margin-bottom: 0;
 }
 
 .crepe-root .milkdown .ProseMirror hr {
@@ -185,6 +196,40 @@
   margin: 0 0 4px;
 }
 
+/* Blocks inside a list item flow tighter than document blocks: no bottom
+   margin, 8px between siblings, nested lists tuck under their parent item.
+   Crepe wraps the item content in .children > .content-dom. */
+.crepe-root .milkdown .ProseMirror .milkdown-list-item-block > .list-item > .children > .content-dom > * {
+  margin-bottom: 0;
+}
+
+.crepe-root .milkdown .ProseMirror .milkdown-list-item-block > .list-item > .children > .content-dom > * + * {
+  margin-top: 8px;
+}
+
+.crepe-root .milkdown .ProseMirror .milkdown-list-item-block > .list-item > .children > .content-dom > ul,
+.crepe-root .milkdown .ProseMirror .milkdown-list-item-block > .list-item > .children > .content-dom > ol {
+  margin-top: 4px;
+}
+
+/* li.list-item is display:flex, so a last child's bottom margin cannot
+   collapse out through it — it gets trapped inside the item and stacks onto
+   the item gap once per nesting level. Drop it so the only inter-item gap is
+   this li's own 4px margin collapsing through the block wrapper. */
+.crepe-root .milkdown .ProseMirror .milkdown-list-item-block:last-child > .list-item {
+  margin-bottom: 0;
+}
+
+/* Crepe's label row is 32px; align it to the 28px reading line so bullets,
+   numbers and checkboxes sit on the first line's optical centre. */
+.crepe-root .milkdown .milkdown-list-item-block li .label-wrapper {
+  height: var(--text-reading-leading);
+}
+
+.crepe-root .milkdown .milkdown-list-item-block li .label-wrapper .label {
+  height: var(--text-reading-leading);
+}
+
 .crepe-root .milkdown .ProseMirror li::marker {
   color: var(--ink-3);
 }
@@ -195,27 +240,191 @@
   font-weight: 500;
 }
 
+/* Natural column widths, not a 624px squeeze: the table sizes to its content
+   (never narrower than the column) and the wrapper scrolls horizontally when
+   it is wider. */
 .crepe-root .milkdown .ProseMirror table {
   border-collapse: collapse;
-  width: 100%;
+  table-layout: auto;
+  width: auto;
+  min-width: 100%;
   font-size: var(--text-small-size);
   line-height: var(--text-small-leading);
+  /* the scroll wrapper below is a new formatting context, so a margin on the
+     table itself could not collapse out to the next block — keep it on the
+     block instead */
+  margin: 0;
+}
+
+/* flow-root keeps the wrapper's negative margins inside the block, so the
+   block rhythm (0 top / 20 bottom) is not eaten by them. */
+.crepe-root .milkdown .milkdown-table-block {
+  display: flow-root;
   margin: 0 0 20px;
+  --default-cell-min-width: 6em;
+}
+
+/* Crepe positions the line handles and drag preview against the nearest
+   positioned ancestor. Making the wrapper the containing block keeps those
+   coordinates in scroll space: the handles scroll and clip with the table.
+   The padding ring + equal negative margin gives the half-outside add-row /
+   add-col buttons (14px) and the drag preview (clamped ±20px) room inside the
+   padding box without moving the table or the block's border box. */
+.crepe-root .milkdown .table-wrapper {
+  position: relative;
+  overflow-x: auto;
+  padding: 20px;
+  margin: -20px;
+}
+
+/* The drag math measures `tbody.offsetParent` — with the wrapper positioned
+   that would be the wrapper, so keep the table positioned too and the
+   measured offset stays the table's offset inside the wrapper. */
+.crepe-root .milkdown .table-wrapper > table {
+  position: relative;
+}
+
+/* Hidden handles are opacity:0 but still hit-testable: they sit exactly on
+   the line buttons' spots and would eat their clicks. */
+.crepe-root .milkdown .milkdown-table-block .handle[data-show="false"] {
+  pointer-events: none;
+}
+
+/* The x-line handle spans the table's full content width and Crepe pins its
+   add-row button to the line's left end — the table's left edge in scroll
+   space — so a scrolled wide table leaves the button off-screen. Sticky
+   pins it to the scrollport's left edge (the visible table edge) instead;
+   at scrollLeft 0 it lands exactly where the absolute position put it. */
+.crepe-root .milkdown .milkdown-table-block .line-handle[data-role="x-line-drag-handle"] .add-button {
+  position: sticky;
+  left: 20px;
+}
+
+/* Row hairlines come from the inset box-shadows below; cancel Crepe's 1px
+   grid so rules-only styling reads cleanly. */
+.crepe-root .milkdown .ProseMirror th,
+.crepe-root .milkdown .ProseMirror td {
+  padding: 6px 12px;
+  border: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.crepe-root .milkdown .ProseMirror th:first-child,
+.crepe-root .milkdown .ProseMirror td:first-child {
+  padding-left: 0;
+}
+
+.crepe-root .milkdown .ProseMirror th:last-child,
+.crepe-root .milkdown .ProseMirror td:last-child {
+  padding-right: 0;
 }
 
 .crepe-root .milkdown .ProseMirror th {
   text-align: left;
   font-weight: 600;
-  padding: 8px 12px 8px 0;
   box-shadow: inset 0 -0.5px 0 var(--line-strong);
   vertical-align: bottom;
   background: none;
 }
 
 .crepe-root .milkdown .ProseMirror td {
-  padding: 8px 12px 8px 0;
   box-shadow: inset 0 -0.5px 0 var(--line);
   vertical-align: top;
+}
+
+/* Cell paragraphs take the table's 14/22 metrics, not the reading flow's. */
+.crepe-root .milkdown .ProseMirror th > p,
+.crepe-root .milkdown .ProseMirror td > p {
+  margin: 0;
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+}
+
+/* Crepe mounts CodeMirror lazily and renders a placeholder pre before that;
+   keep both states the same size so scrolling past a block does not reflow. */
+.crepe-root .milkdown .milkdown-code-block {
+  margin: 0 0 20px;
+  padding: 8px 16px 14px;
+  background: var(--code);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+  border-radius: 8px;
+}
+
+.crepe-root .milkdown .milkdown-code-block .cm-editor,
+.crepe-root .milkdown .milkdown-code-block .cm-gutters,
+.crepe-root .milkdown .milkdown-code-block .cm-scroller {
+  background: transparent;
+}
+
+.crepe-root .milkdown .milkdown-code-block .cm-content {
+  font-family: var(--font-mono);
+  font-size: var(--text-code-size);
+  padding: 0;
+}
+
+.crepe-root .milkdown .milkdown-code-block .cm-line {
+  font-family: var(--font-mono);
+  font-size: var(--text-code-size);
+  line-height: var(--text-code-leading);
+}
+
+/* Height of the mounted .tools row (language picker + copy), reserved so the
+   placeholder and mounted states have identical block heights. */
+.crepe-root .milkdown .ProseMirror pre.milkdown-code-block-placeholder,
+.crepe-root .milkdown .milkdown-code-block .milkdown-code-block-placeholder {
+  margin: 0;
+  padding: 30px 0 0;
+  background: none;
+  box-shadow: none;
+  border-radius: 0;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-code-size);
+  line-height: var(--text-code-leading);
+  letter-spacing: 0;
+  white-space: pre;
+  word-break: normal;
+  color: var(--ink);
+}
+
+/* Compacted toolbar: 28px items + 4px margins -> 36px tall. */
+.crepe-root .milkdown-toolbar .toolbar-item {
+  width: 28px;
+  height: 28px;
+  margin: 4px;
+  padding: 4px;
+}
+
+.crepe-root .milkdown-toolbar .toolbar-item svg {
+  width: 20px;
+  height: 20px;
+}
+
+.crepe-root .milkdown-toolbar .divider {
+  height: 20px;
+  margin: 8px 4px;
+}
+
+/* While a pointer drag may become a text selection, or after Escape asked
+   for it to go away, hide the toolbar instead of letting it sit on text. */
+.mgo-wysiwyg-root.mgo-pointer-selecting .milkdown-toolbar,
+.mgo-wysiwyg-root.mgo-toolbar-dismissed .milkdown-toolbar {
+  visibility: hidden;
+}
+
+/* CJK–Latin auto spacing for prose; never inside code or kept-source blocks. */
+.crepe-root .milkdown .ProseMirror {
+  text-autospace: normal;
+}
+
+.crepe-root .milkdown .ProseMirror code,
+.crepe-root .milkdown .ProseMirror pre,
+.crepe-root .milkdown .ProseMirror .milkdown-code-block,
+.crepe-root .milkdown .ProseMirror .mgo-code-block,
+.crepe-root .milkdown .ProseMirror .mgo-math,
+.crepe-root .milkdown .ProseMirror .mgo-locked-source {
+  text-autospace: no-autospace;
 }
 
 /* Block handle / slash menu / toolbar sit on paper, not cream. */

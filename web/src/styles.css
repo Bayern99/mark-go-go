@@ -11,7 +11,9 @@
   --font-mono: "IBM Plex Mono", "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas,
     "IBM Plex Sans SC", "PingFang SC", monospace;
 
-  /* Portrait Surfaces & Ink */
+  /* Portrait Surfaces & Ink — a palette swap redefines the tokens in
+     theme/portrait-tokens.ts (SURFACE + STATUS, and MATERIAL per scheme);
+     rules outside this token block must read these names, not literals. */
   --chrome: #f2f2f4;
   --paper: #ffffff;
   --code: #f6f6f8;
@@ -211,7 +213,8 @@ body {
   color: var(--ink);
   white-space: nowrap;
   cursor: pointer;
-  transition: transform var(--duration-press) ease, filter var(--duration-press) ease;
+  transition: transform var(--duration-press) var(--ease-out),
+    filter var(--duration-press) var(--ease-out);
 }
 
 .pill:hover:not(:disabled) {
@@ -285,7 +288,7 @@ body {
   color: var(--ink-3);
   font-weight: 500;
   cursor: pointer;
-  transition: color var(--duration-switch) ease;
+  transition: color var(--duration-switch) var(--ease-out);
 }
 
 .seg button:hover:not(:disabled) {
@@ -681,10 +684,6 @@ body {
   line-height: 18px;
 }
 
-.row.sel .nm {
-  font-weight: 500;
-}
-
 .row .l2 {
   font-size: 12px;
   line-height: 16px;
@@ -752,7 +751,7 @@ body {
   justify-content: space-between;
   gap: 10px;
   padding: 0 8px 0 16px;
-  border-bottom: 1px solid var(--line);
+  box-shadow: 0 0.5px 0 var(--line);
   background: var(--paper);
   -webkit-app-region: drag;
 }
@@ -798,8 +797,8 @@ body {
 .version-chip {
   font-size: 11px;
   color: var(--ink-3);
-  border: 1px solid var(--line);
   border-radius: 999px;
+  box-shadow: 0 0 0 0.5px var(--line-strong);
   padding: 1px 7px;
 }
 
@@ -868,8 +867,8 @@ body {
   z-index: 10;
   font: inherit;
   font-size: 12px;
-  border: 1px solid var(--accent);
   border-radius: 999px;
+  box-shadow: 0 0 0 0.5px var(--accent);
   padding: 3px 12px;
   background: var(--accent-soft);
   color: var(--accent);
@@ -950,7 +949,6 @@ body {
   bottom: 0;
   width: 288px;
   z-index: 15;
-  border-left: 1px solid var(--line);
   background: var(--chrome);
   box-shadow: var(--pop-shadow);
 }
@@ -1030,7 +1028,7 @@ body {
   padding: 0;
   border: 0;
   border-radius: 8px;
-  box-shadow: inset 0 0 0 1px var(--line);
+  box-shadow: inset 0 0 0 0.5px var(--line);
   background: repeating-linear-gradient(135deg, transparent 0 6px, var(--fill) 6px 7px);
   color: var(--ink-2);
   font-family: var(--font-mono);
@@ -1122,7 +1120,14 @@ body {
   flex-shrink: 0;
   gap: 4px;
   opacity: 0;
-  transition: opacity var(--duration-switch) ease;
+  transition: opacity var(--duration-switch) var(--ease-out);
+}
+
+@media (hover: none) {
+  .mgo-note-actions,
+  .mgo-block-actions {
+    opacity: 1;
+  }
 }
 
 .mgo-note:hover .mgo-note-actions,
@@ -1164,7 +1169,7 @@ body {
   display: flex;
   gap: 4px;
   opacity: 0;
-  transition: opacity var(--duration-switch) ease;
+  transition: opacity var(--duration-switch) var(--ease-out);
 }
 
 .mgo-alert:hover .mgo-block-actions,
@@ -1281,7 +1286,7 @@ body {
   gap: 6px;
   margin-top: 8px;
   padding-top: 6px;
-  border-top: 1px solid var(--line);
+  box-shadow: 0 -0.5px 0 var(--line);
 }
 
 .composer-hint,
@@ -1297,7 +1302,7 @@ body {
   justify-content: space-between;
   gap: 12px;
   padding: 4px 16px;
-  border-top: 1px solid var(--line);
+  box-shadow: 0 -0.5px 0 var(--line);
   background: var(--chrome);
   font-size: 11px;
   color: var(--ink-3);
@@ -1391,7 +1396,7 @@ body {
   min-width: 0;
   gap: 3px;
   padding: 5px 10px;
-  border-bottom: 1px solid var(--line);
+  box-shadow: 0 0.5px 0 var(--line);
   background: var(--chrome);
 }
 
@@ -1533,7 +1538,7 @@ body {
 
 .doc-tab-menu-search:focus-within {
   background: var(--paper);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 32%, var(--line-strong));
+  box-shadow: 0 0 0 0.5px var(--line-strong), 0 0 0 3px var(--focus);
 }
 
 .doc-tab-menu-filter {
@@ -1620,16 +1625,13 @@ body {
   white-space: nowrap;
 }
 
-.doc-tab-menu-check {
-  flex: none;
-  color: var(--accent);
-  font-size: 12px;
+.doc-tab-menu-item[data-highlighted] {
+  background: var(--fill-hover);
 }
 
-.doc-tab-menu-item[data-highlighted],
 .doc-tab-menu-item:focus-visible {
-  outline: 1.5px solid var(--focus);
-  outline-offset: -2px;
+  outline: 3px solid var(--focus);
+  outline-offset: -3px;
 }
 
 .doc-tab-menu-item .nm {
@@ -1645,8 +1647,8 @@ body {
 }
 
 .doc-tab-menu-item.sel {
-  background: var(--fill);
-  box-shadow: inset 2px 0 0 var(--accent);
+  background: var(--raised);
+  box-shadow: var(--row-shadow);
   color: var(--ink);
 }
 
@@ -1654,7 +1656,6 @@ body {
   background: var(--raised);
   color: var(--ink);
   box-shadow: var(--raised-shadow);
-  font-weight: 500;
 }
 
 .doc-tab:focus-visible {

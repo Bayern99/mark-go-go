@@ -427,10 +427,9 @@ describe('GenUI generation', () => {
     expect(menu.element().classList.contains('mmenu')).toBe(true)
     expect(menu.element().classList.contains('pop')).toBe(true)
 
-    // Current selection ("Agent’s choice") is marked selected with a checkmark.
+    // Current selection ("Agent’s choice") is marked selected via aria-selected.
     const defaultOpt = menu.getByRole('option', { name: 'Agent’s choice' })
     await expect.element(defaultOpt).toHaveAttribute('aria-selected', 'true')
-    expect(defaultOpt.element().querySelector('.chk')).not.toBeNull()
 
     // Pressing Escape when document.body has focus closes the menu.
     document.body.focus()

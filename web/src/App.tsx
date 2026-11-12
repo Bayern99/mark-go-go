@@ -23,7 +23,6 @@ import { ScrollArea } from './components/ScrollArea'
 import { AppTooltip } from './components/Tooltip'
 import './components/ui.css'
 import { DropdownMenu, Tooltip } from 'radix-ui'
-import { Toaster } from 'sonner'
 
 const EDIT_DEBOUNCE_MS = 250
 export const NARROW_WINDOW_WIDTH = 1180
@@ -719,12 +718,6 @@ export function App({
   return (
     <Tooltip.Provider delayDuration={400} skipDelayDuration={250}>
       <WorkspaceApp workspace={resolved} plugins={plugins} />
-      <Toaster
-        theme="light"
-        position="bottom-center"
-        offset={28}
-        toastOptions={{ unstyled: true, classNames: { toast: 'mgo-toast', title: 'mgo-toast-title' } }}
-      />
     </Tooltip.Provider>
   )
 }
@@ -1091,9 +1084,6 @@ function WorkspaceApp({
                       </span>
                     </AppTooltip>
                     <TabBadges doc={doc} />
-                    <DropdownMenu.ItemIndicator className="doc-tab-menu-check">
-                      <i className="ph ph-check" aria-hidden="true" />
-                    </DropdownMenu.ItemIndicator>
                   </DropdownMenu.RadioItem>
                 ))
               )}

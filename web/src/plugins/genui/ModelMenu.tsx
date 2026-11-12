@@ -84,9 +84,6 @@ export function ModelMenu({ value, models, disabled = false, onChange }: ModelMe
                       aria-hidden="true"
                     />
                     <span className="t">{option.label}</span>
-                    <DropdownMenu.ItemIndicator className="chk" forceMount>
-                      <i className="ph ph-check" aria-hidden="true" />
-                    </DropdownMenu.ItemIndicator>
                   </DropdownMenu.RadioItem>
                 )
               })}

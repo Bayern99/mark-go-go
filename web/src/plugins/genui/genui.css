@@ -214,7 +214,7 @@
 
 .gp-req {
   padding-top: 14px;
-  border-top: 1px solid var(--line);
+  box-shadow: 0 -0.5px 0 var(--line);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -308,7 +308,7 @@
 .rp-foot {
   flex: none;
   margin-top: auto;
-  border-top: 1px solid var(--line);
+  box-shadow: 0 -0.5px 0 var(--line);
   padding: 10px 8px 0;
   display: flex;
   flex-direction: column;
@@ -450,7 +450,7 @@
 }
 
 .mmenu .mi.on .mi-icon {
-  color: var(--accent);
+  color: var(--ink);
 }
 
 .mmenu.pop {
@@ -485,36 +485,19 @@
 }
 
 .mmenu .mi.on {
-  background: var(--fill);
-  box-shadow: inset 2px 0 0 var(--accent);
+  background: var(--raised);
+  box-shadow: var(--row-shadow);
 }
 
 .mmenu .mi:focus-visible {
-  outline: 1.5px solid var(--focus);
-  outline-offset: -2px;
+  outline: 3px solid var(--focus);
+  outline-offset: -3px;
 }
 
 .mmenu .mi .t {
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 16px;
-}
-
-.mmenu .mi .chk {
-  display: none;
-  margin-left: auto;
-  align-items: center;
-  color: var(--accent);
-  font-size: 14px;
-}
-
-.mmenu .mi .chk[data-state='checked'] {
-  display: inline-flex;
-}
-
-.mmenu .mi .chk .ph {
-  display: block;
-  font-size: 12px;
 }
 
 .genui-run-error {
@@ -549,7 +532,8 @@
   margin: 4px 0 0;
   max-height: 12em;
   overflow: auto;
-  border: 1px solid var(--genui-border);
+  border: 0;
+  box-shadow: 0 0 0 0.5px var(--genui-border);
   border-radius: 6px;
   padding: 6px 8px;
   background: var(--genui-surface);
@@ -668,8 +652,9 @@
 
 .genui-block {
   min-width: 0;
-  border: 1px solid var(--genui-border);
+  border: 0;
   border-radius: 8px;
+  box-shadow: 0 0 0 0.5px var(--genui-border);
   padding: 12px;
   background: var(--genui-surface);
   overflow-wrap: anywhere;
@@ -689,6 +674,7 @@
 /* A card already frames its content. */
 .genui-surface a2ui-card .genui-block {
   border: 0;
+  box-shadow: none;
   padding: 0;
 }
 
@@ -803,7 +789,7 @@
 }
 
 .genui-table-scroll:has([data-overlayscrollbars-viewport]:focus-visible) {
-  outline: 2px solid var(--genui-accent);
+  outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -829,7 +815,7 @@
 .genui-comparison th,
 .genui-comparison td {
   min-width: 7em;
-  border-bottom: 1px solid var(--genui-border);
+  box-shadow: inset 0 -0.5px 0 var(--genui-border);
   padding: 6px 8px;
   text-align: left;
   vertical-align: top;
@@ -859,7 +845,7 @@
 }
 
 .genui-comparison thead button:focus-visible {
-  outline: 2px solid var(--genui-accent);
+  outline: 3px solid var(--focus);
   outline-offset: -2px;
 }
 
@@ -987,7 +973,7 @@
   gap: 6px 10px;
   margin-top: 10px;
   padding-top: 8px;
-  border-top: 1px solid var(--genui-border);
+  box-shadow: 0 -0.5px 0 var(--genui-border);
   font-size: 11px;
   color: var(--genui-muted);
 }
@@ -1045,7 +1031,8 @@
 .genui-source-edit,
 .genui-source-note {
   font: inherit;
-  border: 1px solid var(--genui-border);
+  border: 0;
+  box-shadow: 0 0 0 0.5px var(--genui-border);
   border-radius: 6px;
   padding: 2px 8px;
   background: var(--genui-surface);

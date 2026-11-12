@@ -53,18 +53,6 @@
   background: var(--raised);
   box-shadow: var(--row-shadow);
   color: var(--ink);
-  font-weight: 500;
-}
-
-.outline-link[aria-current='true']::before {
-  content: '';
-  position: absolute;
-  left: 2px;
-  top: 7px;
-  bottom: 7px;
-  width: 2px;
-  border-radius: 1px;
-  background: var(--accent);
 }
 
 .outline-empty {

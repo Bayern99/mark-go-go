@@ -22,8 +22,44 @@ export const PORTRAIT_TYPE_TOKENS = [
   '--text-code-leading',
 ] as const
 
+/**
+ * A palette swap redefines these surface/ink values plus PORTRAIT_STATUS_TOKENS
+ * (and, per scheme, PORTRAIT_MATERIAL_TOKENS). Values live in `styles.css`.
+ */
+export const PORTRAIT_SURFACE_TOKENS = [
+  '--chrome',
+  '--paper',
+  '--code',
+  '--ink',
+  '--ink-2',
+  '--ink-3',
+  '--ink-4',
+  '--line',
+  '--line-strong',
+  '--fill',
+  '--fill-hover',
+  '--fill-strong',
+  '--scrollbar-thumb',
+  '--scrollbar-thumb-hover',
+  '--scrollbar-thumb-active',
+] as const
+
+/* Tactile material recipes derived per scheme; swapped only with the palette. */
+export const PORTRAIT_MATERIAL_TOKENS = [
+  '--raised',
+  '--raised-press',
+  '--accent-raised',
+  '--raised-shadow',
+  '--row-shadow',
+  '--sunken-shadow',
+  '--sheet-shadow',
+  '--pop-shadow',
+  '--focus',
+] as const
+
 export const PORTRAIT_STATUS_TOKENS = [
   '--accent',
+  '--on-accent',
   '--warn',
   '--danger',
   '--accent-soft',

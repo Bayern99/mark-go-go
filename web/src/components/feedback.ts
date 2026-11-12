@@ -1,8 +1,37 @@
-import { toast } from 'sonner'
+/**
+ * Copy feedback flips the clicked control's icon to a tick, in place.
+ * `activeElement` covers engines that focus buttons on click; the last
+ * captured press covers engines (and library buttons) that do not.
+ */
+const TICK_MS = 1200
 
-/** Copy feedback is momentary and shares one slot instead of stacking. */
-export const COPY_TOAST_ID = 'mgo-copy'
+let lastPress: EventTarget | null = null
 
-export function notifyCopied(kind: 'Code' | 'Link'): void {
-  toast.success(`${kind} copied`, { id: COPY_TOAST_ID, testId: 'copy-toast' })
+if (typeof document !== 'undefined') {
+  document.addEventListener(
+    'pointerdown',
+    (e) => {
+      lastPress = e.target
+    },
+    { capture: true },
+  )
+}
+
+export function notifyCopied(_kind: 'Code' | 'Link'): void {
+  const active = document.activeElement
+  const button =
+    active instanceof HTMLElement && active.tagName === 'BUTTON'
+      ? active
+      : lastPress instanceof Element
+        ? lastPress.closest('button')
+        : null
+  const icon = button?.firstElementChild
+  if (!button || !(icon instanceof HTMLElement) || button.dataset.copyBusy) return
+  button.dataset.copyBusy = '1'
+  const original = icon.innerHTML
+  icon.innerHTML = '<i class="ph ph-check" aria-hidden="true"></i>'
+  window.setTimeout(() => {
+    icon.innerHTML = original
+    delete button.dataset.copyBusy
+  }, TICK_MS)
 }

@@ -15,6 +15,12 @@ export interface BuiltDocument {
   doc: PMNode
   /** Identity map: a node is unchanged iff `origins.get(node)?.node === node`. */
   origins: WeakMap<PMNode, BlockOrigin>
+  /**
+   * Origins in load order. Anything that re-creates a top-level node (undo,
+   * for example) produces an object the identity map misses; a structurally
+   * equal match here still proves the original bytes render it losslessly.
+   */
+  loaded: BlockOrigin[]
   segments: SourceSegment[]
   prefix: string
   trailing: string
@@ -31,11 +37,14 @@ export interface BuiltDocument {
 export function buildDocument(text: string, schema: Schema, parser: Parser): BuiltDocument {
   const { segments, prefix, trailing } = segmentMarkdown(text)
   const origins = new WeakMap<PMNode, BlockOrigin>()
+  const loaded: BlockOrigin[] = []
   const nodes: PMNode[] = []
   for (const segment of segments) {
     const node = nodeFromSegment(segment, schema, parser)
     nodes.push(node)
-    origins.set(node, { segment, source: segment.source, node })
+    const origin = { segment, source: segment.source, node }
+    origins.set(node, origin)
+    loaded.push(origin)
   }
 
   if (nodes.length === 0) {
@@ -45,7 +54,7 @@ export function buildDocument(text: string, schema: Schema, parser: Parser): Bui
   }
 
   const doc = schema.nodes.doc.create(null, nodes)
-  return { doc, origins, segments, prefix, trailing }
+  return { doc, origins, loaded, segments, prefix, trailing }
 }
 
 /** Parse one source segment into a top-level ProseMirror node. */

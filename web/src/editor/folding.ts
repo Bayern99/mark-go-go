@@ -97,57 +97,75 @@ function sectionAt(state: EditorState, pos: number): number | null {
   return found
 }
 
-/** Stable-ish identity for persistence: kind+text base plus occurrence order. */
-function anchorKeys(state: EditorState, anchors: Set<number>): string[] {
-  const seen = new Map<string, number>()
-  const keys: string[] = []
-  for (const { node, pos } of topNodes(state)) {
-    if (!anchors.has(pos)) continue
-    const base = nodeKeyBase(node)
-    if (!base) continue
-    const idx = seen.get(base) ?? 0
-    seen.set(base, idx + 1)
-    keys.push(`${base}#${idx}`)
-  }
-  return keys
+/** Content signature of one foldable node + the body it would hide. */
+function anchorSig(state: EditorState, pos: number): string | null {
+  const node = state.doc.nodeAt(pos)
+  const kind = node && anchorKind(node)
+  if (!kind || !node) return null
+  const range = hiddenRange(state, pos)
+  const body =
+    kind === 'code'
+      ? node.textContent
+      : range
+        ? state.doc.textBetween(range.from, range.to, ' ')
+        : ''
+  // djb2 over "kind|level|text|body" — 32 bits, collisions are negligible
+  // across a document's few foldable nodes.
+  const s = `${kind}|${(node.attrs.level as number) ?? ''}|${node.textContent}|${body}`
+  let h = 5381
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0
+  return String(h >>> 0)
+}
+
+export interface FoldEntry {
+  /** kind+level(+text) base — restore hint, not identity. */
+  base: string
+  /** Occurrence index among same-base nodes at save time. */
+  idx: number
+  /** Section-content signature — the real identity. */
+  sig: string
 }
 
 export interface PersistedFolds {
-  keys: string[]
-  /** Occurrence totals per base at save time; mismatch => drop that base. */
-  counts: Record<string, number>
+  entries: FoldEntry[]
 }
 
 function anchorPayload(state: EditorState, anchors: Set<number>): PersistedFolds {
-  const counts: Record<string, number> = {}
-  for (const { node } of topNodes(state)) {
+  const seen = new Map<string, number>()
+  const entries: FoldEntry[] = []
+  for (const { node, pos } of topNodes(state)) {
+    if (!anchors.has(pos)) continue
     const base = nodeKeyBase(node)
-    if (base) counts[base] = (counts[base] ?? 0) + 1
+    const sig = anchorSig(state, pos)
+    if (!base || !sig) continue
+    const idx = seen.get(base) ?? 0
+    seen.set(base, idx + 1)
+    entries.push({ base, idx, sig })
   }
-  return { keys: anchorKeys(state, anchors), counts }
+  return { entries }
 }
 
 /**
- * Resolve persisted keys to current positions. When a base's occurrence
- * count changed since saving (a same-named heading was inserted, removed
- * or reordered outside the session), every key of that base is dropped —
- * an ambiguous match must expand, not fold the wrong section.
+ * Resolve persisted entries to current positions. Identity is the section
+ * content signature, not the occurrence index: reordered same-name
+ * sections reattach at their new position, while replaced or edited
+ * bodies fail the signature and stay expanded. An entry restores only
+ * when exactly one foldable node carries its signature.
  */
 function keysToAnchors(state: EditorState, payload: PersistedFolds): Set<number> {
-  const wanted = new Set(payload.keys)
-  const now: Record<string, number> = {}
-  for (const { node } of topNodes(state)) {
-    const base = nodeKeyBase(node)
-    if (base) now[base] = (now[base] ?? 0) + 1
-  }
-  const seen = new Map<string, number>()
-  const anchors = new Set<number>()
+  const bySig = new Map<string, number[]>()
   for (const { node, pos } of topNodes(state)) {
-    const base = nodeKeyBase(node)
-    if (!base) continue
-    const idx = seen.get(base) ?? 0
-    seen.set(base, idx + 1)
-    if (payload.counts[base] === now[base] && wanted.has(`${base}#${idx}`)) anchors.add(pos)
+    if (!anchorKind(node)) continue
+    const sig = anchorSig(state, pos)
+    if (!sig) continue
+    const list = bySig.get(sig) ?? []
+    list.push(pos)
+    bySig.set(sig, list)
+  }
+  const anchors = new Set<number>()
+  for (const e of payload.entries) {
+    const candidates = bySig.get(e.sig) ?? []
+    if (candidates.length === 1) anchors.add(candidates[0])
   }
   return anchors
 }
@@ -209,10 +227,9 @@ export interface FoldFeature {
 
 export function createFoldFeature(
   getView: () => EditorView,
-  persisted: PersistedFolds = { keys: [], counts: {} },
+  persisted: PersistedFolds = { entries: [] },
   onChange?: (payload: PersistedFolds) => void,
 ): FoldFeature {
-  const persistedKeys = persisted
   const dispatchMeta = (payload: { toggle?: number; expand?: number[] }) => {
     const view = getView()
     const tr = view.state.tr
@@ -249,26 +266,17 @@ export function createFoldFeature(
       return true
     },
     keys() {
-      const state = foldPluginKey.getState(getView().state)
-      return state ? anchorKeys(getView().state, state.anchors) : []
+      const p = api.payload()
+      return p.entries.map((e) => `${e.base}#${e.idx}@${e.sig}`)
     },
     payload() {
       const state = foldPluginKey.getState(getView().state)
       return state
         ? anchorPayload(getView().state, state.anchors)
-        : { keys: [], counts: {} }
+        : { entries: [] }
     },
   }
 
-  // Count of each key base in a fresh state, for reload-time restore.
-  function liveCounts(instance: EditorState): Record<string, number> {
-    const counts: Record<string, number> = {}
-    for (const { node } of topNodes(instance)) {
-      const base = nodeKeyBase(node)
-      if (base) counts[base] = (counts[base] ?? 0) + 1
-    }
-    return counts
-  }
 
   const plugin = new Plugin<FoldState>({
     key: foldPluginKey,
@@ -276,13 +284,9 @@ export function createFoldFeature(
       init(_config, instance) {
         // On reloads (load() rebuilds the state) keep the live session
         // folds; only the first state falls back to persisted keys.
-        const live = api.keys()
-        return {
-          anchors: keysToAnchors(
-            instance,
-            live.length > 0 ? { keys: live, counts: liveCounts(instance) } : persistedKeys,
-          ),
-        }
+        // On reloads the live payload re-resolves against the new doc.
+        const live = api.payload()
+        return { anchors: keysToAnchors(instance, live.entries.length > 0 ? live : persisted) }
       },
       apply(tr, value) {
         const action = tr.getMeta(foldPluginKey) as

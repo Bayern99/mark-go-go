@@ -661,17 +661,22 @@ export async function createMarkdownEditor(
 
   const foldKey = options.docKey ? `mgo.folds:${options.docKey}` : null
   const persistedFolds = ((): PersistedFolds => {
-    if (!foldKey) return { keys: [], counts: {} }
+    if (!foldKey) return { entries: [] }
     try {
       const raw = localStorage.getItem(foldKey)
-      const parsed = raw ? (JSON.parse(raw) as unknown) : {}
-      const keys = Array.isArray((parsed as PersistedFolds)?.keys)
-        ? (parsed as PersistedFolds).keys.filter((k): k is string => typeof k === 'string')
+      const parsed = raw ? (JSON.parse(raw) as { entries?: unknown }) : {}
+      const entries = Array.isArray(parsed?.entries)
+        ? parsed.entries.filter(
+            (e): e is { base: string; idx: number; sig: string } =>
+              typeof e === 'object' && e !== null &&
+              typeof (e as { base?: unknown }).base === 'string' &&
+              typeof (e as { idx?: unknown }).idx === 'number' &&
+              typeof (e as { sig?: unknown }).sig === 'string',
+          )
         : []
-      const counts = typeof (parsed as PersistedFolds)?.counts === 'object' ? (parsed as PersistedFolds).counts : {}
-      return { keys, counts }
+      return { entries }
     } catch {
-      return { keys: [], counts: {} }
+      return { entries: [] }
     }
   })()
   const foldFeature = createFoldFeature(

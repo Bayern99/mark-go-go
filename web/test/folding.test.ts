@@ -132,25 +132,28 @@ describe('section folding', () => {
   })
 
   it('persists fold keys per doc and restores on remount', async () => {
-    localStorage.setItem(
-      'mgo.folds:test-doc',
-      JSON.stringify({ keys: ['h2:beta#0'], counts: { 'h2:beta': 1 } }),
-    )
-    const root = document.createElement('div')
-    document.body.append(root)
     const { createMarkdownEditor } = await import('../src/editor/createEditor')
-    const editor = await createMarkdownEditor(root, {
-      initialText: DOC,
-      docKey: 'test-doc',
-    })
-    expect(editor.foldAnchors().length).toBe(1)
-    expect(hiddenCount(editor)).toBe(1) // Beta's section body is one para
-    // collapse state written back
+    const mk = () => {
+      const root = document.createElement('div')
+      document.body.append(root)
+      return root
+    }
+    const r1 = mk()
+    const e1 = await createMarkdownEditor(r1, { initialText: DOC, docKey: 'test-doc' })
+    const [, , , beta] = headingPositions(e1)
+    e1.toggleFold(beta)
     const stored = JSON.parse(localStorage.getItem('mgo.folds:test-doc')!)
-    expect(stored.keys).toEqual(['h2:beta#0'])
-    expect(stored.counts['h2:beta']).toBe(1)
-    await editor.destroy()
-    root.remove()
+    expect(stored.entries.length).toBe(1)
+    expect(stored.entries[0].base).toBe('h2:beta')
+    await e1.destroy()
+    r1.remove()
+
+    const r2 = mk()
+    const e2 = await createMarkdownEditor(r2, { initialText: DOC, docKey: 'test-doc' })
+    expect(e2.foldAnchors().length).toBe(1)
+    expect(hiddenCount(e2)).toBe(1) // Beta's section body is one para
+    await e2.destroy()
+    r2.remove()
     localStorage.removeItem('mgo.folds:test-doc')
   })
 })
@@ -177,26 +180,59 @@ describe('code block folding', () => {
 })
 
 describe('fold boundary cases', () => {
-  it('restores only unambiguous folds when same-name counts changed', async () => {
-    // saved: second "Same" folded, "Other" folded; then external edit added
-    // a third "Same" heading -> every 'h2:same' key is ambiguous -> dropped,
-    // while 'h2:other' still matches.
-    localStorage.setItem(
-      'mgo.folds:dup-doc',
-      JSON.stringify({ keys: ['h2:same#1', 'h2:other#0'], counts: { 'h2:same': 2, 'h2:other': 1 } }),
-    )
-    const edited = '# A\n\nx\n\n## Same\n\ns0\n\n## Same\n\ns1\n\n## Same\n\ns2\n\n## Other\n\no\n'
-    const root = document.createElement('div')
-    document.body.append(root)
+  it('restores reordered duplicate sections by content signature', async () => {
     const { createMarkdownEditor } = await import('../src/editor/createEditor')
-    const editor = await createMarkdownEditor(root, { initialText: edited, docKey: 'dup-doc' })
-    // 'h2:same' dropped (count 2 -> 3), 'h2:other' survives
-    expect(editor.foldAnchors().length).toBe(1)
-    const pos = editor.foldAnchors()[0]
-    expect(editor.getView().state.doc.nodeAt(pos)!.textContent).toBe('Other')
-    await editor.destroy()
-    root.remove()
-    localStorage.removeItem('mgo.folds:dup-doc')
+    const mk = () => {
+      const root = document.createElement('div')
+      document.body.append(root)
+      return root
+    }
+    const doc = '# A\n\nx\n\n## Same\n\nfirst body\n\n## Same\n\nsecond body\n\n## Other\n\no\n'
+    // Session 1: fold the second "Same" (body 'second body')
+    const r1 = mk()
+    const e1 = await createMarkdownEditor(r1, { initialText: doc, docKey: 'sig-doc' })
+    let heads: number[] = []
+    e1.getView().state.doc.forEach((n: any, pos: number) => {
+      if (n.type.name === 'heading' && n.textContent === 'Same') heads.push(pos)
+    })
+    e1.toggleFold(heads[1])
+    await e1.destroy()
+    r1.remove()
+
+    // Session 2: the two "Same" sections were reordered externally. The
+    // folded one (now first) must reattach by content, not by index.
+    const reordered = '# A\n\nx\n\n## Same\n\nsecond body\n\n## Same\n\nfirst body\n\n## Other\n\no\n'
+    const r2 = mk()
+    const e2 = await createMarkdownEditor(r2, { initialText: reordered, docKey: 'sig-doc' })
+    const anchors = e2.foldAnchors()
+    expect(anchors.length).toBe(1)
+    const node = e2.getView().state.doc.nodeAt(anchors[0])!
+    // hidden body after the anchor must be 'second body'
+    const after = e2.getView().state.doc.textBetween(
+      anchors[0] + node.nodeSize,
+      anchors[0] + node.nodeSize + 20,
+    )
+    expect(after).toContain('second body')
+    await e2.destroy()
+    r2.remove()
+
+    // Session 3: same duplicate count, but the folded section's body was
+    // replaced externally -> signature no longer matches -> expands.
+    const replaced = '# A\n\nx\n\n## Same\n\nsecond body\n\n## Same\n\nCHANGED\n\n## Other\n\no\n'
+    // Fresh storage: seed it as if 'first body' was folded.
+    localStorage.removeItem('mgo.folds:sig-doc')
+    const r3 = mk()
+    const e3 = await createMarkdownEditor(r3, { initialText: doc, docKey: 'sig-doc' })
+    e3.toggleFold(heads[0]) // fold 'first body' Same
+    await e3.destroy()
+    r3.remove()
+    const r4 = mk()
+    const e4 = await createMarkdownEditor(r4, { initialText: replaced, docKey: 'sig-doc' })
+    // 'first body' no longer exists -> nothing restores
+    expect(e4.foldAnchors().length).toBe(0)
+    await e4.destroy()
+    r4.remove()
+    localStorage.removeItem('mgo.folds:sig-doc')
   })
 
   it('expands a fold when the caret is placed inside its hidden range', async () => {

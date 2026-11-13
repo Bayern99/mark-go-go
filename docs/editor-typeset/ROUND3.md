@@ -162,12 +162,23 @@ transitively installed version — no dual-package risk), `web/test/folding.test
   exactly as visible content does — the DOM is `display:none`, the document is
   intact. Selections cannot *start* inside hidden DOM, so no accidental
   hidden-region operations arise.
-- Persistence: fold anchors serialize as `kind:level:text#occurrence` keys into
-  `localStorage['mgo.folds:'+docKey]` (docKey = `host.id`, passed from App).
-  **Deliberate behavior: folds survive close/reopen** — reopening a document
-  restores the sections the user chose to collapse. Keys that no longer match any
-  node are dropped silently. `load()` (reload/setMarkdown) restores from the live
-  session keys, so folds survive in-session reloads too.
+- Persistence: fold anchors serialize as `{base, idx, sig}` entries into
+  `localStorage['mgo.folds:'+docKey]` where docKey = `initialState.path || host.id`
+  (App passes the document path; `host.id` is a `randomText()` per open and must
+  NOT be the key — it never survives an app restart). `sig` is a djb2 of
+  `kind|level|heading text|hidden body text` — the *content* identity, not the
+  occurrence index.
+- Restoration policy (simplest reliable): an entry restores only when **exactly
+  one** foldable node carries its signature. Reordered duplicate headings
+  reattach at their new position; replaced or edited bodies fail the signature;
+  a deleted section's sig is simply absent; two sections with identical heading
+  AND identical body produce the same sig → `candidates > 1` → both expand.
+  Ambiguous or unmatched entries are dropped silently — never applied to the
+  wrong section.
+- **Verified across a real quit/reopen**: fold "Alpha Unique" + collapse the
+  code block, `cmd+q`, relaunch — both folds restore (screenshot evidence in
+  session notes). In-session `load()`/setMarkdown restores from live session
+  keys as before.
 
 ## Whole code-block collapse
 
@@ -225,3 +236,44 @@ The 18px occlusion is real but bounded; side placement removes it only at very
 wide windows, costs ~6–10× pointer travel, and adds a fallback path. Not clearly
 superior → **retain current placement**; Escape-to-close, hide-during-drag and
 focus continuity are preserved unchanged.
+
+## Closure addendum — ambiguous restoration + native acceptance
+
+### Duplicate-heading restoration (final policy)
+
+Occurrence-index keys (`h2:same#1`) were replaced by content-signature entries
+after finding that an external edit preserving the duplicate *count* could still
+silently reattach a fold to the wrong section. Regression cases now covered in
+`web/test/folding.test.ts`:
+
+- Two same-level headings with identical text but different bodies; fold one;
+  sections reordered externally before reopen → fold reattaches to the **same
+  content** at its new position.
+- Same setup but the folded section's body replaced externally (count
+  unchanged) → signature mismatch → expands.
+- Deletion of the folded duplicate → sig absent → expands.
+- Two sections with identical heading **and** identical body → same sig,
+  `candidates > 1` → both expand (conservative).
+- Unique headings, code blocks, session mapping, `load()` reload, undo — all
+  unchanged behavior, still covered.
+
+### Native acceptance (macOS dev build, `go tool mygo dev` + vite :5173)
+
+Performed in the real app (window driven via cua-driver; file `/tmp/mgg-r3-accept.md`):
+
+- English typing (heading + paragraph), paste via `cmd+v`, `cmd+z` undo — all
+  verified on screen and in saved file bytes.
+- Section fold via `cmd-alt-left` and via heading chevron click; code block via
+  tools-row chevron → `› code · 4 lines` stub; expand via stub click and
+  `cmd-alt-right`.
+- **Full quit (`cmd+q`, process exit) → relaunch → same saved file → both folds
+  restored** (Alpha folded, code stub collapsed) — confirms the path-keyed
+  persistence fix.
+- Expand → type → `cmd+s` → edit persisted; `cmd+z` → `cmd+s` → file md5
+  identical to pre-edit bytes. Folding alone never dirtied the document.
+
+### Remaining manual item
+
+- ☐ **macOS Pinyin candidate confirmation** (paragraph + table cell): CGEvent
+  keystrokes cannot produce a real IME candidate window; synthetic composition
+  is not a substitute. Requires a human typing run with an actual input source.

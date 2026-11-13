@@ -68,6 +68,14 @@
   letter-spacing: 0;
 }
 
+/* Balanced multi-line splits on expressive levels; run-in levels stay greedy
+   since they almost never reach a second line. Works in both engines. */
+.crepe-root .milkdown .ProseMirror h1,
+.crepe-root .milkdown .ProseMirror h2,
+.crepe-root .milkdown .ProseMirror h3 {
+  text-wrap: balance;
+}
+
 .crepe-root .milkdown .ProseMirror h1 {
   font-size: var(--text-display-size);
   line-height: var(--text-display-leading);
@@ -91,14 +99,34 @@
   margin: 28px 0 8px;
 }
 
+/* Run-in levels share the body font, leading and 24/4 spacing; the ladder
+   steps size (15/14/13) and mutes color with depth so each level has its
+   own register without decorative styling. */
 .crepe-root .milkdown .ProseMirror h4,
 .crepe-root .milkdown .ProseMirror h5,
 .crepe-root .milkdown .ProseMirror h6 {
   font-family: var(--font-sans);
-  font-size: var(--text-reading-size);
   line-height: var(--text-reading-leading);
-  color: var(--ink-2);
   margin: 24px 0 4px;
+}
+
+.crepe-root .milkdown .ProseMirror h4 {
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.crepe-root .milkdown .ProseMirror h5 {
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+/* Deepest run-in level steps down by weight rather than a third color:
+   ink-3 at 13px measured 5.07:1 — below comfortable contrast for a
+   scanning element. */
+.crepe-root .milkdown .ProseMirror h6 {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
 }
 
 .crepe-root .milkdown .ProseMirror p {
@@ -107,6 +135,16 @@
   letter-spacing: var(--text-reading-tracking);
   padding: 0;
   margin: 0 0 16px;
+  /* Multi-line scoring wrap for prose: penalizes widowed last lines and bad
+     breaks around unbreakable tokens (measured: eliminates all widows in
+     WebKit, the shipped engine; Chromium treats it as a no-op). */
+  text-wrap: pretty;
+}
+
+/* Cell paragraphs keep greedy wrapping: pretty rebalances multi-line cells
+   and would move column widths under the user's feet. */
+.crepe-root .milkdown .ProseMirror :is(td, th) > p {
+  text-wrap: wrap;
 }
 
 .crepe-root .milkdown .ProseMirror strong {

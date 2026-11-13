@@ -47,6 +47,7 @@ import { noteBlock, noteInsertionOffset, parseNote, withNoteText } from '../mark
 import { languages } from './languages'
 import { askForMarkdown, askForNote, ComposerScope } from './noteDialog'
 import { createSourceEditor, type SourceEditor } from './source/sourceEditor'
+import { createFoldFeature, foldPluginKey, type PersistedFolds } from './folding'
 
 const NOTE_ICON =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5h14v10H10l-5 4z"/></svg>'
@@ -85,6 +86,10 @@ export interface MarkdownEditor {
    * Returns false when the offset falls outside the current composed text.
    */
   reveal(offset: number): boolean
+  /** Toggle the fold anchored at `pos` (heading or code block node start). */
+  toggleFold(pos: number): void
+  /** Current fold anchor positions in document coordinates. */
+  foldAnchors(): number[]
   /**
    * Select a Markdown source range and scroll its start to the top of the
    * editor's scroll area. Rich text selects whole top-level blocks: from the
@@ -125,6 +130,8 @@ export interface MarkdownEditor {
 export interface CreateEditorOptions {
   initialText?: string
   onChange?: (markdown: string) => void
+  /** Stable document identity; enables fold-state persistence in localStorage. */
+  docKey?: string
 }
 
 export async function createMarkdownEditor(
@@ -651,8 +658,45 @@ export async function createMarkdownEditor(
     },
   })
 
+  const foldKey = options.docKey ? `mgo.folds:${options.docKey}` : null
+  const persistedFolds = ((): PersistedFolds => {
+    if (!foldKey) return { keys: [], counts: {} }
+    try {
+      const raw = localStorage.getItem(foldKey)
+      const parsed = raw ? (JSON.parse(raw) as unknown) : {}
+      const keys = Array.isArray((parsed as PersistedFolds)?.keys)
+        ? (parsed as PersistedFolds).keys.filter((k): k is string => typeof k === 'string')
+        : []
+      const counts = typeof (parsed as PersistedFolds)?.counts === 'object' ? (parsed as PersistedFolds).counts : {}
+      return { keys, counts }
+    } catch {
+      return { keys: [], counts: {} }
+    }
+  })()
+  const foldFeature = createFoldFeature(
+    () => view,
+    persistedFolds,
+    foldKey
+      ? (keys) => {
+          try {
+            localStorage.setItem(foldKey, JSON.stringify(keys))
+          } catch {
+            // storage unavailable → session-only folds
+          }
+        }
+      : undefined,
+  )
+
   const plugins = view.state.plugins.filter((plugin) => !isIdentityBreaking(plugin))
-  plugins.push(selectionPlugin, lockedViewPlugin, historyWatch, tableCaretPlugin)
+  plugins.push(
+    selectionPlugin,
+    lockedViewPlugin,
+    historyWatch,
+    tableCaretPlugin,
+    ...foldFeature.plugins,
+  )
+  // Boundary keys must win over the base keymap's joinBackward/joinForward.
+  plugins.unshift(...foldFeature.earlyPlugins)
 
   const load = (text: string) => {
     composerScope.cancel()
@@ -726,6 +770,9 @@ export async function createMarkdownEditor(
     const pos = block ? topLevelPosition(view.state.doc, block.node) : 1
     if (pos === undefined) return false
 
+    // Navigation must never land inside a collapsed section.
+    foldFeature.expandAt(pos)
+
     const selection =
       block && block.node.type.name === LOCKED_NODE
         ? NodeSelection.create(view.state.doc, pos)
@@ -754,6 +801,8 @@ export async function createMarkdownEditor(
     const start = topLevelPosition(doc, first.node)
     const lastStart = topLevelPosition(doc, last.node)
     if (start === undefined || lastStart === undefined) return false
+
+    foldFeature.expandRange(start, lastStart + last.node.nodeSize)
 
     const selection =
       first === last && first.node.type.name === LOCKED_NODE
@@ -850,6 +899,8 @@ export async function createMarkdownEditor(
       }
     },
     reveal,
+    toggleFold: (pos: number) => foldFeature.toggle(pos),
+    foldAnchors: () => [...(foldPluginKey.getState(view.state)?.anchors ?? [])],
     select,
     addNote,
     onSelectionChange(fn) {

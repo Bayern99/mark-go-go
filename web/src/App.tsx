@@ -311,7 +311,12 @@ export function DocumentPane({
 
       const root = editorRoot.current
       if (!root) return
-      const editor = await createMarkdownEditor(root, { initialText: initial.text })
+      const editor = await createMarkdownEditor(root, {
+        initialText: initial.text,
+        // Fold state persists per path, like the view mode; untitled
+        // documents fall back to the session-bound host id.
+        docKey: initialState.path || host.id,
+      })
       if (disposed) {
         await editor.destroy()
         return

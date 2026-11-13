@@ -18,3 +18,7 @@ Single-context：根目录 `GLOSSARY.md` + `docs/adr/`。See `docs/agents/domain
 
 界面与组件任务遵循《界面任务执行规范》（有界盘点 → 确定最小实现 → 处理未决事项 → 验证真实行为 → 四段式交付），复用语义 Token、已有组件与区块，使视觉、交互与真实业务状态一致。See `docs/agents/ui-tasks.md`.
 
+### Editor typeset bench
+
+编辑器排版基线测量与回归证据在 `docs/editor-typeset/`，运行方式见 `docs/editor-typeset/README.md`.
+

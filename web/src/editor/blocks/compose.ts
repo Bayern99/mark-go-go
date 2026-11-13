@@ -7,6 +7,8 @@ export interface ComposeContext {
   schema: Schema
   serializer: Serializer
   origins: WeakMap<PMNode, BlockOrigin>
+  /** Origins in load order; consulted when identity misses (see `originFor`). */
+  loaded: BlockOrigin[]
   segments: BuiltDocument['segments']
   prefix: string
   trailing: string
@@ -72,9 +74,17 @@ export function composeWithRanges(doc: PMNode, ctx: ComposeContext): ComposedDoc
 
   let out = ''
   const blocks: ComposedBlock[] = []
+  // Nodes still bound by identity already own their origin for this pass; a
+  // structurally equal newcomer must draw from what is left, or two equal
+  // twins could reuse one origin and emit its bytes twice.
+  const claimed = new Set<number>()
+  for (const node of nodes) {
+    const bound = ctx.origins.get(node)
+    if (bound) claimed.add(bound.segment.index)
+  }
   for (let i = 0; i < nodes.length; i += 1) {
     const node = nodes[i]
-    const origin = ctx.origins.get(node)
+    const origin = originFor(node, i, ctx, claimed)
 
     if (i === 0) {
       if (origin && origin.segment.index === 0) out += ctx.prefix
@@ -89,6 +99,48 @@ export function composeWithRanges(doc: PMNode, ctx: ComposeContext): ComposedDoc
 
   out += endsAsLoaded(nodes, ctx) ? ctx.trailing : '\n'
   return { text: out, blocks }
+}
+
+/**
+ * Undo and other node re-creation paths produce a top-level node that is
+ * structurally equal to what these bytes parsed into but is a different
+ * object, so the identity map misses. A structural match means the original
+ * bytes are a lossless rendering of the node, so it keeps its loaded origin
+ * and its original bytes. The match is registered back into the identity
+ * map the same way `setNoteText` does, so the fast path takes over again.
+ *
+ * Each origin backs at most one node per pass: `claimed` is pre-filled with
+ * every identity-bound node, so a structurally equal copy lands on an
+ * origin nobody owns instead of stealing a twin's bytes.
+ */
+function originFor(
+  node: PMNode,
+  index: number,
+  ctx: ComposeContext,
+  claimed: Set<number>,
+): BlockOrigin | undefined {
+  const direct = ctx.origins.get(node)
+  if (direct !== undefined || node.type.name === LOCKED_NODE) return direct
+  const match = findLoadedOrigin(node, index, ctx.loaded, claimed)
+  if (!match) return undefined
+  claimed.add(match.segment.index)
+  const origin = { ...match, node }
+  ctx.origins.set(node, origin)
+  return origin
+}
+
+function findLoadedOrigin(
+  node: PMNode,
+  index: number,
+  loaded: readonly BlockOrigin[],
+  claimed: ReadonlySet<number>,
+): BlockOrigin | undefined {
+  const equal = (origin: BlockOrigin) =>
+    !claimed.has(origin.segment.index) &&
+    origin.node.type === node.type &&
+    origin.node.nodeSize === node.nodeSize &&
+    origin.node.eq(node)
+  return loaded.find((origin) => origin.segment.index === index && equal(origin)) ?? loaded.find(equal)
 }
 
 const BLANK_LINE = /(?:\r\n?|\n)[ \t]*(?:\r\n?|\n)/

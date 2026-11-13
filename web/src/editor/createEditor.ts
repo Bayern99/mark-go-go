@@ -47,6 +47,8 @@ import { noteBlock, noteInsertionOffset, parseNote, withNoteText } from '../mark
 import { languages } from './languages'
 import { askForMarkdown, askForNote, ComposerScope } from './noteDialog'
 import { createSourceEditor, type SourceEditor } from './source/sourceEditor'
+import { createFoldFeature, foldPluginKey, type PersistedFolds } from './folding'
+import { createCellDragPlugin } from './tableCellDrag'
 
 const NOTE_ICON =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5h14v10H10l-5 4z"/></svg>'
@@ -85,6 +87,10 @@ export interface MarkdownEditor {
    * Returns false when the offset falls outside the current composed text.
    */
   reveal(offset: number): boolean
+  /** Toggle the fold anchored at `pos` (heading or code block node start). */
+  toggleFold(pos: number): void
+  /** Current fold anchor positions in document coordinates. */
+  foldAnchors(): number[]
   /**
    * Select a Markdown source range and scroll its start to the top of the
    * editor's scroll area. Rich text selects whole top-level blocks: from the
@@ -125,6 +131,8 @@ export interface MarkdownEditor {
 export interface CreateEditorOptions {
   initialText?: string
   onChange?: (markdown: string) => void
+  /** Stable document identity; enables fold-state persistence in localStorage. */
+  docKey?: string
 }
 
 export async function createMarkdownEditor(
@@ -191,6 +199,7 @@ export async function createMarkdownEditor(
     schema,
     serializer,
     origins: current.origins,
+    loaded: current.loaded,
     segments: current.segments,
     prefix: current.prefix,
     trailing: current.trailing,
@@ -594,8 +603,107 @@ export async function createMarkdownEditor(
     }),
   })
 
+  // Milkdown #2495: Crepe's table node view answers the first click into a
+  // cell with a deferred rAF/setTimeout dispatch that selects the whole cell
+  // paragraph. The transaction is built from state captured at click time,
+  // so it can overwrite a newer selection — and typing or IME after one
+  // click replaces the cell's text. Nothing else creates that selection
+  // shape (prosemirror-tables uses CellSelection; allowTableNodeSelection
+  // selects the table node), so drop it unconditionally. The same view
+  // flags pointer drags and Escape so the toolbar CSS can stay hidden until
+  // the selection settles.
+  const tableCaretPlugin = new Plugin({
+    filterTransaction(tr) {
+      if (
+        tr.docChanged ||
+        !tr.selectionSet ||
+        !(tr.selection instanceof NodeSelection) ||
+        tr.selection.node.type.name !== 'paragraph' ||
+        (tr.selection.$from.parent.type.name !== 'table_cell' &&
+          tr.selection.$from.parent.type.name !== 'table_header')
+      ) {
+        return true
+      }
+      return false
+    },
+    view(editorView) {
+      const onPointerDown = () => {
+        wysiwygRoot.classList.add('mgo-pointer-selecting')
+        wysiwygRoot.classList.remove('mgo-toolbar-dismissed')
+      }
+      const onKeyDown = (event: KeyboardEvent) => {
+        if (event.key === 'Escape' && !editorView.state.selection.empty) {
+          wysiwygRoot.classList.add('mgo-toolbar-dismissed')
+        }
+      }
+      const endPointerSelect = () => wysiwygRoot.classList.remove('mgo-pointer-selecting')
+      editorView.dom.addEventListener('pointerdown', onPointerDown, true)
+      editorView.dom.addEventListener('keydown', onKeyDown)
+      window.addEventListener('pointerup', endPointerSelect)
+      window.addEventListener('pointercancel', endPointerSelect)
+      window.addEventListener('blur', endPointerSelect)
+      return {
+        update(currentView, prevState) {
+          if (!currentView.state.selection.eq(prevState.selection)) {
+            wysiwygRoot.classList.remove('mgo-toolbar-dismissed')
+          }
+        },
+        destroy() {
+          editorView.dom.removeEventListener('pointerdown', onPointerDown, true)
+          editorView.dom.removeEventListener('keydown', onKeyDown)
+          window.removeEventListener('pointerup', endPointerSelect)
+          window.removeEventListener('pointercancel', endPointerSelect)
+          window.removeEventListener('blur', endPointerSelect)
+        },
+      }
+    },
+  })
+
+  const foldKey = options.docKey ? `mgo.folds:${options.docKey}` : null
+  const persistedFolds = ((): PersistedFolds => {
+    if (!foldKey) return { entries: [] }
+    try {
+      const raw = localStorage.getItem(foldKey)
+      const parsed = raw ? (JSON.parse(raw) as { entries?: unknown }) : {}
+      const entries = Array.isArray(parsed?.entries)
+        ? parsed.entries.filter(
+            (e): e is { base: string; idx: number; sig: string } =>
+              typeof e === 'object' && e !== null &&
+              typeof (e as { base?: unknown }).base === 'string' &&
+              typeof (e as { idx?: unknown }).idx === 'number' &&
+              typeof (e as { sig?: unknown }).sig === 'string',
+          )
+        : []
+      return { entries }
+    } catch {
+      return { entries: [] }
+    }
+  })()
+  const foldFeature = createFoldFeature(
+    () => view,
+    persistedFolds,
+    foldKey
+      ? (keys) => {
+          try {
+            localStorage.setItem(foldKey, JSON.stringify(keys))
+          } catch {
+            // storage unavailable → session-only folds
+          }
+        }
+      : undefined,
+  )
+
   const plugins = view.state.plugins.filter((plugin) => !isIdentityBreaking(plugin))
-  plugins.push(selectionPlugin, lockedViewPlugin, historyWatch)
+  plugins.push(
+    selectionPlugin,
+    lockedViewPlugin,
+    historyWatch,
+    tableCaretPlugin,
+    createCellDragPlugin(),
+    ...foldFeature.plugins,
+  )
+  // Boundary keys must win over the base keymap's joinBackward/joinForward.
+  plugins.unshift(...foldFeature.earlyPlugins)
 
   const load = (text: string) => {
     composerScope.cancel()
@@ -669,6 +777,9 @@ export async function createMarkdownEditor(
     const pos = block ? topLevelPosition(view.state.doc, block.node) : 1
     if (pos === undefined) return false
 
+    // Navigation must never land inside a collapsed section.
+    foldFeature.expandAt(pos)
+
     const selection =
       block && block.node.type.name === LOCKED_NODE
         ? NodeSelection.create(view.state.doc, pos)
@@ -697,6 +808,8 @@ export async function createMarkdownEditor(
     const start = topLevelPosition(doc, first.node)
     const lastStart = topLevelPosition(doc, last.node)
     if (start === undefined || lastStart === undefined) return false
+
+    foldFeature.expandRange(start, lastStart + last.node.nodeSize)
 
     const selection =
       first === last && first.node.type.name === LOCKED_NODE
@@ -793,6 +906,8 @@ export async function createMarkdownEditor(
       }
     },
     reveal,
+    toggleFold: (pos: number) => foldFeature.toggle(pos),
+    foldAnchors: () => [...(foldPluginKey.getState(view.state)?.anchors ?? [])],
     select,
     addNote,
     onSelectionChange(fn) {

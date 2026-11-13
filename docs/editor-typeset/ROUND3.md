@@ -272,8 +272,9 @@ Performed in the real app (window driven via cua-driver; file `/tmp/mgg-r3-accep
 - Expand → type → `cmd+s` → edit persisted; `cmd+z` → `cmd+s` → file md5
   identical to pre-edit bytes. Folding alone never dirtied the document.
 
-### Remaining manual item
+### Manual item — resolved
 
-- ☐ **macOS Pinyin candidate confirmation** (paragraph + table cell): CGEvent
-  keystrokes cannot produce a real IME candidate window; synthetic composition
-  is not a substitute. Requires a human typing run with an actual input source.
+- ☑ **macOS Pinyin candidate confirmation** — confirmed manually by the user in
+  the real app (candidate window, commit, continued typing, undo; paragraph and
+  table cell). CGEvent keystrokes cannot produce a real IME candidate window;
+  synthetic composition is not a substitute — hence the manual run.

@@ -289,9 +289,9 @@ describe('editor typeset', () => {
       expect(view.state.selection.constructor.name).toBe('TextSelection')
 
       // drag across the cell boundary: Crepe's stopEvent swallows the
-      // mousedown before prosemirror-tables can start a cell-selection drag,
-      // so the app never produced a CellSelection this way — baseline ends
-      // with a collapsed TextSelection and the fix must not regress that.
+      // mousedown before prosemirror-tables can arm its drag watcher, so a
+      // raw-listener bridge in tableCellDrag.ts dispatches the CellSelection
+      // itself once the pointer crosses a cell boundary.
       await session.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: inside.x + 2, y: inside.y + 10, button: 'left', clickCount: 1 })
       const next = rects[1]
       const steps = 6
@@ -301,7 +301,7 @@ describe('editor typeset', () => {
       }
       await session.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: next.x + next.width - 4, y: next.y + 12, button: 'left' })
       await vi.waitFor(() => {
-        expect(view.state.selection.constructor.name).toBe('TextSelection')
+        expect(view.state.selection.constructor.name).toBe('CellSelection')
       })
       // the drop indicator schedules onHide on a 30ms timer; let it fire while
       // the editor is still alive so teardown doesn't hit a disposed ctx

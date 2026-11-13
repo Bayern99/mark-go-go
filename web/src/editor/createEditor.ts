@@ -48,6 +48,7 @@ import { languages } from './languages'
 import { askForMarkdown, askForNote, ComposerScope } from './noteDialog'
 import { createSourceEditor, type SourceEditor } from './source/sourceEditor'
 import { createFoldFeature, foldPluginKey, type PersistedFolds } from './folding'
+import { createCellDragPlugin } from './tableCellDrag'
 
 const NOTE_ICON =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5h14v10H10l-5 4z"/></svg>'
@@ -693,6 +694,7 @@ export async function createMarkdownEditor(
     lockedViewPlugin,
     historyWatch,
     tableCaretPlugin,
+    createCellDragPlugin(),
     ...foldFeature.plugins,
   )
   // Boundary keys must win over the base keymap's joinBackward/joinForward.

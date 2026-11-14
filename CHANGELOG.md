@@ -7,7 +7,53 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## [0.2.0] - 2026-11-11
+## [0.3.0] - 2026-11-14
+
+Editor typeset and reading-control rounds on the Milkdown Crepe/ProseMirror editor, keeping the Go/WebView architecture, font system and byte-preserving Markdown model unchanged. Audit, measurements and regression evidence live in [docs/editor-typeset/](docs/editor-typeset/).
+
+### English
+
+#### Editing reliability
+
+- Undo and structural node recreation now restore the document's original Markdown bytes instead of reserialized output; paste, table and heading edits keep byte fidelity.
+- Table caret, toolbar and table-control behaviors refined; deferred Crepe cell selections can no longer overwrite newer selections.
+
+#### Editorial rhythm
+
+- `text-wrap: pretty` for prose (table cells excluded), `balance` for H1–H3, and H4–H6 size/color differentiation on the heading ladder — verified zero widows on WebKit across English, Chinese, bilingual and long LLM fixtures.
+
+#### Long-document reading control
+
+- Section folding by heading: a restrained chevron plus `Cmd/Ctrl-Alt-←/→`; the folded range ends at the next same-or-higher-level heading; nested folds keep independent state.
+- Folding is display-only: Markdown bytes, undo history and the dirty flag are untouched; folding the section containing the caret moves the caret to the heading end, and outline/search navigation expands folds covering the target.
+- Whole code-block collapse to a `› code · N lines` stub via a chevron in the block's own tools row — same nodeview, no CodeMirror rebuild, no height jump.
+- Cross-cell drag now creates a real `CellSelection` with `.selectedCell` highlights and proper `data-pm-slice` table slices on copy, while single clicks, intra-cell drags and row/column controls are unchanged.
+- Fold state persists per document path with content-signature identity: reordered duplicate headings reattach correctly, and replaced, deleted or ambiguous sections expand rather than misfold. Verified across a full app quit and relaunch.
+- The selection toolbar's top placement was kept after measuring a side-margin alternative (occlusion 18px vs ~6–10× pointer travel and insufficient real margin).
+
+### 中文
+
+编辑器排版与长文阅读控制三轮精修，基于 Milkdown Crepe/ProseMirror，保持 Go/WebView 架构、字体系统与字节保真的 Markdown 数据模型不变。审计、测量与回归证据见 [docs/editor-typeset/](docs/editor-typeset/)。
+
+#### 编辑可靠性
+
+- 撤销与结构性节点重建现在恢复文档的原始 Markdown 字节，而非重新序列化结果；粘贴、表格与标题编辑保持字节保真。
+- 表格光标、工具栏与表格控件细节修正；延迟的单元格选择不再覆盖新选区。
+
+#### 排版节奏
+
+- 正文启用 `text-wrap: pretty`（表格单元格除外），H1–H3 使用 `balance`，H4–H6 按标题阶梯区分字号与颜色——WebKit 下英文、中文、混排与长文夹具实测零孤行。
+
+#### 长文阅读控制
+
+- 按标题折叠章节：标题行尾折叠箭头与 `Cmd/Ctrl-Alt-←/→` 键盘操作；折叠范围截止于下一个同级或更高级标题；嵌套折叠各自独立。
+- 折叠只改变显示状态：Markdown 字节、撤销历史与修改标记均不受影响；折叠含光标的章节时光标移至标题末尾；大纲/搜索定位会先展开覆盖目标的折叠。
+- 代码块整段收起为 `› code · N lines` 单行占位，通过块内工具行箭头操作——复用同一 nodeview，不重建 CodeMirror、无高度跳动。
+- 跨单元格拖选现在产生真实的 `CellSelection` 与 `.selectedCell` 高亮，复制产出 `data-pm-slice` 表格切片；单击、格内拖选与行列控件行为不变。
+- 折叠状态按文档路径持久化，以内容签名识别章节：重排的重名标题正确对应，被替换、删除或无法确定的章节展开而非错挂。已通过完全退出再重开的真机验证。
+- 选区工具栏保留顶部方案——实测侧边方案虽无遮挡但指针移动距离增加约 6–10 倍，且实际可用边距不足。
+
+
 
 Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance.md) for automated and native results and the open acceptance items.
 

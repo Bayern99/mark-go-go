@@ -2,7 +2,7 @@
   "name": "Mark Go Go",
   "slug": "mark-go-go",
   "identifier": "dev.markgogo.editor",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "icon": "resources/icon.png",
   "devUrl": "http://localhost:5173",
   "devCommand": "npm --prefix web run dev:web",
@@ -12,7 +12,10 @@
   "out": "build",
   "fileAssociations": [
     {
-      "ext": ["md", "markdown"],
+      "ext": [
+        "md",
+        "markdown"
+      ],
       "name": "Markdown Document",
       "mimeType": "text/markdown"
     }

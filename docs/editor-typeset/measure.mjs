@@ -43,6 +43,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const PAGE_HELPERS = `
 function pmRoot() { return document.querySelector('.crepe-root .ProseMirror') || document.querySelector('.ProseMirror') }
 function pmView() { return window.__pmView || null }
+function proseColumn(root) {
+  const prose = root.querySelector(':scope > :is(p, h1, h2, h3, h4, h5, h6)')
+  if (prose) return prose.getBoundingClientRect()
+  const rect = root.getBoundingClientRect()
+  const style = getComputedStyle(root)
+  const left = rect.left + parseFloat(style.paddingLeft)
+  const right = rect.right - parseFloat(style.paddingRight)
+  return { left, right, width: right - left }
+}
 function visibleTables() {
   return [...pmRoot().querySelectorAll('table')].filter((t) => {
     const r = t.getBoundingClientRect()
@@ -248,8 +257,7 @@ async function measureWrap(page) {
       }
       return lines.map((l) => +(l.right - l.left).toFixed(2))
     }
-    const col = root.getBoundingClientRect()
-    const colW = col.width - parseFloat(getComputedStyle(root).paddingLeft) - parseFloat(getComputedStyle(root).paddingRight)
+    const colW = proseColumn(root).width
     const sample = (els, limit) => {
       const out = []
       for (const el of els.slice(0, limit)) {
@@ -304,11 +312,7 @@ async function measureWrap(page) {
 async function measureComposition(page) {
   return evalPage(page, `(() => {
     const root = pmRoot()
-    const col = root.getBoundingClientRect()
-    const padL = parseFloat(getComputedStyle(root).paddingLeft)
-    const padR = parseFloat(getComputedStyle(root).paddingRight)
-    const textLeft = col.left + padL
-    const textRight = col.right - padR
+    const { left: textLeft, right: textRight } = proseColumn(root)
     const kinds = {}
     for (const el of [...root.children]) {
       const kind = blockKind(el)

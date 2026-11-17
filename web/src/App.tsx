@@ -28,10 +28,10 @@ const EDIT_DEBOUNCE_MS = 250
 export const NARROW_WINDOW_WIDTH = 1180
 
 /**
- * What the center of the window shows: the editor as rich text or as
- * Markdown, or the id of a center view a plugin registered.
+ * What the center of the window shows: Preview, Markdown, or a center view
+ * registered by a plugin.
  */
-type ViewMode = 'richtext' | 'markdown' | (string & {})
+type ViewMode = 'preview' | 'markdown' | (string & {})
 
 /** The view mode is remembered per document path in the page's storage. */
 const VIEW_MODE_KEY = 'mgo.viewMode:'
@@ -50,7 +50,7 @@ function rememberViewMode(path: string, mode: ViewMode): void {
   try {
     window.localStorage.setItem(VIEW_MODE_KEY + path, mode)
   } catch {
-    // No storage: the mode is a convenience, the next window starts in rich text.
+    // No storage: the mode is a convenience, the next window starts in Preview.
   }
 }
 
@@ -96,21 +96,21 @@ class ViewModeController {
 
   /**
    * Navigation to a place in the source: from a center view it lands in
-   * rich text and keeps that view as the way back.
+   * Preview and keeps that view as the way back.
    */
   showSource(): void {
     const from = this.center
     if (from === null) return
     this.leaveCenter()
-    this.editor()?.setMode('wysiwyg')
+    this.editor()?.setMode('preview')
     this.setReturnTo(from)
   }
 
-  /** ⌘/: between rich text and Markdown; from a center view, the one the editor is not in. */
+  /** ⌘/: between Preview and Markdown; from a center view, the one the editor is not in. */
   toggleEditorMode(): void {
     const editor = this.editor()
     if (!editor) return
-    this.showEditor(editor.getMode() === 'wysiwyg' ? 'source' : 'wysiwyg')
+    this.showEditor(editor.getMode() === 'preview' ? 'source' : 'preview')
   }
 
   /** The shown center view went away (its plugin was disabled). */
@@ -148,7 +148,7 @@ export function DocumentPane({
   const editorRef = useRef<MarkdownEditor | null>(null)
   const [docState, setDocState] = useState<DocumentInfo | null>(null)
   const [version, setVersion] = useState(0)
-  const [editorMode, setEditorMode] = useState<EditorMode>('wysiwyg')
+  const [editorMode, setEditorMode] = useState<EditorMode>('preview')
   const [centerViewId, setCenterViewId] = useState<string | null>(null)
   const [returnToId, setReturnToId] = useState<string | null>(null)
   const [rightViewId, setRightViewId] = useState<string | null>('outline.panel')
@@ -188,7 +188,7 @@ export function DocumentPane({
   const rightViews = useViews(services.views, 'right')
   const centerView = centerViews.find((view) => view.id === centerViewId) ?? null
   const returnTo = centerView ? null : (centerViews.find((view) => view.id === returnToId) ?? null)
-  const viewMode: ViewMode = centerView ? centerView.id : editorMode === 'source' ? 'markdown' : 'richtext'
+  const viewMode: ViewMode = centerView ? centerView.id : editorMode === 'source' ? 'markdown' : 'preview'
 
   const rightShown = rightViews.length > 0 && (isNarrow ? rightFloatOpen : rightWantOpen)
   const rightFloating = isNarrow && rightFloatOpen
@@ -505,6 +505,8 @@ export function DocumentPane({
     if (!ready || restored.current || !docState) return
     restored.current = true
     const saved = docState.viewMode || rememberedViewMode(docState.path)
+    // Preview is the editor's initial mode, including in older sessions.
+    if (saved === 'preview' || saved === 'richtext') return
     if (saved === 'markdown') editorRef.current?.setMode('source')
     else if (saved && services.views.getAll().some((v) => v.location === 'center' && v.id === saved)) {
       modes.showCenter(saved)
@@ -531,13 +533,13 @@ export function DocumentPane({
   }, [active, host.id, centerViewId, editorMode])
 
   const modeChoices = [
-    { id: 'richtext', label: 'Rich text', title: 'Rich text (⌘/)' },
+    { id: 'preview', label: 'Preview', title: 'Markdown Preview (⌘/)' },
     { id: 'markdown', label: 'Markdown', title: 'Markdown source (⌘/)' },
     ...centerViews.map((view) => ({ id: view.id, label: view.title, title: view.title })),
   ]
 
   const chooseMode = (id: string) => {
-    if (id === 'richtext') modes.showEditor('wysiwyg')
+    if (id === 'preview') modes.showEditor('preview')
     else if (id === 'markdown') modes.showEditor('source')
     else modes.showCenter(id)
   }

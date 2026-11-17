@@ -1,6 +1,6 @@
 import { redo, undo } from '@codemirror/commands'
 import { EditorState } from '@codemirror/state'
-import { undo as undoWysiwyg } from '@milkdown/kit/prose/history'
+import { undo as undoPreview } from '@milkdown/kit/prose/history'
 import { describe, expect, it } from 'vitest'
 import { mountEditor, replaceParagraph } from './helpers/editor'
 import { getSourceView, replaceSource, replaceSourceText } from './helpers/source'
@@ -22,14 +22,14 @@ describe('source mode round trip', () => {
       const changes: string[] = []
       mounted.editor.onChange((text) => changes.push(text))
       try {
-        expect(mounted.editor.getMode()).toBe('wysiwyg')
+        expect(mounted.editor.getMode()).toBe('preview')
         mounted.editor.setMode('source')
         expect(mounted.editor.getMode()).toBe('source')
         expect(getSourceView(mounted.root).state.doc.toString()).toBe(source)
         expect(mounted.editor.getMarkdown()).toBe(source)
 
-        mounted.editor.setMode('wysiwyg')
-        expect(mounted.editor.getMode()).toBe('wysiwyg')
+        mounted.editor.setMode('preview')
+        expect(mounted.editor.getMode()).toBe('preview')
         expect(mounted.editor.getMarkdown()).toBe(source)
         expect(changes).toEqual([])
       } finally {
@@ -198,7 +198,7 @@ describe('source mode cursor mapping', () => {
       expect(view.state.selection.main.head).toBe(secondStart)
 
       view.dispatch({ selection: { anchor: secondStart + 5 } })
-      mounted.editor.setMode('wysiwyg')
+      mounted.editor.setMode('preview')
       expect(offsets.at(-1)).toBe(secondStart)
     } finally {
       await mounted.cleanup()
@@ -214,7 +214,7 @@ describe('source mode cursor mapping', () => {
       mounted.editor.setMode('source')
       mounted.editor.setMode('source')
       mounted.editor.toggleMode()
-      expect(modes).toEqual(['source', 'wysiwyg'])
+      expect(modes).toEqual(['source', 'preview'])
     } finally {
       await mounted.cleanup()
     }
@@ -224,25 +224,25 @@ describe('source mode cursor mapping', () => {
 describe('source mode switching boundaries', () => {
   const source = 'First paragraph.\n\nSecond paragraph.\n'
 
-  it('keeps WYSIWYG state and undo history when leaving unchanged', async () => {
+  it('keeps Preview state and undo history when leaving unchanged', async () => {
     const mounted = await mountEditor(source)
     try {
       replaceParagraph(mounted.editor, 'First paragraph.', 'First paragraph, edited.')
       const composed = mounted.editor.getMarkdown()
-      const wysiwygView = mounted.editor.getView()
+      const previewView = mounted.editor.getView()
 
       mounted.editor.setMode('source')
-      mounted.editor.setMode('wysiwyg')
+      mounted.editor.setMode('preview')
       expect(mounted.editor.getMarkdown()).toBe(composed)
 
-      undoWysiwyg(wysiwygView.state, (transaction) => wysiwygView.dispatch(transaction))
+      undoPreview(previewView.state, (transaction) => previewView.dispatch(transaction))
       expect(mounted.editor.getMarkdown()).toBe(source)
     } finally {
       await mounted.cleanup()
     }
   })
 
-  it('rebuilds WYSIWYG from edited source and resets its undo history', async () => {
+  it('rebuilds Preview from edited source and resets its undo history', async () => {
     const mounted = await mountEditor(source)
     try {
       mounted.editor.setMode('source')
@@ -250,18 +250,18 @@ describe('source mode switching boundaries', () => {
       replaceSourceText(view, 'Second paragraph.', 'Second paragraph, edited.')
       const edited = view.state.doc.toString()
 
-      mounted.editor.setMode('wysiwyg')
+      mounted.editor.setMode('preview')
       expect(mounted.editor.getMarkdown()).toBe(edited)
 
-      const wysiwygView = mounted.editor.getView()
-      undoWysiwyg(wysiwygView.state, (transaction) => wysiwygView.dispatch(transaction))
+      const previewView = mounted.editor.getView()
+      undoPreview(previewView.state, (transaction) => previewView.dispatch(transaction))
       expect(mounted.editor.getMarkdown()).toBe(edited)
     } finally {
       await mounted.cleanup()
     }
   })
 
-  it('rebuilds WYSIWYG when a source reload matches the pre-source text', async () => {
+  it('rebuilds Preview when a source reload matches the pre-source text', async () => {
     const mounted = await mountEditor(source)
     try {
       replaceParagraph(mounted.editor, 'First paragraph.', 'First paragraph, edited.')
@@ -269,11 +269,11 @@ describe('source mode switching boundaries', () => {
 
       mounted.editor.setMode('source')
       mounted.editor.setMarkdown(composed)
-      mounted.editor.setMode('wysiwyg')
+      mounted.editor.setMode('preview')
       expect(mounted.editor.getMarkdown()).toBe(composed)
 
-      const wysiwygView = mounted.editor.getView()
-      undoWysiwyg(wysiwygView.state, (transaction) => wysiwygView.dispatch(transaction))
+      const previewView = mounted.editor.getView()
+      undoPreview(previewView.state, (transaction) => previewView.dispatch(transaction))
       expect(mounted.editor.getMarkdown()).toBe(composed)
     } finally {
       await mounted.cleanup()
@@ -293,7 +293,7 @@ describe('source mode switching boundaries', () => {
       mounted.editor.onSelectionChange((offset) => offsets.push(offset))
       offsets.length = 0
 
-      mounted.editor.setMode('wysiwyg')
+      mounted.editor.setMode('preview')
       expect(offsets).toEqual([secondStart])
     } finally {
       await mounted.cleanup()
@@ -306,10 +306,10 @@ describe('source mode switching boundaries', () => {
     mounted.editor.onChange((text) => changes.push(text))
     try {
       mounted.editor.setMode('source')
-      mounted.editor.setMode('wysiwyg')
+      mounted.editor.setMode('preview')
       mounted.editor.setMode('source')
       mounted.editor.setMarkdown('Replaced while in source.\n')
-      mounted.editor.setMode('wysiwyg')
+      mounted.editor.setMode('preview')
       expect(changes).toEqual([])
     } finally {
       await mounted.cleanup()

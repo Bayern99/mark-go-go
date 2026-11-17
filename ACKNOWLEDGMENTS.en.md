@@ -7,7 +7,7 @@
 The Portrait design boards, tokens, and implementation are in this repository. The browser preview runs the interface with sample documents and an in-memory host. See [development setup](README.en.md#development).
 
 - [Design boards](docs/design/Mark%20Go%20Go%20界面设计.html) · [UI rules](docs/agents/ui-tasks.md)
-- [Portrait tokens](web/src/theme/portrait-tokens.ts) · [App styles](web/src/styles.css) · [Rich text styles](web/src/editor/crepe-theme.css)
+- [Portrait tokens](web/src/theme/portrait-tokens.ts) · [App styles](web/src/styles.css) · [Markdown Preview styles](web/src/editor/crepe-theme.css)
 - [Workspace and document tabs](web/src/App.tsx) · [Shared components](web/src/components/) · [GenUI views and components](web/src/plugins/genui/)
 
 ## Design and interaction references
@@ -19,8 +19,8 @@ The Portrait design boards, tokens, and implementation are in this repository. T
 ## Software and assets
 
 - **MyGo** by Egoist and contributors provides the native desktop host. The repository includes v0.7.4 with document group and workspace lifecycle patches under MIT. Its CLI's pinyin data comes from Unicode Unihan 16.0.0. [Upstream](https://github.com/egoist/mygo/tree/v0.7.4) · [MyGo license](third_party/mygo/LICENSE) · [Unicode notice](third_party/mygo/cmd/mygo/LICENSE-Unicode.txt) · [Patch notes](docs/mygo-document-groups.md)
-- **Milkdown Crepe and ProseMirror** power Rich text, and **CodeMirror** powers the Markdown view. **Radix Primitives** provides controls such as tooltips and menus, **OverlayScrollbars** provides scroll areas, **Mermaid** renders diagrams locally, and **A2UI** provides the GenUI component protocol. [Frontend dependencies](web/package.json)
-- **ProseMirror Tables** by Marijn Haverbeke and contributors provides the Rich text table model and selection. [Upstream](https://github.com/ProseMirror/prosemirror-tables) · [Local license](web/public/licenses/LICENSE-ProseMirror-Tables.txt)
+- **Milkdown Crepe and ProseMirror** power Markdown Preview, and **CodeMirror** powers the Markdown view. **Radix Primitives** provides controls such as tooltips and menus, **OverlayScrollbars** provides scroll areas, **Mermaid** renders diagrams locally, and **A2UI** provides the GenUI component protocol. [Frontend dependencies](web/package.json)
+- **ProseMirror Tables** by Marijn Haverbeke and contributors provides the table model in Preview and selection. [Upstream](https://github.com/ProseMirror/prosemirror-tables) · [Local license](web/public/licenses/LICENSE-ProseMirror-Tables.txt)
 - **IBM Plex Sans, Sans SC and Mono** and **Barlow Semi Condensed** ship under the SIL Open Font License. `MGG Condensed` is the CSS name used for the bundled Barlow files with adjusted display metrics. [IBM Plex](https://github.com/IBM/plex) · [Barlow](https://github.com/jpt/barlow) · [Font licenses](web/src/assets/licenses/)
 - **Phosphor Icons** by Helena Zhang and Tobias Fried provides the bundled UI icon font under MIT. [Phosphor Icons](https://phosphoricons.com/) · [Icon license](web/src/assets/licenses/LICENSE-Phosphor.txt)
 

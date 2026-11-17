@@ -261,7 +261,11 @@ func TestPlanPartialFailureKeepsRecoverableAndOthers(t *testing.T) {
 			ActiveID: "ok",
 		},
 	}}
-	plan := planSessionRestore(file, restoreLive{
+	st := &settingsStore{dir: t.TempDir()}
+	if err := st.saveSession(file); err != nil {
+		t.Fatal(err)
+	}
+	plan := planSessionRestore(st.loadSession(), restoreLive{
 		OpenByID: map[string]restoreDoc{recoveryID: {ID: recoveryID, Path: ""}},
 	})
 	if len(plan.Workspaces) != 2 {
@@ -273,6 +277,9 @@ func TestPlanPartialFailureKeepsRecoverableAndOthers(t *testing.T) {
 	}
 	if len(broken.Tabs) != 1 || broken.Tabs[0].ReuseID != recoveryID {
 		t.Fatalf("recoverable untitled dropped: %+v", broken.Tabs)
+	}
+	if broken.Tabs[0].ViewMode != "preview" {
+		t.Fatalf("legacy view mode restored as %q, want preview", broken.Tabs[0].ViewMode)
 	}
 	goodWS := plan.Workspaces[1]
 	if len(goodWS.Tabs) != 1 || goodWS.Tabs[0].OpenPath != good {
@@ -453,7 +460,7 @@ func TestCaptureSessionKeepsUntitledTabsByID(t *testing.T) {
 		byWindow: make(map[*mygo.Window]*workspace),
 		byID:     map[string]*docSession{},
 	}
-	h.byID["u1"] = &docSession{id: "u1", pathFn: func() string { return "" }, viewMode: "richtext"}
+	h.byID["u1"] = &docSession{id: "u1", pathFn: func() string { return "" }, viewMode: "preview"}
 	h.byID["u2"] = &docSession{id: "u2", pathFn: func() string { return "" }, viewMode: "genui"}
 	untitled := &workspace{id: "uws", tabs: []string{"u1", "u2"}, active: "u2"}
 	win := &mygo.Window{}
@@ -469,7 +476,7 @@ func TestCaptureSessionKeepsUntitledTabsByID(t *testing.T) {
 	if len(tabs) != 2 || tabs[0].ID != "u1" || tabs[1].ID != "u2" {
 		t.Fatalf("untitled tabs = %+v", tabs)
 	}
-	if tabs[0].Path != "" || tabs[1].ViewMode != "genui" {
+	if tabs[0].Path != "" || tabs[0].ViewMode != "preview" || tabs[1].ViewMode != "genui" {
 		t.Fatalf("untitled tab fields = %+v", tabs)
 	}
 	if file.Workspaces[0].ActiveID != "u2" {

@@ -9,7 +9,7 @@ GenUI 的视图显示与视图管理是两件事：中间那块区域只负责�
 
 - **三栏的职责边界。**
   - **左栏（工作区）**：只放整个文件夹的导航（文件树与过滤框）。
-  - **中央（文档内容）**：只放当前标签的文档呈现（Rich text、Markdown、GenUI 视图）以及跟这段文字直接相连的动作——GenUI 卡片底部的来源章节、`Source changed` 标记、`Edit in source` 和 `Note`，还有正文里的批注编辑与删除。中央不放生成按钮、生成要求输入框、Agent 设置或生成错误块。
+  - **中央（文档内容）**：只放当前标签的文档呈现（Preview、Markdown、GenUI）以及跟这段文字直接相连的动作——GenUI 卡片底部的来源章节、`Source changed` 标记、`Edit in source` 和 `Note`，还有正文里的批注编辑与删除。中央不放生成按钮、生成要求输入框、Agent 设置或生成错误块。
   - **右栏（当前文档）**：放只跟当前文档有关、但不属于正文本身的面板。顶部切换 **Outline**（默认第一位）和 **GenUI**。
 - **插件位置契约。** `web/src/core/types.ts` 的 `ViewLocation` 扩为 `'left' | 'center' | 'right'`。Outline 插件改为 `'right'`；GenUI 插件注册两个视图——`'center'` 渲染视图、`'right'` 管理面板——共用同一个 `GenerationController` 与视图状态。
 - **窄窗自适应。** 窗口宽度不足以同时放下三栏与可读的正文栏时，右栏自动收起；用户手动点开时以浮层盖在纸面右侧，点回正文即收起。
@@ -18,7 +18,7 @@ GenUI 的视图显示与视图管理是两件事：中间那块区域只负责�
   2. **该放（生成要求 Focus）**：有视图时平时显示成安静的只读文字，点 `Edit` 原地展开编辑，点 `Regenerate all` 生效。
   3. **底部固定信息**：`Agent` 只读显示 `Antigravity (agy)`；`Model` 用与块菜单同一材质的弹出菜单选择（触发钮显示当前值，列表由 Go 端缓存 ACP `session/new` 返回的 `configOptions` 模型列表并随 `getSettings` 提供，支持探测或默认回退列表，加上 `Agent’s choice`）；以及生成时间与有备份时才出现的 `Undo`。
   4. **不放**：常规界面里不放 `Agent command` 手输框（目前只接 `agy`，找不到可执行文件时只在 `failAgentNotFound` 错误提示里给定位动作），不放组件总数，不放重复的文档文件名。
-- **原地 Composer。** 批注（Rich text 与 GenUI 卡片内）和生成要求都不弹窗，直接在它最终落下的位置展开成一张白纸输入区，高度随内容长高，`⌘↩` 保存、`Esc` 取消。
+- **原地 Composer。** 批注（预览与 GenUI 卡片内）和生成要求都不弹窗，直接在它最终落下的位置展开成一张白纸输入区，高度随内容长高，`⌘↩` 保存、`Esc` 取消。
 
 ## 放弃的方案
 

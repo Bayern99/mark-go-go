@@ -62,7 +62,7 @@ func (h *documentHost) SetViewMode(ctx context.Context, documentID, mode string)
 		return err
 	}
 	h.mu.Lock()
-	s.viewMode = mode
+	s.viewMode = normalizeViewMode(mode)
 	w := s.ws
 	h.mu.Unlock()
 	h.persistSession()

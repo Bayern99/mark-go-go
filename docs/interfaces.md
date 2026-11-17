@@ -153,12 +153,13 @@ interface PluginContext {
 
 - `PluginRegistry.enable(id)` / `disable(id)`：注册表追踪所有经 ctx 产生的注册与订阅，`disable` 统一释放；`activate` 抛错时回滚。`ctx.editor.onSelectionChange` 同样被追踪，禁用插件即移除其选择监听。
 - `PluginRegistry(documents, views, commands, editor, viewFile)`：`editor` 是 `EditorSelectionSource`，App 用 `EditorAccess` 实现：注册表在编辑器创建前构造，编辑器就绪后 `attach(editor)`，之后才注册/启用插件；未 attach 时调用抛错（不会静默失效），App 卸载时 `detach()`。`viewFile` 是该面板的 host（`ViewFileSource & ViewGenerator`，`generate` / `watch` / `setSettings` 都绑定该面板的 `id`）；`ctx.viewFile.watch` 与 `ctx.viewFile.onSettings` 被追踪，禁用插件即停止跟随视图文件与设置。`documents.path` 由 App 按该文档的 `DocumentInfo.path` 更新。
-- `ViewRegistration.location` 必填：`'left'` 进左侧栏（`SidePane`）；`'center'` 成为一个视图模式，与 `Rich text` / `Markdown` 并列出现在头部的三选一切换里，只在被选中时挂载、离开时卸载；`'right'` 进右侧栏（`RightPane`，顶部 `Outline` / `GenUI` 分段切换，可带 `status` 圆点提示，窗口宽度 `< 1180px` 时收起为浮层）。
-- 编辑器提供的命令：`editor.reveal(offset: number)`（偏移越界时返回 `false`；当前是中央视图时先切回 Rich text 再跳转）、`editor.toggleSourceMode()`（在 Rich text 与 Markdown 之间切换，从中央视图出发则切到编辑器的另一模式；返回当前编辑器模式）。插件跳转一律 `ctx.commands.execute('editor.reveal', offset)`，不另设 reveal API。
+- `ViewRegistration.location` 必填：`'left'` 进左侧栏（`SidePane`）；`'center'` 成为一个视图模式，与 `Preview` / `Markdown` 并列出现在头部的三选一切换里，只在被选中时挂载、离开时卸载；`'right'` 进右侧栏（`RightPane`，顶部 `Outline` / `GenUI` 分段切换，可带 `status` 圆点提示，窗口宽度 `< 1180px` 时收起为浮层）。
+- 编辑器提供的命令：`editor.reveal(offset: number)`（偏移越界时返回 `false`；当前是中央视图时先切回预览再跳转）、`editor.toggleSourceMode()`（在预览与 Markdown 之间切换，从中央视图出发则切到编辑器的另一模式；返回当前编辑器模式）。插件跳转一律 `ctx.commands.execute('editor.reveal', offset)`，不另设 reveal API。
 
 ## 视图模式（#9）
 
-- 头部 `role="radiogroup"`（`View mode`），每个模式一个 `role="radio"` 按钮（测试钩子 `view-mode-richtext` / `view-mode-markdown` / `view-mode-<中央视图 id>`，`aria-checked` 表示当前模式）。`⌘/` / `Ctrl+/` 在 Rich text 与 Markdown 之间切换。
+- 头部 `role="radiogroup"`（`View mode`），每个模式一个 `role="radio"` 按钮（测试钩子 `view-mode-preview` / `view-mode-markdown` / `view-mode-<中央视图 id>`，`aria-checked` 表示当前模式）。`⌘/` / `Ctrl+/` 在预览与 Markdown 之间切换。
+- `Preview` 是可编辑的 Markdown 预览，直接在渲染后的内容上编辑原文。`Markdown` 显示并编辑源文本。
 - 进入中央视图时编辑器只设 `hidden`、不销毁：ProseMirror / CodeMirror 状态、光标、撤销历史和未保存的修改保留；回到编辑器时恢复离开时的滚动位置。切换模式本身不调用 `host.update`。
 - 当前模式随标签保存在 Go 的会话里（`SetViewMode(documentId, mode)` → `session.json`，由 `DocState.viewMode` 送回页面），页面另以 `localStorage` 的 `mgo.viewMode:<path>` 作为旧版本/重开路径的兼容回退。未保存的新文档不写 `localStorage`；重启恢复按 `documentId` 复原。
 
@@ -191,10 +192,10 @@ interface PluginContext {
 - 左栏宽度 190–420px 可调（默认 248px），但渲染宽度随窗口收窄让位：不超过 `窗口宽 − 310px`（下限 140px），窗口放宽后恢复用户设定；分隔条在 6px 视觉槽内提供 14px 触控热区（`aria-valuenow` 报告实际渲染宽度）。
 - Outline 插件（`createOutlinePlugin()`）注册视图 `outline.panel`（`location: 'right'`，标题 `Outline`），与 `genui.panel` 并列在右侧栏顶部分段标签中切换。
 - 条目来自 `extractHeadings(ctx.documents.snapshot().text)`，按 `level` 缩进；文档变更经 `OUTLINE_DEBOUNCE_MS`（300ms，导出自 `OutlinePanel.tsx`）防抖后重新解析。
-- 当前章节 = 最后一个 `offset ≤ 光标偏移` 的标题；光标在第一个标题之前时不高亮任何条目；光标偏移来自 `ctx.editor.onSelectionChange`（WYSIWYG 为顶层块起始偏移，源码为精确偏移），高亮条目标 `aria-current="true"`。
+- 当前章节 = 最后一个 `offset ≤ 光标偏移` 的标题；光标在第一个标题之前时不高亮任何条目；光标偏移来自 `ctx.editor.onSelectionChange`（预览为顶层块起始偏移，源码为精确偏移），高亮条目标 `aria-current="true"`。
 - 点击条目执行 `editor.reveal(该条目自身 offset)`，所以同文标题各跳各的位置；两种模式行为一致。
 - 无标题时显示 `No headings in this document.`（`data-testid="outline-empty"`）。
-- GenUI 不自带标题列表；在 GenUI 模式下点大纲条目会切回 Rich text 并跳转。
+- GenUI 不自带标题列表；在 GenUI 模式下点大纲条目会切回预览并跳转。
 - `App({ workspace | host, plugins })` 在 GenUI / Outline 之后为每个 `DocumentPane` 追加注册插件（自动化测试注入异步激活插件用），注册与启用逐项检查 `disposed`。
 
 ## GenUI 视图模式（#9，取代 #6 的右侧栏与 v1 格式）
@@ -226,7 +227,7 @@ interface PluginContext {
 - `SourceFrame.tsx`：所有内容组件都画在同一个框里：底部 `From` 后按组件 `sources` 的顺序，每个来源 id 一个按钮（文本是来源表记录的 `heading`，带 `data-source-id` / `data-source-occurrence` / `data-source-available`），点击只定位该来源自身的 heading + occurrence；另有状态标记 `Source changed` / `Source not found`（只在这两种状态显示）、整体 `Edit in source` 按钮与 `Note` 入口。状态写在 `data-source-status`。组件经 `useComponentSource(sources)` 取状态、逐条 `references` 与 `edit(text?)`。
 - 部分来源丢失（#28）：某个 heading + occurrence 已不在文档时，只有那一个按钮禁用并提示该标题已不在，不回退到同名或兄弟来源；其余来源仍可点。整体 `Edit in source` 与 `Note` 在还有来源存在时用第一个仍存在的来源，全部失效时才禁用并写明。聚合状态仍如实为 `missing`，精确引语、行与 checkbox 的定位行为不变。
 - 隔离（规范）：`Edit in source` 与右栏 `.changed-list` 的跳转/高亮只在该文档自己的 GenUI 挂载元素内查询卡片，隐藏标签不能截获；每个编辑器持有自己的 Composer 生命周期，后台文档的 `load` / `onReload` / `setReadonly` / `destroy` 只取消它自己的 Note 或特殊块 composer，不关闭其他文档未保存的草稿。
-- `Edit in source`：取组件第一个仍在文档里的来源，先立即刷新章节（不用防抖中的旧偏移），再执行命令 `editor.select(start, end)`；底部每个来源按钮则只用自己那个 id 定位（`edit([该 id])`），不换到别的来源。带 `text` 时（Checklist 项）在各来源节里找这段原文，找到就只选它，否则选第一个来源整节。App 切到 Rich text、选中，并在编辑器区显示 `← Back to GenUI`（`data-testid="return-to-view"`）。点它回到 GenUI；在头部选任一模式后这个按钮消失。
+- `Edit in source`：取组件第一个仍在文档里的来源，先立即刷新章节（不用防抖中的旧偏移），再执行命令 `editor.select(start, end)`；底部每个来源按钮则只用自己那个 id 定位（`edit([该 id])`），不换到别的来源。带 `text` 时（Checklist 项）在各来源节里找这段原文，找到就只选它，否则选第一个来源整节。App 切到预览、选中，并在编辑器区显示 `← Back to GenUI`（`data-testid="return-to-view"`）。点它回到 GenUI；在头部选任一模式后这个按钮消失。
 - 滚动位置：GenUI 视图的挂载元素 `.center-view` 就是滚动区。位置按视图文件文本记在插件里（`ScrollMemory`），跨挂载保留；同一份视图文件回来时恢复，换了视图文件从顶部开始。A2UI 首次提交后才渲染组件树，所以恢复时跟随内容增高（`ResizeObserver`，最多 1s）。
 - 生成器（#7）按页面给的章节范围写入每个来源的 `hash`；手写的视图文件不带 `hash` 时不显示状态。
 
@@ -289,8 +290,8 @@ interface PluginContext {
 - 转义：文字里的 `-->` 写成 `--\>`，`--!>` 写成 `--\!>`（浏览器也把它当注释结束）；已经带反斜杠的再加一个，读回时去掉一个，所以任何文字都读回不变。文字可以多行，读写时去掉首尾空白。
 - 编辑器：批注是锁定块（`kind: 'note'`），按原字节写回。只有改过的批注才重新序列化，只改文字部分，冒号之前（包括不认识的属性）原样保留，并沿用这一块原来的间隔。
 - 原地白纸输入块（`.composer.mgo-note-composer`，无 `<dialog>` 模态弹窗）：
-  - Rich text：块菜单（`+` 或 `/`）里的 `Add note` 或已有批注上的 `Edit` 按钮通过 `noteDialog.ts` 的 `askForNote` 在目标顶层块紧下方原地展开 `<div class="composer mgo-note-composer" role="region" aria-label="Note composer">`（含随内容增高的 `<textarea aria-label="Note">`、底部 `.composer-foot` 提示 `⌘↩ to save · Esc to cancel`、`Cancel` 与 `Save` 按钮）；保存或 `Delete` 都是普通事务，可以撤销。只读文档不能操作。Markdown 模式显示原始文本。
-  - GenUI：组件底座 `SourceFrame.tsx` 的 `Note` 按钮在卡片底座下方原地展开 React `.composer.mgo-note-composer`；`⌘↩` / `Ctrl+↩` 或点击 `Save` 时通过命令 `editor.addNote(offset, text)` 把批注加到第一个来源那一节的末尾，停留在 GenUI 且不使任何组件变为 `Source changed`；`Escape` 或 `Cancel` 关闭输入块不写入。宿主编辑器处在 Rich text 或 Markdown 都写出相同的字节。组件旁显示它所有来源节里的批注。只读文档会提示无法添加。
+  - 预览：块菜单（`+` 或 `/`）里的 `Add note` 或已有批注上的 `Edit` 按钮通过 `noteDialog.ts` 的 `askForNote` 在目标顶层块紧下方原地展开 `<div class="composer mgo-note-composer" role="region" aria-label="Note composer">`（含随内容增高的 `<textarea aria-label="Note">`、底部 `.composer-foot` 提示 `⌘↩ to save · Esc to cancel`、`Cancel` 与 `Save` 按钮）；保存或 `Delete` 都是普通事务，可以撤销。只读文档不能操作。Markdown 模式显示原始文本。
+  - GenUI：组件底座 `SourceFrame.tsx` 的 `Note` 按钮在卡片底座下方原地展开 React `.composer.mgo-note-composer`；`⌘↩` / `Ctrl+↩` 或点击 `Save` 时通过命令 `editor.addNote(offset, text)` 把批注加到第一个来源那一节的末尾，停留在 GenUI 且不使任何组件变为 `Source changed`；`Escape` 或 `Cancel` 关闭输入块不写入。宿主编辑器处在预览或 Markdown 都写出相同的字节。组件旁显示它所有来源节里的批注。只读文档会提示无法添加。
 - `editor.addNote(offset, text)`：放在 `offset` 之前开始的最后一个顶层块之后，新批注前面是 `\n\n`。
 - 字节保留：插入或删除一块后，后面的块保留自己的间隔（间隔不含空行且换了位置时才用 `\n\n`，否则可能和新的前一块合并）。文件末尾的字节在增删批注时不变。
 - 哈希：章节哈希去掉每条批注，以及它和前一块之间的空白，所以结果和加批注之前的文本一样。Go 没有 Markdown 解析器，页面在 `GenerateRequest.sections[].exclude`（UTF-16 范围，按顺序）里告诉它哪些范围要去掉；范围越界时这个来源不写哈希。代码块里的 `<!-- note -->` 不会被去掉。共享向量 `section-vectors.json` 的 `notes` 部分在 TS 和 Go 两边验证。
@@ -299,7 +300,7 @@ interface PluginContext {
 ## Editor Adapter（`web/src/editor/createEditor.ts`）
 
 ```ts
-type EditorMode = 'wysiwyg' | 'source'
+type EditorMode = 'preview' | 'source'
 
 interface MarkdownEditor {
   getMode(): EditorMode
@@ -319,19 +320,19 @@ interface MarkdownEditor {
 ```
 
 - 跨模块位置一律是当前 Markdown 文本的 UTF-16 源偏移；ProseMirror 位置不出适配器。
-- WYSIWYG 模式下按顶层块粒度映射：`reveal(offset)` 滚动到并聚焦包含该偏移的顶层块开头（锁定块用节点选择），偏移超出当前 compose 文本时返回 `false`；只要命中块就会报告该块起始偏移（光标原本就在该块也报告）。`select(from, to)` 选中从包含 `from` 的块到 `to` 之前最后一个块的全部块（`to` 为区间终点，不含），滚动并聚焦，报告起始块偏移；区间越界或 `from > to` 返回 `false`。源码模式下 `select` 是精确的 CodeMirror 选区。`onSelectionChange` 在光标换块或编辑使该块偏移变化时报告光标所在顶层块的源起始偏移，并在注册时同步回调一次当前偏移（大纲可立即高亮当前章节）。块范围每次由最新 compose 文本推导，所以块内编辑以及光标之前的增删不会让偏移失效。
+- 预览模式下按顶层块粒度映射：`reveal(offset)` 滚动到并聚焦包含该偏移的顶层块开头（锁定块用节点选择），偏移超出当前 compose 文本时返回 `false`；只要命中块就会报告该块起始偏移（光标原本就在该块也报告）。`select(from, to)` 选中从包含 `from` 的块到 `to` 之前最后一个块的全部块（`to` 为区间终点，不含），滚动并聚焦，报告起始块偏移；区间越界或 `from > to` 返回 `false`。源码模式下 `select` 是精确的 CodeMirror 选区。`onSelectionChange` 在光标换块或编辑使该块偏移变化时报告光标所在顶层块的源起始偏移，并在注册时同步回调一次当前偏移（大纲可立即高亮当前章节）。块范围每次由最新 compose 文本推导，所以块内编辑以及光标之前的增删不会让偏移失效。
 - 选择到块的解析只使用 ProseMirror 文档结构（文本选择取 `$from.node(1)`，文档级选择取 `$from.index(0)` 对应的顶层节点），从不把 ProseMirror 位置当作 Markdown 偏移比较。
-- `getMarkdown()`：WYSIWYG 模式返回当前 compose 文本（未改动块保持原始字节）；源码模式返回 CodeMirror 文档文本（逐字节原样）。
+- `getMarkdown()`：预览模式返回当前 compose 文本（未改动块保持原始字节）；源码模式返回 CodeMirror 文档文本（逐字节原样）。
 - 旧接口 `revealHeading(text)` 已删除；调用方先经共享标题模块解析出偏移再 `editor.reveal`。
 
 ### 源码模式
 
-- 源码模式是 CodeMirror 6（`markdown()`、行折行、`history()` + `defaultKeymap`/`historyKeymap`），装配在 `web/src/editor/source/sourceEditor.ts`，与 WYSIWYG 挂在同一个编辑器区域内，同一时间只有一个可见。
+- 源码模式是 CodeMirror 6（`markdown()`、行折行、`history()` + `defaultKeymap`/`historyKeymap`），装配在 `web/src/editor/source/sourceEditor.ts`，与预览挂在同一个编辑器区域内，同一时间只有一个可见。
 - 配置 `EditorState.lineSeparator.of('\n')`：只有 LF 分行，CRLF / 混合换行 / 单独 CR / 无末尾换行的文件进出源码模式都不改变任何字节，源码中的无关行编辑也不改变其他字节。
-- WYSIWYG → 源码：CodeMirror 文本取当前 compose 文本，历史为空；光标移到旧模式光标所在块的源起始偏移。
-- 源码 → WYSIWYG：若源码文本与进入时相同，保留原 ProseMirror 状态与撤销历史；若不同（或期间发生外部 reload），从新文本经 `buildDocument` / `segmentMarkdown` 重建，WYSIWYG 撤销历史重置。切换后在新模式中 reveal 旧模式的光标偏移。
-- 源码模式语义：`onChange` 在用户编辑后带 CodeMirror 文本触发；`setMarkdown`（外部 reload）替换文本、重置 CodeMirror 历史与光标并立即报告光标偏移 0，模式不变；`setReadonly` 同时作用于 CodeMirror（`EditorState.readOnly` + `EditorView.editable` Compartment）；`reveal(offset)` 为精确光标偏移 + `scrollIntoView` + focus；`onSelectionChange` 报告精确的 CodeMirror 偏移，监听器跨模式保持，切换时立即报告。源码有改动后切回 WYSIWYG 的重建会抑制加载中间态的偏移报告，监听器只看到最终 reveal 的块偏移。
-- 切换模式本身不触发 `onChange`。App 头部的视图模式切换显示当前模式（`Rich text` / `Markdown` / 中央视图，见「视图模式」），`⌘/` 或 `Ctrl+/` 在两种编辑器模式之间切换，命令 `editor.toggleSourceMode` 供插件调用。
+- 预览 → 源码：CodeMirror 文本取当前 compose 文本，历史为空；光标移到旧模式光标所在块的源起始偏移。
+- 源码 → 预览：若源码文本与进入时相同，保留原 ProseMirror 状态与撤销历史；若不同（或期间发生外部 reload），从新文本经 `buildDocument` / `segmentMarkdown` 重建，预览撤销历史重置。切换后在新模式中 reveal 旧模式的光标偏移。
+- 源码模式语义：`onChange` 在用户编辑后带 CodeMirror 文本触发；`setMarkdown`（外部 reload）替换文本、重置 CodeMirror 历史与光标并立即报告光标偏移 0，模式不变；`setReadonly` 同时作用于 CodeMirror（`EditorState.readOnly` + `EditorView.editable` Compartment）；`reveal(offset)` 为精确光标偏移 + `scrollIntoView` + focus；`onSelectionChange` 报告精确的 CodeMirror 偏移，监听器跨模式保持，切换时立即报告。源码有改动后切回预览的重建会抑制加载中间态的偏移报告，监听器只看到最终 reveal 的块偏移。
+- 切换模式本身不触发 `onChange`。App 头部的视图模式切换显示当前模式（`Preview` / `Markdown` / 中央视图，见「视图模式」），`⌘/` 或 `Ctrl+/` 在两种编辑器模式之间切换，命令 `editor.toggleSourceMode` 供插件调用。
 
 ## 特殊块（可视呈现与原地 Markdown 编辑，ADR 0006）
 

@@ -37,7 +37,7 @@ async function waitForTarget(id: string): Promise<void> {
 }
 
 describe('MarkdownEditor history', () => {
-  it('undoes and redoes a rich-text edit through the public editor API', async () => {
+  it('undoes and redoes a Preview edit through the public editor API', async () => {
     const mounted = await mountEditor(RICH)
     try {
       expect(mounted.editor.canUndo()).toBe(false)
@@ -135,7 +135,7 @@ describe('native Edit command routing', () => {
     }
   })
 
-  it('clears the edited flag after undoing rich text back to the saved bytes', async () => {
+  it('clears the edited flag after undoing Preview back to the saved bytes', async () => {
     const host = createBrowserHost(RICH, 'draft.md')
     const app = await mountApp(RICH, host)
     try {

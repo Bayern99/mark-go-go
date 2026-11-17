@@ -47,7 +47,7 @@
 |---|---|---|
 | 前端类型、测试、生产构建 | PASS | `npm --prefix web run typecheck && npm --prefix web test && npm --prefix web run build`；真实 Chromium 31 个文件、303 项通过。构建保留大于 500kB 的 chunk 提示，未调整阈值或压制警告。 |
 | Mermaid 的原文保真与编辑 | PASS（Chromium） | `mermaid.test.ts` 覆盖有效图、无效图原文与错误、CRLF 原地修改与撤销、外部资源拒绝及只读入口；既有 roundtrip 与特殊块套件一并通过。 |
-| Mermaid 实际工作台 | PASS（浏览器） | 在 App + BrowserWorkspace 接缝同时显示中文流程图和时序图；Save 只改目标块，Undo 恢复全文，Cancel 不写入，Markdown / Rich text 切换保留全文；最终串行渲染版再次显示两图、原文字节一致，资源记录无外部地址。 |
+| Mermaid 实际工作台 | PASS（浏览器） | 在 App + BrowserWorkspace 接缝同时显示中文流程图和时序图；Save 只改目标块，Undo 恢复全文，Cancel 不写入，Markdown / 预览切换保留全文；最终串行渲染版再次显示两图、原文字节一致，资源记录无外部地址。 |
 | 深层文件树与标签 | PASS（浏览器） | 16 文档、深度 8 文件树；248/190/420px 侧栏的深层摘要实测约 95/74/175px，日期先让位、批注数随后让位；标签关闭区均 20px，溢出菜单搜索末项并激活、方向键切换与 Delete 关闭后剩余 15 文档。 |
 | Go 集成 | PASS | `go test ./...`，应用包通过；未执行本轮原生打包。 |
 | 默认窗口实际启动尺寸与小屏适配 | BLOCKED | 唯一工作区窗口创建入口已设 1280×820，未请求全屏/最大化；1280×820 浏览器布局有真实截图。原生工具按名称/路径选择应用时超时，Dev 应用随后被自动审批拒绝（`Computer Use was not approved`），未读取原生启动 bounds，也未验证较小屏幕工作区。 |
@@ -86,16 +86,16 @@
 
 - 23 个语料文件：进入源码 → 文本与 `getMarkdown` 逐字节一致 → 不编辑退出 → 逐字节一致，且无 change 事件。
 - CRLF、混合换行、无末尾换行、单独 CR：源码中编辑无关行，其余字节不变。
-- 源码模式 undo/redo；切换保留/重建 WYSIWYG 的边界（未改动保留撤销历史，改动后以新文本重建）；切换不触发 change。
-- 源码中 `reveal` / `onSelectionChange` 为精确偏移；切换模式后在新模式 reveal 旧光标偏移；源码 reload 会报告光标重置为新位置，切换回 WYSIWYG 只报告最终块偏移、不报告加载中间态。
-- 源码中外部 reload 替换文本、保持模式并重置历史；即使 reload 文本等于进入源码前的 compose 文本，回到 WYSIWYG 仍强制重建（撤销不会复活 reload 前状态）；只读文档在源码中只读。
-- App：头部按钮与 `⌘/`、`Ctrl+/` 均可切换；进入/退出无编辑时 `host.update` 从未调用；源码中改 frontmatter 并去掉 `[!NOTE]` 后 host 收到期望字节，回到 WYSIWYG 该块是可编辑引用而非锁定块，随后 WYSIWYG 编辑仍保留源码改动的字节；源码 undo；源码中 reload 保持模式；只读 host。
+- 源码模式 undo/redo；切换保留/重建预览的边界（未改动保留撤销历史，改动后以新文本重建）；切换不触发 change。
+- 源码中 `reveal` / `onSelectionChange` 为精确偏移；切换模式后在新模式 reveal 旧光标偏移；源码 reload 会报告光标重置为新位置，切换回预览只报告最终块偏移、不报告加载中间态。
+- 源码中外部 reload 替换文本、保持模式并重置历史；即使 reload 文本等于进入源码前的 compose 文本，回到预览仍强制重建（撤销不会复活 reload 前状态）；只读文档在源码中只读。
+- App：头部按钮与 `⌘/`、`Ctrl+/` 均可切换；进入/退出无编辑时 `host.update` 从未调用；源码中改 frontmatter 并去掉 `[!NOTE]` 后 host 收到期望字节，回到预览该块是可编辑引用而非锁定块，随后预览编辑仍保留源码改动的字节；源码 undo；源码中 reload 保持模式；只读 host。
 
 打包应用手动检查（2026-11-06，`go tool mygo build` 产物）：
 
 | 检查 | 状态 |
 |---|---|
-| `⌘/` 在打包应用中切换源码 / WYSIWYG，焦点与滚动位置正确；不编辑来回切换后文件 sha256 不变 | 通过（自动化 UI 操作） |
+| `⌘/` 在打包应用中切换源码 / 预览，焦点与滚动位置正确；不编辑来回切换后文件 sha256 不变 | 通过（自动化 UI 操作） |
 | 源码模式内 `⌘Z` / `⇧⌘Z` 撤销重做（真实键盘） | 通过（人工） |
 | 源码模式内中文输入法输入正常（真实 IME） | 通过（人工） |
 | 源码模式编辑后自动保存：状态栏 Edited → Saved | 通过（人工） |
@@ -108,11 +108,11 @@
 
 - 视图注册的 `location` 是 `'left' | 'center'`：左侧视图进左栏，中央视图成为视图模式（见 #9）；没有右栏。
 - 大纲对 `test/fixtures/outline.md`（ATX H1–H3、setext H2、代码围栏内的伪标题、重复标题）只列真实标题且层级正确。
-- 点击每个条目（含第二个重复标题）把光标移到该标题：WYSIWYG 检查光标所在标题，源码模式检查 CodeMirror 精确偏移。
+- 点击每个条目（含第二个重复标题）把光标移到该标题：预览检查光标所在标题，源码模式检查 CodeMirror 精确偏移。
 - 新增 / 重命名 / 删除标题在防抖（300ms）后更新列表。
 - 条目缩进按标题层级递增（比较文字 `getBoundingClientRect`，不依赖内部属性）；标题内 `**粗体**` / `` `code` `` 显示为纯文本。
 - frontmatter 内的 `# x` 与原始 HTML 块内的 `<h2>` / `# y` 不会出现在大纲。
-- 点击条目会把标题滚动进视口并把焦点交给编辑器（WYSIWYG 与源码模式都验证），焦点不停留在大纲按钮上。
+- 点击条目会把标题滚动进视口并把焦点交给编辑器（预览与源码模式都验证），焦点不停留在大纲按钮上。
 - 源码模式中把光标移到后续章节时，对应条目高亮；光标在第一个标题之前时没有高亮。
 - 关闭后重新打开大纲：左栏与条目恢复，高亮继续跟随光标。
 - 预注册左侧与中央视图后挂载侧栏：左侧视图只挂载一次，中央视图不会被侧栏挂载；只有中央视图时不渲染左栏。
@@ -120,13 +120,13 @@
 - 移动光标高亮所在章节（`aria-current="true"`）。
 - 无标题文档显示空状态。
 - 关闭大纲插件：左栏消失、编辑仍写入 host；`PluginContext.editor.onSelectionChange` 监听随插件禁用被释放。
-- GenUI 不包含自己的标题列表；在 GenUI 模式下大纲仍在左栏，点条目切回 Rich text 并把光标放到该标题。
+- GenUI 不包含自己的标题列表；在 GenUI 模式下大纲仍在左栏，点条目切回预览并把光标放到该标题。
 
 ## 视图模式与 GenUI（#9，取代 #6 的右侧栏与 v1 格式）
 
 自动化（`web/test/genui.test.tsx`、`web/test/app-source.test.tsx`、`web/test/outline.test.tsx` 在 App + `createBrowserHost` 接缝；`web/test/sections.test.ts` 用共享向量；`web/test/side-pane.test.tsx`、`web/test/plugin-registry.test.ts`）：
 
-- 头部三选一 `Rich text` / `Markdown` / `GenUI`；`⌘/`、`Ctrl+/` 在 Rich text 与 Markdown 之间切换。
+- 头部三选一 `Preview` / `Markdown` / `GenUI`；`⌘/`、`Ctrl+/` 在预览与 Markdown 之间切换。
 - 没有视图文件：显示 `No view yet.` 与 `Generate`（#7 起可用）。
 - `view-format.md` 的 v2 JSON 示例直接加载：替代编辑器占满中央，无错误，Tabs / Row / Card / Column / Text / KeyPoints 全部渲染，`Text` 里的 `**粗体**` 是 `<strong>`；切到 `Details` 标签页显示第二页。
 - 在视图里切换标签页不调用 `host.update`，文档不变为 edited。
@@ -134,7 +134,7 @@
 - `Text` 里的链接、图片、`<b>`：不产生 `a` / `img` / `b` 元素；链接只显示文字。
 - 非 JSON、`version: 1`（提示「请重新生成」）、`version: 3`、缺 `a2ui`、引用不存在的组件：整个视图一条错误；写入、替换、删除视图文件时视图随之更新。
 - 只在 GenUI 模式显示时跟随视图文件：启动时 0 个跟随者，进入 GenUI 1 个，离开归 0；离开期间写入的视图在再次进入时显示。
-- Markdown 模式里的修改经过一次 GenUI 后仍在，并已写入 host；Rich text 的滚动位置在往返 GenUI 后恢复。
+- Markdown 模式里的修改经过一次 GenUI 后仍在，并已写入 host；预览的滚动位置在往返 GenUI 后恢复。
 - 视图模式按文档记忆：重新挂载 App 后回到 GenUI。
 - 章节范围与 `fnv1a32` 哈希与独立计算的向量一致（含 CJK、emoji、CRLF、重复标题、setext、代码围栏伪标题）。
 
@@ -146,7 +146,7 @@
 |---|---|
 | 头部三选一，切到 GenUI：格式文档示例占满中央，粗体、标签页、分栏、卡片、KeyPoints 正确 | 通过（自动化 UI 操作） |
 | 切到 `Details` 标签页 | 通过（自动化 UI 操作） |
-| GenUI 模式下点大纲 `Metrics`：切回 Rich text，光标在 Metrics 标题 | 通过（自动化 UI 操作） |
+| GenUI 模式下点大纲 `Metrics`：切回预览，光标在 Metrics 标题 | 通过（自动化 UI 操作） |
 | 退出后重新打开：直接回到 GenUI | 通过（自动化 UI 操作） |
 | 在磁盘上改写视图文件：未知组件只在其位置报错；写成 v1 显示「请重新生成」 | 通过（自动化 UI 操作） |
 | 以上全部操作后 `report.md` sha1 不变 | 通过 |
@@ -157,16 +157,16 @@
 
 - 视图哈希由共享章节模块算出（与宿主将写入的一致）。外部改动一个章节：只有引用它的组件（含多来源组件）标 `Source changed`，其他不变；改掉标题：引用它的组件标 `Source not found`（优先于 changed），内容照常显示，`Edit in source` 禁用；恢复原文后标记全部消失。
 - 无 `hash` 的手写视图：改动来源后仍不显示任何状态。
-- `Edit in source` 引用第二个同名 `Summary`：切到 Rich text，选中的正是第二个章节（标题 + 正文），而不是第一个。
-- 视图滚到下方点 `Edit in source`、在 Rich text 修改、点 `← Back to GenUI`：回到 GenUI，滚动位置误差 < 2px，被改章节的组件标 `Source changed`，其余不变；之后返回按钮消失。在头部选模式后返回按钮也消失。
-- 编辑器 `select`：WYSIWYG 按整块选中区间（重复标题各选各的），越界返回 `false`；源码模式为精确选区并报告起始偏移，`from > to` 返回 `false`。
+- `Edit in source` 引用第二个同名 `Summary`：切到预览，选中的正是第二个章节（标题 + 正文），而不是第一个。
+- 视图滚到下方点 `Edit in source`、在预览修改、点 `← Back to GenUI`：回到 GenUI，滚动位置误差 < 2px，被改章节的组件标 `Source changed`，其余不变；之后返回按钮消失。在头部选模式后返回按钮也消失。
+- 编辑器 `select`：预览按整块选中区间（重复标题各选各的），越界返回 `false`；源码模式为精确选区并报告起始偏移，`from > to` 返回 `false`。
 
 打包应用手动检查（2026-11-06，`go tool mygo build` 产物，`/tmp/mdws-smoke/view10/report.md`，视图哈希按格式文档独立计算）：
 
 | 检查 | 状态 |
 |---|---|
 | 进入 GenUI：所有组件无标记，底部显示 `From <标题>` 与 `Edit in source` | 通过（自动化 UI 操作） |
-| 滚到底部点 LATE 的 `Edit in source`：切到 Rich text，第二个 `Summary` 章节被选中，大纲高亮该条，显示 `← Back to GenUI` | 通过（自动化 UI 操作） |
+| 滚到底部点 LATE 的 `Edit in source`：切到预览，第二个 `Summary` 章节被选中，大纲高亮该条，显示 `← Back to GenUI` | 通过（自动化 UI 操作） |
 | 在该段末尾输入 ` Revised.`：自动保存，文件末尾为 `Late summary. Revised.` | 通过（自动化 UI 操作） |
 | 点 `← Back to GenUI`：回到原滚动位置，只有 LATE 标 `Source changed` | 通过（自动化 UI 操作） |
 | 外部进程把 `# Metrics` 改成 `# Numbers`：版本 v2，METRICS 与 BOTH 标 `Source not found`，LATE 仍为 `Source changed` | 通过（自动化 UI 操作） |
@@ -177,7 +177,7 @@
 
 - 格式文档示例用到目录里全部 10 个组件，在 App 里无错误渲染（Summary：KeyPoints、Checklist、MetricGrid、粗体 Text；Details：ComparisonTable、Timeline）。
 - ComparisonTable：点 `Size` 升序（9、12、180，按数值）→ 降序 → 原顺序；点 `Option` 按文字排序；`aria-sort` 跟随；`host.update` 从未调用。
-- Checklist：`aria-checked` / `aria-readonly`；点 `Generation`（`quote: "Ship generation"`）切到 Rich text 并选中原文那一项，原文不变、未 edited；来源缺失时各项禁用。
+- Checklist：`aria-checked` / `aria-readonly`；点 `Generation`（`quote: "Ship generation"`）切到预览并选中原文那一项，原文不变、未 edited；来源缺失时各项禁用。
 - 属性写错：错误写明组件与 id（`'MetricGrid' (root)`）和原因（缺 `value`、`trend` 枚举、表格某行单元格数不对、空 `events`、多余属性 `checked`）。
 - 嵌套违规：`Card` 里放 `Tabs` → `UNALLOWED_CHILD: …`；`Row` 里放 `Row` → `UNALLOWED_PARENT: …`；信息里没有占位组件名。
 - 560px 与 1600px 宽：中央区与每个组件都不横向溢出，超长单词换行，宽表只在自己框内滚动。
@@ -192,7 +192,7 @@
 |---|---|
 | GenUI Summary：两张卡片并排（KeyPoints、Checklist 一项已勾），下方 MetricGrid 带单位与 ▲ +4%；`Edit in source` 按钮样式正确 | 通过（自动化 UI 操作 + 截图） |
 | Details：ComparisonTable 与 Timeline；点 `Size (MB)` 列头后为 Tauri 9 → MyGo 12 → Electron 180 | 通过（自动化 UI 操作 + 截图） |
-| 点 Checklist 项：切到 Rich text，`Next steps` 一节被选中（该项文字不在原文，回退到整节），显示 `← Back to GenUI` | 通过（自动化 UI 操作 + 截图） |
+| 点 Checklist 项：切到预览，`Next steps` 一节被选中（该项文字不在原文，回退到整节），显示 `← Back to GenUI` | 通过（自动化 UI 操作 + 截图） |
 | ~~WebKit 深色：临时把 `:root` 改成 `color-scheme: dark` 打包，组件为深色背景、浅色文字（只验证了 GenUI；其余界面还没有深色样式）~~ | 曾通过（截图），已改回；**已被 ADR 0006 取代**：本轮不提供深色外观 |
 | 以上全部操作后 `report.md` sha1 不变 | 通过 |
 
@@ -249,7 +249,7 @@
 
 | 检查 | 状态 |
 |---|---|
-| Rich text 里把 Options 表格 Tauri 的 9 改成 0 → GenUI：`From Options` 标 Source changed，按钮 `Regenerate changed (1)` | 通过（自动化 UI 操作） |
+| 预览里把 Options 表格 Tauri 的 9 改成 0 → GenUI：`From Options` 标 Source changed，按钮 `Regenerate changed (1)` | 通过（自动化 UI 操作） |
 | `Regenerate changed (1)`：进度 Starting / Agent ready / Thinking / File source.md / File view.json / File out.json，约 1 分钟后表格显示 Tauri 0、无 Source changed、`Regenerate changed` 禁用、出现 `Undo last generation` | 通过（自动化 UI 操作） |
 | 视图文件：`a2ui` = 原 `createSurface` + 一条只含 `compare` 的 `updateComponents`；`sources.options.hash` 重算为 `fnv1a32:6a329a8c`；`.report.md.genui.prev.json` 与原视图逐字节一致；无 `agy` 进程与临时目录 | 通过 |
 | `Undo last generation`：视图文件与原视图逐字节一致、备份删除；页面回到 Tauri 9 + Source changed + `Regenerate changed (1)`，撤回按钮消失 | 通过 |
@@ -257,20 +257,20 @@
 
 ## 批注（#13）
 
-自动化：`web/test/notes.test.ts`（格式、转义、Rich text 添加 / 编辑 / 删除 / 撤销、源码模式、只读）、`web/test/genui-notes.test.tsx`（从组件添加、显示、不标「原文已改」、`exclude` 传给宿主）、`web/test/compose-gaps.test.ts`（增删块后其余间隔不变）、语料 `22-notes.md`（逐字节往返）、`section-vectors.json` 的 `notes`（TS 和 Go）。
+自动化：`web/test/notes.test.ts`（格式、转义、预览添加 / 编辑 / 删除 / 撤销、源码模式、只读）、`web/test/genui-notes.test.tsx`（从组件添加、显示、不标「原文已改」、`exclude` 传给宿主）、`web/test/compose-gaps.test.ts`（增删块后其余间隔不变）、语料 `22-notes.md`（逐字节往返）、`section-vectors.json` 的 `notes`（TS 和 Go）。
 
 打包应用实测（2026-11-07，真实 `agy acp`，`/tmp/mdws-smoke/notes/report.md`：CRLF、不规则空行、无结尾换行、带属性的批注、代码块里的 `<!-- note -->`）：
 
 | 检查 | 结果 |
 |---|---|
-| Rich text 显示 | 批注是标记，带 Edit / Delete；代码块里的注释仍是代码 |
+| 预览显示 | 批注是标记，带 Edit / Delete；代码块里的注释仍是代码 |
 | 编辑（写入 `Edited --> note`） | 磁盘上只有文字变成 `Edited --\> note`，`author` / `id`、CRLF、空行不变；显示读回原文 |
 | ⌘Z | 文件回到编辑前的字节 |
 | 块菜单 `Add note` | 批注落在打开菜单的块后面，其余字节（含 `\n\n\n`）不变 |
 | 带批注的文档 `Generate` | 4 个来源的哈希与 Python 手工去掉批注后计算的一致；没有组件标 Source changed；Agent 没有把批注写进内容 |
 | GenUI 组件 `Note` | 带子节的来源：批注落在子节之后；末节：文件仍无结尾换行；两次都只多出批注；没有组件标 Source changed；停留在 GenUI |
 | Markdown 模式 | 显示 `<!-- note: … -->` 原始文本 |
-| 回 Rich text 按两次 ⌘Z | GenUI 加的两条都撤销，文件回到添加前的字节 |
+| 回预览按两次 ⌘Z | GenUI 加的两条都撤销，文件回到添加前的字节 |
 | Delete | 批注和它前面的间隔一起去掉，其余字节不变；GenUI 没有标 Source changed |
 | #12 遗留：备份权限 | 视图 0600 时 `Regenerate all`：备份 0600、视图 0600，备份与旧视图逐字节一致；Undo 后视图逐字节恢复，备份删除 |
 | 退出 | 没有 `agy` 进程，没有 `markgogo-genui-*` 临时目录 |
@@ -308,7 +308,7 @@
   - 中央视图（`location: 'center'`）仅渲染纯净只读 A2UI 组件卡片与来源底座，彻底剥离生成工具栏与错误提示框。
   - 右栏 `genui.panel`（`location: 'right'`）承载 5 种顶部状态与唯一主操作按钮、点击 `Source changed` 列表项平滑滚动并高亮定位中央卡片、Focus 生成要求安静只读与原地编辑、以及固定底部元数据（`Antigravity (agy)`、`ModelMenu`、生成时间、`Undo`）。
 - **原地白纸 Composer（#19）**：
-  - 彻底移除居中模态 `<dialog class="mgo-note-dialog">`，Rich text 与 GenUI 卡片内写批注均原地展开自适应增高白纸卡片（`.composer`，`⌘↩` 保存，`Esc` 取消），保持原文逐字节保真，且不触发“原文已改”。
+  - 彻底移除居中模态 `<dialog class="mgo-note-dialog">`，预览与 GenUI 卡片内写批注均原地展开自适应增高白纸卡片（`.composer`，`⌘↩` 保存，`Esc` 取消），保持原文逐字节保真，且不触发“原文已改”。
 
 ## 工作区、标签与 Portrait 集成（#20/#21–#32，2026-11-08）
 
@@ -401,7 +401,7 @@
 | Open Folder 原生面板 | Go To `/private/tmp/.../native32/workspace` 后得到规范化根，文件数 12 | 通过（该场景） |
 | 文件树 | `bytes` 文件夹可访问名为 `bytes, 8 files`，计数右对齐；8 个子孙连续排在根级 alpha/beta/comparison/partial-sources 之前；折叠只隐藏这 8 行并保留根级行 | 通过（该场景） |
 | 同窗多标签 | 从树打开 Alpha 再打开 Beta，同一原生窗口两个标签，两个正文都显示 | 通过（该场景） |
-| 视图模式 | `⌘/` 在 Rich text / Markdown 间切换并把焦点交给源码编辑器；切换标签各自保留模式 | 通过（该场景） |
+| 视图模式 | `⌘/` 在预览 / Markdown 间切换并把焦点交给源码编辑器；切换标签各自保留模式 | 通过（该场景） |
 | 输入归属 | `typeText` 分别写入 Alpha `NATIVE-A-INPUTxy`、Beta `NATIVE-B-INPUTwz`，未观察到串写；短暂 Edited 后自动 Saved（v1 不是编辑计数） | 通过（该场景） |
 | 标签键盘 | 标签获得焦点后方向键 Right 激活 Beta | 通过（该场景；CUA 焦点报告仍留在前一个标签，不构成 VoiceOver 结论） |
 | 路由修复（更早 SHA） | `0b226e99` 构建上，同一工作区先开 Alpha 再开 Beta 得到同窗两个标签；此前 `ca95333` 因 `/tmp` 与 `/private/tmp` 别名分裂为两个窗口（已由符号链接前缀规范化修复） | 通过（该场景，非最终验收） |
@@ -446,7 +446,7 @@
 | 首次输入的显式保存 | alpha 上 Cmd+S 写入同一 181 B 内容，编辑器内容保持，无空写入 | **PASS** |
 | 未命名 Save As 与迁移 | 见上表：精确 50 B、标签迁移、无占位、`Saved v1` | **PASS** |
 | 迁移后的撤销/重做 | 迁移文档内 Cmd+Z 移除输入（Edited）、⇧⌘Z 恢复；alpha/beta 字节不变，历史属于迁移后的文档 | **PASS** |
-| 特殊块与原地 Composer 字节保真（47e 复验保存/撤销；Esc 取消在 7b 观察） | 打开 `baseline-richtext.md` 本身不写盘（169 B `5b377f55…75e6`，mtime 12:30:06）；composer 追加 ` CHK47` 后自动保存为 175 B `1d0f0c44…db28`，diff 只有 alert 行，其余字节一致；Cmd+Z + 自动保存恢复到精确原始 169 B `5b377f55…75e6`。7b 上的 Esc 取消保持文档与文件不变 | **PASS（47e）** |
+| 特殊块与原地 Composer 字节保真（47e 复验保存/撤销；Esc 取消在 7b 观察） | 打开原始样文时未写盘（169 B `5b377f55…75e6`，mtime 12:30:06）；composer 追加 ` CHK47` 后自动保存为 175 B `1d0f0c44…db28`，diff 只有 alert 行，其余字节一致；Cmd+Z + 自动保存恢复到精确原始 169 B `5b377f55…75e6`。7b 上的 Esc 取消保持文档与文件不变 | **PASS（47e）** |
 | ComparisonTable 键盘排序与不写原文（7b 构建） | 表头 `Option/Size/Notes` 可聚焦，Space 排序 180/12/9（数值降序），再次 Space 恢复；`comparison.md` 哈希与 mtime 不变。注意：6478 本轮只以鼠标激活取得一次升序，键盘/AT 未复验（见下） | **PASS（7b 构建，路径未改动）** |
 | 部分来源与全部缺失的实时跟随（7b 构建） | mixed 视图：FRESH、STALE `Source changed`、MISSING `Source not found` 且 `Edit in source`/`Note` 禁用并提示“None of this part's sources are in the document now.”、无哈希不标记；面板 `2 components out of date`、`Regenerate changed (2)`；`state.sh all-missing` 实时变为 MISSING A/B 且均禁用，`state.sh partial` 恢复；原文哈希与 mtime 不变 | **PASS（7b 构建，路径未改动）** |
 | 窄窗右栏浮层（7b 构建） | 约 750 pt 窗口下 `Show right panel` 以浮层盖在文档上，含 Outline/GenUI 分段；GenUI 显示过期摘要；`Hide` 收起；宽窗布局已在同名标签场景观察到 | **PASS（7b 构建，路径未改动）** |
@@ -454,7 +454,7 @@
 | 两个未命名 A/B，A 首次保存进已有文件夹（47e） | 新建 Untitled A 与 Untitled 2 B；`File > Save As` 后 A 成为 `first-save-A.md` 且内容完整，B 仍是独立的 `Untitled 2` 标签；保存后 A 内 Cmd+Z/⇧⌘Z 有效，B 未受影响 | **PASS** |
 | 只读文档（47e） | `readonly-special-blocks.md` 以 `Read only` 打开并渲染块；输入 `RO-EDIT` 不改变文档；Cmd+S 显示原生提示“The document “readonly-special-blocks.md” can’t be saved because its file is read-only. Save it as another file to keep your changes.”（Cancel / Save As…），Cancel 关闭；文件仍为 0444、字节不变 | **PASS** |
 | 同名标签与导航（47e） | workspace-same 显示 `notes.md — alpha` 与 `notes.md — beta` 两个标签且内容各自不同；面包屑 `workspace-same / beta / notes.md`；过滤 `notes` 显示 “2 of 3 files”；同时观察到宽窗三栏布局 | **PASS** |
-| 主动清空（47e） | Rich text 中 Cmd+A/Backspace 后 Cmd+S：文件为 1 字节 `01ba4719…546b`（单个 `\n`），退出重启后文档恢复为空白、Saved，文件仍 1 字节；Markdown 模式清空后 Cmd+S 为 0 字节 `e3b0c442…`，两种形式都不被退出覆盖 | **PASS** |
+| 主动清空（47e） | 预览中 Cmd+A/Backspace 后 Cmd+S：文件为 1 字节 `01ba4719…546b`（单个 `\n`），退出重启后文档恢复为空白、Saved，文件仍 1 字节；Markdown 模式清空后 Cmd+S 为 0 字节 `e3b0c442…`，两种形式都不被退出覆盖 | **PASS** |
 | 并发 A/B 生成（fake ACP，47e） | alpha（paced，pace 15）与 beta（仓库 helper）在 alpha 运行期间先后生成：alpha `ALPHA VIEW` / 请求 `ALPHA-ONLY focus` / `gemini-3.8-flash` / 04:47:44Z；beta `BETA VIEW` / `BETA-ONLY focus` / 同一模型 / 04:47:52Z；两者 `Up to date`，磁盘视图与日志分别匹配各自请求；alpha 运行中 Model 弹层禁用 | **PASS** |
 | 取消生成（47e） | alpha `Regenerate all` 后 Cancel：回到原有 `ALPHA VIEW`，面板 `Up to date`，请求与生成时间保持；视图文件哈希 `f98d39cd…3bb1` 不变；日志以 `session/prompt → session/cancel` 结束。取消不产生失败、不提示（接口规则），属规范行为，不是 FAIL 候选 | **PASS（规范行为）** |
 | 大目录与监听竞态（#14/#29，47e） | `large-workspace` 只列 `· 1 file`（`audit.md`；514 个无关目录与 16k txt 不列出）；切换 GenUI 到首个含视图内容的 AX 为 **460 ms**（含单次 getAXState 等待，方法已记录）；运行中原子替换视图文件后运行中的视图更新为新文本（约 1.5 s 内，观察上界），恢复原文件后视图回退；`audit.md` 字节不变 | **PASS** |
@@ -564,7 +564,7 @@
 | Model（右栏底部 `ModelMenu`） | 已实现；只提交 `{ model }`；跨文档的原生传播尚未验证（见未运行行的 Model 说明） | `settings.go` 的 `SettingsPatch`；`GenUIView.tsx` 的 `selectModel` |
 | Locate agent…（`agent-not-found` 失败内） | 已实现；只提交 `{ agentCommand }`，空值恢复默认 | 同一补丁类型；`GenerationFailure` 的定位输入 |
 | 生成要求 Focus（右栏，原地 Composer） | 已实现；随视图文件保存并在重新生成时沿用 | `view-format.md` 的 `request` |
-| 视图模式（Rich text / Markdown / GenUI） | 已实现；按 `documentId` 随会话保存 | `SetViewMode`、`session.json` |
+| 视图模式（Preview / Markdown / GenUI） | 已实现；按 `documentId` 随会话保存 | `SetViewMode`、`session.json` |
 | ACP 模型列表缓存 | 已实现；只由 `session/new` 握手写入 | `settings.go` 的 `setModels` |
 | 字体、字号、主题、外观切换、系统提示词 | **N/A（按设计不提供）**，不是未实现控件 | ADR 0006：本轮固定浅色与离线字体；界面无此类入口 |
 | 原生保存表 / Edit 菜单归属 / VoiceOver | 保存表（首次输入 Cmd+S、typed untitled Save As）已在 47e 原生观察；Edit 菜单点击与 VoiceOver 仍未验证，见上表 | 上文的原生证据与未运行行 |
@@ -591,7 +591,7 @@
 - ~~ComparisonTable 的列头按钮在 macOS 辅助功能树里不出现（表格行可见），自动化只能用坐标点击。~~ **已由 #31 取代**：列头是真正的按钮，支持键盘操作并暴露 `aria-sort`；Chromium 测试覆盖键盘排序。真实 WebKit/VoiceOver 行为仍待原生复验（见上表 BLOCKED 行）。
 - ~~多来源组件只要有一个来源 `missing` 就禁用 `Edit in source`，即使其他来源还在。~~ **已由 #28 取代**：只要还有来源存在，`Edit in source` 与 `Note` 就用第一个仍存在的来源；只有全部失效才禁用。
 - 打开大目录工作区（同目录 516 项，含子目录约 1.6 万个文件）首次切到 GenUI 时，旧版本中央区域空白一段时间后才显示视图。**已由 #29 修正代码路径**：`WatchView` 先送出第一份快照再建目录监听，随后追赶快照，GenUI 也有明确的加载状态；真实原生首次视图就绪时间与监听竞态仍需在准备好的大目录上测量（见上表 `#14/#29` 行），不得沿用旧推测作为结论。
-- 大纲在 WYSIWYG 模式按顶层块粒度高亮章节：光标在同一顶级块内移动不会改变当前章节。
+- 大纲在预览模式按顶层块粒度高亮章节：光标在同一顶级块内移动不会改变当前章节。
 - `markdownUpdated` 每次编辑都会在内部整篇序列化（仅耗时，不影响保存内容）。
 - 批注加到父节末尾时，如果父节以子节结束，它也属于这个子节，所以两个组件旁都会显示。
 - 编辑批注时光标放到文字末尾，这个改动只经过 typecheck 和打包，没有在 app 里实测（当时屏幕已锁定）。

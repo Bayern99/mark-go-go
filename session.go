@@ -34,6 +34,14 @@ type sessionTab struct {
 	ViewMode string `json:"viewMode,omitempty"`
 }
 
+// normalizeViewMode accepts the mode name used by older app sessions.
+func normalizeViewMode(mode string) string {
+	if mode == "richtext" {
+		return "preview"
+	}
+	return mode
+}
+
 // restoreLive is what recovery and this launch already opened.
 type restoreLive struct {
 	OpenByID   map[string]restoreDoc
@@ -109,6 +117,7 @@ func (st *settingsStore) loadSession() sessionFileData {
 			if tab.ID == "" && tab.Path == "" {
 				continue
 			}
+			tab.ViewMode = normalizeViewMode(tab.ViewMode)
 			tabs = append(tabs, tab)
 		}
 		out.Workspaces = append(out.Workspaces, sessionWorkspace{

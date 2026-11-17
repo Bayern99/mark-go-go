@@ -37,12 +37,11 @@ _Avoid_: 空工作区、无根工作区
 ## 视图模式
 
 **视图模式（View mode）**：
-同一份原文在窗口中央的三种互斥呈现方式之一：Rich text、Markdown、GenUI。
+同一份原文在窗口中央的三种互斥呈现方式之一：Preview、Markdown、GenUI。
 _Avoid_: 面板、标签页、编辑模式
 
-**Rich text**：
-以所见即所得方式显示并编辑原文的视图模式。
-_Avoid_: WYSIWYG 模式、富文本模式
+**Markdown 预览（Markdown Preview）**：
+以渲染后的 Markdown 呈现原文的可编辑视图模式，界面按钮显示为 `Preview`。
 
 **Markdown**：
 以原始 Markdown 文本显示并编辑原文的视图模式。
@@ -53,7 +52,7 @@ _Avoid_: 源码模式、Source mode、MarkdownView
 _Avoid_: GenUI 面板、Generated UI 侧栏
 
 **原地 Markdown 编辑（In-place Markdown editing）**：
-在 Rich text 中只为一个特殊块展开原文编辑区，完成后回到该块的可视呈现；这是局部编辑操作，不是第四种视图模式。
+在预览中为单个特殊块展开原文编辑区，完成后回到该块的可视呈现。
 _Avoid_: 源码模式（指该操作时）、结构化可视编辑
 
 ## GenUI

@@ -140,7 +140,7 @@
 ## 本项目长期界面规则（要求＋理由）
 
 1. **三栏职责严格分离（左栏工作区、中央只放内容、右栏放 Outline 与 GenUI 管理）**
-   - **要求**：左栏仅放工作区文件导航；中央仅渲染当前文档内容（Rich text / Markdown / GenUI 视图）及紧贴正文的动作（卡片底部来源章节、`Source changed`、`Edit in source`、`Note` 与正文批注操作）；生成触发、进度、失败和模型选择全部放在右栏 GenUI 面板（见 `docs/adr/0004-three-column-layout-and-genui-panel.md`）。
+   - **要求**：左栏仅放工作区文件导航；中央仅渲染当前文档内容（Preview / Markdown / GenUI）及紧贴正文的动作（卡片底部来源章节、`Source changed`、`Edit in source`、`Note` 与正文批注操作）；生成触发、进度、失败和模型选择全部放在右栏 GenUI 面板（见 `docs/adr/0004-three-column-layout-and-genui-panel.md`）。
    - **理由**：避免把“读视图”和“管生成”混在一起，消除中央阅读区上方常驻表单对阅读体验的干扰，并为后续围绕当前文档工作的 Agent 预留自然栏位。
 
 2. **应用状态色与原文内容语义色分开定义**
@@ -148,7 +148,7 @@
    - **理由**：分别表达工作台状态与原文内容含义，避免内容提示被误读成应用错误，并保证颜色之外仍有文字与图标依据。
 
 3. **批注、生成要求与特殊块原地编辑统一使用原地 Composer（禁止模态弹窗）**
-   - **要求**：添加/编辑批注（Rich text 与 GenUI 卡片内）、编辑生成要求（Focus）及特殊块的原地 Markdown 编辑，均在最终落位处原地展开为单张白纸输入块（`border-radius: 8px`，随内容增高，`⌘↩` 保存、`Esc` 取消），不使用 `<dialog>` 或居中弹窗（见 ADR 0004 与 ADR 0006）。
+   - **要求**：添加/编辑批注（预览与 GenUI 卡片内）、编辑生成要求（Focus）及特殊块的原地 Markdown 编辑，均在最终落位处原地展开为单张白纸输入块（`border-radius: 8px`，随内容增高，`⌘↩` 保存、`Esc` 取消），不使用 `<dialog>` 或居中弹窗（见 ADR 0004 与 ADR 0006）。
    - **理由**：保持编辑位置与原文上下文，避免弹窗遮挡及切换整份原文的视图模式。
 
 4. **Model 选择器复用块菜单材质的向上弹出菜单（禁止原生 `<select>` 与自由手输框）**
@@ -160,14 +160,14 @@
    - **理由**：保证“一个文件唯一权威来源”，避免双向同步与概念漂移。
 
 6. **内容滚动区域统一使用低存在感 Overlay Scrollbar**
-   - **要求**：文件树、Rich text、Markdown、中央 GenUI、Outline、GenUI 管理与 ComparisonTable 复用 `web/src/components/ScrollArea.tsx`；滚动位置必须读写组件提供的真实 viewport，不把 OS 宿主当作滚动元素。滑块 4px、命中区 10px、停止交互 600ms 后隐藏，颜色复用 `--scrollbar-thumb*` 语义 Token，动画只涉及透明度与颜色。顶部文档标签只属于 `workspace-main`，不得覆盖左侧工作区栏；标签按实测宽度保留活动标签，其余进入可搜索的溢出菜单；标签不滚动、不显示滚动条，也不得渲染到标签带之外。第三方编辑器、代码块和菜单保留原生滚动所有权，不叠加第二套机制。
+   - **要求**：文件树、预览、Markdown、中央 GenUI、Outline、GenUI 管理与 ComparisonTable 复用 `web/src/components/ScrollArea.tsx`；滚动位置必须读写组件提供的真实 viewport，不把 OS 宿主当作滚动元素。滑块 4px、命中区 10px、停止交互 600ms 后隐藏，颜色复用 `--scrollbar-thumb*` 语义 Token，动画只涉及透明度与颜色。顶部文档标签只属于 `workspace-main`，不得覆盖左侧工作区栏；标签按实测宽度保留活动标签，其余进入可搜索的溢出菜单；标签不滚动、不显示滚动条，也不得渲染到标签带之外。第三方编辑器、代码块和菜单保留原生滚动所有权，不叠加第二套机制。
    - **理由**：统一三栏与内部滚动区域的视觉反馈，避免布局跳动、嵌套滚动冲突，以及编辑器光标、选择和阅读位置恢复回归。
 
 ---
 
 ## 按需 Skill：Mark Go Go 界面任务落地
 
-- **触发条件**：在 Mark Go Go 中新增、重构或修复任何前端界面、插件视图（Outline / GenUI）、编辑器交互（Rich text / Markdown / 批注）或落地 `docs/design/Mark Go Go 界面设计.html` 与 `docs/adr/0004-three-column-layout-and-genui-panel.md`。
+- **触发条件**：在 Mark Go Go 中新增、重构或修复任何前端界面、插件视图（Outline / GenUI）、编辑器交互（预览 / Markdown / 批注）或落地 `docs/design/Mark Go Go 界面设计.html` 与 `docs/adr/0004-three-column-layout-and-genui-panel.md`。
 - **执行步骤**：
   1. **有界盘点**：阅读 `GLOSSARY.md`、`docs/adr/0002-genui-derived-center-view.md`、`docs/adr/0004-three-column-layout-and-genui-panel.md`、`docs/design/Mark Go Go 界面设计.html` 及下方“当前代码与设计规范对照基准”，核对目标文件、Token、组件 props 与 Go ↔ Web `HostAdapter` 接口（`docs/interfaces.md`），列出适用项与缺口。
   2. **确定最小实现**：复用既有语义 Token、组件与区块；对未实现的后端接口（如 `GetSettings` 模型列表缓存）先对齐契约并运行 `go tool mygo generate`（若改 Go 绑定签名），再改前端视图与样式。
@@ -208,7 +208,7 @@
 - **来源引用底座区块**：
   - `web/src/plugins/genui/SourceFrame.tsx` 与 `web/src/plugins/genui/sources.ts`（`SourceStore` 状态计算，卡片底部 `From`、`Source changed` / `Source not found`、`Edit in source`、`Note`）。部分来源缺失时仍用第一个存活来源提供 `Edit in source` 与 `Note`，全部缺失才禁用。
 - **统一原地白纸输入块（`.composer`）**：
-  - `web/src/editor/noteDialog.ts` 与 `web/src/editor/createEditor.ts`：Rich text 添加/编辑批注在目标块下方原地展开 `<div class="composer mgo-note-composer" role="region" aria-label="Note composer">`（不再使用 `<dialog>`）；
+  - `web/src/editor/noteDialog.ts` 与 `web/src/editor/createEditor.ts`：预览添加/编辑批注在目标块下方原地展开 `<div class="composer mgo-note-composer" role="region" aria-label="Note composer">`（不再使用 `<dialog>`）；
   - `web/src/plugins/genui/SourceFrame.tsx`：GenUI 卡片点击 `Note` 在卡片底座下方原地展开 `.composer.mgo-note-composer`；
   - `web/src/plugins/genui/GenUIView.tsx`：右栏点击 `Edit` 原地展开 `Focus` `.composer`；`agent-not-found` 失败里的 `Locate agent…` 原地展开 `Agent command` `.composer`；
   - `web/src/editor/blocks/lockedView.ts` + `web/src/editor/createEditor.ts`：特殊块（frontmatter / alert / footnote / meta code fence / math）的 `Edit` 在块原地展开 `.composer.mgo-block-composer`（`<textarea aria-label="Markdown">`，保存只改写该块原文并保留行尾）；`Kept as written` 块同样可编辑，但 HTML 不执行；

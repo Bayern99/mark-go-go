@@ -4,7 +4,7 @@ import "testing"
 
 func TestDocumentInfoReadsOneSessionState(t *testing.T) {
 	host := &documentHost{}
-	session := &docSession{host: host, viewMode: "richtext"}
+	session := &docSession{host: host, viewMode: "preview"}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -17,7 +17,7 @@ func TestDocumentInfoReadsOneSessionState(t *testing.T) {
 				session.restoreError = "could not restore"
 			} else {
 				session.generating = false
-				session.viewMode = "richtext"
+				session.viewMode = "preview"
 				session.actionError = ""
 				session.restoreError = ""
 			}
@@ -31,7 +31,7 @@ func TestDocumentInfoReadsOneSessionState(t *testing.T) {
 			if info.ViewMode != "markdown" || info.ActionError != "save failed" || info.RestoreError != "could not restore" {
 				t.Fatalf("mixed session state while generating: %+v", info)
 			}
-		} else if info.ViewMode != "richtext" || info.ActionError != "" || info.RestoreError != "" {
+		} else if info.ViewMode != "preview" || info.ActionError != "" || info.RestoreError != "" {
 			t.Fatalf("mixed session state while idle: %+v", info)
 		}
 	}

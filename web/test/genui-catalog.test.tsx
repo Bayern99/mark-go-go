@@ -235,7 +235,7 @@ describe('GenUI content components', () => {
 
     await page.getByRole('checkbox', { name: 'Generation' }).click()
     await vi.waitFor(() => {
-      expect(page.getByTestId('view-mode-richtext').element().getAttribute('aria-checked')).toBe('true')
+      expect(page.getByTestId('view-mode-preview').element().getAttribute('aria-checked')).toBe('true')
       expect(window.getSelection()?.toString()).toContain('Ship generation')
     })
     // The view never writes the document: the item stays unchecked.
@@ -279,7 +279,7 @@ describe('GenUI content components', () => {
     }, { timeout: SOURCE_DEBOUNCE_MS + 2000 })
     await userEvent.click(item)
     await vi.waitFor(() => {
-      expect(page.getByTestId('view-mode-richtext').element().getAttribute('aria-checked')).toBe('true')
+      expect(page.getByTestId('view-mode-preview').element().getAttribute('aria-checked')).toBe('true')
       expect(window.getSelection()?.toString()).toContain('Ship generation')
       expect(window.getSelection()?.toString()).not.toContain('History')
     })
@@ -311,7 +311,7 @@ describe('GenUI content components', () => {
     }, { timeout: SOURCE_DEBOUNCE_MS + 2000 })
     await userEvent.click(item)
     await vi.waitFor(() => {
-      expect(page.getByTestId('view-mode-richtext').element().getAttribute('aria-checked')).toBe('true')
+      expect(page.getByTestId('view-mode-preview').element().getAttribute('aria-checked')).toBe('true')
       const selected = window.getSelection()?.toString() ?? ''
       expect(selected).toContain('Plans')
       expect(selected).toContain('We compare three options.')

@@ -27,7 +27,7 @@
 不启用：`topBar`（应用自有外框）、`latex`（`$` 误转义、强依赖 CodeMirror）、`ai`（第一阶段无 Agent）。
 自行实现：源码模式、大纲、搜索替换、frontmatter 处理。
 
-源码模式（2026-11-06 修订，#3）：独立装配的 CodeMirror 6，`EditorState.lineSeparator.of('\n')` 保证逐字节；不使用 `replaceAll`。切回 WYSIWYG 时，若源码未改动且期间无外部重载则保留原 ProseMirror 状态，否则经同一 `buildDocument` / `segmentMarkdown` 管线重建，新文本即新的字节基线。
+源码模式（2026-11-06 修订，#3）：独立装配的 CodeMirror 6，`EditorState.lineSeparator.of('\n')` 保证逐字节；不使用 `replaceAll`。切回预览时，若源码未改动且期间无外部重载则保留原 ProseMirror 状态，否则经同一 `buildDocument` / `segmentMarkdown` 管线重建，新文本即新的字节基线。
 
 代价：放弃 Crepe 默认的 LaTeX；Vue 运行时仍随 Crepe 组件打包。
 

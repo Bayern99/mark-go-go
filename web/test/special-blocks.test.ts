@@ -37,7 +37,7 @@ async function saveComposer(composer: HTMLElement, commit: 'click' | 'shortcut' 
   }
 }
 
-describe('special blocks in rich text', () => {
+describe('special blocks in Preview', () => {
   it('shows frontmatter keys, alert type, footnotes, code meta, and kept HTML', async () => {
     const mounted = await mountEditor(corpus)
     try {
@@ -228,7 +228,7 @@ describe('special blocks in rich text', () => {
     }
   })
 
-  it('keeps an in-place edit across Markdown mode and undo in Rich text', async () => {
+  it('keeps an in-place edit across Markdown mode and undo in Preview', async () => {
     const source = 'Intro.\n\n> [!NOTE]\n> keep\n\nOutro.\n'
     const mounted = await mountEditor(source)
     try {
@@ -244,7 +244,7 @@ describe('special blocks in rich text', () => {
 
       mounted.editor.setMode('source')
       expect(mounted.editor.getMarkdown()).toBe(edited)
-      mounted.editor.setMode('wysiwyg')
+      mounted.editor.setMode('preview')
       expect(mounted.root.querySelector('.mgo-alert.caution')?.textContent).toContain('rewritten')
       expect(mounted.editor.getMarkdown()).toBe(edited)
 

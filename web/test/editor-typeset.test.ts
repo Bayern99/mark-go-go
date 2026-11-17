@@ -113,17 +113,17 @@ describe('editor typeset', () => {
     }
   })
 
-  it('flags pointer drags on the wysiwyg root', async () => {
+  it('flags pointer drags on the preview root', async () => {
     const mounted = await mountInAppRoot(`# L\n\nplain paragraph\n`)
     try {
-      const wysiwyg = mounted.root.querySelector('.mgo-wysiwyg-root')
+      const preview = mounted.root.querySelector('.mgo-preview-root')
       const p = mounted.root.querySelector('.ProseMirror > p')
-      if (!wysiwyg || !p) throw new Error('editor root missing')
-      expect(wysiwyg.classList.contains('mgo-pointer-selecting')).toBe(false)
+      if (!preview || !p) throw new Error('editor root missing')
+      expect(preview.classList.contains('mgo-pointer-selecting')).toBe(false)
       p.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, isPrimary: true }))
-      expect(wysiwyg.classList.contains('mgo-pointer-selecting')).toBe(true)
+      expect(preview.classList.contains('mgo-pointer-selecting')).toBe(true)
       window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1, isPrimary: true }))
-      expect(wysiwyg.classList.contains('mgo-pointer-selecting')).toBe(false)
+      expect(preview.classList.contains('mgo-pointer-selecting')).toBe(false)
     } finally {
       await mounted.cleanup()
     }
@@ -425,8 +425,8 @@ describe('editor typeset', () => {
     const mounted = await mountInAppRoot(`# T\n\nselectable words here\n`)
     try {
       const view = mounted.editor.getView()
-      const wysiwyg = mounted.root.querySelector('.mgo-wysiwyg-root')
-      if (!wysiwyg) throw new Error('wysiwyg root missing')
+      const preview = mounted.root.querySelector('.mgo-preview-root')
+      if (!preview) throw new Error('preview root missing')
 
       // collapsed caret: nothing to dismiss, the class must stay off
       await page.getByText('selectable words here').click({ position: { x: 60, y: 14 } })
@@ -434,7 +434,7 @@ describe('editor typeset', () => {
         expect(view.state.selection.empty).toBe(true)
       })
       await userEvent.keyboard('{Escape}')
-      expect(wysiwyg.classList.contains('mgo-toolbar-dismissed')).toBe(false)
+      expect(preview.classList.contains('mgo-toolbar-dismissed')).toBe(false)
 
       // open selection: Escape hides the toolbar but must not be consumed —
       // menus, composers and other keymaps still get their keydown
@@ -450,14 +450,14 @@ describe('editor typeset', () => {
       await userEvent.keyboard('{Escape}')
       document.removeEventListener('keydown', onKey)
       expect(reached).toBe(true)
-      expect(wysiwyg.classList.contains('mgo-toolbar-dismissed')).toBe(true)
+      expect(preview.classList.contains('mgo-toolbar-dismissed')).toBe(true)
       expect(view.state.selection.empty).toBe(false)
 
       // and a plain pointerdown restores it, matching the class contract
       const p = mounted.root.querySelector('.ProseMirror > p')
       if (!p) throw new Error('paragraph missing')
       p.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, isPrimary: true }))
-      expect(wysiwyg.classList.contains('mgo-toolbar-dismissed')).toBe(false)
+      expect(preview.classList.contains('mgo-toolbar-dismissed')).toBe(false)
     } finally {
       await mounted.cleanup()
     }
@@ -467,8 +467,8 @@ describe('editor typeset', () => {
     const mounted = await mountInAppRoot(`# T\n\nselectable words here\n`)
     try {
       const view = mounted.editor.getView()
-      const wysiwyg = mounted.root.querySelector('.mgo-wysiwyg-root')
-      if (!wysiwyg) throw new Error('wysiwyg root missing')
+      const preview = mounted.root.querySelector('.mgo-preview-root')
+      if (!preview) throw new Error('preview root missing')
       // position lands on the text, not the empty rest of the full-width p
       await page.getByText('selectable words here').dblClick({ position: { x: 60, y: 14 } })
       await vi.waitFor(() => {
@@ -476,11 +476,11 @@ describe('editor typeset', () => {
       })
 
       await userEvent.keyboard('{Escape}')
-      expect(wysiwyg.classList.contains('mgo-toolbar-dismissed')).toBe(true)
+      expect(preview.classList.contains('mgo-toolbar-dismissed')).toBe(true)
       expect(view.state.selection.empty).toBe(false)
 
       await userEvent.keyboard('{Shift>}{ArrowRight}{/Shift}')
-      expect(wysiwyg.classList.contains('mgo-toolbar-dismissed')).toBe(false)
+      expect(preview.classList.contains('mgo-toolbar-dismissed')).toBe(false)
       expect(view.state.selection.empty).toBe(false)
     } finally {
       await mounted.cleanup()

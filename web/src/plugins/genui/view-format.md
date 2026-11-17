@@ -204,7 +204,7 @@ and `Next steps`, a view that uses every component:
             "sources": ["options"] },
           { "id": "history", "component": "Timeline", "title": "History",
             "events": [
-              { "when": "March", "title": "First prototype", "detail": "Rich text editing only." },
+              { "when": "March", "title": "First prototype", "detail": "Editing in Markdown Preview only." },
               { "when": "November", "title": "GenUI view mode" }
             ],
             "sources": ["history"] }

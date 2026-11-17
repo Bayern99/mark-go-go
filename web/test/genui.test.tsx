@@ -54,11 +54,11 @@ function replaceComponent(id: string, next: Component): (components: Component[]
   return (components) => components.map((component) => (component.id === id ? next : component))
 }
 
-function viewMode(mode: 'richtext' | 'markdown' | 'genui') {
+function viewMode(mode: 'preview' | 'markdown' | 'genui') {
   return page.getByTestId(`view-mode-${mode}`)
 }
 
-async function showMode(mode: 'richtext' | 'markdown' | 'genui'): Promise<void> {
+async function showMode(mode: 'preview' | 'markdown' | 'genui'): Promise<void> {
   await viewMode(mode).click()
   await vi.waitFor(() => expect(viewMode(mode)).toHaveAttribute('aria-checked', 'true'))
 }
@@ -298,7 +298,7 @@ describe('GenUI view mode', () => {
     }
   })
 
-  it('returns to the rich text scroll position', async () => {
+  it('returns to the Preview scroll position', async () => {
     const long = `# Long\n\n${Array.from({ length: 200 }, (_, index) => `Paragraph ${index}.`).join('\n\n')}\n`
     const app = await mountApp(long)
     try {
@@ -309,7 +309,7 @@ describe('GenUI view mode', () => {
       await vi.waitFor(() => expect(viewport.scrollTop).toBe(1200))
 
       await showMode('genui')
-      await showMode('richtext')
+      await showMode('preview')
       await vi.waitFor(() => expect(viewport.scrollTop).toBe(1200))
     } finally {
       await app.unmount()
@@ -334,7 +334,7 @@ describe('GenUI view mode', () => {
   })
 })
 
-/** Plain text of the rich-text selection, blocks joined by `|`. */
+/** Plain text of the Preview selection, blocks joined by `|`. */
 function richSelection(container: HTMLElement): string {
   const selection = window.getSelection()
   const editor = container.querySelector('[data-testid="editor-root"] .ProseMirror')
@@ -525,7 +525,7 @@ describe('GenUI source references', () => {
       if (!edit) throw new Error('edit button missing')
       edit.click()
       await vi.waitFor(() => {
-        expect(viewMode('richtext')).toHaveAttribute('aria-checked', 'true')
+        expect(viewMode('preview')).toHaveAttribute('aria-checked', 'true')
         // The second "Summary", not the first one with the same text.
         expect(richSelection(app.container)).toBe('Summary|Late summary.')
       })
@@ -632,7 +632,7 @@ describe('GenUI source references', () => {
       )
       both.querySelector<HTMLButtonElement>('.genui-source-edit')?.click()
       await vi.waitFor(() => {
-        expect(viewMode('richtext')).toHaveAttribute('aria-checked', 'true')
+        expect(viewMode('preview')).toHaveAttribute('aria-checked', 'true')
         expect(richSelection(app.container)).toBe('Metrics|Second body.')
       })
     } finally {
@@ -657,7 +657,7 @@ describe('GenUI source references', () => {
       )
       both.querySelector<HTMLButtonElement>('.genui-source-edit')?.click()
       await vi.waitFor(() => {
-        expect(viewMode('richtext')).toHaveAttribute('aria-checked', 'true')
+        expect(viewMode('preview')).toHaveAttribute('aria-checked', 'true')
         expect(richSelection(app.container)).toBe('Overview|First body.')
       })
     } finally {
@@ -700,7 +700,7 @@ describe('GenUI source references', () => {
       expect(block(app.container, 'both').querySelector('.genui-source-unavailable')).toBeNull()
       block(app.container, 'both').querySelector<HTMLButtonElement>('.genui-source-edit')?.click()
       await vi.waitFor(() => {
-        expect(viewMode('richtext')).toHaveAttribute('aria-checked', 'true')
+        expect(viewMode('preview')).toHaveAttribute('aria-checked', 'true')
         expect(richSelection(app.container)).toBe('Overview|First body.')
       })
     } finally {
@@ -754,7 +754,7 @@ describe('GenUI source references', () => {
 
       late.click()
       await vi.waitFor(() => {
-        expect(viewMode('richtext')).toHaveAttribute('aria-checked', 'true')
+        expect(viewMode('preview')).toHaveAttribute('aria-checked', 'true')
         expect(richSelection(app.container)).toBe('Summary|Late summary.')
       })
 
@@ -764,7 +764,7 @@ describe('GenUI source references', () => {
         .querySelector<HTMLButtonElement>('.genui-source-heading[data-source-id="earlySummary"]')
         ?.click()
       await vi.waitFor(() => {
-        expect(viewMode('richtext')).toHaveAttribute('aria-checked', 'true')
+        expect(viewMode('preview')).toHaveAttribute('aria-checked', 'true')
         expect(richSelection(app.container)).toBe('Summary|Early summary.')
       })
     } finally {
@@ -785,7 +785,7 @@ describe('GenUI source references', () => {
       metrics.focus()
       await userEvent.keyboard('{Enter}')
       await vi.waitFor(() => {
-        expect(viewMode('richtext')).toHaveAttribute('aria-checked', 'true')
+        expect(viewMode('preview')).toHaveAttribute('aria-checked', 'true')
         expect(richSelection(app.container)).toBe('Metrics|Second body.')
       })
     } finally {
@@ -831,11 +831,11 @@ describe('GenUI source references', () => {
       // The reference is gone, so it does nothing at all rather than open Metrics.
       missing.click()
       expect(viewMode('genui')).toHaveAttribute('aria-checked', 'true')
-      expect(viewMode('richtext')).toHaveAttribute('aria-checked', 'false')
+      expect(viewMode('preview')).toHaveAttribute('aria-checked', 'false')
 
       loaded.click()
       await vi.waitFor(() => {
-        expect(viewMode('richtext')).toHaveAttribute('aria-checked', 'true')
+        expect(viewMode('preview')).toHaveAttribute('aria-checked', 'true')
         expect(richSelection(app.container)).toBe('Metrics|Second body.')
       })
       expect((await host.load()).text).toBe(SOURCED.replace('# Overview', '# Intro'))

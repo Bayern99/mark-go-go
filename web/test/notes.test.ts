@@ -98,7 +98,7 @@ describe('note format', () => {
   })
 })
 
-describe('notes in rich text', () => {
+describe('notes in Preview', () => {
   it('shows a note as a note, and a plain comment or a fence as what they are', async () => {
     const source = 'One.\n\n<!-- note: Mine -->\n\n<!-- plain -->\n\n```md\n<!-- note: fenced -->\n```\n'
     const mounted = await mountEditor(source)
@@ -219,7 +219,7 @@ describe('notes in rich text', () => {
 describe('adding a note at a source offset', () => {
   const SOURCE = '# A\n\nBody.\n\n\n# B\r\n\r\nOther.'
 
-  it('rich text: ends the text before the offset, as an undoable edit, every other byte kept', async () => {
+  it('Preview: ends the text before the offset, as an undoable edit, every other byte kept', async () => {
     const mounted = await mountEditor(SOURCE)
     try {
       expect(mounted.editor.addNote(SOURCE.indexOf('# B'), 'First')).toBe(true)
@@ -241,7 +241,7 @@ describe('adding a note at a source offset', () => {
     }
   })
 
-  it('source: writes the same bytes as rich text, shows them raw, and undoes', async () => {
+  it('source: writes the same bytes as Preview, shows them raw, and undoes', async () => {
     const mounted = await mountEditor(SOURCE)
     try {
       mounted.editor.setMode('source')

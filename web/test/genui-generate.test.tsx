@@ -187,7 +187,7 @@ describe('GenUI generation', () => {
     await generate().click()
     await expect.element(page.getByTestId('genui-progress')).toBeVisible()
 
-    await page.getByTestId('view-mode-richtext').click()
+    await page.getByTestId('view-mode-preview').click()
     const paragraph = Array.from(mounted.container.querySelectorAll<HTMLElement>('.ProseMirror p')).find(
       (p) => p.textContent === 'Second body.',
     )
@@ -506,9 +506,9 @@ function trackedView(update?: { id: string; title: string }): string {
   })
 }
 
-/** Types at the end of the Metrics section in rich text, then goes back to GenUI. */
+/** Types at the end of the Metrics section in Preview, then goes back to GenUI. */
 async function editMetrics(mounted: MountedApp, host: BrowserHost): Promise<void> {
-  await page.getByTestId('view-mode-richtext').click()
+  await page.getByTestId('view-mode-preview').click()
   const paragraph = Array.from(mounted.container.querySelectorAll<HTMLElement>('.ProseMirror p')).find(
     (p) => p.textContent === 'Second body.',
   )

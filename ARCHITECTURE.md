@@ -38,7 +38,7 @@ graph TD
         end
 
         subgraph EditorLayer ["4. Editor Engine (Dual Mode & Composition)"]
-            WYSIWYG["Rich Text (Milkdown 7 Crepe)"]
+            Preview["Markdown Preview (Milkdown 7 Crepe)"]
             Source["Source Mode (CodeMirror 6)"]
             Compose["Block-Preserving Composer<br/>(Unedited blocks keep raw bytes)"]
             SectionHash["Section Hasher<br/>(ATX/setext, fnv1a32, excludes notes)"]
@@ -46,7 +46,7 @@ graph TD
 
         subgraph UILayer ["5. Presentation Layer (React 19 & Portrait Design System)"]
             LeftCol["Left Column<br/>(Workspace & Document Navigation)"]
-            CenterCol["Center Column<br/>(Rich Text / Markdown / GenUI A2UI 1.0)"]
+            CenterCol["Center Column<br/>(Preview / Markdown / GenUI A2UI 1.0)"]
             RightCol["Right Column<br/>(Outline & GenUI Management Panel)"]
             ModelMenu["ModelMenu (Tactile upward popover)"]
             Composer["In-Place Composer (Notes & Focus)"]
@@ -100,7 +100,7 @@ graph TD
 
 #### 4. Editor Engine Layer (TypeScript)
 - **Dual-Engine Architecture**:
-  - **Rich Text (WYSIWYG)**: Milkdown 7.23 with custom `CrepeBuilder`.
+  - **Markdown Preview**: Milkdown 7.23 with custom `CrepeBuilder`.
   - **Source Mode**: CodeMirror 6 for byte-exact plain text Markdown editing with instant toggle (`⌘/`).
 - **Block-Preserving Composition**: Unlike standard Markdown serializers that reformat the entire document on save, Mark Go Go parses documents into discrete ProseMirror block nodes. Unedited blocks retain their exact original source bytes.
 - **Special Blocks (ADR 0006)**: Frontmatter, GitHub alerts, footnote definitions, meta code fences, Mermaid diagrams and math stay atomically byte-preserving. Mermaid renders locally; invalid diagrams retain visible source and an error. Raw HTML and unsupported syntax remain visible as `Kept as written`. `Edit` opens an in-place Markdown composer for that block only, and saving rewrites just that block's source with its original line endings.
@@ -111,7 +111,7 @@ graph TD
 - **Workspace Chrome**: A document tab strip above the workspace body (same-name tabs are disambiguated by parent folder; unsaved, generating, conflict, deleted and read-only badges), and the left pane's file tree, filter, splitter, breadcrumbs and Welcome/recents.
 - **Portrait Three-Column Layout**:
   - **Left Column**: Workspace file navigation.
-  - **Center Column**: Dedicated strictly to document content for the active tab (Rich text, Markdown, or GenUI A2UI reading cards). Free of generation toolbars or settings forms.
+  - **Center Column**: Dedicated strictly to document content for the active tab (Preview, Markdown, or GenUI A2UI reading cards). Free of generation toolbars or settings forms.
   - **Right Column**: Document-scoped panels with a top segmented switcher:
     - `Outline`: Real-time heading tree with bi-directional cursor synchronization.
     - `GenUI Management Panel`: Generation state, primary action, out-of-date component list, Focus request editor, and pinned footer (read-only Agent, Model menu, generated time, Undo).
@@ -174,7 +174,7 @@ graph TD
         end
 
         subgraph 编辑引擎层 ["4. 编辑引擎 (双模式与逐块保真序列化)"]
-            WYSIWYG["所见即所得富文本 (Milkdown 7 Crepe)"]
+            Preview["Markdown 预览 (Milkdown 7 Crepe)"]
             Source["源码模式 (CodeMirror 6, 逐字节保真)"]
             Compose["逐块保真组装器 (Compose Engine)<br/>未改动的块保留原文原始字节"]
             SectionHash["章节哈希器<br/>(ATX/setext 标题解析、fnv1a32 哈希、排除批注)"]
@@ -182,7 +182,7 @@ graph TD
 
         subgraph 视图与UI层 ["5. 交互与表现层 (React 19 & Portrait 设计体系)"]
             LeftCol["左栏: 工作区文档导航"]
-            CenterCol["中央栏: 文档内容画布 (Rich text / Markdown / GenUI A2UI 1.0)"]
+            CenterCol["中央栏: 文档内容画布 (Preview / Markdown / GenUI A2UI 1.0)"]
             RightCol["右栏: 当前文档面板 (Outline 大纲 / GenUI 管理面板)"]
             ModelMenu["ModelMenu: 向上弹出式触觉纸面下拉菜单"]
             Composer["原地 Composer: 白纸材质批注与 Focus 编辑器"]
@@ -236,7 +236,7 @@ graph TD
 
 #### 4. 编辑引擎与保真层（TypeScript）
 - **双模式编辑器**：
-  - **Rich text 所见即所得**：基于 Milkdown 7.23 与定制的 `CrepeBuilder`，提供现代无衬线编辑体验。
+  - **Markdown 预览**：基于 Milkdown 7.23 与定制的 `CrepeBuilder`，提供现代无衬线编辑体验。
   - **源码模式**：基于 CodeMirror 6，支持精确光标偏移定位与 `⌘/` 瞬间无损切换。
 - **逐块保真组装（Block-Preserving Composition）**：
   - 将 Markdown 解析为 ProseMirror 顶层块节点。保存时只重新序列化用户真实改动过的块，未改动的块直接拼接原字节，从根本上杜绝传统 Markdown 编辑器保存时格式全面跑飞（全篇缩进重排、列表符号变异、空行丢失）的通病。
@@ -253,7 +253,7 @@ graph TD
   **工作区外框**：工作区主体上方的文档标签栏（同名标签用父目录区分；带未保存、生成中、冲突、已删除、只读徽标），以及左栏的文件树、筛选、分栏、面包屑与 Welcome/最近工作区。
 * **Portrait 极简三栏工作区**：
   * **左栏**：工作区文件导航与筛选。
-  * **中央栏**：当前标签纯粹的内容画布（Rich text / Markdown / GenUI 视图），顶部仅保留 44px 路径栏与凹陷分段三模式切换器，彻底剔除生成表单与干扰元素。
+  * **中央栏**：当前标签纯粹的内容画布（Preview / Markdown / GenUI 视图），顶部仅保留 44px 路径栏与凹陷分段三模式切换器，彻底剔除生成表单与干扰元素。
   * **右栏**：当前文档的专属面板，顶部凹陷分段切换 `Outline`（默认首位）与 `GenUI`（带状态圆点）。
   * **窄窗自适应**：窗口宽度 `< 1180px` 时右栏自动收起，手动点开时以浮层（`.r-float`）形式贴在右侧，点击中央正文自动收起。窗口继续变窄时左栏主动让位：渲染宽度不超过 `窗口宽 − 310px`（下限 140px），保证最小窗口 480px 时正文仍可用，放宽后恢复用户设定宽度；sheet 容器查询在 380px 以下收起头栏保存状态与版本号、300px 以下收起路径面包屑；侧栏分隔条在 6px 视觉槽内保留 14px 触控热区。
 * **A2UI 1.0 GenUI 阅读视图**：支持 5 种基础布局组件与 5 种高级卡片组件（`KeyPoints` 要点、`MetricGrid` 指标网格、`ComparisonTable` 对比表、`Timeline` 时间线、`Checklist` 只读清单），每个组件底座配备来源引用条（`From` 标题、`Source changed` 标记、`Edit in source` 一键定位修改、`Note` 原地加批注）。KeyPoints 折叠、ComparisonTable 排序（列头为可键盘操作的按钮并带 `aria-sort`）、表格滚动与标签页选择都是每文档的阅读状态，从不写文档。

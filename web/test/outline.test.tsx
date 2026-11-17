@@ -53,7 +53,7 @@ function textLeft(button: Element): number {
   return range.getBoundingClientRect().left
 }
 
-function viewMode(mode: 'richtext' | 'markdown' | 'genui') {
+function viewMode(mode: 'preview' | 'markdown' | 'genui') {
   return page.getByTestId(`view-mode-${mode}`)
 }
 
@@ -139,7 +139,7 @@ describe('Outline plugin', () => {
     }
   })
 
-  it('renders in the right pane in GenUI mode and jumps back to rich text', async () => {
+  it('renders in the right pane in GenUI mode and jumps back to Preview', async () => {
     const app = await mountApp(fixture)
     try {
       expect(page.getByTestId('outline-toggle').query()).toBeNull()
@@ -158,7 +158,7 @@ describe('Outline plugin', () => {
 
       await outlineButtons().nth(2).click()
       await vi.waitFor(() => {
-        expect(viewMode('richtext').element().getAttribute('aria-checked')).toBe('true')
+        expect(viewMode('preview').element().getAttribute('aria-checked')).toBe('true')
         expect(page.getByTestId('center-pane').query()).toBeNull()
         expect(caretHeadingIndex()).toBe(2)
       })
@@ -167,7 +167,7 @@ describe('Outline plugin', () => {
     }
   })
 
-  it('moves the caret to each entry, including the second duplicate, in rich text', async () => {
+  it('moves the caret to each entry, including the second duplicate, in Preview', async () => {
     const app = await mountApp(fixture)
     try {
       expect(editorHeadings().map((heading) => heading.textContent)).toEqual(EXPECTED_HEADINGS)
@@ -294,7 +294,7 @@ describe('Outline plugin', () => {
     }
   })
 
-  it('scrolls the target into view and focuses the editor in rich text', async () => {
+  it('scrolls the target into view and focuses the editor in Preview', async () => {
     const app = await mountApp(LONG_DOCUMENT)
     try {
       const heading = page.getByRole('heading', { name: 'Deep heading' })

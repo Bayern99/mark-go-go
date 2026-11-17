@@ -915,12 +915,12 @@ body {
   scroll-margin-top: 16px;
 }
 
-.mgo-wysiwyg-root,
+.mgo-preview-root,
 .mgo-source-root {
   min-height: 100%;
 }
 
-.mgo-wysiwyg-root[hidden],
+.mgo-preview-root[hidden],
 .mgo-source-root[hidden] {
   display: none;
 }
@@ -1198,7 +1198,7 @@ body {
   line-height: var(--text-code-leading);
 }
 
-/* ─── Unified In-place Paper Composer (Rich text notes, GenUI card notes, Focus) ─── */
+/* ─── Unified In-place Paper Composer (Preview notes, GenUI card notes, Focus) ─── */
 .composer {
   display: block;
   border-radius: 8px;

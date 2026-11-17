@@ -35,7 +35,7 @@ async function mountWorkspace(
       for (const host of hosts) {
         const pane = container.querySelector<HTMLElement>(`[data-document-id="${host.id}"]`)
         if (!pane) throw new Error(`pane missing for ${host.id}`)
-        const mode = pane.querySelector<HTMLButtonElement>('[data-testid="view-mode-richtext"]')
+        const mode = pane.querySelector<HTMLButtonElement>('[data-testid="view-mode-preview"]')
         if (!mode || mode.disabled) throw new Error(`document pane ${host.id} not ready`)
       }
     },

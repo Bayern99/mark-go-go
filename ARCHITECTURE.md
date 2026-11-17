@@ -219,7 +219,7 @@ graph TD
 - **伴随视图追踪**：监听原文同级隐藏文件 `.<name>.md.genui.json` 及其备份文件 `.<name>.md.genui.prev.json`。第一份快照在目录监听建立前送出，随后再送一份追赶快照；文档路径移动时跟随新路径。
 
 #### 2. 宿主适配层（TypeScript）
-- 提供类型安全的 Go ↔ TS 桥接接口（[`web/src/host/types.ts`](file:///Users/dmus/Documents/Mark%20Go%20Go/web/src/host/types.ts) 与自动生成的 [`web/src/host/generated/mygo.ts`](file:///Users/dmus/Documents/Mark%20Go%20Go/web/src/host/generated/mygo.ts)），绑定名为 `WorkspaceHost`。
+- 提供类型安全的 Go ↔ TS 桥接接口（[`web/src/host/types.ts`](web/src/host/types.ts) 与自动生成的 [`web/src/host/generated/mygo.ts`](web/src/host/generated/mygo.ts)），绑定名为 `WorkspaceHost`。
 - `WorkspaceAdapter` 负责导航、文档与每文档的 `HostAdapter`；适配器在生命周期内绑定一个 `documentId`，不从活动标签重定向。
 - 双实现无缝切换：
   - `MyGoHost`：在桌面环境中通过 WebKit 消息通道与 Go 交互，并把原生 File/Edit 命令分派给点击时捕获的文档。

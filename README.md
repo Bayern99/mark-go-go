@@ -1,6 +1,6 @@
 # Mark Go Go
 
-[English](#english) · [中文](#chinese) · [Development / 开发](#development)
+[English](#english) · [中文](#chinese) · [Development / 开发](#development) · [UI source and credits / 界面源码与致谢](ACKNOWLEDGMENTS.md)
 
 ## English
 
@@ -81,3 +81,9 @@ The vendored MyGo omits Automation. For a targeted check, copy the v0.7.4 plugin
 - [Vendored MyGo document groups / MyGo 文档组补丁](docs/mygo-document-groups.md)
 - [Portrait design boards / Portrait 设计画板](docs/design/Mark%20Go%20Go%20界面设计.html)
 - [UI component gaps and typography plan / UI 组件缺口与文字规划](docs/design/ui-component-gaps.md)
+
+## License / 许可证
+
+Mark Go Go's original code and Portrait UI design files are under the [MIT License](LICENSE). Included third-party code and assets carry their own licenses, listed in [UI source and credits](ACKNOWLEDGMENTS.md).
+
+Mark Go Go 的原创代码和 Portrait 界面设计文件采用 [MIT 许可证](LICENSE)。随附的第三方代码和资源采用各自的许可，见[界面源码与致谢](ACKNOWLEDGMENTS.md)。

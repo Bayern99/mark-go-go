@@ -5,6 +5,9 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   base: './',
   plugins: [react()],
+  build: {
+    license: { fileName: 'licenses/Frontend-Licenses.md' },
+  },
   define: {
     __VUE_OPTIONS_API__: 'true',
     __VUE_PROD_DEVTOOLS__: 'false',

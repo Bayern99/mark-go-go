@@ -4,6 +4,7 @@
   "identifier": "dev.markgogo.editor",
   "version": "0.3.0",
   "icon": "resources/icon.png",
+  "resources": ["third_party/mygo/LICENSE"],
   "devUrl": "http://localhost:5173",
   "devCommand": "npm --prefix web run dev:web",
   "buildCommand": "npm --prefix web run build:web",

@@ -1,5 +1,6 @@
 import type { Node as PMNode, Schema } from '@milkdown/kit/prose/model'
 import type { Serializer } from '@milkdown/kit/transformer'
+import { tableSourceEquals } from '../tableColumnWidths'
 import type { BlockOrigin, BuiltDocument } from './build'
 import { LOCKED_NODE } from './locked'
 
@@ -139,7 +140,7 @@ function findLoadedOrigin(
     !claimed.has(origin.segment.index) &&
     origin.node.type === node.type &&
     origin.node.nodeSize === node.nodeSize &&
-    origin.node.eq(node)
+    tableSourceEquals(origin.node, node)
   return loaded.find((origin) => origin.segment.index === index && equal(origin)) ?? loaded.find(equal)
 }
 

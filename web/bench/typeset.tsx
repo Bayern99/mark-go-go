@@ -14,6 +14,10 @@ import '../src/styles.css'
 // @ts-ignore — ?raw imports of files outside web/src
 import paperBilingual from '../../docs/editor-typeset/fixtures/paper-bilingual.md?raw'
 // @ts-ignore
+import paperEnglish from '../../docs/editor-typeset/fixtures/paper-english.md?raw'
+// @ts-ignore
+import paperChinese from '../../docs/editor-typeset/fixtures/paper-chinese.md?raw'
+// @ts-ignore
 import techReportTables from '../../docs/editor-typeset/fixtures/tech-report-tables.md?raw'
 // @ts-ignore
 import llmResearchReport from '../../docs/editor-typeset/fixtures/llm-research-report.md?raw'
@@ -29,6 +33,8 @@ const VARIANTS = import.meta.glob('../../docs/editor-typeset/variants/*.css', {
 
 const DOCS: Record<string, string> = {
   'paper-bilingual': paperBilingual,
+  'paper-english': paperEnglish,
+  'paper-chinese': paperChinese,
   'tech-report-tables': techReportTables,
   'llm-research-report': llmResearchReport,
 }

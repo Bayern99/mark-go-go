@@ -29,10 +29,10 @@ export function replaceParagraph(
   )
 }
 
-export async function mountEditor(text: string): Promise<MountedEditor> {
+export async function mountEditor(text: string, docKey?: string): Promise<MountedEditor> {
   const root = document.createElement('div')
   document.body.append(root)
-  const editor = await createMarkdownEditor(root, { initialText: text })
+  const editor = await createMarkdownEditor(root, { initialText: text, docKey })
   return {
     editor,
     root,

@@ -94,8 +94,9 @@ baseline and final (load unchanged — fidelity concerns only edits; see A below
 
 ## Regression checks (E) — both engines
 
-- Column resize: N/A — `columnResizingPlugin` is defined in preset-gfm but not
-  registered; no `.column-resize-handle`, no `col-resize` cursor at borders.
+- Column resize: the current editor registers `columnResizing` with a Crepe
+  NodeView adapter. Widths are undoable view state, persist locally per document,
+  and do not change Markdown bytes; see `web/test/table-column-widths.test.ts`.
 - CellSelection copy → paste into empty paragraph: PASS (single-column GFM
   table emitted).
 - Whole-table copy (paragraph above → below) → paste: PASS (table node

@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [0.4.0] - 2026-11-17
+
+- 富文本中的普通表格可以拖拽调整列宽。支持撤销和重做，重开文档或应用后恢复已调整的列宽。列宽保存在本地，Markdown 原文保持原样。
+- 宽窗口为表格提供更多空间，正文保留 624 px 的最大阅读宽度。表格的横向滚动滑块可视厚度为 4 px。
+- 修复表格列边界在 macOS 上误触发单元格选区的问题，并为引用块表格保留原有内容。
+- 源码和 Portrait 界面以 MIT 许可证公开。README 和致谢提供独立的中文、英文页面，安装包随附应用与第三方许可声明。
+
 ## [0.3.0] - 2026-11-14
 
 Editor typeset and reading-control rounds on the Milkdown Crepe/ProseMirror editor, keeping the Go/WebView architecture, font system and byte-preserving Markdown model unchanged. Audit, measurements and regression evidence live in [docs/editor-typeset/](docs/editor-typeset/).

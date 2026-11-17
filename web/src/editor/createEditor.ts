@@ -49,6 +49,11 @@ import { askForMarkdown, askForNote, ComposerScope } from './noteDialog'
 import { createSourceEditor, type SourceEditor } from './source/sourceEditor'
 import { createFoldFeature, foldPluginKey, type PersistedFolds } from './folding'
 import { createCellDragPlugin } from './tableCellDrag'
+import {
+  createTableColumnWidthPlugins,
+  readTableColumnWidths,
+  restoreTableColumnWidths,
+} from './tableColumnWidths'
 
 const NOTE_ICON =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5h14v10H10l-5 4z"/></svg>'
@@ -131,7 +136,7 @@ export interface MarkdownEditor {
 export interface CreateEditorOptions {
   initialText?: string
   onChange?: (markdown: string) => void
-  /** Stable document identity; enables fold-state persistence in localStorage. */
+  /** Stable document identity; enables fold and table-width persistence in localStorage. */
   docKey?: string
 }
 
@@ -693,12 +698,15 @@ export async function createMarkdownEditor(
       : undefined,
   )
 
+  const tableColumnWidths = readTableColumnWidths(options.docKey)
+  const tableColumnWidthPlugins = createTableColumnWidthPlugins(options.docKey, tableColumnWidths)
   const plugins = view.state.plugins.filter((plugin) => !isIdentityBreaking(plugin))
   plugins.push(
     selectionPlugin,
     lockedViewPlugin,
     historyWatch,
     tableCaretPlugin,
+    ...tableColumnWidthPlugins,
     createCellDragPlugin(),
     ...foldFeature.plugins,
   )
@@ -710,6 +718,16 @@ export async function createMarkdownEditor(
     suppressChange = true
     try {
       built = buildDocument(text, schema, parser)
+      const beforeRestore = built.doc
+      built.doc = restoreTableColumnWidths(built.doc, tableColumnWidths)
+      if (built.doc !== beforeRestore) {
+        built.doc.forEach((node, _offset, index) => {
+          const previous = beforeRestore.child(index)
+          if (node === previous) return
+          const origin = built.origins.get(previous)
+          if (origin) built.origins.set(node, { ...origin, node })
+        })
+      }
       composedCache = undefined
       const state = EditorState.create({
         schema,

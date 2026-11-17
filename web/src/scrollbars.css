@@ -50,3 +50,34 @@
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) transparent;
 }
+
+.crepe-root .milkdown .table-wrapper {
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+}
+
+.crepe-root .milkdown .table-wrapper::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.crepe-root .milkdown .table-wrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.crepe-root .milkdown .table-wrapper::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
+}
+
+.crepe-root .milkdown .table-wrapper::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
+.crepe-root .milkdown .table-wrapper::-webkit-scrollbar-thumb:active {
+  background: var(--scrollbar-thumb-active);
+  background-clip: padding-box;
+}

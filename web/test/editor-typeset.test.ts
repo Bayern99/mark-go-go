@@ -151,6 +151,7 @@ describe('editor typeset', () => {
     const doc = `# W\n\n${row}\n|${' --- |'.repeat(9)}\n${row}\n${row}\n`
     const mounted = await mountInAppRoot(doc)
     try {
+      mounted.root.style.width = '720px'
       const wrapper = mounted.root.querySelector<HTMLElement>('.table-wrapper')
       if (!wrapper) throw new Error('table wrapper missing')
       expect(wrapper.scrollWidth).toBeGreaterThan(wrapper.clientWidth)

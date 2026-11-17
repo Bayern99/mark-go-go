@@ -4,14 +4,16 @@ Dev-only harness + Playwright measurement script for capturing rendering and
 interaction baselines of the Milkdown Crepe editor. Nothing here is part of the
 production build (`vite build` only emits `index.html`; `bench/` is outside the
 tsconfig `include` set). `SUMMARY.md` records the round-1 baseline/after
-numbers and the regression results behind the shipped changes.
+numbers and the regression results behind the shipped changes. `ROUND2.md`
+records the round-2 editorial research (wrap modes, heading levels, block
+composition) — all variants are bench-only.
 
 ## Files
 
-- `fixtures/` — three long Markdown fixtures plus `figure-1.svg` (referenced by
-  `paper-bilingual.md`).
-- `variants/` — table CSS experiments: `compact-grid` (V1), `rules` (V2,
-  shipped), `dense` (V3).
+- `fixtures/` — five long Markdown fixtures plus `figure-1.svg` (referenced by
+  `paper-bilingual.md` and `paper-english.md`).
+- `variants/` — CSS experiments: round-1 table variants (`compact-grid`,
+  `rules` shipped, `dense`) and round-2 editorial variants (`r2-*`).
 - `../../web/bench/typeset.html` + `typeset.tsx` — renders the real `App` with
   `createBrowserWorkspace([createBrowserHost(fixture)])`. The figure is embedded
   as a base64 data URL (image src rewritten in-memory before seeding). Exposes
@@ -41,8 +43,11 @@ node docs/editor-typeset/measure.mjs --variant dense        --engine both
   `final`).
 - `--engine` — `webkit` (primary; the app ships in WKWebView), `chromium`, or
   `both` (default).
-- `--variant` — table CSS variant; the bench page injects
+- `--variant` — CSS variant; the bench page injects
   `variants/<name>.css` after the app CSS.
+- `--docs` — comma-separated doc list; defaults to the three round-1
+  fixtures. Round 2 used
+  `paper-english,paper-chinese,tech-report-tables,llm-research-report`.
 
 Raw run output (metrics JSON + full-size screenshots) is written to
 `docs/research/editor-typeset/results/<label>/<engine>/`, which is gitignored —

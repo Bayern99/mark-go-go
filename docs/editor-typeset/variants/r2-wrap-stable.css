@@ -1,0 +1,7 @@
+/* Round-2 experiment W1 — text-wrap: stable.
+   Lines before the caret must not rebreak while the user types inside an
+   element: the editing-stability candidate. Inherited by every text block;
+   pre-formatted code is unaffected. */
+.crepe-root .milkdown .ProseMirror {
+  text-wrap: stable;
+}

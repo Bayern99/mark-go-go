@@ -1,0 +1,20 @@
+/* Round-2 experiment R3 — differentiate H4–H6 by style, not size.
+   Baseline leaves all run-in levels at 600 weight with only an
+   ink/ink-2 color split. This variant keeps the run-in spacing and
+   gives each level a distinct voice: H4 italic, H5 italic muted,
+   H6 light letterspaced. */
+.crepe-root .milkdown .ProseMirror h4 {
+  font-style: italic;
+  font-weight: 600;
+  color: var(--ink);
+}
+.crepe-root .milkdown .ProseMirror h5 {
+  font-style: italic;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.crepe-root .milkdown .ProseMirror h6 {
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}

@@ -17,18 +17,19 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(path.join(HERE, '../../web/package.json'))
 const { chromium, webkit } = require('playwright')
 
-const DOCS = ['paper-bilingual', 'tech-report-tables', 'llm-research-report']
+const DEFAULT_DOCS = ['paper-bilingual', 'tech-report-tables', 'llm-research-report']
 const BASE_URL = 'http://localhost:5173'
 const BENCH_PAGE = `${BASE_URL}/bench/typeset.html`
 const VIEWPORT = { width: 1440, height: 900 }
 const SCALE = 2
 
 function parseArgs(argv) {
-  const args = { label: 'baseline', engine: 'both', variant: '' }
+  const args = { label: 'baseline', engine: 'both', variant: '', docs: '' }
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--label') args.label = argv[++i]
     else if (argv[i] === '--engine') args.engine = argv[++i]
     else if (argv[i] === '--variant') args.variant = argv[++i]
+    else if (argv[i] === '--docs') args.docs = argv[++i]
   }
   return args
 }
@@ -105,15 +106,17 @@ async function measureStyles(page) {
     const root = pmRoot()
     const SPEC = [
       ['p', 'p'],
-      ['h1', 'h1'], ['h2', 'h2'], ['h3', 'h3'], ['h4', 'h4'],
-      ['li', 'li'], ['li p', 'li p'],
+      ['h1', 'h1'], ['h2', 'h2'], ['h3', 'h3'], ['h4', 'h4'], ['h5', 'h5'], ['h6', 'h6'],
+      ['hr', 'hr'],
+      ['li', 'li'], ['li p', 'li p'], ['li li', 'li li'],
       ['blockquote', 'blockquote'], ['blockquote p', 'blockquote p'],
       ['pre', 'pre'], ['pre code', 'pre code'],
       ['.cm-content', '.cm-content'], ['.cm-line', '.cm-line'], ['.cm-editor', '.cm-editor'],
+      ['.milkdown-code-block', '.milkdown-code-block'],
       ['inline code', 'code:not(pre code)'],
       ['table', 'table'], ['.milkdown-table-block', '.milkdown-table-block'], ['.table-wrapper', '.table-wrapper'],
-      ['th', 'th'], ['td', 'td'], ['th p', 'th p'], ['td p', 'td p'],
-      ['img', 'img'],
+      ['th', 'th'], ['td', 'td'], ['th p', 'th p'], ['td p', 'td p'], ['td code', 'td code'],
+      ['img', 'img'], ['.milkdown-image-block', '.milkdown-image-block, .image-block, figure'],
       ['list label', '.milkdown-list-item-block .label-wrapper'],
       ['locked/math block', '[data-locked-block], [data-kind], .mgo-locked-block'],
       ['footnote ref', '.mgo-fnref'],
@@ -127,7 +130,7 @@ async function measureStyles(page) {
       'border-bottom-width', 'border-bottom-style', 'border-bottom-color',
       'border-left-width', 'border-left-style', 'border-left-color',
       'box-shadow', 'width', 'max-width', 'table-layout', 'overflow-x',
-      'white-space', 'word-break', 'line-break',
+      'white-space', 'word-break', 'line-break', 'text-wrap', 'overflow-wrap',
       'text-autospace', 'text-spacing-trim', 'hanging-punctuation',
     ]
     const camel = (p) => p.replace(/-([a-z])/g, (_, c) => c.toUpperCase())
@@ -220,6 +223,176 @@ async function measureText(page) {
     const zh = paras.find((p) => { const c = counts(p); return c.cjk > 0 && c.cjk >= c.latin && c.len >= 100 })
     return { englishLong: en ? measure(en) : null, cjkDominant: zh ? measure(zh) : null }
   })()`)
+}
+
+// ---------------------------------------------------------------------------
+// C2. text wrapping: per-line widths -> rag, widows, overflowing tokens
+// ---------------------------------------------------------------------------
+
+async function measureWrap(page) {
+  return evalPage(page, `(() => {
+    const root = pmRoot()
+    const lineRects = (el) => {
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      const rects = [...range.getClientRects()].filter((r) => r.height > 1 && r.width > 0)
+      const lines = []
+      for (const r of rects) {
+        const prev = lines[lines.length - 1]
+        if (prev && Math.abs(r.top - prev.top) < 2) {
+          prev.left = Math.min(prev.left, r.left)
+          prev.right = Math.max(prev.right, r.right)
+        } else {
+          lines.push({ top: r.top, left: r.left, right: r.right })
+        }
+      }
+      return lines.map((l) => +(l.right - l.left).toFixed(2))
+    }
+    const col = root.getBoundingClientRect()
+    const colW = col.width - parseFloat(getComputedStyle(root).paddingLeft) - parseFloat(getComputedStyle(root).paddingRight)
+    const sample = (els, limit) => {
+      const out = []
+      for (const el of els.slice(0, limit)) {
+        const text = el.textContent || ''
+        if (text.length < 60) continue
+        const cs = getComputedStyle(el)
+        const lines = lineRects(el)
+        if (lines.length < 2) continue
+        const body = lines.slice(0, -1)
+        const maxW = Math.max(...lines)
+        const rag = body.length ? body.reduce((a, w) => a + (maxW - w), 0) / body.length : 0
+        const last = lines[lines.length - 1]
+        const fontSize = parseFloat(cs.fontSize) || 16
+        const overhangPx = el.scrollWidth - el.clientWidth
+        out.push({
+          tag: el.tagName.toLowerCase(),
+          cjk: /[\\u3400-\\u4dbf\\u4e00-\\u9fff]/.test(text),
+          textWrap: cs.textWrap || cs.getPropertyValue('text-wrap') || 'n/a',
+          lines: lines.length,
+          lastLineWidth: +last.toFixed(2),
+          lastLineFill: +(last / Math.max(1, maxW)).toFixed(3),
+          widow: last / Math.max(1, maxW) < 0.25,
+          ragPx: +rag.toFixed(2),
+          // hanging-punctuation legitimately paints ~half a glyph past the
+          // edge; only a full-em overhang counts as a real token overflow
+          overhangPx: +overhangPx.toFixed(2),
+          overflow: overhangPx > fontSize,
+          maxLineWidth: +maxW.toFixed(2),
+          snippet: text.slice(0, 60),
+        })
+      }
+      return out
+    }
+    const paras = sample([...root.querySelectorAll(':scope > p')], 24)
+    const heads = sample([...root.querySelectorAll('h1,h2,h3,h4')], 12)
+    const cells = sample([...root.querySelectorAll('td > p, th > p')], 24)
+    const agg = (rows) => ({
+      n: rows.length,
+      widows: rows.filter((r) => r.widow).length,
+      overflow: rows.filter((r) => r.overflow).length,
+      medianLastFill: median(rows.map((r) => r.lastLineFill)),
+      medianRagPx: median(rows.map((r) => r.ragPx)),
+    })
+    return { columnWidthPx: +colW.toFixed(2), paragraphs: paras, headings: heads, cells, aggP: agg(paras), aggH: agg(heads), aggC: agg(cells) }
+  })()`)
+}
+
+// ---------------------------------------------------------------------------
+// C3. composition: every block's edges vs the text column
+// ---------------------------------------------------------------------------
+
+async function measureComposition(page) {
+  return evalPage(page, `(() => {
+    const root = pmRoot()
+    const col = root.getBoundingClientRect()
+    const padL = parseFloat(getComputedStyle(root).paddingLeft)
+    const padR = parseFloat(getComputedStyle(root).paddingRight)
+    const textLeft = col.left + padL
+    const textRight = col.right - padR
+    const kinds = {}
+    for (const el of [...root.children]) {
+      const kind = blockKind(el)
+      const r = el.getBoundingClientRect()
+      ;(kinds[kind] = kinds[kind] || []).push({
+        leftDelta: +(r.left - textLeft).toFixed(2),
+        rightDelta: +(r.right - textRight).toFixed(2),
+        w: +r.width.toFixed(2),
+      })
+    }
+    const imgs = [...root.querySelectorAll('img')].map((img) => {
+      const r = img.getBoundingClientRect()
+      return {
+        renderedW: +r.width.toFixed(2), naturalW: img.naturalWidth || null,
+        display: getComputedStyle(img).display, maxWidth: getComputedStyle(img).maxWidth,
+        leftDelta: +(r.left - textLeft).toFixed(2), rightDelta: +(r.right - textRight).toFixed(2),
+      }
+    })
+    const summary = {}
+    for (const [k, v] of Object.entries(kinds)) {
+      summary[k] = {
+        n: v.length,
+        minLeftDelta: Math.min(...v.map((x) => x.leftDelta)),
+        maxLeftDelta: Math.max(...v.map((x) => x.leftDelta)),
+        maxRightOver: Math.max(...v.map((x) => x.rightDelta)),
+        widths: [...new Set(v.map((x) => x.w))].slice(0, 6),
+      }
+    }
+    return { textColumn: { left: +textLeft.toFixed(2), right: +textRight.toFixed(2), width: +(textRight - textLeft).toFixed(2) }, byKind: summary, images: imgs }
+  })()`)
+}
+
+// ---------------------------------------------------------------------------
+// C4. typing reflow: does editing rebalance lines or move the caret?
+// ---------------------------------------------------------------------------
+
+async function probeTypingReflow(page) {
+  const target = await evalPage(page, `(() => {
+    const paras = [...pmRoot().querySelectorAll(':scope > p')].filter((p) => (p.textContent || '').length > 150)
+    paras.sort((a, b) => b.textContent.length - a.textContent.length)
+    const el = paras[0]
+    if (!el) return null
+    el.scrollIntoView({ block: 'center' })
+    const idx = [...pmRoot().children].indexOf(el)
+    return { idx, len: el.textContent.length, text: el.textContent.slice(0, 50) }
+  })()`)
+  if (!target) return { error: 'no long paragraph' }
+  const expr = `pmRoot().children[${target.idx}]`
+  const pt = await clickInText(page, expr)
+  if (!pt) return { target, error: 'no click point' }
+  await page.waitForTimeout(200)
+  const sample = `(() => {
+    const el = (${expr})
+    const s = scrollViewport()
+    const range = document.createRange()
+    range.selectNodeContents(el)
+    const lines = [...range.getClientRects()].filter((r) => r.height > 1).length
+    const sel = window.getSelection()
+    let caret = null
+    if (sel.rangeCount) {
+      const r = sel.getRangeAt(0).getBoundingClientRect()
+      caret = { x: +r.x.toFixed(1), y: +r.y.toFixed(1) }
+    }
+    return { lines, scrollTop: s.scrollTop, caret }
+  })()`
+  const before = await evalPage(page, sample)
+  const samples = []
+  const TYPED = 'the quick brown fox jumps'
+  for (const ch of TYPED) {
+    await page.keyboard.type(ch)
+    samples.push(await evalPage(page, sample))
+    await page.waitForTimeout(40)
+  }
+  const lineChanges = samples.filter((s, i) => s.lines !== (i === 0 ? before.lines : samples[i - 1].lines)).length
+  const caretJumps = samples.filter((s, i) => {
+    const prev = i === 0 ? before.caret : samples[i - 1].caret
+    return s.caret && prev && Math.abs(s.caret.y - prev.y) > 8
+  }).length
+  const scrollDeltas = samples.map((s) => Math.abs(s.scrollTop - before.scrollTop))
+  for (let i = 0; i < TYPED.length; i++) await page.keyboard.press('Backspace')
+  await page.waitForTimeout(300)
+  const restored = await readMarkdownNow(page)
+  const seeded = await evalPage(page, `window.__bench.fixture`)
+  return { target, before, typedSamples: samples.length, lineChanges, caretJumps, maxScrollDrift: +Math.max(...scrollDeltas).toFixed(2), restoredBytes: restored === seeded }
 }
 
 // ---------------------------------------------------------------------------
@@ -1006,6 +1179,8 @@ async function runDoc(page, context, docName, outDir, engineName, engineKey, var
   result.computedStyles = await measureStyles(page)
   result.blockRhythm = await measureRhythm(page)
   result.measure = await measureText(page)
+  result.wrap = await measureWrap(page)
+  result.composition = await measureComposition(page)
   result.tables = await measureTables(page)
   result.proseMirrorScrollHeight = await evalPage(page, `pmRoot().scrollHeight`)
   result.screenshots = await takeScreenshots(page, outDir, docName)
@@ -1018,6 +1193,8 @@ async function runDoc(page, context, docName, outDir, engineName, engineKey, var
     try { result.probes[name] = await fn() }
     catch (e) { result.probes[name] = { error: String(e && e.message || e) } }
   }
+
+  await probe('typingReflow', () => probeTypingReflow(page))
 
   if (docName === 'tech-report-tables') {
     // T2 = tables[1] (6 cols x 12 body rows). Body row 3 = tr index 3
@@ -1085,7 +1262,8 @@ async function main() {
       runAt: new Date().toISOString(),
       variant: args.variant || null,
     }
-    for (const docName of DOCS) {
+    const docs = args.docs ? args.docs.split(',').map((d) => d.trim()).filter(Boolean) : DEFAULT_DOCS
+    for (const docName of docs) {
       console.log(`[${engineKey}] ${docName} ...`)
       try {
         const r = await runDoc(page, context, docName, outDir, engineKey === 'webkit' ? 'WebKit' : 'Chromium', engineKey, args.variant)

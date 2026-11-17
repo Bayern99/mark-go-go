@@ -1,0 +1,17 @@
+/* Round-2 impl candidate B — weight/color ladder for H4–H6, same size.
+   All three stay at reading size; differentiation comes from color and
+   weight, and deeper levels bind tighter (20/16px top instead of 24). */
+.crepe-root .milkdown .ProseMirror h4 {
+  font-weight: 600;
+  color: var(--ink);
+}
+.crepe-root .milkdown .ProseMirror h5 {
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-top: 20px;
+}
+.crepe-root .milkdown .ProseMirror h6 {
+  font-weight: 500;
+  color: var(--ink-3);
+  margin-top: 16px;
+}

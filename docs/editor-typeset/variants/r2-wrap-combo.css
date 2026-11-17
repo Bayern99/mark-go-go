@@ -1,0 +1,12 @@
+/* Round-2 experiment W4 — pretty body + balanced headings. */
+.crepe-root .milkdown .ProseMirror {
+  text-wrap: pretty;
+}
+.crepe-root .milkdown .ProseMirror h1,
+.crepe-root .milkdown .ProseMirror h2,
+.crepe-root .milkdown .ProseMirror h3,
+.crepe-root .milkdown .ProseMirror h4,
+.crepe-root .milkdown .ProseMirror h5,
+.crepe-root .milkdown .ProseMirror h6 {
+  text-wrap: balance;
+}

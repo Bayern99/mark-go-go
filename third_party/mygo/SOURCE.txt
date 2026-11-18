@@ -1,2 +1,4 @@
-github.com/egoist/mygo v0.7.4
-Copied for a controlled document-group patch. See docs/mygo-document-groups.md
+github.com/egoist/mygo v0.10.0
+Upstream commit ebde9399baf2734b3361856a53f4036859973d1d.
+Copied for the controlled document-group and workspace lifecycle patch.
+See docs/mygo-document-groups.md.

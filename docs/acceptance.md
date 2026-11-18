@@ -2,6 +2,22 @@
 
 本文件按阶段记录实际执行的检查。PR 合并前检查见下节。其余各节保留各自版本的原型与集成证据，被后续规格取代的条目已就地标注。
 
+## MyGo v0.10.0 与官方 Automation（2026-11-18）
+
+基线：多 Workspace 提交 `d729c17`；升级在独立分支进行。上游 v0.10.0 仍为一份文档一个窗口，因此保留并迁移受控 Document Group 补丁。
+
+| 检查 | 判定 | 证据 |
+|---|---|---|
+| 上游与依赖迁移 | PASS | 标签 `v0.10.0` / 提交 `ebde939`；`go.mod`、`third_party/mygo`、`mygo-runtime` 均升级。Go API 无破坏性变更；新版拆分源码已补齐，两个三方合并冲突已解决。 |
+| Go / MyGo 回归 | PASS | `go vet .`、`go test -race .`、`go test -tags e2e -race .`、`(cd third_party/mygo && go test -race . -run TestGroupClose)` 均通过。 |
+| Web 回归 | PASS | 真实 Chromium 36 个文件、359 项通过；`npm --prefix web run typecheck` 与生产构建通过。 |
+| 官方 CLI | PASS | `go tool mygo-automation version` 为 v0.10.0；`skills` 输出当前版本官方指南。 |
+| 原生多 Workspace | PASS（macOS WebKit，非浏览器替身） | `scripts/native-automation-smoke.sh` 实际 Build → Launch → Inspect → Interact → Assert → Restart → Cleanup：三个 Workspace 共用一个窗口、Tab 往返、重复打开去重、视图和当前 Workspace 恢复。 |
+| 原生编辑与菜单 | PASS（macOS） | 同一 Automation 脚本在 Markdown 视图插入文本，File > Save 实际写盘，Edit > Undo / Redo 改变真实编辑器历史，重启后保存内容仍在。 |
+| 截图与三栏 | PASS | 官方 `screenshot` 生成 `/tmp/mgo-automation-smoke.png`；三个文档 Tab、当前 Workspace、Markdown 视图、中央正文与右栏正常。 |
+| 正式版隔离 | PASS | 默认 `go list -deps .` 不含 Automation；普通 `mygo build` 成功。隔离正式 QA 应用设置 `MYGO_AUTOMATION` 后正常运行但未创建 socket。 |
+| Save As / Rename / Move / 冲突系统对话框 | BLOCKED | 本轮没有用官方 Automation 完成这些系统面板内的原生操作；既有 Go 路径/冲突测试通过，但不据此宣称系统对话框验收通过。 |
+
 ## 单窗口多 Workspace（2026-11-17）
 
 Workspace 菜单、Save As 和 Move To 的原生记录来自 `Mark Go Go Native Verify.app`（`dev.markgogo.editor.nativeverify`）。通过 Computer 在 macOS 操作应用菜单和系统文件面板，测试使用独立会话与临时 Markdown 文件。

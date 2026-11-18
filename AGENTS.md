@@ -22,3 +22,7 @@ Single-context：根目录 `GLOSSARY.md` + `docs/adr/`。See `docs/agents/domain
 
 编辑器排版基线测量与回归证据在 `docs/editor-typeset/`，运行方式见 `docs/editor-typeset/README.md`.
 
+### Native automation
+
+真实 macOS 窗口、菜单与 WKWebView 验证使用 MyGo 官方 Automation；先运行 `go tool mygo-automation skills`，流程与隔离要求见 `docs/agents/native-automation.md`.
+

@@ -28,7 +28,7 @@ function longDocument(): string {
   return `# Long\n\n${paragraphs.join('\n\n')}\n`
 }
 
-function modeButton(container: HTMLElement, mode: 'richtext' | 'markdown'): HTMLButtonElement {
+function modeButton(container: HTMLElement, mode: 'preview' | 'markdown'): HTMLButtonElement {
   const button = container.querySelector<HTMLButtonElement>(`[data-testid="view-mode-${mode}"]`)
   if (!button) throw new Error(`view mode ${mode} missing`)
   return button
@@ -91,7 +91,9 @@ describe('App source mode', () => {
   it('switches with the view mode control and shows the current mode', async () => {
     const app = await mountApp(DOCUMENT)
     try {
-      expect(checkedMode(app.container)).toBe('richtext')
+      expect(checkedMode(app.container)).toBe('preview')
+      expect(modeButton(app.container, 'preview').textContent).toBe('Preview')
+      expect(modeButton(app.container, 'preview').title).toBe('Markdown Preview (⌘/)')
 
       await userEvent.click(modeButton(app.container, 'markdown'))
       await vi.waitFor(() => {
@@ -99,7 +101,7 @@ describe('App source mode', () => {
         expect(visibleSource(app.container)).toBe(DOCUMENT)
       })
       expect(app.container.querySelector<HTMLElement>('.mgo-source-root')?.hidden).toBe(false)
-      expect(app.container.querySelector<HTMLElement>('.mgo-wysiwyg-root')?.hidden).toBe(true)
+      expect(app.container.querySelector<HTMLElement>('.mgo-preview-root')?.hidden).toBe(true)
     } finally {
       await app.unmount()
     }
@@ -116,8 +118,8 @@ describe('App source mode', () => {
 
       await toggleShortcut(MOD)
       await vi.waitFor(() => {
-        expect(checkedMode(app.container)).toBe('richtext')
-        expect(app.container.querySelector<HTMLElement>('.mgo-wysiwyg-root')?.hidden).toBe(false)
+        expect(checkedMode(app.container)).toBe('preview')
+        expect(app.container.querySelector<HTMLElement>('.mgo-preview-root')?.hidden).toBe(false)
         expect(app.container.querySelector<HTMLElement>('.mgo-source-root')?.hidden).toBe(true)
       })
 
@@ -141,9 +143,9 @@ describe('App source mode', () => {
       await enterSourceMode(app.container)
       expect(visibleSource(app.container)).toBe(DOCUMENT)
 
-      await userEvent.click(modeButton(app.container, 'richtext'))
+      await userEvent.click(modeButton(app.container, 'preview'))
       await vi.waitFor(() => {
-        expect(checkedMode(app.container)).toBe('richtext')
+        expect(checkedMode(app.container)).toBe('preview')
       })
       await new Promise((resolve) => setTimeout(resolve, 350))
       expect(update).not.toHaveBeenCalled()
@@ -152,7 +154,7 @@ describe('App source mode', () => {
     }
   })
 
-  it('saves source edits verbatim and keeps them through later WYSIWYG edits', async () => {
+  it('saves source edits verbatim and keeps them through later Preview edits', async () => {
     const app = await mountApp(DOCUMENT)
     const update = vi.spyOn(app.host, 'update')
     try {
@@ -170,9 +172,9 @@ describe('App source mode', () => {
         timeout: 3000,
       })
 
-      await userEvent.click(modeButton(app.container, 'richtext'))
+      await userEvent.click(modeButton(app.container, 'preview'))
       await vi.waitFor(() => {
-        expect(checkedMode(app.container)).toBe('richtext')
+        expect(checkedMode(app.container)).toBe('preview')
         expect(app.container.querySelector('[data-testid="editor-root"] .ProseMirror')).not.toBeNull()
         expect(app.container.querySelector('[data-testid="editor-root"] blockquote')).not.toBeNull()
       })
@@ -320,9 +322,9 @@ describe('App source mode', () => {
       })
 
       ;(scroller as HTMLElement).scrollTop = 0
-      await userEvent.click(modeButton(app.container, 'richtext'))
+      await userEvent.click(modeButton(app.container, 'preview'))
       await vi.waitFor(() => {
-        expect(checkedMode(app.container)).toBe('richtext')
+        expect(checkedMode(app.container)).toBe('preview')
         const block = caretBlock(app.container)
         expect(block?.textContent).toBe('Paragraph 299.')
         expect(isWithin(block as HTMLElement, scroller as HTMLElement)).toBe(true)

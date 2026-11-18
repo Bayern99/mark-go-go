@@ -290,13 +290,13 @@ describe('table column widths', () => {
 
       mounted.editor.setMode('source')
       expect(mounted.editor.getMarkdown()).toBe(TABLE_DOC)
-      mounted.editor.setMode('wysiwyg')
+      mounted.editor.setMode('preview')
       expect(firstColumnWidth(mounted.editor)).toBe(resized)
 
       mounted.editor.setMode('source')
       const introduction = '表格前新增的段落。\n\n'
       replaceSource(getSourceView(mounted.root), 0, 0, introduction)
-      mounted.editor.setMode('wysiwyg')
+      mounted.editor.setMode('preview')
       expect(mounted.editor.getMarkdown()).toBe(introduction + TABLE_DOC)
       expect(firstColumnWidth(mounted.editor)).toBe(resized)
 

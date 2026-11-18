@@ -96,7 +96,7 @@ async function mountWorkspace(workspace: WorkspaceAdapter): Promise<{
       const panes = container.querySelectorAll('[data-document-id]')
       if (panes.length === 0) throw new Error('document panes missing')
       for (const pane of panes) {
-        const mode = pane.querySelector<HTMLButtonElement>('[data-testid="view-mode-richtext"]')
+        const mode = pane.querySelector<HTMLButtonElement>('[data-testid="view-mode-preview"]')
         if (!mode || mode.disabled) throw new Error('document pane not ready')
       }
     },

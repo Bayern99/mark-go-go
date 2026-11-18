@@ -69,18 +69,18 @@ const IDENTITY_BREAKING_PLUGIN_KEYS: Record<string, true> = {
   MILKDOWN_TRAILING: true,
 }
 
-export type EditorMode = 'wysiwyg' | 'source'
+export type EditorMode = 'preview' | 'source'
 
 export interface MarkdownEditor {
-  /** Current editor surface: rich text or raw Markdown source. */
+  /** Current editor surface: Preview or raw Markdown source. */
   getMode(): EditorMode
   /** Switch mode; a no-op when the mode is already active. */
   setMode(mode: EditorMode): void
-  /** Switch between rich text and source. */
+  /** Switch between Preview and source. */
   toggleMode(): void
   /** Fires after the active mode changes. */
   onModeChange(fn: (mode: EditorMode) => void): Disposable
-  /** Composed Markdown in rich text mode, the exact CodeMirror text in source. */
+  /** Composed Markdown in Preview mode, the exact CodeMirror text in source. */
   getMarkdown(): string
   /** Replace the editor content (external reload). Undo history is reset. */
   setMarkdown(text: string): void
@@ -98,14 +98,14 @@ export interface MarkdownEditor {
   foldAnchors(): number[]
   /**
    * Select a Markdown source range and scroll its start to the top of the
-   * editor's scroll area. Rich text selects whole top-level blocks: from the
+   * editor's scroll area. Preview selects whole top-level blocks: from the
    * block holding `from` through the last block starting before `to`; source
    * selects the exact offsets. Returns false when the range falls outside the
    * current composed text.
    */
   select(from: number, to: number): boolean
   /**
-   * Add a note as a normal, undoable edit, in rich text or source: right after
+   * Add a note as a normal, undoable edit, in Preview or source: right after
    * the last top-level block that starts before the source offset. Returns
    * false when the document is read only or no block starts before the offset.
    */
@@ -144,17 +144,17 @@ export async function createMarkdownEditor(
   root: HTMLElement,
   options: CreateEditorOptions = {},
 ): Promise<MarkdownEditor> {
-  const wysiwygRoot = document.createElement('div')
-  wysiwygRoot.className = 'mgo-wysiwyg-root'
+  const previewRoot = document.createElement('div')
+  previewRoot.className = 'mgo-preview-root'
   const sourceRoot = document.createElement('div')
   sourceRoot.className = 'mgo-source-root'
   sourceRoot.hidden = true
-  root.append(wysiwygRoot, sourceRoot)
+  root.append(previewRoot, sourceRoot)
 
   /** Set once the view exists; the block menu can only open after that. */
   let addNoteFromMenu: () => Promise<void> = () => Promise.resolve()
 
-  const builder = new CrepeBuilder({ root: wysiwygRoot, defaultValue: '' })
+  const builder = new CrepeBuilder({ root: previewRoot, defaultValue: '' })
     .addFeature(cursor)
     .addFeature(listItem)
     .addFeature(placeholder, { text: 'Start writing…', mode: 'doc' })
@@ -193,9 +193,9 @@ export async function createMarkdownEditor(
   const modeListeners = new Set<(mode: EditorMode) => void>()
   const historyListeners = new Set<() => void>()
   let lastReportedOffset: number | undefined
-  let mode: EditorMode = 'wysiwyg'
+  let mode: EditorMode = 'preview'
   let sourceEditor: SourceEditor | undefined
-  /** Text the rich-text editor represented when source mode was entered. */
+  /** Text the Preview editor represented when source mode was entered. */
   let sourceBaseText: string | undefined
   /** The one composer this editor may have open; other editors have their own. */
   const composerScope = new ComposerScope()
@@ -633,15 +633,15 @@ export async function createMarkdownEditor(
     },
     view(editorView) {
       const onPointerDown = () => {
-        wysiwygRoot.classList.add('mgo-pointer-selecting')
-        wysiwygRoot.classList.remove('mgo-toolbar-dismissed')
+        previewRoot.classList.add('mgo-pointer-selecting')
+        previewRoot.classList.remove('mgo-toolbar-dismissed')
       }
       const onKeyDown = (event: KeyboardEvent) => {
         if (event.key === 'Escape' && !editorView.state.selection.empty) {
-          wysiwygRoot.classList.add('mgo-toolbar-dismissed')
+          previewRoot.classList.add('mgo-toolbar-dismissed')
         }
       }
-      const endPointerSelect = () => wysiwygRoot.classList.remove('mgo-pointer-selecting')
+      const endPointerSelect = () => previewRoot.classList.remove('mgo-pointer-selecting')
       editorView.dom.addEventListener('pointerdown', onPointerDown, true)
       editorView.dom.addEventListener('keydown', onKeyDown)
       window.addEventListener('pointerup', endPointerSelect)
@@ -650,7 +650,7 @@ export async function createMarkdownEditor(
       return {
         update(currentView, prevState) {
           if (!currentView.state.selection.eq(prevState.selection)) {
-            wysiwygRoot.classList.remove('mgo-toolbar-dismissed')
+            previewRoot.classList.remove('mgo-toolbar-dismissed')
           }
         },
         destroy() {
@@ -846,16 +846,16 @@ export async function createMarkdownEditor(
       const offset = selectionOffset(view.state) ?? 0
       mode = 'source'
       sourceBaseText = text
-      wysiwygRoot.hidden = true
+      previewRoot.hidden = true
       sourceRoot.hidden = false
       ensureSourceEditor(text)
       revealSource(offset, offset, true)
     } else {
       const text = sourceEditor?.getText() ?? ''
       const offset = sourceEditor?.getSelection() ?? 0
-      mode = 'wysiwyg'
+      mode = 'preview'
       sourceRoot.hidden = true
-      wysiwygRoot.hidden = false
+      previewRoot.hidden = false
       // Untouched source keeps the existing ProseMirror state (and its undo
       // history); edits rebuild through the normal load pipeline.
       if (sourceBaseText === undefined || text !== sourceBaseText) {
@@ -888,7 +888,7 @@ export async function createMarkdownEditor(
   return {
     getMode: () => mode,
     setMode,
-    toggleMode: () => setMode(mode === 'wysiwyg' ? 'source' : 'wysiwyg'),
+    toggleMode: () => setMode(mode === 'preview' ? 'source' : 'preview'),
     onModeChange(fn) {
       modeListeners.add(fn)
       return {
@@ -901,7 +901,7 @@ export async function createMarkdownEditor(
       mode === 'source' ? (sourceEditor?.getText() ?? '') : compose(view.state.doc),
     setMarkdown(text) {
       if (mode === 'source') {
-        // Any reload invalidates the hidden rich-text copy and its undo
+        // Any reload invalidates the hidden Preview copy and its undo
         // history; leaving source must rebuild from this exact text.
         sourceBaseText = undefined
         const source = ensureSourceEditor(text)

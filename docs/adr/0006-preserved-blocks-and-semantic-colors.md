@@ -18,7 +18,7 @@ SoloMD 的参考实现固定于 [219a6ba](https://github.com/zhitongblog/solomd/
 
 ### Mermaid 图表（2026-11-10）
 
-Rich text 将 `mermaid` 围栏作为保真特殊块显示为图表，复用现有锁定节点与原地 Composer。流程图、时序图等由本地打包的 Mermaid 渲染，展示结果不写入原文；`Edit` 仅修改该围栏，保存、取消、撤销与只读规则沿用现有特殊块。无效图保留错误说明和原始 Markdown，不让一张图的失败阻断其他图或正文。
+预览将 `mermaid` 围栏作为保真特殊块显示为图表，复用现有锁定节点与原地 Composer。流程图、时序图等由本地打包的 Mermaid 渲染，展示结果不写入原文；`Edit` 仅修改该围栏，保存、取消、撤销与只读规则沿用现有特殊块。无效图保留错误说明和原始 Markdown，不让一张图的失败阻断其他图或正文。
 
 Markdown 视图继续展示原文；GenUI Catalog 本次不增加 Diagram 组件，`Text` 中的代码围栏仍按代码显示。GenUI 的图表能力缺口及工作台组件规划见 [UI 组件缺口与文字规划](../design/ui-component-gaps.md)。
 

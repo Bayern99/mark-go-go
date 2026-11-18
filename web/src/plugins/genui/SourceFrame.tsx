@@ -18,7 +18,7 @@ export interface SourceActions {
   /** Component ids whose bodies are being regenerated in place. */
   replacing?: ReadonlySet<string>
   /**
-   * Show a component's source in rich text, selected: where `text` is in its
+   * Show a component's source in Preview, selected: where `text` is in its
    * remaining source sections when given and found, otherwise its first
    * remaining source section.
    */

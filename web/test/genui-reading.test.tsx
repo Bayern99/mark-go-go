@@ -189,7 +189,7 @@ describe('GenUI reading state',
         })
         await expect.element(page.getByRole('columnheader', { name: /^Size/ })).toHaveAttribute('aria-sort', 'ascending')
 
-        await page.getByTestId('view-mode-richtext').click()
+        await page.getByTestId('view-mode-preview').click()
         await page.getByTestId('view-mode-genui').click()
         await vi.waitFor(() => expect(genui()).toHaveAttribute('data-state', 'view'))
 
@@ -253,7 +253,7 @@ describe('card-local generation feedback',
         const mounted = await showGenUI(host)
         await vi.waitFor(() => expect(genui().getByText('Old metrics', { exact: false }).query()).not.toBeNull())
 
-        await page.getByTestId('view-mode-richtext').click()
+        await page.getByTestId('view-mode-preview').click()
         const paragraph = Array.from(mounted.container.querySelectorAll<HTMLElement>('.ProseMirror p')).find(
           (p) => p.textContent === 'Second body.',
         )

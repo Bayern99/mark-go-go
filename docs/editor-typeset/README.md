@@ -21,7 +21,8 @@ composition) — all variants are bench-only.
   `window.__pmView` (the live ProseMirror `EditorView`, captured by patching
   `EditorView.prototype.updateStateInner` in the harness only).
 - `measure.mjs` — measurement script.
-- `screenshots/` — representative before/after captures kept in the repo.
+- `screenshots/` — representative before/after captures of the interface at
+  the time of measurement. The current mode button reads `Preview`.
 
 ## Run
 

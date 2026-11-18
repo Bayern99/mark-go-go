@@ -97,3 +97,43 @@ func TestGroupCloseConfirmationDoesNotBlockPreparedQuit(t *testing.T) {
 		t.Fatal("an already prepared application quit must be able to close the window")
 	}
 }
+
+func TestClearedDocumentSelectionBlocksNativeCommands(t *testing.T) {
+	empty, other := &Window{}, &Window{}
+	var called []MenuRole
+	kind := &docKind{command: func(role MenuRole, _ *docBase, _ *Window) bool {
+		called = append(called, role)
+		return true
+	}}
+	hidden, active := &docBase{kind: kind}, &docBase{kind: kind}
+	docRegistry.Lock()
+	oldKinds, oldGroups := docRegistry.kinds, docRegistry.byWindow
+	docRegistry.kinds = []*docKind{kind}
+	docRegistry.byWindow = map[*Window]*docGroup{
+		empty: {docs: []*docBase{hidden}, selectionCleared: true},
+		other: {docs: []*docBase{active}, active: active},
+	}
+	docRegistry.Unlock()
+	windows.Lock()
+	oldFocus := windows.focused
+	windows.focused = other
+	windows.Unlock()
+	t.Cleanup(func() {
+		docRegistry.Lock()
+		docRegistry.kinds, docRegistry.byWindow = oldKinds, oldGroups
+		docRegistry.Unlock()
+		windows.Lock()
+		windows.focused = oldFocus
+		windows.Unlock()
+	})
+
+	documentRole(RoleClose, empty)
+	documentRole(RoleSave, empty)
+	if len(called) != 0 {
+		t.Fatalf("commands leaked from empty selection to the focused window: %v", called)
+	}
+	documentRole(RoleSave, other)
+	if len(called) != 1 || called[0] != RoleSave {
+		t.Fatalf("active document commands = %v, want Save", called)
+	}
+}

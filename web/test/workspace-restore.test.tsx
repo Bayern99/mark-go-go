@@ -158,8 +158,8 @@ describe('view mode and restore transport',
 
         const wrapped = wrapHostAsWorkspace(untitled)
         expect((await wrapped.snapshot()).documents[0].viewMode).toBe('genui')
-        await untitled.setViewMode('richtext')
-        expect((await wrapped.snapshot()).documents[0].viewMode).toBe('richtext')
+        await untitled.setViewMode('preview')
+        expect((await wrapped.snapshot()).documents[0].viewMode).toBe('preview')
         expect((await wrapped.snapshot()).documents[0].path).toBe('')
       },
     )
@@ -213,6 +213,35 @@ describe('view mode and restore transport',
           expect(host.generations).toEqual([])
           // Restoring the mode must not write the pre-restore default back.
           expect(host.getState().viewMode).toBe('genui')
+        } finally {
+          await app.unmount()
+        }
+      },
+    )
+
+    it.each(['session', 'local storage'])('restores an older %s in Preview and saves the new mode name',
+      async (store) => {
+        const host = createBrowserHost('# Hello\n\nBody.\n', 'legacy-preview.md')
+        const storageKey = `mgo.viewMode:${host.getState().path}`
+        if (store === 'session') {
+          window.localStorage.setItem(storageKey, 'markdown')
+          await host.setViewMode('richtext')
+        } else {
+          window.localStorage.setItem(storageKey, 'richtext')
+        }
+
+        const app = await mountWorkspace(wrapHostAsWorkspace(host))
+        try {
+          await waitForPanes(app.container, 1)
+          const preview = app.container.querySelector<HTMLButtonElement>('[data-testid="view-mode-preview"]')!
+          expect(preview.getAttribute('aria-checked')).toBe('true')
+          expect(app.container.querySelector('.mgo-preview-root')?.hasAttribute('hidden')).toBe(false)
+          await vi.waitFor(() => expect(window.localStorage.getItem(storageKey)).toBe('preview'))
+
+          await enterSourceMode(app.container)
+          await vi.waitFor(() => expect(host.getState().viewMode).toBe('markdown'))
+          await userEvent.click(preview)
+          await vi.waitFor(() => expect(host.getState().viewMode).toBe('preview'))
         } finally {
           await app.unmount()
         }
@@ -294,7 +323,7 @@ describe('view mode and restore transport',
             if (!error) throw new Error('document load failure missing')
             expect(error.textContent).toContain('disk unavailable')
           })
-          expect(app.container.querySelector<HTMLButtonElement>('[data-testid="view-mode-richtext"]')?.disabled).toBe(true)
+          expect(app.container.querySelector<HTMLButtonElement>('[data-testid="view-mode-preview"]')?.disabled).toBe(true)
         } finally {
           await app.unmount()
         }

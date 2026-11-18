@@ -25,6 +25,8 @@ type sessionWorkspace struct {
 	Root     string       `json:"root"`
 	Tabs     []sessionTab `json:"tabs"`
 	ActiveID string       `json:"activeId"`
+	// Active marks the root whose navigation was selected in its window.
+	Active bool `json:"active,omitempty"`
 }
 
 // sessionTab is one document in tab order.
@@ -32,6 +34,14 @@ type sessionTab struct {
 	ID       string `json:"id"`
 	Path     string `json:"path,omitempty"`
 	ViewMode string `json:"viewMode,omitempty"`
+}
+
+// normalizeViewMode accepts the mode name used by older app sessions.
+func normalizeViewMode(mode string) string {
+	if mode == "richtext" {
+		return "preview"
+	}
+	return mode
 }
 
 // restoreLive is what recovery and this launch already opened.
@@ -52,10 +62,11 @@ type restoreDoc struct {
 // problems the windows report, and launch focus. It never starts a
 // generation.
 type restorePlan struct {
-	Workspaces  []plannedWorkspace
-	FocusID     string
-	FocusPath   string
-	ShowWelcome bool
+	Workspaces        []plannedWorkspace
+	ActiveWorkspaceID string
+	FocusID           string
+	FocusPath         string
+	ShowWelcome       bool
 }
 
 type plannedWorkspace struct {
@@ -109,6 +120,7 @@ func (st *settingsStore) loadSession() sessionFileData {
 			if tab.ID == "" && tab.Path == "" {
 				continue
 			}
+			tab.ViewMode = normalizeViewMode(tab.ViewMode)
 			tabs = append(tabs, tab)
 		}
 		out.Workspaces = append(out.Workspaces, sessionWorkspace{
@@ -116,6 +128,7 @@ func (st *settingsStore) loadSession() sessionFileData {
 			Root:     w.Root,
 			Tabs:     tabs,
 			ActiveID: w.ActiveID,
+			Active:   w.Active,
 		})
 	}
 	return out
@@ -226,6 +239,9 @@ func planSessionRestore(file sessionFileData, live restoreLive) restorePlan {
 	plan := restorePlan{Workspaces: make([]plannedWorkspace, 0, len(file.Workspaces))}
 
 	for _, w := range file.Workspaces {
+		if w.Active {
+			plan.ActiveWorkspaceID = w.ID
+		}
 		pw := plannedWorkspace{
 			ID:   w.ID,
 			Root: w.Root,
@@ -337,7 +353,7 @@ func (h *documentHost) captureSessionLocked() sessionFileData {
 			return
 		}
 		seen[w.id] = true
-		sw := sessionWorkspace{ID: w.id, Root: w.root, ActiveID: w.active, Tabs: []sessionTab{}}
+		sw := sessionWorkspace{ID: w.id, Root: w.root, ActiveID: w.active, Active: h.byWindow[w.win] == w, Tabs: []sessionTab{}}
 		for _, id := range w.tabs {
 			s := h.byID[id]
 			if s == nil {
@@ -351,15 +367,7 @@ func (h *documentHost) captureSessionLocked() sessionFileData {
 		}
 		file.Workspaces = append(file.Workspaces, sw)
 	}
-	for _, id := range h.workspaceOrder {
-		for _, w := range h.byWindow {
-			if w != nil && w.id == id {
-				appendWS(w)
-				break
-			}
-		}
-	}
-	for _, w := range h.byWindow {
+	for _, w := range h.allWorkspacesLocked() {
 		appendWS(w)
 	}
 	return file

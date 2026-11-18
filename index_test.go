@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -383,6 +384,35 @@ func TestNavSnapshotKeepsOpenDocumentMissingFromScan(t *testing.T) {
 	got := found[0]
 	if !got.Deleted || got.DocumentID != "doc-draft" || got.Parent != "drafts" || got.Depth != 1 {
 		t.Fatalf("draft entry = %+v", got)
+	}
+}
+
+func TestLargeWorkspaceFiltersFiveHundredMarkdownFiles(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < 500; i++ {
+		writeMD(t, dir, filepath.Join("group", fmt.Sprintf("%02d", i%20), fmt.Sprintf("doc-%03d.md", i)), fmt.Sprintf("# Document %03d\n\nBody %d.\n", i, i))
+	}
+	if err := os.WriteFile(filepath.Join(dir, "asset.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	host := newDocumentHost()
+	host.disableWatch = true
+	host.settings = &settingsStore{dir: t.TempDir()}
+	w := &workspace{id: "large", root: dir}
+	host.startIndex(w)
+	host.waitIndexReady(w, 5*time.Second)
+	snap := host.navSnapshot(w)
+	if snap.Status != IndexReady || snap.Total != 500 {
+		t.Fatalf("large index status=%s total=%d error=%s", snap.Status, snap.Total, snap.Error)
+	}
+	result := host.searchLockedResult(w, w.index, "Document 499")
+	if result.Incomplete || result.Matched != 1 || len(result.Hits) != 1 || result.Hits[0].Name != "doc-499.md" {
+		t.Fatalf("large filter = %+v", result)
+	}
+	for _, entry := range snap.Entries {
+		if entry.Kind == "file" && !markdownName(entry.Name) {
+			t.Fatalf("non-Markdown navigation entry: %+v", entry)
+		}
 	}
 }
 

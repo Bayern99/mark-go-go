@@ -28,10 +28,10 @@ const EDIT_DEBOUNCE_MS = 250
 export const NARROW_WINDOW_WIDTH = 1180
 
 /**
- * What the center of the window shows: the editor as rich text or as
- * Markdown, or the id of a center view a plugin registered.
+ * What the center of the window shows: Preview, Markdown, or a center view
+ * registered by a plugin.
  */
-type ViewMode = 'richtext' | 'markdown' | (string & {})
+type ViewMode = 'preview' | 'markdown' | (string & {})
 
 /** The view mode is remembered per document path in the page's storage. */
 const VIEW_MODE_KEY = 'mgo.viewMode:'
@@ -50,12 +50,16 @@ function rememberViewMode(path: string, mode: ViewMode): void {
   try {
     window.localStorage.setItem(VIEW_MODE_KEY + path, mode)
   } catch {
-    // No storage: the mode is a convenience, the next window starts in rich text.
+    // No storage: the mode is a convenience, the next window starts in Preview.
   }
 }
 
 function measureIsNarrow(): boolean {
-  return typeof window !== 'undefined' && window.innerWidth < NARROW_WINDOW_WIDTH
+  if (typeof window === 'undefined') return false
+  // WebKit can lag window.innerWidth while a native window is resized in the
+  // background; the document element reports the width actually laid out.
+  const width = document.documentElement.clientWidth || window.innerWidth
+  return width < NARROW_WINDOW_WIDTH
 }
 
 /**
@@ -96,21 +100,21 @@ class ViewModeController {
 
   /**
    * Navigation to a place in the source: from a center view it lands in
-   * rich text and keeps that view as the way back.
+   * Preview and keeps that view as the way back.
    */
   showSource(): void {
     const from = this.center
     if (from === null) return
     this.leaveCenter()
-    this.editor()?.setMode('wysiwyg')
+    this.editor()?.setMode('preview')
     this.setReturnTo(from)
   }
 
-  /** ⌘/: between rich text and Markdown; from a center view, the one the editor is not in. */
+  /** ⌘/: between Preview and Markdown; from a center view, the one the editor is not in. */
   toggleEditorMode(): void {
     const editor = this.editor()
     if (!editor) return
-    this.showEditor(editor.getMode() === 'wysiwyg' ? 'source' : 'wysiwyg')
+    this.showEditor(editor.getMode() === 'preview' ? 'source' : 'preview')
   }
 
   /** The shown center view went away (its plugin was disabled). */
@@ -148,7 +152,7 @@ export function DocumentPane({
   const editorRef = useRef<MarkdownEditor | null>(null)
   const [docState, setDocState] = useState<DocumentInfo | null>(null)
   const [version, setVersion] = useState(0)
-  const [editorMode, setEditorMode] = useState<EditorMode>('wysiwyg')
+  const [editorMode, setEditorMode] = useState<EditorMode>('preview')
   const [centerViewId, setCenterViewId] = useState<string | null>(null)
   const [returnToId, setReturnToId] = useState<string | null>(null)
   const [rightViewId, setRightViewId] = useState<string | null>('outline.panel')
@@ -188,7 +192,7 @@ export function DocumentPane({
   const rightViews = useViews(services.views, 'right')
   const centerView = centerViews.find((view) => view.id === centerViewId) ?? null
   const returnTo = centerView ? null : (centerViews.find((view) => view.id === returnToId) ?? null)
-  const viewMode: ViewMode = centerView ? centerView.id : editorMode === 'source' ? 'markdown' : 'richtext'
+  const viewMode: ViewMode = centerView ? centerView.id : editorMode === 'source' ? 'markdown' : 'preview'
 
   const rightShown = rightViews.length > 0 && (isNarrow ? rightFloatOpen : rightWantOpen)
   const rightFloating = isNarrow && rightFloatOpen
@@ -213,7 +217,12 @@ export function DocumentPane({
     }
     syncViewport()
     window.addEventListener('resize', syncViewport)
-    return () => window.removeEventListener('resize', syncViewport)
+    const observer = new ResizeObserver(syncViewport)
+    observer.observe(document.documentElement)
+    return () => {
+      window.removeEventListener('resize', syncViewport)
+      observer.disconnect()
+    }
   }, [])
 
   useEffect(() => {
@@ -505,6 +514,8 @@ export function DocumentPane({
     if (!ready || restored.current || !docState) return
     restored.current = true
     const saved = docState.viewMode || rememberedViewMode(docState.path)
+    // Preview is the editor's initial mode, including in older sessions.
+    if (saved === 'preview' || saved === 'richtext') return
     if (saved === 'markdown') editorRef.current?.setMode('source')
     else if (saved && services.views.getAll().some((v) => v.location === 'center' && v.id === saved)) {
       modes.showCenter(saved)
@@ -531,13 +542,13 @@ export function DocumentPane({
   }, [active, host.id, centerViewId, editorMode])
 
   const modeChoices = [
-    { id: 'richtext', label: 'Rich text', title: 'Rich text (⌘/)' },
+    { id: 'preview', label: 'Preview', title: 'Markdown Preview (⌘/)' },
     { id: 'markdown', label: 'Markdown', title: 'Markdown source (⌘/)' },
     ...centerViews.map((view) => ({ id: view.id, label: view.title, title: view.title })),
   ]
 
   const chooseMode = (id: string) => {
-    if (id === 'richtext') modes.showEditor('wysiwyg')
+    if (id === 'preview') modes.showEditor('preview')
     else if (id === 'markdown') modes.showEditor('source')
     else modes.showCenter(id)
   }
@@ -730,8 +741,21 @@ export function App({
 function tabLabel(docs: { id: string; name: string; path: string }[], doc: { id: string; name: string; path: string }): string {
   const same = docs.filter((other) => other.name === doc.name)
   if (same.length < 2) return doc.name
-  const parent = doc.path.replace(/\\/g, '/').split('/').slice(-2, -1)[0]
-  return parent ? `${doc.name} — ${parent}` : doc.path || doc.name
+  const dirs = doc.path.replace(/\\/g, '/').split('/').slice(0, -1).filter(Boolean)
+  // Keep the established parent-folder label when it is enough. Across
+  // workspaces the same parent name can recur, so add only the path segments
+  // needed to make the label unique; the full path remains in the tooltip.
+  for (let count = 1; count <= dirs.length; count += 1) {
+    const suffix = dirs.slice(-count).join('/')
+    const candidate = `${doc.name} — ${suffix}`
+    const unique = same.every((other) => {
+      if (other.id === doc.id) return true
+      const otherDirs = other.path.replace(/\\/g, '/').split('/').slice(0, -1).filter(Boolean)
+      return otherDirs.slice(-count).join('/') !== suffix
+    })
+    if (unique) return candidate
+  }
+  return doc.path || doc.name
 }
 
 function StatusTooltip({ label, className, testId }: { label: string; className: string; testId?: string }) {
@@ -792,10 +816,36 @@ function WorkspaceApp({
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 0 })
   const [tabMenuOpen, setTabMenuOpen] = useState(false)
   const [tabFilter, setTabFilter] = useState('')
-  const hiddenDocuments = useMemo(
-    () => [...documents.slice(0, visibleRange.start), ...documents.slice(visibleRange.end)],
-    [documents, visibleRange],
-  )
+  const recentDocuments = useRef<string[]>([])
+  useEffect(() => {
+    const live = new Set(documents.map((doc) => doc.id))
+    recentDocuments.current = [
+      ...(activeId ? [activeId] : []),
+      ...recentDocuments.current.filter((id) => id !== activeId && live.has(id)),
+    ]
+  }, [activeId, documents])
+
+  // The existing tab strip is the cross-workspace switcher. Ctrl+Tab is the
+  // zero-search path for the common A → B → A round trip, including when one
+  // of those tabs currently lives in the overflow menu.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || event.metaKey || event.altKey || event.key !== 'Tab') return
+      const previous = recentDocuments.current.find((id) => id !== activeId && documents.some((doc) => doc.id === id))
+      if (!previous) return
+      event.preventDefault()
+      event.stopPropagation()
+      void workspace.activate(previous)
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [activeId, documents, workspace])
+
+  const hiddenDocuments = useMemo(() => {
+    const hidden = [...documents.slice(0, visibleRange.start), ...documents.slice(visibleRange.end)]
+    const rank = new Map(recentDocuments.current.map((id, index) => [id, index]))
+    return hidden.sort((a, b) => (rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.id) ?? Number.MAX_SAFE_INTEGER))
+  }, [documents, visibleRange, activeId])
   const filteredHiddenDocuments = useMemo(() => {
     const query = tabFilter.trim().toLowerCase()
     if (query === '') return hiddenDocuments
@@ -1132,7 +1182,7 @@ function WorkspaceApp({
               }}
             />
           ))}
-          {documents.length === 0 ? (
+          {activeId === '' ? (
             showWelcome ? (
               <Welcome
                 recents={recents}

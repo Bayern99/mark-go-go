@@ -25,10 +25,10 @@ export async function mountApp(
 
   await vi.waitFor(
     () => {
-      const richText = container.querySelector<HTMLButtonElement>(
-        '[data-testid="view-mode-richtext"]',
+      const preview = container.querySelector<HTMLButtonElement>(
+        '[data-testid="view-mode-preview"]',
       )
-      if (!richText || richText.disabled) throw new Error('editor not ready yet')
+      if (!preview || preview.disabled) throw new Error('editor not ready yet')
       if (!container.querySelector('[data-testid="editor-root"] .ProseMirror'))
         throw new Error('editor not mounted yet')
       if (!container.querySelector('.outline-panel')) throw new Error('outline panel missing')

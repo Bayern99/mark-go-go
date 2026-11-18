@@ -36,11 +36,21 @@ export interface HostDocSnapshot {
 
 export type WorkspaceKind = 'folder' | 'untitled'
 
-export interface WorkspaceSnapshot {
+export interface WorkspaceSummary {
   id: string
   root: string
   name: string
   kind: WorkspaceKind
+}
+
+/** One native window: selected navigation root plus one shared document group. */
+export interface WorkspaceSnapshot {
+  /** Stable native-window identity, not the selected root's identity. */
+  id: string
+  root: string
+  name: string
+  kind: WorkspaceKind
+  workspaces: WorkspaceSummary[]
   documents: DocumentInfo[]
   activeId: string
   restoreError?: string
@@ -312,6 +322,8 @@ export interface WorkspaceAdapter {
   subscribe(fn: (snap: WorkspaceSnapshot) => void): Disposable
   open(path: string): Promise<DocumentInfo>
   openWorkspace(root: string): Promise<void>
+  activateWorkspace(id: string): Promise<void>
+  closeWorkspaceRoot(id: string): Promise<CloseResult>
   newDocument(): Promise<DocumentInfo>
   duplicate(id: string): Promise<DocumentInfo>
   activate(id: string): Promise<void>

@@ -1,6 +1,6 @@
 # 工作区 UI 组件缺口与文字布局规划
 
-本次范围：默认窗口、文件树、文档标签、Rich text 的 Mermaid 呈现，以及它们在现有三栏工作台中的关系。组件缺口先盘点，再只为已确认的交互缺口引入轻量 primitives；不引入完整 UI 套件，不扩大 GenUI Catalog。滚动区域维持现有 OverlayScrollbars 实现，不在本次范围。
+本次范围：默认窗口、文件树、文档标签、预览的 Mermaid 呈现，以及它们在现有三栏工作台中的关系。组件缺口先盘点，再只为已确认的交互缺口引入轻量 primitives；不引入完整 UI 套件，不扩大 GenUI Catalog。滚动区域维持现有 OverlayScrollbars 实现，不在本次范围。
 
 依据：[界面任务规范](../agents/ui-tasks.md)、[领域词汇](../../GLOSSARY.md)、[三栏职责](../adr/0004-three-column-layout-and-genui-panel.md)、[特殊块保真与编辑](../adr/0006-preserved-blocks-and-semantic-colors.md)和 [Portrait 设计画板](Mark%20Go%20Go%20界面设计.html)。设计画板的工作区与组件板均规定标签文字与关闭动作间隔 6px，关闭命中区 20px；文档标签的滚动方式按后续已采纳的溢出菜单规则执行。
 

@@ -237,3 +237,121 @@ func TestErrGeneratingExplainsWaitOrCancel(t *testing.T) {
 		t.Fatalf("errGenerating = %q, want wait-or-cancel wording", errGenerating)
 	}
 }
+
+func TestWindowSnapshotAggregatesRootsIntoOneDocumentGroup(t *testing.T) {
+	win := &mygo.Window{}
+	h := &documentHost{
+		byWindow:    map[*mygo.Window]*workspace{},
+		byWorkspace: map[string]*workspace{},
+		byID:        map[string]*docSession{},
+	}
+	research := &workspace{id: "research", windowID: "window", root: "/Research", win: win, tabs: []string{"a"}, active: "a"}
+	music := &workspace{id: "music", windowID: "window", root: "/Music Department", win: win, tabs: []string{"b"}, active: "b"}
+	h.byWorkspace[research.id] = research
+	h.byWorkspace[music.id] = music
+	h.byWindow[win] = music
+	h.workspaceOrder = []string{research.id, music.id}
+	h.byID["a"] = &docSession{id: "a", ws: research, pathFn: func() string { return "/Research/Discussion.md" }}
+	h.byID["b"] = &docSession{id: "b", ws: music, pathFn: func() string { return "/Music Department/CC129.md" }}
+
+	snap, err := h.snapshotWorkspace(win)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.ID != "window" || snap.Root != music.root || snap.ActiveID != "b" {
+		t.Fatalf("selected window/root = %+v", snap)
+	}
+	if len(snap.Workspaces) != 2 || snap.Workspaces[0].ID != "research" || snap.Workspaces[1].ID != "music" {
+		t.Fatalf("workspace summaries = %+v", snap.Workspaces)
+	}
+	if len(snap.Documents) != 2 || snap.Documents[0].ID != "a" || snap.Documents[1].ID != "b" {
+		t.Fatalf("shared document group = %+v", snap.Documents)
+	}
+
+	h.byWindow[win] = research
+	snap, err = h.snapshotWorkspace(win)
+	if err != nil || snap.Root != research.root || snap.ActiveID != "a" || len(snap.Documents) != 2 {
+		t.Fatalf("window snapshot after switching roots = %+v, %v", snap, err)
+	}
+}
+
+func TestFolderRoutingIncludesBackgroundRoots(t *testing.T) {
+	parent := t.TempDir()
+	child := filepath.Join(parent, "nested")
+	if err := os.Mkdir(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(child, "a.md")
+	if err := os.WriteFile(file, []byte("# A\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	win := &mygo.Window{}
+	selected := &workspace{id: "selected", root: t.TempDir(), win: win}
+	background := &workspace{id: "background", root: child, win: win}
+	h := &documentHost{
+		byWindow:    map[*mygo.Window]*workspace{win: selected},
+		byWorkspace: map[string]*workspace{selected.id: selected, background.id: background},
+	}
+	h.mu.Lock()
+	got := h.folderWorkspaceLocked(file, false)
+	h.mu.Unlock()
+	if got != background {
+		t.Fatalf("folderWorkspaceLocked = %v, want background deepest root", got)
+	}
+}
+
+func TestRemovingLastRootKeepsWindowIdentity(t *testing.T) {
+	w := &workspace{id: "root", windowID: "window-stable", root: t.TempDir()}
+	h := &documentHost{
+		byWindow:    map[*mygo.Window]*workspace{nil: w},
+		byWorkspace: map[string]*workspace{w.id: w},
+		byID:        map[string]*docSession{},
+	}
+	h.removeWorkspaceRoot(w)
+	current := h.byWindow[nil]
+	if current == nil || current.root != "" {
+		t.Fatal("closing the last root must leave Welcome")
+	}
+	if snap, err := h.snapshotWorkspace(current.win); err != nil || snap.ID != "window-stable" {
+		t.Fatalf("window id = %q, %v, want window-stable", snap.ID, err)
+	}
+}
+
+func TestRestoreUntitledUsesPreferredSharedWindow(t *testing.T) {
+	preferred := &mygo.Window{}
+	other := &mygo.Window{}
+	target := &workspace{id: "folder", windowID: "window", root: t.TempDir(), win: preferred}
+	recovery := &workspace{id: "recovery", windowID: "other", root: "", win: other}
+	h := &documentHost{
+		byWindow:       map[*mygo.Window]*workspace{preferred: target, other: recovery},
+		byWorkspace:    map[string]*workspace{target.id: target, recovery.id: recovery},
+		byID:           map[string]*docSession{},
+		workspaceOrder: []string{target.id, recovery.id},
+	}
+	got := h.workspaceForPlan(plannedWorkspace{ID: "untitled", Kind: "untitled"}, preferred)
+	if got == nil || got.win != preferred || got.root != "" {
+		t.Fatalf("untitled restore destination = %+v, want preferred window", got)
+	}
+}
+
+func TestRetireEmptyUntitledKeepsSharedWindowAndOtherRoot(t *testing.T) {
+	win := &mygo.Window{}
+	untitled := &workspace{id: "welcome", root: "", win: win}
+	folder := &workspace{id: "folder", root: t.TempDir(), win: win}
+	h := &documentHost{
+		byWindow:       map[*mygo.Window]*workspace{win: folder},
+		byWorkspace:    map[string]*workspace{untitled.id: untitled, folder.id: folder},
+		byID:           map[string]*docSession{},
+		workspaceOrder: []string{untitled.id, folder.id},
+	}
+	if !h.retireEmptyUntitled(untitled) {
+		t.Fatal("empty untitled root should retire")
+	}
+	if h.byWorkspace[untitled.id] != nil || h.byWindow[win] != folder {
+		t.Fatal("shared folder must remain selected in the same window")
+	}
+	snap, err := h.snapshotWorkspace(win)
+	if err != nil || len(snap.Workspaces) != 1 || snap.Workspaces[0].ID != folder.id {
+		t.Fatalf("remaining roots = %+v, %v", snap.Workspaces, err)
+	}
+}

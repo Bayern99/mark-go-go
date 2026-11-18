@@ -12,7 +12,7 @@ export interface SourceEditorOptions {
   onChange(text: string): void
   /**
    * The caret or document moved; reports the exact CodeMirror offset where
-   * the selection starts, as rich text reports the block of its `$from`.
+   * the selection starts, as Preview reports the block of its `$from`.
    */
   onSelection(offset: number): void
 }
@@ -64,7 +64,7 @@ const readonlyExtensions = (value: boolean) => [
   EditorView.editable.of(!value),
 ]
 
-/** Space kept above a revealed line; matches scroll-margin-top for rich text in styles.css. */
+/** Space kept above a revealed line; matches scroll-margin-top for Preview in styles.css. */
 const REVEAL_MARGIN_PX = 16
 
 export function createSourceEditor(options: SourceEditorOptions): SourceEditor {

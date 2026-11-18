@@ -23,9 +23,16 @@ func documentRole(role MenuRole, win *Window) {
 		go openDocumentsDialog()
 		return
 	}
-	b := documentFor(win)
-	if b == nil {
-		b = documentFor(FocusedWindow())
+	b, cleared := documentSelection(win)
+	if b == nil && !cleared {
+		focused := FocusedWindow()
+		b, cleared = documentSelection(focused)
+		if b != nil {
+			win = focused
+		}
+	}
+	if cleared {
+		return
 	}
 	if b == nil {
 		// Close with no document in the window closes that window, as the

@@ -685,7 +685,7 @@ async function probeToolbarDrag(page, shotDir) {
         t,
         show: el ? (el.dataset.show !== undefined ? el.dataset.show : (el.offsetParent !== null)) : null,
         vis: el ? getComputedStyle(el).visibility : null,
-        ptr: !!document.querySelector('.mgo-wysiwyg-root.mgo-pointer-selecting'),
+        ptr: !!document.querySelector('.mgo-preview-root.mgo-pointer-selecting'),
         rect: r ? { x: +r.x.toFixed(1), y: +r.y.toFixed(1), w: +r.width.toFixed(1), h: +r.height.toFixed(1) } : null,
       })
       if (!window.__sampleStop) requestAnimationFrame(loop)

@@ -36,7 +36,10 @@ type documentHost struct {
 	// sessionWriteMu serializes snapshots and writes, including the final quit save.
 	sessionWriteMu sync.Mutex
 
+	// byWindow points at the selected root of each native window. Other roots
+	// in that window live in byWorkspace; documents remain root-scoped.
 	byWindow       map[*mygo.Window]*workspace
+	byWorkspace    map[string]*workspace
 	byID           map[string]*docSession
 	workspaceOrder []string
 	// claims are the files a session has reserved for a path change that
@@ -124,11 +127,12 @@ func newDocumentHost() *documentHost {
 		_ = settingsChanged.Broadcast(s)
 	}
 	return &documentHost{
-		byWindow:   make(map[*mygo.Window]*workspace),
-		byID:       make(map[string]*docSession),
-		claims:     make(map[string]string),
-		settings:   settings,
-		agentCache: newACPProcessCache(),
+		byWindow:    make(map[*mygo.Window]*workspace),
+		byWorkspace: make(map[string]*workspace),
+		byID:        make(map[string]*docSession),
+		claims:      make(map[string]string),
+		settings:    settings,
+		agentCache:  newACPProcessCache(),
 		// Recovery opens documents before restoreAfterStart reads the
 		// session. Their windows must not be written over session.json
 		// before the stored layout is planned from it.
@@ -221,6 +225,13 @@ func (h *documentHost) openWindow(doc *mygo.Document[string]) *mygo.Window {
 	if p := doc.Path(); p != "" {
 		root = canonicalPath(filepath.Dir(p))
 	}
+	// A file outside every open root joins the existing window under a new
+	// parent root. Only an app with no usable window needs a new one.
+	if win := h.preferredWindow(); win != nil {
+		h.addWorkspaceToWindow("", root, filepath.Base(root), win)
+		h.adopt(doc, win)
+		return win
+	}
 	win := h.newWorkspaceWindow(root, doc.Name())
 	h.adopt(doc, win)
 	return win
@@ -243,7 +254,7 @@ func (h *documentHost) existingWindow(doc *mygo.Document[string]) *mygo.Window {
 			return w.win
 		}
 	}
-	for _, w := range h.byWindow {
+	for _, w := range h.allWorkspacesLocked() {
 		if w.root == "" && w.win != nil && !w.win.IsDestroyed() {
 			return w.win
 		}
@@ -258,7 +269,7 @@ func (h *documentHost) existingWindow(doc *mygo.Document[string]) *mygo.Window {
 func (h *documentHost) folderWorkspaceLocked(path string, includeParent bool) *workspace {
 	var roots []string
 	byRoot := map[string]*workspace{}
-	for _, w := range h.byWindow {
+	for _, w := range h.allWorkspacesLocked() {
 		if w.root == "" || w.win == nil || w.win.IsDestroyed() {
 			continue
 		}
@@ -278,12 +289,21 @@ func (h *documentHost) adopt(doc *mygo.Document[string], win *mygo.Window) {
 	id := doc.ID()
 	h.mu.Lock()
 	w := h.byWindow[win]
+	if path := doc.Path(); path != "" {
+		if owned := h.folderWorkspaceLocked(path, true); owned != nil && owned.win == win {
+			w = owned
+		}
+	}
 	if w == nil {
 		h.mu.Unlock()
 		return
 	}
-	if _, exists := h.byID[id]; exists {
+	if existing := h.byID[id]; existing != nil {
 		h.mu.Unlock()
+		// Finder/LaunchServices can ask MyGo to open an already live file
+		// without passing through WorkspaceHost.Open. Reuse and activate that
+		// session so native chrome and the page cannot select different tabs.
+		h.activate(existing)
 		return
 	}
 	s := &docSession{host: h, id: id, doc: doc, win: win, ws: w, version: 1}
@@ -299,16 +319,25 @@ func (h *documentHost) adopt(doc *mygo.Document[string], win *mygo.Window) {
 		w.tabs = append(w.tabs, id)
 	}
 	w.active = id
+	h.byWindow[win] = w
 	h.mu.Unlock()
 
 	s.offReload = doc.OnReload(func() {
 		h.mu.Lock()
 		s.version++
+		currentWin := s.win
 		h.mu.Unlock()
-		_ = docReloaded.Emit(win, s.snapshot())
+		if currentWin != nil {
+			_ = docReloaded.Emit(currentWin, s.snapshot())
+		}
 	})
 	s.offState = doc.OnStateChange(func(state mygo.DocumentState) {
-		_ = docState.Emit(win, s.info())
+		h.mu.Lock()
+		currentWin := s.win
+		h.mu.Unlock()
+		if currentWin != nil {
+			_ = docState.Emit(currentWin, s.info())
+		}
 		s.viewMoved(state.Path)
 		h.migrateIfNeeded(s)
 		h.emitWorkspace(s.ws)
@@ -323,6 +352,17 @@ func (h *documentHost) adopt(doc *mygo.Document[string], win *mygo.Window) {
 	h.emitWorkspace(w)
 	h.reindexOpenDocument(s)
 	h.persistSession()
+}
+
+// documentFocused follows MyGo's duplicate-open focus path, which otherwise
+// bypasses WorkspaceHost.Open and adopt after choosing the native document.
+func (h *documentHost) documentFocused(doc *mygo.Document[string]) {
+	if doc == nil {
+		return
+	}
+	if s, err := h.docSession(doc.ID()); err == nil {
+		h.activate(s)
+	}
 }
 
 func (h *documentHost) dropSession(s *docSession) {
@@ -349,6 +389,7 @@ func (h *documentHost) dropSession(s *docSession) {
 	h.mu.Lock()
 	delete(h.byID, s.id)
 	w := s.ws
+	var closedActive bool
 	if w != nil {
 		tabs := w.tabs[:0]
 		for _, id := range w.tabs {
@@ -358,6 +399,7 @@ func (h *documentHost) dropSession(s *docSession) {
 		}
 		w.tabs = tabs
 		if w.active == s.id {
+			closedActive = h.byWindow[w.win] == w
 			if n := len(w.tabs); n > 0 {
 				w.active = w.tabs[n-1]
 			} else {
@@ -365,14 +407,61 @@ func (h *documentHost) dropSession(s *docSession) {
 			}
 		}
 	}
-	h.mu.Unlock()
 	s.ws = nil
-	if w != nil && w.root == "" && len(w.tabs) == 0 && w.win != nil && !w.win.IsDestroyed() {
-		w.win.Destroy()
+	h.mu.Unlock()
+	if h.retireEmptyUntitled(w) {
+		return
+	}
+	if closedActive && w.win != nil && !w.win.IsDestroyed() {
+		h.activateWorkspace(w)
 		return
 	}
 	h.emitWorkspace(w)
 	h.persistSession()
+}
+
+// retireEmptyUntitled removes an empty Welcome/untitled root after its last
+// document moved or closed. It destroys the native window only when no other
+// root shares it.
+func (h *documentHost) retireEmptyUntitled(w *workspace) bool {
+	if w == nil || w.root != "" {
+		return false
+	}
+	h.mu.Lock()
+	if len(w.tabs) != 0 {
+		h.mu.Unlock()
+		return false
+	}
+	roots := h.windowWorkspacesLocked(w.win)
+	if len(roots) > 1 {
+		delete(h.byWorkspace, w.id)
+		h.workspaceOrder = removeWorkspaceOrder(h.workspaceOrder, w.id)
+		current := h.byWindow[w.win]
+		wasCurrent := current == w
+		if wasCurrent {
+			current = nil
+			for _, candidate := range roots {
+				if candidate != w {
+					current = candidate
+					h.byWindow[w.win] = current
+					break
+				}
+			}
+		}
+		h.mu.Unlock()
+		if wasCurrent && current != nil && w.win != nil && !w.win.IsDestroyed() {
+			h.activateWorkspace(current)
+			return true
+		}
+		h.emitWorkspace(current)
+		h.persistSession()
+		return true
+	}
+	h.mu.Unlock()
+	if w.win != nil && !w.win.IsDestroyed() {
+		w.win.Destroy()
+	}
+	return true
 }
 
 func (h *documentHost) migrateIfNeeded(s *docSession) {
@@ -386,10 +475,17 @@ func (h *documentHost) migrateIfNeeded(s *docSession) {
 	h.mu.Unlock()
 	if dest == nil {
 		parent := filepath.Dir(path)
-		win := h.newWorkspaceWindow(parent, filepath.Base(parent))
-		h.docs.Attach(s.doc, win)
+		win := s.win
+		if win == nil {
+			win = h.preferredWindow()
+		}
+		if win == nil {
+			win = h.newWorkspaceWindow(parent, filepath.Base(parent))
+		} else {
+			h.addWorkspaceToWindow("", parent, filepath.Base(parent), win)
+		}
 		h.mu.Lock()
-		dest = h.byWindow[win]
+		dest = h.folderWorkspaceLocked(path, true)
 		h.mu.Unlock()
 		h.moveTab(s, dest)
 		return
@@ -446,6 +542,7 @@ func (h *documentHost) moveTab(s *docSession, dest *workspace) {
 	dest.active = s.id
 	s.ws = dest
 	s.win = dest.win
+	h.byWindow[dest.win] = dest
 	h.mu.Unlock()
 	if h.docs != nil && s.doc != nil {
 		h.docs.Attach(s.doc, dest.win)
@@ -453,8 +550,7 @@ func (h *documentHost) moveTab(s *docSession, dest *workspace) {
 	h.docs.SetActive(s.doc)
 	h.emitWorkspace(src)
 	h.emitWorkspace(dest)
-	if src != nil && src.root == "" && len(src.tabs) == 0 && src.win != nil && !src.win.IsDestroyed() {
-		src.win.Destroy()
+	if h.retireEmptyUntitled(src) {
 		return
 	}
 	h.persistSession()

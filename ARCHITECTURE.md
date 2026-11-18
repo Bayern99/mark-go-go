@@ -15,7 +15,7 @@ Mark Go Go is a local-first, native macOS Markdown editor and AI reader prototyp
 graph TD
     subgraph macOmerS Desktop ["macOS Native Shell (purego / WebKit)"]
         subgraph HostLayer ["1. Host Layer (Go / MyGo)"]
-            Workspaces["Workspace Host<br/>(one folder = one window, document groups, per-document IPC)"]
+            Workspaces["Workspace Host<br/>(multiple folder roots in one window, one document group, per-document IPC)"]
             DocStore["Document Store<br/>(Raw byte I/O, CRLF/LF preserve, File Watcher)"]
             NavIndex["Navigation Index<br/>(incremental scan, search, honest status)"]
             SessionStore["Session Store<br/>(session.json: workspaces, tabs, view modes)"]
@@ -38,7 +38,7 @@ graph TD
         end
 
         subgraph EditorLayer ["4. Editor Engine (Dual Mode & Composition)"]
-            WYSIWYG["Rich Text (Milkdown 7 Crepe)"]
+            Preview["Markdown Preview (Milkdown 7 Crepe)"]
             Source["Source Mode (CodeMirror 6)"]
             Compose["Block-Preserving Composer<br/>(Unedited blocks keep raw bytes)"]
             SectionHash["Section Hasher<br/>(ATX/setext, fnv1a32, excludes notes)"]
@@ -46,7 +46,7 @@ graph TD
 
         subgraph UILayer ["5. Presentation Layer (React 19 & Portrait Design System)"]
             LeftCol["Left Column<br/>(Workspace & Document Navigation)"]
-            CenterCol["Center Column<br/>(Rich Text / Markdown / GenUI A2UI 1.0)"]
+            CenterCol["Center Column<br/>(Preview / Markdown / GenUI A2UI 1.0)"]
             RightCol["Right Column<br/>(Outline & GenUI Management Panel)"]
             ModelMenu["ModelMenu (Tactile upward popover)"]
             Composer["In-Place Composer (Notes & Focus)"]
@@ -74,7 +74,7 @@ graph TD
 ### 2. Core Architectural Layers
 
 #### 1. Host Layer (Go / MyGo)
-- **Workspace Ownership**: One folder is one window. `WorkspaceHost` (`documenthost.go`, `workspace.go`) hosts the window's document group: ordered tabs, one active document, per-window `workspaceChanged` / `navChanged` events, and document-scoped calls that always name a `documentId`. A document keeps its identity across path, tab, window, first save and Save As; the same disk file has exactly one editing session app-wide; routing picks the deepest containing workspace or creates one at the file's parent.
+- **Workspace Ownership**: One native window can hold multiple folder workspaces. `WorkspaceHost` (`documenthost.go`, `workspace.go`) hosts one cross-workspace document group: ordered tabs, one active document, a selected navigation root, per-window `workspaceChanged` / selected-root `navChanged` events, and document-scoped calls that always name a `documentId`. A document keeps its identity across path, tab, root, first save and Save As; the same disk file has exactly one editing session app-wide; routing picks the deepest containing workspace or adds the file's parent to the current window. The existing workspace name opens the root menu; `Ctrl+Tab` switches recent documents.
 - **Persistence Authority**: Native Go backend using `purego` bindings to macOS WebKit. Owns filesystem access, raw-byte reading and writing, CRLF/LF line ending preservation, atomic saves, and `fsnotify` file change detection.
 - **Navigation Index**: `index.go` / `navmeta.go` scan the workspace root incrementally, publish honest `scanning` / `indexing` / `ready` progress with `indexed` / `total`, index unsaved text of open documents, and answer `SetFilter` with heading hits.
 - **Session Store**: `session.go` / `restore_host.go` persist `session.json` (workspaces, tab order, active document, view modes) after every window acknowledges the quit flush, then restore it after MyGo's recovery copies and launch files, never replaying generation. A flush delivers what the pane really holds — the text on screen (`editor.getMarkdown()`), else the host-loaded core document state — so an untouched, reloaded or remounted document is never written empty; a disk-opened document gets a new MyGo id at restore, so the stored active tab is mapped to the id its document really has now.
@@ -100,7 +100,7 @@ graph TD
 
 #### 4. Editor Engine Layer (TypeScript)
 - **Dual-Engine Architecture**:
-  - **Rich Text (WYSIWYG)**: Milkdown 7.23 with custom `CrepeBuilder`.
+  - **Markdown Preview**: Milkdown 7.23 with custom `CrepeBuilder`.
   - **Source Mode**: CodeMirror 6 for byte-exact plain text Markdown editing with instant toggle (`⌘/`).
 - **Block-Preserving Composition**: Unlike standard Markdown serializers that reformat the entire document on save, Mark Go Go parses documents into discrete ProseMirror block nodes. Unedited blocks retain their exact original source bytes.
 - **Special Blocks (ADR 0006)**: Frontmatter, GitHub alerts, footnote definitions, meta code fences, Mermaid diagrams and math stay atomically byte-preserving. Mermaid renders locally; invalid diagrams retain visible source and an error. Raw HTML and unsupported syntax remain visible as `Kept as written`. `Edit` opens an in-place Markdown composer for that block only, and saving rewrites just that block's source with its original line endings.
@@ -111,7 +111,7 @@ graph TD
 - **Workspace Chrome**: A document tab strip above the workspace body (same-name tabs are disambiguated by parent folder; unsaved, generating, conflict, deleted and read-only badges), and the left pane's file tree, filter, splitter, breadcrumbs and Welcome/recents.
 - **Portrait Three-Column Layout**:
   - **Left Column**: Workspace file navigation.
-  - **Center Column**: Dedicated strictly to document content for the active tab (Rich text, Markdown, or GenUI A2UI reading cards). Free of generation toolbars or settings forms.
+  - **Center Column**: Dedicated strictly to document content for the active tab (Preview, Markdown, or GenUI A2UI reading cards). Free of generation toolbars or settings forms.
   - **Right Column**: Document-scoped panels with a top segmented switcher:
     - `Outline`: Real-time heading tree with bi-directional cursor synchronization.
     - `GenUI Management Panel`: Generation state, primary action, out-of-date component list, Focus request editor, and pinned footer (read-only Agent, Model menu, generated time, Undo).
@@ -151,7 +151,7 @@ Mark Go Go 是一款面向 macOS 的本地优先（Local-First）Markdown 原生
 graph TD
     subgraph macOS桌面宿主 ["macOS 原生桌面壳 (purego / WebKit)"]
         subgraph Go宿主层 ["1. 宿主层 (Go / MyGo)"]
-            Workspaces["工作区宿主<br/>(一个文件夹一个窗口、文档组、按文档身份的 IPC)"]
+            Workspaces["工作区宿主<br/>(一个窗口多个文件夹根目录、单一文档组、按文档身份的 IPC)"]
             DocStore["文档存储核心<br/>(原始字节 I/O、CRLF/LF 保真、文件监听)"]
             NavIndex["导航索引<br/>(增量扫描、搜索、如实进度)"]
             SessionStore["会话存储<br/>(session.json：工作区、标签、视图模式)"]
@@ -174,7 +174,7 @@ graph TD
         end
 
         subgraph 编辑引擎层 ["4. 编辑引擎 (双模式与逐块保真序列化)"]
-            WYSIWYG["所见即所得富文本 (Milkdown 7 Crepe)"]
+            Preview["Markdown 预览 (Milkdown 7 Crepe)"]
             Source["源码模式 (CodeMirror 6, 逐字节保真)"]
             Compose["逐块保真组装器 (Compose Engine)<br/>未改动的块保留原文原始字节"]
             SectionHash["章节哈希器<br/>(ATX/setext 标题解析、fnv1a32 哈希、排除批注)"]
@@ -182,7 +182,7 @@ graph TD
 
         subgraph 视图与UI层 ["5. 交互与表现层 (React 19 & Portrait 设计体系)"]
             LeftCol["左栏: 工作区文档导航"]
-            CenterCol["中央栏: 文档内容画布 (Rich text / Markdown / GenUI A2UI 1.0)"]
+            CenterCol["中央栏: 文档内容画布 (Preview / Markdown / GenUI A2UI 1.0)"]
             RightCol["右栏: 当前文档面板 (Outline 大纲 / GenUI 管理面板)"]
             ModelMenu["ModelMenu: 向上弹出式触觉纸面下拉菜单"]
             Composer["原地 Composer: 白纸材质批注与 Focus 编辑器"]
@@ -210,7 +210,7 @@ graph TD
 ### 2. 五层架构设计
 
 #### 1. 宿主层（Go / MyGo）
-- **工作区归属**：一个文件夹对应一个窗口。`WorkspaceHost`（`documenthost.go`、`workspace.go`）承载该窗口的文档组：有序标签、一个活动文档、按窗口推送的 `workspaceChanged` / `navChanged`，以及所有带 `documentId` 的文档级调用。文档身份跨路径、标签、窗口、首次保存与另存为不变；同一磁盘文件全应用只有一个编辑会话；路由取包含该文件的根目录最深的工作区，否则在父目录新建。
+- **工作区归属**：一个原生窗口可承载多个文件夹工作区。`WorkspaceHost`（`documenthost.go`、`workspace.go`）承载跨工作区的同一文档组：有序标签、一个活动文档、当前导航根目录、按窗口推送的 `workspaceChanged` / 仅当前根目录的 `navChanged`，以及所有带 `documentId` 的文档级调用。文档身份跨路径、标签、根目录、首次保存与另存为不变；同一磁盘文件全应用只有一个编辑会话；路由取包含该文件的最深根目录，否则在当前窗口加入文件父目录。原工作区名称兼作根目录菜单，`Ctrl+Tab` 切换最近文档。
 - **持久化权威**：基于 `purego` 无 CGO 绑定的 macOS 原生 Go 宿主，拥有磁盘文件的最高读写权威，保证文件按字节原样读写、保留原始换行符（CRLF / LF），提供原子保存、窗口焦点与 `fsnotify` 外部文件变更监听。
 - **导航索引**：`index.go` / `navmeta.go` 增量扫描工作区根目录，如实发布 `scanning` / `indexing` / `ready` 与 `indexed` / `total`；已打开文档的未保存文本也进入索引；`SetFilter` 返回标题与章节命中。
 - **会话存储**：`session.go` / `restore_host.go` 在每个窗口确认退出 flush 后写入 `session.json`（工作区、标签顺序、活动文档、视图模式），并在 MyGo 打开恢复副本与启动文件之后恢复，从不重放生成任务。flush 交付面板真正持有的文本（屏幕上的 `editor.getMarkdown()`，否则宿主载入的核心文档状态），未编辑、被重载或重新挂载的文档不会被写成空；从磁盘打开的文档在恢复时得到新的 MyGo id，因此存储的 active tab 映射到该文档现在真实的 id。
@@ -236,7 +236,7 @@ graph TD
 
 #### 4. 编辑引擎与保真层（TypeScript）
 - **双模式编辑器**：
-  - **Rich text 所见即所得**：基于 Milkdown 7.23 与定制的 `CrepeBuilder`，提供现代无衬线编辑体验。
+  - **Markdown 预览**：基于 Milkdown 7.23 与定制的 `CrepeBuilder`，提供现代无衬线编辑体验。
   - **源码模式**：基于 CodeMirror 6，支持精确光标偏移定位与 `⌘/` 瞬间无损切换。
 - **逐块保真组装（Block-Preserving Composition）**：
   - 将 Markdown 解析为 ProseMirror 顶层块节点。保存时只重新序列化用户真实改动过的块，未改动的块直接拼接原字节，从根本上杜绝传统 Markdown 编辑器保存时格式全面跑飞（全篇缩进重排、列表符号变异、空行丢失）的通病。
@@ -253,7 +253,7 @@ graph TD
   **工作区外框**：工作区主体上方的文档标签栏（同名标签用父目录区分；带未保存、生成中、冲突、已删除、只读徽标），以及左栏的文件树、筛选、分栏、面包屑与 Welcome/最近工作区。
 * **Portrait 极简三栏工作区**：
   * **左栏**：工作区文件导航与筛选。
-  * **中央栏**：当前标签纯粹的内容画布（Rich text / Markdown / GenUI 视图），顶部仅保留 44px 路径栏与凹陷分段三模式切换器，彻底剔除生成表单与干扰元素。
+  * **中央栏**：当前标签纯粹的内容画布（Preview / Markdown / GenUI 视图），顶部仅保留 44px 路径栏与凹陷分段三模式切换器，彻底剔除生成表单与干扰元素。
   * **右栏**：当前文档的专属面板，顶部凹陷分段切换 `Outline`（默认首位）与 `GenUI`（带状态圆点）。
   * **窄窗自适应**：窗口宽度 `< 1180px` 时右栏自动收起，手动点开时以浮层（`.r-float`）形式贴在右侧，点击中央正文自动收起。窗口继续变窄时左栏主动让位：渲染宽度不超过 `窗口宽 − 310px`（下限 140px），保证最小窗口 480px 时正文仍可用，放宽后恢复用户设定宽度；sheet 容器查询在 380px 以下收起头栏保存状态与版本号、300px 以下收起路径面包屑；侧栏分隔条在 6px 视觉槽内保留 14px 触控热区。
 * **A2UI 1.0 GenUI 阅读视图**：支持 5 种基础布局组件与 5 种高级卡片组件（`KeyPoints` 要点、`MetricGrid` 指标网格、`ComparisonTable` 对比表、`Timeline` 时间线、`Checklist` 只读清单），每个组件底座配备来源引用条（`From` 标题、`Source changed` 标记、`Edit in source` 一键定位修改、`Note` 原地加批注）。KeyPoints 折叠、ComparisonTable 排序（列头为可键盘操作的按钮并带 `aria-sort`）、表格滚动与标签页选择都是每文档的阅读状态，从不写文档。

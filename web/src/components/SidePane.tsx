@@ -12,6 +12,7 @@ import { breadcrumbs } from '../workspace/nav'
 import { useViews, ViewHost } from './ViewHost'
 import { ScrollArea } from './ScrollArea'
 import { AppTooltip } from './Tooltip'
+import { DropdownMenu } from 'radix-ui'
 
 const SIDEBAR_MIN = 190
 const SIDEBAR_MAX = 420
@@ -104,6 +105,107 @@ function treeRel(root: string, path: string): string {
   return b.startsWith(`${a}/`) ? b.slice(a.length + 1) : b
 }
 
+function WorkspaceSwitcher({
+  workspace,
+  snapshot,
+  selectedId,
+  name,
+}: {
+  workspace?: WorkspaceAdapter
+  snapshot?: WorkspaceSnapshot | null
+  selectedId: string
+  name: string
+}) {
+  const roots = snapshot?.workspaces ?? []
+  if (!workspace) {
+    return <div className="ws-name"><AppLogo /><span>{name}</span></div>
+  }
+  return (
+    <DropdownMenu.Root modal={false}>
+      <DropdownMenu.Trigger asChild>
+        <button
+          type="button"
+          className="ws-name ws-switcher"
+          data-testid="workspace-switcher"
+          aria-label={`Workspace: ${name}`}
+        >
+          <AppLogo />
+          <span className="nm">{name}</span>
+          <i className="ph ph-caret-down ws-caret" aria-hidden="true" />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          className="doc-tab-menu workspace-menu"
+          data-testid="workspace-menu"
+          aria-label="Workspaces"
+          side="bottom"
+          align="start"
+          sideOffset={6}
+          collisionPadding={8}
+        >
+          <div className="doc-tab-menu-head">
+            <span>Workspaces</span>
+            <span>{roots.length}</span>
+          </div>
+          <DropdownMenu.RadioGroup
+            className="doc-tab-menu-list"
+            value={selectedId}
+            onValueChange={(id) => {
+              if (id !== selectedId) void workspace.activateWorkspace(id)
+            }}
+          >
+            {roots.map((root) => (
+              <DropdownMenu.RadioItem
+                key={root.id}
+                value={root.id}
+                className={`doc-tab-menu-item workspace-menu-item${root.id === selectedId ? ' sel' : ''}`}
+                data-testid={`workspace-menu-item-${root.id}`}
+              >
+                <span className="doc-tab-menu-icon" aria-hidden="true">
+                  <i className={`ph ${root.kind === 'folder' ? 'ph-folder' : 'ph-file-text'}`} />
+                </span>
+                <AppTooltip label={root.root || root.name}>
+                  <span className="doc-tab-menu-copy">
+                    <span className="nm">{root.name}</span>
+                    <span className="doc-tab-menu-path">{root.root || 'Untitled'}</span>
+                  </span>
+                </AppTooltip>
+                <DropdownMenu.ItemIndicator>
+                  <i className="ph ph-check" aria-label="Current workspace" />
+                </DropdownMenu.ItemIndicator>
+              </DropdownMenu.RadioItem>
+            ))}
+          </DropdownMenu.RadioGroup>
+          <DropdownMenu.Separator className="workspace-menu-separator" />
+          <DropdownMenu.Item
+            className="doc-tab-menu-item"
+            data-testid="workspace-open-folder"
+            onSelect={() => {
+              void workspace.pickFolder()
+            }}
+          >
+            <span className="doc-tab-menu-icon" aria-hidden="true"><i className="ph ph-folder-plus" /></span>
+            Open Folder…
+          </DropdownMenu.Item>
+          {snapshot?.kind === 'folder' ? (
+            <DropdownMenu.Item
+              className="doc-tab-menu-item"
+              data-testid="workspace-close"
+              onSelect={() => {
+                void workspace.closeWorkspaceRoot(selectedId)
+              }}
+            >
+              <span className="doc-tab-menu-icon" aria-hidden="true"><i className="ph ph-x" /></span>
+              Close Workspace
+            </DropdownMenu.Item>
+          ) : null}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  )
+}
+
 /**
  * The left workspace column: folder tree, filter, and any `location: 'left'` views.
  * When `workspace` is omitted the pane still mounts plugin views for older tests.
@@ -122,18 +224,23 @@ export function SidePane({
   onJumpHeading?: (documentId: string | undefined, path: string, offset: number) => void
 }): React.ReactElement | null {
   const entries = useViews(views, 'left')
-  const [filter, setFilter] = useState('')
+  const [filters, setFilters] = useState<Record<string, string>>({})
   const [nav, setNav] = useState<NavSnapshot | null>(null)
   const [search, setSearch] = useState<NavSearchResult | null>(null)
   const [width, setWidth] = useState(SIDEBAR_DEFAULT)
   const [winWidth, setWinWidth] = useState(() =>
-    typeof window === 'undefined' ? SIDEBAR_DEFAULT : window.innerWidth,
+    typeof window === 'undefined' ? SIDEBAR_DEFAULT : document.documentElement.clientWidth || window.innerWidth,
   )
 
   useEffect(() => {
-    const onResize = () => setWinWidth(window.innerWidth)
+    const onResize = () => setWinWidth(document.documentElement.clientWidth || window.innerWidth)
     window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
+    const observer = new ResizeObserver(onResize)
+    observer.observe(document.documentElement)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      observer.disconnect()
+    }
   }, [])
 
   /** Rendered width: the user's size, capped so the document column keeps
@@ -141,9 +248,16 @@ export function SidePane({
    *  window restores the user's setting. */
   const paneWidth = Math.min(width, Math.max(SIDEBAR_FLOOR, winWidth - CENTER_MIN))
 
+  const selectedWorkspaceId = workspaceSnap?.workspaces.find(
+    (item) => item.root === workspaceSnap.root && item.kind === workspaceSnap.kind,
+  )?.id ?? ''
+  const filter = filters[selectedWorkspaceId] ?? ''
+
   useEffect(() => {
     if (!workspace) return
     let disposed = false
+    setNav(null)
+    setSearch(null)
     void workspace.navSnapshot().then((snap) => {
       if (!disposed) setNav(snap)
     })
@@ -154,7 +268,7 @@ export function SidePane({
       sub.dispose()
       searchSub.dispose()
     }
-  }, [workspace])
+  }, [workspace, selectedWorkspaceId])
 
   useEffect(() => {
     if (!workspace) return
@@ -162,7 +276,7 @@ export function SidePane({
       void workspace.setFilter(filter).then(setSearch)
     }, 80)
     return () => window.clearTimeout(handle)
-  }, [filter, workspace])
+  }, [filter, workspace, selectedWorkspaceId])
 
   if (!workspace && doc === undefined && entries.length === 0) return null
 
@@ -201,10 +315,12 @@ export function SidePane({
         style={{ width: paneWidth, maxWidth: paneWidth, minWidth: paneWidth }}
       >
         <div className="ws">
-          <div className="ws-name">
-            <AppLogo />
-            <span>{kind === 'untitled' ? 'Untitled' : name}</span>
-          </div>
+          <WorkspaceSwitcher
+            workspace={workspace}
+            snapshot={workspaceSnap}
+            selectedId={selectedWorkspaceId}
+            name={kind === 'untitled' ? 'Untitled' : name}
+          />
           <div className="ws-meta meta">
             <span className="p">{kind === 'folder' ? root || name : 'Untitled window'}</span>
             <span>·</span>
@@ -219,7 +335,10 @@ export function SidePane({
               aria-label="Filter files and headings"
               autoComplete="off"
               value={filter}
-              onChange={(event) => setFilter(event.target.value)}
+              onChange={(event) => {
+                const value = event.target.value
+                setFilters((current) => ({ ...current, [selectedWorkspaceId]: value }))
+              }}
             />
             {filter ? (
               <button
@@ -227,7 +346,7 @@ export function SidePane({
                 className="clear"
                 aria-label="Clear filter"
                 data-testid="clear-filter"
-                onClick={() => setFilter('')}
+                onClick={() => setFilters((current) => ({ ...current, [selectedWorkspaceId]: '' }))}
               >
                 ×
               </button>

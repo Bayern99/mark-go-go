@@ -240,7 +240,7 @@ export function renderMermaidBlock(dom: HTMLElement, source: string, readonly: b
       diagram,
     )
   ) {
-    fail('This diagram references an external resource. Rich text renders diagrams offline.')
+    fail('This diagram references an external resource. Markdown Preview renders diagrams offline.')
     return
   }
 

@@ -56,6 +56,84 @@ func TestSessionStoreRoundTripOrderAndViewMode(t *testing.T) {
 	}
 }
 
+func TestSessionSelectedWorkspaceSurvivesRoundTrip(t *testing.T) {
+	st := &settingsStore{dir: t.TempDir()}
+	file := sessionFileData{Workspaces: []sessionWorkspace{
+		{ID: "research", Root: t.TempDir()},
+		{ID: "music", Root: t.TempDir(), Active: true},
+	}}
+	if err := st.saveSession(file); err != nil {
+		t.Fatal(err)
+	}
+	loaded := st.loadSession()
+	if len(loaded.Workspaces) != 2 || !loaded.Workspaces[1].Active || loaded.Workspaces[0].Active {
+		t.Fatalf("selected root did not round-trip: %+v", loaded.Workspaces)
+	}
+	plan := planSessionRestore(loaded, restoreLive{})
+	if plan.ActiveWorkspaceID != "music" {
+		t.Fatalf("restore selected root = %q, want music", plan.ActiveWorkspaceID)
+	}
+}
+
+func TestRestoreReusesWindowOpenedBeforeSessionLayout(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		launch bool
+		nested bool
+	}{
+		{name: "named recovery"},
+		{name: "launch file", launch: true},
+		{name: "recovery under a nested directory", nested: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cleanRoot, savedRoot, emptyRoot := t.TempDir(), t.TempDir(), t.TempDir()
+			liveRoot := savedRoot
+			if tc.nested {
+				liveRoot = filepath.Join(savedRoot, "nested")
+			}
+			path := filepath.Join(liveRoot, "notes.md")
+			win := &mygo.Window{}
+			liveRootState := &workspace{id: "native-root", root: liveRoot, win: win, tabs: []string{"native-doc"}, active: "native-doc"}
+			h := &documentHost{
+				byWindow:       map[*mygo.Window]*workspace{win: liveRootState},
+				byWorkspace:    map[string]*workspace{liveRootState.id: liveRootState},
+				workspaceOrder: []string{liveRootState.id},
+				settings:       &settingsStore{dir: t.TempDir()},
+				disableWatch:   true,
+				restoring:      true,
+			}
+			doc := &docSession{id: "native-doc", host: h, ws: liveRootState, win: win, pathFn: func() string { return path }}
+			h.byID = map[string]*docSession{doc.id: doc}
+			storedID := doc.id
+			if tc.launch {
+				storedID = "previous-doc"
+			}
+			file := sessionFileData{Workspaces: []sessionWorkspace{
+				{ID: "clean", Root: cleanRoot},
+				{ID: "saved-root", Root: savedRoot, Tabs: []sessionTab{{ID: storedID, Path: path, ViewMode: "markdown"}}, ActiveID: storedID, Active: true},
+				{ID: "empty", Root: emptyRoot},
+			}}
+			h.applyRestorePlan(planSessionRestore(file, h.liveRestoreState(nil)))
+			snap, err := h.snapshotWorkspace(win)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(h.byWindow) != 1 || len(snap.Workspaces) != 3 {
+				t.Fatalf("restore produced %d windows and roots %+v", len(h.byWindow), snap.Workspaces)
+			}
+			wantRoots := []string{cleanRoot, savedRoot, emptyRoot}
+			for i, want := range wantRoots {
+				if !sameRoot(snap.Workspaces[i].Root, want) {
+					t.Fatalf("root order = %+v, want %v", snap.Workspaces, wantRoots)
+				}
+			}
+			if !sameRoot(snap.Root, savedRoot) || snap.ActiveID != doc.id || doc.win != win || doc.viewMode != "markdown" {
+				t.Fatalf("restore lost the live tab or selection: snapshot=%+v, mode=%q", snap, doc.viewMode)
+			}
+		})
+	}
+}
+
 func TestSessionStoreEmptyMeansNoWorkspaces(t *testing.T) {
 	st := &settingsStore{dir: t.TempDir()}
 	if err := st.saveSession(sessionFileData{}); err != nil {
@@ -261,7 +339,11 @@ func TestPlanPartialFailureKeepsRecoverableAndOthers(t *testing.T) {
 			ActiveID: "ok",
 		},
 	}}
-	plan := planSessionRestore(file, restoreLive{
+	st := &settingsStore{dir: t.TempDir()}
+	if err := st.saveSession(file); err != nil {
+		t.Fatal(err)
+	}
+	plan := planSessionRestore(st.loadSession(), restoreLive{
 		OpenByID: map[string]restoreDoc{recoveryID: {ID: recoveryID, Path: ""}},
 	})
 	if len(plan.Workspaces) != 2 {
@@ -273,6 +355,9 @@ func TestPlanPartialFailureKeepsRecoverableAndOthers(t *testing.T) {
 	}
 	if len(broken.Tabs) != 1 || broken.Tabs[0].ReuseID != recoveryID {
 		t.Fatalf("recoverable untitled dropped: %+v", broken.Tabs)
+	}
+	if broken.Tabs[0].ViewMode != "preview" {
+		t.Fatalf("legacy view mode restored as %q, want preview", broken.Tabs[0].ViewMode)
 	}
 	goodWS := plan.Workspaces[1]
 	if len(goodWS.Tabs) != 1 || goodWS.Tabs[0].OpenPath != good {
@@ -453,7 +538,7 @@ func TestCaptureSessionKeepsUntitledTabsByID(t *testing.T) {
 		byWindow: make(map[*mygo.Window]*workspace),
 		byID:     map[string]*docSession{},
 	}
-	h.byID["u1"] = &docSession{id: "u1", pathFn: func() string { return "" }, viewMode: "richtext"}
+	h.byID["u1"] = &docSession{id: "u1", pathFn: func() string { return "" }, viewMode: "preview"}
 	h.byID["u2"] = &docSession{id: "u2", pathFn: func() string { return "" }, viewMode: "genui"}
 	untitled := &workspace{id: "uws", tabs: []string{"u1", "u2"}, active: "u2"}
 	win := &mygo.Window{}
@@ -469,7 +554,7 @@ func TestCaptureSessionKeepsUntitledTabsByID(t *testing.T) {
 	if len(tabs) != 2 || tabs[0].ID != "u1" || tabs[1].ID != "u2" {
 		t.Fatalf("untitled tabs = %+v", tabs)
 	}
-	if tabs[0].Path != "" || tabs[1].ViewMode != "genui" {
+	if tabs[0].Path != "" || tabs[0].ViewMode != "preview" || tabs[1].ViewMode != "genui" {
 		t.Fatalf("untitled tab fields = %+v", tabs)
 	}
 	if file.Workspaces[0].ActiveID != "u2" {

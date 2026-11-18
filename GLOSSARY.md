@@ -15,8 +15,12 @@ _Avoid_: 源文件、底稿、主版本
 _Avoid_: 项目（指工作区时）、工作目录（指工作区时）
 
 **工作区窗口（Workspace window）**：
-以一个文件夹为根、用顶部文档标签切换原文的那个窗口；未绑定文件夹时是临时窗口。
+默认承载一个或多个工作区、用顶部同一组文档标签切换原文的窗口；左栏显示当前选中的工作区。未绑定文件夹时是临时窗口。
 _Avoid_: 主窗口、编辑器窗口
+
+**当前工作区（Selected workspace）**：
+窗口左栏当前显示文件树与过滤结果的工作区；切换它不会关闭或卸载其他工作区的文档。
+_Avoid_: 活动窗口、当前项目
 
 **文件树（File tree）**：
 左栏中一个工作区的 Markdown 文件与文件夹导航；它不是 GenUI 视图，也不是大纲。
@@ -37,12 +41,11 @@ _Avoid_: 空工作区、无根工作区
 ## 视图模式
 
 **视图模式（View mode）**：
-同一份原文在窗口中央的三种互斥呈现方式之一：Rich text、Markdown、GenUI。
+同一份原文在窗口中央的三种互斥呈现方式之一：Preview、Markdown、GenUI。
 _Avoid_: 面板、标签页、编辑模式
 
-**Rich text**：
-以所见即所得方式显示并编辑原文的视图模式。
-_Avoid_: WYSIWYG 模式、富文本模式
+**Markdown 预览（Markdown Preview）**：
+以渲染后的 Markdown 呈现原文的可编辑视图模式，界面按钮显示为 `Preview`。
 
 **Markdown**：
 以原始 Markdown 文本显示并编辑原文的视图模式。
@@ -53,7 +56,7 @@ _Avoid_: 源码模式、Source mode、MarkdownView
 _Avoid_: GenUI 面板、Generated UI 侧栏
 
 **原地 Markdown 编辑（In-place Markdown editing）**：
-在 Rich text 中只为一个特殊块展开原文编辑区，完成后回到该块的可视呈现；这是局部编辑操作，不是第四种视图模式。
+在预览中为单个特殊块展开原文编辑区，完成后回到该块的可视呈现。
 _Avoid_: 源码模式（指该操作时）、结构化可视编辑
 
 ## GenUI

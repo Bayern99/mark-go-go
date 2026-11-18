@@ -4,7 +4,7 @@
 
 | 模块 | 位置 | 职责 |
 |---|---|---|
-| Host（Go） | `main.go`、`documenthost.go`、`workspace.go`、`viewfile.go`、`generate.go` 等 | `mygo.NewDocuments[string]` + 绑定服务 `WorkspaceHost`：一个工作区（文件夹）一个窗口，同窗多文档标签、全应用同一文件的单一编辑会话、文件读写（原始字节）、脏状态、自动保存、恢复副本、外部修改重载/冲突、File/Edit 菜单归属；跟随文档旁的视图文件；按文档隔离的 ACP 生成（ADR 0003、0005） |
+| Host（Go） | `main.go`、`documenthost.go`、`workspace.go`、`viewfile.go`、`generate.go` 等 | `mygo.NewDocuments[string]` + 绑定服务 `WorkspaceHost`：一个窗口承载多个工作区（文件夹）、跨工作区单一文档标签组、全应用同一文件的单一编辑会话、文件读写（原始字节）、脏状态、自动保存、恢复副本、外部修改重载/冲突、File/Edit 菜单归属；跟随文档旁的视图文件；按文档隔离的 ACP 生成（ADR 0003、0005） |
 | 导航索引（Go） | `index.go`、`navmeta.go` | 工作区文件树的增量扫描与索引（`NavSnapshot` 的 `status`/`indexed`/`total` 如实报告未完成）、`SetFilter` 搜索（标题 + 预览 + 章节命中）、已打开文档的未保存文本也参与索引 |
 | 会话恢复（Go） | `session.go`、`restore_host.go` | `session.json` 布局（工作区、标签顺序、活动文档、视图模式）、退出前逐窗口 flush 确认后的持久化、启动恢复与缺失路径的部分恢复（#23） |
 | Host Adapter（TS） | `web/src/host/` | `WorkspaceAdapter` / `HostAdapter` 契约；`mygoHost.ts`（MyGo IPC）、`browserHost.ts`（纯浏览器内存实现，`createBrowserWorkspace` / `createBrowserHost`） |
@@ -23,14 +23,16 @@
 
 | 名称 | 类型 | 说明 |
 |---|---|---|
-| `Snapshot()` | `→ WorkspaceSnapshot` | 当前窗口的工作区：`id`、`root`（未命名窗口为空）、`name`、`kind`（`folder` / `untitled`）、按标签顺序的 `documents: DocumentInfo[]`、`activeId`、`restoreError?` |
-| `Open(path)` | `→ DocumentInfo` | 全局路由：先定位同一磁盘文件的已打开标签（`path` 相等、规范化路径相等或 `os.SameFile`），否则进入根目录最深的已打开工作区，再否则以文件父目录打开/新建工作区（ADR 0005） |
-| `OpenWorkspace(root)` | `→ void` | 已是某工作区根则定位该窗口，否则新建工作区窗口；根与文件在解析符号链接前缀后比较（macOS `/tmp` 与 `/private/tmp` 是同一工作区） |
+| `Snapshot()` | `→ WorkspaceSnapshot` | 当前窗口：`id` 是窗口身份；`root` / `name` / `kind` 是当前导航根目录；`workspaces: WorkspaceSummary[]` 列出本窗口根目录；`documents` 是跨工作区的统一标签顺序；另有 `activeId`、`restoreError?` |
+| `Open(path)` | `→ DocumentInfo` | 全局路由：先定位同一磁盘文件的已打开标签（`path` 相等、规范化路径相等或 `os.SameFile`），否则进入根目录最深的已打开工作区，再否则在当前窗口加入文件父目录（ADR 0005） |
+| `OpenWorkspace(root)` | `→ void` | 已是某工作区根则选择它，否则在当前窗口加入该根目录；根与文件在解析符号链接前缀后比较（macOS `/tmp` 与 `/private/tmp` 是同一工作区） |
+| `ActivateWorkspace(workspaceId)` | `→ void` | 选择该根目录的左栏导航及其最近文档；空根目录不卸载其他文档 |
+| `CloseWorkspaceRoot(workspaceId)` | `→ CloseResult` | 只确认并关闭该根目录的标签，再移除导航；取消保留全部标签，其他根目录不受影响 |
 | `New()` | `→ DocumentInfo` | 本窗口新增未命名原文（`kind: 'untitled'` 的窗口） |
 | `Duplicate(documentId)` | `→ DocumentInfo` | 复制为新的未命名原文 |
 | `Activate(documentId)` | `→ void` | 激活标签，不改文件 |
 | `CloseDocument(documentId)` | `→ CloseResult` | 关闭一个文档标签；脏文档逐字询问。`{closed:false, canceled:true}` 时窗口与其余标签不变 |
-| `CloseWorkspace()` | `→ CloseResult` | 窗口关闭按钮：逐个确认脏文档。全部同意关闭后才丢弃恢复副本；取消保留窗口、标签与未保存的恢复副本。已经成功写入的保存仍有效 |
+| `CloseWorkspace()` | `→ CloseResult` | 原生窗口关闭按钮：确认整个跨工作区文档组。全部同意关闭后才丢弃恢复副本；取消保留窗口、标签与未保存的恢复副本。已经成功写入的保存仍有效 |
 | `NavSnapshot()` / `SetFilter(query)` / `ToggleFolder(rel)` / `RevealPath(path)` / `PickFolder()` / `RecentWorkspaces()` | 见「工作区导航」 | 打开工作区不等整目录扫描；`PickFolder` 取消时以 `ErrCanceled` 拒绝 |
 
 ### 文档级
@@ -53,11 +55,11 @@
 
 | 事件 | 载荷 | 说明 |
 |---|---|---|
-| `workspaceChanged` | `WorkspaceSnapshot` | 标签顺序、活动标签、根目录与每个标签的徽标的权威来源 |
+| `workspaceChanged` | `WorkspaceSnapshot` | 跨工作区标签顺序、活动标签、当前根目录、根目录列表与每个标签徽标的权威来源 |
 | `docReloaded` | `Snapshot` | MyGo 因外部修改重读文件；`version` +1；带 `id` |
 | `docState` | `DocumentInfo` | 该文档的 edited / conflict / deleted / readOnly / name / path / generating / `actionError`；背景标签只更新对应标签，不激活它 |
 | `viewChanged` | `{ id } & ViewSnapshot` | 跟随期间视图文件被写入、替换或删除；文档改名/首次保存/Save As 后改跟随新路径并推送一次 |
-| `navChanged` | `NavSnapshot` | 文件树增量快照；`status` 为 `idle`/`scanning`/`indexing`/`ready`/`error` |
+| `navChanged` | `NavSnapshot` | 当前根目录的文件树增量快照；后台根目录完成索引时不覆盖当前左栏；`status` 为 `idle`/`scanning`/`indexing`/`ready`/`error` |
 | `navSearchReady` | `NavSearchResult` | 过滤搜索结果；索引未完成时 `incomplete: true` |
 | `nativeCommand` | `NativeCommand { id, command, attempt? }` | 原生 File/Edit 菜单和 `Cmd+W` 捕获目标 `documentId`。`flushQuit` 携带退出尝试编号 |
 | `settingsChanged` | `Settings` | 设置写入成功后广播到**每个窗口**，见「生成设置」 |
@@ -98,6 +100,8 @@ interface WorkspaceAdapter {
   subscribe(fn: (snap: WorkspaceSnapshot) => void): Disposable
   open(path: string): Promise<DocumentInfo>
   openWorkspace(root: string): Promise<void>
+  activateWorkspace(id: string): Promise<void>
+  closeWorkspaceRoot(id: string): Promise<CloseResult>
   newDocument(): Promise<DocumentInfo>
   duplicate(id: string): Promise<DocumentInfo>
   activate(id: string): Promise<void>
@@ -153,24 +157,26 @@ interface PluginContext {
 
 - `PluginRegistry.enable(id)` / `disable(id)`：注册表追踪所有经 ctx 产生的注册与订阅，`disable` 统一释放；`activate` 抛错时回滚。`ctx.editor.onSelectionChange` 同样被追踪，禁用插件即移除其选择监听。
 - `PluginRegistry(documents, views, commands, editor, viewFile)`：`editor` 是 `EditorSelectionSource`，App 用 `EditorAccess` 实现：注册表在编辑器创建前构造，编辑器就绪后 `attach(editor)`，之后才注册/启用插件；未 attach 时调用抛错（不会静默失效），App 卸载时 `detach()`。`viewFile` 是该面板的 host（`ViewFileSource & ViewGenerator`，`generate` / `watch` / `setSettings` 都绑定该面板的 `id`）；`ctx.viewFile.watch` 与 `ctx.viewFile.onSettings` 被追踪，禁用插件即停止跟随视图文件与设置。`documents.path` 由 App 按该文档的 `DocumentInfo.path` 更新。
-- `ViewRegistration.location` 必填：`'left'` 进左侧栏（`SidePane`）；`'center'` 成为一个视图模式，与 `Rich text` / `Markdown` 并列出现在头部的三选一切换里，只在被选中时挂载、离开时卸载；`'right'` 进右侧栏（`RightPane`，顶部 `Outline` / `GenUI` 分段切换，可带 `status` 圆点提示，窗口宽度 `< 1180px` 时收起为浮层）。
-- 编辑器提供的命令：`editor.reveal(offset: number)`（偏移越界时返回 `false`；当前是中央视图时先切回 Rich text 再跳转）、`editor.toggleSourceMode()`（在 Rich text 与 Markdown 之间切换，从中央视图出发则切到编辑器的另一模式；返回当前编辑器模式）。插件跳转一律 `ctx.commands.execute('editor.reveal', offset)`，不另设 reveal API。
+- `ViewRegistration.location` 必填：`'left'` 进左侧栏（`SidePane`）；`'center'` 成为一个视图模式，与 `Preview` / `Markdown` 并列出现在头部的三选一切换里，只在被选中时挂载、离开时卸载；`'right'` 进右侧栏（`RightPane`，顶部 `Outline` / `GenUI` 分段切换，可带 `status` 圆点提示，窗口宽度 `< 1180px` 时收起为浮层）。
+- 编辑器提供的命令：`editor.reveal(offset: number)`（偏移越界时返回 `false`；当前是中央视图时先切回预览再跳转）、`editor.toggleSourceMode()`（在预览与 Markdown 之间切换，从中央视图出发则切到编辑器的另一模式；返回当前编辑器模式）。插件跳转一律 `ctx.commands.execute('editor.reveal', offset)`，不另设 reveal API。
 
 ## 视图模式（#9）
 
-- 头部 `role="radiogroup"`（`View mode`），每个模式一个 `role="radio"` 按钮（测试钩子 `view-mode-richtext` / `view-mode-markdown` / `view-mode-<中央视图 id>`，`aria-checked` 表示当前模式）。`⌘/` / `Ctrl+/` 在 Rich text 与 Markdown 之间切换。
+- 头部 `role="radiogroup"`（`View mode`），每个模式一个 `role="radio"` 按钮（测试钩子 `view-mode-preview` / `view-mode-markdown` / `view-mode-<中央视图 id>`，`aria-checked` 表示当前模式）。`⌘/` / `Ctrl+/` 在预览与 Markdown 之间切换。
+- `Preview` 是可编辑的 Markdown 预览，直接在渲染后的内容上编辑原文。`Markdown` 显示并编辑源文本。
 - 进入中央视图时编辑器只设 `hidden`、不销毁：ProseMirror / CodeMirror 状态、光标、撤销历史和未保存的修改保留；回到编辑器时恢复离开时的滚动位置。切换模式本身不调用 `host.update`。
 - 当前模式随标签保存在 Go 的会话里（`SetViewMode(documentId, mode)` → `session.json`，由 `DocState.viewMode` 送回页面），页面另以 `localStorage` 的 `mgo.viewMode:<path>` 作为旧版本/重开路径的兼容回退。未保存的新文档不写 `localStorage`；重启恢复按 `documentId` 复原。
 
 ## 工作区、文档与标签（#21，ADR 0005）
 
-- 一个文件夹 = 一个工作区 = 一个窗口。窗口顶部的文档标签在同一个窗口里切换原文；左栏始终是该文件夹的文件导航。
-- 身份分工：`documentId`（Go `mygo.Document.ID()`，跨路径、标签、窗口、首次保存与 Save As 稳定）、`workspaceId`（窗口内标签集合）、`root`（文件夹路径，未命名窗口为空）、`path`（磁盘文件，未保存时为空）、标签（UI 导航项）。文档适配器在生命周期内绑定一个 `documentId`；异步调用、事件、视图跟随与生成都不经活动标签重定向。
+- 一个文件夹 = 一个工作区；一个窗口默认可容纳多个工作区。窗口顶部唯一一组文档标签跨工作区切换原文；左栏显示当前选中的文件夹导航，原工作区名称打开根目录菜单。
+- 身份分工：`documentId`（Go `mygo.Document.ID()`，跨路径、标签、根目录、首次保存与 Save As 稳定）、`workspaceId`（一个根目录的导航与文档归属）、`WorkspaceSnapshot.id`（原生窗口与统一标签组）、`root`（文件夹路径，未命名工作区为空）、`path`（磁盘文件，未保存时为空）、标签（UI 导航项）。文档适配器在生命周期内绑定一个 `documentId`；异步调用、事件、视图跟随与生成都不经活动标签重定向。
 - 同一份磁盘文件全应用只保留一个打开的编辑会话：从 Finder、File > Open、文件树或 `RevealPath` 重复打开只定位已有标签，不产生第二份待保存内容。根本身按解析符号链接后的规范化路径比较，`/tmp` 与 `/private/tmp` 这类别名不会分裂成两个工作区。
 - 未命名窗口（`kind: 'untitled'`，`root` 为空）承载未命名原文；关掉最后一个标签即关闭窗口。绑定文件夹的工作区关掉最后一个标签仍保留窗口，中央显示空状态。
-- 首次保存 / Save As 后：文档保留 `documentId`、内容、版本、视图跟随与生成槽；标签离开原窗口，按路由加入包含新路径的工作区（取根目录最深的已打开工作区，否则在父目录新开窗口）；同一未命名窗口里的其他未命名原文留在原处；目标路径已是另一份打开文档时拒绝保存，不静默覆盖。
+- 首次保存 / Save As 后：文档保留 `documentId`、内容、版本、视图跟随与生成槽；标签在同一原生窗口中按路由加入包含新路径的工作区（取根目录最深的已打开工作区，否则加入父目录根）；同一未命名工作区里的其他未命名原文留在原处；目标路径已是另一份打开文档时拒绝保存，不静默覆盖。
 - 标签栏：`role="tablist"`，每个标签 `role="tab"` 与 `aria-selected`，显示文件名（同名标签追加父目录名，如 `notes.md — alpha`）、未保存圆点、生成中、冲突、已删除、只读徽标与关闭按钮。方向键移动，`Delete` / `⌘W` 关闭当前标签。
 - 共享提示与通知：`components/Tooltip.tsx` 用 `radix-ui@1.8.1` 为文件树、标签和状态提供完整路径/说明；`App` 根部只有一个 `Tooltip.Provider` 与浅色 Sonner `Toaster`。`components/feedback.ts` 在 Crepe 代码块和链接复制成功后用固定 ID 显示 `Code copied` / `Link copied`，不叠加重复 toast；持续错误和生成进度仍原位呈现。
+- 高频往返：可见标签直接点击；`Ctrl+Tab` 与最近的另一份已打开文档往返，目标在其他工作区或溢出菜单中也适用。溢出列表按最近使用优先。
 - 文档溢出菜单：触发钮直接显示 `+N`，`DropdownMenu` Portal 承载带标题、搜索图标、文件图标、路径次级行和当前项勾号的命令菜单；活动标签与触发钮保留拟物 `--raised` 材质，搜索焦点为细内描边。Radix 管理焦点、键盘导航、Escape、外部点击和碰撞定位；标签的测量 ref 直接挂按钮，选择后焦点返回活动标签，Escape 返回溢出触发钮。文件树使用 Phosphor folder/folder-open/file-text，普通行次级文字为父目录，过滤结果保留标题/摘要。
 - 生成中则禁用该文档的 Save As / Rename / Move（提示先取消或等待），普通保存、继续编辑与标签切换仍可用，其他文档不受影响。
 
@@ -191,10 +197,10 @@ interface PluginContext {
 - 左栏宽度 190–420px 可调（默认 248px），但渲染宽度随窗口收窄让位：不超过 `窗口宽 − 310px`（下限 140px），窗口放宽后恢复用户设定；分隔条在 6px 视觉槽内提供 14px 触控热区（`aria-valuenow` 报告实际渲染宽度）。
 - Outline 插件（`createOutlinePlugin()`）注册视图 `outline.panel`（`location: 'right'`，标题 `Outline`），与 `genui.panel` 并列在右侧栏顶部分段标签中切换。
 - 条目来自 `extractHeadings(ctx.documents.snapshot().text)`，按 `level` 缩进；文档变更经 `OUTLINE_DEBOUNCE_MS`（300ms，导出自 `OutlinePanel.tsx`）防抖后重新解析。
-- 当前章节 = 最后一个 `offset ≤ 光标偏移` 的标题；光标在第一个标题之前时不高亮任何条目；光标偏移来自 `ctx.editor.onSelectionChange`（WYSIWYG 为顶层块起始偏移，源码为精确偏移），高亮条目标 `aria-current="true"`。
+- 当前章节 = 最后一个 `offset ≤ 光标偏移` 的标题；光标在第一个标题之前时不高亮任何条目；光标偏移来自 `ctx.editor.onSelectionChange`（预览为顶层块起始偏移，源码为精确偏移），高亮条目标 `aria-current="true"`。
 - 点击条目执行 `editor.reveal(该条目自身 offset)`，所以同文标题各跳各的位置；两种模式行为一致。
 - 无标题时显示 `No headings in this document.`（`data-testid="outline-empty"`）。
-- GenUI 不自带标题列表；在 GenUI 模式下点大纲条目会切回 Rich text 并跳转。
+- GenUI 不自带标题列表；在 GenUI 模式下点大纲条目会切回预览并跳转。
 - `App({ workspace | host, plugins })` 在 GenUI / Outline 之后为每个 `DocumentPane` 追加注册插件（自动化测试注入异步激活插件用），注册与启用逐项检查 `disposed`。
 
 ## GenUI 视图模式（#9，取代 #6 的右侧栏与 v1 格式）
@@ -226,7 +232,7 @@ interface PluginContext {
 - `SourceFrame.tsx`：所有内容组件都画在同一个框里：底部 `From` 后按组件 `sources` 的顺序，每个来源 id 一个按钮（文本是来源表记录的 `heading`，带 `data-source-id` / `data-source-occurrence` / `data-source-available`），点击只定位该来源自身的 heading + occurrence；另有状态标记 `Source changed` / `Source not found`（只在这两种状态显示）、整体 `Edit in source` 按钮与 `Note` 入口。状态写在 `data-source-status`。组件经 `useComponentSource(sources)` 取状态、逐条 `references` 与 `edit(text?)`。
 - 部分来源丢失（#28）：某个 heading + occurrence 已不在文档时，只有那一个按钮禁用并提示该标题已不在，不回退到同名或兄弟来源；其余来源仍可点。整体 `Edit in source` 与 `Note` 在还有来源存在时用第一个仍存在的来源，全部失效时才禁用并写明。聚合状态仍如实为 `missing`，精确引语、行与 checkbox 的定位行为不变。
 - 隔离（规范）：`Edit in source` 与右栏 `.changed-list` 的跳转/高亮只在该文档自己的 GenUI 挂载元素内查询卡片，隐藏标签不能截获；每个编辑器持有自己的 Composer 生命周期，后台文档的 `load` / `onReload` / `setReadonly` / `destroy` 只取消它自己的 Note 或特殊块 composer，不关闭其他文档未保存的草稿。
-- `Edit in source`：取组件第一个仍在文档里的来源，先立即刷新章节（不用防抖中的旧偏移），再执行命令 `editor.select(start, end)`；底部每个来源按钮则只用自己那个 id 定位（`edit([该 id])`），不换到别的来源。带 `text` 时（Checklist 项）在各来源节里找这段原文，找到就只选它，否则选第一个来源整节。App 切到 Rich text、选中，并在编辑器区显示 `← Back to GenUI`（`data-testid="return-to-view"`）。点它回到 GenUI；在头部选任一模式后这个按钮消失。
+- `Edit in source`：取组件第一个仍在文档里的来源，先立即刷新章节（不用防抖中的旧偏移），再执行命令 `editor.select(start, end)`；底部每个来源按钮则只用自己那个 id 定位（`edit([该 id])`），不换到别的来源。带 `text` 时（Checklist 项）在各来源节里找这段原文，找到就只选它，否则选第一个来源整节。App 切到预览、选中，并在编辑器区显示 `← Back to GenUI`（`data-testid="return-to-view"`）。点它回到 GenUI；在头部选任一模式后这个按钮消失。
 - 滚动位置：GenUI 视图的挂载元素 `.center-view` 就是滚动区。位置按视图文件文本记在插件里（`ScrollMemory`），跨挂载保留；同一份视图文件回来时恢复，换了视图文件从顶部开始。A2UI 首次提交后才渲染组件树，所以恢复时跟随内容增高（`ResizeObserver`，最多 1s）。
 - 生成器（#7）按页面给的章节范围写入每个来源的 `hash`；手写的视图文件不带 `hash` 时不显示状态。
 
@@ -261,11 +267,11 @@ interface PluginContext {
 
 ## 原生菜单、撤销重做与会话恢复（#21、#23、#30）
 
-- File 菜单的 Save / Save As / Duplicate / Rename / Move / Revert 作用于**聚焦窗口的活动文档**（MyGo 文档组），点击时捕获该窗口的 `documentId`；`Cmd+W` / File > Close（`RoleClose`）关闭**捕获的活动文档**：有文档时修补后的菜单把 `RoleClose` 交给 `performRole(RoleClose)` 而非平台 `performClose`，文档角色经应用的 `Command`（`nativeCommand close`）关闭该文档。窗口关闭按钮调用 `CloseWorkspace`（逐个确认脏文档，取消保留标签及恢复副本），关闭整个文档组。文件夹工作区没有标签时保留窗口：`RefreshDocumentMenus` 在该状态禁用 File > Close，因此原生 `Cmd+W` 是 no-op，而不是关窗。独立未命名窗口的最后一份文档关闭仍销毁窗口。若 Go 文档角色在无文档时被调用 `RoleClose`（窗口/菜单竞态），它解析给定或聚焦窗口并关闭；`BeforeWindowClose` 仍把它转为 `CloseWorkspace`——这个内部回退不是“空文件夹窗口下 Cmd+W 会关窗”的 UI 承诺。无文档支持的应用保留平台 `performClose`。
+- File 菜单的文档命令在点击时捕获聚焦窗口的活动 `documentId`。`Cmd+W` 与 File > Close 经 `performRole(RoleClose)` 和 `nativeCommand close` 关闭捕获的文档。当前根目录仍有标签时，窗口选中该根目录的一份文档。空文件夹根目录保留窗口，以根目录名为标题，清除 MyGo 活动文档并禁用 File 菜单的文档命令。此时按 `Cmd+W` 保留窗口。窗口关闭按钮调用 `CloseWorkspace`，确认所有有未保存修改的文档后关闭整个文档组。独立未命名窗口关闭最后一份文档时销毁窗口。无文档支持的应用保留平台 `performClose`。
 
 - 退出时宿主向工作区窗口发送带尝试编号的 `flushQuit`。窗口通过 `PrepareQuit(attempt, failure)` 报告结果。全部窗口成功交付编辑且 `session.json` 写入成功后才继续退出。交付失败、确认超时或写入失败时，应用保留窗口并显示提示，用户可再次选择退出。未保存内容由 MyGo 恢复副本保存。
 - Edit > Undo / Redo（`nativeCommand` 的 `undo` / `redo`）按点击时的活动 `documentId` 应用到**该文档编辑器的历史**，与 `UndoView`（视图文件撤回）无关。`nativeEdit.ts` 维护每文档的目标（ProseMirror 或 CodeMirror），聚焦的原地 Composer `textarea` 保留原生字段撤销；只读 GenUI / ComparisonTable 的焦点不改写文档。`SetNativeEditState(documentId, canUndo, canRedo)` 只为聚焦窗口的活动文档更新菜单可用性。
-- 会话文件：`session.json` 在 `PathUserData`，记录未主动关闭的工作区（`id`、`root`、按顺序的 `tabs[{id, path, viewMode}]`、`activeId`），不复制未保存字节。布局变化（打开、移动标签、激活、关闭、切换视图模式）时写入，退出确认后再写一次；恢复期间跳过写入，避免用半恢复的窗口覆盖已存布局。空的无标题窗口（Welcome）不存；关闭的标签或工作区不复活。
+- `PathUserData` 下的 `session.json` 保存工作区的 `id`、`root`、按顺序的 `tabs[{id, path, viewMode}]`、`activeId` 及可选的 `active` 标记。布局变化和退出确认后写入，恢复期间暂停写入。Welcome 空窗口、主动关闭的标签或工作区无需恢复。未保存文字由 MyGo 恢复副本持有。启动时将保存的布局合并到一个窗口，优先复用恢复副本或启动文件已经打开的窗口。
 - `flushQuit` / Save / Save As / Close 的文本来源是**该面板真正持有的文本**：编辑器已挂载时取屏幕上的当前 Markdown（`editor.getMarkdown()`，即当前 compose 文本），否则回落到宿主载入的核心文档状态。用户确实清空文档时，按普通编辑送达 `""`。
 - `bindFlush` 注册面板的原始文本读取器。Save、Save As、Rename、Move、Revert、Duplicate 和关闭标签各对捕获的文档调用一次 `Flush`。关闭工作区对每个已注册的读取器调用一次 `Flush`。退出时对每个已注册的读取器调用一次 `FlushQuit`，带上当前尝试编号。没有注册读取器的文档不会产生写入。
 - 绑定时机：只有编辑器已 ready 才 `bindFlush`；已注册的 reader 执行时若 `editorRef` 短暂为空，回落到宿主载入的核心文本；从未挂载编辑器的面板不会提前注册，也不会交付 `''`。
@@ -289,8 +295,8 @@ interface PluginContext {
 - 转义：文字里的 `-->` 写成 `--\>`，`--!>` 写成 `--\!>`（浏览器也把它当注释结束）；已经带反斜杠的再加一个，读回时去掉一个，所以任何文字都读回不变。文字可以多行，读写时去掉首尾空白。
 - 编辑器：批注是锁定块（`kind: 'note'`），按原字节写回。只有改过的批注才重新序列化，只改文字部分，冒号之前（包括不认识的属性）原样保留，并沿用这一块原来的间隔。
 - 原地白纸输入块（`.composer.mgo-note-composer`，无 `<dialog>` 模态弹窗）：
-  - Rich text：块菜单（`+` 或 `/`）里的 `Add note` 或已有批注上的 `Edit` 按钮通过 `noteDialog.ts` 的 `askForNote` 在目标顶层块紧下方原地展开 `<div class="composer mgo-note-composer" role="region" aria-label="Note composer">`（含随内容增高的 `<textarea aria-label="Note">`、底部 `.composer-foot` 提示 `⌘↩ to save · Esc to cancel`、`Cancel` 与 `Save` 按钮）；保存或 `Delete` 都是普通事务，可以撤销。只读文档不能操作。Markdown 模式显示原始文本。
-  - GenUI：组件底座 `SourceFrame.tsx` 的 `Note` 按钮在卡片底座下方原地展开 React `.composer.mgo-note-composer`；`⌘↩` / `Ctrl+↩` 或点击 `Save` 时通过命令 `editor.addNote(offset, text)` 把批注加到第一个来源那一节的末尾，停留在 GenUI 且不使任何组件变为 `Source changed`；`Escape` 或 `Cancel` 关闭输入块不写入。宿主编辑器处在 Rich text 或 Markdown 都写出相同的字节。组件旁显示它所有来源节里的批注。只读文档会提示无法添加。
+  - 预览：块菜单（`+` 或 `/`）里的 `Add note` 或已有批注上的 `Edit` 按钮通过 `noteDialog.ts` 的 `askForNote` 在目标顶层块紧下方原地展开 `<div class="composer mgo-note-composer" role="region" aria-label="Note composer">`（含随内容增高的 `<textarea aria-label="Note">`、底部 `.composer-foot` 提示 `⌘↩ to save · Esc to cancel`、`Cancel` 与 `Save` 按钮）；保存或 `Delete` 都是普通事务，可以撤销。只读文档不能操作。Markdown 模式显示原始文本。
+  - GenUI：组件底座 `SourceFrame.tsx` 的 `Note` 按钮在卡片底座下方原地展开 React `.composer.mgo-note-composer`；`⌘↩` / `Ctrl+↩` 或点击 `Save` 时通过命令 `editor.addNote(offset, text)` 把批注加到第一个来源那一节的末尾，停留在 GenUI 且不使任何组件变为 `Source changed`；`Escape` 或 `Cancel` 关闭输入块不写入。宿主编辑器处在预览或 Markdown 都写出相同的字节。组件旁显示它所有来源节里的批注。只读文档会提示无法添加。
 - `editor.addNote(offset, text)`：放在 `offset` 之前开始的最后一个顶层块之后，新批注前面是 `\n\n`。
 - 字节保留：插入或删除一块后，后面的块保留自己的间隔（间隔不含空行且换了位置时才用 `\n\n`，否则可能和新的前一块合并）。文件末尾的字节在增删批注时不变。
 - 哈希：章节哈希去掉每条批注，以及它和前一块之间的空白，所以结果和加批注之前的文本一样。Go 没有 Markdown 解析器，页面在 `GenerateRequest.sections[].exclude`（UTF-16 范围，按顺序）里告诉它哪些范围要去掉；范围越界时这个来源不写哈希。代码块里的 `<!-- note -->` 不会被去掉。共享向量 `section-vectors.json` 的 `notes` 部分在 TS 和 Go 两边验证。
@@ -299,7 +305,7 @@ interface PluginContext {
 ## Editor Adapter（`web/src/editor/createEditor.ts`）
 
 ```ts
-type EditorMode = 'wysiwyg' | 'source'
+type EditorMode = 'preview' | 'source'
 
 interface MarkdownEditor {
   getMode(): EditorMode
@@ -319,19 +325,19 @@ interface MarkdownEditor {
 ```
 
 - 跨模块位置一律是当前 Markdown 文本的 UTF-16 源偏移；ProseMirror 位置不出适配器。
-- WYSIWYG 模式下按顶层块粒度映射：`reveal(offset)` 滚动到并聚焦包含该偏移的顶层块开头（锁定块用节点选择），偏移超出当前 compose 文本时返回 `false`；只要命中块就会报告该块起始偏移（光标原本就在该块也报告）。`select(from, to)` 选中从包含 `from` 的块到 `to` 之前最后一个块的全部块（`to` 为区间终点，不含），滚动并聚焦，报告起始块偏移；区间越界或 `from > to` 返回 `false`。源码模式下 `select` 是精确的 CodeMirror 选区。`onSelectionChange` 在光标换块或编辑使该块偏移变化时报告光标所在顶层块的源起始偏移，并在注册时同步回调一次当前偏移（大纲可立即高亮当前章节）。块范围每次由最新 compose 文本推导，所以块内编辑以及光标之前的增删不会让偏移失效。
+- 预览模式下按顶层块粒度映射：`reveal(offset)` 滚动到并聚焦包含该偏移的顶层块开头（锁定块用节点选择），偏移超出当前 compose 文本时返回 `false`；只要命中块就会报告该块起始偏移（光标原本就在该块也报告）。`select(from, to)` 选中从包含 `from` 的块到 `to` 之前最后一个块的全部块（`to` 为区间终点，不含），滚动并聚焦，报告起始块偏移；区间越界或 `from > to` 返回 `false`。源码模式下 `select` 是精确的 CodeMirror 选区。`onSelectionChange` 在光标换块或编辑使该块偏移变化时报告光标所在顶层块的源起始偏移，并在注册时同步回调一次当前偏移（大纲可立即高亮当前章节）。块范围每次由最新 compose 文本推导，所以块内编辑以及光标之前的增删不会让偏移失效。
 - 选择到块的解析只使用 ProseMirror 文档结构（文本选择取 `$from.node(1)`，文档级选择取 `$from.index(0)` 对应的顶层节点），从不把 ProseMirror 位置当作 Markdown 偏移比较。
-- `getMarkdown()`：WYSIWYG 模式返回当前 compose 文本（未改动块保持原始字节）；源码模式返回 CodeMirror 文档文本（逐字节原样）。
+- `getMarkdown()`：预览模式返回当前 compose 文本（未改动块保持原始字节）；源码模式返回 CodeMirror 文档文本（逐字节原样）。
 - 旧接口 `revealHeading(text)` 已删除；调用方先经共享标题模块解析出偏移再 `editor.reveal`。
 
 ### 源码模式
 
-- 源码模式是 CodeMirror 6（`markdown()`、行折行、`history()` + `defaultKeymap`/`historyKeymap`），装配在 `web/src/editor/source/sourceEditor.ts`，与 WYSIWYG 挂在同一个编辑器区域内，同一时间只有一个可见。
+- 源码模式是 CodeMirror 6（`markdown()`、行折行、`history()` + `defaultKeymap`/`historyKeymap`），装配在 `web/src/editor/source/sourceEditor.ts`，与预览挂在同一个编辑器区域内，同一时间只有一个可见。
 - 配置 `EditorState.lineSeparator.of('\n')`：只有 LF 分行，CRLF / 混合换行 / 单独 CR / 无末尾换行的文件进出源码模式都不改变任何字节，源码中的无关行编辑也不改变其他字节。
-- WYSIWYG → 源码：CodeMirror 文本取当前 compose 文本，历史为空；光标移到旧模式光标所在块的源起始偏移。
-- 源码 → WYSIWYG：若源码文本与进入时相同，保留原 ProseMirror 状态与撤销历史；若不同（或期间发生外部 reload），从新文本经 `buildDocument` / `segmentMarkdown` 重建，WYSIWYG 撤销历史重置。切换后在新模式中 reveal 旧模式的光标偏移。
-- 源码模式语义：`onChange` 在用户编辑后带 CodeMirror 文本触发；`setMarkdown`（外部 reload）替换文本、重置 CodeMirror 历史与光标并立即报告光标偏移 0，模式不变；`setReadonly` 同时作用于 CodeMirror（`EditorState.readOnly` + `EditorView.editable` Compartment）；`reveal(offset)` 为精确光标偏移 + `scrollIntoView` + focus；`onSelectionChange` 报告精确的 CodeMirror 偏移，监听器跨模式保持，切换时立即报告。源码有改动后切回 WYSIWYG 的重建会抑制加载中间态的偏移报告，监听器只看到最终 reveal 的块偏移。
-- 切换模式本身不触发 `onChange`。App 头部的视图模式切换显示当前模式（`Rich text` / `Markdown` / 中央视图，见「视图模式」），`⌘/` 或 `Ctrl+/` 在两种编辑器模式之间切换，命令 `editor.toggleSourceMode` 供插件调用。
+- 预览 → 源码：CodeMirror 文本取当前 compose 文本，历史为空；光标移到旧模式光标所在块的源起始偏移。
+- 源码 → 预览：若源码文本与进入时相同，保留原 ProseMirror 状态与撤销历史；若不同（或期间发生外部 reload），从新文本经 `buildDocument` / `segmentMarkdown` 重建，预览撤销历史重置。切换后在新模式中 reveal 旧模式的光标偏移。
+- 源码模式语义：`onChange` 在用户编辑后带 CodeMirror 文本触发；`setMarkdown`（外部 reload）替换文本、重置 CodeMirror 历史与光标并立即报告光标偏移 0，模式不变；`setReadonly` 同时作用于 CodeMirror（`EditorState.readOnly` + `EditorView.editable` Compartment）；`reveal(offset)` 为精确光标偏移 + `scrollIntoView` + focus；`onSelectionChange` 报告精确的 CodeMirror 偏移，监听器跨模式保持，切换时立即报告。源码有改动后切回预览的重建会抑制加载中间态的偏移报告，监听器只看到最终 reveal 的块偏移。
+- 切换模式本身不触发 `onChange`。App 头部的视图模式切换显示当前模式（`Preview` / `Markdown` / 中央视图，见「视图模式」），`⌘/` 或 `Ctrl+/` 在两种编辑器模式之间切换，命令 `editor.toggleSourceMode` 供插件调用。
 
 ## 特殊块（可视呈现与原地 Markdown 编辑，ADR 0006）
 

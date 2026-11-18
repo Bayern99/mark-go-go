@@ -39,7 +39,7 @@ async function openComposer(mounted: MountedEditor, block: Element): Promise<HTM
   )
 }
 
-describe('Mermaid fences in rich text', () => {
+describe('Mermaid fences in Preview', () => {
   it('renders a valid fence offline without changing its bytes', { timeout: 30_000 }, async () => {
     const mounted = await mountEditor(VALID)
     try {

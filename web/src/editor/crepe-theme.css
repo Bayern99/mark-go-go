@@ -473,8 +473,8 @@
 
 /* While a pointer drag may become a text selection, or after Escape asked
    for it to go away, hide the toolbar instead of letting it sit on text. */
-.mgo-wysiwyg-root.mgo-pointer-selecting .milkdown-toolbar,
-.mgo-wysiwyg-root.mgo-toolbar-dismissed .milkdown-toolbar {
+.mgo-preview-root.mgo-pointer-selecting .milkdown-toolbar,
+.mgo-preview-root.mgo-toolbar-dismissed .milkdown-toolbar {
   visibility: hidden;
 }
 

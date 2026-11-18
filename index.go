@@ -629,11 +629,23 @@ func (h *documentHost) emitNav(w *workspace) {
 	if w == nil || w.win == nil || w.win.IsDestroyed() {
 		return
 	}
+	h.mu.Lock()
+	selected := h.byWindow[w.win] == w
+	h.mu.Unlock()
+	if !selected {
+		return
+	}
 	_ = navChanged.Emit(w.win, h.navSnapshot(w))
 }
 
 func (h *documentHost) emitSearch(w *workspace, idx *workspaceIndex) {
 	if w == nil || w.win == nil || w.win.IsDestroyed() || idx == nil {
+		return
+	}
+	h.mu.Lock()
+	selected := h.byWindow[w.win] == w
+	h.mu.Unlock()
+	if !selected {
 		return
 	}
 	idx.mu.Lock()

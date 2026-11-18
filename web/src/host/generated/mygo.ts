@@ -255,15 +255,27 @@ export interface ViewEvent {
   canUndo: boolean;
 }
 
-/** WorkspaceSnapshot is one workspace window as the page lists it. */
+/**
+ * WorkspaceSnapshot is one native window. Root/Name/Kind describe the root
+ * whose navigation is selected; Documents is the window's single tab group.
+ */
 export interface WorkspaceSnapshot {
   id: string;
   root: string;
   name: string;
   kind: string;
+  workspaces: WorkspaceSummary[];
   documents: DocumentInfo[];
   activeId: string;
   restoreError?: string;
+}
+
+/** WorkspaceSummary is one root available in a native window. */
+export interface WorkspaceSummary {
+  id: string;
+  root: string;
+  name: string;
+  kind: string;
 }
 
 // ---- Services ----
@@ -278,6 +290,10 @@ export const WorkspaceHost = {
   activate(documentID: string): Promise<void> {
     return call("WorkspaceHost.Activate", documentID);
   },
+  /** ActivateWorkspace selects a root's navigation and its most recent document. */
+  activateWorkspace(workspaceID: string): Promise<void> {
+    return call("WorkspaceHost.ActivateWorkspace", workspaceID);
+  },
   /**
    * CloseDocument asks to save the document, then drops its tab. Cancel
    * leaves the workspace and every tab as they were.
@@ -291,6 +307,14 @@ export const WorkspaceHost = {
    */
   closeWorkspace(): Promise<CloseResult> {
     return call("WorkspaceHost.CloseWorkspace");
+  },
+  /**
+   * CloseWorkspaceRoot closes only one root's documents and removes its
+   * navigation. The native window and other roots stay open. Closing the last
+   * root leaves the existing window at Welcome.
+   */
+  closeWorkspaceRoot(workspaceID: string): Promise<CloseResult> {
+    return call("WorkspaceHost.CloseWorkspaceRoot", workspaceID);
   },
   /** Duplicate opens an untitled copy of the document. */
   duplicate(documentID: string): Promise<DocumentInfo> {
@@ -351,7 +375,10 @@ export const WorkspaceHost = {
   open(path: string): Promise<DocumentInfo> {
     return call("WorkspaceHost.Open", path);
   },
-  /** OpenWorkspace focuses an existing folder workspace or opens one empty. */
+  /**
+   * OpenWorkspace selects an existing root or adds it to the calling window.
+   * A new native window is created only when the app has no window to reuse.
+   */
   openWorkspace(root: string): Promise<void> {
     return call("WorkspaceHost.OpenWorkspace", root);
   },

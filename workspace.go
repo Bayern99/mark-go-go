@@ -12,15 +12,25 @@ import (
 	"github.com/egoist/mygo"
 )
 
-// WorkspaceSnapshot is one workspace window as the page lists it.
+// WorkspaceSummary is one root available in a native window.
+type WorkspaceSummary struct {
+	ID   string `json:"id"`
+	Root string `json:"root"`
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+}
+
+// WorkspaceSnapshot is one native window. Root/Name/Kind describe the root
+// whose navigation is selected; Documents is the window's single tab group.
 type WorkspaceSnapshot struct {
-	ID           string         `json:"id"`
-	Root         string         `json:"root"`
-	Name         string         `json:"name"`
-	Kind         string         `json:"kind"`
-	Documents    []DocumentInfo `json:"documents"`
-	ActiveID     string         `json:"activeId"`
-	RestoreError string         `json:"restoreError,omitempty"`
+	ID           string             `json:"id"`
+	Root         string             `json:"root"`
+	Name         string             `json:"name"`
+	Kind         string             `json:"kind"`
+	Workspaces   []WorkspaceSummary `json:"workspaces"`
+	Documents    []DocumentInfo     `json:"documents"`
+	ActiveID     string             `json:"activeId"`
+	RestoreError string             `json:"restoreError,omitempty"`
 }
 
 // DocumentInfo is one open document in a workspace. ID is stable across
@@ -80,10 +90,12 @@ var (
 	errNoWorkspace = errors.New("markgogo: this window is not a workspace")
 )
 
-// workspace is one window: a folder root, or an untitled window.
+// workspace is one root's navigation and tab ownership. Several workspace
+// values may share win; byWindow points at the one whose navigation is shown.
 type workspace struct {
 	id           string
-	root         string // empty = untitled window
+	windowID     string
+	root         string // empty = untitled workspace
 	win          *mygo.Window
 	tabs         []string
 	active       string
@@ -205,6 +217,74 @@ func (h *documentHost) workspaceOfWindow(win *mygo.Window) (*workspace, error) {
 	return w, nil
 }
 
+// workspaceByIDLocked also supports the small hand-built hosts in tests that
+// predate byWorkspace; production registers every root there.
+func (h *documentHost) workspaceByIDLocked(id string) *workspace {
+	if w := h.byWorkspace[id]; w != nil {
+		return w
+	}
+	for _, w := range h.byWindow {
+		if w != nil && w.id == id {
+			return w
+		}
+	}
+	return nil
+}
+
+// allWorkspacesLocked returns roots in their stable window/tab order.
+func (h *documentHost) allWorkspacesLocked() []*workspace {
+	out := make([]*workspace, 0, len(h.byWorkspace)+len(h.byWindow))
+	seen := map[string]bool{}
+	for _, id := range h.workspaceOrder {
+		if w := h.workspaceByIDLocked(id); w != nil && !seen[id] {
+			seen[id] = true
+			out = append(out, w)
+		}
+	}
+	for id, w := range h.byWorkspace {
+		if w != nil && !seen[id] {
+			seen[id] = true
+			out = append(out, w)
+		}
+	}
+	for _, w := range h.byWindow {
+		if w != nil && !seen[w.id] {
+			seen[w.id] = true
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+func (h *documentHost) windowWorkspacesLocked(win *mygo.Window) []*workspace {
+	out := make([]*workspace, 0, 1)
+	for _, w := range h.allWorkspacesLocked() {
+		if w.win == win {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+func (h *documentHost) preferredWindow() *mygo.Window {
+	if win := mygo.FocusedWindow(); win != nil && !win.IsDestroyed() {
+		h.mu.Lock()
+		w := h.byWindow[win]
+		h.mu.Unlock()
+		if w != nil {
+			return win
+		}
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, w := range h.allWorkspacesLocked() {
+		if w.win != nil && !w.win.IsDestroyed() {
+			return w.win
+		}
+	}
+	return nil
+}
+
 func (h *documentHost) docSession(id string) (*docSession, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -215,46 +295,70 @@ func (h *documentHost) docSession(id string) (*docSession, error) {
 	return s, nil
 }
 
-func (h *documentHost) snapshotWorkspace(w *workspace) WorkspaceSnapshot {
+func (h *documentHost) snapshotWorkspace(win *mygo.Window) (WorkspaceSnapshot, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.snapshotWorkspaceLocked(w)
+	return h.snapshotWorkspaceLocked(win)
 }
 
-func (h *documentHost) snapshotWorkspaceLocked(w *workspace) WorkspaceSnapshot {
-	docs := make([]DocumentInfo, 0, len(w.tabs))
-	for _, id := range w.tabs {
-		s := h.byID[id]
-		if s == nil {
-			continue
+func (h *documentHost) snapshotWorkspaceLocked(win *mygo.Window) (WorkspaceSnapshot, error) {
+	w := h.byWindow[win]
+	if w == nil {
+		return WorkspaceSnapshot{}, errNoWorkspace
+	}
+	roots := h.windowWorkspacesLocked(win)
+	docs := make([]DocumentInfo, 0)
+	for _, root := range roots {
+		for _, id := range root.tabs {
+			s := h.byID[id]
+			if s != nil {
+				docs = append(docs, s.infoLocked())
+			}
 		}
-		docs = append(docs, s.infoLocked())
+	}
+	summaries := make([]WorkspaceSummary, 0, len(roots))
+	for _, root := range roots {
+		summaries = append(summaries, WorkspaceSummary{ID: root.id, Root: root.root, Name: root.name(), Kind: root.kind()})
+	}
+	windowID := w.windowID
+	if windowID == "" {
+		windowID = w.id
 	}
 	return WorkspaceSnapshot{
-		ID:           w.id,
+		ID:           windowID,
 		Root:         w.root,
 		Name:         w.name(),
 		Kind:         w.kind(),
+		Workspaces:   summaries,
 		Documents:    docs,
 		ActiveID:     w.active,
 		RestoreError: w.restoreError,
-	}
+	}, nil
 }
 
 func (h *documentHost) emitWorkspace(w *workspace) {
-	if w == nil || w.win == nil || w.win.IsDestroyed() {
+	if w == nil {
 		return
 	}
-	_ = workspaceChanged.Emit(w.win, h.snapshotWorkspace(w))
+	// Queue snapshots in the same order that the host reads the selection.
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	win := w.win
+	if win == nil || win.IsDestroyed() {
+		return
+	}
+	if snap, err := h.snapshotWorkspaceLocked(win); err == nil {
+		_ = workspaceChanged.Emit(win, snap)
+	}
 }
 
 // Snapshot is the calling window's workspace.
 func (h *documentHost) Snapshot(ctx context.Context) (WorkspaceSnapshot, error) {
-	w, err := h.workspaceOf(ctx)
-	if err != nil {
-		return WorkspaceSnapshot{}, err
+	win := mygo.CallerWindow(ctx)
+	if win == nil {
+		return WorkspaceSnapshot{}, errNoWorkspace
 	}
-	return h.snapshotWorkspace(w), nil
+	return h.snapshotWorkspace(win)
 }
 
 // Open opens path with global routing: existing session, else deepest
@@ -290,7 +394,8 @@ func (h *documentHost) Open(ctx context.Context, path string) (DocumentInfo, err
 	return s.info(), nil
 }
 
-// OpenWorkspace focuses an existing folder workspace or opens one empty.
+// OpenWorkspace selects an existing root or adds it to the calling window.
+// A new native window is created only when the app has no window to reuse.
 func (h *documentHost) OpenWorkspace(ctx context.Context, root string) error {
 	abs, err := filepath.Abs(root)
 	if err != nil {
@@ -305,21 +410,70 @@ func (h *documentHost) OpenWorkspace(ctx context.Context, root string) error {
 	}
 	abs = canonicalPath(abs)
 	h.mu.Lock()
-	for _, w := range h.byWindow {
+	for _, w := range h.allWorkspacesLocked() {
 		if w.root != "" && sameRoot(w.root, abs) {
-			win := w.win
 			h.mu.Unlock()
-			win.Show()
-			win.Focus()
+			h.activateWorkspace(w)
+			w.win.Show()
+			w.win.Focus()
 			h.rememberRoot(abs)
 			return nil
 		}
 	}
 	h.mu.Unlock()
-	win := h.newWorkspaceWindow(abs, filepath.Base(abs))
+	var win *mygo.Window
+	if current, currentErr := h.workspaceOf(ctx); currentErr == nil {
+		win = current.win
+	} else {
+		win = h.preferredWindow()
+	}
+	if win == nil {
+		win = h.newWorkspaceWindow(abs, filepath.Base(abs))
+	} else {
+		w := h.addWorkspaceToWindow("", abs, filepath.Base(abs), win)
+		h.activateWorkspace(w)
+	}
 	win.Show()
+	win.Focus()
+	h.rememberRoot(abs)
 	h.persistSession()
 	return nil
+}
+
+// ActivateWorkspace selects a root's navigation and its most recent document.
+func (h *documentHost) ActivateWorkspace(ctx context.Context, workspaceID string) error {
+	h.mu.Lock()
+	w := h.workspaceByIDLocked(workspaceID)
+	h.mu.Unlock()
+	if w == nil {
+		return errNoWorkspace
+	}
+	h.activateWorkspace(w)
+	if w.win != nil {
+		w.win.Show()
+		w.win.Focus()
+	}
+	return nil
+}
+
+func (h *documentHost) activateWorkspace(w *workspace) {
+	if w == nil {
+		return
+	}
+	h.mu.Lock()
+	h.byWindow[w.win] = w
+	active := w.active
+	h.mu.Unlock()
+	if active != "" {
+		if s, err := h.docSession(active); err == nil && h.docs != nil {
+			h.docs.SetActive(s.doc)
+		}
+	} else if h.docs != nil && w.win != nil && !w.win.IsDestroyed() {
+		h.docs.ClearActive(w.win, w.name())
+		applyNativeEditMenu(false, false)
+	}
+	h.emitWorkspace(w)
+	h.persistSession()
 }
 
 // New creates an untitled document. MyGo calls Window, which reuses an
@@ -369,6 +523,7 @@ func (h *documentHost) activate(s *docSession) {
 	h.mu.Lock()
 	if s.ws != nil {
 		s.ws.active = s.id
+		h.byWindow[s.win] = s.ws
 	}
 	w := s.ws
 	h.mu.Unlock()
@@ -419,6 +574,76 @@ func (h *documentHost) closeWorkspace(w *workspace) (CloseResult, error) {
 	return CloseResult{Closed: true}, nil
 }
 
+// CloseWorkspaceRoot closes only one root's documents and removes its
+// navigation. The native window and other roots stay open. Closing the last
+// root leaves the existing window at Welcome.
+func (h *documentHost) CloseWorkspaceRoot(ctx context.Context, workspaceID string) (CloseResult, error) {
+	caller, callerErr := h.workspaceOf(ctx)
+	h.mu.Lock()
+	w := h.workspaceByIDLocked(workspaceID)
+	h.mu.Unlock()
+	if w == nil || (callerErr == nil && caller.win != w.win) {
+		return CloseResult{}, errNoWorkspace
+	}
+	var docs []*mygo.Document[string]
+	for _, id := range w.tabs {
+		if s, err := h.docSession(id); err == nil && s.doc != nil {
+			docs = append(docs, s.doc)
+		}
+	}
+	if len(docs) > 0 {
+		if err := h.docs.CloseDocuments(docs); errors.Is(err, mygo.ErrCanceled) {
+			h.emitWorkspace(w)
+			return CloseResult{Canceled: true}, nil
+		} else if err != nil {
+			return CloseResult{}, err
+		}
+	}
+	h.removeWorkspaceRoot(w)
+	return CloseResult{Closed: true}, nil
+}
+
+func (h *documentHost) removeWorkspaceRoot(w *workspace) {
+	if w == nil {
+		return
+	}
+	h.mu.Lock()
+	windowID := w.windowID
+	if windowID == "" {
+		windowID = w.id
+	}
+	delete(h.byWorkspace, w.id)
+	h.workspaceOrder = removeWorkspaceOrder(h.workspaceOrder, w.id)
+	var next *workspace
+	wasCurrent := h.byWindow[w.win] == w
+	if wasCurrent {
+		delete(h.byWindow, w.win)
+		for _, candidate := range h.allWorkspacesLocked() {
+			if candidate.win == w.win && candidate != w {
+				next = candidate
+				break
+			}
+		}
+	}
+	h.mu.Unlock()
+	h.forgetIndex(w)
+	if !wasCurrent {
+		h.mu.Lock()
+		current := h.byWindow[w.win]
+		h.mu.Unlock()
+		h.emitWorkspace(current)
+		h.persistSession()
+		return
+	}
+	if next == nil {
+		next = h.addWorkspaceToWindow("", "", "Welcome", w.win)
+		h.mu.Lock()
+		next.windowID = windowID
+		h.mu.Unlock()
+	}
+	h.activateWorkspace(next)
+}
+
 func nativeCommandName(role mygo.MenuRole) (string, bool) {
 	switch role {
 	case mygo.RoleSave:
@@ -452,6 +677,15 @@ func (h *documentHost) interceptCommand(role mygo.MenuRole, doc *mygo.Document[s
 	if !ok {
 		return false
 	}
+	h.mu.Lock()
+	current := h.byWindow[win]
+	matchesVisibleDocument := current != nil && current.active == doc.ID()
+	h.mu.Unlock()
+	if !matchesVisibleDocument {
+		// Selecting an empty root must not leave File/Edit commands aimed at
+		// the previously active document in another root.
+		return true
+	}
 	_ = nativeCommand.Emit(win, NativeCommand{ID: doc.ID(), Command: cmd})
 	return true
 }
@@ -474,7 +708,7 @@ func (h *documentHost) SetNativeEditState(ctx context.Context, documentID string
 		active = w.active
 	}
 	h.mu.Unlock()
-	if active != "" && active != documentID {
+	if active != documentID {
 		return nil
 	}
 	applyNativeEditMenu(canUndo, canRedo)
@@ -554,13 +788,53 @@ func (h *documentHost) openWorkspaceWindow(id, root, title string) *mygo.Window 
 		MinWidth:  minWindowWidth,
 		MinHeight: minWindowHeight,
 	})
-	w := &workspace{id: id, root: root, win: win}
+	h.addWorkspaceToWindow(id, root, title, win)
+	win.OnClosed(func() { h.forgetWindow(win) })
+	if h.docs != nil {
+		h.docs.ClearActive(win, title)
+	}
+	return win
+}
+
+// addWorkspaceToWindow registers one root without creating another native
+// window. The first root also supplies the stable window identity.
+func (h *documentHost) addWorkspaceToWindow(id, root, title string, win *mygo.Window) *workspace {
+	if root != "" {
+		root = canonicalPath(root)
+	}
+	if title == "" {
+		if root == "" {
+			title = "Untitled"
+		} else {
+			title = filepath.Base(root)
+		}
+	}
+	if id == "" {
+		id = newWorkspaceID()
+	}
 	h.mu.Lock()
+	windowID := id
+	if current := h.byWindow[win]; current != nil {
+		windowID = current.windowID
+		if windowID == "" {
+			windowID = current.id
+		}
+		// Opening the first folder replaces an empty Welcome root instead of
+		// leaving a meaningless second workspace in the switcher.
+		if root != "" && current.root == "" && len(current.tabs) == 0 {
+			delete(h.byWorkspace, current.id)
+			h.workspaceOrder = removeWorkspaceOrder(h.workspaceOrder, current.id)
+		}
+	}
+	w := &workspace{id: id, windowID: windowID, root: root, win: win}
+	if h.byWorkspace == nil {
+		h.byWorkspace = make(map[string]*workspace)
+	}
+	h.byWorkspace[id] = w
 	h.byWindow[win] = w
-	h.workspaceOrder = appendWorkspaceOrder(h.workspaceOrder, w.id)
+	h.workspaceOrder = appendWorkspaceOrder(h.workspaceOrder, id)
 	attempt, saving := h.quitAttempt, h.quitSaving
 	h.mu.Unlock()
-	win.OnClosed(func() { h.forgetWindow(win) })
 	if attempt != 0 {
 		h.failQuitAttempt(attempt, nil, errors.New("a workspace opened while preparing to quit"), saving, !saving)
 	}
@@ -570,16 +844,17 @@ func (h *documentHost) openWorkspaceWindow(id, root, title string) *mygo.Window 
 			h.startIndex(w)
 		}
 	}
-	return win
+	return w
 }
 
 func (h *documentHost) forgetWindow(win *mygo.Window) {
 	h.mu.Lock()
-	w := h.byWindow[win]
+	roots := h.windowWorkspacesLocked(win)
 	delete(h.byWindow, win)
 	var ids []string
-	if w != nil {
-		ids = append([]string{}, w.tabs...)
+	for _, w := range roots {
+		ids = append(ids, w.tabs...)
+		delete(h.byWorkspace, w.id)
 		h.workspaceOrder = removeWorkspaceOrder(h.workspaceOrder, w.id)
 	}
 	done := false
@@ -590,7 +865,9 @@ func (h *documentHost) forgetWindow(win *mygo.Window) {
 		done, file = h.ackQuitWindowLocked(win, attempt)
 	}
 	h.mu.Unlock()
-	h.forgetIndex(w)
+	for _, w := range roots {
+		h.forgetIndex(w)
+	}
 	for _, id := range ids {
 		if s, err := h.docSession(id); err == nil {
 			h.dropSession(s)

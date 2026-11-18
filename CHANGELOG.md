@@ -7,9 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [Unreleased]
+
+- 将渲染后可编辑的视图统一命名为 Markdown Preview，视图按钮显示为 `Preview`。已有工作区能继续恢复之前的视图模式。
+
 ## [0.4.0] - 2026-11-17
 
-- 富文本中的普通表格可以拖拽调整列宽。支持撤销和重做，重开文档或应用后恢复已调整的列宽。列宽保存在本地，Markdown 原文保持原样。
+- 预览中的普通表格可以拖拽调整列宽。支持撤销和重做，重开文档或应用后恢复已调整的列宽。列宽保存在本地，Markdown 原文保持原样。
 - 宽窗口为表格提供更多空间，正文保留 624 px 的最大阅读宽度。表格的横向滚动滑块可视厚度为 4 px。
 - 修复表格列边界在 macOS 上误触发单元格选区的问题，并为引用块表格保留原有内容。
 - 源码和 Portrait 界面以 MIT 许可证公开。README 和致谢提供独立的中文、英文页面，安装包随附应用与第三方许可声明。
@@ -69,7 +73,7 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 #### Window size, diagrams and workspace text
 
 - Workspace windows now start at 1280×820 instead of 940×720, above the three-column layout breakpoint, without requesting fullscreen or maximization.
-- Rich text renders Mermaid fences locally as byte-preserving special blocks. In-place Markdown editing, cancel, undo and read-only behavior use the existing editor path; invalid diagrams retain visible source and an error.
+- Preview renders Mermaid fences locally as byte-preserving special blocks. In-place Markdown editing, cancel, undo and read-only behavior use the existing editor path; invalid diagrams retain visible source and an error.
 - Document tabs use bundled file/close icons, tactile active states and an explicit `+N` overflow count. The command-style document menu includes a heading, quiet search, file icons, paths and selection checks. The file tree uses real folder/file icons and parent-folder context; Model menus include model icons and a section heading. Deep rows keep bounded indentation and progressive metadata reduction.
 - The sidebar yields on narrow windows, rendering at most `window width − 310px` down to a 140px floor, so the document sheet stays usable at the 480px minimum window; widening the window restores the user's sidebar width. Inside the sheet, container queries drop the docbar's save status and version chip below 380px and the path crumbs below 300px. The sidebar splitter keeps a 14px pointer/touch target inside its 6px visual slot.
 - Recorded the bounded [UI component gaps and typography plan](docs/design/ui-component-gaps.md), including the desktop/browser excerpt mismatch and the future GenUI Diagram contract. Added only Radix Tooltip/DropdownMenu primitives and Sonner copy feedback; no full UI suite or Catalog expansion is included.
@@ -113,7 +117,7 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 - **ComparisonTable is keyboard sortable**: column headers are real buttons with `aria-sort`; sorting cycles ascending → descending → original order and never calls `host.update`.
 
 #### Overlay Scrollbars
-- **Shared native-scroll overlay**: `ScrollArea` uses OverlayScrollbars 2 for the file tree, Rich text, Markdown, central GenUI, Outline, the GenUI management panel and ComparisonTable. Scroll restoration, source navigation, editor selection, table keyboard focus and the pinned GenUI footer keep their existing behavior through the real viewport.
+- **Shared native-scroll overlay**: `ScrollArea` uses OverlayScrollbars 2 for the file tree, Preview, Markdown, central GenUI, Outline, the GenUI management panel and ComparisonTable. Scroll restoration, source navigation, editor selection, table keyboard focus and the pinned GenUI footer keep their existing behavior through the real viewport.
 - **Quiet visual and interaction language**: a 4px rounded thumb inside a 10px hit area uses semantic ink tokens, appears on scrolling or pointer movement, supports direct dragging and fades after 600ms without changing content geometry. Reduced Motion follows the existing global override; third-party code and menu scrollers keep native ownership with thin semantic-color scrollbars.
 - **Document tabs use an overflow menu**: the tab bar lives inside the workspace main region, keeps only measured tabs inside its own bounds, always retains the active tab, and moves the rest to a searchable menu. Tabs never scroll, use an overlay scrollbar instance, or render outside the tab row.
 
@@ -134,7 +138,7 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 #### 窗口尺寸、图表与工作区文字
 
 - 工作区窗口默认尺寸由 940×720 调整为 1280×820，高于三栏布局断点，不请求全屏或最大化。
-- Rich text 本地渲染 Mermaid 围栏，沿用保真特殊块、原地 Markdown 编辑、取消、撤销和只读规则；无效图保留可见原文与错误说明。
+- Preview 本地渲染 Mermaid 围栏，沿用保真特殊块、原地 Markdown 编辑、取消、撤销和只读规则；无效图保留可见原文与错误说明。
 - 文档标签使用内置文件/关闭图标、拟物活动态和明确的 `+N` 溢出计数；文档命令菜单包含标题、安静搜索、文件图标、路径与选中勾号。文件树使用真实文件夹/文件图标和父目录上下文；Model 菜单包含模型图标与分组标题。深层行保留缩进边界和逐级元信息让位。
 - 窄窗口下侧栏主动让位：渲染宽度不超过 `窗口宽 − 310px`（下限 140px），保证最小窗口 480px 时正文仍可用，窗口放宽后恢复用户设定宽度。文档头栏按 sheet 容器查询逐级让位：小于 380px 收起保存状态与版本号，小于 300px 收起路径面包屑。侧栏分隔条在 6px 视觉槽内保留 14px 触控热区。
 - 记录有界的 [UI 组件缺口与文字规划](docs/design/ui-component-gaps.md)，包括桌面与浏览器摘要提取差异、未来 GenUI Diagram 的契约。仅引入 Radix Tooltip / DropdownMenu primitives 与 Sonner 复制反馈，不引入完整 UI 套件或扩充 Catalog。
@@ -178,7 +182,7 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 - **ComparisonTable 可键盘排序**：列头是真正的按钮并带 `aria-sort`；排序按升序 → 降序 → 原顺序循环，从不调用 `host.update`。
 
 #### Overlay Scrollbars 滚动条
-- **统一保留原生滚动的浮层组件**：`ScrollArea` 基于 OverlayScrollbars 2，覆盖文件树、Rich text、Markdown、中央 GenUI、Outline、GenUI 管理面板与 ComparisonTable。滚动恢复、来源跳转、编辑器选择、表格键盘焦点和 GenUI 固定 footer 都通过真实 viewport 保持原行为。
+- **统一保留原生滚动的浮层组件**：`ScrollArea` 基于 OverlayScrollbars 2，覆盖文件树、Preview、Markdown、中央 GenUI、Outline、GenUI 管理面板与 ComparisonTable。滚动恢复、来源跳转、编辑器选择、表格键盘焦点和 GenUI 固定 footer 都通过真实 viewport 保持原行为。
 - **克制的视觉与交互**：4px 圆角滑块、10px 命中区，颜色派生自语义墨色 Token；滚动或指针移动时显示，支持直接拖动，停止 600ms 后淡出，不改变内容几何尺寸。Reduced Motion 沿用全局覆盖；第三方代码与菜单滚动区保留原生所有权，使用细窄语义色滚动条。
 - **文档标签改用溢出菜单**：标签带只位于工作区主区域，保留经测量后能放入自身边界内的标签，始终保留活动标签，其余进入可搜索菜单。标签不再滚动、不接入 Overlay 实例，也不会渲染到标签带之外。
 
@@ -199,7 +203,7 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 #### Portrait Three-Column Layout & Design Language
 - **Three-Column Separation of Concerns (ADR 0004)**:
   - **Left Column**: Workspace document navigation.
-  - **Center Column**: Dedicated solely to clean document content (Rich text, Markdown, or GenUI view). Completely removes cluttered generation forms from the reading surface.
+  - **Center Column**: Dedicated solely to clean document content (Preview, Markdown, or GenUI view). Completely removes cluttered generation forms from the reading surface.
   - **Right Column**: Document-scoped panels housing real-time `Outline` and `GenUI Management Panel` via top segmented switcher.
 - **Narrow-Window Responsive Behavior**: Windows `< 1180px` automatically collapse the right column into an overlay floating drawer (`.r-float`), automatically dismissed when clicking back into center content.
 - **Portrait Tactile Design Tokens**:
@@ -209,7 +213,7 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 
 #### Block-Preserving Markdown Editor
 - **Dual-Engine Editing**:
-  - **Rich Text (WYSIWYG)**: Modern distraction-free editing powered by Milkdown 7.23 and `CrepeBuilder`.
+  - **Markdown Preview**: Modern distraction-free editing powered by Milkdown 7.23 and `CrepeBuilder`.
   - **Source Mode**: Exact plain-text editing powered by CodeMirror 6 with instant `⌘/` toggling.
 - **Block-Preserving Composition Engine**:
   - Saves Markdown by recomposing individual ProseMirror block nodes. Unedited blocks retain their exact raw source bytes.
@@ -219,7 +223,7 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 #### Outline Navigation
 - **Real-Time Heading Tree**: Extracts ATX and setext headings using a shared AST parser.
 - **Bi-Directional Cursor Tracking**: Clicking an outline item navigates the editor and shifts focus; moving the editor cursor dynamically highlights the corresponding outline heading.
-- **Cross-Mode Jumping**: Clicking an outline item in GenUI view mode smoothly switches back to Rich text mode and scrolls to the target section.
+- **Cross-Mode Jumping**: Clicking an outline item in GenUI view mode smoothly switches back to Preview mode and scrolls to the target section.
 
 #### Derived GenUI Reading View (A2UI 1.0)
 - **Componentized AI Reader (ADR 0002)**: Renders structured, interactive reading views compiled from companion `.<name>.md.genui.json` view files following the A2UI 1.0 standard.
@@ -229,7 +233,7 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 - **Source Tracking & Navigation (ADR 0002)**:
   - Each component displays a source reference capsule (`From <heading>`).
   - Detects out-of-date sections (`Source changed`) via normalized `fnv1a32` hashes.
-  - Clicking `Edit in source` jumps directly to the source text in Rich text mode and preserves scroll position upon returning to GenUI.
+  - Clicking `Edit in source` jumps directly to the source text in Preview mode and preserves scroll position upon returning to GenUI.
 
 #### ACP Agent Generation & ModelMenu
 - **Native ACP Agent Runner (ADR 0003)**:
@@ -256,7 +260,7 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 #### Portrait 极简三栏工作区与设计语言
 - **三栏职责分离架构（ADR 0004）**：
   - **左栏（工作区）**：仅承载工作区文档列表与筛选导航。
-  - **中央栏（内容画布）**：严格专用于呈现文档内容（Rich text、Markdown、GenUI 视图），彻底剔除中央阅读区顶部的生成表单与按钮。
+  - **中央栏（内容画布）**：严格专用于呈现文档内容（Preview、Markdown、GenUI 视图），彻底剔除中央阅读区顶部的生成表单与按钮。
   - **右栏（当前文档）**：承载只属于当前文档的辅助面板，顶部通过凹陷分段条切换实时大纲（`Outline`）与 `GenUI` 管理面板。
 - **窄窗自适应响应式机制**：窗口宽度 `< 1180px` 时右栏自动收起，手动触发时以右侧浮层（`.r-float`）形式展开，点击正文自动收回。
 - **Portrait 触觉设计语义 Token**：
@@ -266,7 +270,7 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 
 #### 逐块保真的 Markdown 双模式编辑器
 - **双引擎编辑**：
-  - **所见即所得富文本（WYSIWYG）**：基于 Milkdown 7.23 与定制 `CrepeBuilder`，提供现代无干扰写作体验。
+  - **Markdown 预览**：基于 Milkdown 7.23 与定制 `CrepeBuilder`，提供现代无干扰写作体验。
   - **源码模式**：基于 CodeMirror 6，支持精确字符偏移与 `⌘/` 瞬间无损切换。
 - **逐块保真组装引擎（Block-Preserving Composition）**：
   - 将 Markdown 拆解为 ProseMirror 块节点，保存时仅重新序列化被编辑过的块，未改动的块保留原文件逐字节字符（包括行尾空格、空行与换行风格）。
@@ -276,7 +280,7 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 #### 大纲导航与双向光标联动
 - **实时标题树**：基于共享 AST 标题解析算法准确提取 ATX 与 setext 标题。
 - **双向光标同步**：点击大纲项精准移动光标并定位视图，正文移动光标时大纲项实时同步高亮。
-- **跨模式一键回切**：在 GenUI 视图中点击大纲项，自动切回富文本模式并定位到对应章节。
+- **跨模式一键回切**：在 GenUI 视图中点击大纲项，自动切回预览模式并定位到对应章节。
 
 #### 派生 GenUI 阅读视图（A2UI 1.0）
 - **组件化 AI 阅读界面（ADR 0002）**：渲染由隐藏伴随文件 `.<name>.md.genui.json` 存储的 A2UI 1.0 协议标准交互视图。
@@ -285,7 +289,7 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
   - 5 种高级卡片组件：`KeyPoints` 要点卡片、`MetricGrid` 指标网格、`ComparisonTable` 对比表格、`Timeline` 时间线、`Checklist` 只读核对清单。
 - **来源追踪与跳转定位**：
   - 每个组件底座配备来源胶囊（`From <标题>`），通过 `fnv1a32` 正文哈希实时追踪“原文已改（`Source changed`）”。
-  - 点击“去原文修改（`Edit in source`）”一键切到富文本并选中来源段落，改完返回自动恢复原滚动位置。
+  - 点击“去原文修改（`Edit in source`）”一键切到预览并选中来源段落，改完返回自动恢复原滚动位置。
 
 #### 外部 Agent (ACP) 生成与模型菜单
 - **原生 ACP 执行器（ADR 0003）**：

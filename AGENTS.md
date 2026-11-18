@@ -4,5 +4,5 @@
 
 - 术语与决策：[GLOSSARY.md](GLOSSARY.md) · [相关 ADR](docs/adr/)。
 - Issues：用 `gh` 操作 `Bayern99/mark-go-go`。分诊见 [triage-labels.md](docs/agents/triage-labels.md)。
-- 界面改动：[界面规则](docs/agents/ui-tasks.md)。精确排版测量见 [基准](docs/editor-typeset/README.md)。
+- 界面改动：涉及布局、排版、组件或交互时读 [DESIGN.md](DESIGN.md)。
 - 原生窗口、菜单或恢复验证：[原生 Automation](docs/agents/native-automation.md)。

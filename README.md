@@ -25,4 +25,4 @@ go test -race .
 
 菜单、保存对话框和重启使用 [原生 Automation 与 macOS 验证流程](docs/agents/native-automation.md)。
 
-[架构与代码入口](ARCHITECTURE.md) · [更新日志](CHANGELOG.md) · [验收记录](docs/acceptance.md) · [MIT 许可证](LICENSE)
+[架构与代码入口](ARCHITECTURE.md) · [界面设计](DESIGN.md) · [更新日志](CHANGELOG.md) · [验收记录](docs/acceptance.md) · [MIT 许可证](LICENSE)

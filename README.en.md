@@ -25,4 +25,4 @@ go test -race .
 
 Use the [native Automation and macOS checks](docs/agents/native-automation.md) for menus, save dialogs, and restart behavior.
 
-[Architecture and code entry points](ARCHITECTURE.md) · [Changelog](CHANGELOG.md) · [Acceptance evidence](docs/acceptance.md) · [MIT license](LICENSE)
+[Architecture and code entry points](ARCHITECTURE.md) · [Interface design](DESIGN.md) · [Changelog](CHANGELOG.md) · [Acceptance evidence](docs/acceptance.md) · [MIT license](LICENSE)

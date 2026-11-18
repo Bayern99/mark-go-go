@@ -1,15 +1,11 @@
 name: CI
 
 on:
-  # Docs-only PRs do not run. Keep these jobs out of required checks unless a
-  # docs-only job with the same name always runs; a skipped required check
-  # otherwise leaves the PR pending forever.
   pull_request:
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
       - '.gitignore'
-  # Every main commit is a release gate, including docs commits.
   push:
     branches: [main]
   workflow_dispatch:
@@ -19,7 +15,6 @@ permissions:
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  # Superseded PR pushes are cancelled. Main runs must all finish.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -36,8 +31,6 @@ jobs:
         run: test -z "$(gofmt -l *.go)"
       - run: go vet .
       - run: go test -race .
-      # The native host vendors platform source too; catch Windows-only gaps
-      # even though behavioral tests and the native Automation smoke run on macOS.
       - name: Cross-compile Windows host
         run: GOOS=windows GOARCH=amd64 go build ./...
 
@@ -52,7 +45,6 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm --prefix web ci
-      # typecheck + production bundle, without a second tsc pass
       - run: npm --prefix web run build
 
   web-test:

@@ -10,7 +10,6 @@ export interface NativeEditCapabilities {
 export interface NativeEditTarget {
   capabilities(): NativeEditCapabilities
   perform(command: NativeEditCommand): boolean
-  /** False when this document's editor is hidden (GenUI / another center view). */
   editorVisible(): boolean
 }
 
@@ -40,7 +39,6 @@ function composerField(
   return null
 }
 
-/** Native text fields keep WebKit / AppKit undo; the page must not steal that. */
 export function nativeComposerHasFocus(root?: ParentNode | null): boolean {
   const active = document.activeElement
   if (!isNativeField(active)) return false
@@ -48,10 +46,6 @@ export function nativeComposerHasFocus(root?: ParentNode | null): boolean {
   return composerField(active) !== null
 }
 
-/**
- * Track a native composer field so its own undo/redo stay local even when
- * the native Edit menu is routed at a document.
- */
 export function registerNativeField(field: HTMLTextAreaElement | HTMLInputElement): Disposable {
   nativeFields.add(field)
   return {
@@ -99,11 +93,6 @@ function execNative(command: NativeEditCommand): boolean {
   }
 }
 
-/**
- * Apply a native Undo/Redo to the captured document. A focused composer in
- * that document uses the field's own history. Read-only GenUI / ComparisonTable
- * focus does not rewrite the document.
- */
 export function applyNativeEdit(id: string, command: NativeEditCommand): boolean {
   const root = targetRoots.get(id)
   if (nativeComposerHasFocus(root)) return execNative(command)

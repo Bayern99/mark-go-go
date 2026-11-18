@@ -4,7 +4,6 @@ import remarkMath from 'remark-math'
 import remarkParse from 'remark-parse'
 import { unified } from 'unified'
 
-/** The subset of mdast node fields the editor and heading modules rely on. */
 export interface MdastNode {
   type: string
   depth?: number
@@ -24,20 +23,12 @@ export interface MdastRoot {
   children: MdastNode[]
 }
 
-/**
- * One parser for every consumer: block segmentation and heading extraction must
- * agree on what counts as code, HTML, frontmatter or math.
- */
 const processor = unified().use(remarkParse).use(remarkGfm).use(remarkFrontmatter).use(remarkMath)
 
 export function parseMdast(markdown: string): MdastRoot {
   return processor.parse(markdown) as unknown as MdastRoot
 }
 
-/**
- * Plain text of a node: inline formatting is dropped, raw inline HTML is
- * ignored, images contribute their alt text and hard breaks become spaces.
- */
 export function plainText(node: MdastNode): string {
   if (node.type === 'html') return ''
   if (node.type === 'image') return node.alt ?? ''

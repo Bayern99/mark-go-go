@@ -154,7 +154,6 @@ function modelTrigger(pane: HTMLElement): HTMLButtonElement {
   return trigger
 }
 
-/** Picks a model in this document's footer through its menu, as a reader does. */
 async function chooseModel(pane: HTMLElement, model: string): Promise<void> {
   modelTrigger(pane).dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }))
   const option = await vi.waitFor(() => {
@@ -167,7 +166,6 @@ async function chooseModel(pane: HTMLElement, model: string): Promise<void> {
   flushSync(() => option.click())
 }
 
-/** Types a command in the Locate agent composer and saves it with Enter. */
 function saveAgentCommand(alert: HTMLElement, command: string): void {
   const input = alert.querySelector<HTMLInputElement>('input[aria-label="Agent command"]')
   if (!input) throw new Error('Agent command input missing')
@@ -260,7 +258,6 @@ describe('multi-document generation isolation', () => {
       const agentA = scripted()
       const a = createBrowserHost(DOC_A, 'a.md', { generator: agentA.generator })
       const b = createBrowserHost(DOC_B, 'b.md', { generator: () => new Promise<string>(() => {}) })
-      // One window, one settings store: both tabs read the same values.
       createBrowserWorkspace([a, b])
       const req: GenerateRequest = { text: DOC_A, mode: 'full', request: 'keep-me', format: '{}', sections: [] }
       const run = a.generate(req, () => {}, new AbortController().signal)
@@ -372,7 +369,6 @@ describe('one settings store across documents', () => {
       const triggerBefore = modelTrigger(paneA)
       expect(triggerBefore.textContent).toContain('gemini-3.8-flash')
 
-      // B picks a model while A sits idle in the background.
       await chooseModel(paneOf(app.container, b), 'claude-opus-5-5')
 
       await vi.waitFor(() => {
@@ -380,7 +376,6 @@ describe('one settings store across documents', () => {
           throw new Error('the idle panel still shows the old model')
         }
       })
-      // The same panel and footer control, never remounted.
       expect(paneOf(app.container, a)).toBe(paneA)
       expect(modelTrigger(paneA)).toBe(triggerBefore)
       expect(await a.getSettings()).toMatchObject({ model: 'claude-opus-5-5', agentCommand: 'agy' })
@@ -401,7 +396,6 @@ describe('one settings store across documents', () => {
       const paneA = paneOf(app.container, a)
       const paneB = paneOf(app.container, b)
 
-      // B fails on a missing agent and saves the command that does exist.
       flushSync(() => generateButton(paneB).click())
       agentB.fail({
         kind: 'agent-not-found',
@@ -427,7 +421,6 @@ describe('one settings store across documents', () => {
         }
       })
 
-      // A's stale panel must not write B's command back to the default.
       await chooseModel(paneA, 'claude-opus-5-5')
       await vi.waitFor(async () => {
         if ((await a.getSettings()).model !== 'claude-opus-5-5') {
@@ -465,7 +458,6 @@ describe('one settings store across documents', () => {
 const ISOLATED_A = `# Overview\n\nA first body.\n\n# Metrics\n\nA second body.\n`
 const ISOLATED_B = `# Overview\n\nB first body.\n\n# Metrics\n\nB second body.\n`
 
-/** A view of `markdown` whose component ids match the other document's view. */
 function isolatedView(markdown: string): string {
   const sections = extractSections(markdown)
   const sources: Record<string, { heading: string; occurrence: number; hash: string }> = {}
@@ -553,7 +545,6 @@ describe('GenUI scroll/highlight isolation', () => {
       expect(scrollA).not.toHaveBeenCalled()
       expect(cardA.getAttribute('data-highlighted')).toBeNull()
 
-      // Jumping to a card is navigation only: both documents keep their bytes.
       expect((await a.load()).text).toBe(ISOLATED_A)
       expect((await b.load()).text).toBe(editedB)
     } finally {

@@ -1,18 +1,10 @@
 import { isRecord } from '../../lib/guards'
 
-/**
- * The view file's own envelope around its A2UI messages (see
- * `view-format.md`, the one description of the format). Parsing never
- * throws: a file that cannot be used becomes one message for the reader.
- */
 export const VIEW_VERSION = 2
 
 export interface SourceRef {
-  /** The heading's plain text as it reads in the document. */
   heading: string
-  /** Which heading with that text, from 1 in document order. */
   occurrence: number
-  /** `fnv1a32:` hash of the section when the view was made; absent in hand-written files. */
   hash?: string
 }
 
@@ -21,7 +13,6 @@ export interface ViewFile {
   model?: string
   request?: string
   sources: Record<string, SourceRef>
-  /** A2UI 1.0 messages, checked only when they are applied. */
   messages: unknown[]
 }
 

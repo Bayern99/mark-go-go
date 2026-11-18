@@ -20,8 +20,6 @@ import (
 	"time"
 )
 
-// ReadBench records only explicitly selected runs in a private directory.
-// The production Generate/ACP/commit path remains the one under observation.
 func configureReadBench(h *documentHost) {
 	root := os.Getenv("MARKGOGO_READBENCH_DIR")
 	if root == "" {
@@ -167,8 +165,6 @@ func configureReadBench(h *documentHost) {
 
 var readBenchRunID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,150}$`)
 
-// Preserve protocol structure and redact credential fields, never the whole
-// environment. Benchmark inputs are restricted to the public corpus.
 func readBenchRedact(value any) bool {
 	changed := false
 	switch v := value.(type) {

@@ -1,7 +1,3 @@
-/*
- * GenUI colours map onto the shared Portrait tokens so the view, paper and
- * chrome stay one light system. A2UI layout components read the same names.
- */
 .genui-view {
   --genui-text: var(--ink);
   --genui-muted: var(--ink-3);
@@ -76,7 +72,6 @@
   color: var(--accent);
 }
 
-/* ─── Right-column GenUI Management Panel (.genui-panel / .gp) ─── */
 .genui-panel {
   flex: 1;
   min-height: 0;
@@ -304,7 +299,6 @@
   outline: none;
 }
 
-/* ─── Pinned Footer ─── */
 .rp-foot {
   flex: none;
   margin-top: auto;
@@ -635,7 +629,6 @@
   padding-left: 28px;
 }
 
-/* Rows hold their items side by side only while each still has room. */
 .genui-surface a2ui-basic-row {
   flex-wrap: wrap;
 }
@@ -671,7 +664,6 @@
   background: var(--genui-surface-soft);
 }
 
-/* A card already frames its content. */
 .genui-surface a2ui-card .genui-block {
   border: 0;
   box-shadow: none;

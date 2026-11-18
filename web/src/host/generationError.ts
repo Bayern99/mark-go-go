@@ -1,6 +1,5 @@
 import type { GenerateFailure, GenerateFailureKind } from './types'
 
-/** A failed generation, as `ViewGenerator.generate` rejects with it. */
 export class GenerationError extends Error {
   readonly failure: GenerateFailure
 
@@ -11,15 +10,10 @@ export class GenerationError extends Error {
   }
 }
 
-/** The failure of a run the reader cancelled. */
 export function cancelled(): GenerationError {
   return new GenerationError({ kind: 'cancelled', message: 'Generation was cancelled.' })
 }
 
-/**
- * The failure an error stands for: a `GenerationError`'s own, or any other
- * error's message as an `agent-error`.
- */
 export function failureOf(error: unknown): GenerateFailure {
   if (error instanceof GenerationError) return error.failure
   const message = error instanceof Error ? error.message : String(error)
@@ -43,7 +37,6 @@ const KINDS: Record<GenerateFailureKind, true> = {
   cancelled: true,
 }
 
-/** The host's failure kinds are plain strings on the wire. */
 export function isFailureKind(kind: string): kind is GenerateFailureKind {
   return Object.hasOwn(KINDS, kind)
 }

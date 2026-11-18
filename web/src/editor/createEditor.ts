@@ -58,11 +58,6 @@ import {
 const NOTE_ICON =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5h14v10H10l-5 4z"/></svg>'
 
-/**
- * Plugins that rewrite the document on load or after transactions. They break
- * node identity, which is what lets compose() emit untouched blocks byte for
- * byte (heading ids, renumbered lists, an auto-appended trailing paragraph).
- */
 const IDENTITY_BREAKING_PLUGIN_KEYS: Record<string, true> = {
   MILKDOWN_HEADING_ID: true,
   MILKDOWN_KEEP_LIST_ORDER: true,
@@ -72,63 +67,25 @@ const IDENTITY_BREAKING_PLUGIN_KEYS: Record<string, true> = {
 export type EditorMode = 'preview' | 'source'
 
 export interface MarkdownEditor {
-  /** Current editor surface: Preview or raw Markdown source. */
   getMode(): EditorMode
-  /** Switch mode; a no-op when the mode is already active. */
   setMode(mode: EditorMode): void
-  /** Switch between Preview and source. */
   toggleMode(): void
-  /** Fires after the active mode changes. */
   onModeChange(fn: (mode: EditorMode) => void): Disposable
-  /** Composed Markdown in Preview mode, the exact CodeMirror text in source. */
   getMarkdown(): string
-  /** Replace the editor content (external reload). Undo history is reset. */
   setMarkdown(text: string): void
-  /** Fires after every user edit with freshly composed Markdown. */
   onChange(fn: (markdown: string) => void): Disposable
-  /**
-   * Place the cursor at the start of the top-level block containing a Markdown
-   * source offset and scroll that block to the top of the editor's scroll area.
-   * Returns false when the offset falls outside the current composed text.
-   */
   reveal(offset: number): boolean
-  /** Toggle the fold anchored at `pos` (heading or code block node start). */
   toggleFold(pos: number): void
-  /** Current fold anchor positions in document coordinates. */
   foldAnchors(): number[]
-  /**
-   * Select a Markdown source range and scroll its start to the top of the
-   * editor's scroll area. Preview selects whole top-level blocks: from the
-   * block holding `from` through the last block starting before `to`; source
-   * selects the exact offsets. Returns false when the range falls outside the
-   * current composed text.
-   */
   select(from: number, to: number): boolean
-  /**
-   * Add a note as a normal, undoable edit, in Preview or source: right after
-   * the last top-level block that starts before the source offset. Returns
-   * false when the document is read only or no block starts before the offset.
-   */
   addNote(offset: number, text: string): boolean
-  /**
-   * Fires with the source start offset of the cursor's top-level block whenever
-   * the selection changes block or an edit moves that offset. Also reports the
-   * current offset synchronously when the listener is registered, so views can
-   * highlight the current section immediately.
-   */
   onSelectionChange(fn: (offset: number) => void): Disposable
   setReadonly(readonly: boolean): void
-  /** Whether the active editor surface has an undoable edit. */
   canUndo(): boolean
-  /** Whether the active editor surface has a redoable edit. */
   canRedo(): boolean
-  /** Undo one edit on the active surface. Returns false when there is none. */
   undo(): boolean
-  /** Redo one edit on the active surface. Returns false when there is none. */
   redo(): boolean
-  /** Fires after the active surface's undo/redo availability changes. */
   onHistoryChange(fn: () => void): Disposable
-  /** Low-level access for tests and host integrations. */
   getView(): EditorView
   destroy(): Promise<void>
 }
@@ -136,7 +93,6 @@ export interface MarkdownEditor {
 export interface CreateEditorOptions {
   initialText?: string
   onChange?: (markdown: string) => void
-  /** Stable document identity; enables fold and table-width persistence in localStorage. */
   docKey?: string
 }
 
@@ -151,7 +107,6 @@ export async function createMarkdownEditor(
   sourceRoot.hidden = true
   root.append(previewRoot, sourceRoot)
 
-  /** Set once the view exists; the block menu can only open after that. */
   let addNoteFromMenu: () => Promise<void> = () => Promise.resolve()
 
   const builder = new CrepeBuilder({ root: previewRoot, defaultValue: '' })
@@ -195,9 +150,7 @@ export async function createMarkdownEditor(
   let lastReportedOffset: number | undefined
   let mode: EditorMode = 'preview'
   let sourceEditor: SourceEditor | undefined
-  /** Text the Preview editor represented when source mode was entered. */
   let sourceBaseText: string | undefined
-  /** The one composer this editor may have open; other editors have their own. */
   const composerScope = new ComposerScope()
 
   const composeContext = (current: typeof built): ComposeContext => ({
@@ -210,11 +163,6 @@ export async function createMarkdownEditor(
     trailing: current.trailing,
   })
 
-  /**
-   * Composing re-serializes every edited block, so keep the last result while
-   * the ProseMirror document (and load baseline) is unchanged. Selection-only
-   * transactions reuse it, which keeps cursor movement O(1).
-   */
   let composedCache:
     | { built: BuiltDocument; doc: PMNode; composed: ComposedDocument }
     | undefined
@@ -230,15 +178,11 @@ export async function createMarkdownEditor(
 
   const compose = (doc: PMNode): string => composed(doc).text
 
-  /** Source start offset of the top-level block holding the current selection. */
   const selectionOffset = (state: EditorState): number | undefined => {
     const { blocks } = composed(state.doc)
     if (blocks.length === 0 || state.doc.childCount === 0) return undefined
 
     const { $from } = state.selection
-    // Text selections live inside a top-level block; document-level selections
-    // (node selection, gap cursor, select-all) index the doc itself. Never
-    // compare a ProseMirror position with a Markdown offset.
     const top =
       $from.depth >= 1
         ? $from.node(1)
@@ -287,8 +231,6 @@ export async function createMarkdownEditor(
     if (!sourceEditor) return false
     lastReportedOffset = undefined
     if (!sourceEditor.reveal(from, to)) return false
-    // The dispatch reports through the update listener unless the selection
-    // was already exactly there; a switch must still emit the current offset.
     if (alwaysReport && lastReportedOffset !== from) emitSelection(from)
     return true
   }
@@ -306,10 +248,6 @@ export async function createMarkdownEditor(
   const noteNode = (text: string): PMNode =>
     schema.nodes[LOCKED_NODE].create({ source: noteBlock(text), kind: 'note' })
 
-  /**
-   * A note in place of the empty paragraph the block menu was opened in, which
-   * is right after the block it was opened for; else after the cursor's block.
-   */
   const insertNoteAtCursor = (text: string) => {
     const { state } = view
     const { $from } = state.selection
@@ -323,7 +261,6 @@ export async function createMarkdownEditor(
     )
   }
 
-  /** Leave no empty paragraph behind when adding a note from the block menu is cancelled. */
   const dropEmptyParagraphAtCursor = () => {
     const { state } = view
     const { $from } = state.selection
@@ -385,10 +322,6 @@ export async function createMarkdownEditor(
     view.focus()
   }
 
-  /**
-   * A changed note keeps its place in the file: it stays the block loaded
-   * there, so only its text changes and the bytes around it stay.
-   */
   const setNoteText = (pos: number, text: string) => {
     const { state } = view
     const node = state.doc.nodeAt(pos)
@@ -608,15 +541,6 @@ export async function createMarkdownEditor(
     }),
   })
 
-  // Milkdown #2495: Crepe's table node view answers the first click into a
-  // cell with a deferred rAF/setTimeout dispatch that selects the whole cell
-  // paragraph. The transaction is built from state captured at click time,
-  // so it can overwrite a newer selection — and typing or IME after one
-  // click replaces the cell's text. Nothing else creates that selection
-  // shape (prosemirror-tables uses CellSelection; allowTableNodeSelection
-  // selects the table node), so drop it unconditionally. The same view
-  // flags pointer drags and Escape so the toolbar CSS can stay hidden until
-  // the selection settles.
   const tableCaretPlugin = new Plugin({
     filterTransaction(tr) {
       if (
@@ -692,7 +616,6 @@ export async function createMarkdownEditor(
           try {
             localStorage.setItem(foldKey, JSON.stringify(keys))
           } catch {
-            // storage unavailable → session-only folds
           }
         }
       : undefined,
@@ -710,7 +633,6 @@ export async function createMarkdownEditor(
     createCellDragPlugin(),
     ...foldFeature.plugins,
   )
-  // Boundary keys must win over the base keymap's joinBackward/joinForward.
   plugins.unshift(...foldFeature.earlyPlugins)
 
   const load = (text: string) => {
@@ -756,33 +678,16 @@ export async function createMarkdownEditor(
   load(options.initialText ?? '')
   if (options.onChange) listeners.add(options.onChange)
 
-  /**
-   * Select `selection`, which starts at the top-level `block` at `pos`, and
-   * scroll that block to the top. Navigating is an explicit request: the
-   * block is reported even when the selection was already inside it.
-   */
   const land = (selection: Selection, block: ComposedBlock | undefined, pos: number) => {
-    // Clearing the dedupe first lets the selection plugin do the reporting
-    // when the selection actually moves.
     lastReportedOffset = undefined
-    // A caller may still be focused in source mode or on a toolbar button;
-    // focus first so the selection lands in the ProseMirror DOM.
     view.focus()
     view.dispatch(view.state.tr.setSelection(selection))
-    // Same top alignment as the source view; scroll-margin-top in styles.css
-    // keeps the gap above the block. Blocks without their own DOM node fall
-    // back to ProseMirror's nearest-edge scroll.
     const target = view.nodeDOM(pos)
     if (target instanceof HTMLElement) target.scrollIntoView({ block: 'start' })
     else view.dispatch(view.state.tr.scrollIntoView())
     if (block && lastReportedOffset !== block.start) emitSelection(block.start)
   }
 
-  /**
-   * Resolve an offset against the *current* composed text, then select the
-   * start of the corresponding top-level block. Atom blocks (frontmatter,
-   * alerts, ...) get a node selection; everything else a text cursor.
-   */
   const reveal = (offset: number): boolean => {
     if (mode === 'source') return revealSource(offset, offset, true)
     if (!Number.isFinite(offset)) return false
@@ -790,12 +695,9 @@ export async function createMarkdownEditor(
     if (offset < 0 || offset > text.length) return false
 
     const block = blockAtOffset(blocks, offset)
-    // Empty or whitespace-only documents compose to no blocks; the invisible
-    // empty paragraph is still a valid place for the cursor.
     const pos = block ? topLevelPosition(view.state.doc, block.node) : 1
     if (pos === undefined) return false
 
-    // Navigation must never land inside a collapsed section.
     foldFeature.expandAt(pos)
 
     const selection =
@@ -856,11 +758,7 @@ export async function createMarkdownEditor(
       mode = 'preview'
       sourceRoot.hidden = true
       previewRoot.hidden = false
-      // Untouched source keeps the existing ProseMirror state (and its undo
-      // history); edits rebuild through the normal load pipeline.
       if (sourceBaseText === undefined || text !== sourceBaseText) {
-        // load() briefly parks the selection at the document start; only the
-        // reveal below is a real cursor move for listeners.
         suppressSelectionReporting = true
         try {
           load(text)
@@ -901,13 +799,8 @@ export async function createMarkdownEditor(
       mode === 'source' ? (sourceEditor?.getText() ?? '') : compose(view.state.doc),
     setMarkdown(text) {
       if (mode === 'source') {
-        // Any reload invalidates the hidden Preview copy and its undo
-        // history; leaving source must rebuild from this exact text.
         sourceBaseText = undefined
         const source = ensureSourceEditor(text)
-        // setState resets the CodeMirror caret without an update event, so
-        // listeners would otherwise keep a stale offset and drop the next move
-        // back to it.
         lastReportedOffset = undefined
         emitSelection(source.getSelection())
         emitHistory()
@@ -930,9 +823,6 @@ export async function createMarkdownEditor(
     addNote,
     onSelectionChange(fn) {
       selectionListeners.add(fn)
-      // Emit the current offset to the new listener only. Mutating the shared
-      // dedupe would make listeners registered at different moments suppress
-      // each other's next real selection event.
       const offset =
         mode === 'source'
           ? sourceEditor?.getSelection()
@@ -998,13 +888,10 @@ function cssSafe(label: string): string {
 function isIdentityBreaking(plugin: Plugin): boolean {
   const key = pluginKey(plugin)
   if (key === undefined) return false
-  // ProseMirror appends a suffix when the same key name is registered twice.
   return IDENTITY_BREAKING_PLUGIN_KEYS[key.replace(/\$\d*$/, '')] === true
 }
 
 function pluginKey(plugin: Plugin): string | undefined {
-  // ProseMirror stores the plugin key name as a plain string on `Plugin.key`,
-  // but its typings do not declare that field.
   if (!('key' in plugin)) return undefined
   const key: unknown = plugin.key
   return typeof key === 'string' ? key : undefined

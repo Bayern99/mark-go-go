@@ -1,6 +1,3 @@
-/* Round-2 impl candidate A — size ladder for H4–H6.
-   Steps the run-in levels down one notch each (15/14/13) and mutes color
-   with depth. Weight stays 600; spacing unchanged. */
 .crepe-root .milkdown .ProseMirror h4 {
   font-size: 15px;
   color: var(--ink);

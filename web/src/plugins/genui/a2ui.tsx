@@ -1,10 +1,3 @@
-/**
- * The only module that knows A2UI. It owns the component catalog, turns a
- * view file's messages into one rendered surface, and reports what went
- * wrong. Everything else in GenUI talks to it through `loadSurface`,
- * `ViewSurface` and `catalogDefinition`, so the renderer can be replaced
- * without touching them.
- */
 import { useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
 import {
@@ -22,15 +15,8 @@ import { SafeMarkdown } from './SafeMarkdown'
 import { SourceContext, type SourceActions } from './SourceFrame'
 import { ReadingContext, type ReadingStore } from './reading'
 
-/** The catalog id a view file's surface must name. */
 export const CATALOG_ID = 'markgogo.dev:genui/v1'
 
-/**
- * Stands in for a component the catalog does not have, so that one
- * unknown component shows an error where it was and the rest still renders.
- * The view file never names it: `loadSurface` puts it there, and every
- * nesting rule admits it so that it is never refused for where it stands.
- */
 const UNKNOWN = 'MgoUnknown'
 const Unknown = createComponentImplementation(
   {
@@ -47,12 +33,6 @@ const Unknown = createComponentImplementation(
 
 const CONTENT = CONTENT_COMPONENTS.map((component) => component.name)
 
-/**
- * The A2UI basic layout components, with the nesting rules that keep a view
- * readable in one editor-wide pane: tabs only at the top, rows side by side
- * but never inside a row or a card, a card around one piece of content.
- * Content components hold no other component.
- */
 function layout(unknown: string[]): ReactCatalogComponent[] {
   const basic = (name: string) => required(basicCatalog.components.get(name), name)
   return [
@@ -71,17 +51,11 @@ const catalog = new Catalog<ReactCatalogComponent>(
   Array.from(basicCatalog.functions.values()),
 )
 
-/** Names a view file may use, in the order the format document lists them. */
 export const CATALOG_COMPONENTS: readonly string[] = [...catalog.components.keys()].filter(
   (name) => name !== UNKNOWN,
 )
 const KNOWN = new Set(CATALOG_COMPONENTS)
 
-/**
- * The catalog as an A2UI 1.0 catalog document, for an agent writing a view:
- * every component a view may use with its JSON Schema and nesting rules.
- * Functions are left out because views are static.
- */
 export function catalogDefinition(): Record<string, unknown> {
   return new Catalog<ReactCatalogComponent>(CATALOG_ID, '1.0', [...layout([]), ...CONTENT_COMPONENTS], []).toJson()
 }
@@ -91,7 +65,6 @@ function required<T>(value: T | undefined, name: string): T {
   return value
 }
 
-/** The only messages a generated view may hold. */
 const GENERATED_MESSAGES = ['createSurface', 'updateComponents']
 
 export type GeneratedViewVerdict = { ok: true } | { ok: false; error: string }
@@ -100,16 +73,6 @@ function rejected(error: string): GeneratedViewVerdict {
   return { ok: false, error }
 }
 
-/**
- * Checks a complete view file before the host writes it or keeps it to go
- * back to. Unlike `loadSurface`, which keeps reading a hand-written view
- * with an unknown component shown in place, a generated view is strict:
- * the catalog, props, message kinds and version, single surface, root,
- * references, nesting, cycles and every component source id are checked.
- * A whole new view rejects orphans; merged updates may retain retired
- * children in history. The processor is disposed after every check and
- * no mounted component or document is needed.
- */
 export function validateGeneratedView(raw: string): GeneratedViewVerdict {
   let file: unknown
   try {
@@ -127,11 +90,6 @@ export function validateGeneratedView(raw: string): GeneratedViewVerdict {
   const unknown = unknownComponent(messages)
   if (unknown) return rejected(unknown)
 
-  // An update is merged into the current view's messages, and A2UI has no
-  // way to delete a component: replacing a container with a leaf retires its
-  // old children, which stay in the history. That is the same reachable
-  // reading `loadSurface` has always had for a view file. A whole new view
-  // has no history, so an unreachable component there is still refused.
   const merged = messages.some((message) => isRecord(message) && isRecord(message.updateComponents))
   const processor = new MessageProcessor<ReactCatalogComponent>([catalog], undefined, {
     validationConfig: {
@@ -142,8 +100,6 @@ export function validateGeneratedView(raw: string): GeneratedViewVerdict {
     },
   })
   try {
-    // The processor validates the props, message kinds, version and the
-    // whole component graph: root, references, nesting, cycles, orphans.
     processor.processMessages(messages as Parameters<typeof processor.processMessages>[0])
     const surfaces = [...processor.model.surfacesMap.values()]
     if (surfaces.length !== 1) {
@@ -159,7 +115,6 @@ export function validateGeneratedView(raw: string): GeneratedViewVerdict {
   }
 }
 
-/** The first generated component the catalog cannot show, if any. */
 function unknownComponent(messages: unknown[]): string | undefined {
   for (const component of componentsOf(messages)) {
     if (typeof component.component !== 'string') continue
@@ -170,7 +125,6 @@ function unknownComponent(messages: unknown[]): string | undefined {
   return undefined
 }
 
-/** The first source id a component uses that the view does not define. */
 function missingSource(messages: unknown[], sources: Record<string, unknown>): string | undefined {
   for (const component of componentsOf(messages)) {
     if (!Array.isArray(component.sources)) continue
@@ -184,7 +138,6 @@ function missingSource(messages: unknown[], sources: Record<string, unknown>): s
   return undefined
 }
 
-/** Every component object of every createSurface and updateComponents message. */
 function* componentsOf(messages: unknown[]): Generator<Record<string, unknown>> {
   for (const message of messages) {
     if (!isRecord(message)) continue
@@ -202,24 +155,15 @@ export type LoadedSurface =
   | { ok: true; surface: SurfaceModel<ReactCatalogComponent>; dispose(): void }
   | { ok: false; error: string }
 
-/**
- * Applies a view file's A2UI messages, in order, to a fresh surface. The
- * whole view is refused when a message, a component's props, a reference
- * between components or a nesting rule is invalid; an unknown component only
- * marks its own place.
- */
 export function loadSurface(messages: unknown[]): LoadedSurface {
   const processor = new MessageProcessor<ReactCatalogComponent>([catalog], undefined, {
     validationConfig: {
       ...STRICT_VALIDATION,
-      // The children of an unknown component are unreachable once it is
-      // replaced; they are not shown, which is not worth refusing the view.
       allowOrphanComponents: true,
       allowedMessages: ['createSurface', 'updateComponents'],
     },
   })
   try {
-    // The processor validates every message against A2UI 1.0 and the catalog.
     const input = messages.map(replaceUnknown) as Parameters<typeof processor.processMessages>[0]
     processor.processMessages(input)
   } catch (error) {
@@ -251,10 +195,6 @@ function replaceComponent(component: unknown): unknown {
   return { id: component.id, component: UNKNOWN, type: component.component }
 }
 
-/**
- * Nesting violations keep their A2UI code, so the reason names the rule
- * broken; the placeholder for unknown components is ours, not the reader's.
- */
 function describe(error: unknown): string {
   const message = (error instanceof Error ? error.message : String(error))
     .replace(/^\w*Error: /, '')
@@ -263,10 +203,6 @@ function describe(error: unknown): string {
   return code === 'UNALLOWED_PARENT' || code === 'UNALLOWED_CHILD' ? `${code}: ${message}` : message
 }
 
-/**
- * Renders a loaded surface with the app's Markdown rendering for Text and
- * the source actions its content components draw on.
- */
 export function ViewSurface({
   surface,
   sources,
@@ -283,10 +219,6 @@ export function ViewSurface({
     if (!el) return
     const tabsOf = () => [...el.querySelectorAll<HTMLElement & { activeIndex: number }>('a2ui-tabs')]
     let interacted = false
-    // A2UI mounts its tab elements after the first commit, so wait for them.
-    // Restore once, after that first render: applying the saved index on every
-    // later mutation reverts the click still being dispatched, and applying it
-    // during the first commit can render only part of the opened tab.
     const restore = () => {
       const tabs = tabsOf()
       if (tabs.length === 0) return
@@ -332,10 +264,6 @@ export function ViewSurface({
   )
 }
 
-/**
- * Problems the renderer finds while it resolves the tree. An unknown
- * component is already shown in place, so it is not listed again.
- */
 function useSurfaceProblems(surface: SurfaceModel<ReactCatalogComponent>): string[] {
   const [problems, setProblems] = useState<string[]>([])
   useEffect(() => {

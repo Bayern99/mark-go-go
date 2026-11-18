@@ -35,11 +35,6 @@ function orderRightViews(entries: ViewRegistration[]): ViewRegistration[] {
   return [outline, ...entries.slice(0, outlineIndex), ...entries.slice(outlineIndex + 1)]
 }
 
-/**
- * The right document column: hosts `location: 'right'` views behind a
- * top 44px segmented switcher (`Outline` first by default), and switches to
- * `.r-float` when opened in a narrow (< 1180px) window.
- */
 export function RightPane({
   views,
   activeId,

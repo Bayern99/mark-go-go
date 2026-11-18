@@ -25,7 +25,6 @@ Second body.
 Third body.
 `
 
-/** The example in the shipped format document, which the agent prompt will embed too. */
 function formatExample(): string {
   const match = /```json\n([\s\S]*?)\n```/.exec(formatDoc)
   if (!match?.[1]) throw new Error('view-format.md has no JSON example')
@@ -34,7 +33,6 @@ function formatExample(): string {
 
 type Component = Record<string, unknown> & { id: string }
 
-/** The format example with its component list changed by `edit`. */
 function exampleWith(edit: (components: Component[]) => Component[]): string {
   const file: unknown = JSON.parse(formatExample())
   if (!isRecord(file) || !Array.isArray(file.a2ui)) throw new Error('unexpected example shape')
@@ -111,7 +109,6 @@ describe('GenUI view mode', () => {
       await vi.waitFor(() => expect(genui()).toHaveAttribute('data-state', 'view'))
       expect(app.container.querySelector<HTMLElement>('.editor-pane')?.hidden).toBe(true)
       expect(genui().getByRole('alert').query()).toBeNull()
-      // Center view is strictly read-only content: no model menu or generate controls inside genui-view.
       expect(genui().getByRole('button', { name: /Generate|Regenerate/ }).query()).toBeNull()
       expect(app.container.querySelector('[data-testid="genui-view"] [data-testid="model-menu-trigger"]')).toBeNull()
 
@@ -126,7 +123,6 @@ describe('GenUI view mode', () => {
       await expect.element(genui().getByRole('columnheader', { name: /Size \(MB\)/ })).toBeVisible()
       await expect.element(genui().getByText('First prototype')).toBeVisible()
 
-      // Metadata lives in the right GenUI panel's pinned footer.
       await page.getByTestId('right-tab-genui.panel').click()
       const footer = page.getByTestId('genui-panel-footer')
       await expect.element(footer.getByText('Antigravity (agy)')).toBeVisible()
@@ -226,7 +222,6 @@ describe('GenUI view mode', () => {
       await expect.element(genui().getByText('In short')).toBeVisible()
       await expect.element(page.getByTestId('right-tab-dot-genui.panel')).toHaveAttribute('data-tone', 'warn')
 
-      // A reference to no component makes the whole view one error.
       host.writeView(
         exampleWith(replaceComponent('nextCard', { id: 'nextCard', component: 'Card', child: 'missing' })),
       )
@@ -334,7 +329,6 @@ describe('GenUI view mode', () => {
   })
 })
 
-/** Plain text of the Preview selection, blocks joined by `|`. */
 function richSelection(container: HTMLElement): string {
   const selection = window.getSelection()
   const editor = container.querySelector('[data-testid="editor-root"] .ProseMirror')
@@ -359,10 +353,6 @@ Second body.
 Late summary.
 `
 
-/**
- * A view of `markdown` whose sources carry the section hashes the host
- * would record: one KeyPoints per entry, each naming its sources.
- */
 function sourcedView(
   markdown: string,
   points: Array<{ id: string; sources: string[] }>,
@@ -443,7 +433,6 @@ describe('GenUI source references', () => {
       )
       expect(block(app.container, 'late').textContent).toContain('From Summary')
 
-      // The edits come from the source, as an agent or another editor would make them.
       host.reload(SOURCED.replace('Second body.', 'Second body, edited.'))
       await vi.waitFor(
         () =>
@@ -526,7 +515,6 @@ describe('GenUI source references', () => {
       edit.click()
       await vi.waitFor(() => {
         expect(viewMode('preview')).toHaveAttribute('aria-checked', 'true')
-        // The second "Summary", not the first one with the same text.
         expect(richSelection(app.container)).toBe('Summary|Late summary.')
       })
 
@@ -580,12 +568,10 @@ describe('GenUI source references', () => {
       await showMode('genui')
       await page.getByTestId('right-tab-genui.panel').click()
 
-      // Initially up to date: no warning dot on GenUI tab.
       expect(page.getByTestId('right-tab-dot-genui.panel').query()).toBeNull()
       const panel = page.getByTestId('genui-panel')
       await expect.element(panel.getByText('Up to date')).toBeVisible()
 
-      // Edit Metrics section: metrics and both become out of date.
       host.reload(SOURCED.replace('Second body.', 'Second body, edited.'))
       await vi.waitFor(
         () => {
@@ -828,7 +814,6 @@ describe('GenUI source references', () => {
       expect(missing.getAttribute('data-source-available')).toBe('false')
       expect(loaded.disabled).toBe(false)
 
-      // The reference is gone, so it does nothing at all rather than open Metrics.
       missing.click()
       expect(viewMode('genui')).toHaveAttribute('aria-checked', 'true')
       expect(viewMode('preview')).toHaveAttribute('aria-checked', 'false')

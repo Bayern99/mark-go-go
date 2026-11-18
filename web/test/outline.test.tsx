@@ -12,7 +12,6 @@ import fixture from './fixtures/outline.md?raw'
 import { mountApp } from './helpers/app'
 import { getSourceView, replaceSourceText, sourceText } from './helpers/source'
 
-/** `outline.md`: preamble, ATX H1–H3, a setext H2, a fenced pseudo-heading, a duplicate H2. */
 const EXPECTED_HEADINGS = ['Alpha', 'Beta', 'Gamma', 'Setext title', 'Beta']
 
 const LONG_DOCUMENT = [
@@ -46,7 +45,6 @@ function currentOutlineTexts(): string[] {
     .map((button) => button.textContent?.trim() ?? '')
 }
 
-/** Left edge of an entry's rendered text, including its level indentation. */
 function textLeft(button: Element): number {
   const range = document.createRange()
   range.selectNodeContents(button)
@@ -73,14 +71,12 @@ function editorHeadings(): HTMLElement[] {
   )
 }
 
-/** Index of the heading whose DOM contains the caret, or -1. */
 function caretHeadingIndex(): number {
   const anchor: Node | null = window.getSelection()?.anchorNode ?? null
   if (!anchor) return -1
   return editorHeadings().findIndex((heading) => heading.contains(anchor))
 }
 
-/** Caret offset in source mode, measured from the DOM selection inside the editor. */
 function sourceCaretOffset(container: HTMLElement): number | null {
   const selection = window.getSelection()
   const anchor = selection?.anchorNode ?? null
@@ -90,11 +86,6 @@ function sourceCaretOffset(container: HTMLElement): number | null {
   return getSourceView(container).posAtDOM(anchor, selection?.anchorOffset ?? 0)
 }
 
-/**
- * Navigating to a heading must bring it to the top of the editor's scroll
- * area, as a table of contents does, not merely somewhere on screen (the
- * caret-only scroll left the heading on the bottom edge).
- */
 function nearScrollTop(element: Element): boolean {
   const scroller = element.closest('.editor-scroll')
   if (!scroller) throw new Error('heading is not inside the editor scroll area')
@@ -414,7 +405,6 @@ describe('App plugin activation', () => {
         await gate
         ctx.commands.register('slow.ping', () => 'pong')
         lateExecute = () => ctx.commands.execute('slow.ping')
-        // The app may already be gone; this must not surface as a rejection.
         ctx.editor.onSelectionChange(() => {})
       },
     }

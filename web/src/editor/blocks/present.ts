@@ -39,7 +39,6 @@ function asLf(source: string): string {
   return source.replace(/\r\n?/g, '\n')
 }
 
-/** GitHub alert type and body from a locked blockquote's source. */
 export function parseAlert(source: string): AlertPresentation | null {
   const lines = asLf(source).split('\n')
   let kind: AlertKind | undefined
@@ -59,11 +58,6 @@ export function parseAlert(source: string): AlertPresentation | null {
   return { kind, label: ALERT_LABEL[kind], body: body.join('\n').trim() }
 }
 
-/**
- * YAML / TOML frontmatter keys as written. Nested list items stay on the parent
- * value. Unparsable source returns an empty list so the caller can keep the
- * original bytes visible.
- */
 export function parseFrontmatterRows(source: string): FrontmatterRow[] {
   const text = asLf(source)
   const yaml = text.match(/^---(?:toml)?\s*\n([\s\S]*?)\n(?:---|\.{3})\s*$/i)
@@ -102,7 +96,6 @@ function unwrapScalar(value: string): string {
   return trimmed
 }
 
-/** Language, leftover info-string, and body of a fenced code block. */
 export function parseCodeFence(source: string): CodeFencePresentation | null {
   const text = asLf(source)
   const match = FENCE_OPEN.exec(text)
@@ -117,7 +110,6 @@ export function parseCodeFence(source: string): CodeFencePresentation | null {
   return { language, meta: rest.join(' '), code: body }
 }
 
-/** Label and definition text of a GFM footnote definition. */
 export function parseFootnote(source: string): FootnotePresentation | null {
   const match = asLf(source).match(/^\[\^([^\]]+)\]:\s*([\s\S]*)$/)
   if (!match) return null

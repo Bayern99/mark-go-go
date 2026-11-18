@@ -38,7 +38,6 @@
   transition: opacity 160ms ease, background-color 120ms ease;
 }
 
-/* Third-party editor and code-block DOM keeps its native scrolling ownership. */
 .cm-scroller,
 .menu-groups,
 .language-list,

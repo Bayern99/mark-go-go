@@ -5,35 +5,19 @@ import { segmentMarkdown, type LockKind, type SourceSegment } from './segment'
 
 export interface BlockOrigin {
   segment: SourceSegment
-  /** Raw source of the block at load time. */
   source: string
-  /** The exact ProseMirror node that was built from this segment. */
   node: PMNode
 }
 
 export interface BuiltDocument {
   doc: PMNode
-  /** Identity map: a node is unchanged iff `origins.get(node)?.node === node`. */
   origins: WeakMap<PMNode, BlockOrigin>
-  /**
-   * Origins in load order. Anything that re-creates a top-level node (undo,
-   * for example) produces an object the identity map misses; a structurally
-   * equal match here still proves the original bytes render it losslessly.
-   */
   loaded: BlockOrigin[]
   segments: SourceSegment[]
   prefix: string
   trailing: string
 }
 
-/**
- * Build the initial ProseMirror document from per-block parses.
- *
- * Every segment is parsed on its own so that ProseMirror never sees the whole
- * document: that keeps blocks independent (a list cannot merge with the
- * paragraph above it) and lets us map each resulting node back to its exact
- * source bytes.
- */
 export function buildDocument(text: string, schema: Schema, parser: Parser): BuiltDocument {
   const { segments, prefix, trailing } = segmentMarkdown(text)
   const origins = new WeakMap<PMNode, BlockOrigin>()
@@ -48,8 +32,6 @@ export function buildDocument(text: string, schema: Schema, parser: Parser): Bui
   }
 
   if (nodes.length === 0) {
-    // ProseMirror needs a textblock to put the initial selection in; an
-    // empty paragraph is invisible to compose() as long as it stays empty.
     nodes.push(schema.nodes.paragraph.create())
   }
 
@@ -57,7 +39,6 @@ export function buildDocument(text: string, schema: Schema, parser: Parser): Bui
   return { doc, origins, loaded, segments, prefix, trailing }
 }
 
-/** Parse one source segment into a top-level ProseMirror node. */
 export function nodeFromSegment(segment: SourceSegment, schema: Schema, parser: Parser): PMNode {
   let lock: LockKind | null = segment.lock
   let node: PMNode | null = null

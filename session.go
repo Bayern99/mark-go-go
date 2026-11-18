@@ -9,34 +9,26 @@ import (
 	"strings"
 )
 
-// session.json in PathUserData: workspaces the user did not explicitly
-// close. Untitled empty Welcome windows are not stored. MyGo recovery
-// copies remain the authority for unsaved bytes.
 const sessionFile = "session.json"
 
-// sessionFileData is the on-disk session.
 type sessionFileData struct {
 	Workspaces []sessionWorkspace `json:"workspaces"`
 }
 
-// sessionWorkspace is one window to restore.
 type sessionWorkspace struct {
 	ID       string       `json:"id"`
 	Root     string       `json:"root"`
 	Tabs     []sessionTab `json:"tabs"`
 	ActiveID string       `json:"activeId"`
-	// Active marks the root whose navigation was selected in its window.
-	Active bool `json:"active,omitempty"`
+	Active   bool         `json:"active,omitempty"`
 }
 
-// sessionTab is one document in tab order.
 type sessionTab struct {
 	ID       string `json:"id"`
 	Path     string `json:"path,omitempty"`
 	ViewMode string `json:"viewMode,omitempty"`
 }
 
-// normalizeViewMode accepts the mode name used by older app sessions.
 func normalizeViewMode(mode string) string {
 	if mode == "richtext" {
 		return "preview"
@@ -44,7 +36,6 @@ func normalizeViewMode(mode string) string {
 	return mode
 }
 
-// restoreLive is what recovery and this launch already opened.
 type restoreLive struct {
 	OpenByID   map[string]restoreDoc
 	OpenByPath map[string]restoreDoc
@@ -58,9 +49,6 @@ type restoreDoc struct {
 	Path string
 }
 
-// restorePlan is the public restore seam: layout, reuse vs open, the
-// problems the windows report, and launch focus. It never starts a
-// generation.
 type restorePlan struct {
 	Workspaces        []plannedWorkspace
 	ActiveWorkspaceID string
@@ -82,8 +70,8 @@ type plannedTab struct {
 	ID           string
 	Path         string
 	ViewMode     string
-	ReuseID      string // already-open document to keep
-	OpenPath     string // disk path to Open when ReuseID is empty
+	ReuseID      string
+	OpenPath     string
 	RestoreError string
 }
 
@@ -173,8 +161,6 @@ func untitledLostMessage() string {
 	return "An untitled document could not be restored."
 }
 
-// appendRestoreMessage joins a new problem to what the window reports,
-// so one banner explains every tab that could not come back.
 func appendRestoreMessage(have, add string) string {
 	if add == "" {
 		return have
@@ -185,8 +171,6 @@ func appendRestoreMessage(have, add string) string {
 	return have + " " + add
 }
 
-// orderedTabs is the planned tab order followed by any live tab the plan
-// did not name: a restore never hides a document that is still open.
 func orderedTabs(planned, live []string) []string {
 	out := make([]string, 0, len(planned)+len(live))
 	seen := make(map[string]bool, len(planned)+len(live))
@@ -200,10 +184,6 @@ func orderedTabs(planned, live []string) []string {
 	return out
 }
 
-// planSessionRestore turns a stored session and live recovery/launch docs
-// into windows and tabs. A document appears in at most one tab. Missing
-// roots or files become issues; other workspaces continue. Empty folder
-// workspaces are kept. Untitled empty windows are not planned (Welcome).
 func planSessionRestore(file sessionFileData, live restoreLive) restorePlan {
 	if live.OpenByID == nil {
 		live.OpenByID = map[string]restoreDoc{}
@@ -266,8 +246,6 @@ func planSessionRestore(file sessionFileData, live restoreLive) restorePlan {
 						claimedPath[k] = true
 					}
 					if pt.Path != "" && !live.FileOK(pt.Path) {
-						// The recovery copy holds the bytes; the file behind
-						// this tab is gone, so say so on the tab.
 						pt.RestoreError = missingFileMessage(pt.Path)
 					}
 					pw.Tabs = append(pw.Tabs, pt)
@@ -316,7 +294,6 @@ func planSessionRestore(file sessionFileData, live restoreLive) restorePlan {
 			pw.ActiveID = id
 		}
 
-		// Drop vanished untitled windows that have nothing left.
 		if pw.Kind == "untitled" && len(pw.Tabs) == 0 {
 			continue
 		}
@@ -348,7 +325,6 @@ func (h *documentHost) captureSessionLocked() sessionFileData {
 		if w.win != nil && w.win.IsDestroyed() {
 			return
 		}
-		// Untitled empty is Welcome, not a restored workspace.
 		if w.root == "" && len(w.tabs) == 0 {
 			return
 		}
@@ -392,7 +368,6 @@ func (h *documentHost) persistSession() {
 	}
 }
 
-// saveQuitSession lets any normal write captured before quit finish first.
 func (h *documentHost) saveQuitSession(file sessionFileData) error {
 	h.sessionWriteMu.Lock()
 	defer h.sessionWriteMu.Unlock()

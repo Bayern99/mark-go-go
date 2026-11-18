@@ -1,28 +1,8 @@
-# AGENTS.md
+# Mark Go Go
 
-## Agent skills
+以代码、测试和配置确认当前行为。用命名、结构和测试表达意图。代码注释保留工具指令和许可证。
 
-### Issue tracker
-
-Issues 在 GitHub Issues（Bayern99/mark-go-go），用 `gh` 操作。See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-默认 5 个标签：needs-triage、needs-info、ready-for-agent、ready-for-human、wontfix。See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-Single-context：根目录 `GLOSSARY.md` + `docs/adr/`。See `docs/agents/domain.md`.
-
-### UI tasks
-
-界面与组件任务遵循《界面任务执行规范》（有界盘点 → 确定最小实现 → 处理未决事项 → 验证真实行为 → 四段式交付），复用语义 Token、已有组件与区块，使视觉、交互与真实业务状态一致。See `docs/agents/ui-tasks.md`.
-
-### Editor typeset bench
-
-编辑器排版基线测量与回归证据在 `docs/editor-typeset/`，运行方式见 `docs/editor-typeset/README.md`.
-
-### Native automation
-
-真实 macOS 窗口、菜单与 WKWebView 验证使用 MyGo 官方 Automation；先运行 `go tool mygo-automation skills`，流程与隔离要求见 `docs/agents/native-automation.md`.
-
+- 术语与决策：[GLOSSARY.md](GLOSSARY.md) · [相关 ADR](docs/adr/)。
+- Issues：用 `gh` 操作 `Bayern99/mark-go-go`。分诊见 [triage-labels.md](docs/agents/triage-labels.md)。
+- 界面改动：[界面规则](docs/agents/ui-tasks.md)。精确排版测量见 [基准](docs/editor-typeset/README.md)。
+- 原生窗口、菜单或恢复验证：[原生 Automation](docs/agents/native-automation.md)。

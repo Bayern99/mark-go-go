@@ -12,7 +12,6 @@ import { shell } from '@codemirror/legacy-modes/mode/shell'
 
 const bash = new LanguageSupport(StreamLanguage.define(shell))
 
-/** Explicit, small code-block language list (no @codemirror/language-data). */
 export const languages: LanguageDescription[] = [
   LanguageDescription.of({
     name: 'TypeScript',

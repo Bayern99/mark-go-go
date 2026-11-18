@@ -65,35 +65,19 @@ const INITIAL_STATE: DocState = {
 }
 
 export interface BrowserHost extends HostAdapter {
-  /** Simulate an external change (used by tests and the demo reload button). */
   reload(text: string): void
   getState(): DocumentInfo
-  /** Overlay file-status flags so workspace tests can drive tab badges. */
   patchState(partial: Partial<DocState>): void
-  /** Simulate another tool writing (text) or removing (null) the view file; the kept view stays. */
   writeView(text: string | null): void
-  /** The kept view the last generation replaced, or null. */
   keptView(): string | null
   readonly generations: GenerateRequest[]
-  /** Settings (model, agent command) captured at each generate start. */
   readonly capturedSettings: GenerationSettings[]
-  /** Emit the first view snapshot when `holdFirstView` deferred it. */
   releaseFirstView(): void
-  /** Simulate an external path change while a generation is running. */
   setPath(path: string): void
-  /** Read another settings store from now on: a workspace gives its tabs one. */
   useSettings(store: BrowserSettings): void
-  /** Abort an in-flight generation as a real close of this document would. */
   abandonGeneration(): void
 }
 
-/**
- * A scripted stand-in for the agent. It gets the request and a `progress`
- * function; what it returns becomes the view file, for an update as well
- * (the desktop host merges the agent's message itself). Throwing a
- * `GenerationError` plays that failure; any other error is an `agent-error`.
- * `signal` aborts when the page cancels.
- */
 export type FakeGenerator = (
   req: GenerateRequest,
   progress: (step: GenerateProgress) => void,
@@ -101,20 +85,11 @@ export type FakeGenerator = (
 ) => Promise<string>
 
 export interface BrowserHostOptions {
-  /** Initial view file text; none when omitted. */
   view?: string
-  /** Initial kept view, the one to go back to; none when omitted. */
   kept?: string
-  /** Plays the agent; without one, Generate fails with a message. */
   generator?: FakeGenerator
-  /**
-   * The settings file this document reads. Standalone hosts get their own;
-   * a workspace gives every one of its tabs the same store.
-   */
   settings?: BrowserSettings
-  /** Open the document as never saved: it has no path, so no view file. */
   untitled?: boolean
-  /** Do not emit the first watch snapshot until `releaseFirstView`. */
   holdFirstView?: boolean
 }
 
@@ -126,14 +101,7 @@ export const DEFAULT_SETTINGS: GenerationSettings = {
   models: [...DEFAULT_MODELS],
 }
 
-/**
- * The browser's settings file. The desktop app has one store for every
- * document in every window; in the browser a window's workspace owns one, so
- * its tabs never drift apart. A store is never module-global: each test and
- * each workspace gets its own.
- */
 export interface BrowserSettings {
-  /** The committed settings, read synchronously: a run captures them at its start. */
   read(): GenerationSettings
   getSettings(): Promise<GenerationSettings>
   setSettings(patch: SettingsPatch): Promise<GenerationSettings>
@@ -178,11 +146,6 @@ export function createBrowserSettings(initial: Partial<GenerationSettings> = {})
   }
 }
 
-/**
- * In-memory HostAdapter used when the page runs outside MyGo and in tests.
- * It mirrors the semantics the Go side promises: full-text updates, dirty
- * state, and reload events that replace the whole document.
- */
 export function createBrowserHost(
   initial: string = DEMO_MARKDOWN,
   initialName = INITIAL_STATE.name,
@@ -271,10 +234,6 @@ export function createBrowserHost(
     },
     async revert() {},
     async setViewMode(mode: string) {
-      // A view-mode write is not new document state: the native host stores it
-      // in the session and emits only a workspace snapshot. Emitting a whole
-      // document state here would echo stale flags such as readOnly back into
-      // the editor.
       state = { ...state, viewMode: mode }
     },
     bindFlush(getText) {
@@ -309,7 +268,6 @@ export function createBrowserHost(
     },
     watchView(fn) {
       viewListeners.add(fn)
-      // Like the Go host, the first snapshot is the file as it is now.
       if (!options.holdFirstView) {
         queueMicrotask(() => {
           if (viewListeners.has(fn)) fn(viewSnapshot())
@@ -349,8 +307,6 @@ export function createBrowserHost(
           hint: 'Wait for it to finish, or cancel it.',
         })
       }
-      // Capture the shared store as it is now: a later change in this or
-      // another window must not alter a run that already started.
       const captured: GenerationSettings = settingsStore.read()
       capturedPath = state.path
       abandoned = false
@@ -385,8 +341,6 @@ export function createBrowserHost(
             hint: 'Generate again.',
           })
         }
-        // The same strict check the Go host makes before it writes a view:
-        // an invalid view must not replace the current one or its Undo.
         const verdict = validateGeneratedView(body)
         if (!verdict.ok) {
           throw new GenerationError({
@@ -439,7 +393,6 @@ function disposable(fn: () => void): Disposable {
 const flushReaders = new WeakMap<HostAdapter, () => string>()
 
 
-/** One-document workspace around a HostAdapter, for existing pane tests. */
 export function wrapHostAsWorkspace(host: HostAdapter, name?: string): WorkspaceAdapter {
   const info = (): DocumentInfo => {
     const state: DocState = isBrowserHost(host)
@@ -572,14 +525,11 @@ export interface BrowserWorkspaceOptions {
   root?: string
   name?: string
   kind?: WorkspaceKind
-  /** Close-ask: canceled keeps every tab and the adapter cache. */
   confirmClose?: (id: string) => CloseResult | Promise<CloseResult>
   confirmCloseWorkspace?: () => CloseResult | Promise<CloseResult>
   nav?: BrowserNavSeed
   restoreError?: string
-  /** Additional roots in the same native window; root/name/nav describe the first when omitted. */
   workspaces?: BrowserWorkspaceRootOptions[]
-  /** The window's settings file; its tabs share one, created when omitted. */
   settings?: BrowserSettings
 }
 
@@ -613,12 +563,6 @@ function infoFrom(seed: BrowserWorkspaceSeed): DocumentInfo {
   }
 }
 
-/**
- * In-memory multi-document WorkspaceAdapter for workspace tests and the
- * browser preview. There is no hidden second window: every document is a
- * tab in this one snapshot. `document(id)` returns the same HostAdapter
- * for as long as this window hosts that id.
- */
 export function createBrowserWorkspace(
   docs: Array<HostAdapter | BrowserWorkspaceSeed> = [createBrowserHost()],
   options: BrowserWorkspaceOptions = {},
@@ -670,8 +614,6 @@ export function createBrowserWorkspace(
     documents: order.map((id) => {
       const info = infos.get(id)
       if (!info) throw new Error(`missing document ${id}`)
-      // The view mode is presentation metadata written through setViewMode;
-      // read it live so a snapshot does not wait for an unrelated state event.
       const host = adapters.get(id)
       return { ...info, viewMode: host && isBrowserHost(host) ? host.getState().viewMode : info.viewMode }
     }),
@@ -679,8 +621,6 @@ export function createBrowserWorkspace(
     restoreError: options.restoreError,
   })
 
-  // One settings store for this window's tabs, as the app's one file is:
-  // a document's adapter reads it, and never a private copy.
   const settings = options.settings ?? createBrowserSettings()
 
   const emit = () => {

@@ -1,9 +1,3 @@
-// Dev-only measurement harness for editor typesetting research.
-// Not part of the production build (vite only builds index.html).
-// Usage: /bench/typeset.html?doc=paper-bilingual|tech-report-tables|llm-research-report
-//
-// The figure referenced by paper-bilingual.md is embedded as a base64 data
-// URL below so the editor does not depend on static-file serving for it.
 import { createRoot } from 'react-dom/client'
 import { EditorView } from '@milkdown/kit/prose/view'
 import { App } from '../src/App'
@@ -24,7 +18,6 @@ import llmResearchReport from '../../docs/editor-typeset/fixtures/llm-research-r
 // @ts-ignore
 import figureSvg from '../../docs/editor-typeset/fixtures/figure-1.svg?raw'
 
-// Table variants: ?variant=<name> injects docs/.../variants/<name>.css last.
 const VARIANTS = import.meta.glob('../../docs/editor-typeset/variants/*.css', {
   query: '?raw',
   import: 'default',
@@ -58,9 +51,6 @@ const text = raw.replaceAll('figure-1.svg', figureDataUrl)
 const host = createBrowserHost(text, `${docName}.md`)
 const workspace = createBrowserWorkspace([host])
 
-// Measurement hook for docs/research/editor-typeset/measure.mjs. `fixture` is
-// the exact byte string the editor was seeded with (image src rewritten);
-// `source` is the untouched fixture file content.
 ;(window as unknown as { __bench: unknown }).__bench = {
   doc: docName,
   variant: variantCss ? variantName : null,
@@ -70,8 +60,6 @@ const workspace = createBrowserWorkspace([host])
   source: raw,
 }
 
-// Expose the live ProseMirror EditorView for the measurement script
-// (.ProseMirror.pmViewDesc carries no .view back-reference in this PM version).
 const origUpdateStateInner = EditorView.prototype.updateStateInner
 EditorView.prototype.updateStateInner = function (this: EditorView, ...args) {
   ;(window as unknown as { __pmView?: EditorView }).__pmView = this

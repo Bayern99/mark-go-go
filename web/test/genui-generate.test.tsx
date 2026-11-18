@@ -22,7 +22,6 @@ First body.
 Second body.
 `
 
-/** A view as the host writes it, with the request it was made from. */
 function viewFile(title: string, request?: string): string {
   return JSON.stringify({
     version: 2,
@@ -43,7 +42,6 @@ function viewFile(title: string, request?: string): string {
   })
 }
 
-/** A view whose envelope is valid but nests Tabs inside a Card: the artifact the SDK rejects. */
 function nestedBadView(): string {
   return JSON.stringify({
     version: 2,
@@ -68,7 +66,6 @@ function nestedBadView(): string {
   })
 }
 
-/** A generator the test steps through: each `step()` sends one progress, `finish` ends the run. */
 function scripted() {
   let progress: ((step: GenerateProgress) => void) | undefined
   let settle: { resolve(text: string): void; reject(error: Error): void } | undefined
@@ -97,7 +94,6 @@ function scripted() {
   }
 }
 
-/** Waits until the element's text contains `text`. */
 async function containsText(locator: { element(): Element }, text: string): Promise<void> {
   await vi.waitFor(() => expect(locator.element().textContent ?? '').toContain(text))
 }
@@ -135,7 +131,6 @@ describe('GenUI generation', () => {
     const host = createBrowserHost(DOCUMENT, 'report.md', { generator: agent.generator })
     const mounted = await openGenUI(host)
 
-    // Center view has no generate button, textbox, or model menu.
     expect(genui().getByRole('button', { name: 'Generate', exact: true }).query()).toBeNull()
     expect(genui().getByRole('textbox').query()).toBeNull()
 
@@ -150,7 +145,6 @@ describe('GenUI generation', () => {
     agent.step({ phase: 'writing', text: 'File out.json' })
     await containsText(panel().getByRole('status'), 'File out.json')
 
-    // One run at a time: the only action while it runs is Cancel.
     expect(generate().query()).toBeNull()
     await expect.element(panel().getByRole('button', { name: 'Cancel' })).toBeVisible()
 
@@ -170,11 +164,9 @@ describe('GenUI generation', () => {
     agent.finish(viewFile('Made by the agent', 'Focus on the metrics'))
     await expect.element(genui().getByText('Made by the agent', { exact: false })).toBeVisible()
     expect(page.getByTestId('genui-progress').query()).toBeNull()
-    // Nothing changed since: Up to date with only Regenerate all shown.
     await expect.element(panel().getByText('Up to date')).toBeVisible()
     expect(regenerateChanged().query()).toBeNull()
     await expect.element(regenerateAll()).toBeEnabled()
-    // The view's Focus request is displayed read-only until Edit is clicked.
     await expect.element(panel().getByTestId('focus-value')).toHaveTextContent('Focus on the metrics')
     expect(requestBox().query()).toBeNull()
     expect(host.getState().edited).toBe(false)
@@ -197,7 +189,6 @@ describe('GenUI generation', () => {
     await vi.waitFor(() => expect(host.getState().edited).toBe(true))
     expect(host.generations[0]?.text).toBe(DOCUMENT)
 
-    // Back in GenUI, the run is still going.
     await page.getByTestId('view-mode-genui').click()
     await expect.element(page.getByTestId('genui-progress')).toBeVisible()
     agent.finish(viewFile('After the edit'))
@@ -225,13 +216,11 @@ describe('GenUI generation', () => {
       detail: quota,
     })
 
-    // Error alert appears in the right panel, NOT in the center genui-view.
     expect(genui().getByRole('alert').query()).toBeNull()
     const alert = panel().getByRole('alert')
     await containsText(alert, 'The agent finished without writing a view.')
     await containsText(alert, "Read the agent's message; retry once it is resolved.")
     await expect.element(page.getByTestId('right-tab-dot-genui.panel')).toHaveAttribute('data-tone', 'danger')
-    // The agent's words verbatim, line breaks included.
     expect(alert.element().querySelector('pre')?.textContent).toBe(quota)
     await expect.element(genui().getByText('The old view', { exact: false })).toBeVisible()
     expect(panel().getByRole('button', { name: 'Cancel' }).query()).toBeNull()
@@ -352,7 +341,6 @@ describe('GenUI generation', () => {
     expect(agent.signal?.aborted).toBe(true)
     await expect.element(genui().getByText('The old view', { exact: false })).toBeVisible()
     expect(panel().getByRole('alert').query()).toBeNull()
-    // A result arriving after the cancel changes nothing.
     agent.finish(viewFile('Too late'))
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(page.getByText('Too late', { exact: false }).query()).toBeNull()
@@ -375,11 +363,9 @@ describe('GenUI generation', () => {
     })
     await openGenUI(host)
 
-    // Focus is read-only by default when a view exists.
     await expect.element(panel().getByTestId('focus-value')).toHaveTextContent('Initial focus')
     expect(requestBox().query()).toBeNull()
 
-    // Click Edit -> opens inline composer; Escape cancels and reverts.
     await panel().getByTestId('focus-edit').click()
     const input = requestBox()
     await expect.element(input).toHaveValue('Initial focus')
@@ -388,7 +374,6 @@ describe('GenUI generation', () => {
     await expect.poll(() => requestBox().query()).toBeNull()
     await expect.element(panel().getByTestId('focus-value')).toHaveTextContent('Initial focus')
 
-    // Click Edit -> type new focus -> ⌘↩ commits and closes composer.
     await panel().getByTestId('focus-edit').click()
     const input2 = requestBox()
     await input2.fill('Updated via shortcut')
@@ -413,36 +398,30 @@ describe('GenUI generation', () => {
     })
     await openGenUI(host)
 
-    // Routine UI does not render text inputs for Model or Agent command.
     expect(page.getByRole('textbox', { name: 'Model' }).query()).toBeNull()
     expect(page.getByRole('textbox', { name: 'Agent command' }).query()).toBeNull()
 
     const trigger = page.getByTestId('model-menu-trigger')
     await expect.element(trigger).toHaveTextContent('Agent’s choice')
 
-    // Click trigger to open upward popover (.mmenu.pop).
     await trigger.click()
     const menu = page.getByRole('listbox', { name: 'Model' })
     await expect.element(menu).toBeVisible()
     expect(menu.element().classList.contains('mmenu')).toBe(true)
     expect(menu.element().classList.contains('pop')).toBe(true)
 
-    // Current selection ("Agent’s choice") is marked selected via aria-selected.
     const defaultOpt = menu.getByRole('option', { name: 'Agent’s choice' })
     await expect.element(defaultOpt).toHaveAttribute('aria-selected', 'true')
 
-    // Pressing Escape when document.body has focus closes the menu.
     document.body.focus()
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await expect.poll(() => page.getByRole('listbox', { name: 'Model' }).query()).toBeNull()
 
-    // Reopen and click outside to close.
     await trigger.click()
     await expect.element(page.getByRole('listbox', { name: 'Model' })).toBeVisible()
     document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
     await expect.poll(() => page.getByRole('listbox', { name: 'Model' }).query()).toBeNull()
 
-    // Reopen and choose a model: saves immediately and closes the menu.
     await trigger.click()
     await page.getByRole('option', { name: 'claude-opus-5-5' }).click()
     await expect.poll(() => page.getByRole('listbox', { name: 'Model' }).query()).toBeNull()
@@ -453,7 +432,6 @@ describe('GenUI generation', () => {
       models: ['gemini-3.8-flash', 'gemini-4-argon', 'claude-opus-5-5'],
     })
 
-    // While generation is running, ModelMenu is disabled.
     await generate().click()
     await expect.element(trigger).toBeDisabled()
     agent.finish(viewFile('Done'))
@@ -461,11 +439,6 @@ describe('GenUI generation', () => {
   })
 })
 
-/**
- * A view of both sections whose hashes match DOCUMENT, so that a section
- * edited afterwards shows as changed; `update` is appended as the host
- * appends an update's message.
- */
 function trackedView(update?: { id: string; title: string }): string {
   const sections = extractSections(DOCUMENT)
   const source = (index: number) => {
@@ -506,7 +479,6 @@ function trackedView(update?: { id: string; title: string }): string {
   })
 }
 
-/** Types at the end of the Metrics section in Preview, then goes back to GenUI. */
 async function editMetrics(mounted: MountedApp, host: BrowserHost): Promise<void> {
   await page.getByTestId('view-mode-preview').click()
   const paragraph = Array.from(mounted.container.querySelectorAll<HTMLElement>('.ProseMirror p')).find(
@@ -546,7 +518,6 @@ describe('GenUI regeneration', () => {
     expect(req?.text).toContain('Second body. More.')
 
     agent.finish(trackedView({ id: 'metrics', title: 'New metrics' }))
-    // The update applies over the view: the other component stays.
     await expect.element(genui().getByText('New metrics', { exact: false })).toBeVisible()
     await expect.element(genui().getByText('Old overview', { exact: false })).toBeVisible()
     expect(genui().getByText('Old metrics', { exact: false }).query()).toBeNull()
@@ -554,7 +525,6 @@ describe('GenUI regeneration', () => {
     await undo().click()
     await expect.element(genui().getByText('Old metrics', { exact: false })).toBeVisible()
     expect(genui().getByText('New metrics', { exact: false }).query()).toBeNull()
-    // Once: nothing is kept any more.
     await vi.waitFor(() => expect(undo().query()).toBeNull())
     expect(host.keptView()).toBeNull()
   })
@@ -583,12 +553,10 @@ describe('GenUI regeneration', () => {
     await regenerateAll().click()
     agent.finish(nestedBadView())
 
-    // The reader is told what is wrong, with the invalid-output hint.
     const alert = panel().getByRole('alert')
     await containsText(alert, 'UNALLOWED_')
     await containsText(alert, 'Tabs')
     await containsText(alert, 'Generate again')
-    // Neither the view nor the view kept to go back to changed.
     expect(host.keptView()).toBe(kept)
     await expect.element(genui().getByText('Old overview', { exact: false })).toBeVisible()
     await expect.element(undo()).toBeEnabled()
@@ -626,7 +594,6 @@ describe('GenUI regeneration', () => {
     const host = createBrowserHost(DOCUMENT, 'report.md', { view: trackedView(), kept, generator: agent.generator })
     await openGenUI(host)
     await regenerateAll().click()
-    // Going back waits while a run goes on.
     await expect.element(undo()).toBeDisabled()
     agent.fail({ kind: 'invalid-output', message: 'The view the agent wrote is not valid.', hint: 'Generate again.' })
 

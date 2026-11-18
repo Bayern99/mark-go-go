@@ -11,9 +11,6 @@ import (
 	"strings"
 )
 
-// baseView is the current view of an update: the file as the host read
-// it when the run started, its surface, the ids of its components, and
-// the components the update replaces.
 type baseView struct {
 	raw       []byte
 	surfaceID string
@@ -23,8 +20,6 @@ type baseView struct {
 	replace   map[string]bool
 }
 
-// a2uiMessage is what the host reads of an A2UI message: the surface
-// and the component ids of a createSurface or an updateComponents.
 type a2uiMessage struct {
 	CreateSurface    *a2uiComponents `json:"createSurface"`
 	UpdateComponents *a2uiComponents `json:"updateComponents"`
@@ -37,14 +32,10 @@ type a2uiComponents struct {
 	} `json:"components"`
 }
 
-// notUpdatable is the failure of an update whose current view cannot
-// take one: the reader can still generate the whole view.
 func notUpdatable(reason string) *genError {
 	return newFailure(failAgentError, "The current view cannot be updated: "+reason, "Regenerate the whole view instead.")
 }
 
-// readBaseView reads the view file at path for an update that replaces
-// the components ids names. Every id must be a component of the view.
 func readBaseView(path string, ids []string) (*baseView, error) {
 	if len(ids) == 0 {
 		return nil, notUpdatable("no components were named to replace.")
@@ -108,7 +99,6 @@ func readBaseView(path string, ids []string) (*baseView, error) {
 	return base, nil
 }
 
-// replaceIDs returns the ids the update replaces, in a stable order.
 func (b *baseView) replaceIDs() []string {
 	ids := make([]string, 0, len(b.replace))
 	for id := range b.replace {
@@ -118,12 +108,6 @@ func (b *baseView) replaceIDs() []string {
 	return ids
 }
 
-// merge checks the agent's update and returns the view's new sources
-// and messages: the agent's one updateComponents message, for the
-// view's surface, naming only the components to replace or new ones,
-// appended to the view's messages; and the view's sources with the new
-// ones the agent added. A source the view has already keeps its
-// heading and occurrence.
 func (b *baseView) merge(a2ui json.RawMessage, added map[string]agentSource) (map[string]agentSource, json.RawMessage, error) {
 	var messages []json.RawMessage
 	if err := json.Unmarshal(a2ui, &messages); err != nil || len(messages) != 1 {
@@ -179,18 +163,10 @@ func (b *baseView) merge(a2ui json.RawMessage, added map[string]agentSource) (ma
 	return sources, merged, nil
 }
 
-// prevViewPath is where the view before the last generation is kept,
-// so that the reader can go back to it once: .<name>.genui.prev.json
-// next to the view file.
 func prevViewPath(viewPath string) string {
 	return strings.TrimSuffix(viewPath, ".json") + ".prev.json"
 }
 
-// replaceView writes data as the view file at path, keeping the file it
-// replaces as the backup, with that file's permissions. expect, when not
-// nil, is what the view file must still hold: an update is refused when
-// the file changed while the agent worked. When writing the view fails,
-// the backup is put back as it was.
 func replaceView(path string, data, expect []byte) error {
 	current, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -203,7 +179,6 @@ func replaceView(path string, data, expect []byte) error {
 	prev := prevViewPath(path)
 	if hadView {
 		oldBackup, backupErr := os.ReadFile(prev)
-		// The backup holds the view's text: it is as private as the view.
 		mode := os.FileMode(0o644)
 		if info, err := os.Stat(path); err == nil {
 			mode = info.Mode().Perm()
@@ -227,9 +202,6 @@ func replaceView(path string, data, expect []byte) error {
 	return nil
 }
 
-// undoView puts the backup back as the view file at path, in one
-// rename: the view of the last generation is gone and there is no
-// backup any more.
 func undoView(path string) error {
 	prev := prevViewPath(path)
 	if fi, err := os.Lstat(prev); err != nil || !fi.Mode().IsRegular() {

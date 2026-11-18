@@ -1,6 +1,3 @@
-/* Round-2 experiment W3 — text-wrap: balance on headings only.
-   Equalizes multi-line heading splits; body text keeps greedy breaking so
-   any heading-only cost is isolated. */
 .crepe-root .milkdown .ProseMirror h1,
 .crepe-root .milkdown .ProseMirror h2,
 .crepe-root .milkdown .ProseMirror h3,

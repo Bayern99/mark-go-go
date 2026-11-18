@@ -110,10 +110,6 @@ function containsFold(hay: string, needle: string): boolean {
   return needle !== '' && hay.toLowerCase().includes(needle)
 }
 
-/**
- * Depth-first tree order: every folder is followed by its descendants.
- * Siblings list folders before files, then names case-insensitively.
- */
 function navOrder(root: string, a: NavEntry, b: NavEntry): number {
   const as = (relativeTo(root, a.path) || a.name).split('/')
   const bs = (relativeTo(root, b.path) || b.name).split('/')
@@ -325,7 +321,6 @@ export async function liveTexts(open: { id: string; path: string }[], document: 
         const snap = await document(doc.id).load()
         texts.set(doc.path, snap.text)
       } catch {
-        /* keep disk index */
       }
     }),
   )

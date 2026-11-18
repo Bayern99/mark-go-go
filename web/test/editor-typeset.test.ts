@@ -41,8 +41,6 @@ three
 \`\`\`
 `
 
-// App.tsx mounts the editor inside a `.crepe-root` div; the theme CSS is
-// scoped to that class, so replicate it here or no theme rule applies.
 async function mountInAppRoot(text: string): Promise<MountedEditor> {
   const mounted = await mountEditor(text)
   mounted.root.classList.add('crepe-root')
@@ -93,8 +91,6 @@ describe('editor typeset', () => {
     const mounted = await mountInAppRoot(TABLE_DOC)
     try {
       const view = mounted.editor.getView()
-      // locator, not a captured element: Crepe swaps the preview table in
-      // asynchronously and can detach the node mid-click
       await userEvent.click(page.getByRole('cell').first())
       await new Promise((resolve) => setTimeout(resolve, 100))
       const selection = view.state.selection
@@ -194,9 +190,6 @@ describe('editor typeset', () => {
   })
 
   it('keeps a newer selection when Crepe replays the stale cell selection (#2495)', async () => {
-    // Crepe's table view dispatches the whole-cell NodeSelection from a rAF
-    // (or a 20ms timeout) built on the click-time state. Hold rAF so a newer
-    // selection can land first; replaying the frame must not clobber it.
     const frames: FrameRequestCallback[] = []
     const original = window.requestAnimationFrame
     window.requestAnimationFrame = ((cb: FrameRequestCallback) => {
@@ -258,8 +251,6 @@ describe('editor typeset', () => {
     const mounted = await mountInAppRoot(TABLE_DOC)
     try {
       const view = mounted.editor.getView()
-      // aim at the text itself: a cell-centre click lands on empty space
-      // past the short text and the browser keeps a collapsed caret
       await page.getByRole('cell').first().dblClick({ position: { x: 6, y: 15 } })
       await vi.waitFor(() => {
         expect(view.state.selection.empty).toBe(false)
@@ -280,7 +271,6 @@ describe('editor typeset', () => {
         td.getBoundingClientRect(),
       )
       const inside = rects[0]
-      // drag within one cell -> plain text selection
       await session.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: inside.x + 2, y: inside.y + 10, button: 'left', clickCount: 1 })
       await session.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: inside.x + inside.width - 6, y: inside.y + 12, button: 'left', buttons: 1 })
       await session.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: inside.x + inside.width - 6, y: inside.y + 12, button: 'left' })
@@ -289,10 +279,6 @@ describe('editor typeset', () => {
       })
       expect(view.state.selection.constructor.name).toBe('TextSelection')
 
-      // drag across the cell boundary: Crepe's stopEvent swallows the
-      // mousedown before prosemirror-tables can arm its drag watcher, so a
-      // raw-listener bridge in tableCellDrag.ts dispatches the CellSelection
-      // itself once the pointer crosses a cell boundary.
       await session.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: inside.x + 2, y: inside.y + 10, button: 'left', clickCount: 1 })
       const next = rects[1]
       const steps = 6
@@ -304,8 +290,6 @@ describe('editor typeset', () => {
       await vi.waitFor(() => {
         expect(view.state.selection.constructor.name).toBe('CellSelection')
       })
-      // the drop indicator schedules onHide on a 30ms timer; let it fire while
-      // the editor is still alive so teardown doesn't hit a disposed ctx
       await new Promise((resolve) => setTimeout(resolve, 80))
     } finally {
       await mounted.cleanup()
@@ -376,8 +360,6 @@ describe('editor typeset', () => {
     try {
       const view = mounted.editor.getView()
       const cell = page.getByRole('cell').first()
-      // aim at the text, like the double-click test: a centre click lands on
-      // empty space and triple-click needs the text itself
       await cell.tripleClick({ position: { x: 6, y: 15 } })
       await vi.waitFor(() => {
         expect(view.state.selection.empty).toBe(false)
@@ -385,7 +367,6 @@ describe('editor typeset', () => {
       expect(view.state.selection.constructor.name).toBe('TextSelection')
       expect(view.state.doc.textBetween(view.state.selection.from, view.state.selection.to)).toBe('x1')
 
-      // deterministic caret: first cell's text 'x1' spans [start, start+2]
       let start = -1
       view.state.doc.descendants((node, pos) => {
         if (start !== -1) return false
@@ -397,9 +378,6 @@ describe('editor typeset', () => {
       })
       if (start === -1) throw new Error('cell missing')
 
-      // Shift+Home from the end of the cell text selects to the line start;
-      // the browser's line-box edge may sit one position before the
-      // paragraph node, so assert the range covers the cell's text
       view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, start + 2)))
       await userEvent.keyboard('{Shift>}{Home}{/Shift}')
       await vi.waitFor(() => {
@@ -409,7 +387,6 @@ describe('editor typeset', () => {
       expect(view.state.selection.from).toBeLessThanOrEqual(start)
       expect(view.state.selection.to).toBe(start + 2)
 
-      // Shift+ArrowRight from the start selects one character
       view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, start)))
       await userEvent.keyboard('{Shift>}{ArrowRight}{/Shift}')
       await vi.waitFor(() => {
@@ -428,7 +405,6 @@ describe('editor typeset', () => {
       const preview = mounted.root.querySelector('.mgo-preview-root')
       if (!preview) throw new Error('preview root missing')
 
-      // collapsed caret: nothing to dismiss, the class must stay off
       await page.getByText('selectable words here').click({ position: { x: 60, y: 14 } })
       await vi.waitFor(() => {
         expect(view.state.selection.empty).toBe(true)
@@ -436,8 +412,6 @@ describe('editor typeset', () => {
       await userEvent.keyboard('{Escape}')
       expect(preview.classList.contains('mgo-toolbar-dismissed')).toBe(false)
 
-      // open selection: Escape hides the toolbar but must not be consumed —
-      // menus, composers and other keymaps still get their keydown
       await page.getByText('selectable words here').dblClick({ position: { x: 60, y: 14 } })
       await vi.waitFor(() => {
         expect(view.state.selection.empty).toBe(false)
@@ -453,7 +427,6 @@ describe('editor typeset', () => {
       expect(preview.classList.contains('mgo-toolbar-dismissed')).toBe(true)
       expect(view.state.selection.empty).toBe(false)
 
-      // and a plain pointerdown restores it, matching the class contract
       const p = mounted.root.querySelector('.ProseMirror > p')
       if (!p) throw new Error('paragraph missing')
       p.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, isPrimary: true }))
@@ -469,7 +442,6 @@ describe('editor typeset', () => {
       const view = mounted.editor.getView()
       const preview = mounted.root.querySelector('.mgo-preview-root')
       if (!preview) throw new Error('preview root missing')
-      // position lands on the text, not the empty rest of the full-width p
       await page.getByText('selectable words here').dblClick({ position: { x: 60, y: 14 } })
       await vi.waitFor(() => {
         expect(view.state.selection.empty).toBe(false)
@@ -492,7 +464,6 @@ describe('editor typeset', () => {
     try {
       const block = mounted.root.querySelector<HTMLElement>('.milkdown-code-block')
       if (!block) throw new Error('code block missing')
-      // The block starts far below the fold: still a placeholder.
       const placeholder = block.querySelector('.milkdown-code-block-placeholder')
       expect(placeholder).not.toBeNull()
       const placeholderH = block.getBoundingClientRect().height

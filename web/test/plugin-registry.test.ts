@@ -7,7 +7,6 @@ import { ViewRegistry } from '../src/core/ViewRegistry'
 import type { AppPlugin, PluginContext } from '../src/core/types'
 import type { ViewFileSource, ViewGenerator, ViewSnapshot } from '../src/host/types'
 
-/** Generation and going back are not what these tests are about. */
 const noGeneration: ViewGenerator & Pick<ViewFileSource, 'undoView'> = {
   generate: () => Promise.reject(new Error('not in these tests')),
   undoView: () => Promise.reject(new Error('not in these tests')),
@@ -26,7 +25,6 @@ interface Effects {
   viewWatchDisposals: number
 }
 
-/** A view file source that records who follows it. */
 function fakeViewFile(
   effects: Effects,
 ): ViewFileSource & ViewGenerator & { followers: Set<(snap: ViewSnapshot) => void> } {

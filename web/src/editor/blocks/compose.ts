@@ -8,17 +8,12 @@ export interface ComposeContext {
   schema: Schema
   serializer: Serializer
   origins: WeakMap<PMNode, BlockOrigin>
-  /** Origins in load order; consulted when identity misses (see `originFor`). */
   loaded: BlockOrigin[]
   segments: BuiltDocument['segments']
   prefix: string
   trailing: string
 }
 
-/**
- * Where a top-level node's bytes landed in the composed Markdown. Offsets are
- * UTF-16 offsets into the composed text.
- */
 export interface ComposedBlock {
   node: PMNode
   start: number
@@ -30,23 +25,10 @@ export interface ComposedDocument {
   blocks: ComposedBlock[]
 }
 
-/**
- * Compose Markdown from the live document.
- *
- * Unchanged top-level nodes are emitted as their original bytes (identity is
- * tracked through `origins`). Changed or brand-new nodes are serialized on
- * their own inside a throwaway doc wrapper, so a list can never merge with a
- * neighbouring paragraph and a heading never rewrites the rest of the file.
- */
 export function composeDocument(doc: PMNode, ctx: ComposeContext): string {
   return composeWithRanges(doc, ctx).text
 }
 
-/**
- * Compose the document and report the source range of every top-level block in
- * the composed text. Ranges are derived from the current text on every call, so
- * edits and insertions elsewhere in the document move them correctly.
- */
 export function composeWithRanges(doc: PMNode, ctx: ComposeContext): ComposedDocument {
   const nodes: PMNode[] = []
   doc.forEach((node) => {
@@ -57,8 +39,6 @@ export function composeWithRanges(doc: PMNode, ctx: ComposeContext): ComposedDoc
     const meaningful = nodes.filter((node) => !(node.type.name === 'paragraph' && node.content.size === 0))
     if (meaningful.length === 0) return { text: ctx.prefix + ctx.trailing, blocks: [] }
 
-    // The document was empty or whitespace-only when loaded: its original text
-    // is a prefix and must stay before the blocks the user just created.
     let text = ctx.prefix
     const blocks: ComposedBlock[] = []
     for (let i = 0; i < meaningful.length; i += 1) {
@@ -75,9 +55,6 @@ export function composeWithRanges(doc: PMNode, ctx: ComposeContext): ComposedDoc
 
   let out = ''
   const blocks: ComposedBlock[] = []
-  // Nodes still bound by identity already own their origin for this pass; a
-  // structurally equal newcomer must draw from what is left, or two equal
-  // twins could reuse one origin and emit its bytes twice.
   const claimed = new Set<number>()
   for (const node of nodes) {
     const bound = ctx.origins.get(node)
@@ -102,18 +79,6 @@ export function composeWithRanges(doc: PMNode, ctx: ComposeContext): ComposedDoc
   return { text: out, blocks }
 }
 
-/**
- * Undo and other node re-creation paths produce a top-level node that is
- * structurally equal to what these bytes parsed into but is a different
- * object, so the identity map misses. A structural match means the original
- * bytes are a lossless rendering of the node, so it keeps its loaded origin
- * and its original bytes. The match is registered back into the identity
- * map the same way `setNoteText` does, so the fast path takes over again.
- *
- * Each origin backs at most one node per pass: `claimed` is pre-filled with
- * every identity-bound node, so a structurally equal copy lands on an
- * origin nobody owns instead of stealing a twin's bytes.
- */
 function originFor(
   node: PMNode,
   index: number,
@@ -146,12 +111,6 @@ function findLoadedOrigin(
 
 const BLANK_LINE = /(?:\r\n?|\n)[ \t]*(?:\r\n?|\n)/
 
-/**
- * The bytes before a block at top-level index `index`. A block keeps its own
- * gap, also when blocks were inserted or removed above it, so such an edit
- * leaves the rest of the file as it was. Away from its old place it needs a
- * blank line there, or it could merge into the block now before it.
- */
 function gapBefore(origin: BlockOrigin | undefined, index: number): string {
   if (!origin) return '\n\n'
   const { gapBefore: gap, index: loadedAt } = origin.segment
@@ -159,11 +118,6 @@ function gapBefore(origin: BlockOrigin | undefined, index: number): string {
   return loadedAt > 0 && BLANK_LINE.test(gap) ? gap : '\n\n'
 }
 
-/**
- * Whether the file still ends with the block it ended with when loaded, so
- * its trailing bytes stay. Notes do not count: adding or removing one at the
- * end of the file changes nothing else.
- */
 function endsAsLoaded(nodes: readonly PMNode[], ctx: ComposeContext): boolean {
   const lastNode = nodes.findLast((node) => !isNoteNode(node))
   const lastSegment = ctx.segments.findLast((segment) => segment.lock !== 'note')
@@ -175,12 +129,6 @@ function isNoteNode(node: PMNode): boolean {
   return node.type.name === LOCKED_NODE && node.attrs.kind === 'note'
 }
 
-/**
- * The block an offset belongs to. A block owns its own text plus its end
- * boundary, so an offset at `end` stays in that block; only offsets strictly
- * inside the gap between two blocks resolve to the following block. Offsets
- * past the trailing text resolve to the last block.
- */
 export function blockAtOffset(blocks: ComposedBlock[], offset: number): ComposedBlock | undefined {
   for (const block of blocks) {
     if (offset >= block.start && offset <= block.end) return block

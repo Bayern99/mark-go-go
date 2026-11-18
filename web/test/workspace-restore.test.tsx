@@ -45,7 +45,6 @@ afterEach(() => {
   window.localStorage.clear()
 })
 
-/** Wait until every document pane has its editor: then it can flush. */
 async function waitForPanes(container: HTMLElement, count: number): Promise<void> {
   await vi.waitFor(
     () => {
@@ -211,7 +210,6 @@ describe('view mode and restore transport',
             'true',
           )
           expect(host.generations).toEqual([])
-          // Restoring the mode must not write the pre-restore default back.
           expect(host.getState().viewMode).toBe('genui')
         } finally {
           await app.unmount()

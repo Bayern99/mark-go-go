@@ -8,9 +8,6 @@ import (
 	"testing"
 )
 
-// baseViewText is a current view an update starts from: a Column of
-// two KeyPoints, "a" from the section Report and "b" from the second
-// Überblick, both with hashes the document no longer has.
 const baseViewText = `{
   "version": 2,
   "generatedAt": "2026-11-06T09:00:00Z",
@@ -30,16 +27,11 @@ const baseViewText = `{
 }
 `
 
-// updateOut is an agent's update that replaces "b" with a Card holding
-// a new component "c" from a new source.
 const updateOut = `{"sources":{"s2":{"heading":"Überblick 概要 🚀","occurrence":2},"s3":{"heading":"Report","occurrence":1}},"a2ui":[{"version":"1.0","updateComponents":{"surfaceId":"view","components":[{"id":"b","component":"Card","child":"c"},{"id":"c","component":"KeyPoints","items":["New C"],"sources":["s2","s3"]}]}}]}`
 
-// writeBase writes the base view as the view file of a fresh folder and,
-// when prev is not empty, a kept earlier view next to it.
 func writeBase(t *testing.T, prev string) string {
 	t.Helper()
 	viewPath := filepath.Join(t.TempDir(), ".notes.md.genui.json")
-	// Owner-only, as a view written by an earlier version may be.
 	if err := os.WriteFile(viewPath, []byte(baseViewText), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -73,8 +65,6 @@ func TestGenerateUpdate(t *testing.T) {
 		t.Fatalf("runGeneration: %v", err)
 	}
 
-	// The agent's folder held the document and the current view, as
-	// the view file was; it may read the view but not write it.
 	if got := logEntries(log, "files")[0]["files"].([]any); len(got) != 2 || got[0] != "source.md" || got[1] != "view.json" {
 		t.Errorf("agent folder at start = %v, want source.md and view.json", got)
 	}
@@ -83,8 +73,6 @@ func TestGenerateUpdate(t *testing.T) {
 		t.Errorf("permission outcomes = %v, want read allowed and edit rejected", outcomes)
 	}
 
-	// The update is appended to the view's messages; every source is
-	// hashed from this run's text, and the new one is added.
 	raw, err := os.ReadFile(viewPath)
 	if err != nil {
 		t.Fatal(err)
@@ -123,7 +111,6 @@ func TestGenerateUpdate(t *testing.T) {
 		t.Errorf("request = %q, want this run's", view.Request)
 	}
 
-	// The view it replaced is kept to go back to, as private as it was.
 	if prev, err := os.ReadFile(prevViewPath(viewPath)); err != nil || string(prev) != baseViewText {
 		t.Errorf("kept view = %q, %v; want the view before the update", prev, err)
 	}
@@ -137,8 +124,6 @@ func TestGenerateUpdate(t *testing.T) {
 }
 
 func TestGenerateUpdateRejected(t *testing.T) {
-	// An update that does more than it was asked to is refused whole:
-	// the view and the kept view stay as they were.
 	const kept = "the view before"
 	message := func(body string) string {
 		return `{"sources":{},"a2ui":[` + body + `]}`
@@ -175,8 +160,6 @@ func TestGenerateUpdateRejected(t *testing.T) {
 }
 
 func TestGenerateUpdateNeedsItsView(t *testing.T) {
-	// An update names components of the view there is; without one, or
-	// with an id the view does not have, the agent never runs.
 	viewPath := writeBase(t, "")
 	for name, mutate := range map[string]func(*generationJob){
 		"unknown id": updateJob(viewPath, "b", "zz"),
@@ -197,8 +180,6 @@ func TestGenerateUpdateNeedsItsView(t *testing.T) {
 }
 
 func TestGenerateUpdateViewChangedMeanwhile(t *testing.T) {
-	// Another tool rewrote the view while the agent worked: the update
-	// was made for the old one and is not applied.
 	viewPath := writeBase(t, "")
 	spec := fakeSpec{Out: updateOut, Messages: []string{"done"}}
 	err, _, _ := driveGeneration(t, spec, func(p GenerateProgress) error {
@@ -223,7 +204,6 @@ func TestFullGenerationKeepsTheViewItReplaces(t *testing.T) {
 	}
 	sentinelKept(t, prevViewPath(viewPath), []byte(baseViewText))
 
-	// A failed run leaves the kept view as it was.
 	now, _ := os.ReadFile(viewPath)
 	err, _, _ := driveGeneration(t, fakeSpec{Out: "not json"}, nil, func(job *generationJob) { job.ViewPath = viewPath })
 	if err == nil {
@@ -238,7 +218,6 @@ func TestUndoView(t *testing.T) {
 	if err := undoView(viewPath); err != nil {
 		t.Fatalf("undoView: %v", err)
 	}
-	// The kept view is the view again, and there is nothing to go back to.
 	snap := readView(viewPath)
 	if snap.Text != "the view before" || snap.CanUndo {
 		t.Errorf("after undo = %+v, want the kept view without undo", snap)

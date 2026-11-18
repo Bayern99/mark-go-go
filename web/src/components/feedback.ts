@@ -1,8 +1,3 @@
-/**
- * Copy feedback flips the clicked control's icon to a tick, in place.
- * `activeElement` covers engines that focus buttons on click; the last
- * captured press covers engines (and library buttons) that do not.
- */
 const TICK_MS = 1200
 
 let lastPress: EventTarget | null = null

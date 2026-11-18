@@ -41,14 +41,14 @@ describe('section folding', () => {
     const { editor, cleanup } = await mountEditor(DOC)
     const [alpha] = headingPositions(editor)
 
-    editor.toggleFold(alpha) // h1 hides everything after it
-    expect(hiddenCount(editor)).toBe(7) // 4 headings + 4 paras
+    editor.toggleFold(alpha)
+    expect(hiddenCount(editor)).toBe(7)
 
     await cleanup()
 
     const t2 = await mountEditor(DOC)
     const heads = headingPositions(t2.editor)
-    t2.editor.toggleFold(heads[1]) // h2 hides inner para + h3 + deep para
+    t2.editor.toggleFold(heads[1])
     expect(hiddenCount(t2.editor)).toBe(3)
     await t2.cleanup()
   })
@@ -57,10 +57,9 @@ describe('section folding', () => {
     const { editor, cleanup } = await mountEditor(DOC)
     const [alpha, sub] = headingPositions(editor)
 
-    editor.toggleFold(sub) // fold child first
-    editor.toggleFold(alpha) // fold parent
-    editor.toggleFold(alpha) // expand parent
-    // child stays folded
+    editor.toggleFold(sub)
+    editor.toggleFold(alpha)
+    editor.toggleFold(alpha)
     expect(editor.foldAnchors()).toEqual([sub])
     expect(hiddenCount(editor)).toBe(3)
     await cleanup()
@@ -85,13 +84,12 @@ describe('section folding', () => {
     const view = editor.getView()
     const [, sub] = headingPositions(editor)
     const subNode = view.state.doc.nodeAt(sub)!
-    const inside = sub + subNode.nodeSize + 2 // inner para text
+    const inside = sub + subNode.nodeSize + 2
     const { TextSelection } = await import('@milkdown/kit/prose/state')
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, inside)))
 
     editor.toggleFold(sub)
     const sel = view.state.selection
-    // caret now sits inside the heading (visible)
     expect(sel.from).toBeLessThanOrEqual(sub + subNode.nodeSize)
     await cleanup()
   })
@@ -102,7 +100,6 @@ describe('section folding', () => {
     editor.toggleFold(alpha)
     expect(hiddenCount(editor)).toBeGreaterThan(0)
 
-    // offset of the deep heading's text in markdown source
     const offset = editor.getMarkdown().indexOf('Alpha.Sub.Deep')
     editor.reveal(offset)
     expect(editor.foldAnchors()).not.toContain(alpha)
@@ -115,7 +112,6 @@ describe('section folding', () => {
     const [, , , beta] = headingPositions(editor)
     editor.toggleFold(beta)
 
-    // Edit the heading text: fold stays on the (renamed) Beta heading.
     view.dispatch(view.state.tr.insertText('X', beta + 1))
     const anchors = editor.foldAnchors()
     expect(anchors.length).toBe(1)
@@ -123,7 +119,6 @@ describe('section folding', () => {
     expect(node.type.name).toBe('heading')
     expect(node.textContent).toContain('XBeta')
 
-    // Delete that heading entirely: fold is dropped.
     const hb = anchors[0]
     const hn = view.state.doc.nodeAt(hb)!
     view.dispatch(view.state.tr.delete(hb, hb + hn.nodeSize))
@@ -151,7 +146,7 @@ describe('section folding', () => {
     const r2 = mk()
     const e2 = await createMarkdownEditor(r2, { initialText: DOC, docKey: 'test-doc' })
     expect(e2.foldAnchors().length).toBe(1)
-    expect(hiddenCount(e2)).toBe(1) // Beta's section body is one para
+    expect(hiddenCount(e2)).toBe(1)
     await e2.destroy()
     r2.remove()
     localStorage.removeItem('mgo.folds:test-doc')
@@ -188,7 +183,6 @@ describe('fold boundary cases', () => {
       return root
     }
     const doc = '# A\n\nx\n\n## Same\n\nfirst body\n\n## Same\n\nsecond body\n\n## Other\n\no\n'
-    // Session 1: fold the second "Same" (body 'second body')
     const r1 = mk()
     const e1 = await createMarkdownEditor(r1, { initialText: doc, docKey: 'sig-doc' })
     let heads: number[] = []
@@ -199,15 +193,12 @@ describe('fold boundary cases', () => {
     await e1.destroy()
     r1.remove()
 
-    // Session 2: the two "Same" sections were reordered externally. The
-    // folded one (now first) must reattach by content, not by index.
     const reordered = '# A\n\nx\n\n## Same\n\nsecond body\n\n## Same\n\nfirst body\n\n## Other\n\no\n'
     const r2 = mk()
     const e2 = await createMarkdownEditor(r2, { initialText: reordered, docKey: 'sig-doc' })
     const anchors = e2.foldAnchors()
     expect(anchors.length).toBe(1)
     const node = e2.getView().state.doc.nodeAt(anchors[0])!
-    // hidden body after the anchor must be 'second body'
     const after = e2.getView().state.doc.textBetween(
       anchors[0] + node.nodeSize,
       anchors[0] + node.nodeSize + 20,
@@ -216,19 +207,15 @@ describe('fold boundary cases', () => {
     await e2.destroy()
     r2.remove()
 
-    // Session 3: same duplicate count, but the folded section's body was
-    // replaced externally -> signature no longer matches -> expands.
     const replaced = '# A\n\nx\n\n## Same\n\nsecond body\n\n## Same\n\nCHANGED\n\n## Other\n\no\n'
-    // Fresh storage: seed it as if 'first body' was folded.
     localStorage.removeItem('mgo.folds:sig-doc')
     const r3 = mk()
     const e3 = await createMarkdownEditor(r3, { initialText: doc, docKey: 'sig-doc' })
-    e3.toggleFold(heads[0]) // fold 'first body' Same
+    e3.toggleFold(heads[0])
     await e3.destroy()
     r3.remove()
     const r4 = mk()
     const e4 = await createMarkdownEditor(r4, { initialText: replaced, docKey: 'sig-doc' })
-    // 'first body' no longer exists -> nothing restores
     expect(e4.foldAnchors().length).toBe(0)
     await e4.destroy()
     r4.remove()
@@ -242,8 +229,6 @@ describe('fold boundary cases', () => {
     editor.toggleFold(alpha)
     expect(hiddenCount(editor)).toBeGreaterThan(0)
 
-    // Programmatic caret inside the hidden body — as an ArrowRight from the
-    // heading end would land.
     const hiddenPos = alpha + view.state.doc.nodeAt(alpha)!.nodeSize + 2
     const { TextSelection } = await import('@milkdown/kit/prose/state')
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, hiddenPos)))
@@ -256,7 +241,7 @@ describe('fold boundary cases', () => {
     const { editor, cleanup } = await mountEditor(DOC)
     const view = editor.getView()
     const [, sub] = headingPositions(editor)
-    editor.toggleFold(sub) // hide Alpha.Sub's body; 'Beta' is the next visible node
+    editor.toggleFold(sub)
     const betaPos = (() => {
       let p = -1
       view.state.doc.forEach((n: any, pos: number) => {
@@ -264,14 +249,12 @@ describe('fold boundary cases', () => {
       })
       return p
     })()
-    // Caret at start of the first visible node after the fold (Beta's
-    // heading text), Backspace would merge into hidden content.
     const { TextSelection } = await import('@milkdown/kit/prose/state')
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, betaPos + 1)))
     view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }))
     await new Promise((r) => setTimeout(r, 0))
     expect(editor.foldAnchors()).not.toContain(sub)
-    expect(editor.getMarkdown()).toBe(DOC) // nothing deleted
+    expect(editor.getMarkdown()).toBe(DOC)
     await cleanup()
   })
 })

@@ -1,40 +1,27 @@
 export interface ComposerMount {
-  /** Block element after which the inline composer is placed when no custom mount is given. */
   anchor?: Element | null
-  /** Fallback container when no custom mount is given. */
   container?: Element | null
-  /** Custom mount hook (e.g. ProseMirror widget) returning an optional cleanup. */
   mount?: (composer: HTMLElement) => (() => void) | void
 }
 
-/**
- * The owner of at most one open composer. Each editor has its own scope, so a
- * background document's reload, read-only switch or teardown can close its own
- * composer without touching another document's draft.
- */
 export class ComposerScope {
   private cancelActive: (() => void) | null = null
 
-  /** Close the one composer this owner has open, if any. */
   cancel(): void {
     this.cancelActive?.()
   }
 
-  /** @internal Claims or releases this owner's open-composer slot. */
   track(cancel: (() => void) | null): void {
     this.cancelActive = cancel
   }
 }
 
 export interface NoteComposerOptions extends ComposerMount {
-  /** The editor this composer belongs to; only that editor may cancel it. */
   scope: ComposerScope
 }
 
 export interface MarkdownComposerOptions extends ComposerMount {
-  /** Accessible name of the region. */
   label?: string
-  /** The editor this composer belongs to; only that editor may cancel it. */
   scope: ComposerScope
 }
 
@@ -163,12 +150,6 @@ function openComposer(config: OpenComposerConfig): Promise<string | null> {
   })
 }
 
-/**
- * Opens an in-place paper composer (`<div class="composer mgo-note-composer">`,
- * never a `<dialog>`) anchored right after the target block in the editor.
- * Resolves to the trimmed note text on save (`⌘↩` / `Ctrl+↩` / `Save`), or
- * `null` when cancelled (`Escape` / `Cancel`).
- */
 export function askForNote(initial: string, options: NoteComposerOptions): Promise<string | null> {
   return openComposer({
     ...options,
@@ -183,11 +164,6 @@ export function askForNote(initial: string, options: NoteComposerOptions): Promi
   })
 }
 
-/**
- * Opens the same paper composer for a special block's raw Markdown. The saved
- * string is the textarea contents as typed, including whitespace; cancel returns
- * null and writes nothing.
- */
 export function askForMarkdown(
   initial: string,
   options: MarkdownComposerOptions,
@@ -205,11 +181,6 @@ export function askForMarkdown(
   })
 }
 
-/**
- * Textarea.value always stores LF. Map those LFs back onto the original
- * block's CR / CRLF / LF endings so an in-place edit does not rewrite
- * untouched line breaks inside the same source span.
- */
 function restoreNewlines(original: string, typed: string): string {
   const originalLines = original.split(/\r\n|\n|\r/)
   const typedLines = typed.split(/\n/)

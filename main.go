@@ -1,11 +1,3 @@
-// Command mark-go-go is a local-first Markdown editor for macOS.
-//
-// The Go side owns documents: MyGo reads and writes files, autosaves,
-// keeps recovery copies and reports file state. A workspace window hosts
-// several documents as tabs. See workspace.go and documenthost.go.
-//
-//	mygo dev     # or: go tool mygo dev
-//	mygo build   # or: go tool mygo build
 package main
 
 import (
@@ -17,8 +9,6 @@ import (
 	"github.com/egoist/mygo"
 )
 
-// documentAutosave remains the production default. Explicit e2e builds turn
-// it off so native Save tests cannot pass because an autosave won the race.
 var documentAutosave = mygo.AutosaveInPlace
 
 func main() {

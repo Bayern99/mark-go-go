@@ -37,7 +37,6 @@ describe('section text and hash (shared vectors)', () => {
     expect(sections).toEqual(vectors.notes.sections.map(({ text: _text, ...section }) => section))
     for (const section of vectors.notes.sections) expect(sectionHash(section.text)).toBe(section.hash)
 
-    // The same sections before the notes were added hash the same.
     expect(extractSections(textWithoutNotes).map((section) => section.hash)).toEqual(
       vectors.notes.sections.map((section) => section.hash),
     )

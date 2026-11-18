@@ -42,8 +42,9 @@ func main() {
 		Command: func(role mygo.MenuRole, doc *mygo.Document[string], win *mygo.Window) bool {
 			return host.interceptCommand(role, doc, win)
 		},
-		PathChange:  host.pathChangeLock,
-		ReservePath: host.reservePath,
+		DocumentFocused: host.documentFocused,
+		PathChange:      host.pathChangeLock,
+		ReservePath:     host.reservePath,
 		BeforeWindowClose: func(win *mygo.Window) bool {
 			return host.interceptWindowClose(win)
 		},

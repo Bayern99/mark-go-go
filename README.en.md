@@ -4,7 +4,7 @@
 
 Mark Go Go is a local Markdown editor for macOS. Open a folder as a workspace, edit the rendered document in Markdown Preview or its source in Markdown mode, and use GenUI to read a generated view alongside the original document.
 
-- A workspace window opens at 1280 × 820 with a file tree and document tabs. Search paths, titles, excerpts and headings, including changes in open documents. The app restores the previous workspace, tabs and view modes when you reopen it.
+- A workspace window opens at 1280 × 820 with a file tree and document tabs. One window can hold multiple folder workspaces: tabs switch directly across them, `Ctrl+Tab` alternates recent documents, and the workspace name opens the root menu. Search paths, titles, excerpts and headings, including changes in open documents. The app restores the previous workspaces, tabs and view modes when you reopen it.
 - Use `⌘/` to switch between `Preview` and `Markdown`. Preview preserves the bytes of unedited blocks, renders Mermaid diagrams locally, and lets you edit special blocks in place.
 - GenUI is a read-only view derived from the original Markdown. Its cards link back to their sources. The right pane holds the Outline and the controls for generating or updating GenUI through an external ACP agent.
 - Portrait is the light interface for all three columns. Fonts and icons ship with the app.

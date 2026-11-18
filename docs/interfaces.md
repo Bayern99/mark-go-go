@@ -4,7 +4,7 @@
 
 | 模块 | 位置 | 职责 |
 |---|---|---|
-| Host（Go） | `main.go`、`documenthost.go`、`workspace.go`、`viewfile.go`、`generate.go` 等 | `mygo.NewDocuments[string]` + 绑定服务 `WorkspaceHost`：一个工作区（文件夹）一个窗口，同窗多文档标签、全应用同一文件的单一编辑会话、文件读写（原始字节）、脏状态、自动保存、恢复副本、外部修改重载/冲突、File/Edit 菜单归属；跟随文档旁的视图文件；按文档隔离的 ACP 生成（ADR 0003、0005） |
+| Host（Go） | `main.go`、`documenthost.go`、`workspace.go`、`viewfile.go`、`generate.go` 等 | `mygo.NewDocuments[string]` + 绑定服务 `WorkspaceHost`：一个窗口承载多个工作区（文件夹）、跨工作区单一文档标签组、全应用同一文件的单一编辑会话、文件读写（原始字节）、脏状态、自动保存、恢复副本、外部修改重载/冲突、File/Edit 菜单归属；跟随文档旁的视图文件；按文档隔离的 ACP 生成（ADR 0003、0005） |
 | 导航索引（Go） | `index.go`、`navmeta.go` | 工作区文件树的增量扫描与索引（`NavSnapshot` 的 `status`/`indexed`/`total` 如实报告未完成）、`SetFilter` 搜索（标题 + 预览 + 章节命中）、已打开文档的未保存文本也参与索引 |
 | 会话恢复（Go） | `session.go`、`restore_host.go` | `session.json` 布局（工作区、标签顺序、活动文档、视图模式）、退出前逐窗口 flush 确认后的持久化、启动恢复与缺失路径的部分恢复（#23） |
 | Host Adapter（TS） | `web/src/host/` | `WorkspaceAdapter` / `HostAdapter` 契约；`mygoHost.ts`（MyGo IPC）、`browserHost.ts`（纯浏览器内存实现，`createBrowserWorkspace` / `createBrowserHost`） |
@@ -23,14 +23,16 @@
 
 | 名称 | 类型 | 说明 |
 |---|---|---|
-| `Snapshot()` | `→ WorkspaceSnapshot` | 当前窗口的工作区：`id`、`root`（未命名窗口为空）、`name`、`kind`（`folder` / `untitled`）、按标签顺序的 `documents: DocumentInfo[]`、`activeId`、`restoreError?` |
-| `Open(path)` | `→ DocumentInfo` | 全局路由：先定位同一磁盘文件的已打开标签（`path` 相等、规范化路径相等或 `os.SameFile`），否则进入根目录最深的已打开工作区，再否则以文件父目录打开/新建工作区（ADR 0005） |
-| `OpenWorkspace(root)` | `→ void` | 已是某工作区根则定位该窗口，否则新建工作区窗口；根与文件在解析符号链接前缀后比较（macOS `/tmp` 与 `/private/tmp` 是同一工作区） |
+| `Snapshot()` | `→ WorkspaceSnapshot` | 当前窗口：`id` 是窗口身份；`root` / `name` / `kind` 是当前导航根目录；`workspaces: WorkspaceSummary[]` 列出本窗口根目录；`documents` 是跨工作区的统一标签顺序；另有 `activeId`、`restoreError?` |
+| `Open(path)` | `→ DocumentInfo` | 全局路由：先定位同一磁盘文件的已打开标签（`path` 相等、规范化路径相等或 `os.SameFile`），否则进入根目录最深的已打开工作区，再否则在当前窗口加入文件父目录（ADR 0005） |
+| `OpenWorkspace(root)` | `→ void` | 已是某工作区根则选择它，否则在当前窗口加入该根目录；根与文件在解析符号链接前缀后比较（macOS `/tmp` 与 `/private/tmp` 是同一工作区） |
+| `ActivateWorkspace(workspaceId)` | `→ void` | 选择该根目录的左栏导航及其最近文档；空根目录不卸载其他文档 |
+| `CloseWorkspaceRoot(workspaceId)` | `→ CloseResult` | 只确认并关闭该根目录的标签，再移除导航；取消保留全部标签，其他根目录不受影响 |
 | `New()` | `→ DocumentInfo` | 本窗口新增未命名原文（`kind: 'untitled'` 的窗口） |
 | `Duplicate(documentId)` | `→ DocumentInfo` | 复制为新的未命名原文 |
 | `Activate(documentId)` | `→ void` | 激活标签，不改文件 |
 | `CloseDocument(documentId)` | `→ CloseResult` | 关闭一个文档标签；脏文档逐字询问。`{closed:false, canceled:true}` 时窗口与其余标签不变 |
-| `CloseWorkspace()` | `→ CloseResult` | 窗口关闭按钮：逐个确认脏文档。全部同意关闭后才丢弃恢复副本；取消保留窗口、标签与未保存的恢复副本。已经成功写入的保存仍有效 |
+| `CloseWorkspace()` | `→ CloseResult` | 原生窗口关闭按钮：确认整个跨工作区文档组。全部同意关闭后才丢弃恢复副本；取消保留窗口、标签与未保存的恢复副本。已经成功写入的保存仍有效 |
 | `NavSnapshot()` / `SetFilter(query)` / `ToggleFolder(rel)` / `RevealPath(path)` / `PickFolder()` / `RecentWorkspaces()` | 见「工作区导航」 | 打开工作区不等整目录扫描；`PickFolder` 取消时以 `ErrCanceled` 拒绝 |
 
 ### 文档级
@@ -53,11 +55,11 @@
 
 | 事件 | 载荷 | 说明 |
 |---|---|---|
-| `workspaceChanged` | `WorkspaceSnapshot` | 标签顺序、活动标签、根目录与每个标签的徽标的权威来源 |
+| `workspaceChanged` | `WorkspaceSnapshot` | 跨工作区标签顺序、活动标签、当前根目录、根目录列表与每个标签徽标的权威来源 |
 | `docReloaded` | `Snapshot` | MyGo 因外部修改重读文件；`version` +1；带 `id` |
 | `docState` | `DocumentInfo` | 该文档的 edited / conflict / deleted / readOnly / name / path / generating / `actionError`；背景标签只更新对应标签，不激活它 |
 | `viewChanged` | `{ id } & ViewSnapshot` | 跟随期间视图文件被写入、替换或删除；文档改名/首次保存/Save As 后改跟随新路径并推送一次 |
-| `navChanged` | `NavSnapshot` | 文件树增量快照；`status` 为 `idle`/`scanning`/`indexing`/`ready`/`error` |
+| `navChanged` | `NavSnapshot` | 当前根目录的文件树增量快照；后台根目录完成索引时不覆盖当前左栏；`status` 为 `idle`/`scanning`/`indexing`/`ready`/`error` |
 | `navSearchReady` | `NavSearchResult` | 过滤搜索结果；索引未完成时 `incomplete: true` |
 | `nativeCommand` | `NativeCommand { id, command, attempt? }` | 原生 File/Edit 菜单和 `Cmd+W` 捕获目标 `documentId`。`flushQuit` 携带退出尝试编号 |
 | `settingsChanged` | `Settings` | 设置写入成功后广播到**每个窗口**，见「生成设置」 |
@@ -98,6 +100,8 @@ interface WorkspaceAdapter {
   subscribe(fn: (snap: WorkspaceSnapshot) => void): Disposable
   open(path: string): Promise<DocumentInfo>
   openWorkspace(root: string): Promise<void>
+  activateWorkspace(id: string): Promise<void>
+  closeWorkspaceRoot(id: string): Promise<CloseResult>
   newDocument(): Promise<DocumentInfo>
   duplicate(id: string): Promise<DocumentInfo>
   activate(id: string): Promise<void>
@@ -165,13 +169,14 @@ interface PluginContext {
 
 ## 工作区、文档与标签（#21，ADR 0005）
 
-- 一个文件夹 = 一个工作区 = 一个窗口。窗口顶部的文档标签在同一个窗口里切换原文；左栏始终是该文件夹的文件导航。
-- 身份分工：`documentId`（Go `mygo.Document.ID()`，跨路径、标签、窗口、首次保存与 Save As 稳定）、`workspaceId`（窗口内标签集合）、`root`（文件夹路径，未命名窗口为空）、`path`（磁盘文件，未保存时为空）、标签（UI 导航项）。文档适配器在生命周期内绑定一个 `documentId`；异步调用、事件、视图跟随与生成都不经活动标签重定向。
+- 一个文件夹 = 一个工作区；一个窗口默认可容纳多个工作区。窗口顶部唯一一组文档标签跨工作区切换原文；左栏显示当前选中的文件夹导航，原工作区名称打开根目录菜单。
+- 身份分工：`documentId`（Go `mygo.Document.ID()`，跨路径、标签、根目录、首次保存与 Save As 稳定）、`workspaceId`（一个根目录的导航与文档归属）、`WorkspaceSnapshot.id`（原生窗口与统一标签组）、`root`（文件夹路径，未命名工作区为空）、`path`（磁盘文件，未保存时为空）、标签（UI 导航项）。文档适配器在生命周期内绑定一个 `documentId`；异步调用、事件、视图跟随与生成都不经活动标签重定向。
 - 同一份磁盘文件全应用只保留一个打开的编辑会话：从 Finder、File > Open、文件树或 `RevealPath` 重复打开只定位已有标签，不产生第二份待保存内容。根本身按解析符号链接后的规范化路径比较，`/tmp` 与 `/private/tmp` 这类别名不会分裂成两个工作区。
 - 未命名窗口（`kind: 'untitled'`，`root` 为空）承载未命名原文；关掉最后一个标签即关闭窗口。绑定文件夹的工作区关掉最后一个标签仍保留窗口，中央显示空状态。
-- 首次保存 / Save As 后：文档保留 `documentId`、内容、版本、视图跟随与生成槽；标签离开原窗口，按路由加入包含新路径的工作区（取根目录最深的已打开工作区，否则在父目录新开窗口）；同一未命名窗口里的其他未命名原文留在原处；目标路径已是另一份打开文档时拒绝保存，不静默覆盖。
+- 首次保存 / Save As 后：文档保留 `documentId`、内容、版本、视图跟随与生成槽；标签在同一原生窗口中按路由加入包含新路径的工作区（取根目录最深的已打开工作区，否则加入父目录根）；同一未命名工作区里的其他未命名原文留在原处；目标路径已是另一份打开文档时拒绝保存，不静默覆盖。
 - 标签栏：`role="tablist"`，每个标签 `role="tab"` 与 `aria-selected`，显示文件名（同名标签追加父目录名，如 `notes.md — alpha`）、未保存圆点、生成中、冲突、已删除、只读徽标与关闭按钮。方向键移动，`Delete` / `⌘W` 关闭当前标签。
 - 共享提示与通知：`components/Tooltip.tsx` 用 `radix-ui@1.8.1` 为文件树、标签和状态提供完整路径/说明；`App` 根部只有一个 `Tooltip.Provider` 与浅色 Sonner `Toaster`。`components/feedback.ts` 在 Crepe 代码块和链接复制成功后用固定 ID 显示 `Code copied` / `Link copied`，不叠加重复 toast；持续错误和生成进度仍原位呈现。
+- 高频往返：可见标签直接点击；`Ctrl+Tab` 与最近的另一份已打开文档往返，目标在其他工作区或溢出菜单中也适用。溢出列表按最近使用优先。
 - 文档溢出菜单：触发钮直接显示 `+N`，`DropdownMenu` Portal 承载带标题、搜索图标、文件图标、路径次级行和当前项勾号的命令菜单；活动标签与触发钮保留拟物 `--raised` 材质，搜索焦点为细内描边。Radix 管理焦点、键盘导航、Escape、外部点击和碰撞定位；标签的测量 ref 直接挂按钮，选择后焦点返回活动标签，Escape 返回溢出触发钮。文件树使用 Phosphor folder/folder-open/file-text，普通行次级文字为父目录，过滤结果保留标题/摘要。
 - 生成中则禁用该文档的 Save As / Rename / Move（提示先取消或等待），普通保存、继续编辑与标签切换仍可用，其他文档不受影响。
 
@@ -262,11 +267,11 @@ interface PluginContext {
 
 ## 原生菜单、撤销重做与会话恢复（#21、#23、#30）
 
-- File 菜单的 Save / Save As / Duplicate / Rename / Move / Revert 作用于**聚焦窗口的活动文档**（MyGo 文档组），点击时捕获该窗口的 `documentId`；`Cmd+W` / File > Close（`RoleClose`）关闭**捕获的活动文档**：有文档时修补后的菜单把 `RoleClose` 交给 `performRole(RoleClose)` 而非平台 `performClose`，文档角色经应用的 `Command`（`nativeCommand close`）关闭该文档。窗口关闭按钮调用 `CloseWorkspace`（逐个确认脏文档，取消保留标签及恢复副本），关闭整个文档组。文件夹工作区没有标签时保留窗口：`RefreshDocumentMenus` 在该状态禁用 File > Close，因此原生 `Cmd+W` 是 no-op，而不是关窗。独立未命名窗口的最后一份文档关闭仍销毁窗口。若 Go 文档角色在无文档时被调用 `RoleClose`（窗口/菜单竞态），它解析给定或聚焦窗口并关闭；`BeforeWindowClose` 仍把它转为 `CloseWorkspace`——这个内部回退不是“空文件夹窗口下 Cmd+W 会关窗”的 UI 承诺。无文档支持的应用保留平台 `performClose`。
+- File 菜单的文档命令在点击时捕获聚焦窗口的活动 `documentId`。`Cmd+W` 与 File > Close 经 `performRole(RoleClose)` 和 `nativeCommand close` 关闭捕获的文档。当前根目录仍有标签时，窗口选中该根目录的一份文档。空文件夹根目录保留窗口，以根目录名为标题，清除 MyGo 活动文档并禁用 File 菜单的文档命令。此时按 `Cmd+W` 保留窗口。窗口关闭按钮调用 `CloseWorkspace`，确认所有有未保存修改的文档后关闭整个文档组。独立未命名窗口关闭最后一份文档时销毁窗口。无文档支持的应用保留平台 `performClose`。
 
 - 退出时宿主向工作区窗口发送带尝试编号的 `flushQuit`。窗口通过 `PrepareQuit(attempt, failure)` 报告结果。全部窗口成功交付编辑且 `session.json` 写入成功后才继续退出。交付失败、确认超时或写入失败时，应用保留窗口并显示提示，用户可再次选择退出。未保存内容由 MyGo 恢复副本保存。
 - Edit > Undo / Redo（`nativeCommand` 的 `undo` / `redo`）按点击时的活动 `documentId` 应用到**该文档编辑器的历史**，与 `UndoView`（视图文件撤回）无关。`nativeEdit.ts` 维护每文档的目标（ProseMirror 或 CodeMirror），聚焦的原地 Composer `textarea` 保留原生字段撤销；只读 GenUI / ComparisonTable 的焦点不改写文档。`SetNativeEditState(documentId, canUndo, canRedo)` 只为聚焦窗口的活动文档更新菜单可用性。
-- 会话文件：`session.json` 在 `PathUserData`，记录未主动关闭的工作区（`id`、`root`、按顺序的 `tabs[{id, path, viewMode}]`、`activeId`），不复制未保存字节。布局变化（打开、移动标签、激活、关闭、切换视图模式）时写入，退出确认后再写一次；恢复期间跳过写入，避免用半恢复的窗口覆盖已存布局。空的无标题窗口（Welcome）不存；关闭的标签或工作区不复活。
+- `PathUserData` 下的 `session.json` 保存工作区的 `id`、`root`、按顺序的 `tabs[{id, path, viewMode}]`、`activeId` 及可选的 `active` 标记。布局变化和退出确认后写入，恢复期间暂停写入。Welcome 空窗口、主动关闭的标签或工作区无需恢复。未保存文字由 MyGo 恢复副本持有。启动时将保存的布局合并到一个窗口，优先复用恢复副本或启动文件已经打开的窗口。
 - `flushQuit` / Save / Save As / Close 的文本来源是**该面板真正持有的文本**：编辑器已挂载时取屏幕上的当前 Markdown（`editor.getMarkdown()`，即当前 compose 文本），否则回落到宿主载入的核心文档状态。用户确实清空文档时，按普通编辑送达 `""`。
 - `bindFlush` 注册面板的原始文本读取器。Save、Save As、Rename、Move、Revert、Duplicate 和关闭标签各对捕获的文档调用一次 `Flush`。关闭工作区对每个已注册的读取器调用一次 `Flush`。退出时对每个已注册的读取器调用一次 `FlushQuit`，带上当前尝试编号。没有注册读取器的文档不会产生写入。
 - 绑定时机：只有编辑器已 ready 才 `bindFlush`；已注册的 reader 执行时若 `editorRef` 短暂为空，回落到宿主载入的核心文本；从未挂载编辑器的面板不会提前注册，也不会交付 `''`。

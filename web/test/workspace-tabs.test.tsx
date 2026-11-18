@@ -218,6 +218,24 @@ describe('App workspace tabs', () => {
     }
   })
 
+  it('extends same-name labels only until cross-workspace paths differ', async () => {
+    const a = createBrowserHost('# alpha\n', 'notes.md')
+    const b = createBrowserHost('# beta\n', 'notes.md')
+    const workspace = createBrowserWorkspace([
+      { host: a, name: 'notes.md', path: '/Research/notes/notes.md' },
+      { host: b, name: 'notes.md', path: '/Music/notes/notes.md' },
+    ])
+    const app = await mountWorkspace(workspace)
+    try {
+      await vi.waitFor(() => {
+        const labels = [...app.container.querySelectorAll('[role="tab"] .nm')].map((el) => el.textContent)
+        expect(labels).toEqual(['notes.md — Research/notes', 'notes.md — Music/notes'])
+      })
+    } finally {
+      await app.unmount()
+    }
+  })
+
   it('keeps both tabs when close is canceled', async () => {
     const a = createBrowserHost('# A\n', 'a.md')
     const b = createBrowserHost('# B\n', 'b.md')

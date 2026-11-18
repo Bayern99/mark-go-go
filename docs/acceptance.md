@@ -2,6 +2,33 @@
 
 本文件按阶段记录实际执行的检查。PR 合并前检查见下节。其余各节保留各自版本的原型与集成证据，被后续规格取代的条目已就地标注。
 
+## 单窗口多 Workspace（2026-11-17）
+
+Workspace 菜单、Save As 和 Move To 的原生记录来自 `Mark Go Go Native Verify.app`（`dev.markgogo.editor.nativeverify`）。通过 Computer 在 macOS 操作应用菜单和系统文件面板，测试使用独立会话与临时 Markdown 文件。
+
+| 检查 | 判定 | 证据 |
+|---|---|---|
+| 跨 Workspace 打开与往返 | PASS（独立 QA 应用，macOS WebKit） | 从 LaunchServices 依次打开 `Research/Discussion.md`、`Music Department/CC129.md`、`Personal Notes/Ideas.md`，始终只有一个主窗口；三个文档共享顶部 Tab，Tab 点击与真实 `Ctrl+Tab` 均切换正文和左栏。 |
+| 重复路径与同一会话 | PASS（原生） | 以 `/tmp/...` 别名再次打开已恢复的 `/private/tmp/.../Discussion.md`，没有第二个标签；原生标题、页面与左栏均选择 Research。为此给受控 MyGo 增加 `DocumentFocused`。 |
+| 重启与视图模式 | PASS（原生） | 两次退出并重开 QA 应用，三个根目录与标签恢复，退出前的 Personal Notes / Ideas.md 保持活动；Markdown 视图及编辑后的 `# EditedIdeas` 内容恢复。`session.json` 根目录记录含 `active` 标记。 |
+| 窄窗 | PASS（原生，修复后） | 640×700 首次检查发现 WebKit 后台 resize 后右栏仍占位；改用文档真实 `clientWidth` + `ResizeObserver` 后复测，右栏收起、正文正常、三个 Tab 保留且溢出为 `+1`。 |
+| 大量 Markdown 与资源过滤 | PASS | `TestLargeWorkspaceFiltersFiveHundredMarkdownFiles` 实际扫描 500 个嵌套 Markdown 与 JSON 资源；总数 500、目标搜索唯一命中、导航无非 Markdown 文件。 |
+| Workspace 菜单与关闭范围 | PASS（原生 WebKit、Chromium） | 用 Computer 在原生应用内点击根目录切换、Open Folder… 和 Close Workspace。Atlas 有未保存副本时，取消关闭保留了全部 Tab。保存副本后再次关闭 Atlas，只移除了 Atlas 的导航和 Tab，Birch 与 Cedar 仍在同一窗口。通过 Open Folder… 重新打开 Atlas 后显示空工作区。Chromium 覆盖见 `multi-workspace.test.tsx`。 |
+| Save As 原生保存面板 | PASS（原生） | 从 File → Save As… 将 `Atlas/Atlas.md` 另存到已打开的 Birch 根目录。活动 Tab 留在同一窗口，Tab 和窗口标题显示另存的文件名，左栏切到 Birch。源文件仍在，`cmp` 确认副本与源文件逐字节一致。 |
+| Move To 原生文件夹面板 | PASS（原生） | 从 File → Move To… 将 `Atlas/MoveMe.md` 移到已打开的 Cedar 根目录。Tab 留在同一窗口，左栏切到 Cedar。磁盘上旧路径消失，目标文件的 SHA-256 与移动前一致。 |
+| 自动回归 | PASS | Go 全量、vet、race 与 MyGo GroupClose race；Web typecheck、全量 Chromium、生产构建均通过。 |
+
+### 原生回归修复复验（2026-11-17）
+
+从当前源码构建 `Mark Go Go Regression QA.app`（`dev.markgogo.editor.regressionqa`），应用包通过签名校验。通过 Computer 操作 macOS 菜单与应用界面，测试使用独立会话和临时 Markdown 文件。
+
+| 检查 | 判定 | 原生复现与结果 |
+|---|---|---|
+| 后台文件重载保留当前文档 | PASS | 打开 Birch、Cedar 和 Atlas，在 Atlas 活动时从磁盘修改 `Birch.md`。窗口标题、选中标签、正文和左栏均保持 Atlas。点击 Birch 标签后看到新增的 `Final native background check.`。 |
+| 关闭标签后同步标题与 File 菜单 | PASS | 通过 `⌘W` 关闭 `Cedar-Second.md`，标题和选中标签都切到同根目录的 `Cedar.md`。关闭 Atlas 的最后一个标签后，标题和左栏显示 Atlas，正文显示空目录提示，Birch 和 Cedar 标签仍在。File 菜单的 Close、Save、Save As、Duplicate、Rename、Move To、Revert 全部禁用，再按 `⌘W` 窗口保留。切回 Cedar 后，可用的文档命令恢复启用。新启动的 Welcome 窗口也通过空状态菜单与 `⌘W` 检查。 |
+| 带恢复副本的会话重启 | PASS | Birch 排在会话首位。暂时移走 `Cedar.md` 的磁盘文件，在 Markdown 模式输入 `Recovery copy single-window check.` 后退出，确认磁盘上有恢复副本。退出前分别选中 Birch 和 Cedar，两次重启后 macOS Window 菜单均只有一个文档窗口。三个根目录恢复，Birch 和 Cedar 标签同窗，活动根目录与退出前一致，Cedar 的未保存文字和 Markdown 视图完整恢复。 |
+| 自动回归 | PASS | 应用 `go vet ./...` 和 `go test -race -count=1 ./...`、MyGo 包的 race 测试和模块全量测试均通过。Web 36 个文件、359 项测试通过。生产构建内含类型检查，macOS 应用包签名校验通过。Vite 仍报告既有的大 chunk 警告。 |
+
 ## 窄窗口、触控与节流网络 QA（2026-11-11）
 
 本节记录发布前针对本轮 UI 改动的浏览器实测：宽度 1280 / 1024 / 768 / 620 / 560 / 480（应用最小窗口），Chromium CDP 触控仿真与约 400kbps、400ms 延迟的网络节流。发现两处实际问题并就地修复。

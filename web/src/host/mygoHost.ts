@@ -83,6 +83,10 @@ function workspaceSnapshot(snap: WireWorkspaceSnapshot): WorkspaceSnapshot {
   return {
     ...snap,
     kind: snap.kind === 'untitled' ? 'untitled' : 'folder',
+    workspaces: snap.workspaces.map((workspace) => ({
+      ...workspace,
+      kind: workspace.kind === 'untitled' ? 'untitled' : 'folder',
+    })),
     documents: snap.documents.map(documentInfo),
     restoreError: snap.restoreError,
   }
@@ -296,6 +300,13 @@ export function createMyGoHost(): WorkspaceAdapter {
     },
     async openWorkspace(root: string): Promise<void> {
       await WorkspaceHost.openWorkspace(root);
+    },
+    async activateWorkspace(id: string): Promise<void> {
+      await WorkspaceHost.activateWorkspace(id);
+    },
+    async closeWorkspaceRoot(id: string): Promise<CloseResult> {
+      for (const documentId of [...flushers.keys()]) await flushDocument(documentId);
+      return WorkspaceHost.closeWorkspaceRoot(id);
     },
     newDocument(): Promise<DocumentInfo> {
       return WorkspaceHost.new().then(documentInfo);

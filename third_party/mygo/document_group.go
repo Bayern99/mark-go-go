@@ -8,25 +8,29 @@ import (
 // document. documentFor returns the active document; attaching a second
 // document appends it instead of overwriting a single mapping.
 type docGroup struct {
-	win     *Window
-	docs    []*docBase
-	active  *docBase
-	hooked  bool
-	closing bool
+	win              *Window
+	docs             []*docBase
+	active           *docBase
+	selectionCleared bool
+	hooked           bool
+	closing          bool
 }
 
 // documentFor returns the active document of w, or nil.
 func documentFor(w *Window) *docBase {
-	if w == nil {
-		return nil
-	}
+	b, _ := documentSelection(w)
+	return b
+}
+
+// documentSelection reports whether the app explicitly selected an empty view.
+func documentSelection(w *Window) (*docBase, bool) {
 	docRegistry.Lock()
 	defer docRegistry.Unlock()
 	g := docRegistry.byWindow[w]
 	if g == nil {
-		return nil
+		return nil, false
 	}
-	return g.active
+	return g.active, g.selectionCleared
 }
 
 // documentsFor returns the documents of w in tab order.
@@ -77,6 +81,29 @@ func (ds *Documents[T]) SetActive(d *Document[T]) {
 		return
 	}
 	onMain(func() { d.setActive() })
+}
+
+// ClearActive selects an empty view in w, leaving its documents open. It
+// sets the window title and disables commands for the hidden documents.
+func (ds *Documents[T]) ClearActive(w *Window, title string) {
+	if w == nil {
+		return
+	}
+	onMain(func() {
+		if w.IsDestroyed() {
+			return
+		}
+		docRegistry.Lock()
+		g := ensureDocumentGroupLocked(w)
+		g.active = nil
+		g.selectionCleared = true
+		docRegistry.Unlock()
+		g.hook()
+		w.SetDocumentEdited(false)
+		w.SetRepresentedFile("")
+		w.SetTitle(title)
+		refreshDocumentMenus()
+	})
 }
 
 // Attach shows d in w, leaving any previous window. d becomes active.
@@ -142,9 +169,67 @@ func (ds *Documents[T]) CloseDocumentGroup(w *Window) error {
 	})
 }
 
+// CloseDocuments asks to save exactly docs as one confirmation group, then
+// closes them without destroying their shared window. Other documents in the
+// group stay open. A canceled confirmation leaves every target document open.
+func (ds *Documents[T]) CloseDocuments(docs []*Document[T]) error {
+	if len(docs) == 0 {
+		return nil
+	}
+	w := docs[0].Window()
+	g := groupOf(w)
+	if g == nil {
+		return ErrCanceled
+	}
+	bases := make([]*docBase, 0, len(docs))
+	for _, d := range docs {
+		if d == nil || d.Window() != w {
+			return ErrCanceled
+		}
+		bases = append(bases, &d.docBase)
+	}
+	if !g.beginClosing() {
+		return ErrCanceled
+	}
+	defer g.endClosing()
+	discarded, err := g.confirmCloseDocuments(bases)
+	if err != nil {
+		return err
+	}
+	return onMainValue(func() error {
+		current := documentsFor(w)
+		for _, b := range bases {
+			if slices.Index(current, b) < 0 {
+				return ErrCanceled
+			}
+		}
+		for _, b := range discarded {
+			b.mu.Lock()
+			b.discarded = true
+			b.mu.Unlock()
+		}
+		for _, b := range bases {
+			b.finishClose(false)
+		}
+		return nil
+	})
+}
+
 // OnClosed is called on the main thread after the document is closed.
 func (b *docBase) OnClosed(fn func()) (off func()) {
 	return b.onClosed.add(fn, false)
+}
+
+func ensureDocumentGroupLocked(w *Window) *docGroup {
+	if docRegistry.byWindow == nil {
+		docRegistry.byWindow = map[*Window]*docGroup{}
+	}
+	g := docRegistry.byWindow[w]
+	if g == nil {
+		g = &docGroup{win: w}
+		docRegistry.byWindow[w] = g
+	}
+	return g
 }
 
 // attach makes w a window of b. Main thread only. A second document
@@ -160,18 +245,12 @@ func (b *docBase) attach(w *Window) {
 		b.detachFromGroup()
 	}
 	docRegistry.Lock()
-	if docRegistry.byWindow == nil {
-		docRegistry.byWindow = map[*Window]*docGroup{}
-	}
-	g := docRegistry.byWindow[w]
-	if g == nil {
-		g = &docGroup{win: w}
-		docRegistry.byWindow[w] = g
-	}
+	g := ensureDocumentGroupLocked(w)
 	if slices.Index(g.docs, b) < 0 {
 		g.docs = append(g.docs, b)
 	}
 	g.active = b
+	g.selectionCleared = false
 	docRegistry.Unlock()
 	b.mu.Lock()
 	b.window = w
@@ -189,6 +268,7 @@ func (b *docBase) setActive() {
 	g := docRegistry.byWindow[w]
 	if g != nil {
 		g.active = b
+		g.selectionCleared = false
 	}
 	docRegistry.Unlock()
 	b.applyChrome()
@@ -215,6 +295,9 @@ func (b *docBase) isActive() bool {
 func (b *docBase) focus() {
 	onMain(func() {
 		b.setActive()
+		if b.kind != nil && b.kind.focused != nil {
+			b.kind.focused(b)
+		}
 		if w := b.parent(); w != nil {
 			w.Show()
 			w.Focus()

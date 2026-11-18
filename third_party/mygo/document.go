@@ -100,6 +100,10 @@ type DocumentsOptions[T any] struct {
 	// and, for Undo/Redo, the web view's execCommand. The document is the
 	// one active at the moment of the click.
 	Command func(role MenuRole, doc *Document[T], win *Window) bool
+	// DocumentFocused, when set, runs after MyGo focuses an already-open
+	// document through Finder/LaunchServices or another direct Open call.
+	// It lets a document-group shell synchronize its selected tab.
+	DocumentFocused func(doc *Document[T])
 	// BeforeWindowClose, when set and returning true, prevents the default
 	// group save-ask so the app can flush then CloseWorkspace.
 	BeforeWindowClose func(win *Window) bool
@@ -198,6 +202,11 @@ func NewDocuments[T any](opts DocumentsOptions[T]) *Documents[T] {
 				return false
 			}
 			return opts.Command(role, b.ops.(*Document[T]), win)
+		},
+		focused: func(b *docBase) {
+			if opts.DocumentFocused != nil && b != nil {
+				opts.DocumentFocused(b.ops.(*Document[T]))
+			}
 		},
 		beforeClose: opts.BeforeWindowClose,
 		pathChange: func(b *docBase) error {
@@ -822,6 +831,7 @@ type docKindConfig struct {
 	read        func(r io.Reader) (any, error)
 	empty       func() any
 	command     func(MenuRole, *docBase, *Window) bool
+	focused     func(*docBase)
 	beforeClose func(*Window) bool
 	pathChange  func(*docBase) error
 	reservePath func(*docBase, string) (func(), error)

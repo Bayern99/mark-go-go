@@ -496,6 +496,50 @@ body {
   gap: 7px;
 }
 
+.ws-switcher {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ws-switcher .nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-caret {
+  margin-left: auto;
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.ws-switcher:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.workspace-menu {
+  width: min(340px, calc(100vw - 32px));
+}
+
+.workspace-menu-item .ph-check {
+  flex: none;
+  color: var(--accent);
+}
+
+.workspace-menu-separator {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--line);
+}
+
 .ws-logo {
   flex: none;
   display: block;

@@ -7,8 +7,9 @@ Slice-specific. Downstream tickets (#22, #24, #30) consume this as the public Go
 | Identity | Owner | Stable across |
 |---|---|---|
 | `documentId` | Go (`mygo.Document.ID()`) | path, tab, window, first save, Save As |
-| `workspaceId` | Go (`workspaceHost`) | document tabs inside one window |
-| `root` | folder path, empty string for an untitled window | not an identity; routing uses it |
+| `workspaceId` | Go (`workspaceHost`) | one root's navigation and document ownership |
+| `windowId` (`WorkspaceSnapshot.id`) | Go (`workspaceHost`) | the shared native window and its cross-workspace tab group |
+| `root` | folder path, empty string for an untitled workspace | not an identity; routing uses it |
 | `path` | disk file, empty string while untitled | not an identity |
 | `tab` | UI navigation item for one `documentId` in one window | not an identity |
 
@@ -16,17 +17,25 @@ A document adapter binds to one `documentId` for its lifetime. Asynchronous call
 
 ## Go service `WorkspaceHost` (`mygo.BindAs("WorkspaceHost", host)`)
 
-Document-level methods take `documentId`. Workspace-level methods act on the calling page's window.
+Document-level methods take `documentId`. Workspace-level methods act on the calling page's window. A window has one shared document group and one selected navigation root; selecting an empty root sets `activeId` to empty without discarding other roots' tabs.
 
 ```go
+type WorkspaceSummary struct {
+    ID   string `json:"id"`
+    Root string `json:"root"`
+    Name string `json:"name"`
+    Kind string `json:"kind"`
+}
+
 type WorkspaceSnapshot struct {
-    ID           string         `json:"id"`
-    Root         string         `json:"root"`     // empty = untitled window
-    Name         string         `json:"name"`
-    Kind         string         `json:"kind"`     // "folder" | "untitled"
-    Documents    []DocumentInfo `json:"documents"` // tab order
-    ActiveID     string         `json:"activeId"`  // empty when no tabs
-    RestoreError string         `json:"restoreError,omitempty"`
+    ID           string             `json:"id"`        // windowId
+    Root         string             `json:"root"`      // selected root; empty = untitled
+    Name         string             `json:"name"`
+    Kind         string             `json:"kind"`      // "folder" | "untitled"
+    Workspaces   []WorkspaceSummary `json:"workspaces"` // roots in this native window
+    Documents    []DocumentInfo     `json:"documents"`  // one cross-workspace tab order
+    ActiveID     string             `json:"activeId"`   // empty when the selected root has no tab
+    RestoreError string             `json:"restoreError,omitempty"`
 }
 
 type DocumentInfo struct {
@@ -57,7 +66,9 @@ type CloseResult struct {
 // Workspace-level
 Snapshot(ctx) (WorkspaceSnapshot, error)
 Open(ctx, path string) (DocumentInfo, error)          // global routing
-OpenWorkspace(ctx, root string) error                 // reuse existing, else new window
+OpenWorkspace(ctx, root string) error                 // select existing or add root to this window
+ActivateWorkspace(ctx, workspaceId string) error       // select navigation + its recent tab
+CloseWorkspaceRoot(ctx, workspaceId string) (CloseResult, error) // close only this root
 New(ctx) (DocumentInfo, error)                        // untitled document in this window
 Duplicate(ctx, documentId string) (DocumentInfo, error)
 Activate(ctx, documentId string) error
@@ -99,7 +110,7 @@ Canceled native dialogs return `mygo.ErrCanceled` (Save/SaveAs/Rename/Move/Rever
 
 ## Events (payloads include `id`)
 
-Emitted to the workspace window that currently hosts the document.
+Emitted to the native window that currently hosts the document. `workspaceChanged` aggregates every root's tabs. `navChanged` / `navSearchReady` are emitted only for the currently selected root; background indexing remains available when that root is selected.
 
 ```ts
 workspaceChanged: WorkspaceSnapshot
@@ -110,7 +121,7 @@ navChanged: NavSnapshot               // incremental tree; status scanning|index
 navSearchReady: NavSearchResult       // incomplete is true until the index is ready
 ```
 
-`workspaceChanged` is the source of truth for tab order, active tab, root, and per-tab badges. Background `docState` updates the matching tab without activating it.
+`workspaceChanged` is the source of truth for cross-workspace tab order, active tab, selected root, available roots, and per-tab badges. Visible tabs activate directly; the searchable overflow menu prioritizes recent documents, and `Ctrl+Tab` alternates with the most recent other open document. Background `docState` updates the matching tab without activating it.
 
 `settingsChanged: Settings` is broadcast to every window, not to one workspace: see Settings below.
 
@@ -130,24 +141,26 @@ run captures the store once when it starts; later changes do not alter it.
 
 1. If an open document is the same file (`path` equal, canonical path equal, or `os.SameFile`), activate it in its window and focus that window.
 2. Else if one or more folder workspaces contain the file, open it as a tab in the workspace whose `root` is the deepest prefix.
-3. Else open (or create) a folder workspace at the file's parent directory and add the tab there.
+3. Else add a folder workspace at the file's parent directory to the current window and add the tab there. Create a native window only when no usable app window exists.
 
-Opening a folder that is already a workspace root focuses that window. Parent and child folders may both be open; they still share one document session per file. Roots and files are compared after resolving existing symlink prefixes (`canonicalPath`), so aliases of the same directory — including macOS `/tmp` versus `/private/tmp` — reuse the same workspace and keep `documentId`.
+Opening a folder that is already a workspace root selects it in its existing window. Parent and child folders may both be open; they still share one document session per file. MyGo's own duplicate-open focus emits a state change that the host uses to select the same `documentId` in the page. Roots and files are compared after resolving existing symlink prefixes (`canonicalPath`), so aliases of the same directory — including macOS `/tmp` versus `/private/tmp` — reuse the same workspace and keep `documentId`.
 
-Untitled window: `root == ""`, `kind == "untitled"`. It holds untitled documents. Closing its last tab closes the window. A folder workspace with zero tabs stays open.
+Untitled workspace: `root == ""`, `kind == "untitled"`. It holds untitled documents. Closing its last tab closes the window only when no other root shares it; otherwise the empty untitled root is removed. A folder workspace with zero tabs stays in the window. Opening the first folder replaces an empty Welcome root.
 
 ## First save / Save As migration
 
 After a successful first save or Save As:
 
 - The document keeps its `documentId`, content, version, view watch, and generation slot.
-- The tab leaves the source window and joins the destination workspace that contains the new path (deepest existing folder workspace, else a new window at the parent directory).
-- Other untitled documents in an untitled window stay there.
+- The tab leaves its source root and joins the destination workspace that contains the new path (deepest existing folder workspace, else a new root at the parent directory) in the same native window.
+- Other untitled documents in an untitled workspace stay there.
 - If the destination path is already another open document, the save is rejected: no silent overwrite, no second session.
 
 ## Native commands
 
-File menu Save / Save As / Duplicate / Rename / Move / Revert act on the **active document of the focused window** (MyGo document group). `Cmd+W` / File > Close (`RoleClose`) closes the **captured active document** of the focused window: with documents, the patched menu delivers a `RoleClose` item to `performRole(RoleClose)` instead of the platform's `performClose`, so the document role asks the app's `Command` (`nativeCommand` `close` for that document). The window close button runs `CloseWorkspace` (asks every dirty document; cancel keeps the window and every tab) and closes the whole group. A folder workspace with no tabs keeps its window: `RefreshDocumentMenus` disables File > Close there, so the native `Cmd+W` is a no-op rather than a window close. Closing a standalone untitled window's last document destroys that window. If the Go document role is invoked for `RoleClose` while it has no document (a window or menu race), it resolves the given or focused window and closes it; `BeforeWindowClose` still turns that into `CloseWorkspace`. That internal fallback is not a UI promise that `Cmd+W` on an empty folder window closes it. Apps without document support keep the platform `performClose` behaviour.
+File menu Save / Save As / Duplicate / Rename / Move / Revert act on the **active document of the focused window** (MyGo document group). `Cmd+W` and File > Close call `performRole(RoleClose)`, which dispatches the captured active document through `Command` as `nativeCommand close`. Closing a tab selects a remaining tab from the selected root when available. An empty folder root keeps its window and shows the root name as the title. MyGo clears the active document and disables the File menu's document commands, so `Cmd+W` leaves the window open. Closing a standalone untitled window's last document destroys that window. Apps without document support keep the platform `performClose` behaviour.
+
+The window close button runs `CloseWorkspace`, confirms every dirty document and closes the whole group. Cancel keeps the window and every tab. The Workspace menu's `CloseWorkspaceRoot(workspaceId)` confirms and closes only that root's documents and removes its navigation. The other roots stay in the window. Closing the last root leaves Welcome. The controlled MyGo `CloseDocuments` applies a root's discard decisions after every target has confirmed.
 
 Quit sends `flushQuit` with the current attempt ID to each workspace window. Each window sends its editor text through `FlushQuit` and reports completion or an error through `PrepareQuit`. The host accepts these writes only from windows still awaiting acknowledgment in that attempt. It writes `session.json` after all windows flush successfully and continues quitting after the write succeeds. A flush error, missing acknowledgment, or write failure leaves the app open with a message. Choosing Quit again starts a new attempt that can proceed while an older IPC reply is outstanding. MyGo recovery copies hold the unsaved document bytes.
 
@@ -171,13 +184,14 @@ Dialogs use the workspace window as parent. Path changes are gated before the di
       "id": "workspace id",
       "root": "/abs/folder or empty for an untitled window",
       "tabs": [{"id": "documentId", "path": "/abs/file.md", "viewMode": "genui"}],
-      "activeId": "documentId"
+      "activeId": "documentId",
+      "active": true
     }
   ]
 }
 ```
 
-- Written on layout changes (open, tab move, activate, close, view mode) and once more at quit after every window acked `flushQuit`. Writes are skipped while recovery/restore runs so startup cannot overwrite the stored layout with half-restored windows.
+- Written on layout changes (open, tab move, activate, root select/close, view mode) and once more at quit after every window acked `flushQuit`. Writes pause during recovery and restore. The optional `active` field marks the selected root. Restore adds all saved roots to one native window, reusing the window already opened by a recovery copy or a launch file when available.
 - Only workspaces the user did not close are stored; an empty untitled window (Welcome) is not. Closing a tab or a workspace drops it, and cancel keeps the scene as it was.
 - Unsaved text stays in MyGo's recovery copies, keyed by `documentId`; the session only names the tabs, their order, the active one and the view mode. Restore reuses a recovery document instead of opening its path again, and never starts a generation the user cancelled.
 - A missing root or file becomes `WorkspaceSnapshot.restoreError` / `DocumentInfo.restoreError` and the other workspaces still restore. A file opened by this launch takes focus after the layout is placed.
@@ -191,7 +205,9 @@ Pinned source: `github.com/egoist/mygo v0.7.4` vendored at `third_party/mygo` (`
 
 - `docGroup` per window: ordered documents + active document. `documentFor(w)` returns the active document, never overwrites a single-window map with a later attach.
 - `Documents.Attach(doc, win)`, `Documents.Detach(doc)`, `Documents.SetActive(doc)`, `Documents.ForWindowAll(w)`.
+- `DocumentsOptions.DocumentFocused(doc)` reports MyGo's direct duplicate-open focus so the page selects the same session; that path does not call `Window`/`adopt` again.
 - `Document.ID()`, `Document.CloseDocument()` (asks to save that document only; does not destroy a shared window).
+- `Documents.CloseDocuments(docs)` confirms exactly the specified documents together, then closes only them without destroying their shared window. Cancellation keeps every target open.
 - Window close asks every document in the group; cancel leaves the group intact.
 - `notify` updates window title / represented file / edited mark from the **active** document only.
 
@@ -205,6 +221,8 @@ interface WorkspaceAdapter {
   subscribe(fn: (snap: WorkspaceSnapshot) => void): Disposable
   open(path: string): Promise<DocumentInfo>
   openWorkspace(root: string): Promise<void>
+  activateWorkspace(id: string): Promise<void>
+  closeWorkspaceRoot(id: string): Promise<CloseResult>
   newDocument(): Promise<DocumentInfo>
   duplicate(id: string): Promise<DocumentInfo>
   activate(id: string): Promise<void>

@@ -318,14 +318,23 @@ func (h *documentHost) restoreAfterStart() {
 }
 
 func (h *documentHost) applyRestorePlan(plan restorePlan) {
-	plannedRoots := map[string]bool{}
+	// Recovery and launch files may already have opened the shared window.
+	restoreWin := h.preferredWindow()
+	restoredRoots := map[*workspace]bool{}
+	var restoredOrder []string
+	var activeWorkspace *workspace
 	for _, pw := range plan.Workspaces {
-		if pw.Root != "" {
-			plannedRoots[canonicalPath(pw.Root)] = true
-		}
-		dest := h.workspaceForPlan(pw)
+		dest := h.workspaceForPlan(pw, restoreWin)
 		if dest == nil {
 			continue
+		}
+		if restoreWin == nil {
+			restoreWin = dest.win
+		}
+		restoredRoots[dest] = true
+		restoredOrder = append(restoredOrder, dest.id)
+		if plan.ActiveWorkspaceID != "" && pw.ID == plan.ActiveWorkspaceID {
+			activeWorkspace = dest
 		}
 		h.mu.Lock()
 		dest.restoreError = pw.RestoreError
@@ -383,7 +392,16 @@ func (h *documentHost) applyRestorePlan(plan restorePlan) {
 		}
 		h.emitWorkspace(dest)
 	}
-	h.dropRestoreLeftovers(plannedRoots)
+	h.dropRestoreLeftovers(restoredRoots)
+	if len(restoredOrder) > 0 {
+		h.mu.Lock()
+		h.workspaceOrder = orderedTabs(restoredOrder, h.workspaceOrder)
+		if activeWorkspace == nil {
+			activeWorkspace = h.byWindow[restoreWin]
+		}
+		h.mu.Unlock()
+		h.activateWorkspace(activeWorkspace)
+	}
 	// A file this launch opened gets focus after the layout is in place.
 	if plan.FocusPath != "" && h.docs != nil {
 		if info, err := h.Open(context.Background(), plan.FocusPath); err == nil {
@@ -396,41 +414,64 @@ func (h *documentHost) applyRestorePlan(plan restorePlan) {
 	}
 }
 
-// dropRestoreLeftovers closes the folder windows recovery made for files
-// that belong to a planned workspace: their tabs moved away, so nothing
-// is left to show. Planned folders, even empty ones, stay.
-func (h *documentHost) dropRestoreLeftovers(plannedRoots map[string]bool) {
+// dropRestoreLeftovers removes empty folder roots made for recovered tabs
+// that moved to planned roots. Planned folders, even empty ones, stay.
+func (h *documentHost) dropRestoreLeftovers(restoredRoots map[*workspace]bool) {
 	h.mu.Lock()
-	var stale []*mygo.Window
-	for win, w := range h.byWindow {
-		if w.root == "" || len(w.tabs) > 0 || plannedRoots[canonicalPath(w.root)] {
+	emptyRoots := map[*mygo.Window][]*workspace{}
+	keepWindow := map[*mygo.Window]bool{}
+	for _, w := range h.allWorkspacesLocked() {
+		win := w.win
+		if win == nil || win.IsDestroyed() {
 			continue
 		}
-		if win != nil && !win.IsDestroyed() {
-			stale = append(stale, win)
+		if w.root != "" && len(w.tabs) == 0 && !restoredRoots[w] {
+			emptyRoots[win] = append(emptyRoots[win], w)
+		} else {
+			keepWindow[win] = true
 		}
 	}
 	h.mu.Unlock()
-	for _, win := range stale {
-		win.Destroy()
+	for win, roots := range emptyRoots {
+		if !keepWindow[win] {
+			win.Destroy()
+			continue
+		}
+		for _, w := range roots {
+			h.removeWorkspaceRoot(w)
+		}
 	}
 }
 
-func (h *documentHost) workspaceForPlan(pw plannedWorkspace) *workspace {
+func (h *documentHost) workspaceForPlan(pw plannedWorkspace, preferred *mygo.Window) *workspace {
 	if pw.Root != "" {
 		h.mu.Lock()
-		for _, w := range h.byWindow {
+		for _, w := range h.allWorkspacesLocked() {
 			if w.root != "" && sameRoot(w.root, pw.Root) && w.win != nil && !w.win.IsDestroyed() {
 				h.mu.Unlock()
 				return w
 			}
 		}
 		h.mu.Unlock()
+		if preferred != nil && !preferred.IsDestroyed() {
+			return h.addWorkspaceToWindow(pw.ID, pw.Root, filepath.Base(pw.Root), preferred)
+		}
 		win := h.openWorkspaceWindow(pw.ID, pw.Root, filepath.Base(pw.Root))
 		h.mu.Lock()
 		w := h.byWindow[win]
 		h.mu.Unlock()
 		return w
+	}
+	if preferred != nil && !preferred.IsDestroyed() {
+		h.mu.Lock()
+		for _, w := range h.windowWorkspacesLocked(preferred) {
+			if w.root == "" {
+				h.mu.Unlock()
+				return w
+			}
+		}
+		h.mu.Unlock()
+		return h.addWorkspaceToWindow(pw.ID, "", "Untitled", preferred)
 	}
 	h.mu.Lock()
 	for _, tab := range pw.Tabs {
@@ -443,7 +484,7 @@ func (h *documentHost) workspaceForPlan(pw plannedWorkspace) *workspace {
 			return w
 		}
 	}
-	for _, w := range h.byWindow {
+	for _, w := range h.allWorkspacesLocked() {
 		if w.root == "" && w.win != nil && !w.win.IsDestroyed() {
 			h.mu.Unlock()
 			return w

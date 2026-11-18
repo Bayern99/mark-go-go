@@ -15,7 +15,7 @@ Mark Go Go is a local-first, native macOS Markdown editor and AI reader prototyp
 graph TD
     subgraph macOmerS Desktop ["macOS Native Shell (purego / WebKit)"]
         subgraph HostLayer ["1. Host Layer (Go / MyGo)"]
-            Workspaces["Workspace Host<br/>(one folder = one window, document groups, per-document IPC)"]
+            Workspaces["Workspace Host<br/>(multiple folder roots in one window, one document group, per-document IPC)"]
             DocStore["Document Store<br/>(Raw byte I/O, CRLF/LF preserve, File Watcher)"]
             NavIndex["Navigation Index<br/>(incremental scan, search, honest status)"]
             SessionStore["Session Store<br/>(session.json: workspaces, tabs, view modes)"]
@@ -74,7 +74,7 @@ graph TD
 ### 2. Core Architectural Layers
 
 #### 1. Host Layer (Go / MyGo)
-- **Workspace Ownership**: One folder is one window. `WorkspaceHost` (`documenthost.go`, `workspace.go`) hosts the window's document group: ordered tabs, one active document, per-window `workspaceChanged` / `navChanged` events, and document-scoped calls that always name a `documentId`. A document keeps its identity across path, tab, window, first save and Save As; the same disk file has exactly one editing session app-wide; routing picks the deepest containing workspace or creates one at the file's parent.
+- **Workspace Ownership**: One native window can hold multiple folder workspaces. `WorkspaceHost` (`documenthost.go`, `workspace.go`) hosts one cross-workspace document group: ordered tabs, one active document, a selected navigation root, per-window `workspaceChanged` / selected-root `navChanged` events, and document-scoped calls that always name a `documentId`. A document keeps its identity across path, tab, root, first save and Save As; the same disk file has exactly one editing session app-wide; routing picks the deepest containing workspace or adds the file's parent to the current window. The existing workspace name opens the root menu; `Ctrl+Tab` switches recent documents.
 - **Persistence Authority**: Native Go backend using `purego` bindings to macOS WebKit. Owns filesystem access, raw-byte reading and writing, CRLF/LF line ending preservation, atomic saves, and `fsnotify` file change detection.
 - **Navigation Index**: `index.go` / `navmeta.go` scan the workspace root incrementally, publish honest `scanning` / `indexing` / `ready` progress with `indexed` / `total`, index unsaved text of open documents, and answer `SetFilter` with heading hits.
 - **Session Store**: `session.go` / `restore_host.go` persist `session.json` (workspaces, tab order, active document, view modes) after every window acknowledges the quit flush, then restore it after MyGo's recovery copies and launch files, never replaying generation. A flush delivers what the pane really holds — the text on screen (`editor.getMarkdown()`), else the host-loaded core document state — so an untouched, reloaded or remounted document is never written empty; a disk-opened document gets a new MyGo id at restore, so the stored active tab is mapped to the id its document really has now.
@@ -151,7 +151,7 @@ Mark Go Go 是一款面向 macOS 的本地优先（Local-First）Markdown 原生
 graph TD
     subgraph macOS桌面宿主 ["macOS 原生桌面壳 (purego / WebKit)"]
         subgraph Go宿主层 ["1. 宿主层 (Go / MyGo)"]
-            Workspaces["工作区宿主<br/>(一个文件夹一个窗口、文档组、按文档身份的 IPC)"]
+            Workspaces["工作区宿主<br/>(一个窗口多个文件夹根目录、单一文档组、按文档身份的 IPC)"]
             DocStore["文档存储核心<br/>(原始字节 I/O、CRLF/LF 保真、文件监听)"]
             NavIndex["导航索引<br/>(增量扫描、搜索、如实进度)"]
             SessionStore["会话存储<br/>(session.json：工作区、标签、视图模式)"]
@@ -210,7 +210,7 @@ graph TD
 ### 2. 五层架构设计
 
 #### 1. 宿主层（Go / MyGo）
-- **工作区归属**：一个文件夹对应一个窗口。`WorkspaceHost`（`documenthost.go`、`workspace.go`）承载该窗口的文档组：有序标签、一个活动文档、按窗口推送的 `workspaceChanged` / `navChanged`，以及所有带 `documentId` 的文档级调用。文档身份跨路径、标签、窗口、首次保存与另存为不变；同一磁盘文件全应用只有一个编辑会话；路由取包含该文件的根目录最深的工作区，否则在父目录新建。
+- **工作区归属**：一个原生窗口可承载多个文件夹工作区。`WorkspaceHost`（`documenthost.go`、`workspace.go`）承载跨工作区的同一文档组：有序标签、一个活动文档、当前导航根目录、按窗口推送的 `workspaceChanged` / 仅当前根目录的 `navChanged`，以及所有带 `documentId` 的文档级调用。文档身份跨路径、标签、根目录、首次保存与另存为不变；同一磁盘文件全应用只有一个编辑会话；路由取包含该文件的最深根目录，否则在当前窗口加入文件父目录。原工作区名称兼作根目录菜单，`Ctrl+Tab` 切换最近文档。
 - **持久化权威**：基于 `purego` 无 CGO 绑定的 macOS 原生 Go 宿主，拥有磁盘文件的最高读写权威，保证文件按字节原样读写、保留原始换行符（CRLF / LF），提供原子保存、窗口焦点与 `fsnotify` 外部文件变更监听。
 - **导航索引**：`index.go` / `navmeta.go` 增量扫描工作区根目录，如实发布 `scanning` / `indexing` / `ready` 与 `indexed` / `total`；已打开文档的未保存文本也进入索引；`SetFilter` 返回标题与章节命中。
 - **会话存储**：`session.go` / `restore_host.go` 在每个窗口确认退出 flush 后写入 `session.json`（工作区、标签顺序、活动文档、视图模式），并在 MyGo 打开恢复副本与启动文件之后恢复，从不重放生成任务。flush 交付面板真正持有的文本（屏幕上的 `editor.getMarkdown()`，否则宿主载入的核心文档状态），未编辑、被重载或重新挂载的文档不会被写成空；从磁盘打开的文档在恢复时得到新的 MyGo id，因此存储的 active tab 映射到该文档现在真实的 id。

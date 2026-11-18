@@ -472,6 +472,7 @@ export function wrapHostAsWorkspace(host: HostAdapter, name?: string): Workspace
     root: '',
     name: info().name,
     kind: info().path ? 'folder' : 'untitled',
+    workspaces: [{ id: 'ws-test', root: '', name: 'Workspace', kind: 'untitled' }],
     documents: [info()],
     activeId: host.id,
   })
@@ -507,6 +508,10 @@ export function wrapHostAsWorkspace(host: HostAdapter, name?: string): Workspace
       return info()
     },
     async openWorkspace() {},
+    async activateWorkspace() {},
+    async closeWorkspaceRoot() {
+      return { closed: false, canceled: false }
+    },
     async newDocument() {
       return info()
     },
@@ -551,6 +556,15 @@ export interface BrowserWorkspaceSeed {
   host: HostAdapter
   name?: string
   path?: string
+  workspaceId?: string
+}
+
+export interface BrowserWorkspaceRootOptions {
+  id: string
+  root: string
+  name: string
+  kind?: WorkspaceKind
+  nav?: BrowserNavSeed
 }
 
 export interface BrowserWorkspaceOptions {
@@ -563,6 +577,8 @@ export interface BrowserWorkspaceOptions {
   confirmCloseWorkspace?: () => CloseResult | Promise<CloseResult>
   nav?: BrowserNavSeed
   restoreError?: string
+  /** Additional roots in the same native window; root/name/nav describe the first when omitted. */
+  workspaces?: BrowserWorkspaceRootOptions[]
   /** The window's settings file; its tabs share one, created when omitted. */
   settings?: BrowserSettings
 }
@@ -615,15 +631,42 @@ export function createBrowserWorkspace(
   let activeId = ''
 
   const workspaceId = options.id ?? 'browser-workspace'
-  const root = options.root ?? '/demo'
-  const workspaceName = options.name ?? 'demo'
-  const kind: WorkspaceKind = options.kind ?? (root === '' ? 'untitled' : 'folder')
+  const initialRoot = options.root ?? '/demo'
+  const roots = (options.workspaces ?? [{
+    id: workspaceId,
+    root: initialRoot,
+    name: options.name ?? 'demo',
+    kind: options.kind ?? (initialRoot === '' ? 'untitled' : 'folder'),
+    nav: options.nav,
+  }]).map((root) => ({
+    ...root,
+    kind: root.kind ?? (root.root === '' ? 'untitled' : 'folder'),
+    navIndex: new BrowserNavIndex(root.root, root.nav),
+  }))
+  const docWorkspaces = new Map<string, string>()
+  let selectedWorkspaceId = roots[0]?.id ?? workspaceId
+  const currentRoot = () => roots.find((root) => root.id === selectedWorkspaceId) ?? roots[0]
+  const selectDocument = (id: string) => {
+    activeId = id
+    if (id) selectedWorkspaceId = docWorkspaces.get(id) ?? selectedWorkspaceId
+  }
+  const workspaceForPath = (path: string, requested?: string) => {
+    if (requested && roots.some((root) => root.id === requested)) return requested
+    if (!path) return selectedWorkspaceId
+    let best = ''
+    for (const root of roots) {
+      if (!root.root || !path.startsWith(`${root.root}/`)) continue
+      if (!best || root.root.length > (roots.find((item) => item.id === best)?.root.length ?? 0)) best = root.id
+    }
+    return best || selectedWorkspaceId
+  }
 
   const snap = (): WorkspaceSnapshot => ({
     id: workspaceId,
-    root,
-    name: workspaceName,
-    kind,
+    root: currentRoot()?.root ?? '',
+    name: currentRoot()?.name ?? 'Untitled',
+    kind: currentRoot()?.kind ?? 'untitled',
+    workspaces: roots.map(({ id, root, name, kind }) => ({ id, root, name, kind })),
     documents: order.map((id) => {
       const info = infos.get(id)
       if (!info) throw new Error(`missing document ${id}`)
@@ -640,8 +683,6 @@ export function createBrowserWorkspace(
   // a document's adapter reads it, and never a private copy.
   const settings = options.settings ?? createBrowserSettings()
 
-  const nav = new BrowserNavIndex(root, options.nav)
-
   const emit = () => {
     const current = snap()
     for (const fn of listeners) fn(current)
@@ -649,13 +690,15 @@ export function createBrowserWorkspace(
   }
 
   const refreshNav = async () => {
+    const target = currentRoot()
+    if (!target) return
     const docs = snap().documents
     const texts = await liveTexts(docs, (id) => {
       const host = adapters.get(id)
       if (!host) throw new Error(`unknown document ${id}`)
       return host
     })
-    nav.emit(docs, texts)
+    if (selectedWorkspaceId === target.id) target.navIndex.emit(docs, texts)
   }
 
   const drop = (id: string) => {
@@ -665,23 +708,24 @@ export function createBrowserWorkspace(
     stateSubs.delete(id)
     adapters.delete(id)
     infos.delete(id)
+    docWorkspaces.delete(id)
     const index = order.indexOf(id)
     if (index >= 0) order.splice(index, 1)
-    if (activeId === id) activeId = order[0] ?? ''
+    if (activeId === id) selectDocument(order[0] ?? '')
   }
 
   const add = (seed: BrowserWorkspaceSeed, activate = true): DocumentInfo => {
     const host = seed.host
     const existing = adapters.get(host.id)
     if (existing) {
-      if (activate) activeId = host.id
+      if (activate) selectDocument(host.id)
       return { ...(infos.get(host.id) as DocumentInfo) }
     }
     const byPath = seed.path ?? (isBrowserHost(host) ? host.getState().path : '')
     if (byPath !== '') {
       for (const [id, info] of infos) {
         if (info.path === byPath) {
-          if (activate) activeId = id
+          if (activate) selectDocument(id)
           return { ...info }
         }
       }
@@ -692,6 +736,7 @@ export function createBrowserWorkspace(
     const overlayName = seed.name
     const overlayPath = seed.path
     infos.set(host.id, info)
+    docWorkspaces.set(host.id, workspaceForPath(info.path, seed.workspaceId))
     order.push(host.id)
     stateSubs.set(
       host.id,
@@ -714,12 +759,12 @@ export function createBrowserWorkspace(
         emit()
       }),
     )
-    if (activate || activeId === '') activeId = host.id
+    if (activate || activeId === '') selectDocument(host.id)
     return { ...info }
   }
 
   for (const doc of docs) add(asSeed(doc), false)
-  if (!activeId && order[0]) activeId = order[0]
+  if (!activeId && order[0]) selectDocument(order[0])
 
   return {
     snapshot: async () => snap(),
@@ -730,7 +775,7 @@ export function createBrowserWorkspace(
     async open(path: string) {
       for (const [id, info] of infos) {
         if (info.path === path) {
-          activeId = id
+          selectDocument(id)
           emit()
           return { ...info }
         }
@@ -740,7 +785,52 @@ export function createBrowserWorkspace(
       emit()
       return created
     },
-    async openWorkspace() {},
+    async openWorkspace(path: string) {
+      const root = path.replace(/\/$/, '')
+      let target = roots.find((item) => item.root === root)
+      if (!target) {
+        const id = `workspace:${root}`
+        target = { id, root, name: root.split('/').pop() || root, kind: 'folder', navIndex: new BrowserNavIndex(root) }
+        const selected = currentRoot()
+        if (selected?.kind === 'untitled' && !order.some((documentId) => docWorkspaces.get(documentId) === selected.id)) {
+          roots.splice(roots.indexOf(selected), 1)
+        }
+        roots.push(target)
+      }
+      selectedWorkspaceId = target.id
+      selectDocument([...order].reverse().find((id) => docWorkspaces.get(id) === target.id) ?? '')
+      emit()
+    },
+    async activateWorkspace(id: string) {
+      if (!roots.some((root) => root.id === id)) throw new Error(`unknown workspace ${id}`)
+      selectedWorkspaceId = id
+      selectDocument([...order].reverse().find((documentId) => docWorkspaces.get(documentId) === id) ?? '')
+      emit()
+    },
+    async closeWorkspaceRoot(id: string) {
+      const target = roots.find((root) => root.id === id)
+      if (!target) throw new Error(`unknown workspace ${id}`)
+      const closing = order.filter((documentId) => docWorkspaces.get(documentId) === id)
+      for (const documentId of closing) {
+        const host = adapters.get(documentId)
+        if (!host) continue
+        const reader = flushReaders.get(host)
+        if (reader) await host.flush(reader())
+        const result = options.confirmClose
+          ? await options.confirmClose(documentId)
+          : { closed: true, canceled: false }
+        if (result.canceled || !result.closed) return result
+      }
+      for (const documentId of closing) drop(documentId)
+      roots.splice(roots.indexOf(target), 1)
+      if (roots.length === 0) {
+        roots.push({ id: 'workspace:welcome', root: '', name: 'Untitled', kind: 'untitled', navIndex: new BrowserNavIndex('') })
+      }
+      if (!roots.some((root) => root.id === selectedWorkspaceId)) selectedWorkspaceId = roots[0].id
+      selectDocument([...order].reverse().find((documentId) => docWorkspaces.get(documentId) === selectedWorkspaceId) ?? '')
+      emit()
+      return { closed: true, canceled: false }
+    },
     async newDocument() {
       const created = add({ host: createBrowserHost('', 'Untitled.md', { untitled: true }), name: 'Untitled.md', path: '' })
       emit()
@@ -761,7 +851,7 @@ export function createBrowserWorkspace(
     },
     async activate(id: string) {
       if (!adapters.has(id)) throw new Error(`unknown document ${id}`)
-      activeId = id
+      selectDocument(id)
       emit()
     },
     async closeDocument(id: string, text?: string) {
@@ -807,44 +897,48 @@ export function createBrowserWorkspace(
         if (!host) throw new Error(`unknown document ${id}`)
         return host
       })
-      return nav.snapshot(docs, texts)
+      return currentRoot()?.navIndex.snapshot(docs, texts) ?? new BrowserNavIndex('').snapshot([], new Map())
     },
     subscribeNav(fn) {
-      return disposable(nav.subscribeNav(fn))
+      return disposable(currentRoot()?.navIndex.subscribeNav(fn) ?? (() => {}))
     },
     async setFilter(query: string) {
-      nav.setQuery(query)
+      currentRoot()?.navIndex.setQuery(query)
       const docs = snap().documents
       const texts = await liveTexts(docs, (id) => {
         const host = adapters.get(id)
         if (!host) throw new Error(`unknown document ${id}`)
         return host
       })
-      const result = nav.search(docs, texts)
-      nav.emit(docs, texts)
+      const result = currentRoot()?.navIndex.search(docs, texts) ?? new BrowserNavIndex('').search([], new Map())
+      currentRoot()?.navIndex.emit(docs, texts)
       return result
     },
     subscribeSearch(fn) {
-      return disposable(nav.subscribeSearch(fn))
+      return disposable(currentRoot()?.navIndex.subscribeSearch(fn) ?? (() => {}))
     },
     async toggleFolder(rel: string) {
-      nav.toggleFolder(rel)
+      currentRoot()?.navIndex.toggleFolder(rel)
       await refreshNav()
     },
     async revealPath(path: string) {
-      nav.reveal(path)
+      currentRoot()?.navIndex.reveal(path)
       await refreshNav()
     },
     async pickFolder() {
-      if (nav.pickFolderImpl) {
+      const nav = currentRoot()?.navIndex
+      if (nav?.pickFolderImpl) {
         const chosen = await nav.pickFolderImpl()
-        if (chosen) nav.remember(chosen)
+        if (chosen) {
+          nav.remember(chosen)
+          await this.openWorkspace(chosen)
+        }
         return chosen
       }
-      return root
+      return currentRoot()?.root ?? ''
     },
     async recentWorkspaces() {
-      return [...nav.recents]
+      return [...(currentRoot()?.navIndex.recents ?? [])]
     },
   }
 }

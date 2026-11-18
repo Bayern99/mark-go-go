@@ -22,13 +22,15 @@ scripts/native-automation-smoke.sh
 The script performs **Build → Launch → Inspect → Interact → Assert → Restart → Assert → Cleanup** with the official CLI. It:
 
 - builds an `e2e` + inspector QA app with MyGo v0.10.0;
-- uses a temporary project, app name and bundle ID (`dev.markgogo.editor.automation-qa`), so normal Mark Go Go settings and recovery copies are not touched;
+- copies writable web sources and links only read-only dependencies, so generation/build output stays in the temporary project;
+- uses a per-run app name and bundle ID (`dev.markgogo.editor.automation-qa.<run>`), removes its QA user-data directory at cleanup, and never reuses normal Mark Go Go settings or recovery copies;
 - creates only temporary Markdown fixtures and an unused JSON resource;
-- checks cross-Workspace opening, one native window, recent-document switching, Finder duplicate reuse, Markdown view state and restart restoration;
-- edits the active Markdown editor, uses native File > Save and Edit > Undo / Redo, verifies disk content and restores it after restart;
+- checks four cross-Workspace documents, one native window, non-adjacent recent-document switching, tab/body/sidebar/native-title synchronization, Finder duplicate reuse, Markdown view state and restart restoration;
+- waits for indexing before checking resource filtering; uses synthetic Ctrl+Tab events through page `eval`, which are not presented as physical-keyboard evidence;
+- uses `AutosaveOff` only in the e2e QA build, proves the edit is absent from disk before File > Save, then verifies native Save and Edit > Undo / Redo; production remains `AutosaveInPlace`;
 - uses `windows`, `eval`, `menu`, `wait`/`idle` and `screenshot` from the official plugin;
 - saves the last screenshot to `/tmp/mgo-automation-smoke.png` (override with `MYGO_AUTOMATION_REPORT`);
-- closes the Automation session, quits the QA app through its native menu, and removes temporary files.
+- closes the Automation session, quits through the native menu with a 20-second bound, uses bounded process cleanup, and removes temporary files.
 
 The script exits nonzero on an assertion failure. Browser-only Vitest results are not native evidence.
 
@@ -63,7 +65,7 @@ A pure page window has no native element snapshot and does not accept native UI 
 - `automation_e2e.go` links the plugin only with the `e2e` build tag.
 - `mygo dev` / `mygo build -debug` retain the inspector; `GOFLAGS=-tags=e2e` carries the tag into those builds.
 - Normal `mygo build` adds `mygo_noinspector`. Even an `e2e + mygo_noinspector` build links only the official guard that ignores `MYGO_AUTOMATION` and never listens.
-- The socket is created only when `MYGO_AUTOMATION` names a user-private path. There is no discovery or release listener.
+- The smoke uses a user-private Unix socket. Upstream also supports Android abstract sockets (`@name`) and explicitly configured `tcp:` listeners; use the latter only on a trusted network in a non-release build. There is no discovery or release listener.
 
 Useful checks:
 
@@ -74,4 +76,4 @@ go test -tags e2e ./...
 
 ## Current boundary
 
-The smoke test covers the multi-Workspace native path. Native Save As / Rename / Move To system panels, conflict sheets and exact editor scroll/cursor geometry still require targeted verification; do not infer their success from this smoke test.
+The smoke test covers the multi-Workspace native path. It does not drive Save As / Rename / Move To system panels, conflict sheets, physical keyboard input or exact editor scroll/cursor geometry. Independent review of `fb69773` separately verified the Save As / Rename / Move To and close/conflict dialogs, plus physical-keyboard MRU; narrow-window geometry and exact scroll/cursor restoration remain open.

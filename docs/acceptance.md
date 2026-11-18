@@ -2,6 +2,19 @@
 
 本文件按阶段记录实际执行的检查。PR 合并前检查见下节。其余各节保留各自版本的原型与集成证据，被后续规格取代的条目已就地标注。
 
+## MyGo 升级复验修复（2026-11-18，fb69773 后续）
+
+| 检查 | 判定 | 证据 |
+|---|---|---|
+| Linux / Windows 源码完整性 | PASS（交叉编译） | 按应用与 Go 工具的三平台依赖补齐上游源码及 `internal/windows/keys.js`，未带入未引用插件/benchmark/website；`GOOS=linux GOARCH=amd64 go build ./...` 与 `GOOS=windows GOARCH=amd64 go build ./...` 均通过。不是 Linux/Windows 实机 UI 验收。 |
+| 受控补丁完整性 | PASS | 与上游 v0.10.0 的共享文件差异仅为 `document.go`、`document_file.go`、`document_flow.go`、`document_menu.go`、`menu.go`、Darwin WebKit/window 与 Windows menu；Document Group race 测试通过。 |
+| 调用者源码隔离 | PASS | smoke 复制可写 Web 源码，仅链接只读依赖；运行后工作区没有生成绑定或前端构建产生的额外修改。 |
+| QA 会话隔离与清理 | PASS（连续两次原生运行） | 每次使用独立应用名/Bundle ID；两次均通过，运行前后均无残留 QA 用户数据目录；退出和清理均有超时。 |
+| Save 断言 | PASS + 负向验证 | e2e 使用 AutosaveOff，Save 前磁盘无编辑；正常脚本写盘通过。临时跳过 File > Save 后脚本以 1 退出并报告 `native Save did not write the edit`，不再由自动保存误报。 |
+| 导航断言范围 | PASS（官方 Automation 范围） | 四个文档的非相邻 MRU 往返同时核对 Tab、正文、左栏与原生标题；重复打开核对不新增 Tab；索引就绪后才检查资源过滤。合成 Ctrl+Tab 不冒充真实键盘。 |
+| 独立原生系统对话框复验 | PASS（复审者提供证据） | 升级正式包的 Save As、Rename、Move To 字节/哈希、未命名关闭确认与外部冲突取消保护均通过；物理键盘四标签往返通过。 |
+| 窄窗几何、精确光标/滚动 | BLOCKED | 本轮修复未补做这两项原生测量。 |
+
 ## MyGo v0.10.0 与官方 Automation（2026-11-18）
 
 基线：多 Workspace 提交 `d729c17`；升级在独立分支进行。上游 v0.10.0 仍为一份文档一个窗口，因此保留并迁移受控 Document Group 补丁。

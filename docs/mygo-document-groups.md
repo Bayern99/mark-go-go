@@ -24,6 +24,8 @@ The migration used v0.7.4 as the merge base and carried the patch onto v0.10.0. 
 
 `mygo-runtime` is pinned to the same v0.10.0. Official Automation source and CLI are vendored from that release; `automation_e2e.go` is the only app-side link and is excluded from ordinary builds.
 
+The follow-up source audit fills every upstream source and embedded resource referenced by the app and its Go tools across macOS, Linux and Windows, including `internal/scene/surface.go`, Windows display/DIP files and `internal/windows/keys.js`; unused plugins, benchmarks, examples and website sources stay out. Both `GOOS=linux GOARCH=amd64 go build ./...` and `GOOS=windows GOARCH=amd64 go build ./...` pass. A post-fill diff against upstream shows only the eight controlled files listed above plus the in-tree document-group implementation/tests; no controlled file was overwritten.
+
 ## Public API added
 
 - `Document.ID() string` — stable identity, same value as the recovery id, independent of path and window.

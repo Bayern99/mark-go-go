@@ -210,8 +210,6 @@ func TestSessionFileLayoutKeys(t *testing.T) {
 }
 
 func TestActiveAfterRestoreUsesTheRealDocumentID(t *testing.T) {
-	// A tab opened from disk gets a new MyGo id; the session's stored id
-	// must point at it instead of dangling.
 	resolved := []resolvedTab{
 		{planned: "saved-alpha", id: "native-alpha"},
 		{planned: "saved-beta", id: "native-beta"},
@@ -222,7 +220,6 @@ func TestActiveAfterRestoreUsesTheRealDocumentID(t *testing.T) {
 	if got := activeAfterRestore(resolved, "saved-alpha"); got != "native-alpha" {
 		t.Fatalf("active = %q", got)
 	}
-	// The stored active tab did not come back: the first tab that did.
 	if got := activeAfterRestore(resolved, "saved-gone"); got != "native-alpha" {
 		t.Fatalf("active = %q, want the first restored tab", got)
 	}
@@ -560,7 +557,6 @@ func TestCaptureSessionKeepsUntitledTabsByID(t *testing.T) {
 	if file.Workspaces[0].ActiveID != "u2" {
 		t.Fatalf("active = %q", file.Workspaces[0].ActiveID)
 	}
-	// The recovery copies keep these ids, so the plan reuses both.
 	plan := planSessionRestore(file, restoreLive{
 		OpenByID: map[string]restoreDoc{
 			"u1": {ID: "u1"},
@@ -713,7 +709,6 @@ func TestQuitAttemptIsBoundedAndDoesNotCaptureNewWindows(t *testing.T) {
 		t.Fatal("quit attempt must start a bounded ack timer for every current window")
 	}
 
-	// A workspace opened after the attempt began is not in its flush set.
 	h.mu.Lock()
 	h.byWindow[b] = &workspace{id: "ws-b"}
 	h.mu.Unlock()

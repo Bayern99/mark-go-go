@@ -85,8 +85,6 @@ function treeSeed(root = '/work') {
 }
 
 function typeInto(input: HTMLInputElement, value: string) {
-  // React's value tracker ignores a plain `input.value =` assignment, so drive
-  // the native setter before dispatching the input event.
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value)
   input.dispatchEvent(new Event('input', { bubbles: true }))
 }

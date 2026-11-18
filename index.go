@@ -25,7 +25,6 @@ const (
 	navScanYieldEvery   = 64
 )
 
-// FolderState is the collapsed/expanded state of one directory in the tree.
 type FolderState string
 
 const (
@@ -34,7 +33,6 @@ const (
 	FolderEmpty     FolderState = "empty"
 )
 
-// IndexStatus is the honest scan/index progress of a workspace root.
 type IndexStatus string
 
 const (
@@ -45,10 +43,9 @@ const (
 	IndexError    IndexStatus = "error"
 )
 
-// NavEntry is one folder or Markdown file in the workspace tree.
 type NavEntry struct {
 	ID            string      `json:"id"`
-	Kind          string      `json:"kind"` // "file" | "folder"
+	Kind          string      `json:"kind"`
 	Name          string      `json:"name"`
 	Path          string      `json:"path"`
 	Parent        string      `json:"parent"`
@@ -65,7 +62,6 @@ type NavEntry struct {
 	DocumentID    string      `json:"documentId,omitempty"`
 }
 
-// NavSnapshot is the tree as the page lists it.
 type NavSnapshot struct {
 	Root           string      `json:"root"`
 	Status         IndexStatus `json:"status"`
@@ -76,14 +72,12 @@ type NavSnapshot struct {
 	CollapsedCount int         `json:"collapsedCount"`
 }
 
-// HeadingHit is a heading that matched a filter.
 type HeadingHit struct {
 	Text   string `json:"text"`
 	Offset int    `json:"offset"`
 	Level  int    `json:"level"`
 }
 
-// NavSearchHit is one file that matched a filter, with heading hits.
 type NavSearchHit struct {
 	Path       string       `json:"path"`
 	Name       string       `json:"name"`
@@ -93,7 +87,6 @@ type NavSearchHit struct {
 	Headings   []HeadingHit `json:"headings"`
 }
 
-// NavSearchResult is the current filter result, including incomplete scans.
 type NavSearchResult struct {
 	Query      string         `json:"query"`
 	Status     IndexStatus    `json:"status"`
@@ -104,14 +97,12 @@ type NavSearchResult struct {
 	Hits       []NavSearchHit `json:"hits"`
 }
 
-// RecentWorkspace is one remembered folder workspace.
 type RecentWorkspace struct {
 	Root     string `json:"root"`
 	Name     string `json:"name"`
 	OpenedAt int64  `json:"openedAt"`
 }
 
-// Crumb is one path-bar segment.
 type Crumb struct {
 	Name   string `json:"name"`
 	Path   string `json:"path"`
@@ -152,7 +143,7 @@ type workspaceIndex struct {
 	errText   string
 	files     map[string]*indexedFile
 	folders   map[string]*indexedFolder
-	order     []string // relative paths of files, then folders, for tree walk
+	order     []string
 	collapsed map[string]bool
 	query     string
 	stop      context.CancelFunc
@@ -766,7 +757,6 @@ func (h *documentHost) navSnapshot(w *workspace) NavSnapshot {
 		sortable = append(sortable, navSortEntry{rel: rel, entry: entry})
 	}
 
-	// Open documents that were deleted from disk still have a navigable row.
 	for _, id := range extraTabs {
 		if seenOpen[id] {
 			continue
@@ -839,18 +829,11 @@ func depthOf(rel string) int {
 	return strings.Count(rel, "/")
 }
 
-// navSortEntry carries one workspace-relative path, already known from the
-// index key or computed once for an open document, so the tree sort never
-// normalises or splits paths inside the comparator.
 type navSortEntry struct {
 	entry NavEntry
 	rel   string
 }
 
-// navRelLess orders two tree entries depth-first: a folder is followed
-// immediately by its descendants. Siblings list folders before files, then
-// compare names case-insensitively. It walks the precomputed relative paths
-// with strings.Cut so comparing two entries allocates nothing.
 func navRelLess(arel, aKind, brel, bKind string) bool {
 	for {
 		if arel == brel {
@@ -881,8 +864,6 @@ func navRelLess(arel, aKind, brel, bKind string) bool {
 	}
 }
 
-// compareFold orders names case-insensitively without allocating, matching the
-// per-rune lowercasing the tree convention used before.
 func compareFold(a, b string) int {
 	for a != "" && b != "" {
 		ar, an := utf8.DecodeRuneInString(a)
@@ -906,9 +887,6 @@ func compareFold(a, b string) int {
 }
 
 func (h *documentHost) searchLockedResult(w *workspace, idx *workspaceIndex, query string) NavSearchResult {
-	// Open documents are the routing boundary: resolve each one to the same
-	// workspace-relative key the index stores, once, instead of recanonicalising
-	// every indexed path per filter.
 	openByRel := map[string]string{}
 	for p, text := range h.openTexts(w) {
 		if rel := relSlash(idx.root, p); rel != "" {
@@ -932,8 +910,6 @@ func (h *documentHost) searchLockedResult(w *workspace, idx *workspaceIndex, que
 		rel  string
 		file indexedFile
 	}
-	// Allocate without reading the map before taking idx.mu; concurrent
-	// reindexing may add or remove entries while this filter result builds.
 	files := make([]searchFile, 0)
 	for rel, file := range idx.files {
 		if file.missing {
@@ -1001,9 +977,6 @@ func containsFold(hay, needle string) bool {
 	return needle != "" && strings.Contains(strings.ToLower(hay), needle)
 }
 
-// NavSnapshot is the calling window's file tree. Opening a workspace does
-// not wait for a full directory scan: scanning and indexing continue in
-// the background and arrive through navChanged.
 func (h *documentHost) NavSnapshot(ctx context.Context) (NavSnapshot, error) {
 	w, err := h.workspaceOf(ctx)
 	if err != nil {
@@ -1012,7 +985,6 @@ func (h *documentHost) NavSnapshot(ctx context.Context) (NavSnapshot, error) {
 	return h.navSnapshot(w), nil
 }
 
-// SetFilter starts or clears a tree filter. Open unsaved text is searched.
 func (h *documentHost) SetFilter(ctx context.Context, query string) (NavSearchResult, error) {
 	w, err := h.workspaceOf(ctx)
 	if err != nil {
@@ -1030,7 +1002,6 @@ func (h *documentHost) SetFilter(ctx context.Context, query string) (NavSearchRe
 	return result, nil
 }
 
-// ToggleFolder collapses or expands a directory in the tree.
 func (h *documentHost) ToggleFolder(ctx context.Context, rel string) error {
 	w, err := h.workspaceOf(ctx)
 	if err != nil {
@@ -1048,7 +1019,6 @@ func (h *documentHost) ToggleFolder(ctx context.Context, rel string) error {
 	return nil
 }
 
-// RevealPath expands ancestors so path is visible in the tree.
 func (h *documentHost) RevealPath(ctx context.Context, path string) error {
 	w, err := h.workspaceOf(ctx)
 	if err != nil {
@@ -1068,7 +1038,6 @@ func (h *documentHost) RevealPath(ctx context.Context, path string) error {
 	return nil
 }
 
-// PickFolder opens a native directory dialog and focuses or opens that workspace.
 func (h *documentHost) PickFolder(ctx context.Context) (string, error) {
 	w, _ := h.workspaceOf(ctx)
 	var parent *mygo.Window
@@ -1094,7 +1063,6 @@ func (h *documentHost) PickFolder(ctx context.Context) (string, error) {
 	return root, nil
 }
 
-// RecentWorkspaces returns persisted folder workspaces, newest first.
 func (h *documentHost) RecentWorkspaces(ctx context.Context) ([]RecentWorkspace, error) {
 	_ = ctx
 	return h.settings.recentWorkspaces(), nil

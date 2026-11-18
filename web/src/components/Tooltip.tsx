@@ -7,11 +7,6 @@ export interface AppTooltipProps {
   disabled?: boolean
 }
 
-/**
- * One-line label for an existing control. The application mounts a single
- * `Tooltip.Provider` in the shell; this component only owns the trigger and
- * portal, so labels do not add wrapper elements to the layout.
- */
 export function AppTooltip({ label, children, disabled = false }: AppTooltipProps): ReactElement {
   if (disabled || label === null || label === undefined || label === '') {
     return children

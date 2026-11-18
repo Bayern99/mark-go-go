@@ -8,9 +8,6 @@ import (
 	"testing"
 )
 
-// traceRecorder collects the events one run's observer received,
-// decoded to maps so that a test reads them the way a JS harness
-// would.
 type traceRecorder struct {
 	mu     sync.Mutex
 	events []traceRecord
@@ -86,7 +83,6 @@ func traceBool(m map[string]any, key string) bool {
 	return b
 }
 
-// findTraceConfigSet returns the last config.set for configID.
 func findTraceConfigSet(t *testing.T, tr *traceRecorder, configID string) map[string]any {
 	t.Helper()
 	var found map[string]any
@@ -127,8 +123,6 @@ func TestGenerationTraceProvesSessionConfigAndCommittedView(t *testing.T) {
 		t.Fatalf("run.end events = %d, want 1", got)
 	}
 
-	// The process is the one the fake really logged: one pid, one cwd,
-	// the resolved executable and the acp argument.
 	start := tr.last(t, traceAgentStart)
 	fakePid := int(logEntries(log, "pid")[0]["pid"].(float64))
 	fakeCwd := logEntries(log, "cwd")[0]["cwd"].(string)
@@ -146,8 +140,6 @@ func TestGenerationTraceProvesSessionConfigAndCommittedView(t *testing.T) {
 		t.Errorf("agent.start cwd = %q, want the fake's %q", got, fakeCwd)
 	}
 
-	// The complete initialize answer is kept, the client identified
-	// itself, and the protocol version was checked and matched.
 	init := tr.last(t, traceInitialize)
 	clientInfo, _ := init["clientInfo"].(map[string]any)
 	if traceText(clientInfo, "name") != acpClientName {
@@ -161,8 +153,6 @@ func TestGenerationTraceProvesSessionConfigAndCommittedView(t *testing.T) {
 		t.Errorf("initialize result = %v, want the full raw answer", init["result"])
 	}
 
-	// session/new is the same session the later calls name, and its
-	// configOptions are kept with the actual current values.
 	session := tr.last(t, traceSessionNew)
 	if got := traceText(session, "sessionId"); got != "fake-session" {
 		t.Errorf("session.new sessionId = %q, want fake-session", got)
@@ -184,8 +174,6 @@ func TestGenerationTraceProvesSessionConfigAndCommittedView(t *testing.T) {
 		t.Errorf("thought_level values = %v, want low and high", values)
 	}
 
-	// The model's set answer is what confirms the model; the same for
-	// thought_level, which the agent really offered.
 	modelSet := findTraceConfigSet(t, tr, traceModelOption)
 	if !traceBool(modelSet, "confirmed") || traceText(modelSet, "currentValue") != "gemini-3.8-flash" {
 		t.Errorf("model config.set = %v, want confirmed gemini-3.8-flash", modelSet)
@@ -198,8 +186,6 @@ func TestGenerationTraceProvesSessionConfigAndCommittedView(t *testing.T) {
 		t.Errorf("config.option_update events = %d, want 2 (model and thought_level)", got)
 	}
 
-	// Every raw line is the full JSON-RPC object, and every later call
-	// names the session session/new opened.
 	sentInitialize := false
 	sentSessionNew := false
 	sentPrompt := false
@@ -245,8 +231,6 @@ func TestGenerationTraceProvesSessionConfigAndCommittedView(t *testing.T) {
 		t.Error("no phase event was recorded")
 	}
 
-	// The artifacts are the exact files: the captured source, what the
-	// agent wrote, and the view the app committed.
 	artifacts := map[string]map[string]any{}
 	for _, e := range tr.all(traceArtifact) {
 		artifacts[traceText(e, "name")] = e
@@ -271,7 +255,6 @@ func TestGenerationTraceProvesSessionConfigAndCommittedView(t *testing.T) {
 		t.Errorf("view artifact path = %v, want %s", view["path"], job.ViewPath)
 	}
 
-	// run.end proves the run and the configuration from raw answers.
 	end := tr.last(t, traceRunEnd)
 	if !traceBool(end, "ok") || end["error"] != nil || end["failure"] != nil {
 		t.Errorf("run.end = %v, want success without a failure", end)
@@ -359,7 +342,6 @@ func TestGenerationTraceFailureIsNeverSuccess(t *testing.T) {
 
 	t.Run("thought level not offered", func(t *testing.T) {
 		tr := &traceRecorder{}
-		// The fake offers only high, as before this run asks for low.
 		spec := fakeSpec{Out: minimalOut}
 		err, _, log := driveGeneration(t, spec, nil, func(job *generationJob) {
 			job.Observe = tr.observe

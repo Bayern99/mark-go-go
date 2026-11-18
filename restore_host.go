@@ -30,17 +30,11 @@ func removeWorkspaceOrder(order []string, id string) []string {
 	return out
 }
 
-// resolvedTab is a planned tab with the id its document has after
-// restore: a file opened from disk gets a new MyGo id, a recovery copy
-// keeps the id the session stored.
 type resolvedTab struct {
 	planned string
 	id      string
 }
 
-// activeAfterRestore picks the window's active document: the real id of
-// the tab the session named active, else the first tab that came back.
-// It never invents an id that no open document has.
 func activeAfterRestore(resolved []resolvedTab, want string) string {
 	for _, r := range resolved {
 		if want != "" && r.planned == want {
@@ -53,8 +47,6 @@ func activeAfterRestore(resolved []resolvedTab, want string) string {
 	return ""
 }
 
-// SetViewMode stores this document's view mode in the session. Bound to
-// documentID, never the active tab.
 func (h *documentHost) SetViewMode(ctx context.Context, documentID, mode string) error {
 	_ = ctx
 	s, err := h.docSession(documentID)
@@ -74,7 +66,6 @@ const quitAckTimeout = 20 * time.Second
 
 var errStaleQuitAttempt = errors.New("stale quit attempt")
 
-// FlushQuit delivers the editor text while this window still owes a quit ack.
 func (h *documentHost) FlushQuit(ctx context.Context, documentID, text string, attempt int) error {
 	win := mygo.CallerWindow(ctx)
 	h.mu.Lock()
@@ -87,15 +78,12 @@ func (h *documentHost) FlushQuit(ctx context.Context, documentID, text string, a
 		h.mu.Unlock()
 		return errNoDocument
 	}
-	// A retry cannot invalidate the attempt between the check and the write.
 	s.doc.Set(text)
 	h.mu.Unlock()
 	h.reindexOpenDocument(s)
 	return nil
 }
 
-// PrepareQuit records one window's flush, or reports why that window
-// could not flush. The session is written only after every window acks.
 func (h *documentHost) PrepareQuit(ctx context.Context, attempt int, failure string) error {
 	win := mygo.CallerWindow(ctx)
 	if failure != "" {
@@ -140,8 +128,6 @@ func (h *documentHost) beginQuitAttempt() (int, []*mygo.Window, bool) {
 	return attempt, wins, true
 }
 
-// ackQuitWindow marks win flushed for attempt. It completes only once,
-// after every window in that attempt has acked.
 func (h *documentHost) ackQuitWindow(win *mygo.Window, attempt int) (done bool, file sessionFileData) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -176,8 +162,6 @@ func (h *documentHost) ackQuitWindowLocked(win *mygo.Window, attempt int) (done 
 	return true, h.captureSessionLocked()
 }
 
-// saveQuitAttempt leaves the attempt active during the disk write. Tests
-// inject save so failure and retry state do not open a native dialog.
 func (h *documentHost) saveQuitAttempt(
 	attempt int,
 	file sessionFileData,
@@ -293,8 +277,6 @@ func (h *documentHost) onBeforeQuit(e *mygo.QuitEvent) {
 	}
 }
 
-// restoreAfterStart lays out workspaces after MyGo recovery and launch
-// files. It does not start generations.
 func (h *documentHost) restoreAfterStart() {
 	h.mu.Lock()
 	h.restoring = true
@@ -309,16 +291,12 @@ func (h *documentHost) restoreAfterStart() {
 	empty := len(h.byWindow) == 0
 	h.restoring = false
 	h.mu.Unlock()
-	// The stored session had nothing to restore, or every window it
-	// planned failed: say Welcome. A launch file that could not be
-	// opened must not leave the app without a window either.
 	if plan.ShowWelcome || empty {
 		h.showWelcomeIfEmpty()
 	}
 }
 
 func (h *documentHost) applyRestorePlan(plan restorePlan) {
-	// Recovery and launch files may already have opened the shared window.
 	restoreWin := h.preferredWindow()
 	restoredRoots := map[*workspace]bool{}
 	var restoredOrder []string
@@ -339,9 +317,6 @@ func (h *documentHost) applyRestorePlan(plan restorePlan) {
 		h.mu.Lock()
 		dest.restoreError = pw.RestoreError
 		h.mu.Unlock()
-		// Stored ids need not survive: a tab opened from disk gets the
-		// MyGo document's new id, so keep each planned id next to the id
-		// the document really has now.
 		var resolved []resolvedTab
 		for _, tab := range pw.Tabs {
 			var s *docSession
@@ -374,8 +349,6 @@ func (h *documentHost) applyRestorePlan(plan restorePlan) {
 		active := activeAfterRestore(resolved, pw.ActiveID)
 		h.mu.Lock()
 		if len(ordered) > 0 {
-			// A recovery copy the session did not list is still open;
-			// keep its tab instead of hiding unsaved bytes.
 			dest.tabs = orderedTabs(ordered, dest.tabs)
 		}
 		if active != "" {
@@ -402,7 +375,6 @@ func (h *documentHost) applyRestorePlan(plan restorePlan) {
 		h.mu.Unlock()
 		h.activateWorkspace(activeWorkspace)
 	}
-	// A file this launch opened gets focus after the layout is in place.
 	if plan.FocusPath != "" && h.docs != nil {
 		if info, err := h.Open(context.Background(), plan.FocusPath); err == nil {
 			_ = h.Activate(context.Background(), info.ID)
@@ -414,8 +386,6 @@ func (h *documentHost) applyRestorePlan(plan restorePlan) {
 	}
 }
 
-// dropRestoreLeftovers removes empty folder roots made for recovered tabs
-// that moved to planned roots. Planned folders, even empty ones, stay.
 func (h *documentHost) dropRestoreLeftovers(restoredRoots map[*workspace]bool) {
 	h.mu.Lock()
 	emptyRoots := map[*mygo.Window][]*workspace{}

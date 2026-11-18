@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mountEditor } from './helpers/editor'
 
-/** The top-level position right after the block holding `text`. */
 function endOfBlock(doc: { forEach(fn: (node: { textContent: string; nodeSize: number }, offset: number) => void): void }, text: string): number {
   let end = -1
   doc.forEach((node, offset) => {

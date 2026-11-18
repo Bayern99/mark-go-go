@@ -6,15 +6,9 @@ import { segmentMarkdown, type SourceSegment } from './segment'
 
 export interface RebuiltBlock {
   node: PMNode
-  /** Bytes this node should emit on compose. */
   source: string
 }
 
-/**
- * Turn a composer string into the top-level nodes it represents. A single
- * segment keeps the whole string as its source so a no-op edit is byte-identical
- * and a type change still writes exactly what the user typed.
- */
 export function rebuildBlocks(text: string, schema: Schema, parser: Parser): RebuiltBlock[] {
   const { segments, prefix, trailing } = segmentMarkdown(text)
   if (segments.length === 0) {

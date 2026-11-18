@@ -1,6 +1,5 @@
 import { EditorView } from '@codemirror/view'
 
-/** The CodeMirror view behind the source-mode editor, resolved via public API. */
 export function getSourceView(container: HTMLElement): EditorView {
   const element = container.querySelector<HTMLElement>('.mgo-source-root .cm-editor')
   if (!element) throw new Error('source editor is not mounted')
@@ -13,7 +12,6 @@ export function sourceText(container: HTMLElement): string {
   return getSourceView(container).state.doc.toString()
 }
 
-/** Text a user can actually see, assembled from CodeMirror's rendered lines. */
 export function visibleSource(container: HTMLElement): string {
   return sourceLines(container)
     .map((line) => line.textContent ?? '')
@@ -26,7 +24,6 @@ export function sourceLines(container: HTMLElement): HTMLElement[] {
   return Array.from(content.querySelectorAll<HTMLElement>('.cm-line'))
 }
 
-/** The rendered source line containing the DOM caret, if any. */
 export function caretLineInSource(container: HTMLElement): HTMLElement | undefined {
   const anchor = window.getSelection()?.anchorNode
   const element = anchor instanceof Element ? anchor : anchor?.parentElement
@@ -34,10 +31,6 @@ export function caretLineInSource(container: HTMLElement): HTMLElement | undefin
   return line && container.querySelector('.mgo-source-root')?.contains(line) ? line : undefined
 }
 
-/**
- * Replace a range the way a user edit does, so updates carry an input event
- * instead of looking like a programmatic document replacement.
- */
 export function replaceSource(
   view: EditorView,
   from: number,
@@ -52,7 +45,6 @@ export function replaceSource(
   })
 }
 
-/** Replace the first occurrence of `search` in the source text. */
 export function replaceSourceText(view: EditorView, search: string, insert: string): string {
   const text = view.state.doc.toString()
   const from = text.indexOf(search)

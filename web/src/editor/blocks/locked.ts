@@ -22,12 +22,6 @@ const KIND_LABEL: Record<LockKind, string> = {
   unsupported: 'unsupported block',
 }
 
-/**
- * An immutable top-level block that keeps its original Markdown source.
- * ProseMirror treats it as a single atom; composing writes `source` back byte
- * for byte. Visual presentation and in-place Markdown editing are owned by the
- * node view; `toDOM` is the clipboard/fallback shape.
- */
 export const lockedBlockSchema = $nodeSchema(LOCKED_NODE, () => ({
   group: 'block',
   atom: true,

@@ -36,7 +36,6 @@ const TWIN_B_SOURCE = '|a|b|\n|---|---|\n|1|2|'
 
 const occurrences = (text: string, needle: string) => text.split(needle).length - 1
 
-/** Insert text at the start of the first table cell's paragraph. */
 function editFirstCell(editor: MarkdownEditor): void {
   const view = editor.getView()
   let position = -1
@@ -97,8 +96,6 @@ describe('undo restores original bytes', () => {
       const doc = view.state.doc
       const tableA = doc.child(1)
       const aPos = doc.child(0).nodeSize
-      // Clipboard-style move: the pasted node is a new object, so it cannot
-      // use table A's identity — it must claim an origin structurally.
       const clone = tableA.type.create(tableA.attrs, tableA.content, tableA.marks)
       const tr = view.state.tr.delete(aPos, aPos + tableA.nodeSize)
       tr.insert(tr.doc.content.size, clone)
@@ -162,8 +159,6 @@ describe('undo restores original bytes', () => {
   it('clears the edited flag in a full App flow once undo restores the bytes', async () => {
     const app = await mountApp(RAGGED_DOC)
     try {
-      // locator, not a captured element: Crepe swaps the preview table in
-      // asynchronously and can detach the node mid-click
       await userEvent.click(page.getByRole('cell').first())
       await userEvent.keyboard('Z')
       await vi.waitFor(

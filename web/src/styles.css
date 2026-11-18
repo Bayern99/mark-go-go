@@ -11,9 +11,6 @@
   --font-mono: "IBM Plex Mono", "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas,
     "IBM Plex Sans SC", "PingFang SC", monospace;
 
-  /* Portrait Surfaces & Ink — a palette swap redefines the tokens in
-     theme/portrait-tokens.ts (SURFACE + STATUS, and MATERIAL per scheme);
-     rules outside this token block must read these names, not literals. */
   --chrome: #f2f2f4;
   --paper: #ffffff;
   --code: #f6f6f8;
@@ -22,7 +19,6 @@
   --ink-3: #6e6e73;
   --ink-4: #a1a1a6;
 
-  /* Lines & Fills */
   --line: rgba(0, 0, 0, 0.08);
   --line-strong: rgba(0, 0, 0, 0.16);
   --fill: rgba(0, 0, 0, 0.045);
@@ -32,7 +28,6 @@
   --scrollbar-thumb-hover: color-mix(in srgb, var(--ink-3) 54%, transparent);
   --scrollbar-thumb-active: color-mix(in srgb, var(--ink-3) 68%, transparent);
 
-  /* Accents & Status */
   --accent: #2f6f62;
   --on-accent: #ffffff;
   --accent-soft: rgba(47, 111, 98, 0.1);
@@ -42,7 +37,6 @@
   --danger: #a83a3a;
   --danger-soft: rgba(168, 58, 58, 0.08);
 
-  /* Content semantics (document Warning/Caution/Note) — not application status */
   --content-note: var(--accent);
   --content-note-soft: var(--accent-soft);
   --content-warning: #9a4d12;
@@ -50,7 +44,6 @@
   --content-caution: #a83a3a;
   --content-caution-soft: rgba(168, 58, 58, 0.08);
 
-  /* Type scale — only these roles. Line heights are even. */
   --text-display-size: 28px;
   --text-display-leading: 36px;
   --text-title-size: 20px;
@@ -74,7 +67,6 @@
   --duration-menu: 100ms;
   --duration-jump: 1100ms;
 
-  /* Tactile Materials & Shadows */
   --raised: linear-gradient(#ffffff, #f6f6f8);
   --raised-press: linear-gradient(#ececee, #f2f2f4);
   --raised-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.15), 0 1px 1px rgba(0, 0, 0, 0.05),
@@ -88,7 +80,6 @@
   --focus: color-mix(in srgb, var(--accent) 34%, transparent);
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 
-  /* Backward-compatible legacy token aliases */
   --mgo-bg: var(--chrome);
   --mgo-panel: var(--paper);
   --mgo-panel-soft: var(--code);
@@ -99,10 +90,6 @@
   --mgo-accent-soft: var(--accent-soft);
   --mgo-danger: var(--danger);
 
-  /* The scheme `light-dark()` tokens resolve against (GenUI). The build
-     lowers `light-dark()` for older WebKit into variables that only rules
-     in this source declaring `color-scheme` set, so a theme switches here
-     and never through an inline style. */
   font-family: var(--font-sans);
   color: var(--ink);
   background: var(--chrome);
@@ -194,7 +181,6 @@ body {
 }
 
 
-/* ─── Controls: Raised Pills & Sunken Segmented Controls ─── */
 .pill {
   display: inline-flex;
   align-items: center;
@@ -307,7 +293,6 @@ body {
   cursor: default;
 }
 
-/* ─── Three-Column Window Shell ─── */
 .app {
   position: relative;
   display: flex;
@@ -325,7 +310,6 @@ body {
   min-width: 0;
 }
 
-/* ─── Left Column: Workspace Navigation (8px/16px Geometry) ─── */
 .side-pane,
 .left-pane {
   width: clamp(190px, 20vw, 248px);
@@ -341,8 +325,6 @@ body {
 }
 
 .sidebar-splitter {
-  /* 6px visual slot, 14px grab area: the negative margins keep the layout
-   *  footprint unchanged while leaving a reachable touch target. */
   width: 14px;
   margin: 0 -4px;
   flex: none;
@@ -759,7 +741,6 @@ body {
   padding: 0 8px;
 }
 
-/* ─── Center Column: Paper Sheet & Document Content ─── */
 .center-column {
   flex: 1;
   display: flex;
@@ -973,7 +954,6 @@ body {
   min-height: 100%;
 }
 
-/* ─── Right Column: Current Document Panel (Outline + GenUI) ─── */
 .right-pane {
   width: 272px;
   flex-shrink: 0;
@@ -1065,7 +1045,6 @@ body {
   min-height: 0;
 }
 
-/* ─── Editor Locked Blocks & Notes ─── */
 .mgo-locked-block {
   position: relative;
   margin: 0 0 20px;
@@ -1242,7 +1221,6 @@ body {
   line-height: var(--text-code-leading);
 }
 
-/* ─── Unified In-place Paper Composer (Preview notes, GenUI card notes, Focus) ─── */
 .composer {
   display: block;
   border-radius: 8px;
@@ -1795,8 +1773,6 @@ body {
   margin: 0;
 }
 
-/* ─── Narrow sheet: the footer status bar already carries the save state,
-     so the docbar yields secondary meta, then crumbs, to the mode switch. ─── */
 @container sheet (max-width: 380px) {
   .docbar .status,
   .docbar .version-chip {

@@ -1,6 +1,3 @@
-/* Round-2 experiment W5 — overflow-wrap: anywhere on inline code only.
-   Lets a too-long identifier fill the previous line instead of stranding
-   it; scoped to code so prose tokens still wrap on word boundaries. */
 .crepe-root .milkdown .ProseMirror code {
   overflow-wrap: anywhere;
 }

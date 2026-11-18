@@ -6,12 +6,6 @@ import (
 	"strings"
 )
 
-// generationPrompt is the instruction the agent gets for one view. The
-// document's complete captured text, and for an update the current view,
-// are embedded inline once, next to the format definition the page sent
-// and, when the reader asked for one, the reader's request. The snapshots
-// in the workspace stay, but the agent is told not to reread them: its only
-// write is the exact out.json path.
 func generationPrompt(req GenerateRequest, base *baseView, dir string) string {
 	var b strings.Builder
 	size := len(req.Text) + len(req.Format) + len(req.Request) + 4096

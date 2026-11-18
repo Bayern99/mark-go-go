@@ -13,20 +13,9 @@ import type { SourceReference, SourceStatus, SourceStore } from './sources'
 
 export interface SourceActions {
   store: SourceStore
-  /** Component ID currently highlighted by the right-pane out-of-date list. */
   highlightedId?: string | null
-  /** Component ids whose bodies are being regenerated in place. */
   replacing?: ReadonlySet<string>
-  /**
-   * Show a component's source in Preview, selected: where `text` is in its
-   * remaining source sections when given and found, otherwise its first
-   * remaining source section.
-   */
   edit(ids: readonly string[], text?: string): void
-  /**
-   * Add `text` as a note to the end of the component's first remaining source
-   * section. False when it could not be added.
-   */
   addNote(ids: readonly string[], text: string): Promise<boolean>
 }
 
@@ -51,13 +40,9 @@ const noRevision = () => 0
 
 export interface ComponentSource {
   status: SourceStatus
-  /** Its recorded sources, one per id, in the view's order. */
   references: SourceReference[]
-  /** The notes in its source sections. */
   notes: string[]
-  /** Opens the source in the editor; absent when there is nowhere to go. */
   edit: ((text?: string) => void) | undefined
-  /** Adds a note to the source; absent when there is nowhere to put it. */
   addNote: ((text: string) => Promise<boolean>) | undefined
 }
 
@@ -70,12 +55,6 @@ function CardSkeleton(): React.ReactElement {
   )
 }
 
-/**
- * What a component's `sources` say now, re-read whenever the document's
- * sections are. Aggregate `status` is still `missing` when any source is gone;
- * `edit` and `addNote` are absent without sources or when none of them is still
- * in the document.
- */
 export function useComponentSource(sources: readonly string[] | undefined): ComponentSource {
   const actions = useContext(SourceContext)
   useSyncExternalStore(
@@ -97,11 +76,6 @@ export function useComponentSource(sources: readonly string[] | undefined): Comp
   }
 }
 
-/**
- * The frame every content component of the catalog draws in: where its
- * content came from, whether that source changed since the view was made,
- * the notes on that source, and the ways to edit and note it in the document.
- */
 export function SourceFrame({
   source,
   componentId,

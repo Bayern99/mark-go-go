@@ -1,10 +1,8 @@
-/* V1 compact-grid: tighter cell padding, keep Crepe's 1px grid, layout unchanged. */
 .crepe-root .milkdown .ProseMirror th,
 .crepe-root .milkdown .ProseMirror td {
   padding: 6px 12px;
 }
 
-/* Cell paragraph reset (common to all variants). */
 .crepe-root .milkdown .ProseMirror th > p,
 .crepe-root .milkdown .ProseMirror td > p {
   margin: 0;

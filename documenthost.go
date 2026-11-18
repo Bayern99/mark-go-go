@@ -11,9 +11,6 @@ import (
 	"github.com/egoist/mygo"
 )
 
-// Snapshot is one document at one version. Version starts at 1 when the
-// document opens and grows by one every time its content is read from
-// disk again. ID is the stable document identity.
 type Snapshot struct {
 	ID      string       `json:"id"`
 	Text    string       `json:"text"`
@@ -21,31 +18,19 @@ type Snapshot struct {
 	State   DocumentInfo `json:"state"`
 }
 
-// docReloaded tells the page that MyGo read the file again.
 var docReloaded = mygo.NewEvent[Snapshot]("docReloaded")
 
-// docState tells the page that a document's state changed, without
-// activating it.
 var docState = mygo.NewEvent[DocumentInfo]("docState")
 
-// documentHost is the bound WorkspaceHost: workspace navigation and
-// per-document commands keyed by document id, through MyGo's document
-// as the only authority.
 type documentHost struct {
-	mu sync.Mutex
-	// sessionWriteMu serializes snapshots and writes, including the final quit save.
+	mu             sync.Mutex
 	sessionWriteMu sync.Mutex
 
-	// byWindow points at the selected root of each native window. Other roots
-	// in that window live in byWorkspace; documents remain root-scoped.
 	byWindow       map[*mygo.Window]*workspace
 	byWorkspace    map[string]*workspace
 	byID           map[string]*docSession
 	workspaceOrder []string
-	// claims are the files a session has reserved for a path change that
-	// has not touched the disk yet, by canonical path: two windows cannot
-	// both take one target.
-	claims map[string]string
+	claims         map[string]string
 
 	docs *mygo.Documents[string]
 
@@ -61,16 +46,11 @@ type documentHost struct {
 	quitSaving   bool
 	quitTimer    *time.Timer
 
-	// agentCache, when non-nil, keeps at most one idle ACP agent process
-	// for sequential generations; nil starts one process per run.
 	agentCache *acpProcessCache
 
-	// prepareJob, when set, adjusts a generation job after settings and
-	// path are captured. Tests inject a fake agent through it.
 	prepareJob func(*generationJob)
 }
 
-// docSession is one open document, permanently bound to its id.
 type docSession struct {
 	host *documentHost
 	id   string
@@ -78,31 +58,18 @@ type docSession struct {
 	win  *mygo.Window
 	ws   *workspace
 
-	version    int
-	offReload  func()
-	offState   func()
-	offClosed  func()
-	generating bool
-	// genSlot is this document's one generation; nil when idle. Concurrent
-	// documents each have their own. cancel stops the agent; abandoned is
-	// set on a real close so a finishing run cannot write a view.
-	genSlot *generationSlot
-	closed  bool
-	// pathFn, when set, is this session's path for tests without a MyGo
-	// document. Production sessions always have doc and leave this nil.
+	version      int
+	offReload    func()
+	offState     func()
+	offClosed    func()
+	generating   bool
+	genSlot      *generationSlot
+	closed       bool
 	pathFn       func() string
 	viewMode     string
 	restoreError string
-	// actionError is why the last native command on this document failed,
-	// shown in its window, guarded by documentHost.mu.
-	actionError string
+	actionError  string
 
-	// The view file the page follows (viewfile.go), guarded by
-	// documentHost.mu: following says the page asked to, viewPath is the
-	// file watched, stopView ends its watch, and viewGen counts
-	// retargets. emitMu, taken before documentHost.mu, orders the reads
-	// of the file with the events that carry them. emit, when set,
-	// receives those snapshots instead of the page (tests).
 	following bool
 	viewPath  string
 	stopView  func()
@@ -111,7 +78,6 @@ type docSession struct {
 	emit      func(ViewSnapshot)
 }
 
-// generationSlot is one in-flight generation of a document.
 type generationSlot struct {
 	cancel    context.CancelFunc
 	path      string
@@ -121,8 +87,6 @@ type generationSlot struct {
 func newDocumentHost() *documentHost {
 	dir, _ := mygo.App.Path(mygo.PathUserData)
 	settings := &settingsStore{dir: dir}
-	// The settings file is the app's one store: tell every window when it
-	// changes, so a panel in another document does not show an old value.
 	settings.onChange = func(s Settings) {
 		_ = settingsChanged.Broadcast(s)
 	}
@@ -133,15 +97,10 @@ func newDocumentHost() *documentHost {
 		claims:      make(map[string]string),
 		settings:    settings,
 		agentCache:  newACPProcessCache(),
-		// Recovery opens documents before restoreAfterStart reads the
-		// session. Their windows must not be written over session.json
-		// before the stored layout is planned from it.
-		restoring: true,
+		restoring:   true,
 	}
 }
 
-// closeAgentCache stops the idle agent process and removes its private
-// folder. Active runs are stopped through their contexts first.
 func (h *documentHost) closeAgentCache() {
 	if h.agentCache != nil {
 		h.agentCache.close()
@@ -158,7 +117,6 @@ func (s *docSession) info() DocumentInfo {
 	return s.makeInfo(st, s.generating)
 }
 
-// infoLocked is info while documentHost.mu is already held.
 func (s *docSession) infoLocked() DocumentInfo {
 	return s.makeInfo(s.documentState(), s.generating)
 }
@@ -185,7 +143,6 @@ func (s *docSession) currentPath() string {
 	return ""
 }
 
-// makeInfo reads the session fields with documentHost.mu held for hosted documents.
 func (s *docSession) makeInfo(st mygo.DocumentState, generating bool) DocumentInfo {
 	return DocumentInfo{
 		ID:           s.id,
@@ -214,8 +171,6 @@ func (s *docSession) snapshot() Snapshot {
 	}
 }
 
-// openWindow is DocumentsOptions.Window: reuse the workspace that should
-// own this document, or make one. MyGo then attaches the document to it.
 func (h *documentHost) openWindow(doc *mygo.Document[string]) *mygo.Window {
 	if win := h.existingWindow(doc); win != nil {
 		h.adopt(doc, win)
@@ -225,8 +180,6 @@ func (h *documentHost) openWindow(doc *mygo.Document[string]) *mygo.Window {
 	if p := doc.Path(); p != "" {
 		root = canonicalPath(filepath.Dir(p))
 	}
-	// A file outside every open root joins the existing window under a new
-	// parent root. Only an app with no usable window needs a new one.
 	if win := h.preferredWindow(); win != nil {
 		h.addWorkspaceToWindow("", root, filepath.Base(root), win)
 		h.adopt(doc, win)
@@ -247,8 +200,6 @@ func (h *documentHost) existingWindow(doc *mygo.Document[string]) *mygo.Window {
 		}
 		return nil
 	}
-	// Untitled documents join the focused workspace when there is one,
-	// else the existing untitled window, else a new untitled window.
 	if fw := mygo.FocusedWindow(); fw != nil {
 		if w := h.byWindow[fw]; w != nil && w.win != nil && !w.win.IsDestroyed() {
 			return w.win
@@ -262,10 +213,6 @@ func (h *documentHost) existingWindow(doc *mygo.Document[string]) *mygo.Window {
 	return nil
 }
 
-// folderWorkspaceLocked finds an open folder workspace for path. deepest
-// containing root wins; if includeParent and none contain the file, a
-// workspace whose root is the parent directory is reused. Roots are
-// compared after canonicalPath so aliases of the same directory match.
 func (h *documentHost) folderWorkspaceLocked(path string, includeParent bool) *workspace {
 	var roots []string
 	byRoot := map[string]*workspace{}
@@ -300,9 +247,6 @@ func (h *documentHost) adopt(doc *mygo.Document[string], win *mygo.Window) {
 	}
 	if existing := h.byID[id]; existing != nil {
 		h.mu.Unlock()
-		// Finder/LaunchServices can ask MyGo to open an already live file
-		// without passing through WorkspaceHost.Open. Reuse and activate that
-		// session so native chrome and the page cannot select different tabs.
 		h.activate(existing)
 		return
 	}
@@ -354,8 +298,6 @@ func (h *documentHost) adopt(doc *mygo.Document[string], win *mygo.Window) {
 	h.persistSession()
 }
 
-// documentFocused follows MyGo's duplicate-open focus path, which otherwise
-// bypasses WorkspaceHost.Open and adopt after choosing the native document.
 func (h *documentHost) documentFocused(doc *mygo.Document[string]) {
 	if doc == nil {
 		return
@@ -420,9 +362,6 @@ func (h *documentHost) dropSession(s *docSession) {
 	h.persistSession()
 }
 
-// retireEmptyUntitled removes an empty Welcome/untitled root after its last
-// document moved or closed. It destroys the native window only when no other
-// root shares it.
 func (h *documentHost) retireEmptyUntitled(w *workspace) bool {
 	if w == nil || w.root != "" {
 		return false
@@ -556,11 +495,6 @@ func (h *documentHost) moveTab(s *docSession, dest *workspace) {
 	h.persistSession()
 }
 
-// pathChangeLock is DocumentsOptions.PathChange: a document whose
-// generation holds it may not change its file now, so MyGo disables Save
-// As, Rename and Move To for it, and refuses a path change that still
-// reaches the kernel. Ordinary Save, the document's own file, is not a
-// path change and stays available.
 func (h *documentHost) pathChangeLock(doc *mygo.Document[string]) error {
 	return h.lockedPathChange(doc.ID())
 }
@@ -576,10 +510,6 @@ func (h *documentHost) lockedPathChange(id string) error {
 	return nil
 }
 
-// refreshPathMenus updates the native Save As / Rename / Move roles after
-// a document's generation lock changed. MyGo reads that lock from this
-// host, but only a state change it knows about makes it look again; the
-// page cannot wait on a menu while a dialog holds the main thread.
 func (h *documentHost) refreshPathMenus() {
 	if !mygo.App.IsReady() {
 		return
@@ -587,20 +517,10 @@ func (h *documentHost) refreshPathMenus() {
 	mygo.RefreshDocumentMenus()
 }
 
-// reservePath is DocumentsOptions.ReservePath: it runs with the file a
-// document is about to become, before MyGo writes to it or moves the
-// document's file there. It refuses a path change the document's
-// generation locks and a file another live session has, and holds the
-// target until the file operation ends, so two windows cannot both take
-// one file. Nothing on disk changes when it refuses.
 func (h *documentHost) reservePath(doc *mygo.Document[string], target string) (func(), error) {
 	return h.reserveTarget(doc.ID(), doc.Path(), target)
 }
 
-// reserveTarget is reservePath's decision: the document's own file is
-// always available to save to; another file is refused while the
-// document generates, and while another live session has it. A granted
-// target stays claimed until the returned release runs.
 func (h *documentHost) reserveTarget(id, path, target string) (func(), error) {
 	h.mu.Lock()
 	s := h.byID[id]
@@ -640,9 +560,6 @@ func (h *documentHost) reserveTarget(id, path, target string) (func(), error) {
 	}, nil
 }
 
-// noteAction records how a native command on s ended: a failure goes on
-// the document's state for its window to show, and a success clears the
-// previous one. A canceled dialog is not a failure.
 func (h *documentHost) noteAction(s *docSession, err error) {
 	msg := ""
 	if err != nil && !errors.Is(err, mygo.ErrCanceled) {
@@ -663,8 +580,6 @@ func (h *documentHost) noteAction(s *docSession, err error) {
 	h.emitWorkspace(w)
 }
 
-// actionMessage is err's text as a window shows it, without the package
-// prefix errors carry for logs.
 func actionMessage(err error) string {
 	msg := err.Error()
 	for _, prefix := range []string{"markgogo: ", "mygo: "} {
@@ -675,7 +590,6 @@ func actionMessage(err error) string {
 	return msg
 }
 
-// Load returns the content of the document, including unsaved edits.
 func (h *documentHost) Load(ctx context.Context, documentID string) (Snapshot, error) {
 	s, err := h.docSession(documentID)
 	if err != nil {
@@ -684,8 +598,6 @@ func (h *documentHost) Load(ctx context.Context, documentID string) (Snapshot, e
 	return s.snapshot(), nil
 }
 
-// Update replaces the document's Markdown. MyGo autosaves; a document
-// in conflict is still edited, so that saving asks which version to keep.
 func (h *documentHost) Update(ctx context.Context, documentID, text string) error {
 	s, err := h.docSession(documentID)
 	if err != nil {
@@ -696,7 +608,6 @@ func (h *documentHost) Update(ctx context.Context, documentID, text string) erro
 	return nil
 }
 
-// Flush is the last-input delivery of that document, before Save or Close.
 func (h *documentHost) Flush(ctx context.Context, documentID, text string) error {
 	return h.Update(ctx, documentID, text)
 }
@@ -711,10 +622,6 @@ func (h *documentHost) Save(ctx context.Context, documentID string) error {
 	return err
 }
 
-// saveDocument saves s as File > Save does. An untitled or read-only
-// document's save asks for another file, which is a path change: a
-// generation in progress refuses it before any dialog, as the kernel
-// would before any write.
 func (h *documentHost) saveDocument(s *docSession) error {
 	path := s.currentPath()
 	readOnly := s.doc != nil && s.doc.IsReadOnly()
@@ -743,9 +650,6 @@ func (h *documentHost) SaveAs(ctx context.Context, documentID string) error {
 	return err
 }
 
-// saveAsDocument writes s to a file the user picks. Uniqueness is the
-// kernel's: it reserves the target before writing, so an open file is
-// refused with nothing on disk changed.
 func (h *documentHost) saveAsDocument(s *docSession) error {
 	if err := h.rejectPathChange(s); err != nil {
 		return err
@@ -795,8 +699,6 @@ func (h *documentHost) Rename(ctx context.Context, documentID string) error {
 	return err
 }
 
-// renameDocument renames s's file. The kernel reserves the target before
-// it moves anything, so a file another session has is refused there.
 func (h *documentHost) renameDocument(s *docSession) error {
 	if err := h.rejectPathChange(s); err != nil {
 		return err

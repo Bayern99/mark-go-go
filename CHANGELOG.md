@@ -9,7 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- 将渲染后可编辑的视图统一命名为 Markdown Preview，视图按钮显示为 `Preview`。已有工作区能继续恢复之前的视图模式。
+- 多个文件夹工作区共用一个窗口和一组文档标签。`Ctrl+Tab` 在最近的文档间往返，工作区菜单可切换、打开或关闭当前工作区。重启恢复活动文档和视图模式。 Folder workspaces share one window and tab group, with recent-document switching and session restoration.
+- 将渲染后可编辑的视图统一命名为 Markdown Preview，视图按钮显示为 `Preview`。已有工作区能继续恢复之前的视图模式。 The editable rendered view is now Markdown Preview, with compatibility for saved sessions.
+- MyGo 与 Web 运行时升级到 v0.10.0。官方原生 Automation 在独立 QA 应用中验证保存、撤销重做和恢复，并检查应用退出码。 MyGo v0.10.0 adds an isolated native smoke test for save, undo and redo, session restoration, and exit status.
 
 ## [0.4.0] - 2026-11-17
 
@@ -20,7 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [0.3.0] - 2026-11-14
 
-Editor typeset and reading-control rounds on the Milkdown Crepe/ProseMirror editor, keeping the Go/WebView architecture, font system and byte-preserving Markdown model unchanged. Audit, measurements and regression evidence live in [docs/editor-typeset/](docs/editor-typeset/).
+Editor typeset and reading-control rounds on the Milkdown Crepe/ProseMirror editor, keeping the Go/WebView architecture, font system and byte-preserving Markdown model unchanged. Audit, measurements and regression evidence live in [docs/editor-typeset/](https://github.com/Bayern99/mark-go-go/tree/95596258a9100edd6664dc43f1f7554fc28d753b/docs/editor-typeset/).
 
 ### English
 
@@ -44,7 +46,7 @@ Editor typeset and reading-control rounds on the Milkdown Crepe/ProseMirror edit
 
 ### 中文
 
-编辑器排版与长文阅读控制三轮精修，基于 Milkdown Crepe/ProseMirror，保持 Go/WebView 架构、字体系统与字节保真的 Markdown 数据模型不变。审计、测量与回归证据见 [docs/editor-typeset/](docs/editor-typeset/)。
+编辑器排版与长文阅读控制三轮精修，基于 Milkdown Crepe/ProseMirror，保持 Go/WebView 架构、字体系统与字节保真的 Markdown 数据模型不变。审计、测量与回归证据见 [docs/editor-typeset/](https://github.com/Bayern99/mark-go-go/tree/95596258a9100edd6664dc43f1f7554fc28d753b/docs/editor-typeset/)。
 
 #### 编辑可靠性
 
@@ -64,9 +66,9 @@ Editor typeset and reading-control rounds on the Milkdown Crepe/ProseMirror edit
 - 折叠状态按文档路径持久化，以内容签名识别章节：重排的重名标题正确对应，被替换、删除或无法确定的章节展开而非错挂。已通过完全退出再重开的真机验证。
 - 选区工具栏保留顶部方案——实测侧边方案虽无遮挡但指针移动距离增加约 6–10 倍，且实际可用边距不足。
 
+## [0.2.0] - 2026-11-11
 
-
-Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance.md) for automated and native results and the open acceptance items.
+Workspace and Portrait changes for #20. See the [acceptance log](https://github.com/Bayern99/mark-go-go/blob/95596258a9100edd6664dc43f1f7554fc28d753b/docs/acceptance.md) for automated and native results and the open acceptance items.
 
 ### English
 
@@ -76,7 +78,7 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 - Preview renders Mermaid fences locally as byte-preserving special blocks. In-place Markdown editing, cancel, undo and read-only behavior use the existing editor path; invalid diagrams retain visible source and an error.
 - Document tabs use bundled file/close icons, tactile active states and an explicit `+N` overflow count. The command-style document menu includes a heading, quiet search, file icons, paths and selection checks. The file tree uses real folder/file icons and parent-folder context; Model menus include model icons and a section heading. Deep rows keep bounded indentation and progressive metadata reduction.
 - The sidebar yields on narrow windows, rendering at most `window width − 310px` down to a 140px floor, so the document sheet stays usable at the 480px minimum window; widening the window restores the user's sidebar width. Inside the sheet, container queries drop the docbar's save status and version chip below 380px and the path crumbs below 300px. The sidebar splitter keeps a 14px pointer/touch target inside its 6px visual slot.
-- Recorded the bounded [UI component gaps and typography plan](docs/design/ui-component-gaps.md), including the desktop/browser excerpt mismatch and the future GenUI Diagram contract. Added only Radix Tooltip/DropdownMenu primitives and Sonner copy feedback; no full UI suite or Catalog expansion is included.
+- Recorded the bounded [UI component gaps and typography plan](https://github.com/Bayern99/mark-go-go/blob/95596258a9100edd6664dc43f1f7554fc28d753b/docs/design/ui-component-gaps.md), including the desktop/browser excerpt mismatch and the future GenUI Diagram contract. Added only Radix Tooltip/DropdownMenu primitives and Sonner copy feedback; no full UI suite or Catalog expansion is included.
 
 
 #### GenUI generation and architecture evidence
@@ -87,7 +89,7 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 - **Terminology**: the generation content rule keeps the source's technical terms as written even in translation, without a dictionary or post-processing.
 - Added opt-in, `readbench`-tagged native tracing of actual agent processes, ACP sessions/configuration, raw artifacts and commit results. The independent ReadBench runner records real WebView observations and source-grounded answer reviews; model benchmarks are explicit runs, separate from fast deterministic checks.
 - Documented the actual UAX #31 component-id constraint in the generation format and corrected historical source-id coverage claims. ADR 0002/0003 distinguish the default ACP generator from replaceable evidence selectors and inference formats.
-- Added a build-tagged, app-owned controlled GenUI experiment: real Jev component/structure decisions, Gemini content-only generation over the same ACP path, and deterministic A2UI assembly. Twelve native runs and source reviews are recorded in the [decision report](docs/research/readbench/controlled-genui-decision.md); production generation remains unchanged.
+- Added a build-tagged, app-owned controlled GenUI experiment: real Jev component/structure decisions, Gemini content-only generation over the same ACP path, and deterministic A2UI assembly. Twelve native runs and source reviews are recorded in the local decision report (`docs/research/readbench/controlled-genui-decision.md`); production generation remains unchanged.
 
 #### Document reliability
 
@@ -133,7 +135,7 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 
 ### 中文
 
-#20 的工作区与 Portrait 更新。自动化检查、原生验证和待验收项见[验收记录](docs/acceptance.md)。
+#20 的工作区与 Portrait 更新。自动化检查、原生验证和待验收项见[验收记录](https://github.com/Bayern99/mark-go-go/blob/95596258a9100edd6664dc43f1f7554fc28d753b/docs/acceptance.md)。
 
 #### 窗口尺寸、图表与工作区文字
 
@@ -141,7 +143,7 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 - Preview 本地渲染 Mermaid 围栏，沿用保真特殊块、原地 Markdown 编辑、取消、撤销和只读规则；无效图保留可见原文与错误说明。
 - 文档标签使用内置文件/关闭图标、拟物活动态和明确的 `+N` 溢出计数；文档命令菜单包含标题、安静搜索、文件图标、路径与选中勾号。文件树使用真实文件夹/文件图标和父目录上下文；Model 菜单包含模型图标与分组标题。深层行保留缩进边界和逐级元信息让位。
 - 窄窗口下侧栏主动让位：渲染宽度不超过 `窗口宽 − 310px`（下限 140px），保证最小窗口 480px 时正文仍可用，窗口放宽后恢复用户设定宽度。文档头栏按 sheet 容器查询逐级让位：小于 380px 收起保存状态与版本号，小于 300px 收起路径面包屑。侧栏分隔条在 6px 视觉槽内保留 14px 触控热区。
-- 记录有界的 [UI 组件缺口与文字规划](docs/design/ui-component-gaps.md)，包括桌面与浏览器摘要提取差异、未来 GenUI Diagram 的契约。仅引入 Radix Tooltip / DropdownMenu primitives 与 Sonner 复制反馈，不引入完整 UI 套件或扩充 Catalog。
+- 记录有界的 [UI 组件缺口与文字规划](https://github.com/Bayern99/mark-go-go/blob/95596258a9100edd6664dc43f1f7554fc28d753b/docs/design/ui-component-gaps.md)，包括桌面与浏览器摘要提取差异、未来 GenUI Diagram 的契约。仅引入 Radix Tooltip / DropdownMenu primitives 与 Sonner 复制反馈，不引入完整 UI 套件或扩充 Catalog。
 
 
 #### GenUI 生成与架构证据
@@ -151,7 +153,7 @@ Workspace and Portrait changes for #20. See the [acceptance log](docs/acceptance
 - **取消不再等待进程退出**：已应答的 `session/cancel` 在提示轮应答时结束本次运行，最多等 1 秒，之后有界杀死卡住的进程。私有运行目录无论结果都删除；进程目录保留到退出时关闭缓存。工具调用越界仍丢弃进程。
 - **术语**：生成内容规则要求即使翻译也保留原文的技术术语，不引入词典，也不对生成结果做事后替换。
 - 新增显式启用的 `readbench` 构建观测，记录真实 Agent 进程、ACP 会话及配置、原始产物和提交结果。独立 ReadBench 保存真实 WebView 行为和逐条原文审阅；完整模型基准与日常快速确定性检查分开运行。
-- 新增仅在实验构建启用的应用内受控 GenUI：真实 Jev 决定组件与结构，同一 ACP/Gemini 仅填内容槽，由代码装配 A2UI。[决策报告](docs/research/readbench/controlled-genui-decision.md)记录 12 次原生运行与逐条原文审阅；生产默认生成方式不变。
+- 新增仅在实验构建启用的应用内受控 GenUI：真实 Jev 决定组件与结构，同一 ACP/Gemini 仅填内容槽，由代码装配 A2UI。本地决策报告（`docs/research/readbench/controlled-genui-decision.md`）记录 12 次原生运行与逐条原文审阅；生产默认生成方式不变。
 - 格式说明补上实际 UAX #31 组件 ID 约束，研究入口更正历史来源 ID 覆盖率的解释；ADR 0002/0003 区分默认 ACP 生成执行器、可替换证据选择与推理格式。
 
 #### 文档可靠性

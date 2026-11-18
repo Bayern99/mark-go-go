@@ -9,23 +9,6 @@ import (
 	"time"
 )
 
-// followView is WatchView's read/watch order: a first snapshot as soon as
-// follow starts, then the watch, then a catch-up snapshot. Tests drive that
-// order on a session without MyGo windows. They do not time WatchFiles, and
-// they do not treat a directory scan as a measured cause of the #14 wait.
-//
-// Native large-directory smoke (verification owner, real macOS app):
-//  1. Open a Markdown file that already has a sibling view file in a large
-//     folder. Issue #14 used ~/Downloads/SuperCollider 深度分析报告.md
-//     (~516 top-level entries, ~16k files beneath).
-//  2. Switch to GenUI for the first time.
-//  3. The existing view, or an accurate loading state, must appear without a
-//     long unexplained blank. Time-to-first-snapshot must not wait on
-//     unrelated names in that folder.
-//  4. While still on GenUI, replace, then delete, the view file; the pane
-//     must follow. Rename the document; the pane must follow the new sibling.
-//  5. Leave GenUI; further writes must not be delivered.
-
 type followProbe struct {
 	s    *docSession
 	got  chan ViewSnapshot
@@ -71,8 +54,6 @@ func (p *followProbe) noMore(t *testing.T) {
 	}
 }
 
-// startAfterFirst fails if WatchFiles-equivalent work begins before the
-// first snapshot, then blocks until release is closed.
 func (p *followProbe) startAfterFirst(t *testing.T, release <-chan struct{}) func(string, int) error {
 	t.Helper()
 	return func(string, int) error {
@@ -265,7 +246,6 @@ func TestFollowViewUnwatchStopsEvents(t *testing.T) {
 }
 
 func TestFollowViewWatchErrorAfterFirstSnapshot(t *testing.T) {
-	// WatchView returns this error to the page; the first snapshot stays.
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".notes.md.genui.json")
 	if err := os.WriteFile(path, []byte("ok"), 0o600); err != nil {

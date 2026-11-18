@@ -21,8 +21,6 @@ import (
 	"unicode/utf16"
 )
 
-// setStored writes a model and command as one intent patch, for tests
-// that need a store to start from a known value.
 func setStored(t *testing.T, st *settingsStore, model, command string) {
 	t.Helper()
 	if _, err := st.apply(SettingsPatch{Model: &model, AgentCommand: &command}); err != nil {
@@ -30,11 +28,6 @@ func setStored(t *testing.T, st *settingsStore, model, command string) {
 	}
 }
 
-// The tests drive the generator through a fake ACP agent: the test
-// binary re-runs itself (TestMain) when MARKGOGO_FAKE_AGENT is set. It
-// then speaks JSON-RPC 2.0 over its stdio like agy acp does, logs
-// every message it receives to the file MARKGOGO_FAKE_LOG names, and
-// plays the scenario the JSON in MARKGOGO_FAKE_SPEC describes.
 const (
 	fakeAgentEnv      = "MARKGOGO_FAKE_AGENT"
 	fakeSpecEnv       = "MARKGOGO_FAKE_SPEC"
@@ -50,8 +43,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// fakeToolCallSpec is one tool_call update the fake emits; Update
-// makes it a tool_call_update, whose fields the fake sends as given.
 type fakeToolCallSpec struct {
 	Update     bool     `json:"update"`
 	ToolCallID string   `json:"toolCallId"`
@@ -62,89 +53,47 @@ type fakeToolCallSpec struct {
 	Locations  []string `json:"locations"`
 }
 
-// fakePermissionSpec is one permission request the fake sends.
 type fakePermissionSpec struct {
 	Kind      string   `json:"kind"`
 	Title     string   `json:"title"`
 	Locations []string `json:"locations"`
-	// Symlink, when set, is a symbolic link the fake creates in its
-	// working directory before it asks, named after the first
-	// location, pointing at it.
-	Symlink string `json:"symlink"`
+	Symlink   string   `json:"symlink"`
 }
 
-// fakeSpec is the scenario the fake agent plays for one prompt turn.
 type fakeSpec struct {
-	Thought     bool                 `json:"thought"`
-	Messages    []string             `json:"messages"`
-	ToolCalls   []fakeToolCallSpec   `json:"toolCalls"`
-	Permissions []fakePermissionSpec `json:"permissions"`
-	// Models are the model IDs the fake offers; empty offers the
-	// default three.
-	Models []string `json:"models"`
-	// ThoughtValues are the thought_level values the fake offers;
-	// empty offers only "high". ThoughtCurrent is its currentValue,
-	// models[0] when empty.
-	ThoughtValues  []string `json:"thoughtValues"`
-	ThoughtCurrent string   `json:"thoughtCurrent"`
-	// ConfigUpdate, when set, makes the fake send a
-	// config_option_update notification after a successful
-	// set_config_option.
-	ConfigUpdate bool `json:"configUpdate"`
-	// Out is written to out.json in the fake's working directory
-	// before the turn ends; OutSize writes that many bytes instead,
-	// and OutSymlink makes out.json a symbolic link to its target.
-	Out        string `json:"out"`
-	OutSize    int64  `json:"outSize"`
-	OutSymlink string `json:"outSymlink"`
-	// Hang never answers the prompt: the run can only end by
-	// cancellation.
-	Hang      bool `json:"hang"`
-	HoldPipes bool `json:"holdPipes"`
-	// AnswerCancel answers session/cancel with the pending prompt's
-	// result (stopReason "cancelled") after CancelReplyDelayMS, and
-	// keeps running instead of exiting. It is the agent that
-	// acknowledges a cancellation without ending its process.
-	AnswerCancel       bool `json:"answerCancel"`
-	CancelReplyDelayMS int  `json:"cancelReplyDelayMs"`
-	ExitAfterPrompt    bool `json:"exitAfterPrompt"`
-	// UniqueSessions answers each session/new with a new session ID,
-	// numbered in order, so that session identity can be told apart.
-	UniqueSessions bool `json:"uniqueSessions"`
-	// SessionClose advertises agentCapabilities.sessionCapabilities.close
-	// and answers session/close with an empty result.
-	SessionClose bool `json:"sessionClose"`
-	// Silent names a request method the fake never answers; it keeps
-	// reading until the client closes its stdin.
-	Silent string `json:"silent"`
-	// EmptySessionID answers session/new with an empty sessionId.
-	EmptySessionID bool `json:"emptySessionId"`
-	// ModelMismatch accepts a model set but reports the previous
-	// currentValue in the answer.
-	ModelMismatch bool `json:"modelMismatch"`
-	// BareConfigResponse answers set_config_option with no configOptions.
-	BareConfigResponse bool `json:"bareConfigResponse"`
-	// ConfigUpdateModel overrides the model currentValue of the
-	// config_option_update notification.
-	ConfigUpdateModel string `json:"configUpdateModel"`
-	// ForeignSessionEvents, on the second and later session/new of a
-	// unique-session run, emits late notification, config update,
-	// unsafe tool call and permission request of the previous session.
-	ForeignSessionEvents bool `json:"foreignSessionEvents"`
-	// Crash writes the text to stderr and exits 1 right away.
-	Crash string `json:"crash"`
-	// Errors answers the requests of these methods with these
-	// JSON-RPC errors instead.
-	Errors map[string]fakeRPCError `json:"errors"`
+	Thought              bool                    `json:"thought"`
+	Messages             []string                `json:"messages"`
+	ToolCalls            []fakeToolCallSpec      `json:"toolCalls"`
+	Permissions          []fakePermissionSpec    `json:"permissions"`
+	Models               []string                `json:"models"`
+	ThoughtValues        []string                `json:"thoughtValues"`
+	ThoughtCurrent       string                  `json:"thoughtCurrent"`
+	ConfigUpdate         bool                    `json:"configUpdate"`
+	Out                  string                  `json:"out"`
+	OutSize              int64                   `json:"outSize"`
+	OutSymlink           string                  `json:"outSymlink"`
+	Hang                 bool                    `json:"hang"`
+	HoldPipes            bool                    `json:"holdPipes"`
+	AnswerCancel         bool                    `json:"answerCancel"`
+	CancelReplyDelayMS   int                     `json:"cancelReplyDelayMs"`
+	ExitAfterPrompt      bool                    `json:"exitAfterPrompt"`
+	UniqueSessions       bool                    `json:"uniqueSessions"`
+	SessionClose         bool                    `json:"sessionClose"`
+	Silent               string                  `json:"silent"`
+	EmptySessionID       bool                    `json:"emptySessionId"`
+	ModelMismatch        bool                    `json:"modelMismatch"`
+	BareConfigResponse   bool                    `json:"bareConfigResponse"`
+	ConfigUpdateModel    string                  `json:"configUpdateModel"`
+	ForeignSessionEvents bool                    `json:"foreignSessionEvents"`
+	Crash                string                  `json:"crash"`
+	Errors               map[string]fakeRPCError `json:"errors"`
 }
 
-// fakeRPCError is a JSON-RPC error the fake answers with.
 type fakeRPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 }
 
-// runFakeAgent plays the agent until the client goes away.
 func runFakeAgent() {
 	var spec fakeSpec
 	if s := os.Getenv(fakeSpecEnv); s != "" {
@@ -183,7 +132,7 @@ func runFakeAgent() {
 	sessionID := "fake-session"
 	sessionSeq := 0
 	nextID := int64(100)
-	pendingPermissions := make(map[int64]bool) // foreign-session permission requests awaiting an answer
+	pendingPermissions := make(map[int64]bool)
 
 	send := func(v any) {
 		data, _ := json.Marshal(v)
@@ -231,8 +180,6 @@ func runFakeAgent() {
 			logf(map[string]any{"type": "recv", "method": msg.Method, "params": msg.Params})
 		}
 		if msg.ID != nil && msg.Method == "" {
-			// A reply of the client, such as to a foreign-session
-			// permission request.
 			if pendingPermissions[*msg.ID] {
 				var res struct {
 					Outcome struct {
@@ -356,7 +303,6 @@ func runFakeAgent() {
 				}
 				promptID := *msg.ID
 				answered := false
-				// Keep running until the client cancels or closes.
 				for in.Scan() {
 					var m struct {
 						Method string `json:"method"`
@@ -368,9 +314,6 @@ func runFakeAgent() {
 					if !spec.AnswerCancel {
 						os.Exit(0)
 					}
-					// The agent acknowledges the cancellation by
-					// answering the turn, and stays alive: only the
-					// client's own teardown ends the process.
 					if spec.CancelReplyDelayMS > 0 {
 						time.Sleep(time.Duration(spec.CancelReplyDelayMS) * time.Millisecond)
 					}
@@ -397,8 +340,6 @@ func runFakeAgent() {
 	}
 }
 
-// startFakePipeHolder re-execs the test binary with the fake-agent
-// variables removed, leaving a child that inherits the agent's pipes.
 func startFakePipeHolder(logf func(map[string]any)) {
 	cmd := exec.Command(os.Args[0], "-test.run=^TestFakeACPDescendantPipeHolder$")
 	cmd.Env = make([]string, 0, len(os.Environ())+1)
@@ -417,19 +358,12 @@ func startFakePipeHolder(logf func(map[string]any)) {
 	logf(map[string]any{"type": "descendant-pid", "pid": cmd.Process.Pid})
 }
 
-// TestFakeACPDescendantPipeHolder is run by the fake ACP process to
-// keep inherited stdout and stderr open until its parent test kills it.
 func TestFakeACPDescendantPipeHolder(t *testing.T) {
 	if os.Getenv(fakePipeHolderEnv) == "1" {
 		time.Sleep(30 * time.Second)
 	}
 }
 
-// fakeEmitForeignSession sends late events of a previous session on a
-// reused connection: a message chunk, a config update naming another
-// model, an unsafe tool call, and an outside permission request. A
-// client that keeps sessions apart must drop all of them; the
-// permission answer is logged so the test can see it was cancelled.
 func fakeEmitForeignSession(sessionID string, nextID *int64, pending map[int64]bool, send func(any), logf func(map[string]any)) {
 	send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
 		"sessionId": sessionID,
@@ -474,8 +408,6 @@ func fakeEmitForeignSession(sessionID string, nextID *int64, pending map[int64]b
 	}})
 }
 
-// fakePlayScenario plays a prompt turn: a thought, the tool calls, the
-// message chunks, the permission requests, and out.json.
 func fakePlayScenario(spec *fakeSpec, cwd, sessionID string, nextID *int64, send func(any), in *bufio.Scanner, logf func(map[string]any)) {
 	fakeToolSeq := 0
 	if spec.Thought {
@@ -541,7 +473,6 @@ func fakePlayScenario(spec *fakeSpec, cwd, sessionID string, nextID *int64, send
 				{"optionId": "reject", "name": "Reject once", "kind": "reject_once"},
 			},
 		}})
-		// The client's answer is the next message with our id.
 		for in.Scan() {
 			var m struct {
 				ID     *int64          `json:"id"`
@@ -573,7 +504,6 @@ func fakePlayScenario(spec *fakeSpec, cwd, sessionID string, nextID *int64, send
 	}
 }
 
-// fakeLogger opens the fake's log file and returns a writer for it.
 func fakeLogger() (func(map[string]any), func()) {
 	f, err := os.OpenFile(os.Getenv(fakeLogEnv), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
@@ -586,8 +516,6 @@ func fakeLogger() (func(map[string]any), func()) {
 	}, func() { f.Close() }
 }
 
-// fakeResolve makes a location absolute: relative names are of the
-// agent's working directory.
 func fakeResolve(cwd, p string) string {
 	if filepath.IsAbs(p) {
 		return p
@@ -616,20 +544,12 @@ func fakeDirList(cwd string) []string {
 	return names
 }
 
-// ---- tests ----
-
-// fakeNow is the injectable clock of the generation tests.
 var fakeNow = time.Date(2026, 11, 7, 9, 30, 0, 0, time.UTC)
 
-// happyOut is what the fake agent writes on the happy path: valid
-// sources with one unknown heading, one view component, and a field
-// the view must drop.
 const happyOut = `{"extra":true,"sources":{"s1":{"heading":"Report","occurrence":1},"s2":{"heading":"Überblick 概要 🚀","occurrence":2},"s3":{"heading":"No Such Section"}},"a2ui":[{"id":"t1","component":{"type":"Title","text":{"i":["Report"]}}}]}`
 
-// minimalOut is a small valid out.json.
 const minimalOut = `{"a2ui":[{"type":"Text"}],"sources":{}}`
 
-// sectionVectors is the shared section/hash fixture.
 type sectionVectors struct {
 	Document string `json:"document"`
 	Sections []struct {
@@ -680,7 +600,6 @@ func sectionsOf(v sectionVectors) []SectionRef {
 	return sections
 }
 
-// progressCollector records the progress a run sent.
 type progressCollector struct {
 	mu    sync.Mutex
 	steps []GenerateProgress
@@ -699,10 +618,6 @@ func (pc *progressCollector) got() []GenerateProgress {
 	return append([]GenerateProgress(nil), pc.steps...)
 }
 
-// driveGeneration runs runGeneration with a fake agent playing spec.
-// The job defaults to the section vectors' document as the text; View
-// is the view file to write, left empty for one in a fresh temporary
-// folder. mutate adjusts the job before the run.
 func driveGeneration(t *testing.T, spec fakeSpec, progress func(GenerateProgress) error, mutate func(*generationJob)) (error, generationJob, []map[string]any) {
 	t.Helper()
 	dir := t.TempDir()
@@ -724,8 +639,7 @@ func driveGeneration(t *testing.T, spec fakeSpec, progress func(GenerateProgress
 		Model:        "gemini-3.8-flash",
 		ViewPath:     filepath.Join(dir, ".notes.md.genui.json"),
 		Now:          func() time.Time { return fakeNow },
-		// The page is external to these host lifecycle fixtures.
-		Validate: func(context.Context, []byte) error { return nil },
+		Validate:     func(context.Context, []byte) error { return nil },
 		Env: append(os.Environ(),
 			fakeAgentEnv+"=1",
 			fakeSpecEnv+"="+string(specData),
@@ -746,7 +660,7 @@ func readFakeLog(t *testing.T, path string) []map[string]any {
 	t.Helper()
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil // the agent never ran
+		return nil
 	}
 	if err != nil {
 		t.Fatalf("read fake agent log: %v", err)
@@ -786,8 +700,6 @@ func killFakeDescendants(t *testing.T, path string) {
 	}
 }
 
-// killFakeProcesses kills every fake agent process the log names, such
-// as an idle cached process a test did not shut down itself.
 func killFakeProcesses(t *testing.T, path string) {
 	t.Helper()
 	for _, e := range logEntries(readFakeLog(t, path), "pid") {
@@ -799,7 +711,6 @@ func killFakeProcesses(t *testing.T, path string) {
 	}
 }
 
-// waitForFakeDeath waits until pid is gone.
 func waitForFakeDeath(t *testing.T, pid int) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -814,8 +725,6 @@ func waitForFakeDeath(t *testing.T, pid int) {
 	}
 }
 
-// logRecv returns the logged params of the client messages the fake
-// received for method.
 func logRecv(entries []map[string]any, method string) []map[string]any {
 	var out []map[string]any
 	for _, e := range logEntries(entries, "recv") {
@@ -828,7 +737,6 @@ func logRecv(entries []map[string]any, method string) []map[string]any {
 	return out
 }
 
-// waitForLog waits until the fake's log contains substr.
 func waitForLog(t *testing.T, path, substr string) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -842,8 +750,6 @@ func waitForLog(t *testing.T, path, substr string) {
 	t.Fatalf("the fake agent log %s never contained %q", path, substr)
 }
 
-// tempDirGone asserts the fake's working directory, the run's
-// temporary folder, is gone.
 func tempDirGone(t *testing.T, log []map[string]any) {
 	t.Helper()
 	cwd := logEntries(log, "cwd")[0]["cwd"].(string)
@@ -909,10 +815,10 @@ func TestHashLeavesOutNotes(t *testing.T) {
 
 func TestHashRejectsRangesOutsideTheSection(t *testing.T) {
 	for _, exclude := range [][]TextRange{
-		{{Start: 0, End: 5}},                     // starts before the section
-		{{Start: 3, End: 20}},                    // ends after the section
-		{{Start: 4, End: 3}},                     // backwards
-		{{Start: 3, End: 5}, {Start: 4, End: 6}}, // overlapping
+		{{Start: 0, End: 5}},
+		{{Start: 3, End: 20}},
+		{{Start: 4, End: 3}},
+		{{Start: 3, End: 5}, {Start: 4, End: 6}},
 	} {
 		if got, ok := hashSection("0123456789", SectionRef{Start: 2, End: 8, Exclude: exclude}); ok {
 			t.Errorf("hashSection with %v = %q, want it refused", exclude, got)
@@ -946,8 +852,6 @@ func TestGenerateHappyPath(t *testing.T) {
 	}
 	text := string(raw)
 
-	// The keys come in this order: version, generatedAt, model,
-	// request, sources, a2ui.
 	last := -1
 	for _, key := range []string{`"version"`, `"generatedAt"`, `"model"`, `"request"`, `"sources"`, `"a2ui"`} {
 		i := strings.Index(text, key)
@@ -984,8 +888,6 @@ func TestGenerateHappyPath(t *testing.T) {
 		t.Errorf("request = %q", view.Request)
 	}
 
-	// The a2ui array is the agent's, verbatim; the extra field is
-	// dropped.
 	var agentOut map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(happyOut), &agentOut); err != nil {
 		t.Fatalf("parse happy out: %v", err)
@@ -997,8 +899,6 @@ func TestGenerateHappyPath(t *testing.T) {
 		t.Errorf("view file kept the agent's extra field: %s", text)
 	}
 
-	// The sources carry the fixture hashes; the unknown heading gets
-	// no hash, and its occurrence defaults to 1, written out.
 	wantSources := map[string]string{
 		"s1": `{"heading":"Report","occurrence":1,"hash":"fnv1a32:d04be74a"}`,
 		"s2": `{"heading":"Überblick 概要 🚀","occurrence":2,"hash":"fnv1a32:9da8db51"}`,
@@ -1013,13 +913,11 @@ func TestGenerateHappyPath(t *testing.T) {
 		}
 	}
 
-	// The agent ran with no arguments but "acp".
 	args := logEntries(log, "args")[0]["args"].([]any)
 	if len(args) != 2 || args[1] != "acp" {
 		t.Errorf("agent command line = %v, want the binary and \"acp\"", args)
 	}
 
-	// The agent's folder held only source.md, then out.json with it.
 	files := logEntries(log, "files")
 	if got := files[0]["files"].([]any); len(got) != 1 || got[0] != "source.md" {
 		t.Errorf("agent folder at start = %v, want only source.md", got)
@@ -1029,7 +927,6 @@ func TestGenerateHappyPath(t *testing.T) {
 	}
 	tempDirGone(t, log)
 
-	// The allowed permission got an allow_once answer.
 	outcomes := logEntries(log, "outcome")
 	if len(outcomes) != 1 {
 		t.Fatalf("got %d permission outcomes: %v", len(outcomes), outcomes)
@@ -1038,9 +935,6 @@ func TestGenerateHappyPath(t *testing.T) {
 		t.Errorf("permission outcome = %v %v, want selected allow", outcomes[0]["outcome"], outcomes[0]["optionId"])
 	}
 
-	// The document's text went nowhere but source.md and the view: the
-	// view file names no section text the agent could have leaked
-	// through another channel.
 	for _, sec := range vectors.Sections {
 		if strings.Contains(text, strings.TrimRight(sec.Text, "\n")) {
 			t.Errorf("view file contains section %q body verbatim", sec.Heading)
@@ -1098,7 +992,7 @@ func TestGenerateAbortsOutsideToolCall(t *testing.T) {
 			{Name: "read_file", Kind: "read", Title: "File source.md", Locations: []string{"source.md"}},
 			{Name: "run_command", Kind: "execute", Title: "Run ls", Locations: []string{}},
 		},
-		Out: happyOut, // must never reach the view file
+		Out: happyOut,
 	}
 	err, _, log := driveGeneration(t, spec, nil, func(job *generationJob) { job.ViewPath = viewPath })
 	if err == nil || !strings.Contains(err.Error(), `The agent tried to use "Run ls" outside its folder`) {
@@ -1112,7 +1006,6 @@ func TestGenerateAbortsOutsideToolCall(t *testing.T) {
 }
 
 func TestGenerateModel(t *testing.T) {
-	// A model is chosen with set_config_option.
 	err, _, log := driveGeneration(t, fakeSpec{Out: minimalOut}, nil, nil)
 	if err != nil {
 		t.Fatalf("runGeneration: %v", err)
@@ -1122,7 +1015,6 @@ func TestGenerateModel(t *testing.T) {
 		t.Errorf("set_config_option = %v, want one with the model", sets)
 	}
 
-	// An empty model is not sent.
 	err, _, log = driveGeneration(t, fakeSpec{Out: minimalOut}, nil, func(job *generationJob) { job.Model = "" })
 	if err != nil {
 		t.Fatalf("runGeneration: %v", err)
@@ -1131,7 +1023,6 @@ func TestGenerateModel(t *testing.T) {
 		t.Errorf("set_config_option = %v, want none", sets)
 	}
 
-	// An unknown model is model-invalid, with the models offered.
 	err, _, _ = driveGeneration(t, fakeSpec{Out: minimalOut}, nil, func(job *generationJob) { job.Model = "no-such-model" })
 	f := failureFrom(t, err)
 	wantModels := []string{"gemini-4-argon", "gemini-3.8-flash", "claude-opus-5-5"}
@@ -1141,8 +1032,6 @@ func TestGenerateModel(t *testing.T) {
 }
 
 func TestGenerateModelMustBeConfirmed(t *testing.T) {
-	// The answer reports another currentValue than the requested model:
-	// the run fails before the prompt and the view is untouched.
 	viewPath, sentinel := writeSentinelView(t)
 	err, _, log := driveGeneration(t, fakeSpec{Out: minimalOut, ModelMismatch: true}, nil, func(job *generationJob) { job.ViewPath = viewPath })
 	f := failureFrom(t, err)
@@ -1154,8 +1043,6 @@ func TestGenerateModelMustBeConfirmed(t *testing.T) {
 	}
 	sentinelKept(t, viewPath, sentinel)
 
-	// An answer without configOptions confirms nothing: the run goes on
-	// and the view names no model, rather than claiming the requested one.
 	err, job, _ := driveGeneration(t, fakeSpec{Out: minimalOut, BareConfigResponse: true}, nil, nil)
 	if err != nil {
 		t.Fatalf("runGeneration: %v", err)
@@ -1168,7 +1055,6 @@ func TestGenerateModelMustBeConfirmed(t *testing.T) {
 		t.Errorf("view = %s, want no unconfirmed model", view)
 	}
 
-	// A later config update can confirm the requested model.
 	err, job, _ = driveGeneration(t, fakeSpec{Out: minimalOut, BareConfigResponse: true, ConfigUpdate: true}, nil, nil)
 	if err != nil {
 		t.Fatalf("runGeneration with a confirmed update: %v", err)
@@ -1181,8 +1067,6 @@ func TestGenerateModelMustBeConfirmed(t *testing.T) {
 		t.Errorf("view = %s, want the confirmed model", view)
 	}
 
-	// A config update reporting another model fails the run instead of
-	// stamping either value.
 	viewPath, sentinel = writeSentinelView(t)
 	err, _, _ = driveGeneration(t, fakeSpec{Out: minimalOut, ConfigUpdate: true, ConfigUpdateModel: "claude-opus-5-5"}, nil, func(job *generationJob) { job.ViewPath = viewPath })
 	f = failureFrom(t, err)
@@ -1192,7 +1076,6 @@ func TestGenerateModelMustBeConfirmed(t *testing.T) {
 	sentinelKept(t, viewPath, sentinel)
 }
 
-// failureFrom returns the failure of a run's error, which must be one.
 func failureFrom(t *testing.T, err error) GenerateFailure {
 	t.Helper()
 	var ge *genError
@@ -1202,8 +1085,6 @@ func failureFrom(t *testing.T, err error) GenerateFailure {
 	return ge.GenerateFailure
 }
 
-// writeSentinelView writes a view file the failing runs must leave as
-// it is, and returns its path and bytes.
 func writeSentinelView(t *testing.T) (string, []byte) {
 	t.Helper()
 	viewPath := filepath.Join(t.TempDir(), ".notes.md.genui.json")
@@ -1214,7 +1095,6 @@ func writeSentinelView(t *testing.T) (string, []byte) {
 	return viewPath, sentinel
 }
 
-// sentinelKept asserts the view file still has the sentinel's bytes.
 func sentinelKept(t *testing.T, viewPath string, sentinel []byte) {
 	t.Helper()
 	if got, err := os.ReadFile(viewPath); err != nil || string(got) != string(sentinel) {
@@ -1223,10 +1103,6 @@ func sentinelKept(t *testing.T, viewPath string, sentinel []byte) {
 }
 
 func TestGenerateAgentWords(t *testing.T) {
-	// What the agent says when it fails reaches the reader verbatim:
-	// as its last reply when the turn ends without out.json, or as its
-	// error answer to the prompt. An agent that is not signed in gets
-	// the login hint, whichever call it fails.
 	const quota = "Individual quota reached.\nResets in 3h 12m."
 	loginHint := fmt.Sprintf("Run `%s acp --login` in Terminal, then retry.", os.Args[0])
 	cases := []struct {
@@ -1261,11 +1137,6 @@ func TestGenerateAgentWords(t *testing.T) {
 }
 
 func TestGenerateToolCallUpdate(t *testing.T) {
-	// A tool_call_update that carries everything, and one that carries
-	// only its id and status, falling back to what its tool_call
-	// carried, both pass the policy. Sparse observations, an unknown id
-	// and a kind change without paths are accepted, not treated as
-	// violations.
 	spec := fakeSpec{
 		ToolCalls: []fakeToolCallSpec{
 			{Name: "read_file", Kind: "read", Title: "File source.md", Locations: []string{"source.md"}},
@@ -1284,8 +1155,6 @@ func TestGenerateToolCallUpdate(t *testing.T) {
 		t.Fatalf("runGeneration: %v", err)
 	}
 
-	// A reported path outside the folder still stops the run, with the
-	// view untouched, even for an id first seen in the update.
 	dir := t.TempDir()
 	viewPath := filepath.Join(dir, ".notes.md.genui.json")
 	sentinel := []byte("the view that was")
@@ -1307,8 +1176,6 @@ func TestGenerateToolCallUpdate(t *testing.T) {
 		t.Errorf("view file = %q, %v; want the sentinel untouched", got, err)
 	}
 
-	// A reported operation the policy does not allow stops the run even
-	// when it names no path.
 	badKind := fakeSpec{
 		ToolCalls: []fakeToolCallSpec{{Name: "run", Kind: "execute", Title: "Run a command"}},
 		Out:       minimalOut,
@@ -1318,8 +1185,6 @@ func TestGenerateToolCallUpdate(t *testing.T) {
 		t.Fatalf("error = %v, want the outside-folder abort for the operation", err)
 	}
 
-	// A reported path outside is unsafe even when the notification names
-	// no operation kind.
 	badNoKind := fakeSpec{
 		ToolCalls: []fakeToolCallSpec{
 			{Update: true, ToolCallID: "where", Title: "Outside unknown", Locations: []string{"/etc/hosts"}, Status: "in_progress"},
@@ -1361,17 +1226,12 @@ func TestGenerateInvalidOutputs(t *testing.T) {
 		})
 	}
 
-	// The agent's reply, when it gave one with a bad out.json, is the
-	// failure's detail.
 	err, _, _ := driveGeneration(t, fakeSpec{Out: "not json", Messages: []string{"Done."}}, nil, nil)
 	if f := failureFrom(t, err); f.Kind != failInvalidOutput || f.Detail != "Done." {
 		t.Errorf("failure = %+v, want invalid-output with the reply as detail", f)
 	}
 }
 
-// hangingRun starts a run whose agent never answers the prompt, waits
-// until it got the prompt, lets interrupt end the run, and returns the
-// run's error with the fake's log and the view file's state.
 func hangingRun(t *testing.T, timeout time.Duration, interrupt func(cancel context.CancelFunc)) (error, []map[string]any) {
 	t.Helper()
 	dir := t.TempDir()
@@ -1420,20 +1280,12 @@ func hangingRun(t *testing.T, timeout time.Duration, interrupt func(cancel conte
 }
 
 func TestGenerateCancel(t *testing.T) {
-	// The page closing the channel, its window closing and the app
-	// quitting all cancel the call's context.
 	err, _ := hangingRun(t, 0, func(cancel context.CancelFunc) { cancel() })
 	if f := failureFrom(t, err); f.Kind != failCancelled || f.Message != "Generation was cancelled." {
 		t.Errorf("failure = %+v, want the cancellation", f)
 	}
 }
 
-// TestGenerateCancelAcknowledgedWithoutProcessExit pins the cancellation
-// contract: after session/cancel the run completes on the prompt turn's
-// answer, not on the agent process's exit. The fake acknowledges the
-// cancellation with stopReason "cancelled", after a short delay that
-// proves the answer was really awaited, and keeps running; waiting for
-// its exit would cost the full grace period.
 func TestGenerateCancelAcknowledgedWithoutProcessExit(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "fake.log")
@@ -1539,9 +1391,6 @@ func TestACPCancelDoesNotWaitForDescendantPipesOrBlockedWrite(t *testing.T) {
 			agent.writeMu.Unlock()
 		}
 	})
-	// The surviving cancellation seam: asking for the turn's cancel
-	// never waits for the write, and teardown is bounded even while the
-	// write is blocked and a descendant holds the inherited pipes.
 	started := time.Now()
 	agent.cancelTurn(opened.SessionID)
 	if elapsed := time.Since(started); elapsed > 100*time.Millisecond {
@@ -1624,9 +1473,6 @@ func TestGenerateTimeout(t *testing.T) {
 }
 
 func TestReportFailure(t *testing.T) {
-	// A failed run's last step carries the failure, and the error the
-	// promise rejects with is the message and the hint; an error that
-	// is not a failure becomes an agent-error.
 	var steps []GenerateProgress
 	collect := func(p GenerateProgress) error {
 		steps = append(steps, p)
@@ -1667,7 +1513,6 @@ func TestSettingsStore(t *testing.T) {
 	}) {
 		t.Errorf("round trip = %+v", got)
 	}
-	// Caching models from ACP session/new persists across reloads and survives SetSettings that only changes model.
 	if err := st.setModels([]string{"claude-opus-5-5", "gemini-3.8-flash", "claude-opus-5-5", ""}); err != nil {
 		t.Fatalf("setModels: %v", err)
 	}
@@ -1681,8 +1526,6 @@ func TestSettingsStore(t *testing.T) {
 		t.Errorf("empty model and command with stale frontend models = %+v", got)
 	}
 
-	// A store without a directory answers with the defaults and
-	// refuses saves.
 	empty := &settingsStore{}
 	if got := empty.get(); !reflect.DeepEqual(got, defaultSettings()) {
 		t.Errorf("store without a directory = %+v", got)
@@ -1691,7 +1534,6 @@ func TestSettingsStore(t *testing.T) {
 		t.Errorf("apply without a directory succeeded")
 	}
 
-	// The file is written atomically: no leftovers in the directory.
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -1703,10 +1545,6 @@ func TestSettingsStore(t *testing.T) {
 	}
 }
 
-// TestSettingsPatchKeepsUntouchedFields locks the write-side contract of the
-// two composers: a Model change never writes a command and a command change
-// never writes a model, so changes from different windows both survive, and
-// only the agent's handshake writes the cached models.
 func TestSettingsPatchKeepsUntouchedFields(t *testing.T) {
 	dir := t.TempDir()
 	var announced []Settings
@@ -1737,8 +1575,6 @@ func TestSettingsPatchKeepsUntouchedFields(t *testing.T) {
 		t.Errorf("last announcement = %+v, want %+v", announced[1], want)
 	}
 
-	// The handshake's cached list is announced, and a later model change
-	// keeps it as the handshake left it.
 	if err := st.setModels([]string{"model-alpha", "model-beta"}); err != nil {
 		t.Fatalf("setModels: %v", err)
 	}
@@ -1749,8 +1585,6 @@ func TestSettingsPatchKeepsUntouchedFields(t *testing.T) {
 	if last.Model != "model-beta" || !reflect.DeepEqual(last.Models, []string{"model-alpha", "model-beta"}) {
 		t.Errorf("after handshake and model change = %+v", last)
 	}
-	// An empty model is the agent's own choice, an empty command the
-	// default: both are real intents, not "leave alone".
 	empty, err := st.apply(SettingsPatch{Model: new(""), AgentCommand: new("")})
 	if err != nil {
 		t.Fatalf("apply empties: %v", err)
@@ -1763,8 +1597,6 @@ func TestSettingsPatchKeepsUntouchedFields(t *testing.T) {
 	}
 }
 
-// TestSettingsPatchesFromTwoWindowsBothSurvive: concurrent patches, one per
-// field, are serialized by the store, so neither overwrites the other.
 func TestSettingsPatchesFromTwoWindowsBothSurvive(t *testing.T) {
 	st := &settingsStore{dir: t.TempDir()}
 	var wg sync.WaitGroup
@@ -1808,8 +1640,6 @@ func TestGenerateCachesModelsFromHandshake(t *testing.T) {
 }
 
 func TestWriteFileAtomicMode(t *testing.T) {
-	// A new file is readable by others, as a saved document is; a
-	// replaced file keeps the permissions its owner gave it.
 	dir := t.TempDir()
 	modeOf := func(path string) os.FileMode {
 		t.Helper()
@@ -1846,7 +1676,6 @@ func TestGenerateCommandNotFound(t *testing.T) {
 		t.Errorf("failure = %+v, want agent-not-found", f)
 	}
 
-	// A full path is run as it is: one that is not there cannot start.
 	missing := filepath.Join(t.TempDir(), "agy")
 	err, _, _ = driveGeneration(t, fakeSpec{}, nil, func(job *generationJob) { job.AgentCommand = missing })
 	if f := failureFrom(t, err); f.Kind != failAgentNotFound || !strings.HasPrefix(f.Message, fmt.Sprintf("Could not start the agent command %q:", missing)) {
@@ -1870,7 +1699,6 @@ func TestGenerateAgentCrash(t *testing.T) {
 }
 
 func TestGenerateCapturesModelWhenSettingsChange(t *testing.T) {
-	// The run uses the model captured on the job, not a later SetSettings.
 	err, _, log := driveGeneration(t, fakeSpec{Out: minimalOut}, nil, func(job *generationJob) {
 		job.Model = "gemini-3.8-flash"
 	})
@@ -1992,8 +1820,6 @@ func TestCommitGenerationWriteGuardsLiveSlot(t *testing.T) {
 	slot := &generationSlot{path: "/work/a.md"}
 	s.genSlot = slot
 
-	// Fake session has no MyGo document, so Path is empty: a live slot still
-	// refuses to write rather than succeeding against a vanished path.
 	if err := h.commitGenerationWrite(s, slot); err == nil || !strings.Contains(err.Error(), "path changed") {
 		t.Errorf("live empty path = %v, want path-changed", err)
 	}
@@ -2041,7 +1867,7 @@ func TestRejectPathChangeWhileGenerating(t *testing.T) {
 func TestCancelGenerationMarksAbandonedWithoutClearingIdleSlot(t *testing.T) {
 	h := &documentHost{}
 	s := &docSession{host: h}
-	h.cancelGeneration(s) // idle: must not panic
+	h.cancelGeneration(s)
 
 	called := false
 	slot := &generationSlot{cancel: func() { called = true }}
@@ -2075,7 +1901,6 @@ func fakeAgentJob(t *testing.T, spec fakeSpec) (func(*generationJob), string) {
 	}
 	return func(job *generationJob) {
 		job.AgentCommand = os.Args[0]
-		// The native page is an external system in these host lifecycle tests.
 		job.Validate = func(context.Context, []byte) error { return nil }
 		job.Now = func() time.Time { return fakeNow }
 		job.Env = append(os.Environ(),
@@ -2185,11 +2010,6 @@ func TestHostGenerateOneSlotPerDocumentConcurrentAcrossDocuments(t *testing.T) {
 	_ = logPath
 }
 
-// TestHostGenerateReusesOneProcessWithFreshSessionsAndSources pins the
-// cache contract at the host: two sequential generations lease one idle
-// process, each opening its own session in its own run folder, closing
-// it after the settled turn, and carrying its own source text. The
-// process's own working folder outlives both runs.
 func TestHostGenerateReusesOneProcessWithFreshSessionsAndSources(t *testing.T) {
 	dir := t.TempDir()
 	docPath := filepath.Join(dir, "a.md")
@@ -2308,9 +2128,6 @@ func TestHostGenerateReusesOneProcessWithFreshSessionsAndSources(t *testing.T) {
 		t.Errorf("view = %s, want only the last run's request", view)
 	}
 
-	// The trace shows one real cold start, one distinct reuse, and the
-	// real initialize answer cached from the cold process. The wire has
-	// exactly one initialize request and each settled session's close.
 	traceMu.Lock()
 	defer traceMu.Unlock()
 	count := func(name string) int {
@@ -2387,11 +2204,6 @@ func TestHostGenerateReusesOneProcessWithFreshSessionsAndSources(t *testing.T) {
 	}
 }
 
-// TestHostGenerateDiscardsReusedProcessOnRepeatedSessionID pins the
-// freshness invariant: a reused process that answers session/new with
-// the session ID it already had is not a fresh context. The run fails
-// and the process is discarded; the prompt never runs and the view
-// stays as the first run left it.
 func TestHostGenerateDiscardsReusedProcessOnRepeatedSessionID(t *testing.T) {
 	dir := t.TempDir()
 	docPath := filepath.Join(dir, "a.md")
@@ -2400,7 +2212,6 @@ func TestHostGenerateDiscardsReusedProcessOnRepeatedSessionID(t *testing.T) {
 	hostSession(t, h, "a", docPath)
 	h.agentCache = &acpProcessCache{}
 
-	// The fake answers every session/new with the same session ID.
 	prepare, logPath := fakeAgentJob(t, fakeSpec{Out: minimalOut, SessionClose: true})
 	h.prepareJob = prepare
 	t.Cleanup(func() {
@@ -2533,8 +2344,6 @@ func TestHostGenerateAbandonedCloseDoesNotWriteAndCancelCloseKeepsSlot(t *testin
 		t.Fatal("run never reached BeforeWrite")
 	}
 
-	// CloseResult{Canceled: true} is the ask-to-save cancel: it must not
-	// call dropSession, so the slot stays live.
 	if !s.generating {
 		t.Fatal("cancelled close must not clear generating")
 	}

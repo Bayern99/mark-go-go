@@ -5,7 +5,6 @@ import (
 	"unicode/utf16"
 )
 
-// NavHeading is one heading in a workspace file, with a UTF-16 source offset.
 type NavHeading struct {
 	Text   string `json:"text"`
 	Offset int    `json:"offset"`
@@ -19,8 +18,6 @@ type mdMeta struct {
 	Headings []NavHeading
 }
 
-// utf16Count is the number of UTF-16 code units in s, the unit editor
-// offsets use. It counts like sliceUTF16 does, without allocating.
 func utf16Count(s string) int {
 	units := 0
 	for _, r := range s {
@@ -138,8 +135,6 @@ func clipExcerpt(s string) string {
 	return s
 }
 
-// parseMarkdownMeta pulls title, excerpt, note count and headings from Markdown.
-// Offsets are UTF-16, matching the editor. Fenced code and YAML frontmatter are skipped.
 func parseMarkdownMeta(text string) mdMeta {
 	var meta mdMeta
 	inFence := false

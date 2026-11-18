@@ -7,9 +7,6 @@ import (
 	"time"
 )
 
-// The events a generation observer receives. run.end is the terminal
-// event of every run a job with an observer started, including runs
-// that fail before the agent exists.
 const (
 	traceRunStart      = "run.start"
 	traceAgentStart    = "agent.start"
@@ -29,16 +26,11 @@ const (
 	traceRunEnd        = "run.end"
 )
 
-// The config option IDs the trace reads. The model is the app's own
-// setting; thought_level is only set when the agent actually offers
-// it with the requested value.
 const (
 	traceModelOption = "model"
 	traceThoughtID   = "thought_level"
 )
 
-// traceRunStartPayload is the run as the app captured it, before the
-// agent starts.
 type traceRunStartPayload struct {
 	Dir                   string       `json:"dir"`
 	ViewPath              string       `json:"viewPath"`
@@ -53,8 +45,6 @@ type traceRunStartPayload struct {
 	Sections              []SectionRef `json:"sections,omitempty"`
 }
 
-// traceAgentStartPayload is the process the app really started, after
-// exec.Start succeeded.
 type traceAgentStartPayload struct {
 	Path string   `json:"path"`
 	Args []string `json:"args"`
@@ -62,9 +52,6 @@ type traceAgentStartPayload struct {
 	Cwd  string   `json:"cwd"`
 }
 
-// traceAgentReusePayload is the idle process a run leased instead of
-// starting one. Its StartedAt and Cwd are the original process's; the
-// run's own session and working folder are separate.
 type traceAgentReusePayload struct {
 	Path      string   `json:"path"`
 	Args      []string `json:"args"`
@@ -74,13 +61,11 @@ type traceAgentReusePayload struct {
 	IdleMS    int64    `json:"idleMs"`
 }
 
-// traceACPPayload is one full JSON-RPC line as it crossed a pipe.
 type traceACPPayload struct {
 	Direction string          `json:"direction"`
 	Line      json.RawMessage `json:"line"`
 }
 
-// traceInitializePayload is the complete initialize answer.
 type traceInitializePayload struct {
 	ClientInfo        map[string]string `json:"clientInfo"`
 	RequestProtocol   int               `json:"requestProtocolVersion"`
@@ -91,8 +76,6 @@ type traceInitializePayload struct {
 	Result            json.RawMessage   `json:"result"`
 }
 
-// traceInitializeCachedPayload is the real initialize answer a reused
-// process gave when it was started, with that process's provenance.
 type traceInitializeCachedPayload struct {
 	ClientInfo        map[string]string `json:"clientInfo"`
 	RequestProtocol   int               `json:"requestProtocolVersion"`
@@ -106,21 +89,17 @@ type traceInitializeCachedPayload struct {
 	ProcessCwd        string            `json:"processCwd"`
 }
 
-// traceSessionNewPayload is the complete session/new answer.
 type traceSessionNewPayload struct {
 	SessionID string          `json:"sessionId"`
 	Result    json.RawMessage `json:"result"`
 }
 
-// traceOptionValue is one config option as the agent reported it.
 type traceOptionValue struct {
 	ID           string          `json:"id"`
 	CurrentValue json.RawMessage `json:"currentValue,omitempty"`
 	Values       []string        `json:"values,omitempty"`
 }
 
-// traceConfigOptionsPayload is the configOptions of session/new, or of
-// a later answer that carried them.
 type traceConfigOptionsPayload struct {
 	Source        string            `json:"source"`
 	ConfigOptions json.RawMessage   `json:"configOptions,omitempty"`
@@ -128,9 +107,6 @@ type traceConfigOptionsPayload struct {
 	ThoughtLevel  *traceOptionValue `json:"thoughtLevel,omitempty"`
 }
 
-// traceConfigSetPayload is one set_config_option attempt: its answer,
-// the currentValue the answer carried, and whether that confirms the
-// requested value.
 type traceConfigSetPayload struct {
 	ConfigID     string          `json:"configId"`
 	Value        string          `json:"value"`
@@ -143,8 +119,6 @@ type traceConfigSetPayload struct {
 	Note         string          `json:"note,omitempty"`
 }
 
-// traceConfigUpdatePayload is a session/config_option_update
-// notification, as the agent sent it.
 type traceConfigUpdatePayload struct {
 	Source        string            `json:"source"`
 	Method        string            `json:"method"`
@@ -154,27 +128,22 @@ type traceConfigUpdatePayload struct {
 	ThoughtLevel  *traceOptionValue `json:"thoughtLevel,omitempty"`
 }
 
-// tracePromptPayload is the prompt the app really sent.
 type tracePromptPayload struct {
 	SessionID string `json:"sessionId"`
 	Text      string `json:"text"`
 }
 
-// tracePromptResultPayload is the complete session/prompt answer.
 type tracePromptResultPayload struct {
 	StopReason string          `json:"stopReason,omitempty"`
 	Usage      json.RawMessage `json:"usage,omitempty"`
 	Result     json.RawMessage `json:"result"`
 }
 
-// tracePhasePayload is one progress step of the run.
 type tracePhasePayload struct {
 	Phase string `json:"phase"`
 	Text  string `json:"text,omitempty"`
 }
 
-// traceArtifactPayload is one file of the run: source.md, the agent's
-// out.json, or the view the app committed. Content is the exact bytes.
 type traceArtifactPayload struct {
 	Name    string `json:"name"`
 	Path    string `json:"path"`
@@ -182,9 +151,6 @@ type traceArtifactPayload struct {
 	Content string `json:"content"`
 }
 
-// traceRunEndPayload is the terminal evidence of a run. The actual
-// model and thought level are present only when a raw agent response
-// confirmed them; they are never copied from the request.
 type traceRunEndPayload struct {
 	OK                    bool             `json:"ok"`
 	Error                 string           `json:"error,omitempty"`
@@ -206,8 +172,6 @@ type traceRunEndPayload struct {
 	ThoughtLevelNote      string           `json:"thoughtLevelNote,omitempty"`
 }
 
-// traceOptionState is what raw agent responses said about one config
-// option of this run, and whether that confirmed the requested value.
 type traceOptionState struct {
 	actual    json.RawMessage
 	source    string
@@ -216,11 +180,6 @@ type traceOptionState struct {
 	note      string
 }
 
-// generationTrace writes one run's evidence through the job's
-// observer. A nil trace is the no-observer case: every method returns
-// at once, without marshaling or copying anything. One run's
-// observer calls are serialized here, since they arrive from the
-// agent's reader, the writer and the run itself.
 type generationTrace struct {
 	observe          func(event string, payload any)
 	viewPath         string
@@ -235,7 +194,6 @@ type generationTrace struct {
 	thought       traceOptionState
 }
 
-// newGenerationTrace returns nil when the job has no observer.
 func newGenerationTrace(job *generationJob) *generationTrace {
 	if job.Observe == nil {
 		return nil
@@ -248,8 +206,6 @@ func newGenerationTrace(job *generationJob) *generationTrace {
 	}
 }
 
-// emit calls the observer under the trace's lock; a nil trace does
-// nothing.
 func (t *generationTrace) emit(event string, payload any) {
 	if t == nil {
 		return
@@ -282,8 +238,6 @@ func cloneRaw(raw json.RawMessage) json.RawMessage {
 	return append(json.RawMessage(nil), raw...)
 }
 
-// configString reads a config value that may be a string or another
-// JSON scalar, and reports false for a missing or null value.
 func configString(raw json.RawMessage) (string, bool) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return "", false
@@ -295,8 +249,6 @@ func configString(raw json.RawMessage) (string, bool) {
 	return string(raw), true
 }
 
-// acpConfigOption is one entry of a session's configOptions, as the
-// agent sent it.
 type acpConfigOption struct {
 	ID           string          `json:"id"`
 	CurrentValue json.RawMessage `json:"currentValue"`
@@ -335,8 +287,6 @@ func (o acpConfigOption) valueOf() *traceOptionValue {
 	return v
 }
 
-// findConfigOption finds the first option in one of ids, so that the
-// agent's own spelling of thought_level can be honored.
 func findConfigOption(raw json.RawMessage, ids ...string) (acpConfigOption, bool) {
 	if len(raw) == 0 {
 		return acpConfigOption{}, false
@@ -355,8 +305,6 @@ func findConfigOption(raw json.RawMessage, ids ...string) (acpConfigOption, bool
 	return acpConfigOption{}, false
 }
 
-// configOptionsField pulls the configOptions array out of an answer
-// object such as session/new's result or a set_config_option result.
 func configOptionsField(raw json.RawMessage) json.RawMessage {
 	if len(raw) == 0 {
 		return nil
@@ -370,7 +318,6 @@ func configOptionsField(raw json.RawMessage) json.RawMessage {
 	return top.ConfigOptions
 }
 
-// runStart records the captured request and the folder the agent gets.
 func (t *generationTrace) runStart(job *generationJob, dir string) {
 	if t == nil {
 		return
@@ -390,7 +337,6 @@ func (t *generationTrace) runStart(job *generationJob, dir string) {
 	})
 }
 
-// agentStart records the process exec really started.
 func (t *generationTrace) agentStart(path string, cmdArgs []string, pid int, cwd string) {
 	if t == nil {
 		return
@@ -398,8 +344,6 @@ func (t *generationTrace) agentStart(path string, cmdArgs []string, pid int, cwd
 	t.emit(traceAgentStart, &traceAgentStartPayload{Path: path, Args: cmdArgs, PID: pid, Cwd: cwd})
 }
 
-// agentReused records the idle process a run leased instead of
-// starting one. It is never emitted for a process this run started.
 func (t *generationTrace) agentReused(path string, cmdArgs []string, pid int, cwd string, startedAt, idleSince time.Time) {
 	if t == nil {
 		return
@@ -417,7 +361,6 @@ func (t *generationTrace) agentReused(path string, cmdArgs []string, pid int, cw
 	t.emit(traceAgentReused, payload)
 }
 
-// initialize records the complete handshake answer.
 func (t *generationTrace) initialized(result json.RawMessage, clientInfo map[string]string, requestVersion, agentVersion int, agentInfo, capabilities, authMethods json.RawMessage) {
 	if t == nil {
 		return
@@ -433,10 +376,6 @@ func (t *generationTrace) initialized(result json.RawMessage, clientInfo map[str
 	})
 }
 
-// initializeCached records the real initialize answer a reused process
-// gave when it was started, with that process's provenance. It never
-// fabricates an ACP line: the cached answer crossed the pipes once, in
-// the run that started the process.
 func (t *generationTrace) initializeCached(clientInfo map[string]string, requestVersion, agentVersion int, agentInfo, capabilities, authMethods, result json.RawMessage, pid int, startedAt time.Time, cwd string) {
 	if t == nil {
 		return
@@ -455,10 +394,6 @@ func (t *generationTrace) initializeCached(clientInfo map[string]string, request
 	})
 }
 
-// acceptsInbound says whether an inbound line belongs to this run's
-// session. Sparse notifications without a session ID are kept; a
-// session-scoped message for another session is dropped so a reused
-// process's late old events cannot contaminate this run's trace.
 func (t *generationTrace) acceptsInbound(line []byte) bool {
 	if t == nil {
 		return true
@@ -478,8 +413,6 @@ func (t *generationTrace) acceptsInbound(line []byte) bool {
 	return current != "" && msg.Params.SessionID == current
 }
 
-// session respects the handshake's actual configOptions and keeps the
-// session ID the later calls use.
 func (t *generationTrace) sessionNew(result json.RawMessage, sessionID string) {
 	if t == nil {
 		return
@@ -537,8 +470,6 @@ func (t *generationTrace) sessionNew(result json.RawMessage, sessionID string) {
 	t.observe(traceConfigOptions, payload)
 }
 
-// configSetSkipped records that the agent does not offer the requested
-// thought level, so the app did not send a set_config_option for it.
 func (t *generationTrace) configSetSkipped(configID, value, reason string) {
 	if t == nil {
 		return
@@ -557,8 +488,6 @@ func (t *generationTrace) configSetSkipped(configID, value, reason string) {
 	})
 }
 
-// configSetResponse records a successful set_config_option answer and
-// what its own currentValue proves.
 func (t *generationTrace) configSetResponse(configID, value string, result json.RawMessage) {
 	if t == nil {
 		return
@@ -600,7 +529,6 @@ func (t *generationTrace) configSetResponse(configID, value string, result json.
 	t.observe(traceConfigSet, payload)
 }
 
-// configSetError records a set_config_option the agent refused.
 func (t *generationTrace) configSetError(configID, value string, err error) {
 	if t == nil {
 		return
@@ -618,8 +546,6 @@ func (t *generationTrace) configSetError(configID, value string, err error) {
 	})
 }
 
-// configOptionUpdate records a config_option_update notification and
-// takes the actual values it carries.
 func (t *generationTrace) configOptionUpdate(method string, params, opts json.RawMessage) {
 	if t == nil {
 		return
@@ -688,8 +614,6 @@ func (t *generationTrace) prompt(text string) {
 	t.mu.Unlock()
 }
 
-// promptResult records the complete prompt turn answer: its stop
-// reason and usage.
 func (t *generationTrace) promptResult(result json.RawMessage) {
 	if t == nil {
 		return
@@ -713,7 +637,6 @@ func (t *generationTrace) phase(phase, text string) {
 	t.emit(tracePhase, &tracePhasePayload{Phase: phase, Text: text})
 }
 
-// artifact records an exact file of the run.
 func (t *generationTrace) artifact(name, path, content string) {
 	if t == nil {
 		return
@@ -721,8 +644,6 @@ func (t *generationTrace) artifact(name, path, content string) {
 	t.emit(traceArtifact, &traceArtifactPayload{Name: name, Path: path, Bytes: len(content), Content: content})
 }
 
-// viewWritten records the view only after the atomic replace
-// succeeded.
 func (t *generationTrace) viewWritten(path string, content []byte) {
 	if t == nil {
 		return
@@ -733,7 +654,6 @@ func (t *generationTrace) viewWritten(path string, content []byte) {
 	t.observe(traceArtifact, &traceArtifactPayload{Name: "view", Path: path, Bytes: len(content), Content: string(content)})
 }
 
-// end is the terminal event of a run, whatever ended it.
 func (t *generationTrace) end(err error) {
 	if t == nil {
 		return

@@ -1,10 +1,3 @@
-/**
- * Section and code-block folding. Fold state is plugin data only: it never
- * touches the document, so Markdown bytes, undo history and the dirty flag
- * are unaffected. Anchors are document positions mapped through edits; a
- * mark dies when it no longer points at a foldable node (heading deleted or
- * retitled is still a heading; a heading turned to a paragraph is not).
- */
 import type { Node as PMNode } from '@milkdown/kit/prose/model'
 import {
   Plugin,
@@ -25,7 +18,6 @@ const HEADING = 'heading'
 const CODE = 'code_block'
 
 export interface FoldState {
-  /** Document positions of fold anchors (heading or code-block nodes). */
   anchors: Set<number>
 }
 
@@ -53,7 +45,6 @@ function nodeKeyBase(node: PMNode): string | null {
   return null
 }
 
-/** Hidden range (exclusive of the anchor) for one anchor node. */
 export function hiddenRange(
   state: EditorState,
   anchorPos: number,
@@ -62,7 +53,6 @@ export function hiddenRange(
   const kind = anchor && anchorKind(anchor)
   if (!kind || !anchor) return null
   if (kind === 'code') return { from: anchorPos, to: anchorPos + anchor.nodeSize }
-  // A section runs to the next heading of the same or higher level.
   const level = (anchor.attrs.level as number) ?? 1
   let to = state.doc.content.size
   for (const { node, pos } of topNodes(state)) {
@@ -75,7 +65,6 @@ export function hiddenRange(
   return { from: anchorPos + anchor.nodeSize, to }
 }
 
-/** Anchors of folds hiding `pos`, outermost first. */
 export function foldsCovering(state: EditorState, pos: number): number[] {
   const anchors = foldPluginKey.getState(state)?.anchors
   if (!anchors || anchors.size === 0) return []
@@ -87,7 +76,6 @@ export function foldsCovering(state: EditorState, pos: number): number[] {
   return covering
 }
 
-/** The last top-level heading at-or-before `pos` — the caret's section. */
 function sectionAt(state: EditorState, pos: number): number | null {
   let found: number | null = null
   for (const { node, pos: p } of topNodes(state)) {
@@ -97,7 +85,6 @@ function sectionAt(state: EditorState, pos: number): number | null {
   return found
 }
 
-/** Content signature of one foldable node + the body it would hide. */
 function anchorSig(state: EditorState, pos: number): string | null {
   const node = state.doc.nodeAt(pos)
   const kind = node && anchorKind(node)
@@ -109,8 +96,6 @@ function anchorSig(state: EditorState, pos: number): string | null {
       : range
         ? state.doc.textBetween(range.from, range.to, ' ')
         : ''
-  // djb2 over "kind|level|text|body" — 32 bits, collisions are negligible
-  // across a document's few foldable nodes.
   const s = `${kind}|${(node.attrs.level as number) ?? ''}|${node.textContent}|${body}`
   let h = 5381
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0
@@ -118,11 +103,8 @@ function anchorSig(state: EditorState, pos: number): string | null {
 }
 
 export interface FoldEntry {
-  /** kind+level(+text) base — restore hint, not identity. */
   base: string
-  /** Occurrence index among same-base nodes at save time. */
   idx: number
-  /** Section-content signature — the real identity. */
   sig: string
 }
 
@@ -145,13 +127,6 @@ function anchorPayload(state: EditorState, anchors: Set<number>): PersistedFolds
   return { entries }
 }
 
-/**
- * Resolve persisted entries to current positions. Identity is the section
- * content signature, not the occurrence index: reordered same-name
- * sections reattach at their new position, while replaced or edited
- * bodies fail the signature and stay expanded. An entry restores only
- * when exactly one foldable node carries its signature.
- */
 function keysToAnchors(state: EditorState, payload: PersistedFolds): Set<number> {
   const bySig = new Map<string, number[]>()
   for (const { node, pos } of topNodes(state)) {
@@ -170,12 +145,10 @@ function keysToAnchors(state: EditorState, payload: PersistedFolds): Set<number>
   return anchors
 }
 
-/** Start position of the top-level code_block nodeview owning `dom`. */
 function codeBlockPos(view: EditorView, dom: Element): number | null {
   const block = dom.closest('.milkdown-code-block')
   if (!block) return null
   const pos = view.posAtDOM(block, 0)
-  // posAtDOM may land on the node start or just inside the leaf nodeview.
   for (const p of [pos, pos - 1]) {
     const node = p >= 0 ? view.state.doc.nodeAt(p) : null
     if (node?.type.name === CODE) return p
@@ -188,9 +161,6 @@ function chevron(folded: boolean, onToggle: () => void): HTMLElement {
   b.type = 'button'
   b.className = 'mgo-fold-toggle'
   b.contentEditable = 'false'
-  // aria-hidden: the button's label would otherwise append itself to the
-  // heading's accessible name ('Deep heading' -> 'Deep heading Collapse
-  // section'), breaking AT locators. Keyboard folding uses Mod-Alt-Arrows.
   b.setAttribute('aria-hidden', 'true')
   b.tabIndex = -1
   b.title = folded ? 'Expand section' : 'Collapse section'
@@ -198,7 +168,7 @@ function chevron(folded: boolean, onToggle: () => void): HTMLElement {
     ? '<svg viewBox="0 0 16 16" width="14" height="14"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'
     : '<svg viewBox="0 0 16 16" width="14" height="14"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'
   b.addEventListener('mousedown', (e) => {
-    e.preventDefault() // keep editor focus/selection
+    e.preventDefault()
     e.stopPropagation()
   })
   b.addEventListener('click', (e) => {
@@ -211,17 +181,11 @@ function chevron(folded: boolean, onToggle: () => void): HTMLElement {
 
 export interface FoldFeature {
   plugins: Plugin[]
-  /** Boundary-key handler that must precede the base keymap. */
   earlyPlugins: Plugin[]
-  /** Toggle the fold anchored at `pos` (heading or code block). */
   toggle(pos: number): void
-  /** Expand every fold hiding `pos`; returns true when something changed. */
   expandAt(pos: number): boolean
-  /** Expand folds whose hidden range intersects [from, to]. */
   expandRange(from: number, to: number): boolean
-  /** Persisted keys for the current fold state. */
   keys(): string[]
-  /** Full persistence payload (keys + occurrence counts). */
   payload(): PersistedFolds
 }
 
@@ -235,8 +199,6 @@ export function createFoldFeature(
     const tr = view.state.tr
       .setMeta(foldPluginKey, payload)
       .setMeta('addToHistory', false)
-      // The auto-expander must not undo a toggle while the caret is still
-      // inside the freshly hidden range; the caller relocates it next.
       .setMeta('mgo-fold:self', true)
     view.dispatch(tr)
   }
@@ -282,9 +244,6 @@ export function createFoldFeature(
     key: foldPluginKey,
     state: {
       init(_config, instance) {
-        // On reloads (load() rebuilds the state) keep the live session
-        // folds; only the first state falls back to persisted keys.
-        // On reloads the live payload re-resolves against the new doc.
         const live = api.payload()
         return { anchors: keysToAnchors(instance, live.entries.length > 0 ? live : persisted) }
       },
@@ -305,8 +264,6 @@ export function createFoldFeature(
           if (action.expand) for (const a of action.expand) anchors.delete(a)
         }
         if (anchors.size === 0) return { anchors }
-        // Map anchors through the transaction; drop marks that no longer
-        // point at their node kind.
         if (tr.docChanged || tr.mapping) {
           const mapped = new Set<number>()
           for (const a of anchors) {
@@ -326,7 +283,6 @@ export function createFoldFeature(
         const folded = field?.anchors ?? new Set<number>()
         const tops = topNodes(state)
 
-        // Collect nodes hidden by section folds (a heading's own DOM stays).
         const hidden = new Set<number>()
         for (const a of folded) {
           const node = state.doc.nodeAt(a)
@@ -386,9 +342,6 @@ export function createFoldFeature(
         }
       }
       injectToggles()
-      // The .tools row only appears when Crepe lazily mounts CodeMirror
-      // (often on first scroll into view), which happens without a PM
-      // transaction — watch the DOM instead of relying on update() alone.
       const observer = new MutationObserver(() => injectToggles())
       observer.observe(view.dom, { childList: true, subtree: true })
       const onClick = (e: MouseEvent) => {
@@ -416,9 +369,6 @@ export function createFoldFeature(
       }
     },
   })
-  // Any selection landing inside hidden content expands the folds covering
-  // it — arrow keys, Backspace merges and programmatic moves must never
-  // leave an invisible caret or selection span.
   const autoExpandPlugin = new Plugin({
     appendTransaction(trs, _old, state) {
       if (trs.some((tr) => tr.getMeta('mgo-fold:self'))) return null
@@ -437,9 +387,6 @@ export function createFoldFeature(
     },
   })
 
-  // Backspace/Delete at a fold boundary must run BEFORE the base keymap's
-  // joinBackward/joinForward: it would otherwise merge hidden content
-  // invisibly. createEditor unshifts this plugin ahead of Crepe's keymaps.
   const boundaryPlugin = new Plugin({
     props: {
       handleKeyDown(view, event) {
@@ -449,10 +396,6 @@ export function createFoldFeature(
         const anchors = foldPluginKey.getState(state)?.anchors
         if (!anchors || anchors.size === 0) return false
         const caret = state.selection.from
-        // Backspace deletes backward from the caret: at a block boundary
-        // the victim is the node before it, which can be the last hidden
-        // node (caret-1 lands exactly on the range edge — probe caret-2).
-        // Delete mirrors that on the forward edge.
         const probes =
           event.key === 'Backspace'
             ? [caret, caret - 1, caret - 2]
@@ -467,7 +410,6 @@ export function createFoldFeature(
     },
   })
 
-  // Keyboard: Mod-Alt-ArrowLeft folds the caret's section; ArrowRight expands it.
   const keyPlugin = new Plugin({
     props: {
       handleKeyDown(view, event) {
@@ -516,10 +458,6 @@ export function createFoldFeature(
   }
 }
 
-/**
- * When the user folds the section holding the selection, put the caret at
- * the end of the heading so the next keystroke lands in a visible place.
- */
 export function moveSelectionOutOfFold(view: EditorView, anchorPos: number): void {
   if (!foldPluginKey.getState(view.state)?.anchors.has(anchorPos)) return
   const anchor = view.state.doc.nodeAt(anchorPos)

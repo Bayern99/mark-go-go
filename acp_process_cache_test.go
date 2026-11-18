@@ -15,9 +15,6 @@ import (
 	"time"
 )
 
-// cacheHarness is one document generating through a fake agent and a
-// fresh process cache. Its cleanup closes the cache and stops any fake
-// process the test left behind.
 type cacheHarness struct {
 	host    *documentHost
 	dir     string
@@ -52,7 +49,6 @@ func (c *cacheHarness) generate(t *testing.T, request string) error {
 	}, func(GenerateProgress) error { return nil })
 }
 
-// logPids returns the fake agent process IDs the log names, in order.
 func logPids(t *testing.T, path string) []int {
 	t.Helper()
 	var pids []int
@@ -64,7 +60,6 @@ func logPids(t *testing.T, path string) []int {
 
 func processAlive(pid int) bool { return syscall.Kill(pid, 0) == nil }
 
-// waitForProcessExit waits until pid no longer exists.
 func waitForProcessExit(t *testing.T, pid int) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -77,7 +72,6 @@ func waitForProcessExit(t *testing.T, pid int) {
 	t.Fatalf("process %d is still running", pid)
 }
 
-// waitForPromptCount waits until the fake has received count prompts.
 func waitForPromptCount(t *testing.T, path string, count int) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -106,8 +100,6 @@ func TestAgentCacheExpiresIdleProcessAndRestartsOnDemand(t *testing.T) {
 	}
 	waitForProcessExit(t, pids[0])
 
-	// The expired process is gone from the cache; the next run starts a
-	// fresh one on demand.
 	if err := c.generate(t, "two"); err != nil {
 		t.Fatalf("second generation: %v", err)
 	}
@@ -186,8 +178,6 @@ func TestAgentCacheDiscardsIdleProcessOnExecutableChange(t *testing.T) {
 
 func TestAgentCacheKeepsCachedInitializeRawForLaterObservedRun(t *testing.T) {
 	c := newCacheHarness(t, fakeSpec{Out: minimalOut, SessionClose: true, UniqueSessions: true})
-	// The cold run has no observer; its real initialize answer must
-	// still be kept for the process's later leases.
 	if err := c.generate(t, "cold"); err != nil {
 		t.Fatalf("cold generation: %v", err)
 	}

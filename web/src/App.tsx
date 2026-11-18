@@ -27,13 +27,8 @@ import { DropdownMenu, Tooltip } from 'radix-ui'
 const EDIT_DEBOUNCE_MS = 250
 export const NARROW_WINDOW_WIDTH = 1180
 
-/**
- * What the center of the window shows: Preview, Markdown, or a center view
- * registered by a plugin.
- */
 type ViewMode = 'preview' | 'markdown' | (string & {})
 
-/** The view mode is remembered per document path in the page's storage. */
 const VIEW_MODE_KEY = 'mgo.viewMode:'
 
 function rememberedViewMode(path: string): string | null {
@@ -50,25 +45,15 @@ function rememberViewMode(path: string, mode: ViewMode): void {
   try {
     window.localStorage.setItem(VIEW_MODE_KEY + path, mode)
   } catch {
-    // No storage: the mode is a convenience, the next window starts in Preview.
   }
 }
 
 function measureIsNarrow(): boolean {
   if (typeof window === 'undefined') return false
-  // WebKit can lag window.innerWidth while a native window is resized in the
-  // background; the document element reports the width actually laid out.
   const width = document.documentElement.clientWidth || window.innerWidth
   return width < NARROW_WINDOW_WIDTH
 }
 
-/**
- * Switches the center between the editor and a center view. The editor
- * stays mounted while hidden, so its state, selection and undo history
- * survive; its scroll position is put back when it shows again. When a
- * center view sends the reader to the source, it stays the way back until
- * the reader picks a mode.
- */
 class ViewModeController {
   private center: string | null = null
   private savedScroll = 0
@@ -88,20 +73,12 @@ class ViewModeController {
     this.setCenter(id)
   }
 
-  /**
-   * Shows the editor, in `mode` when given. The editor is visible when this
-   * returns, so a reveal right after it can scroll and focus.
-   */
   showEditor(mode?: EditorMode): void {
     this.setReturnTo(null)
     this.leaveCenter()
     if (mode) this.editor()?.setMode(mode)
   }
 
-  /**
-   * Navigation to a place in the source: from a center view it lands in
-   * Preview and keeps that view as the way back.
-   */
   showSource(): void {
     const from = this.center
     if (from === null) return
@@ -110,14 +87,12 @@ class ViewModeController {
     this.setReturnTo(from)
   }
 
-  /** ⌘/: between Preview and Markdown; from a center view, the one the editor is not in. */
   toggleEditorMode(): void {
     const editor = this.editor()
     if (!editor) return
     this.showEditor(editor.getMode() === 'preview' ? 'source' : 'preview')
   }
 
-  /** The shown center view went away (its plugin was disabled). */
   dropCenter(): void {
     this.center = null
     this.setCenter(null)
@@ -322,8 +297,6 @@ export function DocumentPane({
       if (!root) return
       const editor = await createMarkdownEditor(root, {
         initialText: initial.text,
-        // Fold state persists per path, like the view mode; untitled
-        // documents fall back to the session-bound host id.
         docKey: initialState.path || host.id,
       })
       if (disposed) {
@@ -403,7 +376,6 @@ export function DocumentPane({
         }),
       )
 
-      // Adds to the document without leaving the view that asked for it.
       cleanups.push(
         services.commands.register('editor.addNote', (offset, text) => {
           const at = Number(offset)
@@ -456,16 +428,10 @@ export function DocumentPane({
           }, EDIT_DEBOUNCE_MS)
         }),
       )
-      // What this pane really holds: the text on screen now, else the
-      // core document state the host loaded. Never a buffer that only
-      // changes were written to, so a pane that was remounted or has not
-      // mounted an editor cannot deliver an invented empty buffer. The
-      // host's flush is the one layer that writes it back, reading this.
       const currentText = () => editorRef.current?.getMarkdown() ?? services.documents.snapshot().text
       if (host.bindFlush) {
         cleanups.push(
           host.bindFlush(() => {
-            // The delivery this reader feeds supersedes the debounce.
             if (debounceTimer !== undefined) {
               window.clearTimeout(debounceTimer)
               debounceTimer = undefined
@@ -485,8 +451,6 @@ export function DocumentPane({
         try {
           await services.plugins.enable(plugin.id)
         } catch (error) {
-          // Unmounting detaches the editor; a pending activation that resumes
-          // afterwards is expected to fail and must not become unhandled.
           if (disposed) return
           throw error
         }
@@ -509,12 +473,10 @@ export function DocumentPane({
     }
   }, [host, services, modes])
 
-  // Reopen in the mode the document was last shown in, once its views exist.
   useLayoutEffect(() => {
     if (!ready || restored.current || !docState) return
     restored.current = true
     const saved = docState.viewMode || rememberedViewMode(docState.path)
-    // Preview is the editor's initial mode, including in older sessions.
     if (saved === 'preview' || saved === 'richtext') return
     if (saved === 'markdown') editorRef.current?.setMode('source')
     else if (saved && services.views.getAll().some((v) => v.location === 'center' && v.id === saved)) {
@@ -525,8 +487,6 @@ export function DocumentPane({
   useEffect(() => {
     if (!restored.current || !docState) return
     rememberViewMode(docState.path, viewMode)
-    // The first run is the mode being restored, which the session already
-    // holds. Writing it back would race the restore with the default.
     if (!reportedMode.current) {
       reportedMode.current = true
       return
@@ -742,9 +702,6 @@ function tabLabel(docs: { id: string; name: string; path: string }[], doc: { id:
   const same = docs.filter((other) => other.name === doc.name)
   if (same.length < 2) return doc.name
   const dirs = doc.path.replace(/\\/g, '/').split('/').slice(0, -1).filter(Boolean)
-  // Keep the established parent-folder label when it is enough. Across
-  // workspaces the same parent name can recur, so add only the path segments
-  // needed to make the label unique; the full path remains in the tooltip.
   for (let count = 1; count <= dirs.length; count += 1) {
     const suffix = dirs.slice(-count).join('/')
     const candidate = `${doc.name} — ${suffix}`
@@ -825,9 +782,6 @@ function WorkspaceApp({
     ]
   }, [activeId, documents])
 
-  // The existing tab strip is the cross-workspace switcher. Ctrl+Tab is the
-  // zero-search path for the common A → B → A round trip, including when one
-  // of those tabs currently lives in the overflow menu.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!event.ctrlKey || event.metaKey || event.altKey || event.key !== 'Tab') return

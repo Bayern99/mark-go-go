@@ -17,21 +17,13 @@ import { DropdownMenu } from 'radix-ui'
 const SIDEBAR_MIN = 190
 const SIDEBAR_MAX = 420
 const SIDEBAR_DEFAULT = 248
-/** The document column keeps at least this much room; the sidebar yields
- *  below it instead of squeezing the sheet past its usable minimum. */
 const CENTER_MIN = 310
-/** Narrowest the sidebar can go when the window itself is very small. */
 const SIDEBAR_FLOOR = 140
 
-/** Tree indent: 8px/16px geometry, but never more than 40% of the row so deep
- *  nesting in a narrow sidebar still leaves room for name and summary. */
 const TREE_INDENT = 16
 const TREE_INDENT_BASE = 8
 const TREE_INDENT_MAX = 0.4
-/** Row chrome to the right of the text: end padding + marker slot + body padding. */
 const ROW_TEXT_CHROME = 46
-/** The date yields before the summary does; notes are smaller and yield last.
- *  Each threshold keeps roughly a readable summary beside the remaining meta. */
 const META_DATE_MIN_TEXT = 160
 const META_NOTES_MIN_TEXT = 96
 
@@ -45,7 +37,6 @@ function indentStyle(depth: number): React.CSSProperties {
   }
 }
 
-/** Which row metadata fits next to the summary at this depth and pane width. */
 function metaRoom(depth: number, paneWidth?: number): { date: boolean; notes: boolean } {
   if (paneWidth === undefined) return { date: true, notes: true }
   const contentWidth = Math.max(0, paneWidth - 16)
@@ -206,10 +197,6 @@ function WorkspaceSwitcher({
   )
 }
 
-/**
- * The left workspace column: folder tree, filter, and any `location: 'left'` views.
- * When `workspace` is omitted the pane still mounts plugin views for older tests.
- */
 export function SidePane({
   views,
   doc,
@@ -243,9 +230,6 @@ export function SidePane({
     }
   }, [])
 
-  /** Rendered width: the user's size, capped so the document column keeps
-   *  CENTER_MIN in a narrow window. The stored width is kept, so widening the
-   *  window restores the user's setting. */
   const paneWidth = Math.min(width, Math.max(SIDEBAR_FLOOR, winWidth - CENTER_MIN))
 
   const selectedWorkspaceId = workspaceSnap?.workspaces.find(

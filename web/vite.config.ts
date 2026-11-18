@@ -16,8 +16,6 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
-    // Dev-only: let the typeset bench (?raw imports under docs/) read files
-    // outside the web root. Does not affect `vite build`.
     fs: { allow: ['..'] },
     watch: {
       ignored: ['**/.mygo/**', '**/build/**'],

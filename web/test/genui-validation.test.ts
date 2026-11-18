@@ -5,7 +5,6 @@ const CATALOG = 'markgogo.dev:genui/v1'
 
 type Component = Record<string, unknown> & { id: string; component: string }
 
-/** One createSurface message with the given components. */
 function createSurface(components: Component[], surfaceId = 'view'): unknown {
   return {
     version: '1.0',
@@ -13,7 +12,6 @@ function createSurface(components: Component[], surfaceId = 'view'): unknown {
   }
 }
 
-/** A complete view file, as the host writes it. */
 function viewFile(messages: unknown[], sources: Record<string, unknown> = {}): string {
   return JSON.stringify({
     version: 2,
@@ -23,7 +21,6 @@ function viewFile(messages: unknown[], sources: Record<string, unknown> = {}): s
   })
 }
 
-/** The reason a generated view is refused. */
 function errorOf(raw: string): string {
   const verdict = validateGeneratedView(raw)
   expect(verdict.ok).toBe(false)
@@ -39,7 +36,6 @@ function validComponents(): Component[] {
   ]
 }
 
-/** A merged update: the base view's messages plus the agent's message. */
 function mergedMessages(): unknown[] {
   return [
     createSurface([
@@ -138,11 +134,8 @@ describe('generated view validation', () => {
         },
       },
     ]
-    // Replacing the Card with a leaf unlinks 'leaf'; the update cannot
-    // delete it, so it stays retired in the history and is still valid.
     expect(validateGeneratedView(viewFile(merged))).toEqual({ ok: true })
 
-    // A whole view has no history: the same unreachable component is refused.
     const orphaned: Component[] = [
       { id: 'root', component: 'Column', children: ['card', 'b'] },
       { id: 'card', component: 'KeyPoints', items: ['A.'] },

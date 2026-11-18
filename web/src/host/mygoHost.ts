@@ -235,17 +235,14 @@ function bindDocument(id: string): HostAdapter {
       return WorkspaceHost.setSettings(patch);
     },
     onSettings(fn: (settings: GenerationSettings) => void): Disposable {
-      // One settings file for the whole app: every window's write arrives here.
       return disposable(events.settingsChanged.on((settings) => fn(settings)));
     },
   };
 }
 
 
-/** The mounted pane's current Markdown, by document id. */
 const flushers = new Map<string, () => string>();
 
-/** Tell the native Edit menu whether this document currently can undo/redo. */
 export function reportNativeEditState(id: string, canUndo: boolean, canRedo: boolean): void {
   if (!isMyGo()) return
   void WorkspaceHost.setNativeEditState(id, canUndo, canRedo);
@@ -253,37 +250,21 @@ export function reportNativeEditState(id: string, canUndo: boolean, canRedo: boo
 
 declare global {
   interface Window {
-    /** The view validator the Go host calls before it writes a generated view. */
     __mgoValidateGeneratedView?: (raw: string) => Promise<GeneratedViewVerdict>
   }
 }
 
-/**
- * Installs the page-side validator the Go host asks before it writes a view
- * file. It is pure: it reads only its argument, uses the app's own A2UI
- * catalog and message processor, and needs no mounted document or component.
- * An absent bridge, a throw or a rejection all fail closed in the host.
- */
 export function installGeneratedViewValidator(): void {
   window.__mgoValidateGeneratedView = async (raw: string) => validateGeneratedView(raw)
 }
 
 installGeneratedViewValidator()
 
-/**
- * The one write-back of a pane's text: read the Markdown it really holds,
- * then deliver it once. A document with no mounted pane registered no
- * reader and delivers nothing, never an invented empty buffer.
- */
 async function flushDocument(id: string): Promise<void> {
   const read = flushers.get(id);
   if (!read) return;
   await WorkspaceHost.flush(id, read());
 }
-/**
- * Workspace adapter backed by MyGo. document(id) is stable for an open
- * session in this window; a real close or migrate drops the cache.
- */
 export function createMyGoHost(): WorkspaceAdapter {
   const adapters = new Map<string, HostAdapter>();
   let latestQuitAttempt = 0;
@@ -372,8 +353,6 @@ export function createMyGoHost(): WorkspaceAdapter {
       void handleNative(workspace, adapters, native, () => latestQuitAttempt === attempt).catch(() => undefined);
       return;
     }
-    // A failure is recorded on the captured document's state by the host,
-    // which its window shows; it must not become an unhandled rejection.
     void handleNative(workspace, adapters, native).catch(() => undefined);
   });
   events.workspaceChanged.on((snap) => {
@@ -394,7 +373,6 @@ async function handleNative(
 ): Promise<void> {
   const command = cmd.command as NativeCommandName;
   if (command === "closeWorkspace") {
-    // closeWorkspace delivers every pane's last input itself, once.
     await workspace.closeWorkspace();
     return;
   }
@@ -418,13 +396,10 @@ async function handleNative(
     return;
   }
   if (command === "close") {
-    // closeDocument delivers that pane's last input itself, once.
     const result = await workspace.closeDocument(cmd.id);
     if (result.closed) adapters.delete(cmd.id);
     return;
   }
-  // Save, Save As, Rename, Move To, Revert and Duplicate deliver the
-  // captured document's last input first, once, then run on the host.
   await flushDocument(cmd.id);
   switch (command) {
     case "save":

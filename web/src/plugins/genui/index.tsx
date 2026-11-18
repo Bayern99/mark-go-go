@@ -3,16 +3,6 @@ import type { Disposable } from '../../host/types'
 import type { GenUIMemory } from './GenUIView'
 import { ReadingStore } from './reading'
 
-/**
- * The GenUI plugin registers two views sharing one session:
- * - `genui` (`location: 'center'`): read-only A2UI content view and source footers.
- * - `genui.panel` (`location: 'right'`): generation lifecycle, out-of-date component
- *   navigation, inline Focus composer, and pinned Agent/Model/Undo footer.
- *
- * Nothing loads until either view is mounted: the A2UI bundle is imported on first
- * mount, and the view file on disk is only watched while at least one of the two
- * views is mounted.
- */
 export function createGenUIPlugin(): AppPlugin {
   return {
     id: 'genui',

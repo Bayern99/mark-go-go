@@ -4,17 +4,16 @@
 
 ## Portrait 界面
 
-Portrait 的设计画板、样式变量和界面实现都在仓库里。浏览器预览使用样例原文和内存宿主，运行方式见[开发说明](README.md#开发)。
+浏览器预览使用样例原文和内存宿主。运行方式见 [开发说明](README.md#开发)。
 
-- [设计画板](docs/design/Mark%20Go%20Go%20界面设计.html) · [界面规则](docs/agents/ui-tasks.md)
 - [Portrait 样式变量](web/src/theme/portrait-tokens.ts) · [应用样式](web/src/styles.css) · [Markdown 预览样式](web/src/editor/crepe-theme.css)
 - [工作区与文档标签](web/src/App.tsx) · [公用组件](web/src/components/) · [GenUI 视图与组件](web/src/plugins/genui/)
 
 ## 设计与交互参考
 
-- **Tactile Design** 为选中、焦点、边线与控件的审查提供了参考。其作者也感谢 Emil Kowalski、Radix Colors 和 Apple Human Interface Guidelines。仓库保留这份技能及其 MIT 许可证。[上游](https://github.com/kosta4a/tactile-design) · [随附许可证](.devin/skills/tactile-design/LICENSE)
+- **Tactile Design** 为选中、焦点、边线与控件的审查提供了参考。其作者也感谢 Emil Kowalski、Radix Colors 和 Apple Human Interface Guidelines。该技能采用 MIT 许可。[上游](https://github.com/kosta4a/tactile-design) · [随附许可证](.devin/skills/tactile-design/LICENSE)
 - **SoloMD** 为原地 Markdown 编辑和分开展示与保存提供了交互参考。[参考与版本](docs/adr/0006-preserved-blocks-and-semantic-colors.md)
-- **Awesome MyGo** 帮我们了解 MyGo 生态。界面规划记录了评估过的组件库。[Awesome MyGo](https://github.com/yldm-tech/awesome-mygo) · [界面规划](docs/design/ui-component-gaps.md)
+- **Awesome MyGo** 帮我们了解 MyGo 生态。 [Awesome MyGo](https://github.com/yldm-tech/awesome-mygo)
 
 ## 软件与资源
 

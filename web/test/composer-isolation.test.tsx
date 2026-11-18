@@ -200,7 +200,6 @@ describe('per-document composer isolation', () => {
         const view = paneB.querySelector('.ProseMirror')
         if (view?.getAttribute('contenteditable') !== 'true') throw new Error('B is still read only')
       })
-      // Rebuild B's node views while it is editable again, then open a draft.
       b.reload(DOC_B.replace('B locked', 'B locked, once more'))
       const third = await openNoteComposer(paneB)
       await userEvent.fill(third.input, 'B draft 3')

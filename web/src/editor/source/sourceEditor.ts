@@ -8,27 +8,16 @@ export interface SourceEditorOptions {
   parent: HTMLElement
   text: string
   readonly: boolean
-  /** A user edit produced new document text. */
   onChange(text: string): void
-  /**
-   * The caret or document moved; reports the exact CodeMirror offset where
-   * the selection starts, as Preview reports the block of its `$from`.
-   */
   onSelection(offset: number): void
 }
 
 export interface SourceEditor {
   getText(): string
   getSelection(): number
-  /** Replace all text and reset the CodeMirror undo history. */
   setText(text: string): void
   setReadonly(value: boolean): void
-  /**
-   * Select from `from` to `to` (a caret when `to` is omitted), scroll the
-   * line of `from` to the top of the view, and focus.
-   */
   reveal(from: number, to?: number): boolean
-  /** Insert text at `at` as an undoable edit. */
   insert(at: number, text: string): void
   canUndo(): boolean
   canRedo(): boolean
@@ -64,7 +53,6 @@ const readonlyExtensions = (value: boolean) => [
   EditorView.editable.of(!value),
 ]
 
-/** Space kept above a revealed line; matches scroll-margin-top for Preview in styles.css. */
 const REVEAL_MARGIN_PX = 16
 
 export function createSourceEditor(options: SourceEditorOptions): SourceEditor {
@@ -75,8 +63,6 @@ export function createSourceEditor(options: SourceEditorOptions): SourceEditor {
     EditorState.create({
       doc: text,
       extensions: [
-        // Keep every line break exactly as it appears in the file: only LF
-        // splits lines, so CR stays part of the preceding line's text.
         EditorState.lineSeparator.of('\n'),
         markdown(),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
@@ -115,8 +101,6 @@ export function createSourceEditor(options: SourceEditorOptions): SourceEditor {
       if (from < 0 || to < from || to > length) return false
       view.dispatch({
         selection: { anchor: from, head: to },
-        // Navigation (outline, GenUI chips) should land the target at the top
-        // like a table of contents, not on whichever edge is nearest.
         effects: EditorView.scrollIntoView(from, { y: 'start', yMargin: REVEAL_MARGIN_PX }),
       })
       view.focus()

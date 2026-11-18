@@ -1,8 +1,3 @@
-/**
- * Mark Go Go's own content components. Each owns its layout, takes
- * `sources` and `weight`, has no children, and draws in the shared
- * source frame. `a2ui.tsx` puts them in the catalog.
- */
 import { useCallback, useContext, useId, useRef, useState } from 'react'
 import { z } from 'zod'
 import { createComponentImplementation } from '@a2ui/react'
@@ -10,14 +5,10 @@ import { ScrollArea } from '../../components/ScrollArea'
 import { SourceFrame, useComponentSource } from './SourceFrame'
 import { ReadingContext } from './reading'
 
-/** Fold only when there are more points than this. */
 const KEYPOINTS_FOLD_AFTER = 4
 
-/** Props every content component accepts besides its own. */
 const common = {
-  /** Source references: ids in the view file's `sources` table. */
   sources: z.array(z.string()).optional().describe('Ids of the source sections this component draws on.'),
-  /** Share of a Row's width, as for the basic layout components. */
   weight: z.number().positive().optional().describe("Share of a Row's width."),
 }
 
@@ -139,7 +130,6 @@ type SortState = { column: number; direction: 'ascending' | 'descending' } | nul
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
-/** Cells that read as numbers sort by value; anything else by text. */
 function compareCells(a: string, b: string): number {
   const x = asNumber(a)
   const y = asNumber(b)
@@ -208,8 +198,6 @@ export const ComparisonTable = createComponentImplementation(
         reading?.setTableSort(id, next)
         return next
       })
-    // The overlay host itself does not scroll; its viewport does. Restoring on
-    // initialization is what survives the surface remounting in the panel.
     const viewport = useRef<HTMLElement | null>(null)
     const onViewport = useCallback(
       (element: HTMLElement | null) => {
@@ -393,5 +381,4 @@ export const Checklist = createComponentImplementation(
   },
 )
 
-/** Content components, in the order the format document describes them. */
 export const CONTENT_COMPONENTS = [KeyPoints, MetricGrid, ComparisonTable, Timeline, Checklist]

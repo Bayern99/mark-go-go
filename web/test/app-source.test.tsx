@@ -34,7 +34,6 @@ function modeButton(container: HTMLElement, mode: 'preview' | 'markdown'): HTMLB
   return button
 }
 
-/** The id of the checked view mode radio. */
 function checkedMode(container: HTMLElement): string | undefined {
   return container
     .querySelector<HTMLElement>('.view-mode[aria-checked="true"]')
@@ -73,7 +72,6 @@ async function toggleShortcut(modifier: 'Meta' | 'Control'): Promise<void> {
   await userEvent.keyboard(`{${modifier}>}/{/${modifier}}`)
 }
 
-/** Replace one visible source line through real keyboard input. */
 async function replaceSourceLine(
   container: HTMLElement,
   oldLine: string,
@@ -123,7 +121,6 @@ describe('App source mode', () => {
         expect(app.container.querySelector<HTMLElement>('.mgo-source-root')?.hidden).toBe(true)
       })
 
-      // macOS also accepts Ctrl, like the rest of the app's shortcuts.
       if (IS_MAC) {
         await toggleShortcut('Control')
         await vi.waitFor(() => {

@@ -12,7 +12,6 @@ import (
 	"github.com/egoist/mygo"
 )
 
-// WorkspaceSummary is one root available in a native window.
 type WorkspaceSummary struct {
 	ID   string `json:"id"`
 	Root string `json:"root"`
@@ -20,8 +19,6 @@ type WorkspaceSummary struct {
 	Kind string `json:"kind"`
 }
 
-// WorkspaceSnapshot is one native window. Root/Name/Kind describe the root
-// whose navigation is selected; Documents is the window's single tab group.
 type WorkspaceSnapshot struct {
 	ID           string             `json:"id"`
 	Root         string             `json:"root"`
@@ -33,32 +30,25 @@ type WorkspaceSnapshot struct {
 	RestoreError string             `json:"restoreError,omitempty"`
 }
 
-// DocumentInfo is one open document in a workspace. ID is stable across
-// path, tab and window.
 type DocumentInfo struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Path       string `json:"path"`
-	Edited     bool   `json:"edited"`
-	Conflict   bool   `json:"conflict"`
-	Deleted    bool   `json:"deleted"`
-	ReadOnly   bool   `json:"readOnly"`
-	Generating bool   `json:"generating"`
-	ViewMode   string `json:"viewMode,omitempty"`
-	// ActionError is why the last native command on this document failed,
-	// shown in its window. Empty when there is none.
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Path         string `json:"path"`
+	Edited       bool   `json:"edited"`
+	Conflict     bool   `json:"conflict"`
+	Deleted      bool   `json:"deleted"`
+	ReadOnly     bool   `json:"readOnly"`
+	Generating   bool   `json:"generating"`
+	ViewMode     string `json:"viewMode,omitempty"`
 	ActionError  string `json:"actionError,omitempty"`
 	RestoreError string `json:"restoreError,omitempty"`
 }
 
-// CloseResult is the outcome of CloseDocument or CloseWorkspace.
 type CloseResult struct {
 	Closed   bool `json:"closed"`
 	Canceled bool `json:"canceled"`
 }
 
-// NativeCommand asks the page to flush a captured document (or every
-// document, for closeWorkspace) then call the matching host method.
 type NativeCommand struct {
 	ID      string `json:"id"`
 	Command string `json:"command"`
@@ -70,12 +60,6 @@ var (
 	nativeCommand    = mygo.NewEvent[NativeCommand]("nativeCommand")
 )
 
-// defaultWindowWidth and defaultWindowHeight size a new workspace window
-// in logical points. They are the window MyGo creates for every workspace:
-// new folders, restored sessions and the Welcome window alike. A window's
-// geometry is not stored in the app session, so these values never override
-// a size the user chose at runtime; MyGo's own StateKey persistence stays
-// unused.
 const (
 	defaultWindowWidth  = 1280
 	defaultWindowHeight = 820
@@ -90,12 +74,10 @@ var (
 	errNoWorkspace = errors.New("markgogo: this window is not a workspace")
 )
 
-// workspace is one root's navigation and tab ownership. Several workspace
-// values may share win; byWindow points at the one whose navigation is shown.
 type workspace struct {
 	id           string
 	windowID     string
-	root         string // empty = untitled workspace
+	root         string
 	win          *mygo.Window
 	tabs         []string
 	active       string
@@ -127,9 +109,6 @@ func newWorkspaceID() string {
 	return hex.EncodeToString(b[:])
 }
 
-// canonicalPath is an absolute path with existing symlink prefixes
-// resolved. Alias roots such as macOS /tmp versus /private/tmp compare
-// equal so Open reuses the workspace and keeps documentId.
 func canonicalPath(p string) string {
 	if p == "" {
 		return ""
@@ -217,8 +196,6 @@ func (h *documentHost) workspaceOfWindow(win *mygo.Window) (*workspace, error) {
 	return w, nil
 }
 
-// workspaceByIDLocked also supports the small hand-built hosts in tests that
-// predate byWorkspace; production registers every root there.
 func (h *documentHost) workspaceByIDLocked(id string) *workspace {
 	if w := h.byWorkspace[id]; w != nil {
 		return w
@@ -231,7 +208,6 @@ func (h *documentHost) workspaceByIDLocked(id string) *workspace {
 	return nil
 }
 
-// allWorkspacesLocked returns roots in their stable window/tab order.
 func (h *documentHost) allWorkspacesLocked() []*workspace {
 	out := make([]*workspace, 0, len(h.byWorkspace)+len(h.byWindow))
 	seen := map[string]bool{}
@@ -340,7 +316,6 @@ func (h *documentHost) emitWorkspace(w *workspace) {
 	if w == nil {
 		return
 	}
-	// Queue snapshots in the same order that the host reads the selection.
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	win := w.win
@@ -352,7 +327,6 @@ func (h *documentHost) emitWorkspace(w *workspace) {
 	}
 }
 
-// Snapshot is the calling window's workspace.
 func (h *documentHost) Snapshot(ctx context.Context) (WorkspaceSnapshot, error) {
 	win := mygo.CallerWindow(ctx)
 	if win == nil {
@@ -361,8 +335,6 @@ func (h *documentHost) Snapshot(ctx context.Context) (WorkspaceSnapshot, error) 
 	return h.snapshotWorkspace(win)
 }
 
-// Open opens path with global routing: existing session, else deepest
-// open folder workspace, else a workspace at the parent directory.
 func (h *documentHost) Open(ctx context.Context, path string) (DocumentInfo, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -394,8 +366,6 @@ func (h *documentHost) Open(ctx context.Context, path string) (DocumentInfo, err
 	return s.info(), nil
 }
 
-// OpenWorkspace selects an existing root or adds it to the calling window.
-// A new native window is created only when the app has no window to reuse.
 func (h *documentHost) OpenWorkspace(ctx context.Context, root string) error {
 	abs, err := filepath.Abs(root)
 	if err != nil {
@@ -440,7 +410,6 @@ func (h *documentHost) OpenWorkspace(ctx context.Context, root string) error {
 	return nil
 }
 
-// ActivateWorkspace selects a root's navigation and its most recent document.
 func (h *documentHost) ActivateWorkspace(ctx context.Context, workspaceID string) error {
 	h.mu.Lock()
 	w := h.workspaceByIDLocked(workspaceID)
@@ -476,8 +445,6 @@ func (h *documentHost) activateWorkspace(w *workspace) {
 	h.persistSession()
 }
 
-// New creates an untitled document. MyGo calls Window, which reuses an
-// untitled workspace or makes one.
 func (h *documentHost) New(ctx context.Context) (DocumentInfo, error) {
 	doc := h.docs.New()
 	s, err := h.docSession(doc.ID())
@@ -487,7 +454,6 @@ func (h *documentHost) New(ctx context.Context) (DocumentInfo, error) {
 	return s.info(), nil
 }
 
-// Duplicate opens an untitled copy of the document.
 func (h *documentHost) Duplicate(ctx context.Context, documentID string) (DocumentInfo, error) {
 	s, err := h.docSession(documentID)
 	if err != nil {
@@ -502,7 +468,6 @@ func (h *documentHost) Duplicate(ctx context.Context, documentID string) (Docume
 	return d.info(), nil
 }
 
-// Activate makes documentID the active tab of its window.
 func (h *documentHost) Activate(ctx context.Context, documentID string) error {
 	s, err := h.docSession(documentID)
 	if err != nil {
@@ -531,8 +496,6 @@ func (h *documentHost) activate(s *docSession) {
 	h.persistSession()
 }
 
-// CloseDocument asks to save the document, then drops its tab. Cancel
-// leaves the workspace and every tab as they were.
 func (h *documentHost) CloseDocument(ctx context.Context, documentID string) (CloseResult, error) {
 	s, err := h.docSession(documentID)
 	if err != nil {
@@ -547,12 +510,9 @@ func (h *documentHost) CloseDocument(ctx context.Context, documentID string) (Cl
 		h.noteAction(s, err)
 		return CloseResult{}, err
 	}
-	// OnClosed drops the session. Empty untitled windows close there.
 	return CloseResult{Closed: true}, nil
 }
 
-// CloseWorkspace asks to save every dirty document without dropping tabs.
-// Cancel keeps the window and every tab. Success then closes them all.
 func (h *documentHost) CloseWorkspace(ctx context.Context) (CloseResult, error) {
 	w, err := h.workspaceOf(ctx)
 	if err != nil {
@@ -574,9 +534,6 @@ func (h *documentHost) closeWorkspace(w *workspace) (CloseResult, error) {
 	return CloseResult{Closed: true}, nil
 }
 
-// CloseWorkspaceRoot closes only one root's documents and removes its
-// navigation. The native window and other roots stay open. Closing the last
-// root leaves the existing window at Welcome.
 func (h *documentHost) CloseWorkspaceRoot(ctx context.Context, workspaceID string) (CloseResult, error) {
 	caller, callerErr := h.workspaceOf(ctx)
 	h.mu.Lock()
@@ -682,17 +639,12 @@ func (h *documentHost) interceptCommand(role mygo.MenuRole, doc *mygo.Document[s
 	matchesVisibleDocument := current != nil && current.active == doc.ID()
 	h.mu.Unlock()
 	if !matchesVisibleDocument {
-		// Selecting an empty root must not leave File/Edit commands aimed at
-		// the previously active document in another root.
 		return true
 	}
 	_ = nativeCommand.Emit(win, NativeCommand{ID: doc.ID(), Command: cmd})
 	return true
 }
 
-// SetNativeEditState enables native Undo/Redo for the focused window's
-// active document. Reports from a background pane are ignored so they
-// cannot steal menu state. This is editor undo, not UndoView.
 func (h *documentHost) SetNativeEditState(ctx context.Context, documentID string, canUndo, canRedo bool) error {
 	if _, err := h.docSession(documentID); err != nil {
 		return err
@@ -796,8 +748,6 @@ func (h *documentHost) openWorkspaceWindow(id, root, title string) *mygo.Window 
 	return win
 }
 
-// addWorkspaceToWindow registers one root without creating another native
-// window. The first root also supplies the stable window identity.
 func (h *documentHost) addWorkspaceToWindow(id, root, title string, win *mygo.Window) *workspace {
 	if root != "" {
 		root = canonicalPath(root)
@@ -819,8 +769,6 @@ func (h *documentHost) addWorkspaceToWindow(id, root, title string, win *mygo.Wi
 		if windowID == "" {
 			windowID = current.id
 		}
-		// Opening the first folder replaces an empty Welcome root instead of
-		// leaving a meaningless second workspace in the switcher.
 		if root != "" && current.root == "" && len(current.tabs) == 0 {
 			delete(h.byWorkspace, current.id)
 			h.workspaceOrder = removeWorkspaceOrder(h.workspaceOrder, current.id)

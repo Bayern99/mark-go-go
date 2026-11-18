@@ -39,7 +39,6 @@ function viewOf(components: Component[], { stamped = true } = {}): string {
   })
 }
 
-/** Every content component once, under a Row of two Cards so widths are shared. */
 const EVERY: Component[] = [
   { id: 'root', component: 'Column', children: ['row', 'table', 'timeline'] },
   { id: 'row', component: 'Row', children: ['left', 'right'] },
@@ -238,7 +237,6 @@ describe('GenUI content components', () => {
       expect(page.getByTestId('view-mode-preview').element().getAttribute('aria-checked')).toBe('true')
       expect(window.getSelection()?.toString()).toContain('Ship generation')
     })
-    // The view never writes the document: the item stays unchecked.
     expect(update).not.toHaveBeenCalled()
     expect(lastHost?.getState().edited).toBe(false)
   })
@@ -381,7 +379,6 @@ describe('GenUI content components', () => {
       const paneViewport = scrollViewport(pane)
       expect(paneViewport.scrollWidth, `pane at ${width}px`).toBeLessThanOrEqual(paneViewport.clientWidth)
       for (const block of mounted.container.querySelectorAll<HTMLElement>('.genui-block')) {
-        // Wide tables scroll inside their own frame; nothing else may overflow.
         expect(block.scrollWidth, `${block.className} at ${width}px`).toBeLessThanOrEqual(block.clientWidth + 1)
       }
       const scroller = mounted.container.querySelector<HTMLElement>('.genui-table-scroll')

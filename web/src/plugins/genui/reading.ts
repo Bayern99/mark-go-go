@@ -1,11 +1,5 @@
 import { createContext } from 'react'
 
-/**
- * Local reading interactions for one document’s GenUI view: KeyPoints fold,
- * ComparisonTable sort and horizontal scroll, and Tabs selection. Kept outside
- * the mounted surface so leaving GenUI and coming back, or replacing one card,
- * does not reset the rest. It never writes the document.
- */
 export type TableSort = { column: number; direction: 'ascending' | 'descending' } | null
 
 export class ReadingStore {

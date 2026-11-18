@@ -5,12 +5,10 @@ import type { EventListeners, PartialOptions } from 'overlayscrollbars'
 export interface ScrollAreaProps extends HTMLAttributes<HTMLDivElement> {
   axis?: 'x' | 'y'
   contentClassName?: string
-  /** The element that actually owns scrollTop / scrollLeft. */
   onViewport?: (viewport: HTMLElement | null) => void
   onViewportScroll?: (event: Event) => void
 }
 
-/** Native scrolling with one consistent, draggable overlay scrollbar. */
 export function ScrollArea({
   axis = 'y',
   className,

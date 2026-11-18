@@ -1,7 +1,3 @@
-/**
- * Shared Portrait light design contract (#25). #26 / #27 consume these names;
- * values live in `styles.css`. Content tokens are not application status.
- */
 export const PORTRAIT_FONT_TOKENS = ['--font-sans', '--font-display', '--font-mono'] as const
 
 export const PORTRAIT_TYPE_TOKENS = [
@@ -22,10 +18,6 @@ export const PORTRAIT_TYPE_TOKENS = [
   '--text-code-leading',
 ] as const
 
-/**
- * A palette swap redefines these surface/ink values plus PORTRAIT_STATUS_TOKENS
- * (and, per scheme, PORTRAIT_MATERIAL_TOKENS). Values live in `styles.css`.
- */
 export const PORTRAIT_SURFACE_TOKENS = [
   '--chrome',
   '--paper',
@@ -44,7 +36,6 @@ export const PORTRAIT_SURFACE_TOKENS = [
   '--scrollbar-thumb-active',
 ] as const
 
-/* Tactile material recipes derived per scheme; swapped only with the palette. */
 export const PORTRAIT_MATERIAL_TOKENS = [
   '--raised',
   '--raised-press',

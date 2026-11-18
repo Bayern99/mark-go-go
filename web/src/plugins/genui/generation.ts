@@ -10,12 +10,6 @@ import type {
 import { extractSections } from '../../markdown/sections'
 import { catalogDefinition } from './a2ui'
 
-/**
- * The model-only format: the message and source contract, then the actual
- * catalog as compact JSON with every component's schema and nesting rules.
- * view-format.md stays the reader-facing description; its example and
- * property prose would only repeat what the schemas already say.
- */
 const formatContract = `A2UI 1.0 view contract.
 
 out.json: {"sources":{"<id>":{"heading":"<plain heading>","occurrence":<n>}},"a2ui":[<messages>]}. occurrence counts repeated headings from 1 and may be left out when it is 1. Leave out "hash": the app writes it.
@@ -32,10 +26,6 @@ export function agentFormat(): string {
   return `${formatContract}\n${JSON.stringify(catalogDefinition())}\n`
 }
 
-/**
- * What a run is asked to do: a whole new view, or only the components in
- * `replaceIds` replaced in the current one. `request` is the reader's.
- */
 export type GenerationRun =
   | { mode: 'full'; request: string }
   | { mode: 'update'; request: string; replaceIds: string[] }
@@ -43,16 +33,8 @@ export type GenerationRun =
 export type GenerationState =
   | { kind: 'idle' }
   | { kind: 'running'; run: GenerationRun; progress: GenerateProgress[] }
-  /** The last run failed; `run` is what it was asked to do, so it can be retried. */
   | { kind: 'failed'; failure: GenerateFailure; run: GenerationRun }
 
-/**
- * One document's generation: at most one run at a time, its progress, and the
- * error of the last run that failed. Bound to this pane's PluginContext, so
- * it never retargets through the active tab. It outlives the GenUI view's
- * mounts, so leaving GenUI while a run goes on does not lose it. The view
- * file itself comes through the view watch.
- */
 export class GenerationController {
   private state: GenerationState = { kind: 'idle' }
   private abort: AbortController | undefined
@@ -69,12 +51,6 @@ export class GenerationController {
 
   readonly getSnapshot = (): GenerationState => this.state
 
-  /**
-   * Makes a new view of the document as it reads now, or replaces some of
-   * the current view's components, with the reader's request. The text is
-   * taken at once: edits made while the agent works show as changed
-   * sources in the new view.
-   */
   async generate(run: GenerationRun): Promise<void> {
     if (this.state.kind === 'running') return
     const { text } = this.ctx.documents.snapshot()
@@ -110,7 +86,6 @@ export class GenerationController {
       if (this.abort === abort) this.set({ kind: 'idle' })
     } catch (error) {
       if (this.abort !== abort) return
-      // Cancelling is the reader's choice, not a failure to report.
       const failure = failureOf(error)
       this.set(abort.signal.aborted || failure.kind === 'cancelled' ? { kind: 'idle' } : { kind: 'failed', failure, run })
     } finally {
@@ -122,7 +97,6 @@ export class GenerationController {
     this.abort?.abort()
   }
 
-  /** Runs the failed run again. */
   retry(): Promise<void> {
     return this.state.kind === 'failed' ? this.generate(this.state.run) : Promise.resolve()
   }
@@ -135,12 +109,10 @@ export class GenerationController {
     return this.ctx.viewFile.getSettings()
   }
 
-  /** Changes the fields the patch carries, in the one settings store every document shares. */
   setSettings(patch: SettingsPatch): Promise<GenerationSettings> {
     return this.ctx.viewFile.setSettings(patch)
   }
 
-  /** Follows the shared settings store; see `ViewGenerator.onSettings`. */
   onSettings(fn: (settings: GenerationSettings) => void): Disposable {
     return this.ctx.viewFile.onSettings(fn)
   }

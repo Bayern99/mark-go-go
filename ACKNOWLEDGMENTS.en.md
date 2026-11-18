@@ -4,17 +4,16 @@
 
 ## Portrait UI
 
-The Portrait design boards, tokens, and implementation are in this repository. The browser preview runs the interface with sample documents and an in-memory host. See [development setup](README.en.md#development).
+The browser preview uses sample documents and an in-memory host. See [development setup](README.en.md#development).
 
-- [Design boards](docs/design/Mark%20Go%20Go%20界面设计.html) · [UI rules](docs/agents/ui-tasks.md)
 - [Portrait tokens](web/src/theme/portrait-tokens.ts) · [App styles](web/src/styles.css) · [Markdown Preview styles](web/src/editor/crepe-theme.css)
 - [Workspace and document tabs](web/src/App.tsx) · [Shared components](web/src/components/) · [GenUI views and components](web/src/plugins/genui/)
 
 ## Design and interaction references
 
-- **Tactile Design** informed the review of selection, focus, borders, and controls. Its authors also credit Emil Kowalski, Radix Colors, and Apple's Human Interface Guidelines. Mark Go Go includes a copy of the skill under MIT. [Upstream](https://github.com/kosta4a/tactile-design) · [Local license](.devin/skills/tactile-design/LICENSE)
+- **Tactile Design** informed the review of selection, focus, borders, and controls. Its authors also credit Emil Kowalski, Radix Colors, and Apple's Human Interface Guidelines. The skill is licensed under MIT. [Upstream](https://github.com/kosta4a/tactile-design) · [Local license](.devin/skills/tactile-design/LICENSE)
 - **SoloMD** provided an interaction reference for in-place Markdown editing and for keeping rendering separate from saving the document. [Reference and revision](docs/adr/0006-preserved-blocks-and-semantic-colors.md)
-- **Awesome MyGo** helped us explore the MyGo ecosystem. The UI planning notes also record the component libraries evaluated. [Awesome MyGo](https://github.com/yldm-tech/awesome-mygo) · [UI planning notes](docs/design/ui-component-gaps.md)
+- **Awesome MyGo** helped us explore the MyGo ecosystem. [Awesome MyGo](https://github.com/yldm-tech/awesome-mygo)
 
 ## Software and assets
 

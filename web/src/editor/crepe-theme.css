@@ -1,9 +1,3 @@
-/*
- * Portrait mapping for Crepe/Milkdown. Common feature CSS still comes from
- * `@milkdown/crepe/theme/common/style.css`; this file replaces classic.css so
- * Georgia / Open Sans / Fira Code and the warm cream surface never leak.
- * Editor commands, plugins and serialization are unchanged.
- */
 
 .crepe-root {
   --crepe-color-background: var(--paper);
@@ -56,7 +50,6 @@
   margin-top: 0;
 }
 
-/* Kill Crepe's default title sizes (2.625em Georgia, weight 400). */
 .crepe-root .milkdown .ProseMirror h1,
 .crepe-root .milkdown .ProseMirror h2,
 .crepe-root .milkdown .ProseMirror h3,
@@ -70,8 +63,6 @@
   letter-spacing: 0;
 }
 
-/* Balanced multi-line splits on expressive levels; run-in levels stay greedy
-   since they almost never reach a second line. Works in both engines. */
 .crepe-root .milkdown .ProseMirror h1,
 .crepe-root .milkdown .ProseMirror h2,
 .crepe-root .milkdown .ProseMirror h3 {
@@ -101,9 +92,6 @@
   margin: 28px 0 8px;
 }
 
-/* Run-in levels share the body font, leading and 24/4 spacing; the ladder
-   steps size (15/14/13) and mutes color with depth so each level has its
-   own register without decorative styling. */
 .crepe-root .milkdown .ProseMirror h4,
 .crepe-root .milkdown .ProseMirror h5,
 .crepe-root .milkdown .ProseMirror h6 {
@@ -122,9 +110,6 @@
   color: var(--ink-2);
 }
 
-/* Deepest run-in level steps down by weight rather than a third color:
-   ink-3 at 13px measured 5.07:1 — below comfortable contrast for a
-   scanning element. */
 .crepe-root .milkdown .ProseMirror h6 {
   font-size: 13px;
   font-weight: 500;
@@ -137,14 +122,9 @@
   letter-spacing: var(--text-reading-tracking);
   padding: 0;
   margin: 0 0 16px;
-  /* Multi-line scoring wrap for prose: penalizes widowed last lines and bad
-     breaks around unbreakable tokens (measured: eliminates all widows in
-     WebKit, the shipped engine; Chromium treats it as a no-op). */
   text-wrap: pretty;
 }
 
-/* Cell paragraphs keep greedy wrapping: pretty rebalances multi-line cells
-   and would move column widths under the user's feet. */
 .crepe-root .milkdown .ProseMirror :is(td, th) > p {
   text-wrap: wrap;
 }
@@ -236,9 +216,6 @@
   margin: 0 0 4px;
 }
 
-/* Blocks inside a list item flow tighter than document blocks: no bottom
-   margin, 8px between siblings, nested lists tuck under their parent item.
-   Crepe wraps the item content in .children > .content-dom. */
 .crepe-root .milkdown .ProseMirror .milkdown-list-item-block > .list-item > .children > .content-dom > * {
   margin-bottom: 0;
 }
@@ -252,16 +229,10 @@
   margin-top: 4px;
 }
 
-/* li.list-item is display:flex, so a last child's bottom margin cannot
-   collapse out through it — it gets trapped inside the item and stacks onto
-   the item gap once per nesting level. Drop it so the only inter-item gap is
-   this li's own 4px margin collapsing through the block wrapper. */
 .crepe-root .milkdown .ProseMirror .milkdown-list-item-block:last-child > .list-item {
   margin-bottom: 0;
 }
 
-/* Crepe's label row is 32px; align it to the 28px reading line so bullets,
-   numbers and checkboxes sit on the first line's optical centre. */
 .crepe-root .milkdown .milkdown-list-item-block li .label-wrapper {
   height: var(--text-reading-leading);
 }
@@ -280,16 +251,12 @@
   font-weight: 500;
 }
 
-/* The prose column keeps its measured 624px line length while tables use the
-   central pane's available width. Vertical margins remain block-specific. */
 .crepe-root .milkdown .ProseMirror > :not(.milkdown-table-block) {
   max-width: 624px;
   margin-left: auto;
   margin-right: auto;
 }
 
-/* Content-weighted columns come from tableColumnWidths.ts. The table fills the
-   available block, with a per-column minimum before horizontal scrolling. */
 .crepe-root .milkdown .ProseMirror table {
   border-collapse: collapse;
   table-layout: auto;
@@ -297,26 +264,15 @@
   min-width: 100%;
   font-size: var(--text-small-size);
   line-height: var(--text-small-leading);
-  /* the scroll wrapper below is a new formatting context, so a margin on the
-     table itself could not collapse out to the next block — keep it on the
-     block instead */
   margin: 0;
 }
 
-/* flow-root keeps the wrapper's negative margins inside the block, so the
-   block rhythm (0 top / 20 bottom) is not eaten by them. */
 .crepe-root .milkdown .milkdown-table-block {
   display: flow-root;
   margin: 0 0 20px;
   --default-cell-min-width: 8em;
 }
 
-/* Crepe positions the line handles and drag preview against the nearest
-   positioned ancestor. Making the wrapper the containing block keeps those
-   coordinates in scroll space: the handles scroll and clip with the table.
-   The padding ring + equal negative margin gives the half-outside add-row /
-   add-col buttons (14px) and the drag preview (clamped ±20px) room inside the
-   padding box without moving the table or the block's border box. */
 .crepe-root .milkdown .table-wrapper {
   position: relative;
   overflow-x: auto;
@@ -324,31 +280,19 @@
   margin: -20px;
 }
 
-/* The drag math measures `tbody.offsetParent` — with the wrapper positioned
-   that would be the wrapper, so keep the table positioned too and the
-   measured offset stays the table's offset inside the wrapper. */
 .crepe-root .milkdown .table-wrapper > table {
   position: relative;
 }
 
-/* Hidden handles are opacity:0 but still hit-testable: they sit exactly on
-   the line buttons' spots and would eat their clicks. */
 .crepe-root .milkdown .milkdown-table-block .handle[data-show="false"] {
   pointer-events: none;
 }
 
-/* The x-line handle spans the table's full content width and Crepe pins its
-   add-row button to the line's left end — the table's left edge in scroll
-   space — so a scrolled wide table leaves the button off-screen. Sticky
-   pins it to the scrollport's left edge (the visible table edge) instead;
-   at scrollLeft 0 it lands exactly where the absolute position put it. */
 .crepe-root .milkdown .milkdown-table-block .line-handle[data-role="x-line-drag-handle"] .add-button {
   position: sticky;
   left: 20px;
 }
 
-/* Row hairlines come from the inset box-shadows below; cancel Crepe's 1px
-   grid so rules-only styling reads cleanly. */
 .crepe-root .milkdown .ProseMirror th,
 .crepe-root .milkdown .ProseMirror td {
   position: relative;
@@ -397,7 +341,6 @@
   vertical-align: top;
 }
 
-/* Cell paragraphs take the table's 14/22 metrics, not the reading flow's. */
 .crepe-root .milkdown .ProseMirror th > p,
 .crepe-root .milkdown .ProseMirror td > p {
   margin: 0;
@@ -406,8 +349,6 @@
   letter-spacing: inherit;
 }
 
-/* Crepe mounts CodeMirror lazily and renders a placeholder pre before that;
-   keep both states the same size so scrolling past a block does not reflow. */
 .crepe-root .milkdown .milkdown-code-block {
   margin: 0 0 20px;
   padding: 8px 16px 14px;
@@ -434,8 +375,6 @@
   line-height: var(--text-code-leading);
 }
 
-/* Height of the mounted .tools row (language picker + copy), reserved so the
-   placeholder and mounted states have identical block heights. */
 .crepe-root .milkdown .ProseMirror pre.milkdown-code-block-placeholder,
 .crepe-root .milkdown .milkdown-code-block .milkdown-code-block-placeholder {
   margin: 0;
@@ -453,7 +392,6 @@
   color: var(--ink);
 }
 
-/* Compacted toolbar: 28px items + 4px margins -> 36px tall. */
 .crepe-root .milkdown-toolbar .toolbar-item {
   width: 28px;
   height: 28px;
@@ -471,14 +409,11 @@
   margin: 8px 4px;
 }
 
-/* While a pointer drag may become a text selection, or after Escape asked
-   for it to go away, hide the toolbar instead of letting it sit on text. */
 .mgo-preview-root.mgo-pointer-selecting .milkdown-toolbar,
 .mgo-preview-root.mgo-toolbar-dismissed .milkdown-toolbar {
   visibility: hidden;
 }
 
-/* CJK–Latin auto spacing for prose; never inside code or kept-source blocks. */
 .crepe-root .milkdown .ProseMirror {
   text-autospace: normal;
 }
@@ -492,7 +427,6 @@
   text-autospace: no-autospace;
 }
 
-/* Block handle / slash menu / toolbar sit on paper, not cream. */
 .crepe-root .milkdown-slash-menu,
 .crepe-root .milkdown-toolbar,
 .crepe-root .milkdown-block-handle,
@@ -501,7 +435,6 @@
   font-family: var(--font-sans);
 }
 
-/* Special-block presentation (#26). Edit actions live in styles.css. */
 .mgo-alert,
 .mgo-frontmatter-block,
 .mgo-footnote,
@@ -736,7 +669,6 @@ sup.mgo-fnref-wrap {
   color: var(--content-warning);
 }
 
-/* Fold affordances — quiet until hovered or active. */
 .crepe-root .milkdown .ProseMirror .mgo-fold-toggle {
   display: inline-flex;
   align-items: center;
@@ -765,7 +697,6 @@ sup.mgo-fnref-wrap {
 .crepe-root .milkdown .ProseMirror .mgo-fold-hidden {
   display: none;
 }
-/* Foldable code block: chevron lives in the block's own .tools row. */
 .crepe-root .milkdown .ProseMirror .milkdown-code-block .mgo-code-fold-btn {
   order: -1;
   opacity: 0.35;
@@ -774,7 +705,6 @@ sup.mgo-fnref-wrap {
 .crepe-root .milkdown .ProseMirror .mgo-code-folded .mgo-code-fold-btn {
   opacity: 1;
 }
-/* Folded code block: hide the nodeview contents, show a one-line stub. */
 .crepe-root .milkdown .ProseMirror .mgo-code-folded > * {
   display: none;
 }

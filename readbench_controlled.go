@@ -20,15 +20,10 @@ import (
 	"unicode/utf8"
 )
 
-// The controlled arm asks Jev for a route, a layout, a primary content
-// component and independent suitability/priority scores. Gemini then fills
-// content slots only; this file builds the A2UI tree deterministically.
 const (
-	controlledJevEndpoint = "https://api.typesafe.ai/v1/systemone"
-	controlledJevModel    = "jev-1.14.0"
-	controlledFeatureMax  = 16 * 1024
-	// A secondary component must be clearly suitable and worth showing.
-	// Primary always comes from the choice answer.
+	controlledJevEndpoint       = "https://api.typesafe.ai/v1/systemone"
+	controlledJevModel          = "jev-1.14.0"
+	controlledFeatureMax        = 16 * 1024
 	controlledSuitabilityCutoff = 2.5
 	controlledPriorityCutoff    = 2.0
 	controlledMaxComponents     = 3
@@ -109,8 +104,6 @@ type controlledDecision struct {
 	PriorityProbabilities    map[string]float64 `json:"priorityProbabilities"`
 }
 
-// prepareControlledReading returns the complete content-only prompt and a
-// compiler that turns the agent's slot JSON into the ordinary {sources,a2ui}.
 func prepareControlledReading(ctx context.Context, req GenerateRequest, dir string, observe func(string, any)) (string, func([]byte) ([]byte, error), error) {
 	identity := func(data []byte) ([]byte, error) { return data, nil }
 	if observe == nil {
@@ -127,9 +120,6 @@ func prepareControlledReading(ctx context.Context, req GenerateRequest, dir stri
 		"sections":    features,
 	})
 
-	// The route is Jev's answer, not a local fallback. With no heading
-	// sections a controlled route cannot cite any source, so say that
-	// clearly rather than presenting it as an open run.
 	body := controlledJevBody(req, features)
 	observe("controlled.jev.request", map[string]any{
 		"endpoint": controlledJevEndpoint,
@@ -187,9 +177,6 @@ func prepareControlledReading(ctx context.Context, req GenerateRequest, dir stri
 	return controlledPrompt(req, dir, slots), controlledCompiler(req, slots, layout.Choice, observe), nil
 }
 
-// controlledFeatures extracts bounded, deterministic evidence from every
-// section. The page's ranges are UTF-16 code units, so conversion goes
-// through utf16.Decode rather than byte offsets.
 func controlledFeatures(req GenerateRequest) []controlledFeature {
 	units := utf16.Encode([]rune(req.Text))
 	n := len(req.Sections)
@@ -516,8 +503,6 @@ func controlledDecide(resp *controlledJevResponse) (controlledChoiceAnswer, cont
 	return route, layout, primary, decisions, selected, nil
 }
 
-// controlledPrompt is the whole agent prompt for the reduced arm. It names
-// no catalog component, component id, layout or A2UI structure.
 func controlledPrompt(req GenerateRequest, dir string, slots []controlledSlotPlan) string {
 	var b strings.Builder
 	b.WriteString("You are filling content slots for a reading view of a Markdown document for Mark Go Go, a local-first Markdown editor for macOS.\n\n")

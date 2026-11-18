@@ -79,7 +79,6 @@ describe('note format', () => {
     for (const [text, written] of cases) {
       expect(noteBlock(text)).toBe(written)
       expect(parseNote(written)?.text).toBe(text)
-      // The only comment end in it is its own.
       expect(written.slice(0, -3)).not.toMatch(/--!?>/)
     }
   })
@@ -118,7 +117,6 @@ describe('notes in Preview', () => {
     try {
       await clickNoteAction(mounted, 0, 'edit')
       const composer = await openComposer(mounted)
-      // Anchored directly after the first note element inside the editor DOM.
       expect(noteElements(mounted)[0]?.nextElementSibling).toBe(composer)
       expect(composer.querySelector<HTMLTextAreaElement>('textarea[aria-label="Note"]')?.value).toBe('old')
       await answerComposer(mounted, 'new --> text', 'shortcut')
@@ -201,7 +199,6 @@ describe('notes in Preview', () => {
       await vi.waitFor(() => expect(mounted.root.querySelector('.mgo-note-composer')).toBeNull())
       await vi.waitFor(() => expect(mounted.editor.getMarkdown()).toBe('One.\n\nTwo.\n'))
 
-      // Also verify cancelling via the Cancel button on an existing note edit
       mounted.editor.setMarkdown('One.\n\n<!-- note: keep -->\n')
       await clickNoteAction(mounted, 0, 'edit')
       const editComposer = await openComposer(mounted)

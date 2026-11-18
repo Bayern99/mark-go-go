@@ -1,12 +1,6 @@
 import type { ReactNode } from 'react'
 import { parseMdast, type MdastNode } from '../../markdown/mdast'
 
-/**
- * Markdown of an A2UI `Text`, rendered as React elements from the app's own
- * parser. Nothing is ever inserted as HTML: raw HTML is dropped, links show
- * as their text only and images are not shown, so a view can neither run
- * code nor load anything.
- */
 export function SafeMarkdown({ markdown }: { markdown: string }): React.ReactElement {
   return <span className="genui-markdown">{blocks(parseMdast(markdown).children)}</span>
 }
@@ -44,12 +38,10 @@ function block(node: MdastNode, key: number): ReactNode {
     case 'thematicBreak':
       return <hr key={key} />
     default:
-      // Tables, math, frontmatter and raw HTML have no place in a Text.
       return null
   }
 }
 
-/** A tight list item's paragraph renders without its own block margins. */
 function listItem(node: MdastNode): ReactNode {
   const [only] = node.children ?? []
   if (node.children?.length === 1 && only?.type === 'paragraph') return inline(only.children)
@@ -82,7 +74,6 @@ function span(node: MdastNode, key: number): ReactNode {
         </span>
       )
     default:
-      // Images, inline HTML and footnote references are not shown.
       return null
   }
 }

@@ -7,13 +7,6 @@ import (
 	"github.com/egoist/mygo"
 )
 
-// Closing one document runs the session drop below (OnClosed): a folder
-// workspace keeps its registration, its remaining tabs and its session
-// entry. It does not press the native menu: no headless seam reaches a
-// menu key equivalent, so the Cmd+W route itself is verified on the real
-// app. Nor can a window made for a test show a real close: its destroy is
-// a no-op without a native handle, so window survival is the native run's
-// claim, not this test's.
 func TestClosingOneDocumentKeepsFolderWindowTabsAndSession(t *testing.T) {
 	root := t.TempDir()
 	h := &documentHost{

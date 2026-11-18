@@ -84,8 +84,6 @@ export function createTableColumnWidthPlugins(
   })
   const resizeHandlers = resizing.props.handleDOMEvents
   if (resizeHandlers) {
-    // Keep the upstream state and decorations. Its coordinate probe can hit
-    // Crepe's controls, and its preview assumes the first child is a colgroup.
     resizeHandlers.mousemove = () => false
     resizeHandlers.mousedown = () => false
   }
@@ -104,7 +102,6 @@ export function createTableColumnWidthPlugins(
         if (event.button !== 0 || !view.editable) return
         if (columnResizingPluginKey.getState(view.state)?.dragging) return
         sync()
-        // Resolve the boundary again at press time, even before any hover.
         const handle = columnHandleAt(view, event)
         updateHandle(handle)
         resize = handle >= 0 ? startColumnResize(view, event, handle) : undefined
@@ -151,7 +148,6 @@ export function createTableColumnWidthPlugins(
           persist(currentView, storageKey, stored)
         },
         destroy() {
-          // Milkdown may have removed its state context before destroying plugin views.
           resize?.dispose()
           resize = undefined
           view.dom.removeEventListener('mousedown', onMouseDown, true)
@@ -396,7 +392,6 @@ function persist(
   try {
     localStorage.setItem(storageKey, JSON.stringify(stored))
   } catch {
-    // Storage is optional; the live editor state still owns the widths.
   }
 }
 

@@ -1,13 +1,4 @@
 #!/usr/bin/env node
-/**
- * Editor typesetting measurement harness.
- *
- * Usage:
- *   node measure.mjs --label <baseline|after> [--engine webkit|chromium|both]
- *
- * Requires the dev server:  cd web && npx vite   (http://localhost:5173)
- * Writes results to docs/research/editor-typeset/results/<label>/<engine>/ (gitignored)
- */
 import { createRequire } from 'node:module'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -36,9 +27,6 @@ function parseArgs(argv) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-// ---------------------------------------------------------------------------
-// In-page helpers (serialised into the browser context)
-// ---------------------------------------------------------------------------
 
 const PAGE_HELPERS = `
 function pmRoot() { return document.querySelector('.crepe-root .ProseMirror') || document.querySelector('.ProseMirror') }
@@ -106,9 +94,6 @@ async function evalPage(page, body) {
   return page.evaluate(`(() => { ${PAGE_HELPERS}; return (${body}) })()`)
 }
 
-// ---------------------------------------------------------------------------
-// A. computed styles
-// ---------------------------------------------------------------------------
 
 async function measureStyles(page) {
   return evalPage(page, `(() => {
@@ -167,9 +152,6 @@ async function measureStyles(page) {
   })()`)
 }
 
-// ---------------------------------------------------------------------------
-// B. block rhythm
-// ---------------------------------------------------------------------------
 
 async function measureRhythm(page) {
   return evalPage(page, `(() => {
@@ -193,9 +175,6 @@ async function measureRhythm(page) {
   })()`)
 }
 
-// ---------------------------------------------------------------------------
-// C. measure (width / lines / chars per line)
-// ---------------------------------------------------------------------------
 
 async function measureText(page) {
   return evalPage(page, `(() => {
@@ -234,9 +213,6 @@ async function measureText(page) {
   })()`)
 }
 
-// ---------------------------------------------------------------------------
-// C2. text wrapping: per-line widths -> rag, widows, overflowing tokens
-// ---------------------------------------------------------------------------
 
 async function measureWrap(page) {
   return evalPage(page, `(() => {
@@ -305,9 +281,6 @@ async function measureWrap(page) {
   })()`)
 }
 
-// ---------------------------------------------------------------------------
-// C3. composition: every block's edges vs the text column
-// ---------------------------------------------------------------------------
 
 async function measureComposition(page) {
   return evalPage(page, `(() => {
@@ -345,9 +318,6 @@ async function measureComposition(page) {
   })()`)
 }
 
-// ---------------------------------------------------------------------------
-// C4. typing reflow: does editing rebalance lines or move the caret?
-// ---------------------------------------------------------------------------
 
 async function probeTypingReflow(page) {
   const target = await evalPage(page, `(() => {
@@ -399,9 +369,6 @@ async function probeTypingReflow(page) {
   return { target, before, typedSamples: samples.length, lineChanges, caretJumps, maxScrollDrift: +Math.max(...scrollDeltas).toFixed(2), restoredBytes: restored === seeded }
 }
 
-// ---------------------------------------------------------------------------
-// D. tables
-// ---------------------------------------------------------------------------
 
 async function measureTables(page) {
   return evalPage(page, `(() => {
@@ -452,9 +419,6 @@ async function measureTables(page) {
   })()`)
 }
 
-// ---------------------------------------------------------------------------
-// F. screenshots
-// ---------------------------------------------------------------------------
 
 async function takeScreenshots(page, outDir, docName) {
   const shotDir = path.join(outDir, 'shots', docName)
@@ -546,12 +510,9 @@ async function takeScreenshots(page, outDir, docName) {
   return files
 }
 
-// ---------------------------------------------------------------------------
-// Shared probe utilities
-// ---------------------------------------------------------------------------
 
 async function readMarkdownNow(page) {
-  await page.waitForTimeout(450) // > App's 250ms host.update debounce
+  await page.waitForTimeout(450)
   return evalPage(page, `readMarkdown()`)
 }
 
@@ -566,8 +527,6 @@ function firstDiff(a, b) {
   return null
 }
 
-// Click at the centre of the first non-empty text node's rect inside the
-// element produced by `expr` (a JS expression evaluated in the page).
 async function clickInText(page, expr) {
   const pt = await evalPage(page, `(() => {
     const el = (${expr})
@@ -610,9 +569,6 @@ async function selectionInfo(page) {
   })()`)
 }
 
-// ---------------------------------------------------------------------------
-// G1. table click -> caret (tech-report)
-// ---------------------------------------------------------------------------
 
 async function probeTableClick(page, cellDescr, cellExpr) {
   const res = { target: cellDescr, cellExpr }
@@ -636,7 +592,6 @@ async function probeTableClick(page, cellDescr, cellExpr) {
   const mdAfterType = await readMarkdownNow(page)
   res.typeDiff = firstDiff(before, mdAfterType)
   res.lengthDelta = mdAfterType.length - before.length
-  // locate the typed 'X': positions where mdAfterType has X that before lacks
   const xPositions = []
   for (let i = 0; i < mdAfterType.length; i++) {
     if (mdAfterType[i] === 'X' && before[i] !== 'X') xPositions.push(i)
@@ -651,13 +606,9 @@ async function probeTableClick(page, cellDescr, cellExpr) {
   return res
 }
 
-// ---------------------------------------------------------------------------
-// G2. toolbar during drag (paper-bilingual)
-// ---------------------------------------------------------------------------
 
 async function probeToolbarDrag(page, shotDir) {
   const res = { shotDir: shotDir || null }
-  // choose a mid-document paragraph with a decent length
   const target = await evalPage(page, `(() => {
     const paras = [...pmRoot().querySelectorAll(':scope > p')].filter((p) => (p.textContent || '').length > 200)
     const el = paras[Math.floor(paras.length / 2)] || paras[0]
@@ -728,8 +679,6 @@ async function probeToolbarDrag(page, shotDir) {
   const after = data.samples.filter((s) => s.t !== undefined && s.t > upT && s.show === 'true')
   res.firstShowDuringDrag = during.length ? during[0].t - downT : null
   res.firstShowAfterMouseup = after.length ? after[0].t - upT : null
-  // visible = data-show true AND computed visibility not hidden (the
-  // mgo-pointer-selecting class hides the toolbar while a drag is in flight)
   const visible = (s) => s.show === 'true' && s.vis !== 'hidden'
   const duringAll = data.samples.filter((s) => s.t !== undefined && s.t >= downT && s.t <= upT)
   const afterAll = data.samples.filter((s) => s.t !== undefined && s.t > upT)
@@ -747,7 +696,6 @@ async function probeToolbarDrag(page, shotDir) {
   res.selectionRect = data.selRect
   res.toolbarItems = data.toolbarItems
   res.toolbarHtmlSnippet = data.toolbarHtmlSnippet
-  // overlap: toolbar vs the text line above the selection start
   res.overlap = await evalPage(page, `(() => {
     const tb = document.querySelector('.milkdown-toolbar')
     if (!tb) return { visible: false }
@@ -768,14 +716,10 @@ async function probeToolbarDrag(page, shotDir) {
   return res
 }
 
-// ---------------------------------------------------------------------------
-// G3. toolbar focus (paper-bilingual)
-// ---------------------------------------------------------------------------
 
 async function probeToolbarFocus(page) {
   const res = {}
   const mdBefore = await readMarkdownNow(page)
-  // Create a real selection first: double-click selects a word, then extend.
   const wordPt = await evalPage(page, `(() => {
     const p = [...pmRoot().querySelectorAll(':scope > p')].find((x) => (x.textContent || '').length > 120)
     if (!p) return null
@@ -804,7 +748,6 @@ async function probeToolbarFocus(page) {
       buttons: btns,
     }
   })()`)
-  // click the bold button (first icon matching bold/strong, else first button)
   const boldPt = await evalPage(page, `(() => {
     const tb = document.querySelector('.milkdown-toolbar')
     if (!tb) return null
@@ -839,9 +782,6 @@ async function probeToolbarFocus(page) {
   return res
 }
 
-// ---------------------------------------------------------------------------
-// G4. table handles (tech-report T2)
-// ---------------------------------------------------------------------------
 
 async function probeTableHandles(page) {
   const res = { phases: [] }
@@ -886,9 +826,6 @@ async function probeTableHandles(page) {
   return res
 }
 
-// ---------------------------------------------------------------------------
-// G5. layout shift on focus
-// ---------------------------------------------------------------------------
 
 async function probeLayoutShift(page, label, expr) {
   const res = { target: label, expr }
@@ -922,7 +859,6 @@ async function probeLayoutShift(page, label, expr) {
       blockHeight: el ? el.getBoundingClientRect().height : null,
     }
   })()`)
-  // click back into a paragraph
   const pPt = await evalPage(page, `(() => {
     const p = pmRoot().querySelector(':scope > p')
     if (!p) return null
@@ -951,9 +887,6 @@ async function probeLayoutShift(page, label, expr) {
   return res
 }
 
-// ---------------------------------------------------------------------------
-// G6. IME (Chromium only)
-// ---------------------------------------------------------------------------
 
 async function probeIME(page, label, expr) {
   const res = { target: label }
@@ -999,20 +932,12 @@ async function probeIME(page, label, expr) {
   return res
 }
 
-// ---------------------------------------------------------------------------
-// per-document run
-// ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// Variant probes (V2 rules / V3 dense): scrolled handles, add buttons, caret,
-// row hit height — run on tech-report-tables only.
-// ---------------------------------------------------------------------------
 
 async function probeVariantTable(page) {
   const res = {}
   const T2 = `visibleTables()[1]`
   const T3 = `visibleTables()[2]`
-  // (a) scroll the wide T3 wrapper 200px, hover a cell, compare handle vs cell rect
   res.scrollLeftSet = await evalPage(page, `(() => {
     const w = ${T3}.closest('.table-wrapper')
     if (!w) return null
@@ -1048,8 +973,6 @@ async function probeVariantTable(page) {
     })
     return { cell: cr ? { x: +cr.x.toFixed(1), y: +cr.y.toFixed(1), w: +cr.width.toFixed(1), h: +cr.height.toFixed(1) } : null, shown }
   })()`)
-  // (b) add-row / add-column buttons visible and not clipped
-  // show the line handles first by hovering the table's bottom/right edges
   const edge = await evalPage(page, `(() => {
     const t = ${T3}
     if (!t) return null
@@ -1077,13 +1000,11 @@ async function probeVariantTable(page) {
       }
     })
   })()`)
-  // (c) single click -> caret in a cell scrolled into view
   const cellExpr = `${T2}.querySelectorAll('tr')[4].querySelectorAll('td,th')[1]`
   const pt = await clickInText(page, cellExpr)
   res.singleClickPoint = pt
   await page.waitForTimeout(300)
   res.singleClickSelection = await selectionInfo(page)
-  // (d) hit height of a one-line body row
   res.oneLineRowHeight = await evalPage(page, `(() => {
     const rows = [...${T2}.querySelectorAll('tr')].slice(1)
     const heights = rows.map((r) => r.getBoundingClientRect().height)
@@ -1092,8 +1013,6 @@ async function probeVariantTable(page) {
   return res
 }
 
-// Separate page load with IntersectionObserver disabled so the lazy
-// CodeMirror mount never happens: lets us photograph the placeholder state.
 async function takeCodePlaceholderShot(context, url, outDir, docName) {
   const p = path.join(outDir, 'shots', docName, 'code-block-placeholder.png')
   const page = await context.newPage()
@@ -1124,9 +1043,6 @@ async function takeCodePlaceholderShot(context, url, outDir, docName) {
   }
 }
 
-// E3b: scroll a mounted code block >200px above the viewport, wait past
-// Crepe's teardown delay, and confirm scrollTop + a reference paragraph's
-// viewport position do not move when the block collapses to a placeholder.
 async function probeCodeTeardown(page) {
   const res = {}
   await evalPage(page, `(() => {
@@ -1134,7 +1050,7 @@ async function probeCodeTeardown(page) {
     block.scrollIntoView({ block: 'center' })
     return true
   })()`)
-  await page.waitForTimeout(800) // let CodeMirror mount
+  await page.waitForTimeout(800)
   const before = await evalPage(page, `(() => {
     const block = pmRoot().querySelector('.milkdown-code-block')
     const mounted = !!block.querySelector('.cm-editor')
@@ -1152,7 +1068,7 @@ async function probeCodeTeardown(page) {
     return { mounted, refIndex, refTag: ref.tagName, refTop: ref.getBoundingClientRect().top, scrollTop: scroller.scrollTop, blockH: block.getBoundingClientRect().height }
   })()`)
   Object.assign(res, { before })
-  await page.waitForTimeout(5600) // teardown delay (5s) + margin
+  await page.waitForTimeout(5600)
   const after = await evalPage(page, `(() => {
     const block = pmRoot().querySelector('.milkdown-code-block')
     const ref = pmRoot().children[${before.refIndex}]
@@ -1175,7 +1091,6 @@ async function runDoc(page, context, docName, outDir, engineName, engineKey, var
   await page.evaluate(() => document.fonts.ready)
   await page.waitForTimeout(500)
 
-  // G7 round-trip (before any mutation)
   const seeded = await evalPage(page, `window.__bench.fixture`)
   const rt = await readMarkdownNow(page)
   result.roundTrip = { equal: rt === seeded, diff: rt === seeded ? null : firstDiff(seeded, rt) }
@@ -1201,11 +1116,8 @@ async function runDoc(page, context, docName, outDir, engineName, engineKey, var
   await probe('typingReflow', () => probeTypingReflow(page))
 
   if (docName === 'tech-report-tables') {
-    // T2 = tables[1] (6 cols x 12 body rows). Body row 3 = tr index 3
-    // (tr[0] is the header row), col 2 = cell index 1.
     const T2 = `visibleTables()[1]`
     const T2cell = `${T2}.querySelectorAll('tr')[3].querySelectorAll('td,th')[1]`
-    // T4 = tables[3] (3 cols, prose column); pick body row 2, prose column cell.
     const T4cell = `visibleTables()[3].querySelectorAll('tr')[2].querySelectorAll('td,th')[2]`
     await probe('tableClick-T2-r3c2', () => probeTableClick(page, 'T2 body-row-3 col-2', T2cell))
     await probe('tableClick-T4-prose', () => probeTableClick(page, 'T4 body-row-2 prose-col', T4cell))
@@ -1236,9 +1148,6 @@ async function runDoc(page, context, docName, outDir, engineName, engineKey, var
   return result
 }
 
-// ---------------------------------------------------------------------------
-// main
-// ---------------------------------------------------------------------------
 
 async function main() {
   const args = parseArgs(process.argv)

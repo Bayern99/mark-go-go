@@ -1,6 +1,3 @@
-/* Round-2 experiment W2 — text-wrap: pretty.
-   Multi-line scoring for reading text: penalizes short last lines and bad
-   early wraps (long-token paragraphs). Does not equalize headings. */
 .crepe-root .milkdown .ProseMirror {
   text-wrap: pretty;
 }

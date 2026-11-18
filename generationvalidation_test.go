@@ -12,16 +12,10 @@ import (
 	"time"
 )
 
-// rejectedValidation is the external verdict of a page that refuses a
-// candidate: what the real validator says when the SDK finds the view
-// invalid.
 func rejectedValidation(context.Context, []byte) error {
 	return newFailure(failInvalidOutput, "The generated view is not valid: UNALLOWED_CHILD: Container 'card' (Card) cannot contain child 'tabs' (Tabs).", hintInvalidOutput)
 }
 
-// TestGenerateValidationRejectsFullCandidateAndKeepsViewAndUndo drives a
-// whole-view run whose candidate the external validator refuses. Neither
-// the current view nor the view kept for Undo may change.
 func TestGenerateValidationRejectsFullCandidateAndKeepsViewAndUndo(t *testing.T) {
 	viewPath, sentinel := writeSentinelView(t)
 	earlier := []byte("the earlier view")
@@ -58,10 +52,6 @@ func TestGenerateValidationMissingValidatorKeepsViewAndUndo(t *testing.T) {
 	}
 }
 
-// TestGenerateValidationRejectsUpdatedCandidateAndKeepsViewAndUndo
-// does the same for an updated view: the full merged candidate is what
-// the validator sees, and a refusal must not overwrite either the view
-// or its Undo backup.
 func TestGenerateValidationRejectsUpdatedCandidateAndKeepsViewAndUndo(t *testing.T) {
 	earlier := "the earlier view"
 	viewPath := writeBase(t, earlier)
@@ -79,10 +69,6 @@ func TestGenerateValidationRejectsUpdatedCandidateAndKeepsViewAndUndo(t *testing
 	}
 }
 
-// TestGenerateValidationCommitsExactMergedCandidate checks the seam's
-// success path on an update: the validator sees the whole stamped view
-// file, including the base messages the update is merged into, and that
-// exact candidate is what is written and kept for Undo.
 func TestGenerateValidationCommitsExactMergedCandidate(t *testing.T) {
 	viewPath := writeBase(t, "")
 	var candidate []byte
@@ -126,9 +112,6 @@ func TestGenerateValidationCommitsExactMergedCandidate(t *testing.T) {
 	}
 }
 
-// TestGenerateValidationCancellationWritesNothing cancels the run while
-// the validator is still deciding: the view file must not be written,
-// no Undo backup may appear, and the run ends as cancelled.
 func TestGenerateValidationCancellationWritesNothing(t *testing.T) {
 	viewPath, sentinel := writeSentinelView(t)
 	prepare, _ := fakeAgentJob(t, fakeSpec{Out: minimalOut})
@@ -145,7 +128,6 @@ func TestGenerateValidationCancellationWritesNothing(t *testing.T) {
 		Model:    "gemini-3.8-flash",
 	}
 	prepare(&job)
-	// The validator observes the run's context, as the page call does.
 	job.Validate = func(ctx context.Context, _ []byte) error {
 		close(entered)
 		<-ctx.Done()

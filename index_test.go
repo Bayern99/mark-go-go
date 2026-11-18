@@ -55,7 +55,6 @@ func TestParseMarkdownMetaUTF16Offset(t *testing.T) {
 		{
 			name: "ASCII, CJK and emoji headings",
 			body: "# one\n# 中\n# 😀\n# mixed café 😀\n",
-			// JS anchors count UTF-16 code units: emoji cost two.
 			want: []int{0, 6, 10, 15},
 		},
 		{
@@ -290,8 +289,6 @@ func TestNavSnapshotMergesOpenDocumentThroughDirectoryAlias(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeMD(t, root, "notes/alpha.md", "# Alpha\n\nBody text.\n")
-	// The open document reports the file through a symlinked spelling of the
-	// root, so only the routing boundary resolves it to the indexed path.
 	aliasRoot := filepath.Join(t.TempDir(), "ws-alias")
 	if err := os.Symlink(root, aliasRoot); err != nil {
 		t.Fatal(err)

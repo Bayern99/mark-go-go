@@ -4,7 +4,6 @@ import './mermaid.css'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
-/** Elements that could run code, load a resource, or nest an HTML document. */
 const FORBIDDEN_ELEMENTS: Record<string, true> = {
   script: true,
   foreignobject: true,
@@ -23,10 +22,8 @@ const FORBIDDEN_ELEMENTS: Record<string, true> = {
   button: true,
 }
 
-/** CSS that reaches outside the diagram, or evaluates code in old engines. */
 const UNSAFE_CSS = /@import|expression\s*\(|javascript:|url\(\s*(?!['"]?#)/i
 
-/** Presentation attributes whose `url(...)` must stay inside this SVG. */
 const PAINT_ATTRIBUTES: Record<string, true> = {
   fill: true,
   stroke: true,
@@ -42,22 +39,12 @@ interface MermaidRun {
   run: number
 }
 
-/**
- * The async render belongs to one node view's DOM. A newer fill, removal or
- * editor teardown bumps the run, so an older promise can never paint another
- * block or a stale document.
- */
 const runs = new WeakMap<HTMLElement, MermaidRun>()
 
 let mermaidPromise: Promise<Mermaid> | undefined
 let renderChain: Promise<void> = Promise.resolve()
 let renderSerial = 0
 
-/**
- * Mermaid keeps diagram config in shared module state while it renders, so
- * parallel renders of different blocks can leak settings into each other.
- * Queue them like `mermaid.run` does; one failure never stalls the queue.
- */
 function renderSerially<T>(task: () => Promise<T>): Promise<T> {
   const result = renderChain.then(task, task)
   renderChain = result.then(
@@ -104,11 +91,6 @@ function errorMessage(error: unknown): string {
   return raw.replace(/\s+/g, ' ').trim().slice(0, 320) || 'Unknown Mermaid error.'
 }
 
-/**
- * Turn Mermaid's SVG string into DOM without trusting it as HTML. Parsing as
- * XML does not run scripts; forbidden elements and external references are
- * removed before the tree is imported into the editor's document.
- */
 function sanitizeSvg(markup: string): SVGSVGElement {
   const parsed = new DOMParser().parseFromString(markup, 'image/svg+xml')
   if (parsed.querySelector('parsererror')) throw new Error('Mermaid returned malformed SVG.')
@@ -158,10 +140,6 @@ function actionButton(): HTMLButtonElement {
   return button
 }
 
-/**
- * Render one Mermaid fence in place. `source` is the locked block's original
- * bytes; the diagram is a presentation of its body, never a rewrite of it.
- */
 export function renderMermaidBlock(dom: HTMLElement, source: string, readonly: boolean): void {
   const state = runs.get(dom) ?? { run: 0 }
   state.run += 1
@@ -222,9 +200,6 @@ export function renderMermaidBlock(dom: HTMLElement, source: string, readonly: b
     fail('The diagram source is empty.')
     return
   }
-  // Directives and frontmatter can change Mermaid's own config (including
-  // styles and security). They are presentation only, so render without them:
-  // the locked source keeps their bytes untouched.
   const diagram = code
     .replace(/%%\{[\s\S]*?\}%%/g, '')
     .replace(/^\s*---\r?\n[\s\S]*?\r?\n---\r?\n/, '')
@@ -232,9 +207,6 @@ export function renderMermaidBlock(dom: HTMLElement, source: string, readonly: b
     fail('The diagram has no content besides Mermaid configuration.')
     return
   }
-  // Static capability limit: Mermaid can create image/icon shapes and raw
-  // HTML labels. Refuse those before rendering, because a temporary SVG may be
-  // attached to the page and start the request before any later cleanup.
   if (
     /<img\b|!\[[^\]]*\]\(|@\{[^}]*\b(?:img|icon)\s*:|\b(?:href|src)\s*=|url\(\s*(?!['"]?#)/i.test(
       diagram,
@@ -257,8 +229,6 @@ export function renderMermaidBlock(dom: HTMLElement, source: string, readonly: b
     try {
       return await mermaid.render(id, diagram, host)
     } finally {
-      // Mermaid appends temporary scaffolding for layout; never leave it in
-      // the page, and never render it in the visible flow first.
       host.remove()
       document.getElementById(`d${id}`)?.remove()
     }
@@ -277,7 +247,6 @@ export function renderMermaidBlock(dom: HTMLElement, source: string, readonly: b
     .catch((error: unknown) => fail(errorMessage(error)))
 }
 
-/** Invalidate a pending render when ProseMirror removes the node view. */
 export function disposeMermaidBlock(dom: HTMLElement): void {
   const state = runs.get(dom)
   if (!state) return

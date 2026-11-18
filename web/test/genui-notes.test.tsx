@@ -8,7 +8,6 @@ import { SOURCE_DEBOUNCE_MS } from '../src/plugins/genui/sources'
 import { mountApp, type MountedApp } from './helpers/app'
 import { visibleSource } from './helpers/source'
 
-/** Uneven gaps and line ends: adding a note must leave all of them as they are. */
 const DOCUMENT = `# Overview
 
 First body.
@@ -26,7 +25,6 @@ Detail body.
 
 Third body.`
 
-/** A view of the document with the hashes the host would record. */
 function viewOf(markdown: string): string {
   const sections = extractSections(markdown)
   const ids = ['overview', 'metrics', 'steps']
@@ -164,12 +162,10 @@ Third body.`
 
     await addNote(container, 'metrics', 'Check this number')
 
-    // The end of the section is after its sub-section; everything else keeps its bytes.
     await vi.waitFor(() => expect(update).toHaveBeenLastCalledWith(WITH_NOTE), waitLong)
     await vi.waitFor(() => expect(notesOf(blockOf(container, 'metrics'))).toEqual(['Check this number']), waitLong)
     expect(notesOf(blockOf(container, 'overview'))).toEqual([])
     expect(statuses(container)).toEqual([])
-    // Still in GenUI: adding a note does not navigate.
     await expect.element(page.getByTestId('view-mode-genui')).toHaveAttribute('aria-checked', 'true')
   })
 

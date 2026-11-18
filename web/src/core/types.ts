@@ -10,15 +10,9 @@ import type {
 export interface DocumentSnapshot {
   text: string
   version: number
-  /** Where the document is saved; `''` while it is untitled. */
   path: string
 }
 
-/**
- * Where a view shows: `left` is the workspace sidebar; `center` makes the view
- * a view mode the user picks instead of the editor, mounted only while it is
- * shown; `right` is the document panel on the right side of the window.
- */
 export type ViewLocation = 'left' | 'center' | 'right'
 
 export type ViewStatusDot = {
@@ -36,7 +30,6 @@ export interface ViewRegistration {
   title: string
   location: ViewLocation
   status?: ViewStatusSource
-  /** `scrollElement` is the viewport when the host uses an overlay scrollbar. */
   mount(el: HTMLElement, scrollElement?: HTMLElement): Disposable
 }
 
@@ -55,7 +48,6 @@ export interface PluginContext {
   editor: {
     onSelectionChange(fn: (offset: number) => void): Disposable
   }
-  /** The document's view file: following it starts the host's watch; generating writes it. */
   viewFile: {
     watch(fn: (snap: ViewSnapshot) => void): Disposable
     generate(
@@ -63,12 +55,9 @@ export interface PluginContext {
       onProgress: (progress: GenerateProgress) => void,
       signal: AbortSignal,
     ): Promise<void>
-    /** Puts back the view the last generation replaced, once. */
     undo(): Promise<void>
     getSettings(): Promise<GenerationSettings>
-    /** Writes only the patch's fields; resolves with the committed settings. */
     setSettings(patch: SettingsPatch): Promise<GenerationSettings>
-    /** The one settings store changed, from this document or any other window. */
     onSettings(fn: (settings: GenerationSettings) => void): Disposable
   }
   subscriptions: Disposable[]

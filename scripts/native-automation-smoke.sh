@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Build and drive a disposable Mark Go Go app with MyGo's official Automation.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -58,8 +57,6 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# The QA node_modules directory owns Vite's .vite-temp cache while installed
-# packages are reused from the caller.
 cp "$ROOT"/go.mod "$ROOT"/go.sum "$PROJECT"/
 ln -s "$ROOT"/third_party "$ROOT"/resources "$PROJECT"/
 ln -s "$ROOT"/*.go "$PROJECT"/
@@ -183,9 +180,6 @@ open -a "$APP" "$FIXTURES/Work/Plan.md"
 wait_js "document.querySelectorAll('.doc-tab[role=\"tab\"]').length === 4"
 js "document.querySelector('.doc-tab[title$=\"/CC129.md\"]')?.click(); true" > /dev/null
 assert_active 'CC129.md' 'Music Department' 'Music notes.'
-# Page windows use eval rather than native-element input in the official CLI.
-# Exercise MRU with four open documents and non-adjacent tabs; real-key coverage
-# remains a separate native-input check, not a claim made by this script.
 js "window.dispatchEvent(new KeyboardEvent('keydown', {key: 'Tab', ctrlKey: true, bubbles: true})); true" > /dev/null
 assert_active 'Plan.md' 'Work' 'Work notes.'
 js "window.dispatchEvent(new KeyboardEvent('keydown', {key: 'Tab', ctrlKey: true, bubbles: true})); true" > /dev/null

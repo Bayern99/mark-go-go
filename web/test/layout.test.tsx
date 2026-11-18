@@ -3,7 +3,6 @@ import { page } from 'vitest/browser'
 import { afterEach, describe, expect, it } from 'vitest'
 import { mountApp, type MountedApp } from './helpers/app'
 
-/** Default workspace window; narrow-window behavior is exercised separately. */
 const WINDOW = { width: 1280, height: 820 }
 
 const DOCUMENT = `---
@@ -41,7 +40,6 @@ describe('layout at the default window size', () => {
 
     const heading = mounted.container.querySelector('.ProseMirror h1')
     if (!heading) throw new Error('heading not rendered')
-    // A one-line heading: CJK text must not wrap a glyph per line.
     const lineHeight = Number.parseFloat(getComputedStyle(heading).lineHeight)
     expect(heading.getBoundingClientRect().height).toBeLessThan(lineHeight * 2)
   })

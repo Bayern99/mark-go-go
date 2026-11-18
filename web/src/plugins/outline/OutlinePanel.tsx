@@ -3,7 +3,6 @@ import type { PluginContext } from '../../core/types'
 import type { MarkdownHeading } from '../../markdown/headings'
 import { extractHeadings } from '../../markdown/headings'
 
-/** Heading text is re-read this long after the last document change. */
 export const OUTLINE_DEBOUNCE_MS = 300
 
 export interface OutlineState {
@@ -11,11 +10,6 @@ export interface OutlineState {
   cursorOffset: number
 }
 
-/**
- * Outline data for one plugin activation. Headings follow debounced document
- * changes; the cursor offset comes straight from the editor so highlighting
- * stays responsive while typing.
- */
 export class OutlineStore {
   private state: OutlineState
   private timer: number | undefined
@@ -62,7 +56,6 @@ export class OutlineStore {
   }
 }
 
-/** Index of the section containing `cursorOffset`, or -1 before the first heading. */
 function activeHeadingIndex(headings: MarkdownHeading[], cursorOffset: number): number {
   let active = -1
   headings.forEach((heading, index) => {

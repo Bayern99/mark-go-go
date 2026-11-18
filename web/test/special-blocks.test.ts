@@ -156,7 +156,6 @@ describe('special blocks in Preview', () => {
       mounted.editor.setReadonly(true)
       const alert = mounted.root.querySelector<HTMLElement>('.mgo-alert')
       const edit = alert?.querySelector<HTMLElement>('[data-block-action="edit"]')
-      // Read-only hides the edit entry point and refuses one clicked anyway.
       expect(edit?.checkVisibility() ?? false).toBe(false)
       edit?.click()
       expect(mounted.root.querySelector('.mgo-block-composer')).toBeNull()

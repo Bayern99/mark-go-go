@@ -4,16 +4,11 @@ import { bind, event, type Channel } from "mygo-runtime";
 
 // ---- Types ----
 
-/** CloseResult is the outcome of CloseDocument or CloseWorkspace. */
 export interface CloseResult {
   closed: boolean;
   canceled: boolean;
 }
 
-/**
- * DocumentInfo is one open document in a workspace. ID is stable across
- * path, tab and window.
- */
 export interface DocumentInfo {
   id: string;
   name: string;
@@ -24,104 +19,51 @@ export interface DocumentInfo {
   readOnly: boolean;
   generating: boolean;
   viewMode?: string;
-  /**
-   * ActionError is why the last native command on this document failed,
-   * shown in its window. Empty when there is none.
-   */
   actionError?: string;
   restoreError?: string;
 }
 
-/** FolderState is the collapsed/expanded state of one directory in the tree. */
 export type FolderState = "open" | "collapsed" | "empty";
 
-/**
- * GenerateFailure is why a generation ended without a new view, sent
- * to the page as the last step of the run, so that the page tells the
- * reader what happened and what to do.
- */
 export interface GenerateFailure {
-  /** Kind is one of the failure kinds below. */
   kind: string;
-  /** Message says what happened, in a sentence or two. */
   message: string;
-  /** Hint says what the reader can do about it. */
   hint?: string;
-  /** Detail is the agent's own words, verbatim. */
   detail?: string;
-  /** Models are the models the agent offers, for model-invalid. */
   models?: string[];
 }
 
-/**
- * GenerateProgress is one step of a running generation, sent to the
- * page while the generation runs.
- */
 export interface GenerateProgress {
-  /**
-   * Phase is "starting", "thinking", "reading", "writing" or
-   * "checking"; "failed" is the last step of a run that failed.
-   */
   phase: string;
-  /** Text is a short, human-readable description of the step. */
   text: string;
-  /** Failure is why the run failed, on the "failed" step only. */
   failure?: GenerateFailure;
 }
 
-/**
- * GenerateRequest is what the page sends when the reader clicks
- * Generate: the editor text at that moment, the generation mode, the
- * format definition, and the page's sections of the text.
- */
 export interface GenerateRequest {
-  /**
-   * Text is the editor text at that moment; the host writes it to
-   * source.md for the agent to read, and hashes its sections from it.
-   */
   text: string;
-  /**
-   * Mode is "full", a new view, or "update", which replaces the
-   * components ReplaceIDs names in the current view.
-   */
   mode: string;
-  /** ReplaceIDs are the components an update replaces. */
   replaceIds?: string[];
-  /** Request is the reader's generation request; may be empty. */
   request?: string;
-  /**
-   * Format is the format document + catalog definition JSON,
-   * embedded verbatim in the agent's prompt.
-   */
   format: string;
-  /** Sections are the page's heading sections of Text. */
   sections: SectionRef[];
 }
 
-/** HeadingHit is a heading that matched a filter. */
 export interface HeadingHit {
   text: string;
   offset: number;
   level: number;
 }
 
-/** IndexStatus is the honest scan/index progress of a workspace root. */
 export type IndexStatus = "idle" | "scanning" | "indexing" | "ready" | "error";
 
-/**
- * NativeCommand asks the page to flush a captured document (or every
- * document, for closeWorkspace) then call the matching host method.
- */
 export interface NativeCommand {
   id: string;
   command: string;
   attempt?: number;
 }
 
-/** NavEntry is one folder or Markdown file in the workspace tree. */
 export interface NavEntry {
   id: string;
-  /** "file" | "folder" */
   kind: string;
   name: string;
   path: string;
@@ -139,7 +81,6 @@ export interface NavEntry {
   documentId?: string;
 }
 
-/** NavSearchHit is one file that matched a filter, with heading hits. */
 export interface NavSearchHit {
   path: string;
   name: string;
@@ -149,7 +90,6 @@ export interface NavSearchHit {
   headings: HeadingHit[];
 }
 
-/** NavSearchResult is the current filter result, including incomplete scans. */
 export interface NavSearchResult {
   query: string;
   status: IndexStatus;
@@ -160,7 +100,6 @@ export interface NavSearchResult {
   hits: NavSearchHit[];
 }
 
-/** NavSnapshot is the tree as the page lists it. */
 export interface NavSnapshot {
   root: string;
   status: IndexStatus;
@@ -171,68 +110,31 @@ export interface NavSnapshot {
   collapsedCount: number;
 }
 
-/** RecentWorkspace is one remembered folder workspace. */
 export interface RecentWorkspace {
   root: string;
   name: string;
   openedAt: number;
 }
 
-/**
- * SectionRef is one heading section of the request's text, as the
- * page's shared section module found it: UTF-16 offsets [Start, End)
- * into Text. The host has no Markdown parser, so the page also says
- * which ranges of the section are notes.
- */
 export interface SectionRef {
   heading: string;
   occurrence: number;
   start: number;
   end: number;
-  /** Exclude are ranges of the section its hash leaves out, in order. */
   exclude?: TextRange[];
 }
 
-/**
- * Settings is the generation settings the page can read and change:
- * which model the agent uses, what command starts it, and the models
- * the agent offered on its last handshake.
- */
 export interface Settings {
-  /**
-   * Model is the model the agent is asked to use, "gemini-3.8-flash"
-   * by default. Empty means: let the agent keep its own model.
-   */
   model: string;
-  /**
-   * AgentCommand is the command that starts the agent, "agy" by
-   * default: a name looked up on PATH, or a path to the executable.
-   */
   agentCommand: string;
-  /**
-   * Models are the models the agent offered on its last handshake, or
-   * the default fallback list before any handshake has succeeded.
-   */
   models?: string[];
 }
 
-/**
- * SettingsPatch is the reader's intent: only the fields that are present
- * are written, so two windows changing different settings at once keep both
- * changes. An empty model means the agent's own choice; an empty command
- * means the default command. Cached models are never written this way:
- * they belong to the agent's handshake.
- */
 export interface SettingsPatch {
   model?: string;
   agentCommand?: string;
 }
 
-/**
- * Snapshot is one document at one version. Version starts at 1 when the
- * document opens and grows by one every time its content is read from
- * disk again. ID is the stable document identity.
- */
 export interface Snapshot {
   id: string;
   text: string;
@@ -240,13 +142,11 @@ export interface Snapshot {
   state: DocumentInfo;
 }
 
-/** TextRange is a UTF-16 range [Start, End) of the request's text. */
 export interface TextRange {
   start: number;
   end: number;
 }
 
-/** ViewEvent is a view snapshot scoped to a document identity. */
 export interface ViewEvent {
   id: string;
   exists: boolean;
@@ -255,10 +155,6 @@ export interface ViewEvent {
   canUndo: boolean;
 }
 
-/**
- * WorkspaceSnapshot is one native window. Root/Name/Kind describe the root
- * whose navigation is selected; Documents is the window's single tab group.
- */
 export interface WorkspaceSnapshot {
   id: string;
   root: string;
@@ -270,7 +166,6 @@ export interface WorkspaceSnapshot {
   restoreError?: string;
 }
 
-/** WorkspaceSummary is one root available in a native window. */
 export interface WorkspaceSummary {
   id: string;
   root: string;
@@ -280,138 +175,40 @@ export interface WorkspaceSummary {
 
 // ---- Services ----
 
-/**
- * documentHost is the bound WorkspaceHost: workspace navigation and
- * per-document commands keyed by document id, through MyGo's document
- * as the only authority.
- */
 export const WorkspaceHost = {
-  /** Activate makes documentID the active tab of its window. */
   activate: bind<[string], void>("WorkspaceHost.Activate", (documentID: string) => [documentID]),
-  /** ActivateWorkspace selects a root's navigation and its most recent document. */
   activateWorkspace: bind<[string], void>("WorkspaceHost.ActivateWorkspace", (workspaceID: string) => [workspaceID]),
-  /**
-   * CloseDocument asks to save the document, then drops its tab. Cancel
-   * leaves the workspace and every tab as they were.
-   */
   closeDocument: bind<[string], CloseResult>("WorkspaceHost.CloseDocument", (documentID: string) => [documentID]),
-  /**
-   * CloseWorkspace asks to save every dirty document without dropping tabs.
-   * Cancel keeps the window and every tab. Success then closes them all.
-   */
   closeWorkspace: bind<[], CloseResult>("WorkspaceHost.CloseWorkspace", () => []),
-  /**
-   * CloseWorkspaceRoot closes only one root's documents and removes its
-   * navigation. The native window and other roots stay open. Closing the last
-   * root leaves the existing window at Welcome.
-   */
   closeWorkspaceRoot: bind<[string], CloseResult>("WorkspaceHost.CloseWorkspaceRoot", (workspaceID: string) => [workspaceID]),
-  /** Duplicate opens an untitled copy of the document. */
   duplicate: bind<[string], DocumentInfo>("WorkspaceHost.Duplicate", (documentID: string) => [documentID]),
-  /** Flush is the last-input delivery of that document, before Save or Close. */
   flush: bind<[string, string], void>("WorkspaceHost.Flush", (documentID: string, text: string) => [documentID, text]),
-  /** FlushQuit delivers the editor text while this window still owes a quit ack. */
   flushQuit: bind<[string, string, number], void>("WorkspaceHost.FlushQuit", (documentID: string, text: string, attempt: number) => [documentID, text, attempt]),
-  /**
-   * Generate runs the named document's view generation: the host starts the
-   * user's Antigravity agent over ACP in an isolated temporary folder
-   * with the request's captured text, the agent writes the view as out.json,
-   * the host stamps metadata and section hashes onto it and writes that
-   * document's current view file atomically. One slot per document; other
-   * documents may generate at the same time. Settings (model, agent command)
-   * are captured at start. A failed run sends the page its failure as the
-   * last step, then returns it as the error. Closing the document or the
-   * workspace cancels only that document's slot; a cancelled close does not.
-   */
   generate: bind<[string, GenerateRequest, Channel<GenerateProgress>], void>("WorkspaceHost.Generate", (documentID: string, req: GenerateRequest, progress: Channel<GenerateProgress>) => [documentID, req, progress]),
-  /** GetSettings returns the generation settings. */
   getSettings: bind<[], Settings>("WorkspaceHost.GetSettings", () => []),
-  /** Load returns the content of the document, including unsaved edits. */
   load: bind<[string], Snapshot>("WorkspaceHost.Load", (documentID: string) => [documentID]),
   moveTo: bind<[string], void>("WorkspaceHost.MoveTo", (documentID: string) => [documentID]),
-  /**
-   * NavSnapshot is the calling window's file tree. Opening a workspace does
-   * not wait for a full directory scan: scanning and indexing continue in
-   * the background and arrive through navChanged.
-   */
   navSnapshot: bind<[], NavSnapshot>("WorkspaceHost.NavSnapshot", () => []),
-  /**
-   * New creates an untitled document. MyGo calls Window, which reuses an
-   * untitled workspace or makes one.
-   */
   new: bind<[], DocumentInfo>("WorkspaceHost.New", () => []),
-  /**
-   * Open opens path with global routing: existing session, else deepest
-   * open folder workspace, else a workspace at the parent directory.
-   */
   open: bind<[string], DocumentInfo>("WorkspaceHost.Open", (path: string) => [path]),
-  /**
-   * OpenWorkspace selects an existing root or adds it to the calling window.
-   * A new native window is created only when the app has no window to reuse.
-   */
   openWorkspace: bind<[string], void>("WorkspaceHost.OpenWorkspace", (root: string) => [root]),
-  /** PickFolder opens a native directory dialog and focuses or opens that workspace. */
   pickFolder: bind<[], string>("WorkspaceHost.PickFolder", () => []),
-  /**
-   * PrepareQuit records one window's flush, or reports why that window
-   * could not flush. The session is written only after every window acks.
-   */
   prepareQuit: bind<[number, string], void>("WorkspaceHost.PrepareQuit", (attempt: number, failure: string) => [attempt, failure]),
-  /** RecentWorkspaces returns persisted folder workspaces, newest first. */
   recentWorkspaces: bind<[], RecentWorkspace[]>("WorkspaceHost.RecentWorkspaces", () => []),
   rename: bind<[string], void>("WorkspaceHost.Rename", (documentID: string) => [documentID]),
-  /** RevealPath expands ancestors so path is visible in the tree. */
   revealPath: bind<[string], void>("WorkspaceHost.RevealPath", (path: string) => [path]),
   revert: bind<[string], void>("WorkspaceHost.Revert", (documentID: string) => [documentID]),
   save: bind<[string], void>("WorkspaceHost.Save", (documentID: string) => [documentID]),
   saveAs: bind<[string], void>("WorkspaceHost.SaveAs", (documentID: string) => [documentID]),
-  /** SetFilter starts or clears a tree filter. Open unsaved text is searched. */
   setFilter: bind<[string], NavSearchResult>("WorkspaceHost.SetFilter", (query: string) => [query]),
-  /**
-   * SetNativeEditState enables native Undo/Redo for the focused window's
-   * active document. Reports from a background pane are ignored so they
-   * cannot steal menu state. This is editor undo, not UndoView.
-   */
   setNativeEditState: bind<[string, boolean, boolean], void>("WorkspaceHost.SetNativeEditState", (documentID: string, canUndo: boolean, canRedo: boolean) => [documentID, canUndo, canRedo]),
-  /**
-   * SetSettings writes the fields the patch carries and returns the committed
-   * settings. Settings are one process-wide store, so a change from any window
-   * is announced to every window through settingsChanged.
-   */
   setSettings: bind<[SettingsPatch], Settings>("WorkspaceHost.SetSettings", (p: SettingsPatch) => [p]),
-  /**
-   * SetViewMode stores this document's view mode in the session. Bound to
-   * documentID, never the active tab.
-   */
   setViewMode: bind<[string, string], void>("WorkspaceHost.SetViewMode", (documentID: string, mode: string) => [documentID, mode]),
-  /** Snapshot is the calling window's workspace. */
   snapshot: bind<[], WorkspaceSnapshot>("WorkspaceHost.Snapshot", () => []),
-  /** ToggleFolder collapses or expands a directory in the tree. */
   toggleFolder: bind<[string], void>("WorkspaceHost.ToggleFolder", (rel: string) => [rel]),
-  /**
-   * UndoView puts back the view the last generation replaced, once: the
-   * kept view becomes the view file and nothing is kept any more. The
-   * page sees it through the view watch.
-   */
   undoView: bind<[string], void>("WorkspaceHost.UndoView", (documentID: string) => [documentID]),
-  /** UnwatchView stops following the document's view file. */
   unwatchView: bind<[string], void>("WorkspaceHost.UnwatchView", (documentID: string) => [documentID]),
-  /**
-   * Update replaces the document's Markdown. MyGo autosaves; a document
-   * in conflict is still edited, so that saving asks which version to keep.
-   */
   update: bind<[string, string], void>("WorkspaceHost.Update", (documentID: string, text: string) => [documentID, text]),
-  /**
-   * WatchView makes the page follow the document's view file.
-   * viewChanged carries every snapshot, in the order the host read them:
-   * one as soon as follow starts, one after the watch is running, then
-   * each change, and when the document is renamed, moved or first saved.
-   * The first event does not wait for WatchFiles to return. Calling it
-   * again restarts the watch. A snapshot already sent is not withdrawn; a
-   * watch that cannot start is still returned on this call, so the page
-   * does not treat the follow as live. documentId is required; the follow
-   * does not retarget through the active tab.
-   */
   watchView: bind<[string], void>("WorkspaceHost.WatchView", (documentID: string) => [documentID]),
 } as const;
 
@@ -419,24 +216,11 @@ export const WorkspaceHost = {
 
 /** Events sent by the Go side. Subscribe with `events.name.on(listener)`. */
 export const events = {
-  /** docReloaded tells the page that MyGo read the file again. */
   docReloaded: event<Snapshot>("docReloaded"),
-  /**
-   * docState tells the page that a document's state changed, without
-   * activating it.
-   */
   docState: event<DocumentInfo>("docState"),
   navChanged: event<NavSnapshot>("navChanged"),
   navSearchReady: event<NavSearchResult>("navSearchReady"),
-  /**
-   * settingsChanged tells every window's page the committed settings after a
-   * write, since the settings file is one process-wide store, not per document.
-   */
   settingsChanged: event<Settings>("settingsChanged"),
-  /**
-   * viewChanged tells a page that follows a document's view file that the
-   * file changed, appeared or went away.
-   */
   viewChanged: event<ViewEvent>("viewChanged"),
   workspaceChanged: event<WorkspaceSnapshot>("workspaceChanged"),
   nativeCommand: event<NativeCommand>("nativeCommand"),

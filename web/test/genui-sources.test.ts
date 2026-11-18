@@ -113,8 +113,6 @@ describe('SourceStore availability', () => {
     expect(store.status(['late', 'overview'])).toBe('missing')
     expect(store.hasSource(['late', 'overview'])).toBe(true)
     expect(store.target(['late', 'overview'])).toEqual(sectionRange(text, 'Overview'))
-    // The quote lives under the other Summary occurrence, not in a remaining
-    // source, so the target falls back to the first remaining section.
     expect(store.target(['late', 'overview'], 'Early summary.')).toEqual(
       sectionRange(text, 'Overview'),
     )

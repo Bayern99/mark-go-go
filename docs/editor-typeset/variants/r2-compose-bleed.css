@@ -1,6 +1,3 @@
-/* Round-2 experiment C1 — 16px edge bleed for code and table blocks.
-   Structured content may paint past the text column; prose stays aligned.
-   Tests whether bleed reads as emphasis or as misalignment. */
 .crepe-root .milkdown .milkdown-code-block,
 .crepe-root .milkdown .milkdown-table-block,
 .crepe-root .milkdown .ProseMirror .mgo-code-block {

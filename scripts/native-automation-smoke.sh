@@ -58,14 +58,14 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# Only read-only dependencies are linked. Web sources are copied so binding
-# generation and Vite output never write through to the caller's checkout.
+# The QA node_modules directory owns Vite's .vite-temp cache while installed
+# packages are reused from the caller.
 cp "$ROOT"/go.mod "$ROOT"/go.sum "$PROJECT"/
 ln -s "$ROOT"/third_party "$ROOT"/resources "$PROJECT"/
 ln -s "$ROOT"/*.go "$PROJECT"/
-mkdir -p "$PROJECT/web"
+mkdir -p "$PROJECT/web/node_modules"
 tar -C "$ROOT/web" --exclude=./node_modules --exclude=./dist -cf - . | tar -C "$PROJECT/web" -xf -
-ln -s "$ROOT/web/node_modules" "$PROJECT/web/node_modules"
+ln -s "$ROOT"/web/node_modules/* "$ROOT/web/node_modules/.bin" "$PROJECT/web/node_modules/"
 ROOT="$ROOT" PROJECT="$PROJECT" APP_NAME="$APP_NAME" RUN_ID="$RUN_ID" SLUG_ID="$SLUG_ID" node <<'NODE'
 const fs = require('fs')
 const config = JSON.parse(fs.readFileSync(`${process.env.ROOT}/mygo.json`, 'utf8'))
@@ -120,8 +120,10 @@ assert_js() {
 assert_active() {
   local document=$1
   local workspace=$2
-  local text=$3
-  wait_js "document.querySelector('.doc-tab.sel')?.textContent?.includes('$document') && document.querySelector('[data-testid=\"workspace-switcher\"]')?.textContent?.includes('$workspace') && document.querySelector('.app:not([hidden])')?.textContent?.includes('$text')"
+  local paragraph=$3
+  wait_js "document.querySelector('.doc-tab.sel')?.textContent?.includes('$document') &&
+    document.querySelector('[data-testid=\"workspace-switcher\"]')?.textContent?.includes('$workspace') &&
+    document.querySelector('.app:not([hidden]) .editor-pane:not([hidden]) [data-testid=\"editor-root\"]')?.textContent?.includes('$paragraph')"
   if ! auto windows | grep -q "\"$document\""; then
     echo "ASSERT FAIL: native title does not match $document" >&2
     auto windows >&2
@@ -153,8 +155,13 @@ quit() {
     echo 'Application did not quit within 20 seconds' >&2
     return 1
   fi
-  wait "$PROCESS" 2>/dev/null || true
+  local status=0
+  wait "$PROCESS" 2>/dev/null || status=$?
   PROCESS=""
+  if (( status != 0 )); then
+    echo "ASSERT FAIL: application quit with exit status $status" >&2
+  fi
+  return "$status"
 }
 
 launch "$FIXTURES/Research/Discussion.md"
@@ -175,18 +182,18 @@ wait_js "document.querySelectorAll('.doc-tab[role=\"tab\"]').length === 3"
 open -a "$APP" "$FIXTURES/Work/Plan.md"
 wait_js "document.querySelectorAll('.doc-tab[role=\"tab\"]').length === 4"
 js "document.querySelector('.doc-tab[title$=\"/CC129.md\"]')?.click(); true" > /dev/null
-assert_active 'CC129.md' 'Music Department' 'CC129'
+assert_active 'CC129.md' 'Music Department' 'Music notes.'
 # Page windows use eval rather than native-element input in the official CLI.
 # Exercise MRU with four open documents and non-adjacent tabs; real-key coverage
 # remains a separate native-input check, not a claim made by this script.
 js "window.dispatchEvent(new KeyboardEvent('keydown', {key: 'Tab', ctrlKey: true, bubbles: true})); true" > /dev/null
-assert_active 'Plan.md' 'Work' 'Plan'
+assert_active 'Plan.md' 'Work' 'Work notes.'
 js "window.dispatchEvent(new KeyboardEvent('keydown', {key: 'Tab', ctrlKey: true, bubbles: true})); true" > /dev/null
-assert_active 'CC129.md' 'Music Department' 'CC129'
+assert_active 'CC129.md' 'Music Department' 'Music notes.'
 assert_js "document.querySelector('[data-testid=\"view-mode-markdown\"]')?.getAttribute('aria-checked') === 'true'" 'view mode survives cross-Workspace MRU switches'
 
 open -a "$APP" "$FIXTURES/Research/Discussion.md"
-assert_active 'Discussion.md' 'Research' 'Discussion'
+assert_active 'Discussion.md' 'Research' 'Research notes.'
 assert_js "document.querySelectorAll('.doc-tab[role=\"tab\"]').length === 4" 'Finder duplicate reuses its document session without another tab'
 if [[ $(auto windows | grep -c '^w[0-9]') != 1 ]]; then
   echo 'ASSERT FAIL: expected one native window' >&2

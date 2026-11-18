@@ -18,7 +18,7 @@ Portrait 的设计画板、样式变量和界面实现都在仓库里。浏览�
 
 ## 软件与资源
 
-- Egoist 与贡献者的 **MyGo** 提供原生桌面宿主。仓库包含 MIT 许可的 v0.7.4 代码，以及文档组和工作区生命周期补丁。命令行工具的拼音数据来自 Unicode Unihan 16.0.0。[上游](https://github.com/egoist/mygo/tree/v0.7.4) · [MyGo 许可证](third_party/mygo/LICENSE) · [Unicode 声明](third_party/mygo/cmd/mygo/LICENSE-Unicode.txt) · [补丁说明](docs/mygo-document-groups.md)
+- Egoist 与贡献者的 **MyGo** 提供原生桌面宿主。仓库包含 MIT 许可的 v0.10.0 代码，以及文档组和工作区生命周期补丁。命令行工具的拼音数据来自 Unicode Unihan 16.0.0。[上游](https://github.com/egoist/mygo/tree/v0.10.0) · [MyGo 许可证](third_party/mygo/LICENSE) · [Unicode 声明](third_party/mygo/cmd/mygo/LICENSE-Unicode.txt) · [补丁说明](docs/mygo-document-groups.md)
 - **Milkdown Crepe** 与 **ProseMirror** 提供可编辑的 Markdown 预览，**CodeMirror** 提供 Markdown 视图。**Radix Primitives** 提供提示和菜单等基础控件，**OverlayScrollbars** 提供滚动区域，**Mermaid** 在本地呈现图表，**A2UI** 提供 GenUI 组件协议。[前端依赖](web/package.json)
 - Marijn Haverbeke 与贡献者的 **ProseMirror Tables** 提供预览中的表格模型和选区。[上游](https://github.com/ProseMirror/prosemirror-tables) · [随附许可证](web/public/licenses/LICENSE-ProseMirror-Tables.txt)
 - 随应用提供的 **IBM Plex Sans、Sans SC、Mono** 和 **Barlow Semi Condensed** 采用 SIL 开放字体许可证。`MGG Condensed` 是同一组 Barlow 字体在 CSS 中应用尺寸调整后的名称。[IBM Plex](https://github.com/IBM/plex) · [Barlow](https://github.com/jpt/barlow) · [字体许可证](web/src/assets/licenses/)

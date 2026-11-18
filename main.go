@@ -17,6 +17,10 @@ import (
 	"github.com/egoist/mygo"
 )
 
+// documentAutosave remains the production default. Explicit e2e builds turn
+// it off so native Save tests cannot pass because an autosave won the race.
+var documentAutosave = mygo.AutosaveInPlace
+
 func main() {
 	host := newDocumentHost()
 	configureReadBench(host)
@@ -35,6 +39,7 @@ func main() {
 			return err
 		},
 		Equal:      func(a, b string) bool { return a == b },
+		Autosave:   documentAutosave,
 		NoUntitled: true,
 		Window: func(doc *mygo.Document[string]) *mygo.Window {
 			return host.openWindow(doc)

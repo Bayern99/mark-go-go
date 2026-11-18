@@ -53,9 +53,18 @@ go tool mygo build
 
 修改仓库内 MyGo 的文档组时，运行 `(cd third_party/mygo && go test -race . -run TestGroupClose)`。
 
+真实 macOS 自动化使用随项目锁定的 MyGo 官方 CLI：
+
+```sh
+go tool mygo-automation skills
+scripts/native-automation-smoke.sh
+```
+
+脚本构建隔离的 QA 应用，验证跨工作区切换、重复打开与重启恢复，并清理临时文件。详见[原生 Automation 指南](docs/agents/native-automation.md)。
+
 原生检查使用 `go tool mygo dev` 启动具有独立标识的开发版。可从 `web/test/fixtures/` 复制样文到临时工作区。验证打包版时，给临时项目副本单独的应用名和包标识，再运行 `go tool mygo build -skip-dmg`。浏览器测试覆盖页面行为，菜单、保存对话框和输入法通过 macOS 应用验证。
 
-仓库内的 MyGo 省略了自动化插件。做定向检查时，可以将 v0.7.4 插件复制到临时项目的依赖目录，在带 `e2e` 构建标签的 Go 文件中导入。插件可以列出窗口、检查网页视图和调用应用菜单。系统对话框通过原生界面操作。[MyGo 自动化指南](https://github.com/egoist/mygo/blob/v0.7.4/docs/plugins/automation.md)
+仓库内的 MyGo 包含官方 Automation 插件，但应用只在显式 `e2e` 构建中链接它；正式构建不包含测试监听。手动操作与发布边界见[原生 Automation 指南](docs/agents/native-automation.md)。
 
 ## 项目文档
 

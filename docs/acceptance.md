@@ -2,6 +2,46 @@
 
 本文件按阶段记录实际执行的检查。PR 合并前检查见下节。其余各节保留各自版本的原型与集成证据，被后续规格取代的条目已就地标注。
 
+## MyGo 原生 smoke 正文、退出状态与缓存复验
+
+以 `b1e92cd` 为基线，使用 MyGo v0.10.0 的官方 Automation 在 macOS 运行两次完整 smoke，再分别用临时副本注入空正文和非零退出。
+
+| 检查 | 判定 | 证据 |
+|---|---|---|
+| 完整原生流程 | PASS（连续两次） | 每轮独立构建并启动 QA 应用，四个文档的活动编辑区、Tab、左栏和原生标题同步断言通过。保存、撤销、重做和重启恢复均通过，两轮退出码均为 `0`。 |
+| 空正文负向测试 | PASS（预期退出 `1`） | 将 `CC129.md` 换成空文件。原生标题仍为 `CC129.md`，左栏仍显示 Music Department，活动编辑区缺少 `Music notes.` 导致断言超时。脚本退出 `1`。 |
+| 非零退出负向测试 | PASS（预期退出 `23`） | 在临时 QA 应用中让原生 Quit 完成后以 `23` 退出。脚本报告 `application quit with exit status 23`，原样返回 `23`。 |
+| Vite 临时缓存与清理 | PASS | 四轮都在 QA 工程的 `web/node_modules/.vite-temp` 观察到缓存目录。调用侧缓存、生成绑定和已有 `web/dist` 保持原样。每轮结束后，QA 工程和对应用户数据目录均已清理。 |
+
+## MyGo 升级复验修复（2026-11-18，fb69773 后续）
+
+| 检查 | 判定 | 证据 |
+|---|---|---|
+| Linux / Windows 源码完整性 | PASS（交叉编译） | 按应用与 Go 工具的三平台依赖补齐上游源码及 `internal/windows/keys.js`，未带入未引用插件/benchmark/website；`GOOS=linux GOARCH=amd64 go build ./...` 与 `GOOS=windows GOARCH=amd64 go build ./...` 均通过。不是 Linux/Windows 实机 UI 验收。 |
+| 受控补丁完整性 | PASS | 与上游 v0.10.0 的共享文件差异仅为 `document.go`、`document_file.go`、`document_flow.go`、`document_menu.go`、`menu.go`、Darwin WebKit/window 与 Windows menu；Document Group race 测试通过。 |
+| 调用者源码隔离 | PASS | smoke 复制可写 Web 源码，仅链接只读依赖；运行后工作区没有生成绑定或前端构建产生的额外修改。 |
+| QA 会话隔离与清理 | PASS（连续两次原生运行） | 每次使用独立应用名/Bundle ID；两次均通过，运行前后均无残留 QA 用户数据目录；退出和清理均有超时。 |
+| Save 断言 | PASS + 负向验证 | e2e 使用 AutosaveOff，Save 前磁盘无编辑；正常脚本写盘通过。临时跳过 File > Save 后脚本以 1 退出并报告 `native Save did not write the edit`，不再由自动保存误报。 |
+| 导航断言范围 | PASS（官方 Automation 范围） | 四个文档的非相邻 MRU 往返同时核对 Tab、正文、左栏与原生标题；重复打开核对不新增 Tab；索引就绪后才检查资源过滤。合成 Ctrl+Tab 不冒充真实键盘。 |
+| 独立原生系统对话框复验 | PASS（复审者提供证据） | 升级正式包的 Save As、Rename、Move To 字节/哈希、未命名关闭确认与外部冲突取消保护均通过；物理键盘四标签往返通过。 |
+| 窄窗几何、精确光标/滚动 | BLOCKED | 本轮修复未补做这两项原生测量。 |
+
+## MyGo v0.10.0 与官方 Automation（2026-11-18）
+
+基线：多 Workspace 提交 `d729c17`；升级在独立分支进行。上游 v0.10.0 仍为一份文档一个窗口，因此保留并迁移受控 Document Group 补丁。
+
+| 检查 | 判定 | 证据 |
+|---|---|---|
+| 上游与依赖迁移 | PASS | 标签 `v0.10.0` / 提交 `ebde939`；`go.mod`、`third_party/mygo`、`mygo-runtime` 均升级。Go API 无破坏性变更；新版拆分源码已补齐，两个三方合并冲突已解决。 |
+| Go / MyGo 回归 | PASS | `go vet .`、`go test -race .`、`go test -tags e2e -race .`、`(cd third_party/mygo && go test -race . -run TestGroupClose)` 均通过。 |
+| Web 回归 | PASS | 真实 Chromium 36 个文件、359 项通过；`npm --prefix web run typecheck` 与生产构建通过。 |
+| 官方 CLI | PASS | `go tool mygo-automation version` 为 v0.10.0；`skills` 输出当前版本官方指南。 |
+| 原生多 Workspace | PASS（macOS WebKit，非浏览器替身） | `scripts/native-automation-smoke.sh` 实际 Build → Launch → Inspect → Interact → Assert → Restart → Cleanup：三个 Workspace 共用一个窗口、Tab 往返、重复打开去重、视图和当前 Workspace 恢复。 |
+| 原生编辑与菜单 | PASS（macOS） | 同一 Automation 脚本在 Markdown 视图插入文本，File > Save 实际写盘，Edit > Undo / Redo 改变真实编辑器历史，重启后保存内容仍在。 |
+| 截图与三栏 | PASS | 官方 `screenshot` 生成 `/tmp/mgo-automation-smoke.png`；三个文档 Tab、当前 Workspace、Markdown 视图、中央正文与右栏正常。 |
+| 正式版隔离 | PASS | 默认 `go list -deps .` 不含 Automation；普通 `mygo build` 成功。隔离正式 QA 应用设置 `MYGO_AUTOMATION` 后正常运行但未创建 socket。 |
+| Save As / Rename / Move / 冲突系统对话框 | BLOCKED | 本轮没有用官方 Automation 完成这些系统面板内的原生操作；既有 Go 路径/冲突测试通过，但不据此宣称系统对话框验收通过。 |
+
 ## 单窗口多 Workspace（2026-11-17）
 
 Workspace 菜单、Save As 和 Move To 的原生记录来自 `Mark Go Go Native Verify.app`（`dev.markgogo.editor.nativeverify`）。通过 Computer 在 macOS 操作应用菜单和系统文件面板，测试使用独立会话与临时 Markdown 文件。

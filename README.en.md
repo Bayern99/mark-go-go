@@ -53,9 +53,18 @@ go tool mygo build
 
 For changes to the vendored document group, run `(cd third_party/mygo && go test -race . -run TestGroupClose)`.
 
+Real macOS automation uses the project's pinned official MyGo CLI:
+
+```sh
+go tool mygo-automation skills
+scripts/native-automation-smoke.sh
+```
+
+The script builds an isolated QA app, checks cross-workspace switching, duplicate opening and restart restoration, then cleans up. See the [native Automation guide](docs/agents/native-automation.md).
+
 Use `go tool mygo dev` and its separate development identity for native checks. Copy inputs from `web/test/fixtures/` into a temporary workspace. For an installed build check, use a temporary project copy with its own app name and bundle identifier and run `go tool mygo build -skip-dmg`. Browser tests cover page behavior. Use the native app to check menus, save dialogs, and input methods.
 
-The vendored MyGo omits Automation. For a targeted check, copy the v0.7.4 plugin into the temporary project's vendor tree and import it in an `e2e` build-tagged Go file. It can list windows, inspect the WebView and invoke application menu items. Use the native UI for system sheets. [MyGo Automation guide](https://github.com/egoist/mygo/blob/v0.7.4/docs/plugins/automation.md)
+The vendored MyGo includes official Automation, but the app links it only in an explicit `e2e` build; release builds contain no test listener. See the [native Automation guide](docs/agents/native-automation.md) for manual operation and the release boundary.
 
 ## Documentation
 

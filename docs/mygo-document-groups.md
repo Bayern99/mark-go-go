@@ -1,6 +1,6 @@
 # MyGo document groups (controlled patch)
 
-Pinned upstream: `github.com/egoist/mygo v0.7.4`.
+Pinned upstream: `github.com/egoist/mygo v0.10.0`.
 In-tree copy: `third_party/mygo`.
 `go.mod`: `replace github.com/egoist/mygo => ./third_party/mygo`.
 
@@ -12,9 +12,19 @@ Upstream binds one document to one window (`docRegistry.byWindow map[*Window]*do
 
 From a machine that has the module cached:
 
-    rsync -a "$(go env GOMODCACHE)/github.com/egoist/mygo@v0.7.4/" third_party/mygo-upstream/
+    rsync -a "$(go env GOMODCACHE)/github.com/egoist/mygo@v0.10.0/" third_party/mygo-upstream/
 
-Then keep the document-group edits that live in this tree under `third_party/mygo`. Do not `go get` a newer mygo and claim groups work. v0.8.x is still one document per window.
+Then keep the document-group edits that live in this tree under `third_party/mygo`. Do not `go get` a newer mygo and claim groups work. v0.10.0 is still one document per window.
+
+## v0.10.0 upgrade audit
+
+Upstream v0.10.0 (`ebde939`) still maps one `docBase` to one window in `document_flow.go`; its Documents guide retains the same model. None of the group's identity, shared close, path reservation or native-menu behavior exists upstream, so the controlled patch remains necessary.
+
+The migration used v0.7.4 as the merge base and carried the patch onto v0.10.0. Only two semantic conflicts occurred: old single-document functions already moved into `document_group.go`, and the RoleClose override had to be combined with the new menu badge fields. New recovery backups return a success value, which the group close callback now explicitly ignores. The remaining local differences are confined to `document.go`, `document_file.go`, `document_flow.go`, `document_menu.go`, `menu.go`, the Darwin WebKit/window files, Windows menu validation, and the in-tree `document_group.go` / tests.
+
+`mygo-runtime` is pinned to the same v0.10.0. Official Automation source and CLI are vendored from that release; `automation_e2e.go` is the only app-side link and is excluded from ordinary builds.
+
+The follow-up source audit fills every upstream source and embedded resource referenced by the app and its Go tools across macOS, Linux and Windows, including `internal/scene/surface.go`, Windows display/DIP files and `internal/windows/keys.js`; unused plugins, benchmarks, examples and website sources stay out. Both `GOOS=linux GOARCH=amd64 go build ./...` and `GOOS=windows GOARCH=amd64 go build ./...` pass. A post-fill diff against upstream shows only the eight controlled files listed above plus the in-tree document-group implementation/tests; no controlled file was overwritten.
 
 ## Public API added
 

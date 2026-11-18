@@ -201,7 +201,7 @@ Dialogs use the workspace window as parent. Path changes are gated before the di
 
 ## MyGo document groups (controlled patch)
 
-Pinned source: `github.com/egoist/mygo v0.7.4` vendored at `third_party/mygo` (`go.mod` replace). Patch adds:
+Pinned source: `github.com/egoist/mygo v0.10.0` vendored at `third_party/mygo` (`go.mod` replace). Patch adds:
 
 - `docGroup` per window: ordered documents + active document. `documentFor(w)` returns the active document, never overwrites a single-window map with a later attach.
 - `Documents.Attach(doc, win)`, `Documents.Detach(doc)`, `Documents.SetActive(doc)`, `Documents.ForWindowAll(w)`.

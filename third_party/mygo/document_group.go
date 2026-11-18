@@ -577,7 +577,7 @@ func (b *docBase) finishClose(keepIfEdited bool) {
 	k.mu.Unlock()
 	b.watch()
 	if keepIfEdited && keep {
-		docWork.Go(b.backup)
+		docWork.Go(func() { b.backup() })
 	} else {
 		docWork.Go(func() { k.recovery.remove(b) })
 	}

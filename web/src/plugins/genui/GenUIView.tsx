@@ -469,7 +469,7 @@ function GenUIView({
           </Popover.Content>
         </Popover.Root>
       </div>
-      {haloKey > 0 ? <div key={haloKey} className="genui-halo" aria-hidden="true" /> : null}
+      {haloKey > 0 ? <div key={`halo-${haloKey}`} className="genui-halo" aria-hidden="true" /> : null}
       {awaitingFirstView ? <InitialLoading /> : null}
       {generatingWithoutView ? <LoadingSkeleton /> : null}
 
@@ -498,7 +498,7 @@ function GenUIView({
       ) : null}
 
       {state.kind === 'view' && actions ? (
-        <ViewSurface key={state.revision} surface={state.surface} sources={actions} reading={memory.reading} />
+        <ViewSurface key={`surface-${state.revision}`} surface={state.surface} sources={actions} reading={memory.reading} />
       ) : null}
     </div>
   )

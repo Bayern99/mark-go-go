@@ -18,5 +18,6 @@
 | 原文已改 · Source changed | 来源章节的内容已有变化。仅修改批注不触发。 |
 | 生成要求 · Generation request | 读者随 GenUI 保存并可沿用的生成偏好。 |
 | 批注 · Note | 与原文一同保存的读者文字意见。 |
-| 研究会话 · Research session | 同一文件夹工作区内跨文档续接的 Feynman 对话。 |
-| 检查点 · Checkpoint | 当前已保存原文的一个本地 Git 版本，可与编辑中的文字比较或恢复。 |
+| 研究会话 · Research session | 同一文件夹工作区内跨文档续接的研究对话（内置支持 Feynman，不绑死核心编辑模型）。 |
+| 变更提案 · Change proposal | 由任意 Agent 提交、尚未写入原文、等待在编辑器中审阅后接受或拒绝的改动草稿。 |
+| 检查点 · Checkpoint | 原文在某一时刻的本地版本快照（可附带标签与来源），可与编辑中的文字比较或恢复。 |

@@ -1,5 +1,7 @@
 # ADR 0007 · 工作区研究会话与单文档检查点
 
+> Note: 本 ADR 中关于 `pi-acp`、Pi RPC 中继与 `sandbox-exec` 的决策已由 [ADR 0008](0008-direct-feynman-rpc-and-gui-shell.md) 取代；单文档 Git 检查点与变更审阅原则继续有效。
+
 研究者会在计划、草稿和来源记录之间切换。每个文件夹工作区因此保留同一场 Feynman 会话，插件通过 pi-acp 恢复会话，并使用 Feynman 的模型和认证配置。
 
 研究栏从已运行的 Feynman 读取工作流、Skills 与扩展清单。pi-acp 管理模型、认证、会话和工具流。宿主的 Pi RPC 中继把同一进程中的扩展表单、预填和可见消息送入研究栏，并在纯扩展操作完成后恢复输入。 [宿主](../../research_ui.go) · [中继](../../scripts/feynman-rpc.mjs)

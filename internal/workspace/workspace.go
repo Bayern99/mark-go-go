@@ -442,13 +442,15 @@ func (h *Service) Activate(ctx context.Context, documentID string) error {
 }
 
 func (h *Service) activate(s *docSession) {
-	if h.docs != nil {
+	if h.docs != nil && s.doc != nil {
 		h.docs.SetActive(s.doc)
 	}
 	h.mu.Lock()
 	if s.ws != nil {
 		s.ws.active = s.id
-		h.byWindow[s.win] = s.ws
+		if s.win != nil {
+			h.byWindow[s.win] = s.ws
+		}
 	}
 	w := s.ws
 	h.mu.Unlock()

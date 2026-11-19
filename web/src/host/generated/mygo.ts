@@ -61,6 +61,12 @@ export interface DiffLine {
 
 export type DiffLineKind = "context" | "delete" | "insert";
 
+export interface DocReveal {
+  id: string;
+  path?: string;
+  offset: number;
+}
+
 export interface DocumentInfo {
   workspaceRoot?: string;
   id: string;
@@ -606,6 +612,7 @@ export const events = {
   docState: event<DocumentInfo>("docState"),
   navChanged: event<NavSnapshot>("navChanged"),
   navSearchReady: event<NavSearchResult>("navSearchReady"),
+  docReveal: event<DocReveal>("docReveal"),
   settingsChanged: event<Settings>("settingsChanged"),
   workspaceChanged: event<WorkspaceSnapshot>("workspaceChanged"),
   nativeCommand: event<NativeCommand>("nativeCommand"),

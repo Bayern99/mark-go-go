@@ -1628,3 +1628,40 @@ func readFixtureSessionFile(path string) (fixtureSessionHeader, string, []map[st
 	}
 	return hdr, name, msgs, nil
 }
+
+func TestResearchManagerBeforeStartAndAfterStopHooks(t *testing.T) {
+	home := t.TempDir()
+	root := t.TempDir()
+	data := t.TempDir()
+
+	var events []string
+	var seenRoot, seenWork string
+	h := NewResearchManager(fakeWorkspaceLookup{dataDir: data})
+	defer h.Close()
+	h.command = fixtureCommand(home)
+	h.SetBeforeStart(func(r, w string) error {
+		seenRoot = r
+		seenWork = w
+		events = append(events, "beforeStart")
+		return nil
+	})
+	h.SetAfterStop(func(r, w string) {
+		if r != seenRoot || w != seenWork {
+			t.Errorf("afterStop got (%q, %q), want (%q, %q)", r, w, seenRoot, seenWork)
+		}
+		events = append(events, "afterStop")
+	})
+
+	if err := h.connect(WorkspaceRef{Root: root}, func(ResearchUpdate) {}); err != nil {
+		t.Fatalf("connect failed: %v", err)
+	}
+	if !slices.Equal(events, []string{"beforeStart"}) {
+		t.Fatalf("events after connect = %v, want [beforeStart]", events)
+	}
+	if err := h.Disconnect(context.Background(), root); err != nil {
+		t.Fatalf("Disconnect failed: %v", err)
+	}
+	if !slices.Equal(events, []string{"beforeStart", "afterStop"}) {
+		t.Fatalf("events after Disconnect = %v, want [beforeStart afterStop]", events)
+	}
+}

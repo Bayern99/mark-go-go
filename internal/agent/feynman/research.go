@@ -40,6 +40,7 @@ type ResearchManager struct {
 	dataDir     string
 	command     func(root, work string) (*exec.Cmd, error)
 	beforeStart func(root, work string) error
+	afterStop   func(root, work string)
 	mu          sync.Mutex
 	sessions    map[string]*researchSession
 	closed      bool
@@ -48,6 +49,7 @@ type ResearchManager struct {
 type researchSession struct {
 	sources        map[string]os.FileInfo
 	imagePrompts   bool
+	work           string
 	win            *mygo.Window
 	rpc            *rpcClient
 	sessionsDir    string
@@ -115,6 +117,12 @@ func (h *ResearchManager) SetBeforeStart(fn func(root, work string) error) {
 	h.mu.Unlock()
 }
 
+func (h *ResearchManager) SetAfterStop(fn func(root, work string)) {
+	h.mu.Lock()
+	h.afterStop = fn
+	h.mu.Unlock()
+}
+
 func (h *ResearchManager) Close() {
 	h.close()
 }
@@ -171,6 +179,7 @@ func (h *ResearchManager) connect(w WorkspaceRef, emit func(ResearchUpdate)) err
 	}
 	_, defaultSessions, _ := resolveFeynmanDirs()
 	s := &researchSession{
+		work:         work,
 		win:          w.Window,
 		sessionsDir:  defaultSessions,
 		imagePrompts: true,
@@ -956,6 +965,8 @@ func (h *ResearchManager) stop(root string, s *researchSession, message string) 
 	offWindow := s.offWindow
 	s.offWindow = nil
 	rpc := s.rpc
+	work := s.work
+	afterStop := h.afterStop
 	h.mu.Unlock()
 
 	s.cancelSettleTimer()
@@ -969,6 +980,9 @@ func (h *ResearchManager) stop(root string, s *researchSession, message string) 
 	<-s.ready
 	if turn != nil {
 		<-turn
+	}
+	if afterStop != nil && work != "" {
+		afterStop(root, work)
 	}
 	if message != "" {
 		s.emit(ResearchUpdate{Kind: "error", Text: message})

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
+	"github.com/Bayern99/mark-go-go/internal/mcp"
 	"github.com/Bayern99/mark-go-go/internal/review"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo"
@@ -89,6 +90,12 @@ func main() {
 	mygo.BindAs("WorkspaceHost", workspace.NewHost(host))
 	mygo.BindAs("ReviewHost", reviewSvc.Host())
 	research := feynman.NewResearchManager(adapter)
+	mcpServer := mcp.NewServer(mcp.Dependencies{
+		Workspace: host,
+		Review:    reviewSvc,
+	})
+	research.SetBeforeStart(mcpServer.BeforeResearchStart)
+	research.SetAfterStop(mcpServer.AfterResearchStop)
 	mygo.BindAs("ResearchHost", research.Host())
 	mygo.BindAs("CheckpointHost", review.NewCheckpointHost(adapter))
 
@@ -121,6 +128,7 @@ func main() {
 	})
 	err := mygo.App.Run()
 	research.Close()
+	_ = mcpServer.Close()
 	host.WaitForGenerations(5 * time.Second)
 	host.WaitForSessionWrites(2 * time.Second)
 	host.CloseAgentCache()

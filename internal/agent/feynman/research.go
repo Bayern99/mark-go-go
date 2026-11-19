@@ -35,15 +35,23 @@ type WorkspaceLookup interface {
 	UserDataDir() string
 }
 
+type focusWatcher struct {
+	root string
+	off  func()
+}
+
 type ResearchManager struct {
-	workspaces  WorkspaceLookup
-	dataDir     string
-	command     func(root, work string) (*exec.Cmd, error)
-	beforeStart func(root, work string) error
-	afterStop   func(root, work string)
-	mu          sync.Mutex
-	sessions    map[string]*researchSession
-	closed      bool
+	workspaces    WorkspaceLookup
+	dataDir       string
+	command       func(root, work string) (*exec.Cmd, error)
+	cliCommand    func(ctx context.Context, work string, args ...string) (*exec.Cmd, error)
+	openTerminal  func(ctx context.Context, command string) error
+	beforeStart   func(root, work string) error
+	afterStop     func(root, work string)
+	mu            sync.Mutex
+	sessions      map[string]*researchSession
+	focusWatchers map[*mygo.Window]*focusWatcher
+	closed        bool
 }
 
 type researchSession struct {
@@ -104,10 +112,13 @@ func NewResearchManager(workspaces WorkspaceLookup) *ResearchManager {
 		dataDir = workspaces.UserDataDir()
 	}
 	return &ResearchManager{
-		workspaces: workspaces,
-		dataDir:    dataDir,
-		command:    researchCommand,
-		sessions:   make(map[string]*researchSession),
+		workspaces:    workspaces,
+		dataDir:       dataDir,
+		command:       researchCommand,
+		cliCommand:    feynmanCLICommand,
+		openTerminal:  openSystemTerminal,
+		sessions:      make(map[string]*researchSession),
+		focusWatchers: make(map[*mygo.Window]*focusWatcher),
 	}
 }
 
@@ -260,6 +271,7 @@ func (h *ResearchManager) connect(w WorkspaceRef, emit func(ResearchUpdate)) err
 	h.mu.Unlock()
 
 	if w.Window != nil {
+		h.ensureFocusWatch(w)
 		off := w.Window.OnClosed(func() { go h.stop(root, s, "") })
 		h.mu.Lock()
 		select {
@@ -1002,7 +1014,17 @@ func (h *ResearchManager) close() {
 	for root, s := range h.sessions {
 		sessions[root] = s
 	}
+	var offs []func()
+	for win, fw := range h.focusWatchers {
+		if fw != nil && fw.off != nil {
+			offs = append(offs, fw.off)
+		}
+		delete(h.focusWatchers, win)
+	}
 	h.mu.Unlock()
+	for _, off := range offs {
+		off()
+	}
 	for root, s := range sessions {
 		h.stop(root, s, "")
 	}

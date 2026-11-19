@@ -24,6 +24,10 @@ func TestMain(m *testing.M) {
 		runFeynmanRPCFixture()
 		os.Exit(0)
 	}
+	if os.Getenv("MGO_FIXTURE_FEYNMAN_CLI") == "1" {
+		runFeynmanCLIFixture()
+		os.Exit(0)
+	}
 	os.Exit(m.Run())
 }
 

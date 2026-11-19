@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useReducer, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { AppPlugin, DocumentSnapshot, PluginContext, WorkspaceContext } from '../../core'
+import { FeynmanSettings } from './FeynmanSettings'
 import { ResearchSession } from './session'
 
 const ResearchPanel = lazy(() => import('./ResearchPanel'))
@@ -12,12 +13,16 @@ export type OpenResearchDocument = (path: string, existingID?: string) => Promis
 
 export interface FeynmanSettingsSlotProps {
   root: string
+  session?: ResearchSession
   onClose: () => void
+  onInsertToChat?: (text: string) => void
 }
 
 export interface FeynmanPluginOptions {
   renderSettings?: (props: FeynmanSettingsSlotProps) => React.ReactNode
 }
+
+const defaultRenderSettings = (props: FeynmanSettingsSlotProps) => <FeynmanSettings {...props} />
 
 export function WorkspaceResearch({
   root,
@@ -70,7 +75,7 @@ export function WorkspaceResearch({
         ctx={ctx}
         documentID={documentID}
         open={open}
-        renderSettings={renderSettings}
+        renderSettings={renderSettings ?? defaultRenderSettings}
       />
     </Suspense>
   ) : (
@@ -202,7 +207,10 @@ export function createFeynmanPlugin(options?: FeynmanPluginOptions): AppPlugin {
         mount(el) {
           const reactRoot = createRoot(el)
           reactRoot.render(
-            <FeynmanWorkspaceView workspace={workspace} renderSettings={options?.renderSettings} />,
+            <FeynmanWorkspaceView
+              workspace={workspace}
+              renderSettings={options?.renderSettings ?? defaultRenderSettings}
+            />,
           )
           return {
             dispose() {

@@ -18,6 +18,8 @@ import (
 	"time"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/Bayern99/mark-go-go/internal/genui"
 )
 
 const (
@@ -104,7 +106,7 @@ type controlledDecision struct {
 	PriorityProbabilities    map[string]float64 `json:"priorityProbabilities"`
 }
 
-func prepareControlledReading(ctx context.Context, req GenerateRequest, dir string, observe func(string, any)) (string, func([]byte) ([]byte, error), error) {
+func prepareControlledReading(ctx context.Context, req genui.GenerateRequest, dir string, observe func(string, any)) (string, func([]byte) ([]byte, error), error) {
 	identity := func(data []byte) ([]byte, error) { return data, nil }
 	if observe == nil {
 		observe = func(string, any) {}
@@ -166,7 +168,7 @@ func prepareControlledReading(ctx context.Context, req GenerateRequest, dir stri
 	if open {
 		plan["compiler"] = "identity"
 		observe("controlled.plan", plan)
-		return generationPrompt(req, nil, dir), identity, nil
+		return genui.GenerationPrompt(req, nil, dir), identity, nil
 	}
 	if len(req.Sections) == 0 {
 		plan["error"] = "controlled route has no heading sections to cite"
@@ -177,7 +179,7 @@ func prepareControlledReading(ctx context.Context, req GenerateRequest, dir stri
 	return controlledPrompt(req, dir, slots), controlledCompiler(req, slots, layout.Choice, observe), nil
 }
 
-func controlledFeatures(req GenerateRequest) []controlledFeature {
+func controlledFeatures(req genui.GenerateRequest) []controlledFeature {
 	units := utf16.Encode([]rune(req.Text))
 	n := len(req.Sections)
 	budget := controlledFeatureMax
@@ -203,7 +205,7 @@ func controlledFeatures(req GenerateRequest) []controlledFeature {
 	return features
 }
 
-func controlledSectionText(units []uint16, sec SectionRef) string {
+func controlledSectionText(units []uint16, sec genui.SectionRef) string {
 	start, end := sec.Start, sec.End
 	if start < 0 {
 		start = 0
@@ -273,7 +275,7 @@ func controlledTail(s string, n int) string {
 	return s[start:]
 }
 
-func controlledJevBody(req GenerateRequest, features []controlledFeature) []byte {
+func controlledJevBody(req genui.GenerateRequest, features []controlledFeature) []byte {
 	questions := map[string]any{
 		"route": map[string]any{
 			"type":         "choice",
@@ -503,7 +505,7 @@ func controlledDecide(resp *controlledJevResponse) (controlledChoiceAnswer, cont
 	return route, layout, primary, decisions, selected, nil
 }
 
-func controlledPrompt(req GenerateRequest, dir string, slots []controlledSlotPlan) string {
+func controlledPrompt(req genui.GenerateRequest, dir string, slots []controlledSlotPlan) string {
 	var b strings.Builder
 	b.WriteString("You are filling content slots for a reading view of a Markdown document for Mark Go Go, a local-first Markdown editor for macOS.\n\n")
 	fmt.Fprintf(&b, "Workspace directory: %q. Always pass absolute paths to file tools.\nsource.md: %q\nout.json: %q\n\n", dir, dir+"/source.md", dir+"/out.json")
@@ -597,7 +599,7 @@ type controlledResolved struct {
 	refs    []controlledCanonicalSource
 }
 
-func controlledCompiler(req GenerateRequest, slots []controlledSlotPlan, layout string, observe func(string, any)) func([]byte) ([]byte, error) {
+func controlledCompiler(req genui.GenerateRequest, slots []controlledSlotPlan, layout string, observe func(string, any)) func([]byte) ([]byte, error) {
 	canonical := map[string]controlledCanonicalSource{}
 	for _, sec := range req.Sections {
 		key := controlledSourceKey(sec.Heading, sec.Occurrence)
@@ -627,7 +629,7 @@ func controlledCompiler(req GenerateRequest, slots []controlledSlotPlan, layout 
 }
 
 func controlledSourceKey(heading string, occurrence int) string {
-	return normalizeKey(heading) + "\x00" + strconv.Itoa(occurrence)
+	return genui.NormalizeKey(heading) + "\x00" + strconv.Itoa(occurrence)
 }
 
 func controlledResolve(data []byte, slots []controlledSlotPlan, canonical map[string]controlledCanonicalSource) ([]controlledResolved, error) {

@@ -1,33 +1,132 @@
 package feynman
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
-	"github.com/Bayern99/mark-go-go/internal/review"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/Bayern99/mark-go-go/internal/review"
 )
 
-func TestResearchConversationsBelongToOneWorkspace(t *testing.T) {
-	if os.Getenv("MGO_TEST_CONVERSATIONS") == "1" {
-		serveConversationFixture()
-		os.Exit(0)
+func TestResearchSessionsJSONLAndTreeForkCloneRenameDelete(t *testing.T) {
+	home := t.TempDir()
+	root := t.TempDir()
+	data := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("FEYNMAN_HOME", home)
+
+	work := review.WorkDir(data, root)
+	sessionsDir := filepath.Join(home, ".feynman", "sessions")
+	if err := os.MkdirAll(sessionsDir, 0700); err != nil {
+		t.Fatal(err)
 	}
-	root, data := t.TempDir(), t.TempDir()
-	h := NewResearchManager(fakeWorkspaceLookup{dataDir: data}, []byte("// stub relay\n"))
-	h.command = func(_, cwd string) (*exec.Cmd, error) {
-		cmd := exec.Command(os.Args[0], "-test.run=^TestResearchConversationsBelongToOneWorkspace$")
-		cmd.Dir = cwd
-		cmd.Env = append(os.Environ(), "MGO_TEST_CONVERSATIONS=1")
-		return cmd, nil
-	}
-	defer h.close()
-	events := make(chan ResearchUpdate, 80)
+
+	// Pre-populate .jsonl session files:
+	// 1. "older" belonging to this workspace (work) with latest session_info name and user message preview
+	writeTestSessionJSONL(t, filepath.Join(sessionsDir, "older.jsonl"), []any{
+		map[string]any{
+			"type":          "session",
+			"version":       3,
+			"id":            "older",
+			"timestamp":     "2026-11-18T10:00:00Z",
+			"cwd":           work,
+			"parentSession": filepath.Join(sessionsDir, "root-parent.jsonl"),
+		},
+		map[string]any{
+			"type":      "message",
+			"id":        "m1",
+			"parentId":  nil,
+			"timestamp": "2026-11-18T10:00:01Z",
+			"message": map[string]any{
+				"role":    "user",
+				"content": "Investigate reverberation time in lecture halls",
+			},
+		},
+		map[string]any{
+			"type":      "message",
+			"id":        "m2",
+			"parentId":  "m1",
+			"timestamp": "2026-11-18T10:00:02Z",
+			"message": map[string]any{
+				"role":    "assistant",
+				"content": []map[string]any{{"type": "text", "text": "Restored older"}},
+			},
+		},
+		map[string]any{
+			"type":      "session_info",
+			"id":        "si-1",
+			"parentId":  "m2",
+			"timestamp": "2026-11-18T10:01:00Z",
+			"name":      "Draft name",
+		},
+		map[string]any{
+			"type":      "session_info",
+			"id":        "si-2",
+			"parentId":  "si-1",
+			"timestamp": "2026-11-18T10:02:00Z",
+			"name":      "Earlier research",
+		},
+	})
+
+	// 2. "preview-only" belonging to this workspace without session_info (title should come from first user message preview)
+	writeTestSessionJSONL(t, filepath.Join(sessionsDir, "preview-only.jsonl"), []any{
+		map[string]any{
+			"type":      "session",
+			"version":   3,
+			"id":        "preview-only",
+			"timestamp": "2026-11-17T08:00:00Z",
+			"cwd":       work,
+		},
+		map[string]any{
+			"type":      "message",
+			"id":        "p1",
+			"parentId":  nil,
+			"timestamp": "2026-11-17T08:00:01Z",
+			"message": map[string]any{
+				"role":    "user",
+				"content": []map[string]any{{"type": "text", "text": "Compare Room Impulse Response datasets"}},
+			},
+		},
+	})
+
+	// 3. "foreign" belonging to a different workspace cwd
+	writeTestSessionJSONL(t, filepath.Join(sessionsDir, "foreign.jsonl"), []any{
+		map[string]any{
+			"type":      "session",
+			"version":   3,
+			"id":        "foreign",
+			"timestamp": "2026-11-19T08:00:00Z",
+			"cwd":       filepath.Dir(work),
+		},
+		map[string]any{
+			"type":      "session_info",
+			"id":        "f1",
+			"parentId":  nil,
+			"timestamp": "2026-11-19T08:00:01Z",
+			"name":      "Outside workspace",
+		},
+	})
+
+	// 4. "broken" belonging to this workspace (triggers switch_session error in fixture)
+	writeTestSessionJSONL(t, filepath.Join(sessionsDir, "broken.jsonl"), []any{
+		map[string]any{
+			"type":      "session",
+			"version":   3,
+			"id":        "broken",
+			"timestamp": "2026-11-16T08:00:00Z",
+			"cwd":       work,
+		},
+	})
+
+	h := NewResearchManager(fakeWorkspaceLookup{dataDir: data})
+	defer h.Close()
+	h.command = fixtureCommand(home)
+
+	events := make(chan ResearchUpdate, 128)
 	connect := func() {
 		t.Helper()
 		if err := h.connect(WorkspaceRef{Root: root}, func(e ResearchUpdate) { events <- e }); err != nil {
@@ -35,7 +134,8 @@ func TestResearchConversationsBelongToOneWorkspace(t *testing.T) {
 		}
 	}
 	connect()
-	early := ""
+
+	var early string
 	for len(events) > 0 {
 		e := <-events
 		if e.Kind == "assistant" {
@@ -43,26 +143,85 @@ func TestResearchConversationsBelongToOneWorkspace(t *testing.T) {
 		}
 	}
 	if early != "Created first" {
-		t.Fatalf("initial history: %q", early)
+		t.Fatalf("initial history = %q, want %q", early, "Created first")
 	}
+
 	ctx := context.Background()
-	records, err := h.Sessions(ctx, root)
-	if err != nil || len(records) != 2 || !records[0].Current || records[1].Title != "Earlier research" {
-		t.Fatalf("history: %+v %v", records, err)
+	records, err := h.Host().Sessions(ctx, root)
+	if err != nil {
+		t.Fatalf("Sessions failed: %v", err)
 	}
-	if err := h.SelectSession(ctx, root, "foreign"); err == nil {
+	// Must include "first", "older", "preview-only", "broken" (all matching work), and MUST NOT include "foreign".
+	byID := map[string]ResearchConversation{}
+	for _, r := range records {
+		if r.ID == "foreign" {
+			t.Fatalf("foreign session leaked into workspace Sessions: %+v", records)
+		}
+		byID[r.ID] = r
+	}
+	if !byID["first"].Current {
+		t.Fatalf("expected 'first' to be current: %+v", byID["first"])
+	}
+	if byID["older"].Title != "Earlier research" || byID["older"].Name != "Earlier research" ||
+		byID["older"].Preview != "Investigate reverberation time in lecture halls" ||
+		!strings.HasSuffix(byID["older"].ParentSession, "root-parent.jsonl") {
+		t.Fatalf("older session header/info/preview mismatch: %+v", byID["older"])
+	}
+	if byID["preview-only"].Title != "Compare Room Impulse Response datasets" || byID["preview-only"].Preview != "Compare Room Impulse Response datasets" {
+		t.Fatalf("preview-only session title mismatch: %+v", byID["preview-only"])
+	}
+
+	// Reject selecting or deleting foreign session or deleting active session
+	if err := h.Host().SelectSession(ctx, root, "foreign"); err == nil {
 		t.Fatal("opened a session from a different workspace")
 	}
-	if err := h.DeleteSession(ctx, root, "foreign"); err == nil {
+	if err := h.Host().DeleteSession(ctx, root, "foreign"); err == nil {
 		t.Fatal("deleted a session from a different workspace")
 	}
-	if err := h.DeleteSession(ctx, root, "first"); err == nil {
+	if _, err := os.Stat(filepath.Join(sessionsDir, "foreign.jsonl")); err != nil {
+		t.Fatal("foreign.jsonl should still exist on disk")
+	}
+	if err := h.Host().DeleteSession(ctx, root, "first"); err == nil {
 		t.Fatal("deleted active session")
 	}
-	if err := h.SelectSession(ctx, root, "older"); err != nil {
-		t.Fatal(err)
+
+	// Rename current session via SetSessionName
+	if err := h.Host().SetSessionName(ctx, root, "Acoustic Baseline"); err != nil {
+		t.Fatalf("SetSessionName failed: %v", err)
 	}
-	history := []string{}
+	sessionEvt := waitUpdate(t, events, "session")
+	if sessionEvt.Text != "Acoustic Baseline" {
+		t.Fatalf("expected session rename event 'Acoustic Baseline', got %q", sessionEvt.Text)
+	}
+
+	// Inspect Tree (get_tree) and ForkMessages (get_fork_messages)
+	tree, err := h.Host().Tree(ctx, root)
+	if err != nil || tree.LeafID != "entry-reply" || len(tree.Tree) != 1 || tree.Tree[0].Entry.ID != "entry-init" || len(tree.Tree[0].Children) != 1 {
+		t.Fatalf("Tree mismatch: %+v %v", tree, err)
+	}
+	forkMsgs, err := h.Host().ForkMessages(ctx, root)
+	if err != nil || len(forkMsgs) != 2 || forkMsgs[0].EntryID != "entry-init" {
+		t.Fatalf("ForkMessages mismatch: %+v %v", forkMsgs, err)
+	}
+
+	// Fork session from entry-init
+	forkRes, err := h.Host().Fork(ctx, root, "entry-init")
+	if err != nil || forkRes.Cancelled || forkRes.Text != "First research prompt" || !strings.HasPrefix(forkRes.SessionID, "forked-") {
+		t.Fatalf("Fork mismatch: %+v %v", forkRes, err)
+	}
+
+	// Clone session
+	cloned, err := h.Host().Clone(ctx, root)
+	if err != nil || !cloned {
+		t.Fatalf("Clone mismatch: cloned=%v err=%v", cloned, err)
+	}
+
+	// Switch to "older" session
+	drainEvents(events)
+	if err := h.Host().SelectSession(ctx, root, "older"); err != nil {
+		t.Fatalf("SelectSession(older) failed: %v", err)
+	}
+	var history []string
 	for len(events) > 0 {
 		e := <-events
 		if e.Kind == "reset" {
@@ -73,163 +232,113 @@ func TestResearchConversationsBelongToOneWorkspace(t *testing.T) {
 		}
 	}
 	if len(history) != 1 || history[0] != "Restored older" {
-		t.Fatalf("unexpected replay: %v", history)
+		t.Fatalf("unexpected replay after switching to older: %v", history)
 	}
-	record := filepath.Join(filepath.Dir(review.WorkDir(data, root)), "session")
+	record := filepath.Join(filepath.Dir(work), "session")
 	id, err := os.ReadFile(record)
 	if err != nil || string(id) != "older" {
 		t.Fatalf("switch not persisted: %q %v", id, err)
 	}
-	if err := h.SelectSession(ctx, root, ""); err != nil {
-		t.Fatal(err)
+
+	// Start a new session via NewSession / SelectSession("")
+	if err := h.Host().NewSession(ctx, root, ""); err != nil {
+		t.Fatalf("NewSession failed: %v", err)
 	}
 	id, _ = os.ReadFile(record)
-	if string(id) != "next" {
-		t.Fatalf("new session id = %q", id)
+	currentAfterNew := string(id)
+	if currentAfterNew == "" || currentAfterNew == "older" {
+		t.Fatalf("new session id not persisted: %q", currentAfterNew)
 	}
-	if err := h.DeleteSession(ctx, root, "older"); err != nil {
-		t.Fatal(err)
+
+	// Delete "older" session and verify its .jsonl file is removed
+	if err := h.Host().DeleteSession(ctx, root, "older"); err != nil {
+		t.Fatalf("DeleteSession(older) failed: %v", err)
 	}
-	rows, err := h.Sessions(ctx, root)
+	if _, err := os.Stat(filepath.Join(sessionsDir, "older.jsonl")); !os.IsNotExist(err) {
+		t.Fatalf("older.jsonl was not deleted from disk: %v", err)
+	}
+	rows, err := h.Host().Sessions(ctx, root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, row := range rows {
 		if row.ID == "older" {
-			t.Fatal("deleted session remains")
+			t.Fatal("deleted session remains in Sessions list")
 		}
 	}
-	if err := h.Disconnect(ctx, root); err != nil {
-		t.Fatal(err)
-	}
-	connect()
-	for len(events) > 0 {
-		<-events
-	}
-	if err := h.SelectSession(ctx, root, "broken"); err == nil {
+
+	// Switching to a broken session fails without overwriting the durable selection
+	drainEvents(events)
+	if err := h.Host().SelectSession(ctx, root, "broken"); err == nil {
 		t.Fatal("unavailable session switched successfully")
 	}
 	id, _ = os.ReadFile(record)
-	if string(id) != "next" {
-		t.Fatal("failed switch replaced durable session selection")
+	if string(id) != currentAfterNew {
+		t.Fatalf("failed switch replaced durable session selection: got %q, want %q", id, currentAfterNew)
 	}
-	for len(events) > 0 {
-		e := <-events
-		if e.Kind == "reset" || e.Kind == "assistant" || e.Kind == "config" {
-			t.Fatalf("failed switch changed visible conversation: %+v", e)
-		}
-	}
+
+	// Reconnect after failed switch
 	connect()
-	if err := h.SetConfig(ctx, root, "model", "unknown"); err == nil {
-		t.Fatal("unavailable config accepted after reconnect")
-	}
-	work := review.WorkDir(data, root)
+	drainEvents(events)
+
+	// Verify mid-switch disconnect drains cleanly and keeps previous selection
 	if err := os.WriteFile(filepath.Join(work, "pause-load"), nil, 0600); err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
-	go func() { done <- h.SelectSession(ctx, root, "broken") }()
+	go func() { done <- h.Host().SelectSession(ctx, root, "broken") }()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		if _, err := os.Stat(filepath.Join(work, "loading")); err == nil {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("fixture never received session/load")
+			t.Fatal("fixture never received switch_session for broken")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if _, err := h.Prompt(ctx, root, "overlap", "", ""); err == nil {
-		t.Fatal("prompt accepted during restore")
+	if _, err := h.Host().Prompt(ctx, root, "overlap", "", ""); err == nil {
+		t.Fatal("prompt accepted during session switch")
 	}
-	if err := h.Disconnect(ctx, root); err != nil {
+	if err := h.Host().Disconnect(ctx, root); err != nil {
 		t.Fatal(err)
 	}
 	select {
 	case err := <-done:
 		if err == nil {
-			t.Fatal("disconnected restore reported success")
+			t.Fatal("disconnected switch reported success")
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("disconnected restore did not drain")
+		t.Fatal("disconnected switch did not drain")
 	}
 	id, err = os.ReadFile(record)
-	if err != nil || string(id) != "next" {
+	if err != nil || string(id) != currentAfterNew {
 		t.Fatalf("lost previous selection: %q %v", id, err)
 	}
-	connect()
 
+	// Verify missing saved session recovery on connect
+	if err := os.WriteFile(record, []byte("removed-session-id"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	connect()
+	notice := waitUpdate(t, events, "notice")
+	if !strings.Contains(notice.Text, "no longer available") {
+		t.Fatalf("expected recovery notice, got %q", notice.Text)
+	}
 }
 
-func serveConversationFixture() {
-	reader, writer := bufio.NewScanner(os.Stdin), json.NewEncoder(os.Stdout)
-	respond := func(id int, value any) {
-		_ = writer.Encode(map[string]any{"id": id, "jsonrpc": "2.0", "result": value})
+func writeTestSessionJSONL(t *testing.T, path string, entries []any) {
+	t.Helper()
+	var buf strings.Builder
+	for _, entry := range entries {
+		b, err := json.Marshal(entry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		buf.Write(b)
+		buf.WriteByte('\n')
 	}
-	replay := func(id, text string) {
-		_ = writer.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": id, "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": text}}}})
-	}
-	first, deleted := true, false
-	for reader.Scan() {
-		var req struct {
-			ID     int
-			Method string
-			Params struct{ Cwd, Cursor, SessionID string }
-		}
-		if json.Unmarshal(reader.Bytes(), &req) != nil {
-			return
-		}
-		switch req.Method {
-		case "initialize":
-			respond(req.ID, map[string]any{"protocolVersion": 1, "agentCapabilities": map[string]any{"loadSession": true, "sessionCapabilities": map[string]any{"list": map[string]any{}, "delete": map[string]any{}}}})
-		case "session/new":
-			id := "next"
-			if first {
-				id = "first"
-				first = false
-			}
-			replay("foreign", "Leaked before creation")
-			replay(id, "Created "+id)
-			respond(req.ID, map[string]string{"sessionId": id})
-		case "session/load":
-			if req.Params.SessionID == "broken" {
-				replay("broken", "Unconfirmed broken transcript")
-				if _, err := os.Stat(filepath.Join(req.Params.Cwd, "pause-load")); err == nil {
-					if err := os.WriteFile(filepath.Join(req.Params.Cwd, "loading"), nil, 0600); err != nil {
-						panic(err)
-					}
-					continue
-				}
-				_ = writer.Encode(map[string]any{"id": req.ID, "error": map[string]any{"code": -32602, "message": "unavailable"}})
-				continue
-			}
-			replay("first", "Leaked former session")
-			replay(req.Params.SessionID, "Restored "+req.Params.SessionID)
-			respond(req.ID, map[string]string{})
-		case "session/list":
-			entries := []map[string]string{}
-			row := func(id, title, cwd string) {
-				entries = append(entries, map[string]string{"sessionId": id, "cwd": cwd, "title": title})
-			}
-			if req.Params.Cursor == "" {
-				row("first", "First research", req.Params.Cwd)
-				row("foreign", "Outside", filepath.Dir(req.Params.Cwd))
-				respond(req.ID, map[string]any{"sessions": entries, "nextCursor": "2"})
-			} else {
-				if !deleted {
-					row("older", "Earlier research", req.Params.Cwd)
-				}
-				if first {
-					row("broken", "Broken", req.Params.Cwd)
-				}
-				respond(req.ID, map[string]any{"sessions": entries})
-			}
-		case "session/delete":
-			if req.Params.SessionID != "older" {
-				panic(errors.New("unexpected delete"))
-			}
-			deleted = true
-			respond(req.ID, map[string]any{})
-		}
+	if err := os.WriteFile(path, []byte(buf.String()), 0600); err != nil {
+		t.Fatal(err)
 	}
 }

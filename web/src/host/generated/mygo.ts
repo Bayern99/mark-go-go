@@ -137,11 +137,27 @@ export interface ResearchCommand {
   name: string;
   description?: string;
   source?: string;
+  sourceInfo?: ResearchCommandSourceInfo;
   input?: ResearchCommandInput;
 }
 
 export interface ResearchCommandInput {
   hint: string;
+}
+
+export interface ResearchCommandSourceInfo {
+  path?: string;
+  source?: string;
+  scope?: string;
+  origin?: string;
+  baseDir?: string;
+}
+
+export interface ResearchCompactionResult {
+  summary: string;
+  firstKeptEntryId?: string;
+  tokensBefore: number;
+  estimatedTokensAfter?: number;
 }
 
 export interface ResearchConfig {
@@ -160,27 +176,55 @@ export interface ResearchConfigValue {
   description?: string;
 }
 
-export interface ResearchConsoleSnapshot {
-  text: string;
-  seq: number;
-  running: boolean;
-  complete: boolean;
-  exitCode?: number;
-}
-
-export interface ResearchConsoleUpdate {
-  root: string;
-  kind: string;
-  text?: string;
-  exitCode?: number;
-  seq?: number;
+export interface ResearchContextUsage {
+  tokens: number;
+  contextWindow: number;
+  percent: number;
 }
 
 export interface ResearchConversation {
   id: string;
   title: string;
+  name?: string;
+  preview?: string;
+  cwd?: string;
+  timestamp?: string;
   updatedAt: string;
+  parentSession?: string;
+  sessionFile?: string;
   current: boolean;
+}
+
+export interface ResearchForkMessage {
+  entryId: string;
+  text: string;
+}
+
+export interface ResearchForkResult {
+  text?: string;
+  cancelled: boolean;
+  sessionId?: string;
+}
+
+export interface ResearchModel {
+  id: string;
+  name?: string;
+  api?: string;
+  provider: string;
+  baseUrl?: string;
+  reasoning?: boolean;
+  input?: string[];
+  contextWindow?: number;
+  maxTokens?: number;
+  cost?: ResearchModelCost;
+}
+
+export interface ResearchModelCost {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total?: number;
 }
 
 export interface ResearchOption {
@@ -195,6 +239,47 @@ export interface ResearchPlanEntry {
   priority: string;
 }
 
+export interface ResearchQueueState {
+  steering: string[];
+  followUp: string[];
+}
+
+export interface ResearchSessionState {
+  model?: ResearchModel;
+  thinkingLevel: string;
+  isStreaming: boolean;
+  isCompacting: boolean;
+  steeringMode?: string;
+  followUpMode?: string;
+  sessionFile?: string;
+  sessionId: string;
+  sessionName?: string;
+  autoCompactionEnabled: boolean;
+  messageCount: number;
+  pendingMessageCount: number;
+}
+
+export interface ResearchSessionStats {
+  sessionFile?: string;
+  sessionId: string;
+  userMessages: number;
+  assistantMessages: number;
+  toolCalls: number;
+  toolResults: number;
+  totalMessages: number;
+  tokens: ResearchTokenStats;
+  cost: number;
+  contextUsage?: ResearchContextUsage;
+}
+
+export interface ResearchTokenStats {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+}
+
 export interface ResearchTool {
   toolCallId: string;
   title?: string;
@@ -205,6 +290,7 @@ export interface ResearchTool {
   output?: string;
   terminalDelta?: string;
   exitCode?: number;
+  durationMs?: number;
   images?: string[];
   diffs?: ResearchToolDiff[];
 }
@@ -220,14 +306,65 @@ export interface ResearchToolLocation {
   line?: number;
 }
 
+export interface ResearchTree {
+  tree: ResearchTreeNode[];
+  leafId?: string;
+}
+
+export interface ResearchTreeEntry {
+  type: string;
+  id: string;
+  parentId?: string;
+  timestamp?: string;
+  role?: string;
+  text?: string;
+  name?: string;
+  summary?: string;
+  customType?: string;
+  provider?: string;
+  modelId?: string;
+  thinkingLevel?: string;
+}
+
+export interface ResearchTreeNode {
+  entry: ResearchTreeEntry;
+  children: ResearchTreeNode[];
+  label?: string;
+  labelTimestamp?: string;
+}
+
 export interface ResearchUpdate {
   root: string;
   kind: string;
+  eventType?: string;
+  uiMethod?: string;
+  title?: string;
+  message?: string;
   text?: string;
   placeholder?: string;
   prefill?: string;
+  notifyType?: string;
+  statusKey?: string;
+  widgetKey?: string;
+  widgetLines?: string[];
+  widgetPlacement?: string;
+  timeout?: number;
   commands?: ResearchCommand[];
   config?: ResearchConfig[];
+  models?: ResearchModel[];
+  thinkingLevels?: string[];
+  thinkingLevel?: string;
+  state?: ResearchSessionState;
+  queue?: ResearchQueueState;
+  stats?: ResearchSessionStats;
+  compaction?: ResearchCompactionResult;
+  reason?: string;
+  willRetry?: boolean;
+  aborted?: boolean;
+  retryAttempt?: number;
+  retryMaxAttempts?: number;
+  retryDelayMs?: number;
+  retrySuccess?: boolean;
   tool?: ResearchTool;
   plan?: ResearchPlanEntry[];
   used?: number;
@@ -336,13 +473,23 @@ export const WorkspaceHost = {
 } as const;
 
 export const ResearchHost = {
+  abort: bind<[string], void>("ResearchHost.Abort", (root: string) => [root]),
   answer: bind<[string, string, string], void>("ResearchHost.Answer", (root: string, requestID: string, optionID: string) => [root, requestID, optionID]),
+  answerConfirm: bind<[string, string, boolean, boolean], void>("ResearchHost.AnswerConfirm", (root: string, requestID: string, confirmed: boolean, cancelled: boolean) => [root, requestID, confirmed, cancelled]),
   answerText: bind<[string, string, string, boolean], void>("ResearchHost.AnswerText", (root: string, requestID: string, text: string, cancelled: boolean) => [root, requestID, text, cancelled]),
   artifacts: bind<[string], ResearchArtifact[]>("ResearchHost.Artifacts", (root: string) => [root]),
   cancel: bind<[string], void>("ResearchHost.Cancel", (root: string) => [root]),
+  clearQueue: bind<[string], ResearchQueueState>("ResearchHost.ClearQueue", (root: string) => [root]),
+  clone: bind<[string], boolean>("ResearchHost.Clone", (root: string) => [root]),
+  commands: bind<[string], ResearchCommand[]>("ResearchHost.Commands", (root: string) => [root]),
+  compact: bind<[string, string], ResearchCompactionResult>("ResearchHost.Compact", (root: string, customInstructions: string) => [root, customInstructions]),
   connect: bind<[string], void>("ResearchHost.Connect", (root: string) => [root]),
   deleteSession: bind<[string, string], void>("ResearchHost.DeleteSession", (root: string, id: string) => [root, id]),
   disconnect: bind<[string], void>("ResearchHost.Disconnect", (root: string) => [root]),
+  followUp: bind<[string, string, string[]], void>("ResearchHost.FollowUp", (root: string, text: string, sources: string[]) => [root, text, sources]),
+  fork: bind<[string, string], ResearchForkResult>("ResearchHost.Fork", (root: string, entryID: string) => [root, entryID]),
+  forkMessages: bind<[string], ResearchForkMessage[]>("ResearchHost.ForkMessages", (root: string) => [root]),
+  newSession: bind<[string, string], void>("ResearchHost.NewSession", (root: string, parentSession: string) => [root, parentSession]),
   openCitation: bind<[string, string], void>("ResearchHost.OpenCitation", (root: string, address: string) => [root, address]),
   pickSources: bind<[string], string[]>("ResearchHost.PickSources", (root: string) => [root]),
   prompt: bind<[string, string, string, string], string>("ResearchHost.Prompt", (root: string, text: string, documentID: string, buffer: string) => [root, text, documentID, buffer]),
@@ -351,16 +498,16 @@ export const ResearchHost = {
   recoverArtifact: bind<[string, string], string>("ResearchHost.RecoverArtifact", (root: string, relative: string) => [root, relative]),
   revealOutputs: bind<[string], void>("ResearchHost.RevealOutputs", (root: string) => [root]),
   selectSession: bind<[string, string], void>("ResearchHost.SelectSession", (root: string, id: string) => [root, id]),
+  sessionStats: bind<[string], ResearchSessionStats>("ResearchHost.SessionStats", (root: string) => [root]),
   sessions: bind<[string], ResearchConversation[]>("ResearchHost.Sessions", (root: string) => [root]),
   setConfig: bind<[string, string, string], void>("ResearchHost.SetConfig", (root: string, id: string, value: string) => [root, id, value]),
-} as const;
-
-export const ResearchConsoleHost = {
-  connect: bind<[string, string[]], void>("ResearchConsoleHost.Connect", (root: string, args: string[]) => [root, args]),
-  disconnect: bind<[string], void>("ResearchConsoleHost.Disconnect", (root: string) => [root]),
-  input: bind<[string, string], void>("ResearchConsoleHost.Input", (root: string, data: string) => [root, data]),
-  resize: bind<[string, number, number], void>("ResearchConsoleHost.Resize", (root: string, cols: number, rows: number) => [root, cols, rows]),
-  snapshot: bind<[string], ResearchConsoleSnapshot>("ResearchConsoleHost.Snapshot", (root: string) => [root]),
+  setModel: bind<[string, string, string], ResearchModel>("ResearchHost.SetModel", (root: string, provider: string, modelID: string) => [root, provider, modelID]),
+  setSessionName: bind<[string, string], void>("ResearchHost.SetSessionName", (root: string, name: string) => [root, name]),
+  setThinkingLevel: bind<[string, string], void>("ResearchHost.SetThinkingLevel", (root: string, level: string) => [root, level]),
+  state: bind<[string], ResearchSessionState>("ResearchHost.State", (root: string) => [root]),
+  steer: bind<[string, string, string[]], void>("ResearchHost.Steer", (root: string, text: string, sources: string[]) => [root, text, sources]),
+  switchSession: bind<[string, string], void>("ResearchHost.SwitchSession", (root: string, target: string) => [root, target]),
+  tree: bind<[string], ResearchTree>("ResearchHost.Tree", (root: string) => [root]),
 } as const;
 
 export const CheckpointHost = {
@@ -375,7 +522,6 @@ export const CheckpointHost = {
 export const events = {
   viewChanged: event<ViewEvent>("viewChanged"),
   researchUpdate: event<ResearchUpdate>("researchUpdate"),
-  researchConsoleUpdate: event<ResearchConsoleUpdate>("researchConsoleUpdate"),
   docReloaded: event<Snapshot>("docReloaded"),
   docState: event<DocumentInfo>("docState"),
   navChanged: event<NavSnapshot>("navChanged"),

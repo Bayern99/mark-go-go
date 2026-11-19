@@ -19,7 +19,7 @@ The browser preview uses sample documents and an in-memory host. See [developmen
 
 ## Software and assets
 
-- The Feynman plugin uses **MyGo** for native source selection and opening citations, **react-markdown** and the remark/rehype plugins for replies, and **xterm.js** with **creack/pty** for its embedded CLI. Feynman and pi-acp are installed on the user’s machine. [react-markdown](https://github.com/remarkjs/react-markdown) · [xterm.js](https://github.com/xtermjs/xterm.js) · [PTY licence](resources/licenses/MIT-creack-pty.txt) · [Feynman](https://github.com/Companion-Inc/feynman) · [pi-acp](https://github.com/svkozak/pi-acp)
+- The Feynman plugin uses **MyGo** for native source selection and opening citations, and **react-markdown** and the remark/rehype plugins for replies, connecting directly to **Feynman** installed on the user’s machine. [react-markdown](https://github.com/remarkjs/react-markdown) · [Feynman](https://github.com/Companion-Inc/feynman)
 
 - **MyGo** by Egoist and contributors provides the native desktop host. The repository includes v0.10.0 with document group and workspace lifecycle patches under MIT. Its CLI's pinyin data comes from Unicode Unihan 16.0.0. [Upstream](https://github.com/egoist/mygo/tree/v0.10.0) · [MyGo license](third_party/mygo/LICENSE) · [Unicode notice](third_party/mygo/cmd/mygo/LICENSE-Unicode.txt) · [Patch notes](docs/mygo-document-groups.md)
 - **Milkdown Crepe and ProseMirror** power Markdown Preview, and **CodeMirror** powers the Markdown view. **Radix Primitives** provides controls such as tooltips and menus, **OverlayScrollbars** provides scroll areas, **Mermaid** renders diagrams locally, and **A2UI** provides the GenUI component protocol. [Frontend dependencies](web/package.json)

@@ -56,3 +56,112 @@
 }
 .document-diff pre[aria-label='Removed lines'] { border-color: var(--danger); }
 .document-diff pre[aria-label='Proposed lines'] { border-color: var(--accent); }
+
+.checkpoint-create-form {
+  display: grid;
+  gap: 8px;
+}
+
+.checkpoint-label-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0.5px solid var(--line);
+  border-radius: 8px;
+  background: var(--fill);
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+}
+
+.checkpoint-label-input:focus-visible,
+.checkpoint-label-input:focus {
+  background: var(--paper);
+  box-shadow: var(--ring-field);
+}
+
+.checkpoint-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.checkpoint-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0.5px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.checkpoint-item:hover:not(:disabled) {
+  background: var(--fill);
+}
+
+.checkpoint-item.active {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.checkpoint-item:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-field);
+}
+
+.checkpoint-item-head,
+.checkpoint-item-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.checkpoint-item-label {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checkpoint-badge {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--ink-2);
+  font-family: var(--font-display);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-leading);
+  font-weight: 600;
+}
+
+.checkpoint-badge[data-source='feynman'],
+.checkpoint-badge[data-source='mcp'] {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--ink);
+}
+
+.checkpoint-item-meta {
+  color: var(--ink-3);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-leading);
+}
+
+.checkpoint-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.checkpoint-backend {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}

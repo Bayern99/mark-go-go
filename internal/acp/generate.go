@@ -1015,20 +1015,25 @@ func (r *genRun) writeView(ctx context.Context, sources map[string]genui.AgentSo
 	if ctx.Err() != nil {
 		return genui.ErrCancelled
 	}
-	if r.job.Validate == nil {
-		return genui.ValidationUnavailable("no view validator is configured")
+	validate := r.job.Validate
+	if validate == nil {
+		validate = genui.ValidateCandidate
 	}
 	if r.trace != nil {
 		r.trace.artifact("candidate", "", string(content))
 		r.trace.emit("validation.start", nil)
 	}
-	validationErr := r.job.Validate(ctx, content)
+	validationErr := validate(ctx, content)
 	if ctx.Err() != nil {
 		return genui.ErrCancelled
 	}
 	if validationErr != nil {
 		if r.trace != nil {
 			r.trace.emit("validation.result", map[string]any{"ok": false, "error": validationErr.Error()})
+		}
+		var ge *genui.GenError
+		if errors.As(validationErr, &ge) {
+			return r.outputError(ge.Message)
 		}
 		return r.outputError(validationErr.Error())
 	}

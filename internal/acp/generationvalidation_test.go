@@ -157,3 +157,78 @@ func TestGenerateValidationCancellationWritesNothing(t *testing.T) {
 		t.Errorf("kept view exists after a cancelled validation: %v", err)
 	}
 }
+
+func TestGenerateHeadlessPureGoValidatorEndToEnd(t *testing.T) {
+	validFullOut := `{"sources":{"s1":{"heading":"Report","occurrence":1}},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"view","catalogId":"markgogo.dev:genui/v1","components":[{"id":"root","component":"Column","children":["kp"]},{"id":"kp","component":"KeyPoints","title":"Summary","items":["First point."],"sources":["s1"]}]}}]}`
+	invalidNestedOut := `{"sources":{"s1":{"heading":"Report","occurrence":1}},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"view","catalogId":"markgogo.dev:genui/v1","components":[{"id":"root","component":"Column","children":["card"]},{"id":"card","component":"Card","child":"tabs"},{"id":"tabs","component":"Tabs","tabs":[{"title":"A","child":"kp"}]},{"id":"kp","component":"KeyPoints","items":["Point."],"sources":["s1"]}]}}]}`
+	invalidUpdateOut := `{"sources":{"s2":{"heading":"Überblick 概要 🚀","occurrence":2}},"a2ui":[{"version":"1.0","updateComponents":{"surfaceId":"view","components":[{"id":"b","component":"Card","child":"tabs"},{"id":"tabs","component":"Tabs","tabs":[{"title":"A","child":"c"}]},{"id":"c","component":"KeyPoints","items":["New C"],"sources":["s2"]}]}}]}`
+
+	t.Run("accepts valid full view headlessly", func(t *testing.T) {
+		err, job, _ := driveGeneration(t, fakeSpec{Out: validFullOut}, nil, func(job *GenerationJob) {
+			job.Validate = genui.ValidateCandidate
+		})
+		if err != nil {
+			t.Fatalf("RunGeneration(validFullOut) = %v, want nil", err)
+		}
+		written, err := os.ReadFile(job.ViewPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := genui.ValidateGeneratedView(written); err != nil {
+			t.Fatalf("ValidateGeneratedView(written) = %v, want nil", err)
+		}
+	})
+
+	t.Run("rejects invalid full view headlessly and keeps previous view", func(t *testing.T) {
+		viewPath, sentinel := writeSentinelView(t)
+		earlier := []byte("the earlier view")
+		if err := os.WriteFile(genui.PrevViewPath(viewPath), earlier, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		err, _, _ := driveGeneration(t, fakeSpec{Out: invalidNestedOut}, nil, func(job *GenerationJob) {
+			job.ViewPath = viewPath
+			job.Validate = genui.ValidateCandidate
+		})
+		if f := failureFrom(t, err); f.Kind != genui.FailInvalidOutput || !strings.Contains(f.Message, "UNALLOWED_CHILD") {
+			t.Errorf("failure = %+v, want headless validator's UNALLOWED_CHILD verdict", f)
+		}
+		sentinelKept(t, viewPath, sentinel)
+		if kept, err := os.ReadFile(genui.PrevViewPath(viewPath)); err != nil || !bytes.Equal(kept, earlier) {
+			t.Errorf("kept view = %q, %v; want the earlier view untouched", kept, err)
+		}
+	})
+
+	t.Run("accepts valid update view headlessly", func(t *testing.T) {
+		viewPath := writeBase(t, "")
+		err, _, _ := driveGeneration(t, fakeSpec{Out: updateOut}, nil, func(job *GenerationJob) {
+			updateJob(viewPath, "b")(job)
+			job.Validate = genui.ValidateCandidate
+		})
+		if err != nil {
+			t.Fatalf("RunGeneration(updateOut) = %v, want nil", err)
+		}
+		written, err := os.ReadFile(viewPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := genui.ValidateGeneratedView(written); err != nil {
+			t.Fatalf("ValidateGeneratedView(written) = %v, want nil", err)
+		}
+	})
+
+	t.Run("rejects invalid update view headlessly and keeps previous view", func(t *testing.T) {
+		earlier := "the earlier view"
+		viewPath := writeBase(t, earlier)
+		err, _, _ := driveGeneration(t, fakeSpec{Out: invalidUpdateOut}, nil, func(job *GenerationJob) {
+			updateJob(viewPath, "b")(job)
+			job.Validate = genui.ValidateCandidate
+		})
+		if f := failureFrom(t, err); f.Kind != genui.FailInvalidOutput || !strings.Contains(f.Message, "UNALLOWED_CHILD") {
+			t.Errorf("failure = %+v, want headless validator's UNALLOWED_CHILD verdict", f)
+		}
+		sentinelKept(t, viewPath, []byte(baseViewText))
+		if kept, err := os.ReadFile(genui.PrevViewPath(viewPath)); err != nil || string(kept) != earlier {
+			t.Errorf("kept view = %q, %v; want the earlier view untouched", kept, err)
+		}
+	})
+}

@@ -1,6 +1,6 @@
 import '../src/styles.css'
 import { cdp, page, userEvent } from 'vitest/browser'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createBrowserHost,
   createBrowserSettings,
@@ -99,10 +99,30 @@ async function containsText(locator: { element(): Element }, text: string): Prom
 }
 
 let app: MountedApp | undefined
+let consoleKeyWarnings: string[] = []
+let errorSpy: ReturnType<typeof vi.spyOn> | undefined
+let warnSpy: ReturnType<typeof vi.spyOn> | undefined
+
+beforeEach(() => {
+  consoleKeyWarnings = []
+  const recordIfKeyWarning = (...args: unknown[]) => {
+    const text = args.map((arg) => String(arg)).join(' ')
+    if (/Encountered two children with the same key|each child in a list should have a unique "key"/i.test(text)) {
+      consoleKeyWarnings.push(text)
+    }
+  }
+  errorSpy = vi.spyOn(console, 'error').mockImplementation(recordIfKeyWarning)
+  warnSpy = vi.spyOn(console, 'warn').mockImplementation(recordIfKeyWarning)
+})
 
 afterEach(async () => {
+  errorSpy?.mockRestore()
+  warnSpy?.mockRestore()
+  errorSpy = undefined
+  warnSpy = undefined
   await app?.unmount()
   app = undefined
+  expect(consoleKeyWarnings).toEqual([])
 })
 
 async function openGenUI(host: BrowserHost): Promise<MountedApp> {

@@ -181,6 +181,11 @@ export class GenUISession {
   private unsubSources: (() => void) | undefined
   private highlightedId: string | null = null
   private readonly highlightListeners = new Set<() => void>()
+  private focusRequests = 0
+  private pendingFocusComposer = false
+  private readonly focusListeners = new Set<() => void>()
+  private haloSeq = 0
+  private readonly haloListeners = new Set<() => void>()
   private statusDot: ViewStatusDot = null
 
   constructor(
@@ -236,6 +241,41 @@ export class GenUISession {
 
   readonly getHighlightedId = (): string | null => this.highlightedId
 
+  readonly subscribeFocusComposer = (listener: () => void): (() => void) => {
+    this.focusListeners.add(listener)
+    return () => {
+      this.focusListeners.delete(listener)
+    }
+  }
+
+  readonly getFocusRequests = (): number => this.focusRequests
+
+  requestFocusComposer(): void {
+    this.pendingFocusComposer = true
+    this.focusRequests += 1
+    for (const listener of this.focusListeners) listener()
+  }
+
+  consumeFocusComposer(): boolean {
+    if (!this.pendingFocusComposer) return false
+    this.pendingFocusComposer = false
+    return true
+  }
+
+  readonly subscribeHalo = (listener: () => void): (() => void) => {
+    this.haloListeners.add(listener)
+    return () => {
+      this.haloListeners.delete(listener)
+    }
+  }
+
+  readonly getHaloSeq = (): number => this.haloSeq
+
+  triggerHalo(): void {
+    this.haloSeq += 1
+    for (const listener of this.haloListeners) listener()
+  }
+
   highlightComponent(id: string): void {
     this.highlightedId = id
     for (const listener of this.highlightListeners) listener()
@@ -247,6 +287,7 @@ export class GenUISession {
       for (const el of cards) el.classList.remove('mgo-jump')
       const card = Array.from(cards).find((el) => el.getAttribute('data-component-id') === id)
       if (!card) return false
+      void card.offsetWidth
       card.classList.add('mgo-jump')
       card.scrollIntoView({ block: 'center', behavior: 'auto' })
       return true
@@ -302,6 +343,8 @@ export class GenUISession {
     this.unsubGen()
     this.store.dispose()
     this.highlightListeners.clear()
+    this.focusListeners.clear()
+    this.haloListeners.clear()
   }
 }
 
@@ -376,6 +419,8 @@ function GenUIView({
   const state = useSyncExternalStore(session.store.subscribe, session.store.getSnapshot)
   const run = useSyncExternalStore(session.generation.subscribe, session.generation.getSnapshot)
   const highlightedId = useSyncExternalStore(session.subscribeHighlight, session.getHighlightedId)
+  const haloSeq = useSyncExternalStore(session.subscribeHalo, session.getHaloSeq)
+  const [haloKey, setHaloKey] = useState(0)
   const content = useRef<HTMLDivElement>(null)
   const running = run.kind === 'running'
   const replacing =
@@ -383,6 +428,13 @@ function GenUIView({
   const awaitingFirstView = state.kind === 'loading'
   const generatingWithoutView = running && state.kind !== 'view' && !awaitingFirstView
   useScrollMemory(scroller, memory, state.kind === 'view' && !running ? state.text : null, content)
+
+  useEffect(() => {
+    if (haloSeq === 0) return
+    setHaloKey(haloSeq)
+    const timer = window.setTimeout(() => setHaloKey(0), 960)
+    return () => window.clearTimeout(timer)
+  }, [haloSeq])
 
   const sources = state.kind === 'view' ? state.sources : null
   const actions = useMemo<SourceActions | null>(
@@ -409,6 +461,7 @@ function GenUIView({
 
   const openPanel = () => {
     void ctx.commands.execute('rightPane.show', 'genui.panel')
+    session.requestFocusComposer()
   }
 
   return (
@@ -419,6 +472,7 @@ function GenUIView({
       aria-busy={awaitingFirstView || generatingWithoutView || undefined}
       ref={content}
     >
+      {haloKey > 0 ? <div key={haloKey} className="genui-halo" aria-hidden="true" /> : null}
       {awaitingFirstView ? <InitialLoading /> : null}
       {generatingWithoutView ? <LoadingSkeleton /> : null}
 
@@ -479,8 +533,10 @@ function GenUIPanel({
   const [request, setRequest] = useState(memory.draft ?? savedRequest)
   const [editingFocus, setEditingFocus] = useState(false)
   const [focusDraft, setFocusDraft] = useState(request)
+  const [haloActive, setHaloActive] = useState(false)
   const focusTextareaRef = useRef<HTMLTextAreaElement>(null)
   const inlineTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const focusRequests = useSyncExternalStore(session.subscribeFocusComposer, session.getFocusRequests)
 
   const [settings, setSettings] = useState<GenerationSettings>({
     model: 'gemini-3.8-flash',
@@ -544,6 +600,26 @@ function GenUIPanel({
     autoGrowTextarea(el)
   }, [hasView, request])
 
+  useEffect(() => {
+    if (!session.consumeFocusComposer()) return
+    const frame = window.requestAnimationFrame(() => {
+      if (inlineTextareaRef.current && !inlineTextareaRef.current.disabled) {
+        inlineTextareaRef.current.focus()
+        return
+      }
+      if (focusTextareaRef.current && !focusTextareaRef.current.disabled) {
+        focusTextareaRef.current.focus()
+      }
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [session, focusRequests])
+
+  useEffect(() => {
+    if (!haloActive) return
+    const timer = window.setTimeout(() => setHaloActive(false), 920)
+    return () => window.clearTimeout(timer)
+  }, [haloActive])
+
   const models =
     run.kind === 'failed' && run.failure.models?.length
       ? run.failure.models
@@ -581,6 +657,8 @@ function GenUIPanel({
     }
     memory.draft = undefined
     setUndoError('')
+    setHaloActive(true)
+    session.triggerHalo()
     void session.generation.generate(nextRun)
   }
 
@@ -602,8 +680,8 @@ function GenUIPanel({
   }
 
   return (
-    <div className="genui-panel gp" data-testid="genui-panel">
-      <ScrollArea className="genui-panel-scroll r-scroll" contentClassName="genui-panel-scroll-content">
+    <div className="genui-panel gp" data-testid="genui-panel" data-halo={haloActive ? 'true' : undefined}>
+      <ScrollArea className="genui-panel-scroll r-scroll" edgeFade contentClassName="genui-panel-scroll-content">
         {running ? (
           <GenerationProgress run={run} onCancel={() => session.generation.cancel()} />
         ) : run.kind === 'failed' ? (
@@ -797,7 +875,7 @@ function GenUIPanel({
                   }}
                 />
                 <div className="composer-bar">
-                  <span className="hint meta">⌘↩ to save</span>
+                  <span className="hint meta">⌘↩ save · Esc cancel</span>
                   <button type="button" className="pill xs quiet" onClick={cancelFocusEdit}>
                     Cancel
                   </button>
@@ -932,7 +1010,7 @@ function GenerationFailure({
             }}
           />
           <div className="composer-bar">
-            <span className="hint meta">⌘↩ to save</span>
+            <span className="hint meta">Enter save · Esc cancel</span>
             <button type="button" className="pill xs quiet" onClick={cancelLocateAgent}>
               Cancel
             </button>

@@ -1,7 +1,8 @@
 import '../src/styles.css'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { afterEach, describe, expect, it } from 'vitest'
 import { mountApp, type MountedApp } from './helpers/app'
+import { MOD } from './helpers/platform'
 
 const WINDOW = { width: 1280, height: 820 }
 
@@ -53,6 +54,24 @@ describe('layout at the default window size', () => {
     expect(frontmatter.getBoundingClientRect().width).toBeGreaterThanOrEqual(280)
   })
 
+  it('keeps fixed workspace regions free of gradient backgrounds', async () => {
+    await page.viewport(WINDOW.width, WINDOW.height)
+    mounted = await mountApp(DOCUMENT)
+
+    const selectors = ['.app', '.side-pane', '.right-pane', '.doc-tabs-row', '.status-bar', '.sheet']
+    for (const selector of selectors) {
+      const elements = mounted.container.querySelectorAll(selector)
+      expect(elements.length, selector).toBeGreaterThan(0)
+      for (const element of elements) {
+        expect(getComputedStyle(element).backgroundImage, selector).toBe('none')
+        for (const pseudo of ['::before', '::after']) {
+          if (element.matches('.side-pane, .right-pane')) continue
+          expect(getComputedStyle(element, pseudo).backgroundImage, `${selector}${pseudo}`).toBe('none')
+        }
+      }
+    }
+  })
+
   it('auto-collapses the right pane below 1180px, opens it as .r-float on toggle, and closes on center click', async () => {
     await page.viewport(940, 720)
     mounted = await mountApp(DOCUMENT)
@@ -78,4 +97,65 @@ describe('layout at the default window size', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
   })
 
+  it('provides a close button on .r-float and auto-closes it when jumping via Outline', async () => {
+    await page.viewport(940, 720)
+    mounted = await mountApp(DOCUMENT)
+
+    const rightPane = mounted.container.querySelector<HTMLElement>('[data-testid="right-pane"]')
+    if (!rightPane) throw new Error('right pane missing')
+
+    await page.getByTestId('right-pane-toggle').click()
+    expect(rightPane.hidden).toBe(false)
+    expect(rightPane.classList.contains('r-float')).toBe(true)
+
+    await page.getByTestId('right-pane-close').click()
+    expect(rightPane.hidden).toBe(true)
+
+    await page.getByTestId('right-pane-toggle').click()
+    expect(rightPane.hidden).toBe(false)
+
+    const outlineItem = mounted.container.querySelector<HTMLButtonElement>('.outline-link')
+    if (!outlineItem) throw new Error('outline item missing')
+    outlineItem.click()
+    await expect.poll(() => rightPane.hidden).toBe(true)
+  })
+
+  it('moves keyboard focus into the floating panel and back on Escape', async () => {
+    await page.viewport(480, 360)
+    mounted = await mountApp(DOCUMENT)
+    const editor = mounted.container.querySelector<HTMLElement>('.ProseMirror')!
+    const original = editor.textContent
+    editor.focus()
+
+    await userEvent.keyboard(`{${MOD}>}{Alt>}[Digit0]{/Alt}{/${MOD}}`)
+    await expect.element(page.getByTestId('right-pane-close')).toHaveFocus()
+    expect(editor.contains(window.getSelection()?.anchorNode ?? null)).toBe(false)
+    await userEvent.keyboard('Q{Escape}')
+    await expect.element(page.getByTestId('right-pane')).not.toBeVisible()
+    await expect.element(page.getByTestId('right-pane-toggle')).toHaveFocus()
+    expect(editor.textContent).toBe(original)
+  })
+
+  it('reclaims reading space at the native minimum and resets the file drawer on resize', async () => {
+    await page.viewport(480, 360)
+    mounted = await mountApp(DOCUMENT)
+    const files = page.getByRole('button', { name: 'Show files' })
+    const library = page.getByTestId('left-pane')
+    await expect.element(library).not.toBeVisible()
+    const paragraph = mounted.container.querySelector('.ProseMirror > p')!
+    expect(paragraph.getBoundingClientRect().width).toBeGreaterThan(280)
+
+    await files.click()
+    await expect.element(library).toBeVisible()
+    await expect.element(page.getByTestId('library-close')).toHaveFocus()
+    await userEvent.keyboard('{Escape}')
+    await expect.element(files).toHaveFocus()
+    await files.click()
+    await page.viewport(800, 640)
+    await expect.element(library).toBeVisible()
+    await expect.element(page.getByTestId('library-close')).not.toBeInTheDocument()
+    await page.viewport(480, 360)
+    await expect.element(library).not.toBeVisible()
+    await expect.element(files).toBeVisible()
+  })
 })

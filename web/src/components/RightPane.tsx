@@ -1,5 +1,6 @@
-import { useState, useSyncExternalStore } from 'react'
+import { useRef, useState, useSyncExternalStore } from 'react'
 import type { ViewRegistry } from '../core/ViewRegistry'
+import { MovingCapsule } from './MovingCapsule'
 import type { ViewRegistration, ViewStatusSource } from '../core/types'
 import { useViews, ViewHost } from './ViewHost'
 
@@ -41,16 +42,19 @@ export function RightPane({
   onSelect,
   open = true,
   floating = false,
+  onClose,
 }: {
   views: ViewRegistry
   activeId?: string | null
   onSelect?: (id: string) => void
   open?: boolean
   floating?: boolean
+  onClose?: () => void
 }): React.ReactElement | null {
   const rawEntries = useViews(views, 'right')
   const entries = orderRightViews(rawEntries)
   const [internalId, setInternalId] = useState<string | null>(null)
+  const tabsRef = useRef<HTMLDivElement>(null)
 
   if (entries.length === 0) return null
 
@@ -70,7 +74,8 @@ export function RightPane({
       hidden={!open}
     >
       <div className="rp-bar">
-        <div className="seg" role="tablist" aria-label="Panel">
+        <div className="seg" role="tablist" aria-label="Panel" ref={tabsRef}>
+          <MovingCapsule trackRef={tabsRef} watch={[selectedId, open, floating, entries.length]} />
           {entries.map((view) => {
             const isSelected = view.id === active.id
             return (
@@ -88,6 +93,19 @@ export function RightPane({
             )
           })}
         </div>
+        {floating && onClose ? (
+          <button
+            type="button"
+            className="pill icon quiet rp-close"
+            data-testid="right-pane-close"
+            aria-label="Close document panel"
+            title="Close panel (Esc)"
+            autoFocus
+            onClick={onClose}
+          >
+            <i className="ph ph-x" aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
       <div
         className="rp-body right-view"
@@ -100,6 +118,7 @@ export function RightPane({
           view={active}
           className="right-view-body"
           scrollable={active.id !== 'genui.panel'}
+          edgeFade={active.id !== 'genui.panel'}
           contentClassName="right-view-content"
         />
       </div>

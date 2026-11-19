@@ -9,6 +9,7 @@
   padding: 0 8px;
   font-size: var(--text-meta-size);
   line-height: var(--text-meta-leading);
+  font-variant-numeric: tabular-nums;
   color: var(--ink-3);
 }
 
@@ -42,17 +43,27 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: color var(--duration-press) var(--ease-out),
+    transform var(--duration-press) var(--ease-out);
 }
 
-.outline-link:hover {
-  background: var(--fill-hover);
-  color: var(--ink);
+@media (hover: hover) and (pointer: fine) {
+  .outline-link:hover {
+    background: var(--raised);
+    box-shadow: var(--row-shadow);
+    color: var(--ink);
+  }
+}
+
+.outline-link:active {
+  transform: scale(0.99);
 }
 
 .outline-link[aria-current='true'] {
   background: var(--raised);
   box-shadow: var(--row-shadow);
   color: var(--ink);
+  font-weight: 500;
 }
 
 .outline-empty {

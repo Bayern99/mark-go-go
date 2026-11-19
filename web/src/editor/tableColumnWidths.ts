@@ -10,7 +10,9 @@ import {
 import type { EditorView } from '@milkdown/kit/prose/view'
 
 const CELL_NAMES = new Set(['table_cell', 'table_header'])
+const CELL_MIN_WIDTH = 72
 const DEFAULT_CELL_MIN_WIDTH = 112
+const PROSE_MEASURE = 624
 const HANDLE_WIDTH = 6
 
 type ColumnWidths = (number | null)[]
@@ -78,10 +80,11 @@ export function createTableColumnWidthPlugins(
   stored: TableColumnWidths,
 ): Plugin[] {
   const resizing = columnResizing({
-    cellMinWidth: 72,
+    cellMinWidth: CELL_MIN_WIDTH,
     defaultCellMinWidth: DEFAULT_CELL_MIN_WIDTH,
     View: null,
   })
+  resizing.props.decorations = undefined
   const resizeHandlers = resizing.props.handleDOMEvents
   if (resizeHandlers) {
     resizeHandlers.mousemove = () => false
@@ -93,8 +96,14 @@ export function createTableColumnWidthPlugins(
     view(view) {
       let selecting = false
       let resize: ReturnType<typeof startColumnResize>
+      const guide = createResizeGuide()
       const sync = () => syncTables(view)
       const updateHandle = (handle: number) => {
+        if (handle >= 0) {
+          guide.showForCellPos(view, handle)
+        } else {
+          guide.hide()
+        }
         if (columnResizingPluginKey.getState(view.state)?.activeHandle === handle) return
         view.dispatch(view.state.tr.setMeta(columnResizingPluginKey, { setHandle: handle }))
       }
@@ -104,7 +113,7 @@ export function createTableColumnWidthPlugins(
         sync()
         const handle = columnHandleAt(view, event)
         updateHandle(handle)
-        resize = handle >= 0 ? startColumnResize(view, event, handle) : undefined
+        resize = handle >= 0 ? startColumnResize(view, event, handle, guide) : undefined
         selecting = !resize
         if (resize) {
           event.preventDefault()
@@ -113,11 +122,14 @@ export function createTableColumnWidthPlugins(
       }
       const onMouseMove = (event: MouseEvent) => {
         if (columnResizingPluginKey.getState(view.state)?.dragging) {
-          sync()
           return
         }
         if (selecting || !view.editable) return
         updateHandle(columnHandleAt(view, event))
+      }
+      const onMouseLeave = () => {
+        if (columnResizingPluginKey.getState(view.state)?.dragging) return
+        updateHandle(-1)
       }
       const onPointerMove = (event: PointerEvent) => {
         if (columnResizingPluginKey.getState(view.state)?.dragging) {
@@ -131,27 +143,45 @@ export function createTableColumnWidthPlugins(
         onEnd()
         resize?.cancel()
         resize = undefined
+        guide.hide()
       }
 
       sync()
       view.dom.addEventListener('mousedown', onMouseDown, true)
       view.dom.addEventListener('pointermove', onPointerMove, true)
+      view.dom.addEventListener('mouseleave', onMouseLeave)
       window.addEventListener('mousemove', onMouseMove, true)
       window.addEventListener('mouseup', onEnd, true)
       window.addEventListener('blur', onBlur)
       return {
         update(currentView, previousState) {
-          if (currentView.state.doc === previousState.doc) return
-          resize?.cancel()
-          resize = undefined
-          sync()
-          persist(currentView, storageKey, stored)
+          if (currentView.state.doc !== previousState.doc) {
+            resize?.cancel()
+            resize = undefined
+            guide.hide()
+            sync()
+            persist(currentView, storageKey, stored)
+            return
+          }
+          if (resize) {
+            resize.reapply()
+          } else {
+            syncIfMissing(currentView)
+            const activeHandle = columnResizingPluginKey.getState(currentView.state)?.activeHandle ?? -1
+            if (activeHandle >= 0) {
+              guide.showForCellPos(currentView, activeHandle)
+            } else {
+              guide.hide()
+            }
+          }
         },
         destroy() {
           resize?.dispose()
           resize = undefined
+          guide.hide()
           view.dom.removeEventListener('mousedown', onMouseDown, true)
           view.dom.removeEventListener('pointermove', onPointerMove, true)
+          view.dom.removeEventListener('mouseleave', onMouseLeave)
           window.removeEventListener('mousemove', onMouseMove, true)
           window.removeEventListener('mouseup', onEnd, true)
           window.removeEventListener('blur', onBlur)
@@ -165,6 +195,7 @@ export function createTableColumnWidthPlugins(
 
 function columnHandleAt(view: EditorView, event: MouseEvent): number {
   if (!(event.target instanceof Element)) return -1
+  if (event.target.closest('.cell-handle, .add-button')) return -1
   const cell = event.target.closest('th, td')
   const table = cell?.closest('table.children')
   if (
@@ -187,28 +218,297 @@ function columnHandleAt(view: EditorView, event: MouseEvent): number {
   return index > 0 && index % map.width !== 0 ? start + map.map[index - 1]! : -1
 }
 
+function computeResizedWidths(
+  startWidths: readonly number[],
+  col: number,
+  rawDelta: number,
+  minWidth = CELL_MIN_WIDTH,
+): number[] {
+  const next = [...startWidths]
+  const delta = Math.round(rawDelta)
+  const left = startWidths[col]
+  if (left === undefined) return next
+
+  if (col >= startWidths.length - 1) {
+    next[col] = Math.max(minWidth, left + delta)
+    return next
+  }
+
+  const right = startWidths[col + 1]!
+  const applied = Math.min(right - minWidth, Math.max(minWidth - left, delta))
+  next[col] = left + applied
+  next[col + 1] = right - applied
+  return next
+}
+
+function measureRenderedColumnWidths(
+  tableDom: HTMLTableElement,
+  tableNode: PMNode,
+): number[] {
+  const map = TableMap.get(tableNode)
+  const count = map.width
+  const measured = Array<number>(count).fill(0)
+  const rows = Array.from(tableDom.rows)
+
+  for (let r = 0; r < rows.length; r += 1) {
+    const row = rows[r]!
+    let col = 0
+    for (const cell of Array.from(row.cells)) {
+      const span = cell.colSpan || 1
+      if (span === 1 && col < count && measured[col] === 0) {
+        measured[col] = cell.getBoundingClientRect().width
+      }
+      col += span
+    }
+    if (measured.every((w) => w > 0)) break
+  }
+
+  if (measured.some((w) => w <= 0)) {
+    const firstRow = rows[0]
+    if (firstRow) {
+      let col = 0
+      for (const cell of Array.from(firstRow.cells)) {
+        const span = cell.colSpan || 1
+        const share = cell.getBoundingClientRect().width / span
+        for (let i = 0; i < span && col + i < count; i += 1) {
+          if (measured[col + i]! <= 0) measured[col + i] = share
+        }
+        col += span
+      }
+    }
+  }
+
+  const rawTotal = measured.reduce((sum, w) => sum + (w || DEFAULT_CELL_MIN_WIDTH), 0)
+  const rounded = measured.map((w) => Math.max(CELL_MIN_WIDTH, Math.round(w || DEFAULT_CELL_MIN_WIDTH)))
+  const targetTotal = Math.round(rawTotal)
+  let residual = targetTotal - rounded.reduce((sum, w) => sum + w, 0)
+  if (residual !== 0 && rounded.length > 0) {
+    let targetIndex = 0
+    for (let i = 1; i < rounded.length; i += 1) {
+      if (rounded[i]! > rounded[targetIndex]!) targetIndex = i
+    }
+    const adjusted = rounded[targetIndex]! + residual
+    if (adjusted >= CELL_MIN_WIDTH) rounded[targetIndex] = adjusted
+  }
+  return rounded
+}
+
+function tableBlockOf(tableDom: HTMLTableElement, viewDom: HTMLElement): HTMLElement | null {
+  const block = tableDom.closest<HTMLElement>('.milkdown-table-block')
+  return block && block.parentElement === viewDom ? block : null
+}
+
+function setTableBlockFrame(block: HTMLElement | null, mode: 'prose' | 'full' | number): void {
+  if (!block) return
+  block.style.marginLeft = ''
+  block.style.marginRight = ''
+  if (mode === 'full') {
+    block.style.maxWidth = 'none'
+  } else if (typeof mode === 'number' && mode > PROSE_MEASURE) {
+    block.style.maxWidth = `${Math.round(mode)}px`
+  } else {
+    block.style.maxWidth = ''
+  }
+}
+
+function blockLeftOffset(block: HTMLElement, viewDom: HTMLElement): number {
+  const proseRect = viewDom.getBoundingClientRect()
+  const proseStyle = getComputedStyle(viewDom)
+  const contentLeft =
+    proseRect.left +
+    (Number.parseFloat(proseStyle.borderLeftWidth) || 0) +
+    (Number.parseFloat(proseStyle.paddingLeft) || 0)
+  return Math.max(0, block.getBoundingClientRect().left - contentLeft)
+}
+
+function hideBlockHandle(view: EditorView): void {
+  const root = view.dom.closest('.milkdown') ?? view.dom.parentElement
+  root?.querySelectorAll<HTMLElement>('.milkdown-block-handle').forEach((handle) => {
+    handle.dataset.show = 'false'
+  })
+}
+
+function resetTableHandles(block: HTMLElement | null): void {
+  if (!block) return
+  block.querySelectorAll<HTMLElement>('.handle').forEach((handle) => {
+    handle.dataset.show = 'false'
+    handle.style.left = ''
+    handle.style.top = ''
+  })
+}
+
+interface ResizeGuide {
+  showForCellPos: (view: EditorView, cellPos: number) => void
+  showForColumn: (table: HTMLTableElement, widths: readonly number[], col: number) => void
+  hide: () => void
+}
+
+function createResizeGuide(): ResizeGuide {
+  const el = document.createElement('div')
+  el.className = 'column-resize-handle'
+  const place = (wrapper: HTMLElement, table: HTMLTableElement, leftPx: number) => {
+    const wrapperRect = wrapper.getBoundingClientRect()
+    const tableRect = table.getBoundingClientRect()
+    if (el.parentElement !== wrapper) wrapper.appendChild(el)
+    el.style.left = `${leftPx - 1}px`
+    el.style.top = `${tableRect.top - wrapperRect.top + wrapper.scrollTop}px`
+    el.style.height = `${tableRect.height}px`
+  }
+  return {
+    showForCellPos(view, cellPos) {
+      if (cellPos < 0 || cellPos >= view.state.doc.content.size) {
+        el.remove()
+        return
+      }
+      const dom = view.nodeDOM(cellPos)
+      const cell = dom instanceof HTMLElement ? dom : null
+      const table = cell?.closest<HTMLTableElement>('table.children')
+      const wrapper = table?.closest<HTMLElement>('.table-wrapper')
+      if (!cell || !table || !wrapper) {
+        el.remove()
+        return
+      }
+      const wrapperRect = wrapper.getBoundingClientRect()
+      const cellRect = cell.getBoundingClientRect()
+      place(wrapper, table, cellRect.right - wrapperRect.left + wrapper.scrollLeft)
+    },
+    showForColumn(table, widths, col) {
+      const wrapper = table.closest<HTMLElement>('.table-wrapper')
+      if (!wrapper) {
+        el.remove()
+        return
+      }
+      let offsetX = 0
+      for (let i = 0; i <= col && i < widths.length; i += 1) {
+        offsetX += Math.max(CELL_MIN_WIDTH, Math.round(widths[i] ?? DEFAULT_CELL_MIN_WIDTH))
+      }
+      const wrapperRect = wrapper.getBoundingClientRect()
+      const tableRect = table.getBoundingClientRect()
+      place(wrapper, table, tableRect.left - wrapperRect.left + wrapper.scrollLeft + offsetX)
+    },
+    hide() {
+      el.remove()
+    },
+  }
+}
+
+function applyFixedColumnWidths(
+  tableDom: HTMLTableElement,
+  colgroup: HTMLTableColElement,
+  widths: readonly number[],
+  block: HTMLElement | null = null,
+): void {
+  const count = widths.length
+  if (colgroup.childElementCount !== count) {
+    colgroup.replaceChildren(
+      ...Array.from({ length: count }, () => document.createElement('col')),
+    )
+  }
+  let total = 0
+  for (let i = 0; i < count; i += 1) {
+    const width = Math.max(CELL_MIN_WIDTH, Math.round(widths[i] ?? DEFAULT_CELL_MIN_WIDTH))
+    total += width
+    const colEl = colgroup.children[i] as HTMLElement
+    colEl.style.width = `${width}px`
+    colEl.style.minWidth = ''
+  }
+  tableDom.classList.add('mgo-table-sized')
+  tableDom.style.tableLayout = 'fixed'
+  tableDom.style.minWidth = '0px'
+  tableDom.style.width = `${total}px`
+  if (block) setTableBlockFrame(block, total > PROSE_MEASURE ? total : 'prose')
+}
+
+function tableElementAt(view: EditorView, tableStart: number): HTMLTableElement | null {
+  let dom: HTMLElement | null = view.domAtPos(tableStart).node as HTMLElement
+  while (dom && dom.nodeName !== 'TABLE') dom = dom.parentElement
+  return dom instanceof HTMLTableElement ? dom : null
+}
+
+function ensureColgroup(tableDom: HTMLTableElement): HTMLTableColElement {
+  let colgroup = tableDom.querySelector<HTMLTableColElement>(':scope > colgroup')
+  if (!colgroup) {
+    colgroup = document.createElement('colgroup')
+    tableDom.insertBefore(colgroup, tableDom.firstChild)
+  }
+  return colgroup
+}
+
 function startColumnResize(
   view: EditorView,
   event: MouseEvent,
   cellPos: number,
-): { cancel: () => void; dispose: () => void } | undefined {
+  guide: ResizeGuide,
+): { cancel: () => void; dispose: () => void; reapply: () => void } | undefined {
   const cell = view.state.doc.nodeAt(cellPos)
   if (!cell) return undefined
   const $cell = view.state.doc.resolve(cellPos)
-  if ($cell.node(-1).type.name !== 'table' || !$cell.nodeAfter) return undefined
+  const tableNode = $cell.node(-1)
+  if (tableNode.type.name !== 'table' || !$cell.nodeAfter) return undefined
+
+  const tableStart = $cell.start(-1)
+  const initialTableDom = tableElementAt(view, tableStart)
+  if (!initialTableDom) return undefined
+  const map = TableMap.get(tableNode)
+  const col = map.colCount($cell.pos - tableStart) + ($cell.nodeAfter.attrs.colspan as number) - 1
   const startX = event.clientX
-  const startWidth = currentColumnWidth(view, cellPos)
+  const startWidths = measureRenderedColumnWidths(initialTableDom, tableNode)
+  const startWidth = startWidths[col] ?? DEFAULT_CELL_MIN_WIDTH
+  let latestWidths = startWidths
+  const initialBlock = tableBlockOf(initialTableDom, view.dom)
+  const pinnedPrevMaxWidth = initialBlock?.style.maxWidth ?? ''
+  const pinnedLeftOffset = initialBlock ? blockLeftOffset(initialBlock, view.dom) : 0
+  hideBlockHandle(view)
+  resetTableHandles(initialBlock)
+
+  const applyLive = (widths: readonly number[]) => {
+    latestWidths = [...widths]
+    const liveTable = tableElementAt(view, tableStart)
+    if (!liveTable) return
+    const liveBlock = tableBlockOf(liveTable, view.dom)
+    if (liveBlock) {
+      liveBlock.style.marginLeft = `${pinnedLeftOffset}px`
+      liveBlock.style.marginRight = '0px'
+      liveBlock.style.maxWidth = 'none'
+    }
+    const liveColgroup = ensureColgroup(liveTable)
+    applyFixedColumnWidths(liveTable, liveColgroup, widths)
+    guide.showForColumn(liveTable, widths, col)
+  }
+
+  view.dom.classList.add('mgo-column-resizing')
   view.dispatch(view.state.tr.setMeta(columnResizingPluginKey, {
     setDragging: { startX, startWidth },
   }))
+  applyLive(startWidths)
 
   let settled = false
-  const widthAt = (pointer: MouseEvent) =>
-    Math.max(72, startWidth + pointer.clientX - startX)
+  let moved = false
+  const widthsAt = (pointer: MouseEvent) =>
+    computeResizedWidths(startWidths, col, pointer.clientX - startX, CELL_MIN_WIDTH)
+
+  const onKeyDown = (keyEvent: KeyboardEvent) => {
+    if (keyEvent.key !== 'Escape') return
+    keyEvent.preventDefault()
+    keyEvent.stopPropagation()
+    cancel()
+  }
   const dispose = () => {
     settled = true
+    const liveTable = tableElementAt(view, tableStart)
+    const liveBlock = liveTable ? tableBlockOf(liveTable, view.dom) : initialBlock
+    if (liveBlock) {
+      liveBlock.style.marginLeft = ''
+      liveBlock.style.marginRight = ''
+      liveBlock.style.maxWidth = pinnedPrevMaxWidth
+      resetTableHandles(liveBlock)
+    }
+    guide.hide()
+    hideBlockHandle(view)
+    view.dom.classList.remove('mgo-column-resizing')
     window.removeEventListener('mousemove', move)
     window.removeEventListener('mouseup', finish)
+    window.removeEventListener('keydown', onKeyDown, true)
   }
   const cancel = () => {
     if (settled) return
@@ -221,93 +521,105 @@ function startColumnResize(
     }
     syncTables(view)
   }
+  const reapply = () => {
+    if (settled) return
+    applyLive(latestWidths)
+  }
   const move = (pointer: MouseEvent) => {
-    if (!settled && columnResizingPluginKey.getState(view.state)?.dragging) {
-      displayColumnWidth(view, cellPos, widthAt(pointer))
-    }
+    if (settled || !columnResizingPluginKey.getState(view.state)?.dragging) return
+    if (pointer.clientX !== startX) moved = true
+    applyLive(widthsAt(pointer))
   }
   const finish = (pointer: MouseEvent) => {
     if (settled) return
     dispose()
     if (!columnResizingPluginKey.getState(view.state)?.dragging) return
+    const finalWidths = widthsAt(pointer)
     view.dispatch(view.state.tr.setMeta(columnResizingPluginKey, { setDragging: null }))
-    setColumnWidth(view, cellPos, widthAt(pointer))
+    if (!moved && pointer.clientX === startX) {
+      syncTables(view)
+      return
+    }
+    if (!setAllColumnWidths(view, tableStart, finalWidths)) {
+      syncTables(view)
+    }
   }
   window.addEventListener('mousemove', move)
   window.addEventListener('mouseup', finish)
-  return { cancel, dispose }
+  window.addEventListener('keydown', onKeyDown, true)
+  return { cancel, dispose, reapply }
 }
 
-// Column width helpers adapted from prosemirror-tables 1.8.5. See public/licenses/LICENSE-ProseMirror-Tables.txt.
-function currentColumnWidth(view: EditorView, cellPos: number): number {
-  const cell = view.state.doc.nodeAt(cellPos)
-  if (!cell) return DEFAULT_CELL_MIN_WIDTH
-  const colspan = cell.attrs.colspan as number
-  const colwidth = cell.attrs.colwidth as number[] | null
-  const existing = colwidth?.[colwidth.length - 1]
-  if (existing) return existing
-  const at = view.domAtPos(cellPos)
-  const dom = at.node.childNodes[at.offset]
-  if (!(dom instanceof HTMLElement)) return DEFAULT_CELL_MIN_WIDTH
-  let width = dom.offsetWidth
-  let parts = colspan
-  if (colwidth) {
-    for (let index = 0; index < colspan; index += 1) {
-      if (!colwidth[index]) continue
-      width -= colwidth[index]
-      parts -= 1
+function setAllColumnWidths(view: EditorView, tableStart: number, widths: readonly number[]): boolean {
+  const $table = view.state.doc.resolve(tableStart)
+  const table = $table.parent
+  if (table.type.name !== 'table') return false
+  const map = TableMap.get(table)
+  if (map.width !== widths.length) return false
+  const tr = view.state.tr
+  const seen = new Set<number>()
+  for (let row = 0; row < map.height; row += 1) {
+    for (let col = 0; col < map.width; col += 1) {
+      const pos = map.map[row * map.width + col]
+      if (pos === undefined || seen.has(pos)) continue
+      seen.add(pos)
+      const cell = table.nodeAt(pos)
+      if (!cell) continue
+      const colspan = cell.attrs.colspan as number
+      const next = widths.slice(col, col + colspan)
+      const current = cell.attrs.colwidth as (number | null)[] | null
+      if (current && current.length === next.length && current.every((v, i) => v === next[i])) {
+        continue
+      }
+      tr.setNodeMarkup(tableStart + pos, undefined, { ...cell.attrs, colwidth: next })
     }
   }
-  return width / parts
-}
-
-function displayColumnWidth(
-  view: EditorView,
-  cellPos: number,
-  width: number,
-): void {
-  const $cell = view.state.doc.resolve(cellPos)
-  const table = $cell.node(-1)
-  const start = $cell.start(-1)
-  const col = TableMap.get(table).colCount($cell.pos - start) + $cell.nodeAfter!.attrs.colspan - 1
-  let dom: HTMLElement | null = view.domAtPos($cell.start(-1)).node as HTMLElement
-  while (dom && dom.nodeName !== 'TABLE') dom = dom.parentElement
-  if (!(dom instanceof HTMLTableElement)) return
-  let colgroup = dom.querySelector<HTMLTableColElement>(':scope > colgroup')
-  if (!colgroup) {
-    colgroup = document.createElement('colgroup')
-    dom.insertBefore(colgroup, dom.firstChild)
-  }
-  updateColumnsOnResize(table, colgroup, dom, DEFAULT_CELL_MIN_WIDTH, col, width)
-}
-
-function setColumnWidth(view: EditorView, cellPos: number, width: number): void {
-  const $cell = view.state.doc.resolve(cellPos)
-  const table = $cell.node(-1)
-  const map = TableMap.get(table)
-  const start = $cell.start(-1)
-  const col = map.colCount($cell.pos - start) + $cell.nodeAfter!.attrs.colspan - 1
-  const tr = view.state.tr
-  for (let row = 0; row < map.height; row += 1) {
-    const mapIndex = row * map.width + col
-    if (row && map.map[mapIndex] === map.map[mapIndex - map.width]) continue
-    const pos = map.map[mapIndex]
-    if (pos === undefined) continue
-    const cell = table.nodeAt(pos)
-    if (!cell) continue
-    const index = cell.attrs.colspan === 1 ? 0 : col - map.colCount(pos)
-    const current = cell.attrs.colwidth as (number | null)[] | null
-    if (current && current[index] === width) continue
-    const colwidth = current ? [...current] : Array<number>(cell.attrs.colspan).fill(0)
-    colwidth[index] = width
-    tr.setNodeMarkup(start + pos, undefined, { ...cell.attrs, colwidth })
-  }
-  if (tr.docChanged) view.dispatch(tr)
+  if (!tr.docChanged) return false
+  view.dispatch(tr)
+  return true
 }
 
 export function tableSourceEquals(a: PMNode, b: PMNode): boolean {
   if (a.type.name !== 'table' || b.type.name !== 'table') return a.eq(b)
   return withoutColumnWidths(a).eq(withoutColumnWidths(b))
+}
+
+function syncIfMissing(view: EditorView): void {
+  view.state.doc.forEach((node, offset) => {
+    if (node.type.name !== 'table') return
+    const block = view.nodeDOM(offset)
+    const table =
+      block instanceof Element
+        ? block.querySelector<HTMLTableElement>('table.children')
+        : null
+    if (!table) return
+    const blockEl = tableBlockOf(table, view.dom)
+    const existingColgroup = table.querySelector<HTMLTableColElement>(':scope > colgroup')
+    const saved = readWidths(node)
+    const hasCustom = saved.some((width) => width !== null)
+    const expectedCount = columnCount(node)
+    if (
+      existingColgroup &&
+      existingColgroup.childElementCount === expectedCount &&
+      (!hasCustom || table.classList.contains('mgo-table-sized'))
+    ) {
+      return
+    }
+    const colgroup = existingColgroup ?? ensureColgroup(table)
+    if (hasCustom) {
+      if (saved.every((width): width is number => width !== null)) {
+        applyFixedColumnWidths(table, colgroup, saved, blockEl)
+      } else {
+        table.classList.remove('mgo-table-sized')
+        table.style.tableLayout = ''
+        const approxTotal = saved.reduce<number>((sum, w) => sum + (w ?? DEFAULT_CELL_MIN_WIDTH), 0)
+        setTableBlockFrame(blockEl, approxTotal > PROSE_MEASURE ? approxTotal : 'prose')
+        updateColumnsOnResize(node, colgroup, table, DEFAULT_CELL_MIN_WIDTH)
+      }
+      return
+    }
+    layoutDefaultTable(table, node, colgroup, blockEl)
+  })
 }
 
 function syncTables(view: EditorView): void {
@@ -319,16 +631,22 @@ function syncTables(view: EditorView): void {
         ? block.querySelector<HTMLTableElement>('table.children')
         : null
     if (!table) return
-    let colgroup = table.querySelector<HTMLTableColElement>(':scope > colgroup')
-    if (!colgroup) {
-      colgroup = document.createElement('colgroup')
-      table.insertBefore(colgroup, table.firstChild)
-    }
-    if (readWidths(node).some((width) => width !== null)) {
-      updateColumnsOnResize(node, colgroup, table, DEFAULT_CELL_MIN_WIDTH)
+    const blockEl = tableBlockOf(table, view.dom)
+    const colgroup = ensureColgroup(table)
+    const saved = readWidths(node)
+    if (saved.some((width) => width !== null)) {
+      if (saved.every((width): width is number => width !== null)) {
+        applyFixedColumnWidths(table, colgroup, saved, blockEl)
+      } else {
+        table.classList.remove('mgo-table-sized')
+        table.style.tableLayout = ''
+        const approxTotal = saved.reduce<number>((sum, w) => sum + (w ?? DEFAULT_CELL_MIN_WIDTH), 0)
+        setTableBlockFrame(blockEl, approxTotal > PROSE_MEASURE ? approxTotal : 'prose')
+        updateColumnsOnResize(node, colgroup, table, DEFAULT_CELL_MIN_WIDTH)
+      }
       return
     }
-    layoutDefaultTable(table, node, colgroup)
+    layoutDefaultTable(table, node, colgroup, blockEl)
   })
 }
 
@@ -336,7 +654,10 @@ function layoutDefaultTable(
   table: HTMLTableElement,
   node: PMNode,
   colgroup: HTMLTableColElement,
+  block: HTMLElement | null = null,
 ): void {
+  table.classList.remove('mgo-table-sized')
+  table.style.tableLayout = ''
   const count = columnCount(node)
   if (colgroup.childElementCount !== count) {
     colgroup.replaceChildren(
@@ -345,10 +666,14 @@ function layoutDefaultTable(
   }
   const preferred = preferredWidths(table, count)
   const total = preferred.reduce((sum, width) => sum + width, 0)
+  const minTotal = count * DEFAULT_CELL_MIN_WIDTH
+  setTableBlockFrame(block, Math.max(total, minTotal) > PROSE_MEASURE ? 'full' : 'prose')
   table.style.width = '100%'
-  table.style.minWidth = `${count * DEFAULT_CELL_MIN_WIDTH}px`
+  table.style.minWidth = `${minTotal}px`
   preferred.forEach((width, index) => {
-    ;(colgroup.children[index] as HTMLElement).style.width = `${(width / total) * 100}%`
+    const colEl = colgroup.children[index] as HTMLElement
+    colEl.style.width = `${(width / total) * 100}%`
+    colEl.style.minWidth = ''
   })
 }
 

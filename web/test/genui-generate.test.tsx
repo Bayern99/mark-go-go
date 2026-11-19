@@ -1,5 +1,5 @@
 import '../src/styles.css'
-import { page, userEvent } from 'vitest/browser'
+import { cdp, page, userEvent } from 'vitest/browser'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createBrowserHost,
@@ -126,6 +126,32 @@ const undo = () => panel().getByRole('button', { name: 'Undo' })
 const requestBox = () => panel().getByRole('textbox', { name: 'Generation request' })
 
 describe('GenUI generation', () => {
+  it('shows the generation rim on the visible progress panel in Preview and respects reduced motion', async () => {
+    const agent = scripted()
+    app = await mountApp(DOCUMENT, createBrowserHost(DOCUMENT, 'report.md', { generator: agent.generator }))
+    await page.getByTestId('right-tab-genui.panel').click()
+    const progress = page.getByTestId('genui-progress')
+    await generate().click()
+    await expect.element(progress).toBeVisible()
+    expect(getComputedStyle(progress.element(), '::after').animationName).toBe('genui-rim-sweep')
+
+    agent.finish(viewFile('Generated in Preview'))
+    await regenerateAll().click()
+    await expect.element(progress).toBeVisible()
+    expect(getComputedStyle(progress.element(), '::after').animationName).toBe('genui-rim-sweep')
+
+    const session = cdp()
+    try {
+      await session.send('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
+      })
+      expect(getComputedStyle(progress.element(), '::after').display).toBe('none')
+      await expect.element(progress.getByRole('status')).toBeVisible()
+    } finally {
+      await session.send('Emulation.setEmulatedMedia', { features: [] })
+    }
+  })
+
   it('sends the editor text, its sections, the format and the request, then shows the new view', async () => {
     const agent = scripted()
     const host = createBrowserHost(DOCUMENT, 'report.md', { generator: agent.generator })

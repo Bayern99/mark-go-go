@@ -1,8 +1,9 @@
 import { defaultKeymap, history, historyKeymap, redo, redoDepth, undo, undoDepth } from '@codemirror/commands'
 import { markdown } from '@codemirror/lang-markdown'
-import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { Compartment, EditorState } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
+import { tags } from '@lezer/highlight'
 
 export interface SourceEditorOptions {
   parent: HTMLElement
@@ -26,6 +27,21 @@ export interface SourceEditor {
   destroy(): void
 }
 
+const portraitHighlightStyle = HighlightStyle.define([
+  { tag: [tags.heading, tags.heading1, tags.heading2, tags.heading3, tags.heading4, tags.heading5, tags.heading6], color: 'var(--ink)', fontWeight: '600', textDecoration: 'none' },
+  { tag: [tags.processingInstruction, tags.punctuation, tags.meta, tags.contentSeparator], color: 'var(--ink-4)' },
+  { tag: tags.quote, color: 'var(--ink-2)' },
+  { tag: tags.strong, color: 'var(--ink)', fontWeight: '600' },
+  { tag: tags.emphasis, color: 'var(--ink-2)', fontStyle: 'italic' },
+  { tag: tags.strikethrough, color: 'var(--ink-3)', textDecoration: 'line-through' },
+  { tag: [tags.link, tags.url], color: 'var(--accent)', textDecoration: 'none' },
+  { tag: [tags.monospace, tags.labelName, tags.keyword], color: 'var(--accent)' },
+  { tag: tags.string, color: 'var(--content-note)' },
+  { tag: [tags.number, tags.bool, tags.atom], color: 'var(--content-warning)' },
+  { tag: tags.comment, color: 'var(--ink-3)', fontStyle: 'italic' },
+  { tag: tags.invalid, color: 'var(--danger)' },
+])
+
 const sourceTheme = EditorView.theme({
   '&': {
     minHeight: '100%',
@@ -41,7 +57,14 @@ const sourceTheme = EditorView.theme({
     padding: '44px 40px 120px',
     maxWidth: '720px',
     margin: '0 auto',
-    caretColor: 'var(--ink)',
+    caretColor: 'var(--accent)',
+  },
+  '.cm-cursor, .cm-dropCursor': {
+    borderLeftColor: 'var(--accent)',
+    borderLeftWidth: '1.5px',
+  },
+  '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+    backgroundColor: 'var(--accent-soft)',
   },
   '&.cm-focused': {
     outline: 'none',
@@ -65,7 +88,7 @@ export function createSourceEditor(options: SourceEditorOptions): SourceEditor {
       extensions: [
         EditorState.lineSeparator.of('\n'),
         markdown(),
-        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        syntaxHighlighting(portraitHighlightStyle, { fallback: true }),
         history(),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         EditorView.lineWrapping,

@@ -1,3 +1,9 @@
+@property --mgo-halo-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: -60deg;
+}
+
 .genui-view {
   --genui-text: var(--ink);
   --genui-muted: var(--ink-3);
@@ -25,6 +31,7 @@
   --a2ui-card-box-shadow: none;
   --a2ui-card-margin: 0;
 
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -34,6 +41,92 @@
   line-height: var(--text-reading-leading);
   letter-spacing: var(--text-reading-tracking);
   color: var(--genui-text);
+  overflow-x: clip;
+}
+
+.genui-halo {
+  position: absolute;
+  inset: -24px;
+  z-index: 2;
+  pointer-events: none;
+  border-radius: 12px;
+  background: radial-gradient(
+    circle at 86% 24%,
+    transparent 0%,
+    transparent 24%,
+    color-mix(in srgb, var(--accent) 11%, transparent) 38%,
+    color-mix(in srgb, var(--accent) 6%, rgba(168, 214, 202, 0.14)) 50%,
+    transparent 68%
+  );
+  transform-origin: 86% 24%;
+  animation: genui-halo-sweep 950ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes genui-halo-sweep {
+  0% {
+    opacity: 0;
+    transform: scale(0.32);
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.15);
+  }
+}
+
+.genui-panel[data-halo='true'] .genui-progress::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 8px;
+  padding: 1.5px;
+  background: conic-gradient(
+    from var(--mgo-halo-angle),
+    transparent 0deg 250deg,
+    color-mix(in srgb, var(--accent) 70%, #ffffff) 312deg,
+    rgba(255, 255, 255, 0.96) 338deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  animation: genui-rim-sweep 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes genui-rim-sweep {
+  0% {
+    --mgo-halo-angle: -60deg;
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.95;
+  }
+  75% {
+    opacity: 0.72;
+  }
+  100% {
+    --mgo-halo-angle: 300deg;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .genui-halo {
+    animation: none;
+    opacity: 0;
+  }
+
+  .genui-panel[data-halo='true'] .genui-progress::after {
+    display: none;
+  }
 }
 
 .genui-meta,
@@ -90,7 +183,9 @@
   flex-direction: column;
   gap: 16px;
   padding-top: 4px;
+  padding-right: 6px;
   padding-bottom: 12px;
+  padding-left: 6px;
 }
 
 .gp-block {
@@ -158,7 +253,8 @@
 }
 
 .gp-item:hover {
-  background: var(--fill-hover);
+  background: var(--raised);
+  box-shadow: var(--row-shadow);
 }
 
 .gp-item .rdot {
@@ -243,7 +339,8 @@
 }
 
 .gp-req-h button:hover:not(:disabled) {
-  background: var(--fill-hover);
+  background: var(--raised);
+  box-shadow: var(--row-shadow);
   color: var(--ink);
 }
 
@@ -263,7 +360,8 @@
 }
 
 .gp-req-v:hover:not(:disabled) {
-  background: var(--fill-hover);
+  background: var(--raised);
+  box-shadow: var(--row-shadow);
   color: var(--ink);
 }
 
@@ -285,9 +383,9 @@
   margin: 0;
   background: none;
   font: inherit;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 20px;
+  font-family: var(--font-sans);
+  font-size: var(--text-control-size);
+  line-height: var(--text-control-leading);
   color: var(--ink);
 }
 
@@ -299,6 +397,11 @@
   outline: none;
 }
 
+.genui-panel .composer textarea {
+  max-height: min(320px, 45vh);
+  overflow-y: auto;
+}
+
 .rp-foot {
   flex: none;
   margin-top: auto;
@@ -307,7 +410,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: var(--chrome);
+  background: transparent;
   font-size: 12px;
   line-height: 16px;
   color: var(--ink-3);
@@ -338,7 +441,8 @@
 }
 
 .gp-when button:hover:not(:disabled) {
-  background: var(--fill-hover);
+  background: var(--raised);
+  box-shadow: var(--row-shadow);
   color: var(--ink);
 }
 
@@ -352,6 +456,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  min-width: 0;
   min-height: 24px;
   font-size: 12px;
   line-height: 16px;
@@ -369,11 +474,15 @@
   position: relative;
   display: inline-flex;
   align-items: center;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .sel-btn {
   display: inline-flex;
   align-items: center;
+  min-width: 0;
+  max-width: 100%;
   gap: 7px;
   height: 26px;
   padding: 0 8px 0 9px;
@@ -388,17 +497,20 @@
   white-space: nowrap;
   cursor: pointer;
   transition:
-    transform 120ms var(--ease-out),
-    background 120ms var(--ease-out);
+    transform var(--duration-press) var(--ease-out),
+    box-shadow 140ms var(--ease-out);
 }
 
-.sel-btn:hover:not(:disabled) {
-  filter: brightness(0.985);
+@media (hover: hover) and (pointer: fine) {
+  .sel-btn:hover:not(:disabled) {
+    box-shadow: var(--raised-hover-shadow);
+  }
 }
 
 .sel-btn:active:not(:disabled) {
   background: var(--raised-press);
-  transform: scale(0.98);
+  box-shadow: var(--raised-press-shadow);
+  transform: translateY(0.5px) scale(0.98);
 }
 
 .sel-btn:disabled {
@@ -406,27 +518,30 @@
   cursor: default;
 }
 
+.sel-btn > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sel-btn .sel-caret {
+  flex: none;
   font-size: 12px;
   color: var(--ink-3);
 }
 
 .mmenu {
+  position: relative;
   min-width: 240px;
-  padding: 7px;
-  border-radius: 10px;
-  background: var(--paper);
-  box-shadow: var(--pop-shadow);
+  padding: 5px;
+  border-radius: 12px;
   font-size: 13px;
   line-height: 18px;
 }
 
-.mgg.dark .mmenu {
-  background: var(--raised);
-}
-
 .mmenu-head {
-  padding: 3px 8px 7px;
+  padding: 4px 8px 6px;
   color: var(--ink-3);
   font-size: var(--text-meta-size);
   line-height: var(--text-meta-leading);
@@ -444,7 +559,14 @@
 }
 
 .mmenu .mi.on .mi-icon {
-  color: var(--ink);
+  color: var(--accent);
+}
+
+.mmenu .mi-check {
+  margin-left: auto;
+  flex: none;
+  font-size: 13px;
+  color: var(--accent);
 }
 
 .mmenu.pop {
@@ -452,16 +574,34 @@
   max-height: var(--radix-dropdown-menu-content-available-height, min(320px, 60vh));
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.mmenu.pop[data-more-below='true'] {
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 18px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 18px), transparent 100%);
+}
+
+.mmenu.pop[data-more-above='true'] {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 100%);
+}
+
+.mmenu.pop[data-more-above='true'][data-more-below='true'] {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 calc(100% - 18px), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 calc(100% - 18px), transparent 100%);
 }
 
 .mmenu .mi {
   display: flex;
   width: 100%;
+  min-height: 32px;
   align-items: center;
   gap: 8px;
   padding: 5px 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   background: transparent;
   text-align: left;
   color: var(--ink);
@@ -471,11 +611,8 @@
 
 .mmenu .mi:hover,
 .mmenu .mi[data-highlighted] {
-  background: var(--fill-hover);
-}
-
-.mmenu .mi {
-  min-height: 32px;
+  background: var(--raised);
+  box-shadow: var(--row-shadow);
 }
 
 .mmenu .mi.on {
@@ -489,6 +626,16 @@
 }
 
 .mmenu .mi .t {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 18px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mmenu .mi .t.mono {
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 16px;
@@ -538,6 +685,7 @@
 }
 
 .genui-progress {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -570,13 +718,20 @@
 .genui-skeleton-line,
 .genui-skeleton-block {
   border-radius: 8px;
-  background: var(--genui-border);
-  animation: genui-pulse 1.4s ease-in-out infinite;
+  background: linear-gradient(
+    90deg,
+    var(--fill) 0%,
+    color-mix(in srgb, var(--paper) 82%, var(--fill)) 46%,
+    var(--fill) 92%
+  );
+  background-size: 240% 100%;
+  animation: genui-shimmer 1.3s linear infinite;
 }
 
 .genui-skeleton-line {
   width: 60%;
   height: 14px;
+  flex: none;
 }
 
 .genui-skeleton-block {
@@ -595,13 +750,17 @@
 }
 
 .genui-card-skeleton .genui-skeleton-block {
-  height: 72px;
-  flex-basis: auto;
+  flex: 1 1 auto;
+  min-height: 54px;
+  height: auto;
 }
 
-@keyframes genui-pulse {
-  50% {
-    opacity: 0.45;
+@keyframes genui-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -140% 0;
   }
 }
 
@@ -609,6 +768,7 @@
   .genui-skeleton-line,
   .genui-skeleton-block {
     animation: none;
+    background: var(--fill);
   }
 }
 
@@ -646,18 +806,40 @@
 .genui-block {
   min-width: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: 10px;
   box-shadow: 0 0 0 0.5px var(--genui-border);
   padding: 12px;
   background: var(--genui-surface);
   overflow-wrap: anywhere;
   transition: box-shadow var(--duration-enter) var(--ease-out);
+  animation: genui-card-in 220ms var(--ease-out) var(--genui-stagger, 0ms) both;
+}
+
+@keyframes genui-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+:root[data-input='keyboard'] .genui-block {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .genui-block {
+    animation: none;
+  }
 }
 
 .genui-block.is-highlighted {
-  box-shadow:
-    0 0 0 1px var(--accent),
-    0 0 0 3px var(--focus);
+  box-shadow: var(--ring-editing);
 }
 
 .genui-block.is-replacing {
@@ -990,7 +1172,7 @@
 }
 
 .genui-source-heading:hover:not(:disabled) {
-  background: var(--fill-hover);
+  background: var(--accent-soft);
   text-decoration-color: currentColor;
 }
 
@@ -1031,18 +1213,22 @@
   color: var(--genui-accent);
   cursor: pointer;
   transition:
-    background var(--duration-press) var(--ease-out),
+    box-shadow var(--duration-press) var(--ease-out),
     transform var(--duration-press) var(--ease-out);
 }
 
-.genui-source-edit:hover:not(:disabled),
-.genui-source-note:hover:not(:disabled) {
-  background: var(--fill-hover);
+@media (hover: hover) and (pointer: fine) {
+  .genui-source-edit:hover:not(:disabled),
+  .genui-source-note:hover:not(:disabled) {
+    background: var(--raised);
+    box-shadow: var(--row-shadow);
+  }
 }
 
 .genui-source-edit:active:not(:disabled),
 .genui-source-note:active:not(:disabled) {
-  transform: scale(0.97);
+  background: var(--raised-press);
+  transform: translateY(0.5px) scale(0.97);
 }
 
 .genui-source-edit:focus-visible,

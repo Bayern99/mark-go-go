@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { DropdownMenu } from 'radix-ui'
 
 export interface ModelMenuProps {
@@ -13,12 +13,36 @@ const AGENTS_CHOICE = 'Agent’s choice'
 export function ModelMenu({ value, models, disabled = false, onChange }: ModelMenuProps): React.ReactElement {
   const [open, setOpen] = useState(false)
   const isOpen = open && !disabled
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  const updateOverflow = () => {
+    const menu = menuRef.current
+    if (!menu) return
+    menu.dataset.moreAbove = String(menu.scrollTop > 2)
+    menu.dataset.moreBelow = String(menu.scrollTop + menu.clientHeight < menu.scrollHeight - 2)
+  }
 
   useEffect(() => {
     if (disabled) {
       setOpen(false)
     }
   }, [disabled])
+
+  useEffect(() => {
+    if (!isOpen) return
+    let observer: ResizeObserver | null = null
+    const frame = window.requestAnimationFrame(() => {
+      updateOverflow()
+      const menu = menuRef.current
+      if (!menu) return
+      observer = new ResizeObserver(updateOverflow)
+      observer.observe(menu)
+    })
+    return () => {
+      window.cancelAnimationFrame(frame)
+      observer?.disconnect()
+    }
+  }, [isOpen])
 
   const uniqueModels = Array.from(new Set(models.map((m) => m.trim()).filter(Boolean)))
   if (value && !uniqueModels.includes(value)) {
@@ -55,9 +79,11 @@ export function ModelMenu({ value, models, disabled = false, onChange }: ModelMe
             aria-label="Model"
             side="top"
             align="end"
-            sideOffset={4}
+            sideOffset={6}
             collisionPadding={8}
             loop
+            ref={menuRef}
+            onScroll={updateOverflow}
           >
             <div className="mmenu-head">Model</div>
             <DropdownMenu.RadioGroup
@@ -83,7 +109,8 @@ export function ModelMenu({ value, models, disabled = false, onChange }: ModelMe
                       className={`ph ${option.value ? 'ph-cpu' : 'ph-sparkle'} mi-icon`}
                       aria-hidden="true"
                     />
-                    <span className="t">{option.label}</span>
+                    <span className={option.value ? 't mono' : 't'}>{option.label}</span>
+                    {selected ? <i className="ph ph-check mi-check" aria-hidden="true" /> : null}
                   </DropdownMenu.RadioItem>
                 )
               })}

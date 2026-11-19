@@ -373,7 +373,7 @@ function DocumentPane({
             !editor.applyMarkdown(base.text, next)) {
           throw new Error('The document changed. Review the current text before applying this edit.')
         }
-        modes.showEditor('source')
+        modes.showEditor()
         return true
       }))
 

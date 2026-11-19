@@ -27,7 +27,13 @@ import {
   TextSelection,
 } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
-import { undo as undoRich, redo as redoRich, undoDepth, redoDepth } from '@milkdown/kit/prose/history'
+import {
+  closeHistory,
+  undo as undoRich,
+  redo as redoRich,
+  undoDepth,
+  redoDepth,
+} from '@milkdown/kit/prose/history'
 import { listenerCtx } from '@milkdown/kit/plugin/listener'
 import type { Disposable } from '../host/types'
 import { notifyCopied } from '../components/feedback'
@@ -141,6 +147,7 @@ export async function createMarkdownEditor(
   const serializer = editor.action((ctx) => ctx.get(serializerCtx))
 
   let built = buildDocument(options.initialText ?? '', schema, parser)
+  const builtSnapshots: Array<{ doc: PMNode; built: BuiltDocument }> = []
   let suppressChange = false
   let suppressSelectionReporting = false
   let readonly = false
@@ -153,6 +160,25 @@ export async function createMarkdownEditor(
   let sourceEditor: SourceEditor | undefined
   let sourceBaseText: string | undefined
   const composerScope = new ComposerScope()
+
+  const recordBuiltSnapshot = (doc: PMNode, targetBuilt: BuiltDocument) => {
+    for (let i = builtSnapshots.length - 1; i >= 0; i -= 1) {
+      if (sameTopLevelChildren(builtSnapshots[i].doc, doc)) {
+        builtSnapshots.splice(i, 1)
+      }
+    }
+    builtSnapshots.push({ doc, built: targetBuilt })
+  }
+
+  const resolveBuiltForDoc = (doc: PMNode): BuiltDocument => {
+    for (let i = builtSnapshots.length - 1; i >= 0; i -= 1) {
+      if (sameTopLevelChildren(builtSnapshots[i].doc, doc)) {
+        built = builtSnapshots[i].built
+        return built
+      }
+    }
+    return built
+  }
 
   const composeContext = (current: typeof built): ComposeContext => ({
     schema,
@@ -169,11 +195,12 @@ export async function createMarkdownEditor(
     | undefined
 
   const composed = (doc: PMNode): ComposedDocument => {
-    if (composedCache && composedCache.built === built && composedCache.doc === doc) {
+    const activeBuilt = resolveBuiltForDoc(doc)
+    if (composedCache && composedCache.built === activeBuilt && composedCache.doc === doc) {
       return composedCache.composed
     }
-    const result = composeWithRanges(doc, composeContext(built))
-    composedCache = { built, doc, composed: result }
+    const result = composeWithRanges(doc, composeContext(activeBuilt))
+    composedCache = { built: activeBuilt, doc, composed: result }
     return result
   }
 
@@ -636,21 +663,32 @@ export async function createMarkdownEditor(
   )
   plugins.unshift(...foldFeature.earlyPlugins)
 
+  const buildWithTableWidths = (text: string): BuiltDocument => {
+    const candidate = buildDocument(text, schema, parser)
+    const beforeRestore = candidate.doc
+    candidate.doc = restoreTableColumnWidths(candidate.doc, tableColumnWidths)
+    if (candidate.doc !== beforeRestore) {
+      candidate.doc.forEach((node, _offset, index) => {
+        const previous = beforeRestore.child(index)
+        if (node === previous) return
+        const origin = candidate.origins.get(previous)
+        if (origin) {
+          const updated = { ...origin, node }
+          candidate.origins.set(node, updated)
+          candidate.loaded[origin.segment.index] = updated
+        }
+      })
+    }
+    return candidate
+  }
+
   const load = (text: string) => {
     composerScope.cancel()
     suppressChange = true
     try {
-      built = buildDocument(text, schema, parser)
-      const beforeRestore = built.doc
-      built.doc = restoreTableColumnWidths(built.doc, tableColumnWidths)
-      if (built.doc !== beforeRestore) {
-        built.doc.forEach((node, _offset, index) => {
-          const previous = beforeRestore.child(index)
-          if (node === previous) return
-          const origin = built.origins.get(previous)
-          if (origin) built.origins.set(node, { ...origin, node })
-        })
-      }
+      built = buildWithTableWidths(text)
+      builtSnapshots.length = 0
+      recordBuiltSnapshot(built.doc, built)
       composedCache = undefined
       const state = EditorState.create({
         schema,
@@ -663,6 +701,99 @@ export async function createMarkdownEditor(
       suppressChange = false
     }
     emitHistory()
+  }
+
+  const applyPreviewMarkdownInPlace = (text: string) => {
+    composerScope.cancel()
+    const prevDoc = view.state.doc
+    const prevBuilt = resolveBuiltForDoc(prevDoc)
+    recordBuiltSnapshot(prevDoc, prevBuilt)
+
+    const nextBuilt = buildWithTableWidths(text)
+    const nextDoc = nextBuilt.doc
+
+    const prevCount = prevDoc.childCount
+    const nextCount = nextDoc.childCount
+    const minCount = Math.min(prevCount, nextCount)
+
+    const canShareBlock = (prevIdx: number, nextIdx: number): boolean => {
+      if (prevIdx === 0 && nextIdx === 0 && prevBuilt.prefix !== nextBuilt.prefix) return false
+      const pNode = prevDoc.child(prevIdx)
+      const nNode = nextDoc.child(nextIdx)
+      if (!pNode.eq(nNode)) return false
+      const pOrigin = prevBuilt.origins.get(pNode)
+      const nOrigin = nextBuilt.origins.get(nNode)
+      if (!pOrigin || !nOrigin) return false
+      return (
+        pOrigin.source === nOrigin.source &&
+        pOrigin.segment.gapBefore === nOrigin.segment.gapBefore
+      )
+    }
+
+    let prefixCount = 0
+    while (prefixCount < minCount && canShareBlock(prefixCount, prefixCount)) {
+      prefixCount += 1
+    }
+
+    let suffixCount = 0
+    if (prevBuilt.trailing === nextBuilt.trailing) {
+      while (
+        suffixCount < minCount - prefixCount &&
+        canShareBlock(prevCount - 1 - suffixCount, nextCount - 1 - suffixCount)
+      ) {
+        suffixCount += 1
+      }
+    }
+
+    // If all blocks matched structurally (e.g. only whitespace/prefix/trailing differed),
+    // replace the full document content so ProseMirror history records a real ReplaceStep.
+    if (prefixCount === prevCount && prefixCount === nextCount) {
+      prefixCount = 0
+      suffixCount = 0
+    }
+
+    for (let i = 0; i < prefixCount; i += 1) {
+      const pNode = prevDoc.child(i)
+      const nNode = nextDoc.child(i)
+      const nOrigin = nextBuilt.origins.get(nNode)
+      if (nOrigin) {
+        const bound = { ...nOrigin, node: pNode }
+        nextBuilt.origins.set(pNode, bound)
+        nextBuilt.loaded[nOrigin.segment.index] = bound
+      }
+    }
+    for (let i = 0; i < suffixCount; i += 1) {
+      const pNode = prevDoc.child(prevCount - 1 - i)
+      const nNode = nextDoc.child(nextCount - 1 - i)
+      const nOrigin = nextBuilt.origins.get(nNode)
+      if (nOrigin) {
+        const bound = { ...nOrigin, node: pNode }
+        nextBuilt.origins.set(pNode, bound)
+        nextBuilt.loaded[nOrigin.segment.index] = bound
+      }
+    }
+
+    let fromPos = 0
+    for (let i = 0; i < prefixCount; i += 1) {
+      fromPos += prevDoc.child(i).nodeSize
+    }
+    let toPos = fromPos
+    for (let i = prefixCount; i < prevCount - suffixCount; i += 1) {
+      toPos += prevDoc.child(i).nodeSize
+    }
+
+    const replacements: PMNode[] = []
+    for (let i = prefixCount; i < nextCount - suffixCount; i += 1) {
+      replacements.push(nextDoc.child(i))
+    }
+
+    built = nextBuilt
+    composedCache = undefined
+    let tr = closeHistory(view.state.tr)
+    tr = tr.replaceWith(fromPos, toPos, replacements)
+    tr = closeHistory(tr)
+    view.dispatch(tr)
+    recordBuiltSnapshot(view.state.doc, nextBuilt)
   }
 
   const notify = (markdown: string) => {
@@ -802,8 +933,22 @@ export async function createMarkdownEditor(
       const current = mode === 'source' ? sourceEditor?.getText() : compose(view.state.doc)
       if (readonly || current !== expected) return false
       if (current === text) return true
-      setMode('source')
-      sourceEditor!.replace(text)
+      if (mode === 'source') {
+        suppressChange = true
+        try {
+          applyPreviewMarkdownInPlace(text)
+        } finally {
+          suppressChange = false
+        }
+        sourceBaseText = text
+        sourceEditor!.replace(text)
+        return true
+      }
+      applyPreviewMarkdownInPlace(text)
+      if (sourceEditor) {
+        sourceBaseText = text
+        sourceEditor.setText(text)
+      }
       return true
     },
     setMarkdown(text) {
@@ -845,19 +990,95 @@ export async function createMarkdownEditor(
     },
     setReadonly,
     canUndo() {
-      if (mode === 'source') return sourceEditor?.canUndo() ?? false
+      if (mode === 'source') {
+        if (sourceEditor?.canUndo()) return true
+        return sourceEditor !== undefined && sourceEditor.getText() === sourceBaseText && undoDepth(view.state) > 0
+      }
       return undoDepth(view.state) > 0
     },
     canRedo() {
-      if (mode === 'source') return sourceEditor?.canRedo() ?? false
+      if (mode === 'source') {
+        if (sourceEditor?.canRedo()) return true
+        return sourceEditor !== undefined && sourceEditor.getText() === sourceBaseText && redoDepth(view.state) > 0
+      }
       return redoDepth(view.state) > 0
     },
     undo() {
-      if (mode === 'source') return sourceEditor?.undo() ?? false
+      if (mode === 'source') {
+        if (sourceEditor?.canUndo()) {
+          const syncedWithPreview = sourceEditor.getText() === sourceBaseText
+          const ok = sourceEditor.undo()
+          if (ok && syncedWithPreview && undoDepth(view.state) > 0) {
+            suppressChange = true
+            try {
+              undoRich(view.state, view.dispatch)
+            } finally {
+              suppressChange = false
+            }
+            if (compose(view.state.doc) === sourceEditor.getText()) {
+              sourceBaseText = sourceEditor.getText()
+            }
+          }
+          return ok
+        }
+        if (sourceEditor && sourceEditor.getText() === sourceBaseText && undoDepth(view.state) > 0) {
+          suppressChange = true
+          let ok = false
+          try {
+            ok = undoRich(view.state, view.dispatch)
+          } finally {
+            suppressChange = false
+          }
+          if (ok) {
+            const nextText = compose(view.state.doc)
+            sourceBaseText = nextText
+            sourceEditor.setText(nextText)
+            notify(nextText)
+            emitHistory()
+          }
+          return ok
+        }
+        return false
+      }
       return undoRich(view.state, view.dispatch)
     },
     redo() {
-      if (mode === 'source') return sourceEditor?.redo() ?? false
+      if (mode === 'source') {
+        if (sourceEditor?.canRedo()) {
+          const syncedWithPreview = sourceEditor.getText() === sourceBaseText
+          const ok = sourceEditor.redo()
+          if (ok && syncedWithPreview && redoDepth(view.state) > 0) {
+            suppressChange = true
+            try {
+              redoRich(view.state, view.dispatch)
+            } finally {
+              suppressChange = false
+            }
+            if (compose(view.state.doc) === sourceEditor.getText()) {
+              sourceBaseText = sourceEditor.getText()
+            }
+          }
+          return ok
+        }
+        if (sourceEditor && sourceEditor.getText() === sourceBaseText && redoDepth(view.state) > 0) {
+          suppressChange = true
+          let ok = false
+          try {
+            ok = redoRich(view.state, view.dispatch)
+          } finally {
+            suppressChange = false
+          }
+          if (ok) {
+            const nextText = compose(view.state.doc)
+            sourceBaseText = nextText
+            sourceEditor.setText(nextText)
+            notify(nextText)
+            emitHistory()
+          }
+          return ok
+        }
+        return false
+      }
       return redoRich(view.state, view.dispatch)
     },
     onHistoryChange(fn) {
@@ -880,6 +1101,15 @@ export async function createMarkdownEditor(
       await builder.destroy()
     },
   }
+}
+
+function sameTopLevelChildren(a: PMNode, b: PMNode): boolean {
+  if (a === b) return true
+  if (a.childCount !== b.childCount) return false
+  for (let i = 0; i < a.childCount; i += 1) {
+    if (a.child(i) !== b.child(i)) return false
+  }
+  return true
 }
 
 function isEmptyParagraph(node: PMNode): boolean {

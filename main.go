@@ -89,7 +89,9 @@ func main() {
 	})
 	host.SetDocuments(ds)
 	adapter := workspaceAdapter{svc: host}
+	reviewSvc := review.NewService()
 	mygo.BindAs("WorkspaceHost", workspace.NewHost(host))
+	mygo.BindAs("ReviewHost", reviewSvc.Host())
 	research := feynman.NewResearchManager(adapter, feynmanRelayScript)
 	mygo.BindAs("ResearchHost", research.Host())
 	console := feynman.NewConsoleManager(adapter, research)

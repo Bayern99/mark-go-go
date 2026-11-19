@@ -1,15 +1,34 @@
+import { isMyGo } from 'mygo-runtime'
 import type { DocumentSnapshot } from '../../core'
-import { events, ResearchConsoleHost, ResearchHost, type ResearchArtifact, type ResearchCommand, type ResearchConfig, type ResearchPlanEntry, type ResearchTool, type ResearchUpdate } from '../../host/generated/mygo'
+import {
+  events,
+  ReviewHost,
+  ResearchConsoleHost,
+  ResearchHost,
+  type ChangeProposal,
+  type HunkDecision,
+  type ResearchArtifact,
+  type ResearchCommand,
+  type ResearchConfig,
+  type ResearchPlanEntry,
+  type ResearchTool,
+  type ResearchUpdate,
+  type ReviewUpdateEvent,
+} from '../../host/generated/mygo'
 
 export type ConversationItem =
   | { role: 'user' | 'assistant' | 'notice' | 'thought'; text: string; messageId?: string; image?: string }
   | { role: 'tool'; tool: ResearchTool }
   | { role: 'plan'; steps: ResearchPlanEntry[] }
 
-interface Proposal {
+export interface Proposal {
+  id: string
   documentID: string
   base: DocumentSnapshot
   text: string
+  source?: string
+  summary?: string
+  decisions: Record<string, HunkDecision>
 }
 
 const sessions = new Map<string, ResearchSession>()
@@ -19,10 +38,12 @@ export class ResearchSession {
   private revision = 0
   private owners = 0
   private off?: () => void
+  private offReview?: () => void
   private offConsole?: () => void
   private launchingCLI?: Promise<void>
   private closing?: Promise<void>
   private generation = 0
+  private proposalSeq = 0
 
   status: 'offline' | 'connecting' | 'ready' | 'working' = 'offline'
   messages: ConversationItem[] = []
@@ -38,25 +59,183 @@ export class ResearchSession {
   files: ResearchArtifact[] = []
   permission?: ResearchUpdate
   suggestedDraft?: string
-  proposal?: Proposal
+  proposals: Proposal[] = []
+  activeProposalId = ''
   draft = ''
   progress = ''
   error = ''
 
   private constructor(readonly root: string) {}
 
+  get proposal(): Proposal | undefined {
+    return this.proposals.find(p => p.id === this.activeProposalId) ?? this.proposals[0]
+  }
+
+  set proposal(next: Proposal | undefined) {
+    if (!next) {
+      if (this.activeProposalId) {
+        this.proposals = this.proposals.filter(p => p.id !== this.activeProposalId)
+        this.activeProposalId = this.proposals[0]?.id ?? ''
+      } else {
+        this.proposals = []
+      }
+      return
+    }
+    this.upsertProposal(next)
+  }
+
+  upsertProposal(input: Omit<Proposal, 'id' | 'decisions'> & { id?: string; decisions?: Record<string, HunkDecision> }): Proposal {
+    const existing = this.proposals.find(
+      p => (input.id && p.id === input.id) || (p.base.path && p.base.path === input.base.path) || (input.documentID && p.documentID === input.documentID),
+    )
+    const id = input.id || existing?.id || `proposal-${++this.proposalSeq}`
+    const next: Proposal = {
+      id,
+      documentID: input.documentID,
+      base: input.base,
+      text: input.text,
+      source: input.source,
+      summary: input.summary,
+      decisions: input.decisions ?? {},
+    }
+    if (existing) {
+      this.proposals = this.proposals.map(p => (p.id === existing.id ? next : p))
+    } else {
+      this.proposals = [...this.proposals, next]
+    }
+    this.activeProposalId = id
+    if (isMyGo()) {
+      void ReviewHost.submit({
+        id,
+        workspaceRoot: this.root,
+        documentId: next.documentID,
+        path: next.base.path,
+        source: next.source ?? 'feynman',
+        summary: next.summary,
+        baseVersion: next.base.version,
+        baseText: next.base.text,
+        proposedText: next.text,
+      }).catch(() => {})
+    }
+    this.changed()
+    return next
+  }
+
+  selectProposal(id: string) {
+    if (this.proposals.some(p => p.id === id)) {
+      this.activeProposalId = id
+      this.changed()
+    }
+  }
+
+  updateProposalBase(id: string, documentID: string, base: DocumentSnapshot) {
+    this.proposals = this.proposals.map(p =>
+      p.id === id ? { ...p, documentID, base, decisions: {} } : p,
+    )
+    this.changed()
+  }
+
+  decideHunk(proposalId: string, hunkId: string, decision: HunkDecision, liveText = '') {
+    this.proposals = this.proposals.map(p =>
+      p.id === proposalId
+        ? { ...p, decisions: { ...p.decisions, [hunkId]: decision } }
+        : p,
+    )
+    if (isMyGo()) {
+      void ReviewHost.decideHunk(this.root, proposalId, hunkId, decision, liveText).catch(() => {})
+    }
+    this.changed()
+  }
+
+  acceptAllHunks(proposalId: string, hunkIds: string[], liveText = '') {
+    this.proposals = this.proposals.map(p => {
+      if (p.id !== proposalId) return p
+      const nextDecisions = { ...p.decisions }
+      for (const hid of hunkIds) nextDecisions[hid] = 'accepted'
+      return { ...p, decisions: nextDecisions }
+    })
+    if (isMyGo()) {
+      void ReviewHost.acceptAll(this.root, proposalId, liveText).catch(() => {})
+    }
+    this.changed()
+  }
+
+  dismissProposal(proposalId: string) {
+    this.proposals = this.proposals.filter(p => p.id !== proposalId)
+    if (this.activeProposalId === proposalId) {
+      this.activeProposalId = this.proposals[0]?.id ?? ''
+    }
+    if (isMyGo()) {
+      void ReviewHost.dismiss(this.root, proposalId).catch(() => {})
+    }
+    this.changed()
+  }
+
+  completeProposal(proposalId: string) {
+    this.proposals = this.proposals.filter(p => p.id !== proposalId)
+    if (this.activeProposalId === proposalId) {
+      this.activeProposalId = this.proposals[0]?.id ?? ''
+    }
+    if (isMyGo()) {
+      void ReviewHost.complete(this.root, proposalId).catch(() => {})
+    }
+    this.changed()
+  }
+
+  private mergeBackendProposals(backend: ChangeProposal[]) {
+    const mapped: Proposal[] = backend.map(cp => {
+      const decisions: Record<string, HunkDecision> = {}
+      for (const h of cp.hunks) decisions[h.id] = h.decision
+      const existing = this.proposals.find(p => p.id === cp.id)
+      return {
+        id: cp.id,
+        documentID: cp.documentId || existing?.documentID || '',
+        base: {
+          path: cp.path,
+          text: cp.baseText,
+          version: cp.baseVersion ?? existing?.base.version ?? 1,
+        },
+        text: cp.proposedText,
+        source: cp.source,
+        summary: cp.summary,
+        decisions,
+      }
+    })
+    this.proposals = mapped
+    if (!mapped.some(p => p.id === this.activeProposalId)) {
+      this.activeProposalId = mapped[0]?.id ?? ''
+    }
+    this.changed()
+  }
+
   static acquire(root: string) {
     const session = sessions.get(root) ?? new ResearchSession(root)
     sessions.set(root, session)
     session.owners++
-    session.off ??= events.researchUpdate.on(event => {
+    session.off ??= events.researchUpdate?.on(event => {
       if (event.root === root && session.owners > 0) session.receive(event)
     })
+    if (!session.offReview) {
+      try {
+        session.offReview = events.reviewUpdated?.on((event: ReviewUpdateEvent) => {
+          if (event.workspaceRoot === root && session.owners > 0) {
+            session.mergeBackendProposals(event.proposals)
+          }
+        })
+      } catch {
+        // Standalone Vitest runs without MyGo runtime or mocked reviewUpdated event.
+      }
+    }
+    if (isMyGo() && session.owners === 1) {
+      void ReviewHost.list(root).then(list => {
+        if (session.owners > 0 && list.length > 0) session.mergeBackendProposals(list)
+      }).catch(() => {})
+    }
     return session
   }
 
   async selectConversation(id: string) {
-    if (this.status !== 'ready' || this.configuring || this.draft.trim() || this.sources.length || this.proposal) {
+    if (this.status !== 'ready' || this.configuring || this.draft.trim() || this.sources.length || this.proposals.length > 0) {
       throw new Error('Finish the current draft or edit before switching conversations.')
     }
     const generation = ++this.generation
@@ -75,7 +254,7 @@ export class ResearchSession {
 
   async launchCLI(args: string[]) {
     if (!this.root || !this.owners || this.cliRunning || this.status === 'working' ||
-        this.status === 'connecting' || this.configuring || this.sources.length || this.proposal) {
+        this.status === 'connecting' || this.configuring || this.sources.length || this.proposals.length > 0) {
       throw new Error('Finish the current research action and clear attached files before starting the CLI.')
     }
     const connected = this.status === 'ready'
@@ -119,6 +298,8 @@ export class ResearchSession {
       this.generation++
       this.off?.()
       this.off = undefined
+      this.offReview?.()
+      this.offReview = undefined
       const usedCLI = Boolean(this.offConsole)
       this.offConsole?.()
       this.offConsole = undefined
@@ -272,7 +453,9 @@ export class ResearchSession {
         ? await ResearchHost.promptWithSources(this.root, prompt, base ? documentID : '', base?.text ?? '', sources)
         : await ResearchHost.prompt(this.root, prompt, base ? documentID : '', base?.text ?? '')
       if (generation !== this.generation) return
-      if (base && base.text !== text) this.proposal = { documentID, base, text }
+      if (base && base.text !== text) {
+        this.upsertProposal({ documentID, base, text, source: 'feynman' })
+      }
     } catch (error) {
       if (generation !== this.generation) return
       this.error = String(error)

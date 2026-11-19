@@ -206,15 +206,17 @@ func (s *docSession) emitView(path string, gen int) bool {
 	snap := readView(path)
 	h := s.host
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	if !s.currentLocked(gen) {
+		h.mu.Unlock()
 		return false
 	}
-	if s.emit != nil {
-		s.emit(snap)
-	} else {
-		_ = viewChanged.Emit(s.win, ViewEvent{
-			ID:      s.id,
+	win, id, emit := s.win, s.id, s.emit
+	h.mu.Unlock()
+	if emit != nil {
+		emit(snap)
+	} else if win != nil && !win.IsDestroyed() {
+		_ = viewChanged.Emit(win, ViewEvent{
+			ID:      id,
 			Exists:  snap.Exists,
 			Text:    snap.Text,
 			Error:   snap.Error,

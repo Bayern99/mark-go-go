@@ -7,7 +7,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo"
 )
@@ -318,12 +320,14 @@ func (h *documentHost) emitWorkspace(w *workspace) {
 		return
 	}
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	win := w.win
 	if win == nil || win.IsDestroyed() {
+		h.mu.Unlock()
 		return
 	}
-	if snap, err := h.snapshotWorkspaceLocked(win); err == nil {
+	snap, err := h.snapshotWorkspaceLocked(win)
+	h.mu.Unlock()
+	if err == nil {
 		_ = workspaceChanged.Emit(win, snap)
 	}
 }
@@ -342,19 +346,28 @@ func (h *documentHost) Open(ctx context.Context, path string) (DocumentInfo, err
 		return DocumentInfo{}, err
 	}
 	abs = canonicalPath(abs)
+	type openCandidate struct {
+		session *docSession
+		path    string
+	}
 	h.mu.Lock()
+	candidates := make([]openCandidate, 0, len(h.byID))
 	for _, s := range h.byID {
-		if sameFile(s.doc.Path(), abs) {
-			h.mu.Unlock()
-			h.activate(s)
-			if w := s.doc.Window(); w != nil {
-				w.Show()
-				w.Focus()
-			}
-			return s.info(), nil
+		if s != nil && s.doc != nil {
+			candidates = append(candidates, openCandidate{session: s, path: s.doc.Path()})
 		}
 	}
 	h.mu.Unlock()
+	for _, item := range candidates {
+		if sameFile(item.path, abs) {
+			h.activate(item.session)
+			if w := item.session.doc.Window(); w != nil {
+				w.Show()
+				w.Focus()
+			}
+			return item.session.info(), nil
+		}
+	}
 	doc, err := h.docs.Open(abs)
 	if err != nil {
 		return DocumentInfo{}, err
@@ -380,18 +393,28 @@ func (h *documentHost) OpenWorkspace(ctx context.Context, root string) error {
 		abs = filepath.Dir(abs)
 	}
 	abs = canonicalPath(abs)
+	type rootCandidate struct {
+		ws   *workspace
+		root string
+	}
 	h.mu.Lock()
-	for _, w := range h.allWorkspacesLocked() {
-		if w.root != "" && sameRoot(w.root, abs) {
-			h.mu.Unlock()
-			h.activateWorkspace(w)
-			w.win.Show()
-			w.win.Focus()
+	all := h.allWorkspacesLocked()
+	candidates := make([]rootCandidate, 0, len(all))
+	for _, w := range all {
+		if w.root != "" {
+			candidates = append(candidates, rootCandidate{ws: w, root: w.root})
+		}
+	}
+	h.mu.Unlock()
+	for _, item := range candidates {
+		if sameRoot(item.root, abs) {
+			h.activateWorkspace(item.ws)
+			item.ws.win.Show()
+			item.ws.win.Focus()
 			h.rememberRoot(abs)
 			return nil
 		}
 	}
-	h.mu.Unlock()
 	var win *mygo.Window
 	if current, currentErr := h.workspaceOf(ctx); currentErr == nil {
 		win = current.win
@@ -475,9 +498,9 @@ func (h *documentHost) Activate(ctx context.Context, documentID string) error {
 		return err
 	}
 	h.activate(s)
-	if s.win != nil {
-		s.win.Show()
-		s.win.Focus()
+	if win := h.sessionWindow(s); win != nil {
+		win.Show()
+		win.Focus()
 	}
 	return nil
 }
@@ -539,12 +562,16 @@ func (h *documentHost) CloseWorkspaceRoot(ctx context.Context, workspaceID strin
 	caller, callerErr := h.workspaceOf(ctx)
 	h.mu.Lock()
 	w := h.workspaceByIDLocked(workspaceID)
+	var tabIDs []string
+	if w != nil {
+		tabIDs = slices.Clone(w.tabs)
+	}
 	h.mu.Unlock()
 	if w == nil || (callerErr == nil && caller.win != w.win) {
 		return CloseResult{}, errNoWorkspace
 	}
 	var docs []*mygo.Document[string]
-	for _, id := range w.tabs {
+	for _, id := range tabIDs {
 		if s, err := h.docSession(id); err == nil && s.doc != nil {
 			docs = append(docs, s.doc)
 		}
@@ -819,11 +846,27 @@ func (h *documentHost) forgetWindow(win *mygo.Window) {
 	}
 	for _, id := range ids {
 		if s, err := h.docSession(id); err == nil {
-			h.dropSession(s)
+			h.dropSessionState(s, false)
 		}
 	}
-	h.persistSession()
-	if done {
-		h.completeQuitAttempt(attempt, file, win)
+	h.sessionWG.Add(1)
+	go func() {
+		defer h.sessionWG.Done()
+		h.persistSession()
+		if done {
+			h.completeQuitAttempt(attempt, file, win)
+		}
+	}()
+}
+
+func (h *documentHost) waitForSessionWrites(limit time.Duration) {
+	done := make(chan struct{})
+	go func() {
+		h.sessionWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(limit):
 	}
 }

@@ -415,14 +415,24 @@ func (h *documentHost) dropRestoreLeftovers(restoredRoots map[*workspace]bool) {
 
 func (h *documentHost) workspaceForPlan(pw plannedWorkspace, preferred *mygo.Window) *workspace {
 	if pw.Root != "" {
+		type rootCandidate struct {
+			ws   *workspace
+			root string
+		}
 		h.mu.Lock()
-		for _, w := range h.allWorkspacesLocked() {
-			if w.root != "" && sameRoot(w.root, pw.Root) && w.win != nil && !w.win.IsDestroyed() {
-				h.mu.Unlock()
-				return w
+		all := h.allWorkspacesLocked()
+		candidates := make([]rootCandidate, 0, len(all))
+		for _, w := range all {
+			if w.root != "" && w.win != nil && !w.win.IsDestroyed() {
+				candidates = append(candidates, rootCandidate{ws: w, root: w.root})
 			}
 		}
 		h.mu.Unlock()
+		for _, c := range candidates {
+			if sameRoot(c.root, pw.Root) {
+				return c.ws
+			}
+		}
 		if preferred != nil && !preferred.IsDestroyed() {
 			return h.addWorkspaceToWindow(pw.ID, pw.Root, filepath.Base(pw.Root), preferred)
 		}

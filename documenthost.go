@@ -36,6 +36,7 @@ type documentHost struct {
 
 	settings     *settingsStore
 	runs         sync.WaitGroup
+	sessionWG    sync.WaitGroup
 	disableWatch bool
 	quitting     bool
 	restoring    bool
@@ -195,16 +196,34 @@ func (h *documentHost) openWindow(doc *mygo.Document[string]) *mygo.Window {
 	return win
 }
 
-func (h *documentHost) existingWindow(doc *mygo.Document[string]) *mygo.Window {
-	path := doc.Path()
+func (h *documentHost) sessionWindow(s *docSession) *mygo.Window {
+	if s == nil || h == nil {
+		return nil
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	return s.win
+}
+
+func (h *documentHost) sessionWorkspace(s *docSession) *workspace {
+	if s == nil || h == nil {
+		return nil
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return s.ws
+}
+
+func (h *documentHost) existingWindow(doc *mygo.Document[string]) *mygo.Window {
+	path := doc.Path()
 	if path != "" {
-		if w := h.folderWorkspaceLocked(path, false); w != nil {
+		if w := h.matchFolderWorkspace(path, false); w != nil {
 			return w.win
 		}
 		return nil
 	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if fw := mygo.FocusedWindow(); fw != nil {
 		if w := h.byWindow[fw]; w != nil && w.win != nil && !w.win.IsDestroyed() {
 			return w.win
@@ -218,33 +237,62 @@ func (h *documentHost) existingWindow(doc *mygo.Document[string]) *mygo.Window {
 	return nil
 }
 
-func (h *documentHost) folderWorkspaceLocked(path string, includeParent bool) *workspace {
+func (h *documentHost) folderWorkspaceCandidatesLocked() ([]string, []*workspace) {
 	var roots []string
-	byRoot := map[string]*workspace{}
+	var candidates []*workspace
 	for _, w := range h.allWorkspacesLocked() {
 		if w.root == "" || w.win == nil || w.win.IsDestroyed() {
 			continue
 		}
 		roots = append(roots, w.root)
-		byRoot[canonicalPath(w.root)] = w
+		candidates = append(candidates, w)
 	}
+	return roots, candidates
+}
+
+func matchWorkspaceFromCandidates(path string, roots []string, candidates []*workspace, includeParent bool) *workspace {
 	if best := deepestRoot(path, roots); best != "" {
-		return byRoot[canonicalPath(best)]
+		for i, r := range roots {
+			if r == best {
+				return candidates[i]
+			}
+		}
 	}
 	if includeParent && path != "" {
-		return byRoot[canonicalPath(filepath.Dir(path))]
+		parent := filepath.Dir(path)
+		for i, r := range roots {
+			if sameRoot(r, parent) {
+				return candidates[i]
+			}
+		}
 	}
 	return nil
 }
 
+func (h *documentHost) folderWorkspaceLocked(path string, includeParent bool) *workspace {
+	roots, candidates := h.folderWorkspaceCandidatesLocked()
+	return matchWorkspaceFromCandidates(path, roots, candidates, includeParent)
+}
+
+func (h *documentHost) matchFolderWorkspace(path string, includeParent bool) *workspace {
+	h.mu.Lock()
+	roots, candidates := h.folderWorkspaceCandidatesLocked()
+	h.mu.Unlock()
+	return matchWorkspaceFromCandidates(path, roots, candidates, includeParent)
+}
+
 func (h *documentHost) adopt(doc *mygo.Document[string], win *mygo.Window) {
 	id := doc.ID()
+	var owned *workspace
+	if path := doc.Path(); path != "" {
+		if candidate := h.matchFolderWorkspace(path, true); candidate != nil && candidate.win == win {
+			owned = candidate
+		}
+	}
 	h.mu.Lock()
 	w := h.byWindow[win]
-	if path := doc.Path(); path != "" {
-		if owned := h.folderWorkspaceLocked(path, true); owned != nil && owned.win == win {
-			w = owned
-		}
+	if owned != nil {
+		w = owned
 	}
 	if w == nil {
 		h.mu.Unlock()
@@ -271,7 +319,7 @@ func (h *documentHost) adopt(doc *mygo.Document[string], win *mygo.Window) {
 	h.byWindow[win] = w
 	h.mu.Unlock()
 
-	s.offReload = doc.OnReload(func() {
+	offReload := doc.OnReload(func() {
 		h.mu.Lock()
 		s.version++
 		currentWin := s.win
@@ -280,7 +328,7 @@ func (h *documentHost) adopt(doc *mygo.Document[string], win *mygo.Window) {
 			_ = docReloaded.Emit(currentWin, s.snapshot())
 		}
 	})
-	s.offState = doc.OnStateChange(func(state mygo.DocumentState) {
+	offState := doc.OnStateChange(func(state mygo.DocumentState) {
 		h.mu.Lock()
 		currentWin := s.win
 		h.mu.Unlock()
@@ -289,12 +337,24 @@ func (h *documentHost) adopt(doc *mygo.Document[string], win *mygo.Window) {
 		}
 		s.viewMoved(state.Path)
 		h.migrateIfNeeded(s)
-		h.emitWorkspace(s.ws)
+		h.emitWorkspace(h.sessionWorkspace(s))
 		h.reindexOpenDocument(s)
 	})
-	s.offClosed = doc.OnClosed(func() {
+	offClosed := doc.OnClosed(func() {
 		h.dropSession(s)
 	})
+	h.mu.Lock()
+	if s.closed {
+		h.mu.Unlock()
+		offReload()
+		offState()
+		offClosed()
+		return
+	}
+	s.offReload = offReload
+	s.offState = offState
+	s.offClosed = offClosed
+	h.mu.Unlock()
 	if h.docs != nil {
 		h.docs.SetActive(doc)
 	}
@@ -316,21 +376,33 @@ func (h *documentHost) dropSession(s *docSession) {
 	if s == nil {
 		return
 	}
-	if s.offReload != nil {
-		s.offReload()
-		s.offReload = nil
+	if h.dropSessionState(s, true) {
+		h.persistSession()
 	}
-	if s.offState != nil {
-		s.offState()
-		s.offState = nil
-	}
-	if s.offClosed != nil {
-		s.offClosed()
-		s.offClosed = nil
+}
+
+func (h *documentHost) dropSessionState(s *docSession, emit bool) bool {
+	if s == nil {
+		return false
 	}
 	h.mu.Lock()
+	if s.closed {
+		h.mu.Unlock()
+		return false
+	}
 	s.closed = true
+	offReload, offState, offClosed := s.offReload, s.offState, s.offClosed
+	s.offReload, s.offState, s.offClosed = nil, nil, nil
 	h.mu.Unlock()
+	if offReload != nil {
+		offReload()
+	}
+	if offState != nil {
+		offState()
+	}
+	if offClosed != nil {
+		offClosed()
+	}
 	h.cancelGeneration(s)
 	s.unfollowView()
 	h.mu.Lock()
@@ -356,15 +428,18 @@ func (h *documentHost) dropSession(s *docSession) {
 	}
 	s.ws = nil
 	h.mu.Unlock()
+	if !emit {
+		return false
+	}
 	if h.retireEmptyUntitled(w) {
-		return
+		return false
 	}
 	if closedActive && w.win != nil && !w.win.IsDestroyed() {
 		h.activateWorkspace(w)
-		return
+		return false
 	}
 	h.emitWorkspace(w)
-	h.persistSession()
+	return true
 }
 
 func (h *documentHost) retireEmptyUntitled(w *workspace) bool {
@@ -416,10 +491,10 @@ func (h *documentHost) migrateIfNeeded(s *docSession) {
 	dest := h.workspaceForPath(path)
 	h.mu.Lock()
 	src := s.ws
+	win := s.win
 	h.mu.Unlock()
 	if dest == nil {
 		parent := filepath.Dir(path)
-		win := s.win
 		if win == nil {
 			win = h.preferredWindow()
 		}
@@ -428,9 +503,7 @@ func (h *documentHost) migrateIfNeeded(s *docSession) {
 		} else {
 			h.addWorkspaceToWindow("", parent, filepath.Base(parent), win)
 		}
-		h.mu.Lock()
-		dest = h.folderWorkspaceLocked(path, true)
-		h.mu.Unlock()
+		dest = h.workspaceForPath(path)
 		h.moveTab(s, dest)
 		return
 	}
@@ -442,9 +515,7 @@ func (h *documentHost) migrateIfNeeded(s *docSession) {
 }
 
 func (h *documentHost) workspaceForPath(path string) *workspace {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.folderWorkspaceLocked(path, true)
+	return h.matchFolderWorkspace(path, true)
 }
 
 func (h *documentHost) moveTab(s *docSession, dest *workspace) {
@@ -527,42 +598,61 @@ func (h *documentHost) reservePath(doc *mygo.Document[string], target string) (f
 }
 
 func (h *documentHost) reserveTarget(id, path, target string) (func(), error) {
-	h.mu.Lock()
-	s := h.byID[id]
-	if s == nil {
-		h.mu.Unlock()
-		return nil, nil
-	}
-	if s.generating && !sameFile(target, path) {
-		h.mu.Unlock()
-		return nil, errors.New(errGenerating)
-	}
 	canon := canonicalPath(target)
-	if owner := h.claims[canon]; owner != "" && owner != id {
-		h.mu.Unlock()
-		return nil, errAlreadyOpen
-	}
-	for other, sess := range h.byID {
-		if other == id {
-			continue
+	checked := map[string]string{}
+	for {
+		h.mu.Lock()
+		s := h.byID[id]
+		if s == nil {
+			h.mu.Unlock()
+			return nil, nil
 		}
-		if sameFile(sess.currentPath(), target) {
+		if s.generating && !sameFile(target, path) {
+			h.mu.Unlock()
+			return nil, errors.New(errGenerating)
+		}
+		if owner := h.claims[canon]; owner != "" && owner != id {
 			h.mu.Unlock()
 			return nil, errAlreadyOpen
 		}
-	}
-	if h.claims == nil {
-		h.claims = make(map[string]string)
-	}
-	h.claims[canon] = id
-	h.mu.Unlock()
-	return func() {
-		h.mu.Lock()
-		if h.claims[canon] == id {
-			delete(h.claims, canon)
+		var pending []struct {
+			id   string
+			path string
+		}
+		for other, sess := range h.byID {
+			if other == id {
+				continue
+			}
+			otherPath := sess.currentPath()
+			if prev, ok := checked[other]; !ok || prev != otherPath {
+				pending = append(pending, struct {
+					id   string
+					path string
+				}{id: other, path: otherPath})
+			}
+		}
+		if len(pending) == 0 {
+			if h.claims == nil {
+				h.claims = make(map[string]string)
+			}
+			h.claims[canon] = id
+			h.mu.Unlock()
+			return func() {
+				h.mu.Lock()
+				if h.claims[canon] == id {
+					delete(h.claims, canon)
+				}
+				h.mu.Unlock()
+			}, nil
 		}
 		h.mu.Unlock()
-	}, nil
+		for _, item := range pending {
+			if sameFile(item.path, target) {
+				return nil, errAlreadyOpen
+			}
+			checked[item.id] = item.path
+		}
+	}
 }
 
 func (h *documentHost) noteAction(s *docSession, err error) {
@@ -678,7 +768,7 @@ func (h *documentHost) askSavePath(s *docSession) (string, error) {
 		def = filepath.Join(dir, s.doc.Name()+"."+ext)
 	}
 	target, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
-		Parent:      s.win,
+		Parent:      h.sessionWindow(s),
 		DefaultPath: def,
 		Filters:     []mygo.FileFilter{{Name: "Markdown Document", Extensions: []string{"md", "markdown"}}},
 	})

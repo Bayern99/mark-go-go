@@ -102,8 +102,8 @@ func (st *settingsStore) get() Settings {
 
 func (st *settingsStore) apply(p SettingsPatch) (Settings, error) {
 	st.mu.Lock()
-	defer st.mu.Unlock()
 	if st.dir == "" {
+		st.mu.Unlock()
 		return Settings{}, errors.New("The settings folder is not available.")
 	}
 	s := st.getLocked()
@@ -118,19 +118,19 @@ func (st *settingsStore) apply(p SettingsPatch) (Settings, error) {
 	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
+		st.mu.Unlock()
 		return Settings{}, err
 	}
 	if err := writeFileAtomic(st.path(), append(data, '\n')); err != nil {
+		st.mu.Unlock()
 		return Settings{}, err
 	}
-	st.announceLocked(s)
-	return s, nil
-}
-
-func (st *settingsStore) announceLocked(s Settings) {
-	if st.onChange != nil {
-		st.onChange(s)
+	onChange := st.onChange
+	st.mu.Unlock()
+	if onChange != nil {
+		onChange(s)
 	}
+	return s, nil
 }
 
 func (st *settingsStore) setModels(models []string) error {
@@ -139,19 +139,25 @@ func (st *settingsStore) setModels(models []string) error {
 		return nil
 	}
 	st.mu.Lock()
-	defer st.mu.Unlock()
 	if st.dir == "" {
+		st.mu.Unlock()
 		return nil
 	}
 	s := st.getLocked()
 	s.Models = cleaned
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
+		st.mu.Unlock()
 		return err
 	}
 	if err := writeFileAtomic(st.path(), append(data, '\n')); err != nil {
+		st.mu.Unlock()
 		return err
 	}
-	st.announceLocked(s)
+	onChange := st.onChange
+	st.mu.Unlock()
+	if onChange != nil {
+		onChange(s)
+	}
 	return nil
 }

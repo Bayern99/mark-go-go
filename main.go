@@ -84,6 +84,7 @@ func main() {
 	console.shutdown()
 	research.close()
 	host.waitForGenerations(5 * time.Second)
+	host.waitForSessionWrites(2 * time.Second)
 	host.closeAgentCache()
 	if err != nil {
 		log.Fatal(err)

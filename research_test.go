@@ -148,6 +148,109 @@ func TestResearchSession(t *testing.T) {
 	}
 }
 
+func TestResearchConnectDoesNotHoldGlobalLockDuringCommandStartup(t *testing.T) {
+	rootA := t.TempDir()
+	rootB := t.TempDir()
+	h := newResearchHost(&documentHost{settings: &settingsStore{dir: t.TempDir()}})
+	defer h.close()
+
+	gateA := make(chan struct{})
+	releaseA := make(chan struct{})
+	h.command = func(root, work string) (*exec.Cmd, error) {
+		if sameRoot(root, rootA) {
+			close(gateA)
+			<-releaseA
+		}
+		cmd := exec.Command(os.Args[0], "-test.run=^TestResearchSession$")
+		cmd.Dir = work
+		cmd.Env = append(os.Environ(), "MGO_FIXTURE_RESEARCH=1")
+		return cmd, nil
+	}
+
+	errA := make(chan error, 1)
+	go func() {
+		errA <- h.connect(&workspace{root: rootA}, func(ResearchUpdate) {})
+	}()
+
+	<-gateA
+
+	errB := make(chan error, 1)
+	go func() {
+		errB <- h.connect(&workspace{root: rootB}, func(ResearchUpdate) {})
+	}()
+
+	select {
+	case err := <-errB:
+		if err != nil {
+			close(releaseA)
+			t.Fatalf("second workspace connect failed while first was starting: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		close(releaseA)
+		t.Fatal("second workspace connect blocked on global research lock while first workspace ran command startup")
+	}
+
+	close(releaseA)
+	if err := <-errA; err != nil {
+		t.Fatalf("first workspace connect failed: %v", err)
+	}
+}
+
+func TestResearchStopWhileConnectingReapsChildAndUnblocks(t *testing.T) {
+	root := t.TempDir()
+	h := newResearchHost(&documentHost{settings: &settingsStore{dir: t.TempDir()}})
+	defer h.close()
+
+	gate := make(chan struct{})
+	release := make(chan struct{})
+	spawned := make(chan *exec.Cmd, 1)
+	h.command = func(_, work string) (*exec.Cmd, error) {
+		close(gate)
+		<-release
+		cmd := exec.Command(os.Args[0], "-test.run=^TestResearchSession$")
+		cmd.Dir = work
+		cmd.Env = append(os.Environ(), "MGO_FIXTURE_RESEARCH=1")
+		spawned <- cmd
+		return cmd, nil
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- h.connect(&workspace{root: root}, func(ResearchUpdate) {})
+	}()
+
+	<-gate
+	closed := make(chan struct{})
+	go func() {
+		h.close()
+		close(closed)
+	}()
+	// Give h.close() a moment to enter stop/close before releasing command startup.
+	time.Sleep(30 * time.Millisecond)
+	close(release)
+
+	select {
+	case <-closed:
+	case <-time.After(3 * time.Second):
+		t.Fatal("researchHost.close hung while connect was starting")
+	}
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("connect should fail when host closed mid-startup")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("connect did not return after close")
+	}
+	select {
+	case cmd := <-spawned:
+		if cmd.Process != nil && cmd.ProcessState == nil {
+			t.Fatal("spawned child process was not reaped after connect aborted")
+		}
+	default:
+	}
+}
+
 func runResearchFixture() {
 	encoder := json.NewEncoder(os.Stdout)
 	reply := func(id int, result any) {

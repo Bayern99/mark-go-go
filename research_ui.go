@@ -91,10 +91,15 @@ func (ui *researchUI) handle(conn net.Conn, h *researchHost, s *researchSession)
 		for i := range s.extensions {
 			s.extensions[i].Source = "extension"
 		}
+		var upd *ResearchUpdate
 		if s.replay == nil && s.commands != nil && ui.context.Err() == nil {
-			s.emitCommands()
+			u := s.commandsUpdateLocked()
+			upd = &u
 		}
 		s.updateMu.Unlock()
+		if upd != nil {
+			s.emit(*upd)
+		}
 	case "input", "editor":
 		ctx, cancel := context.WithCancel(ui.context)
 		defer cancel()
@@ -131,7 +136,7 @@ func (ui *researchUI) handle(conn net.Conn, h *researchHost, s *researchSession)
 	json.NewEncoder(conn).Encode(response)
 }
 
-func (s *researchSession) emitCommands() {
+func (s *researchSession) commandsUpdateLocked() ResearchUpdate {
 	commands := slices.Clone(s.commands)
 	for _, ext := range s.extensions {
 		switch ext.Name {
@@ -142,12 +147,13 @@ func (s *researchSession) emitCommands() {
 			commands = append(commands, ext)
 		}
 	}
-	s.emit(ResearchUpdate{Kind: "commands", Commands: commands})
+	return ResearchUpdate{Kind: "commands", Commands: commands}
 }
 
 func (h *researchHost) askResearchQuestion(ctx context.Context, s *researchSession, sessionID string, event ResearchUpdate) *string {
 	h.mu.Lock()
 	turn := s.turn
+	agent := s.agent
 	h.mu.Unlock()
 	select {
 	case s.questionSlot <- struct{}{}:
@@ -169,12 +175,16 @@ func (h *researchHost) askResearchQuestion(ctx context.Context, s *researchSessi
 	h.mu.Unlock()
 	event.RequestID = q.id
 	s.emit(event)
+	var exited <-chan struct{}
+	if agent != nil {
+		exited = agent.exited
+	}
 	var answer *string
 	select {
 	case answer = <-q.answer:
 	case <-ctx.Done():
 	case <-s.stopped:
-	case <-s.agent.exited:
+	case <-exited:
 	case <-turn:
 	}
 	h.mu.Lock()

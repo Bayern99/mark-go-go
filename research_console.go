@@ -95,7 +95,11 @@ func (h *researchConsoleHost) Connect(ctx context.Context, root string, args []s
 	if err != nil {
 		return err
 	}
-	root = canonicalPath(w.root)
+	return h.connect(w, args)
+}
+
+func (h *researchConsoleHost) connect(w *workspace, args []string) error {
+	root := canonicalPath(w.root)
 
 	h.mu.Lock()
 	if h.closed {
@@ -148,17 +152,20 @@ func (h *researchConsoleHost) Connect(ctx context.Context, root string, args []s
 		done:     make(chan struct{}),
 		readDone: make(chan struct{}),
 	}
+	abortSpawn := func() {
+		_ = term.Close()
+		killResearchConsoleProcess(cmd)
+		_ = cmd.Wait()
+	}
 	h.mu.Lock()
 	if h.closed {
 		h.mu.Unlock()
-		_ = term.Close()
-		killResearchConsoleProcess(cmd)
+		abortSpawn()
 		return errors.New("The Feynman console is closing.")
 	}
 	if previous := h.sessions[root]; previous != nil {
 		h.mu.Unlock()
-		_ = term.Close()
-		killResearchConsoleProcess(cmd)
+		abortSpawn()
 		return errors.New("The Feynman console is already open for this workspace.")
 	}
 	h.sessions[root] = session
@@ -166,15 +173,21 @@ func (h *researchConsoleHost) Connect(ctx context.Context, root string, args []s
 	releaseConsole = false
 
 	if w.win != nil {
-		offClosed := w.win.OnClosed(func() { _ = h.disconnect(root, session) })
+		offClosed := w.win.OnClosed(func() { h.handleWindowClosed(root, session) })
 		session.mu.Lock()
 		session.offClosed = offClosed
 		session.mu.Unlock()
 	}
-	_ = researchConsoleUpdate.Emit(w.win, ResearchConsoleUpdate{Root: root, Kind: "reset"})
 	go h.read(session)
 	go h.wait(session)
+	emitResearchConsole(w.win, ResearchConsoleUpdate{Root: root, Kind: "reset"})
 	return nil
+}
+
+func emitResearchConsole(win *mygo.Window, update ResearchConsoleUpdate) {
+	if win != nil && !win.IsDestroyed() {
+		_ = researchConsoleUpdate.Emit(win, update)
+	}
 }
 
 func (h *researchConsoleHost) read(session *researchConsoleSession) {
@@ -206,7 +219,7 @@ func (h *researchConsoleHost) read(session *researchConsoleSession) {
 				_, _ = session.backlog.Write(data)
 			}
 			session.mu.Unlock()
-			_ = researchConsoleUpdate.Emit(session.win, ResearchConsoleUpdate{Root: session.root, Kind: "output", Text: text, Seq: seq})
+			emitResearchConsole(session.win, ResearchConsoleUpdate{Root: session.root, Kind: "output", Text: text, Seq: seq})
 		}
 		if err != nil {
 			session.mu.Lock()
@@ -219,7 +232,7 @@ func (h *researchConsoleHost) read(session *researchConsoleSession) {
 				seq := session.seq
 				_, _ = session.backlog.Write([]byte(text))
 				session.mu.Unlock()
-				_ = researchConsoleUpdate.Emit(session.win, ResearchConsoleUpdate{Root: session.root, Kind: "output", Text: text, Seq: seq})
+				emitResearchConsole(session.win, ResearchConsoleUpdate{Root: session.root, Kind: "output", Text: text, Seq: seq})
 			}
 			return
 		}
@@ -279,9 +292,9 @@ func (h *researchConsoleHost) wait(session *researchConsoleSession) {
 	h.completedOwner[session.root] = session.win
 	h.mu.Unlock()
 	if finishErr != nil {
-		_ = researchConsoleUpdate.Emit(session.win, ResearchConsoleUpdate{Root: session.root, Kind: "error", Text: finishErr.Error()})
+		emitResearchConsole(session.win, ResearchConsoleUpdate{Root: session.root, Kind: "error", Text: finishErr.Error()})
 	}
-	_ = researchConsoleUpdate.Emit(session.win, ResearchConsoleUpdate{Root: session.root, Kind: "exit", ExitCode: exitCode})
+	emitResearchConsole(session.win, ResearchConsoleUpdate{Root: session.root, Kind: "exit", ExitCode: exitCode})
 	h.research.releaseConsole(session.root)
 	close(session.done)
 }
@@ -369,6 +382,12 @@ func (h *researchConsoleHost) Disconnect(ctx context.Context, root string) error
 		return nil
 	}
 	return h.disconnect(canonicalPath(root), session)
+}
+
+func (h *researchConsoleHost) handleWindowClosed(root string, session *researchConsoleSession) {
+	go func() {
+		_ = h.disconnect(root, session)
+	}()
 }
 
 func (h *researchConsoleHost) disconnect(root string, session *researchConsoleSession) error {

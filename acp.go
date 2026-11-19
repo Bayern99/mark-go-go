@@ -289,6 +289,9 @@ func (a *acpAgent) callCapturing(method string, params any, result any, raw *jso
 	a.mu.Unlock()
 
 	if err := a.write(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params}); err != nil {
+		a.mu.Lock()
+		delete(a.pending, id)
+		a.mu.Unlock()
 		return fmt.Errorf("could not send %s to the agent: %v", method, err)
 	}
 	var resp acpResponse
@@ -298,6 +301,9 @@ func (a *acpAgent) callCapturing(method string, params any, result any, raw *jso
 		select {
 		case resp = <-ch:
 		default:
+			a.mu.Lock()
+			delete(a.pending, id)
+			a.mu.Unlock()
 			return errors.New(a.goneMessage(method))
 		}
 	}

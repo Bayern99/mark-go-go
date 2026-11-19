@@ -19,7 +19,7 @@ import {
 } from './editor/nativeEdit'
 import { createGenUIPlugin } from './plugins/genui'
 import { DesktopPlugins, PluginMenu, usePluginEnabled } from './plugins/DesktopPlugins'
-import { EmptyResearchPane } from './plugins/feynman'
+import { WorkspaceResearch } from './plugins/feynman'
 import { isRecord } from './lib/guards'
 import { createOutlinePlugin } from './plugins/outline'
 import { ScrollArea } from './components/ScrollArea'
@@ -112,68 +112,53 @@ class ViewModeController {
   }
 }
 
-export function DocumentPane({
-  host,
-  plugins = [],
-  active = true,
-  workspaceRoot = '',
-  libraryOpen = false,
-  onOpenRightFloat,
+function createDocumentServices(host: HostAdapter) {
+  const documents = new DocumentService()
+  const commands = new CommandRegistry()
+  const views = new ViewRegistry()
+  const editor = new EditorAccess()
+  const plugins = new PluginRegistry(documents, views, commands, editor, host)
+  return { host, documents, commands, views, editor, plugins }
+}
+
+function DocumentPane({
+  services,
+  plugins,
+  active,
+  workspaceRoot,
+  drawerOpen,
+  closeDrawers,
   onOpenPath,
   onReadyReveal,
-  workspaceView,
-  preferredRightView,
-  onWorkspaceView,
-  openDocument,
 }: {
-  host: HostAdapter
-  workspaceView?: string
-  preferredRightView?: string
-  onWorkspaceView?: (id?: string) => void
-  openDocument?: (path: string, existingID?: string) => Promise<unknown>
-  plugins?: AppPlugin[]
-  active?: boolean
-  workspaceRoot?: string
-  libraryOpen?: boolean
-  onOpenRightFloat?: () => void
-  onOpenPath?: (path: string, isFile: boolean) => void
-  onReadyReveal?: (id: string, reveal: (offset: number) => boolean) => () => void
+  services: ReturnType<typeof createDocumentServices>
+  plugins: AppPlugin[]
+  active: boolean
+  workspaceRoot: string
+  drawerOpen: boolean
+  closeDrawers: () => void
+  onOpenPath: (path: string, isFile: boolean) => void
+  onReadyReveal: (id: string, reveal: (offset: number) => boolean) => () => void
 }): React.ReactElement {
+  const { host } = services
   const editorRoot = useRef<HTMLDivElement>(null)
   const editorScroll = useRef<HTMLElement | null>(null)
   const editorRef = useRef<MarkdownEditor | null>(null)
   const viewModesRef = useRef<HTMLDivElement>(null)
-  const rightToggleRef = useRef<HTMLButtonElement>(null)
   const [docState, setDocState] = useState<DocumentInfo | null>(null)
   const [version, setVersion] = useState(0)
   const [editorMode, setEditorMode] = useState<EditorMode>('preview')
   const [centerViewId, setCenterViewId] = useState<string | null>(null)
   const [returnToId, setReturnToId] = useState<string | null>(null)
-  const [rightViewId, setRightViewId] = useState<string | null>(null)
-  const previousPreference = useRef(preferredRightView)
-  const [isNarrow, setIsNarrow] = useState<boolean>(() => measureIsNarrow())
-  const [rightWantOpen, setRightWantOpen] = useState<boolean>(true)
-  const [rightFloatOpen, setRightFloatOpen] = useState<boolean>(false)
   const [ready, setReady] = useState(false)
   const [bootstrapError, setBootstrapError] = useState('')
   const [, refreshPlugins] = useReducer((value: number) => value + 1, 0)
   const restored = useRef(false)
   const reportedMode = useRef(false)
   const activeRef = useRef(active)
-  const sharedPanelSelection = useRef(onWorkspaceView)
-  sharedPanelSelection.current = onWorkspaceView
   const revealBinder = useRef(onReadyReveal)
   activeRef.current = active
   revealBinder.current = onReadyReveal
-
-  const services = useMemo(() => {
-    const documents = new DocumentService()
-    const commands = new CommandRegistry()
-    const views = new ViewRegistry()
-    const editor = new EditorAccess()
-    const plugins = new PluginRegistry(documents, views, commands, editor, host)
-    return { documents, commands, views, editor, plugins }
-  }, [host])
 
   const [modes] = useState(
     () =>
@@ -186,89 +171,16 @@ export function DocumentPane({
   )
 
   const centerViews = useViews(services.views, 'center')
-  const rightViews = useViews(services.views, 'right')
+  const documentActions = useViews(services.views, 'document')
   const centerView = centerViews.find((view) => view.id === centerViewId) ?? null
   const returnTo = centerView ? null : (centerViews.find((view) => view.id === returnToId) ?? null)
   const viewMode: ViewMode = centerView ? centerView.id : editorMode === 'source' ? 'markdown' : 'preview'
 
-  const rightShown = rightViews.length > 0 && (isNarrow ? rightFloatOpen : rightWantOpen)
-  const rightFloating = isNarrow && rightFloatOpen
-
-  useEffect(() => {
-    if (!ready) return
-    const previous = previousPreference.current
-    previousPreference.current = preferredRightView
-    if (active && preferredRightView && preferredRightView !== previous) {
-      void services.commands.execute('rightPane.show', preferredRightView)
-    }
-  }, [ready, active, preferredRightView, services])
-
-  const toggleRightPane = () => {
-    if (measureIsNarrow()) {
-      setIsNarrow(true)
-      onOpenRightFloat?.()
-      rightToggleRef.current?.focus({ preventScroll: true })
-      setRightFloatOpen((open) => !open)
-    } else {
-      setIsNarrow(false)
-      setRightWantOpen((open) => !open)
-    }
-  }
-
-  useEffect(() => {
-    if (libraryOpen) setRightFloatOpen(false)
-  }, [libraryOpen])
-
   useLayoutEffect(() => {
-    if (!rightFloating && !libraryOpen) return
+    if (!drawerOpen || !active) return
     const selection = window.getSelection()
     if (selection && editorRoot.current?.contains(selection.anchorNode)) selection.removeAllRanges()
-  }, [rightFloating, libraryOpen])
-
-  useEffect(() => {
-    if (!rightFloating) return
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.repeat || event.defaultPrevented) return
-      if (!activeRef.current) return
-      if (
-        document.querySelector(
-          '[role="menu"][data-state="open"], [role="listbox"][data-state="open"], [role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]',
-        )
-      ) {
-        return
-      }
-      const target = event.target instanceof Element ? event.target : null
-      if (
-        target?.closest(
-          'input, textarea, select, dialog, [contenteditable="true"], [role="menu"], [role="menubar"], [role="listbox"], [role="dialog"], [role="alertdialog"], [data-radix-popper-content-wrapper], .ProseMirror, .cm-editor',
-        )
-      ) {
-        return
-      }
-      setRightFloatOpen(false)
-      rightToggleRef.current?.focus()
-    }
-    window.addEventListener('keydown', handleEscape)
-    return () => window.removeEventListener('keydown', handleEscape)
-  }, [rightFloating])
-
-  useEffect(() => {
-    const syncViewport = () => {
-      const narrow = measureIsNarrow()
-      setIsNarrow((prev) => {
-        if (narrow && !prev) setRightFloatOpen(false)
-        return narrow
-      })
-    }
-    syncViewport()
-    window.addEventListener('resize', syncViewport)
-    const observer = new ResizeObserver(syncViewport)
-    observer.observe(document.documentElement)
-    return () => {
-      window.removeEventListener('resize', syncViewport)
-      observer.disconnect()
-    }
-  }, [])
+  }, [drawerOpen, active])
 
   useEffect(() => {
     if (centerViewId !== null && centerView === null) modes.dropCenter()
@@ -292,12 +204,6 @@ export function DocumentPane({
     const handleShortcuts = (event: KeyboardEvent) => {
       if (!activeRef.current) return
       if (event.repeat) return
-      if ((event.metaKey || event.ctrlKey) && event.altKey && event.code === 'Digit0') {
-        event.preventDefault()
-        event.stopPropagation()
-        toggleRightPane()
-        return
-      }
       if (!(event.metaKey || event.ctrlKey) || event.altKey || event.key !== '/') return
       if (!editorRef.current) return
       event.preventDefault()
@@ -433,7 +339,7 @@ export function DocumentPane({
         services.commands.register('editor.reveal', (offset) => {
           const value = Number(offset)
           if (!Number.isFinite(value)) return false
-          if (measureIsNarrow()) setRightFloatOpen(false)
+          closeDrawers()
           modes.showSource()
           return editor.reveal(value)
         }),
@@ -444,7 +350,7 @@ export function DocumentPane({
           const start = Number(from)
           const end = Number(to)
           if (!Number.isFinite(start) || !Number.isFinite(end)) return false
-          if (measureIsNarrow()) setRightFloatOpen(false)
+          closeDrawers()
           modes.showSource()
           return editor.select(start, end)
         }),
@@ -474,25 +380,6 @@ export function DocumentPane({
         services.commands.register('editor.toggleSourceMode', () => {
           modes.toggleEditorMode()
           return editor.getMode()
-        }),
-      )
-
-      cleanups.push(
-        services.commands.register('rightPane.show', (targetViewId) => {
-          if (typeof targetViewId === 'string' && targetViewId !== '') {
-            const shared = services.views.getAll().find(view => view.id === targetViewId)?.workspaceScoped
-            sharedPanelSelection.current?.(shared ? targetViewId : undefined)
-            setRightViewId(targetViewId)
-          }
-          if (measureIsNarrow()) {
-            setIsNarrow(true)
-            onOpenRightFloat?.()
-            setRightFloatOpen(true)
-          } else {
-            setIsNarrow(false)
-            setRightWantOpen(true)
-          }
-          return true
         }),
       )
 
@@ -560,7 +447,7 @@ export function DocumentPane({
       void editorRef.current?.destroy()
       editorRef.current = null
     }
-  }, [host, services, modes])
+  }, [host, services, modes, closeDrawers])
 
   useLayoutEffect(() => {
     if (!ready || restored.current || !docState) return
@@ -602,15 +489,9 @@ export function DocumentPane({
     else modes.showCenter(id)
   }
 
-  const handleCenterClick = () => {
-    if (isNarrow && rightFloatOpen) {
-      setRightFloatOpen(false)
-    }
-  }
-
   return (
     <div
-      className={`app mgg win${rightShown && !rightFloating ? ' rp-dock' : ''}${rightFloating ? ' rp-float' : ''}`}
+      className="app mgg win"
       hidden={!active}
       data-document-id={host.id}
     >
@@ -664,22 +545,8 @@ export function DocumentPane({
                     </button>
                   ))}
                 </div>
-                {ready && openDocument && <DesktopPlugins registry={services.plugins} documentID={host.id}
-                  workspaceRoot={workspaceRoot} openDocument={openDocument} />}
-                <button
-                  type="button"
-                  className="toggle-button pill icon quiet rp-tg"
-                  data-testid="right-pane-toggle"
-                  data-rp-toggle
-                  ref={rightToggleRef}
-                  aria-expanded={rightShown}
-                  aria-label={rightShown ? 'Hide right panel' : 'Show right panel'}
-                  title={`${rightShown ? 'Hide' : 'Show'} right panel (⌥⌘0)`}
-                  onClick={toggleRightPane}
-                  disabled={!ready}
-                >
-                  <i className="ph ph-sidebar-simple rp-tg-icon" aria-hidden="true" />
-                </button>
+                {ready && <DesktopPlugins registry={services.plugins} documentID={host.id} />}
+                {active && documentActions.map(view => <ViewHost key={view.id} view={view} />)}
               </div>
             </header>
 
@@ -713,7 +580,7 @@ export function DocumentPane({
             <div
               className="center-stage"
               data-testid="center-stage"
-              onClick={handleCenterClick}
+              onClick={closeDrawers}
             >
               <main className="editor-pane" hidden={centerView !== null}>
                 {returnTo ? (
@@ -756,23 +623,6 @@ export function DocumentPane({
           </section>
         </div>
 
-        <RightPane
-          views={services.views}
-          activeId={rightViews.some(view => view.id === workspaceView)
-            ? workspaceView
-            : rightViewId ?? (active && rightShown ? preferredRightView : undefined)}
-          onSelect={id => {
-            const shared = rightViews.find(view => view.id === id)?.workspaceScoped
-            onWorkspaceView?.(shared ? id : undefined)
-            if (!shared || !onWorkspaceView) setRightViewId(id)
-          }}
-          open={rightShown}
-          floating={rightFloating}
-          onClose={() => {
-            setRightFloatOpen(false)
-            rightToggleRef.current?.focus()
-          }}
-        />
       </div>
 
       <footer className="status-bar">
@@ -854,15 +704,26 @@ function WorkspaceApp({
 }): React.ReactElement {
   const [snap, setSnap] = useState<WorkspaceSnapshot | null>(null)
   const researchEnabled = usePluginEnabled('feynman')
-  const [workspaceViews, setWorkspaceViews] = useState<Record<string, string | undefined>>({})
+  const panes = useRef(new Map<string, ReturnType<typeof createDocumentServices>>())
   const openDocument = useCallback(async (path: string, existingID?: string) => {
+    let id: string
     if (existingID && (await workspace.snapshot()).documents.some(doc => doc.id === existingID)) {
-      return workspace.activate(existingID)
+      await workspace.activate(existingID)
+      id = existingID
+    } else {
+      id = (await workspace.open(path)).id
     }
-    return workspace.open(path)
+    return {
+      id,
+      async snapshot() {
+        const buffer = panes.current.get(id)?.documents.snapshot()
+        if (buffer?.version) return buffer
+        const { state, text, version } = await workspace.document(id).load()
+        return { path: state.path, text, version }
+      },
+    }
   }, [workspace])
   const [recents, setRecents] = useState<RecentWorkspace[]>([])
-  const panes = useRef(new Map<string, HostAdapter>())
   const reveals = useRef(new Map<string, (offset: number) => boolean>())
   const emptyViews = useMemo(() => new ViewRegistry(), [])
 
@@ -894,6 +755,61 @@ function WorkspaceApp({
   const [tabFilter, setTabFilter] = useState('')
   const [libraryOpen, setLibraryOpen] = useState(false)
   const libraryToggleRef = useRef<HTMLButtonElement>(null)
+  const rightToggleRef = useRef<HTMLButtonElement>(null)
+  const [isNarrow, setIsNarrow] = useState(measureIsNarrow)
+  const [rightWantOpen, setRightWantOpen] = useState(true)
+  const [rightFloatOpen, setRightFloatOpen] = useState(false)
+  const rightShown = researchEnabled && (isNarrow ? rightFloatOpen : rightWantOpen)
+  const rightFloating = rightShown && isNarrow
+  const closeDrawers = useCallback(() => {
+    setLibraryOpen(false)
+    setRightFloatOpen(false)
+  }, [])
+  const toggleResearch = useCallback(() => {
+    if (measureIsNarrow()) {
+      setLibraryOpen(false)
+      rightToggleRef.current?.focus({ preventScroll: true })
+      setRightFloatOpen(value => !value)
+    } else {
+      setRightWantOpen(value => !value)
+    }
+  }, [])
+
+  useEffect(() => {
+    const resize = () => {
+      const narrow = measureIsNarrow()
+      setIsNarrow(narrow)
+      if (!narrow) setRightFloatOpen(false)
+    }
+    const observer = new ResizeObserver(resize)
+    observer.observe(document.documentElement)
+    window.addEventListener('resize', resize)
+    return () => { observer.disconnect(); window.removeEventListener('resize', resize) }
+  }, [])
+
+  useEffect(() => {
+    if (!researchEnabled) {
+      setRightFloatOpen(false)
+      setRightWantOpen(true)
+      return
+    }
+    const keydown = (event: KeyboardEvent) => {
+      if (event.repeat || event.defaultPrevented) return
+      if ((event.metaKey || event.ctrlKey) && event.altKey && event.code === 'Digit0') {
+        event.preventDefault()
+        toggleResearch()
+      } else if (rightFloating && event.key === 'Escape' &&
+        !document.querySelector('[data-radix-popper-content-wrapper], [role="dialog"][data-state="open"]') &&
+        !(event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"], dialog'))) {
+        event.preventDefault()
+        setRightFloatOpen(false)
+        rightToggleRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', keydown)
+    return () => window.removeEventListener('keydown', keydown)
+  }, [researchEnabled, rightFloating, toggleResearch])
+
   const recentDocuments = useRef<string[]>([])
   useEffect(() => {
     const live = new Set(documents.map((doc) => doc.id))
@@ -1044,11 +960,13 @@ function WorkspaceApp({
   }, [hiddenDocuments.length])
 
   for (const doc of documents) {
-    if (!panes.current.has(doc.id)) panes.current.set(doc.id, workspace.document(doc.id))
+    if (!panes.current.has(doc.id)) panes.current.set(doc.id, createDocumentServices(workspace.document(doc.id)))
   }
   for (const id of [...panes.current.keys()]) {
     if (!documents.some((doc) => doc.id === id)) panes.current.delete(id)
   }
+
+  const activePane = panes.current.get(activeId)
 
   const activate = (id: string, focusTab = false) => {
     tabFocusTarget.current = focusTab ? id : null
@@ -1102,11 +1020,11 @@ function WorkspaceApp({
       <button
         type="button"
         className="pill icon quiet library-toggle"
-        aria-label={libraryOpen ? 'Hide files' : 'Show files'}
+        aria-label={libraryOpen ? 'Hide navigation' : 'Show navigation'}
         aria-expanded={libraryOpen}
-        title={libraryOpen ? 'Hide files' : 'Show files'}
+        title={libraryOpen ? 'Hide navigation' : 'Show navigation'}
         ref={libraryToggleRef}
-        onClick={() => setLibraryOpen((open) => !open)}
+        onClick={() => { setRightFloatOpen(false); setLibraryOpen(open => !open) }}
       >
         <i className="ph ph-sidebar-simple" aria-hidden="true" />
       </button>
@@ -1275,6 +1193,14 @@ function WorkspaceApp({
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
+      {researchEnabled && (
+        <button type="button" className="pill icon quiet rp-tg" data-testid="right-pane-toggle" data-rp-toggle
+          ref={rightToggleRef} aria-expanded={rightShown} aria-controls="feynman-sidebar"
+          aria-label={rightShown ? 'Hide Feynman' : 'Show Feynman'} title={`${rightShown ? 'Hide' : 'Show'} Feynman (⌥⌘0)`}
+          onClick={toggleResearch}>
+          <i className="ph ph-sidebar-simple rp-tg-icon" aria-hidden="true" />
+        </button>
+      )}
       <PluginMenu workspaces={snap?.workspaces ?? []} />
     </div>
   )
@@ -1298,7 +1224,7 @@ function WorkspaceApp({
           />
         ) : null}
         <SidePane
-          views={emptyViews}
+          views={activePane?.views ?? emptyViews}
           workspace={workspace}
           workspaceSnap={snap}
           doc={documents.find((d) => d.id === activeId) ?? null}
@@ -1322,16 +1248,12 @@ function WorkspaceApp({
           {documents.map((doc) => (
             <DocumentPane
               key={doc.id}
-              host={panes.current.get(doc.id)!}
+              services={panes.current.get(doc.id)!}
               plugins={plugins}
               active={doc.id === activeId}
               workspaceRoot={doc.workspaceRoot ?? (doc.id === activeId ? snap?.root : '') ?? ''}
-              openDocument={openDocument}
-              preferredRightView={researchEnabled ? 'feynman.panel' : undefined}
-              workspaceView={workspaceViews[doc.workspaceRoot ?? snap?.root ?? '']}
-              onWorkspaceView={id => setWorkspaceViews(current => ({ ...current, [doc.workspaceRoot ?? snap?.root ?? '']: id }))}
-              libraryOpen={libraryOpen}
-              onOpenRightFloat={() => setLibraryOpen(false)}
+              drawerOpen={libraryOpen || rightFloating}
+              closeDrawers={closeDrawers}
               onOpenPath={openPath}
               onReadyReveal={(id, reveal) => {
                 reveals.current.set(id, reveal)
@@ -1356,18 +1278,19 @@ function WorkspaceApp({
                 }}
               />
             ) : (
-              <div className="empty-folder">
-                <div className="workspace-empty" data-testid="workspace-empty">
-                  Open a Markdown file from this folder.
-                  {snap?.root && researchEnabled && workspaceViews[snap.root] !== 'feynman.panel' &&
-                    <button className="pill" onClick={() => setWorkspaceViews(current => ({ ...current, [snap.root]: 'feynman.panel' }))}>Start research</button>}
-                </div>
-                {snap?.root && researchEnabled && workspaceViews[snap.root] === 'feynman.panel' &&
-                  <EmptyResearchPane key={snap.root} root={snap.root} open={openDocument} />}
-              </div>
+              <div className="workspace-empty" data-testid="workspace-empty">Open a Markdown file from this folder.</div>
             )
           ) : null}
         </div>
+        {researchEnabled && snap && (
+          <RightPane open={rightShown} floating={rightFloating} onClose={() => {
+            setRightFloatOpen(false)
+            rightToggleRef.current?.focus()
+          }}>
+            <WorkspaceResearch key={snap.root} root={snap.root} ctx={activePane} documentID={activeId} open={openDocument}
+              openFolder={() => void workspace.pickFolder()} />
+          </RightPane>
+        )}
       </div>
     </div>
   )

@@ -15,7 +15,7 @@ The browser preview uses sample documents and an in-memory host. See [developmen
 - **SoloMD** provided an interaction reference for in-place Markdown editing and for keeping rendering separate from saving the document. [Reference and revision](docs/adr/0006-preserved-blocks-and-semantic-colors.md)
 - **Awesome MyGo** helped us explore the MyGo ecosystem. [Awesome MyGo](https://github.com/yldm-tech/awesome-mygo)
 
-- **Onevra Chat** and the **MyGo Markdown chat** example informed the research pane’s composer, streamed Markdown, tool details and scroll behaviour. **GoRex** provided a reference for resizing and reattaching a running terminal. [Onevra Chat](https://github.com/oneo-me/onevra/tree/main/source/components/chat) · [MyGo example](https://github.com/egoist/mygo/tree/v0.10.0/examples/markdown-chat) · [GoRex](https://github.com/egoist/gorex)
+- **Onevra Chat** and the **MyGo Markdown chat** example informed the research pane’s composer, streamed Markdown, tool details and scroll behaviour. **Pi P2** informed the sidebar layout and searchable research actions. **GoRex** provided a reference for resizing and reattaching a running terminal. [Onevra Chat](https://github.com/oneo-me/onevra/tree/main/source/components/chat) · [MyGo example](https://github.com/egoist/mygo/tree/v0.10.0/examples/markdown-chat) · [Pi sidebar](https://github.com/earendil-works/pi/blob/main/apps/p2/src/web/SidePanel.tsx) · [Pi command pages](https://github.com/earendil-works/pi/blob/main/apps/p2/plugins/chat/commands.tsx) · [GoRex](https://github.com/egoist/gorex)
 
 ## Software and assets
 

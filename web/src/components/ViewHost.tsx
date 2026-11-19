@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ViewRegistry } from '../core/ViewRegistry'
 import type { ViewLocation, ViewRegistration, ViewStatusSource } from '../core/types'
 import { ScrollArea } from './ScrollArea'
@@ -21,7 +21,7 @@ export function ViewStatusIndicator({ status, testId }: { status: ViewStatusSour
 export function useViews(views: ViewRegistry, location: ViewLocation): ViewRegistration[] {
   const [entries, setEntries] = useState(() => select(views, location))
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const update = () => setEntries(select(views, location))
     update()
     const subscription = views.onDidChange(update)

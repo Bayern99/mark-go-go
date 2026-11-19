@@ -31,7 +31,6 @@ export async function mountApp(
       if (!preview || preview.disabled) throw new Error('editor not ready yet')
       if (!container.querySelector('[data-testid="editor-root"] .ProseMirror'))
         throw new Error('editor not mounted yet')
-      if (!container.querySelector('.outline-panel')) throw new Error('outline panel missing')
       if (!container.querySelector('[data-testid="view-mode-genui"]'))
         throw new Error('GenUI view mode missing')
     },

@@ -441,7 +441,7 @@ describe('GenUI generation', () => {
 
     await trigger.click()
     await expect.element(page.getByRole('listbox', { name: 'Model' })).toBeVisible()
-    await page.getByTestId('right-tab-outline.panel').click()
+    await page.getByTestId('left-tab-outline.panel').click()
     await expect.poll(() => page.getByRole('listbox', { name: 'Model' }).query()).toBeNull()
     await expect.poll(() => panel().query()).toBeNull()
 

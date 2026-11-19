@@ -48,6 +48,11 @@ func TestResearchSession(t *testing.T) {
 		}
 	}
 	ctx := context.Background()
+	for _, command := range []string{"/new", "/quit", "/exit"} {
+		if _, err := h.Prompt(ctx, root, command, "", ""); err == nil || !strings.Contains(err.Error(), "Conversation history") && !strings.Contains(err.Error(), "Plugins") {
+			t.Fatalf("%s should point to its workspace control, got %v", command, err)
+		}
+	}
 	connect()
 	if cmds := wait("commands").Commands; len(cmds) != 1 || cmds[0].Name != "lit" {
 		t.Fatal(cmds)
@@ -159,6 +164,7 @@ func runResearchFixture() {
 	}
 	sc := bufio.NewScanner(os.Stdin)
 	turn := 0
+	finishOnDismiss := false
 	for sc.Scan() {
 		var r struct {
 			ID     int
@@ -203,12 +209,20 @@ func runResearchFixture() {
 			reply(r.ID, map[string]any{"configOptions": config(p.Value)})
 		case "session/prompt":
 			turn = r.ID
+			finishOnDismiss = strings.Contains(string(r.Params), "Dismiss extension choice")
+			if strings.Contains(string(r.Params), "Exercise extension forms") {
+				msg("Extension ready")
+				continue
+			}
 			_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "id": 29, "method": "session/request_permission", "params": map[string]any{"sessionId": "fixture", "toolCall": map[string]any{"title": "Apply?", "rawInput": map[string]string{"message": "Save the fixture?"}}, "options": []map[string]string{{"name": "Accept", "kind": "allow_once", "optionId": "yes"}}}})
 		case "session/cancel":
 			reply(turn, map[string]string{"stopReason": "cancelled"})
 		case "":
 			if r.ID == 29 && strings.Contains(string(r.Result), "\"yes\"") {
 				msg("saved")
+				reply(turn, map[string]string{"stopReason": "end_turn"})
+			}
+			if r.ID == 29 && finishOnDismiss && strings.Contains(string(r.Result), "\"cancelled\"") {
 				reply(turn, map[string]string{"stopReason": "end_turn"})
 			}
 		}

@@ -128,6 +128,7 @@ export interface ResearchArtifact {
 export interface ResearchCommand {
   name: string;
   description?: string;
+  source?: string;
   input?: ResearchCommandInput;
 }
 
@@ -215,6 +216,8 @@ export interface ResearchUpdate {
   root: string;
   kind: string;
   text?: string;
+  placeholder?: string;
+  prefill?: string;
   commands?: ResearchCommand[];
   config?: ResearchConfig[];
   tool?: ResearchTool;
@@ -223,6 +226,7 @@ export interface ResearchUpdate {
   size?: number;
   image?: string;
   messageId?: string;
+  key?: string;
   requestId?: string;
   options?: ResearchOption[];
 }
@@ -325,6 +329,7 @@ export const WorkspaceHost = {
 
 export const ResearchHost = {
   answer: bind<[string, string, string], void>("ResearchHost.Answer", (root: string, requestID: string, optionID: string) => [root, requestID, optionID]),
+  answerText: bind<[string, string, string, boolean], void>("ResearchHost.AnswerText", (root: string, requestID: string, text: string, cancelled: boolean) => [root, requestID, text, cancelled]),
   artifacts: bind<[string], ResearchArtifact[]>("ResearchHost.Artifacts", (root: string) => [root]),
   cancel: bind<[string], void>("ResearchHost.Cancel", (root: string) => [root]),
   connect: bind<[string], void>("ResearchHost.Connect", (root: string) => [root]),

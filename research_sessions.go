@@ -155,6 +155,8 @@ func (h *researchHost) openConversation(s *researchSession, work, id, notice str
 
 	s.updateMu.Lock()
 	s.replay = []json.RawMessage{}
+	s.commands = nil
+	s.extensions = nil
 	s.updateMu.Unlock()
 	var opened struct {
 		SessionID     string

@@ -1,3 +1,4 @@
+import './helpers/enable-feynman'
 import '../src/styles.css'
 import { page, userEvent } from 'vitest/browser'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -29,7 +30,7 @@ afterEach(async () => {
 })
 
 describe('layout at the default window size', () => {
-  it('keeps a readable text column with the outline open', async () => {
+  it('keeps a readable text column with research docked', async () => {
     await page.viewport(WINDOW.width, WINDOW.height)
     mounted = await mountApp(DOCUMENT)
 
@@ -91,7 +92,7 @@ describe('layout at the default window size', () => {
     expect(rightPane.classList.contains('r-float')).toBe(true)
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
 
-    await page.getByText('结论').first().click()
+    await page.getByTestId('center-stage').click({ position: { x: 12, y: 80 } })
     expect(rightPane.hidden).toBe(true)
     expect(rightPane.classList.contains('r-float')).toBe(false)
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
@@ -114,6 +115,8 @@ describe('layout at the default window size', () => {
     await page.getByTestId('right-pane-toggle').click()
     expect(rightPane.hidden).toBe(false)
 
+    await page.getByRole('tab', { name: 'Outline' }).click()
+    await expect.element(page.getByRole('navigation', { name: 'Document outline' })).toBeVisible()
     const outlineItem = mounted.container.querySelector<HTMLButtonElement>('.outline-link')
     if (!outlineItem) throw new Error('outline item missing')
     outlineItem.click()
@@ -139,7 +142,7 @@ describe('layout at the default window size', () => {
   it('reclaims reading space at the native minimum and resets the file drawer on resize', async () => {
     await page.viewport(480, 360)
     mounted = await mountApp(DOCUMENT)
-    const files = page.getByRole('button', { name: 'Show files' })
+    const files = page.getByRole('button', { name: 'Show navigation' })
     const library = page.getByTestId('left-pane')
     await expect.element(library).not.toBeVisible()
     const paragraph = mounted.container.querySelector('.ProseMirror > p')!

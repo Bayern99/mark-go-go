@@ -1,11 +1,82 @@
 package main
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 )
+
+func TestFeynmanRPCSettlesOnlyAnIdleHandledPrompt(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("Node.js is required by pi-acp")
+	}
+	pi := filepath.Join(t.TempDir(), "local feynman")
+	sh := `#!/bin/sh
+set -eu
+test -z "${MGO_FEYNMAN_UI_TOKEN-}${MGO_FEYNMAN_UI_SOCKET-}"
+while read -r line; do
+	case "$line" in
+		*'"id":"idle"'*) echo '{"type":"response","command":"prompt","id":"idle","success":true,"data":{"disposition":"handled"}}';;
+		*'"id":"mgo-idle-idle"'*) echo '{"type":"response","command":"get_state","id":"mgo-idle-idle","success":true,"data":{"isStreaming":false}}';;
+		*'"id":"research"'*)
+			echo '{"type":"response","command":"prompt","id":"research","success":true,"data":{"disposition":"handled"}}'
+			echo '{"type":"agent_start"}'
+			;;
+		*'"id":"mgo-idle-research"'*)
+			echo '{"type":"response","command":"get_state","id":"mgo-idle-research","success":true,"data":{"isStreaming":true}}'
+			echo '{"type":"message_end","message":"result"}'
+			echo '{"type":"agent_settled","aborted":false}'
+			;;
+	esac
+done
+`
+	if err := os.WriteFile(pi, []byte(sh), 0700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, node, "scripts/feynman-rpc.mjs", "--mode", "rpc")
+	cmd.Env = append(os.Environ(), "MGO_FEYNMAN_EXECUTABLE="+pi, "MGO_FEYNMAN_UI_TOKEN=test-token")
+	input, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	scanner := bufio.NewScanner(output)
+	for _, turn := range []struct {
+		id     string
+		events []string
+	}{
+		{"idle", []string{"response", "agent_settled"}},
+		{"research", []string{"response", "agent_start", "message_end", "agent_settled"}},
+	} {
+		if err := json.NewEncoder(input).Encode(map[string]string{"type": "prompt", "id": turn.id}); err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range turn.events {
+			var event struct{ Type string }
+			if !scanner.Scan() || json.Unmarshal(scanner.Bytes(), &event) != nil || event.Type != want {
+				t.Fatalf("Expected %s for %s, received %q (%v)", want, turn.id, scanner.Bytes(), scanner.Err())
+			}
+		}
+	}
+	input.Close()
+	if err := cmd.Wait(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestResearchWorkingCopyProtectsUserFiles(t *testing.T) {
 	home, root, data := t.TempDir(), t.TempDir(), t.TempDir()

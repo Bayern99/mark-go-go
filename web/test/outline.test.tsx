@@ -9,7 +9,7 @@ import { createBrowserHost } from '../src/host/browserHost'
 import { OUTLINE_DEBOUNCE_MS } from '../src/plugins/outline/OutlinePanel'
 import outlineExtra from './fixtures/outline-extra.md?raw'
 import fixture from './fixtures/outline.md?raw'
-import { mountApp } from './helpers/app'
+import { mountApp as mountEditorApp } from './helpers/app'
 import { getSourceView, replaceSourceText, sourceText } from './helpers/source'
 
 const EXPECTED_HEADINGS = ['Alpha', 'Beta', 'Gamma', 'Setext title', 'Beta']
@@ -23,6 +23,13 @@ const LONG_DOCUMENT = [
   '## Deep heading',
   ...Array.from({ length: 40 }, (_, index) => `Deep body paragraph ${index}.`),
 ].join('\n\n')
+
+async function mountApp(...args: Parameters<typeof mountEditorApp>) {
+  const app = await mountEditorApp(...args)
+  await page.getByRole('tab', { name: 'Outline' }).click()
+  await expect.element(outline()).toBeVisible()
+  return app
+}
 
 function outline() {
   return page.getByRole('navigation', { name: 'Document outline' })
@@ -130,22 +137,21 @@ describe('Outline plugin', () => {
     }
   })
 
-  it('renders in the right pane in GenUI mode and jumps back to Preview', async () => {
+  it('renders in the left navigation in GenUI mode and jumps back to Preview', async () => {
     const app = await mountApp(fixture)
     try {
       expect(page.getByTestId('outline-toggle').query()).toBeNull()
       const left = page.getByTestId('left-pane')
       expect(left.query()).not.toBeNull()
-      expect(left.getByRole('navigation', { name: 'Document outline' }).query()).toBeNull()
+      expect(left.getByRole('navigation', { name: 'Document outline' }).query()).not.toBeNull()
 
       await viewMode('genui').click()
       await vi.waitFor(() => {
         expect(page.getByTestId('center-pane').query()).not.toBeNull()
         expect(app.container.querySelector<HTMLElement>('.editor-pane')?.hidden).toBe(true)
       })
-      const right = page.getByTestId('right-pane')
-      expect(right.getByRole('navigation', { name: 'Document outline' }).query()).not.toBeNull()
-      expect(right.getByTestId('genui-view').query()).toBeNull()
+      expect(page.getByTestId('right-pane').query()).toBeNull()
+      expect(left.getByTestId('genui-view').query()).toBeNull()
 
       await outlineButtons().nth(2).click()
       await vi.waitFor(() => {
@@ -322,25 +328,13 @@ describe('Outline plugin', () => {
     }
   })
 
-  it('restores the right pane and highlighting when re-opened', async () => {
+  it('restores headings when switching back from the file tree', async () => {
     const app = await mountApp(fixture)
     try {
-      await page.getByTestId('right-pane-toggle').click()
-      await vi.waitFor(() => {
-        expect(page.getByTestId('right-pane').element().hasAttribute('hidden')).toBe(true)
-        expect(page.getByTestId('right-pane-toggle').element().getAttribute('aria-expanded')).toBe(
-          'false',
-        )
-      })
-
-      await page.getByTestId('right-pane-toggle').click()
-      await vi.waitFor(() => {
-        expect(page.getByTestId('right-pane').element().hasAttribute('hidden')).toBe(false)
-        expect(page.getByTestId('right-pane-toggle').element().getAttribute('aria-expanded')).toBe(
-          'true',
-        )
-        expect(outlineTexts()).toEqual(EXPECTED_HEADINGS)
-      })
+      await page.getByRole('tab', { name: 'Workspace', exact: true }).click()
+      await expect.element(outline()).not.toBeInTheDocument()
+      await page.getByRole('tab', { name: 'Outline' }).click()
+      await vi.waitFor(() => expect(outlineTexts()).toEqual(EXPECTED_HEADINGS))
 
       await page.getByText('Gamma body.').click()
       await vi.waitFor(() => {
@@ -361,19 +355,12 @@ describe('Outline plugin', () => {
     }
   })
 
-  it('collapses the right pane when toggled off and keeps edits flowing to the host', async () => {
+  it('keeps edits flowing to the host when switching away from Outline', async () => {
     const app = await mountApp(fixture, createBrowserHost(fixture))
     const update = vi.spyOn(app.host, 'update')
     try {
-      expect(page.getByTestId('right-pane').element().hasAttribute('hidden')).toBe(false)
-
-      await page.getByTestId('right-pane-toggle').click()
-      await vi.waitFor(() => {
-        expect(page.getByTestId('right-pane-toggle').element().getAttribute('aria-expanded')).toBe(
-          'false',
-        )
-        expect(page.getByTestId('right-pane').element().hasAttribute('hidden')).toBe(true)
-      })
+      await page.getByRole('tab', { name: 'Workspace', exact: true }).click()
+      await expect.element(outline()).not.toBeInTheDocument()
 
       await enterSourceMode()
       replaceSourceText(getSourceView(app.container), 'Preamble text.', 'Preamble text, edited.')
@@ -417,6 +404,7 @@ describe('App plugin activation', () => {
     })
 
     try {
+      await page.getByRole('tab', { name: 'Outline' }).click()
       await vi.waitFor(() => {
         expect(container.querySelector('.outline-panel')).not.toBeNull()
       })

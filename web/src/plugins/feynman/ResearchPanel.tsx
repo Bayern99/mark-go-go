@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react'
 import type { PluginContext } from '../../core'
 import { ResearchHost, type ResearchArtifact } from '../../host/generated/mygo'
 import { ScrollArea } from '../../components/ScrollArea'
@@ -6,6 +6,8 @@ import { DocumentDiff } from '../DocumentDiff'
 import { Conversation, ResearchIcon } from './Conversation'
 import { Composer, useCommand } from './Composer'
 import { SessionMenu } from './SessionMenu'
+import { ResearchQuestion } from './ResearchQuestion'
+import type { OpenResearchDocument } from './index'
 import type { ResearchSession } from './session'
 import './research.css'
 
@@ -13,28 +15,45 @@ const CLIConsole = lazy(() => import('./CLIConsole').then(m => ({ default: m.CLI
 
 export default function ResearchPanel({ session, ctx, documentID, open }: {
   session: ResearchSession
-  ctx?: PluginContext
+  ctx?: Pick<PluginContext, 'documents' | 'commands'>
   documentID: string
-  open: (path: string, existingID?: string) => Promise<unknown>
+  open: OpenResearchDocument
 }) {
   useSyncExternalStore(session.subscribe, session.snapshot)
-  const [edit, setEdit] = useState(false)
+  const [editTarget, setEditTarget] = useState('')
+  const edit = !!documentID && editTarget === documentID
+  const setEdit = (value: boolean) => setEditTarget(value ? documentID : '')
   const input = useRef<HTMLTextAreaElement>(null)
   const choose = useCommand(session, input)
   const { tab, cliRunning } = session
   useEffect(() => { if (tab === 'chat' && !cliRunning) void session.connect() }, [session, tab, cliRunning])
-  const [doc, setDoc] = useState(() => ctx?.documents.snapshot())
-  useEffect(() => {
-    setDoc(ctx?.documents.snapshot())
-    const sub = ctx?.documents.onDidChange(setDoc)
+  const [, refreshDoc] = useReducer(n => n + 1, 0)
+  useLayoutEffect(() => {
+    const sub = ctx?.documents.onDidChange(refreshDoc)
     return () => sub?.dispose()
   }, [ctx])
+  const doc = ctx?.documents.snapshot()
   const { status, permission, proposal } = session
-  const sameTarget = proposal && doc && (proposal.documentID === documentID || doc.path === proposal.base.path)
-  const stale = sameTarget && (proposal.documentID !== documentID || doc.path !== proposal.base.path ||
+  const sameTarget = proposal && doc && proposal.documentID === documentID
+  const stale = sameTarget && (doc.path !== proposal.base.path ||
     doc.version !== proposal.base.version || doc.text !== proposal.base.text)
   const busy = status === 'working'
   const report = (error: unknown) => { session.error = String(error); session.changed() }
+  const comparison = useRef<HTMLElement>(null)
+  function showComparison() {
+    session.tab = 'chat'
+    session.changed()
+    requestAnimationFrame(() => comparison.current?.scrollIntoView({ block: 'nearest' }))
+  }
+  async function showPending() {
+    const pending = session.proposal
+    if (!pending) return
+    const target = await open(pending.base.path, pending.documentID)
+    if (session.proposal === pending && target.id !== pending.documentID) {
+      session.proposal = { ...pending, documentID: target.id }
+    }
+    showComparison()
+  }
   async function review(file: ResearchArtifact) {
     if (file.missing) {
       const recovered = await ResearchHost.recoverArtifact(session.root, file.path)
@@ -42,15 +61,19 @@ export default function ResearchPanel({ session, ctx, documentID, open }: {
       await open(recovered)
       return
     }
-    if (file.error || !file.proposal || !ctx || doc?.path !== file.target) {
+    if (file.error || !file.proposal) {
       await open(file.target)
       return
     }
-    const base = ctx.documents.snapshot()
-    const text = await ResearchHost.readArtifact(session.root, file.path)
+    if (session.proposal) return showPending()
+    const target = await open(file.target)
+    const [base, text] = await Promise.all([target.snapshot(), ResearchHost.readArtifact(session.root, file.path)])
+    if (session.proposal) return showPending()
+    if (session.status === 'working') throw new Error('Finish the current research action before reviewing this file.')
+    if (base.path !== file.target) throw new Error('The document moved. Refresh research files before reviewing.')
     if (text === base.text) return
-    session.proposal = { documentID, base, text }
-    session.changed()
+    session.proposal = { documentID: target.id, base, text }
+    showComparison()
   }
   async function apply() {
     if (!ctx || !proposal || proposal.documentID !== documentID) return
@@ -60,14 +83,14 @@ export default function ResearchPanel({ session, ctx, documentID, open }: {
     await session.refresh()
   }
 
-  if (!session.root) return <p className="nav-empty">Open a folder to start research.</p>
   const label = cliRunning ? 'CLI running' : status === 'ready' ? 'Connected' : status === 'working' ? 'Working' : status === 'connecting' ? 'Connecting…' : 'Offline'
   const pane = (tab: ResearchSession['tab']) => { session.tab = tab; session.changed() }
   function fileButton(file: ResearchArtifact) {
     return <div className="fy-file-wrap" key={file.path}>
       {file.error && <p role="alert">{file.path} · {file.error}</p>}
       {(file.target || (file.missing && !file.error)) && <button type="button" className="research-file"
-        title={file.path} disabled={busy && (file.proposal || file.missing)} onClick={() => void review(file).catch(report)}>
+        title={file.proposal && proposal ? 'Finish the pending edit before reviewing this file.' : file.path}
+        disabled={(busy && (file.proposal || file.missing)) || (file.proposal && !!proposal)} onClick={() => void review(file).catch(report)}>
         <ResearchIcon name={file.path.endsWith('.provenance.md') ? 'link' : file.proposal ? 'git-diff' : 'file-text'} />
         <span><b>{file.missing ? 'Restore ' : file.proposal ? 'Review ' : ''}{file.path.split('/').at(-1)}</b>
         {file.path.includes('/') && <small>{file.path.slice(0,file.path.lastIndexOf('/'))}</small>}</span>
@@ -76,7 +99,7 @@ export default function ResearchPanel({ session, ctx, documentID, open }: {
     </div>
   }
   const reviewSlot = <>
-    {proposal && <section aria-label="Proposed document edit">
+    {proposal && <section ref={comparison} aria-label="Proposed document edit">
       {sameTarget ? <>
         <DocumentDiff before={proposal.base.text} after={proposal.text} />
         {stale ? <>
@@ -86,7 +109,7 @@ export default function ResearchPanel({ session, ctx, documentID, open }: {
             session.changed()
           }}>Compare current text</button>
         </> : <button className="pill" onClick={() => void apply().catch(report)}>Apply in Markdown</button>}
-      </> : <button className="pill" onClick={() => void open(proposal.base.path, proposal.documentID).catch(report)}>Open document {proposal.base.path.split('/').pop()}</button>}
+      </> : <button className="pill" onClick={() => void showPending().catch(report)}>Open document {proposal.base.path.split('/').pop()}</button>}
       {!sameTarget && <button className="pill quiet" onClick={() => void navigator.clipboard.writeText(proposal.text).catch(report)}>Copy proposed Markdown</button>}
       <button className="pill quiet" onClick={() => { session.proposal = undefined; setEdit(false); session.changed() }}>Dismiss</button>
     </section>}
@@ -95,8 +118,8 @@ export default function ResearchPanel({ session, ctx, documentID, open }: {
     </div>}
   </>
   return <section className="plugin-panel fy-panel" aria-label="Feynman research">
-    <header className="fy-heading"><div className="fy-heading-title"><small>{session.root.split('/').filter(Boolean).at(-1)}</small>
-      <h3 title={session.title || 'Research'}>{session.title || 'Research'}</h3></div>
+    <header className="fy-heading"><ResearchIcon name="atom" /><div className="fy-heading-title"><h3>Feynman</h3>
+      <small title={session.root}>{[session.root.split('/').filter(Boolean).at(-1), session.title].filter(Boolean).join(' · ')}</small></div>
       <span className="fy-connection" data-status={status} title={label} aria-label={label} /><SessionMenu session={session} />
     </header>
     <nav className="fy-tabs" aria-label="Research tools">{(['chat', 'files', 'cli'] as const).map(tab =>
@@ -113,16 +136,13 @@ export default function ResearchPanel({ session, ctx, documentID, open }: {
           <button type="button" className="fy-icon" title="Open research output folder" aria-label="Open research output folder"
             onClick={() => void ResearchHost.revealOutputs(session.root).catch(report)}><ResearchIcon name="folder-open" /></button></div>
         {!session.files.length && <p className="fy-muted">Completed research files appear here.</p>}
+        {proposal && <button type="button" className="pill" onClick={() => void showPending().catch(report)}>Review pending edit · {proposal.base.path.split('/').at(-1)}</button>}
         {session.files.map(fileButton)}
-        {proposal && <button type="button" className="pill" onClick={() => pane('chat')}>Review document edit</button>}
       </ScrollArea> : <>
         <Conversation session={session} choose={choose} open={review} reviewSlot={reviewSlot} />
-        {permission && <div className="fy-permission" role="group" aria-label="Feynman confirmation"><strong><ResearchIcon name="hand-palm" />Confirmation requested</strong>
-          <p>{permission.text || 'Choose how Feynman should proceed.'}</p><div className="plugin-actions">{permission.options?.map(option =>
-            <button type="button" key={option.id} className="pill" onClick={() => void ResearchHost.answer(session.root, permission.requestId!, option.id).catch(report)}>{option.name}</button>)}</div></div>}
+        {permission && <ResearchQuestion session={session} key={permission.requestId} question={permission} onError={report} />}
         {cliRunning && <div className="fy-offline"><span>Feynman CLI is running.</span><button className="pill" onClick={() => pane('cli')}>Return to CLI</button></div>}
-        {status === 'offline' && !cliRunning && <div className="fy-offline"><button type="button" className="pill" onClick={() => void session.connect()}>Reconnect</button>
-          <button type="button" className="fy-link" onClick={() => pane('cli')}>Open Feynman CLI</button></div>}
+        {status === 'offline' && !cliRunning && <div className="fy-offline"><button type="button" className="pill" onClick={() => void session.connect()}>Reconnect</button></div>}
         <Composer session={session} documentID={documentID} doc={doc} input={input} choose={choose} edit={edit} setEdit={setEdit} />
       </>}
   </section>

@@ -14,7 +14,7 @@ import { useViews, ViewHost } from './ViewHost'
 import { ScrollArea } from './ScrollArea'
 import { AppTooltip } from './Tooltip'
 import { SearchClearButton } from './SearchClearButton'
-import { DropdownMenu } from 'radix-ui'
+import { DropdownMenu, Tabs } from 'radix-ui'
 
 const SIDEBAR_MIN = 190
 const SIDEBAR_MAX = 420
@@ -219,6 +219,9 @@ export function SidePane({
   onCloseFloating?: () => void
 }): React.ReactElement | null {
   const entries = useViews(views, 'left')
+  const outline = entries.find(view => view.id === 'outline.panel')
+  const [section, setSection] = useState('workspace')
+  const sections = useRef<HTMLDivElement>(null)
   const [filters, setFilters] = useState<Record<string, string>>({})
   const [nav, setNav] = useState<NavSnapshot | null>(null)
   const [search, setSearch] = useState<NavSearchResult | null>(null)
@@ -276,7 +279,7 @@ export function SidePane({
   const root = workspaceSnap?.root ?? nav?.root ?? ''
   const name = workspaceSnap?.name ?? (root ? relativeFolder(root) : 'Workspace')
   const kind = workspaceSnap?.kind ?? (root ? 'folder' : 'untitled')
-  const activePath = workspaceSnap?.documents.find((d) => d.id === workspaceSnap.activeId)?.path ?? doc?.path ?? ''
+  const activeDocument = doc ?? workspaceSnap?.documents.find(d => d.id === workspaceSnap.activeId)
   const total = nav?.total ?? 0
   const query = filter.trim()
   const filtering = query !== ''
@@ -302,7 +305,7 @@ export function SidePane({
 
   return (
     <>
-      <aside
+      <Tabs.Root asChild value={section} onValueChange={setSection}><aside
         className="side-pane left-pane side"
         data-testid="left-pane"
         aria-label="Workspace"
@@ -321,8 +324,8 @@ export function SidePane({
                 type="button"
                 className="pill icon quiet ws-close"
                 data-testid="library-close"
-                aria-label="Close files panel"
-                title="Close files (Esc)"
+                aria-label="Close navigation"
+                title="Close navigation (Esc)"
                 autoFocus
                 onClick={onCloseFloating}
               >
@@ -331,11 +334,18 @@ export function SidePane({
             ) : null}
           </div>
           <div className="ws-meta meta">
-            <span className="p">{kind === 'folder' ? root || name : 'Untitled window'}</span>
-            <span>·</span>
-            <span data-testid="workspace-file-count">{fileCountLabel}</span>
+            {section === 'outline' ? <span className="p">{doc?.name ?? 'No document open'}</span> : <>
+              <span className="p">{kind === 'folder' ? root || name : 'Untitled window'}</span>
+              <span>·</span><span data-testid="workspace-file-count">{fileCountLabel}</span>
+            </>}
           </div>
         </div>
+        {(workspace || outline) && <Tabs.List className="seg ws-sections" aria-label="Navigation" ref={sections}>
+          <MovingCapsule trackRef={sections} watch={[section, floatingOpen]} />
+          <Tabs.Trigger value="workspace" data-testid="left-tab-workspace">Workspace</Tabs.Trigger>
+          <Tabs.Trigger value="outline" data-testid="left-tab-outline.panel">Outline</Tabs.Trigger>
+        </Tabs.List>}
+        <Tabs.Content value="workspace" className="ws-content" forceMount hidden={section !== 'workspace'}>
         {kind === 'folder' ? (
           <label className={`filter${filter ? ' has' : ''}`}>
             <input
@@ -368,7 +378,7 @@ export function SidePane({
         ) : kind === 'folder' ? (
           <FileTree
             entries={tree}
-            activePath={activePath}
+            activeDocument={activeDocument}
             collapsedCount={nav?.collapsedCount ?? 0}
             status={nav?.status ?? 'idle'}
             paneWidth={paneWidth}
@@ -394,13 +404,18 @@ export function SidePane({
             )}
           </div>
         )}
-        {entries.map((view) => (
+        {entries.filter(view => view !== outline).map((view) => (
           <section key={view.id} className="side-view" data-view-id={view.id} aria-label={view.title}>
             <header className="side-view-header">{view.title}</header>
             <ViewHost view={view} className="side-view-body" />
           </section>
         ))}
-      </aside>
+        </Tabs.Content>
+        <Tabs.Content value="outline" className="ws-content">
+          {outline ? <ViewHost key={doc?.id} view={outline} className="outline-scroll" scrollable edgeFade /> :
+            <p className="nav-empty">{doc ? 'Opening outline…' : 'Open a document to see its outline.'}</p>}
+        </Tabs.Content>
+      </aside></Tabs.Root>
       <div
         className="sidebar-splitter"
         data-dragging={dragging ? 'true' : undefined}
@@ -451,7 +466,7 @@ export function SidePane({
 
 function FileTree({
   entries,
-  activePath,
+  activeDocument,
   collapsedCount,
   status,
   paneWidth,
@@ -459,7 +474,7 @@ function FileTree({
   onToggle,
 }: {
   entries: NavEntry[]
-  activePath: string
+  activeDocument?: DocumentInfo | null
   collapsedCount: number
   status: string
   paneWidth: number
@@ -547,10 +562,6 @@ function FileTree({
         }
       }}
     >
-      <div className="tree-section" aria-hidden="true">
-        <span>Workspace</span>
-        <span>{countFormat.format(entries.filter((entry) => entry.kind === 'file').length)}</span>
-      </div>
       {collapsedCount > 0 ? (
         <p className="nav-collapsed meta" data-testid="collapsed-count">{countFormat.format(collapsedCount)} files hidden</p>
       ) : null}
@@ -559,7 +570,7 @@ function FileTree({
           trackRef={capsuleTrackRef}
           selector=".row.sel"
           axis="y"
-          watch={[activePath, entries]}
+          watch={[activeDocument?.id, activeDocument?.path, entries]}
         />
         {entries.map((entry) =>
           entry.kind === 'folder' ? (
@@ -568,7 +579,7 @@ function FileTree({
             <FileRow
               key={entry.id}
               entry={entry}
-              selected={entry.path === activePath}
+              selected={entry.documentId ? entry.documentId === activeDocument?.id : entry.path === activeDocument?.path}
               query=""
               paneWidth={paneWidth}
               onOpen={() => onOpenFile(entry.path)}

@@ -15,7 +15,7 @@
 - **SoloMD** 为原地 Markdown 编辑和分开展示与保存提供了交互参考。[参考与版本](docs/adr/0006-preserved-blocks-and-semantic-colors.md)
 - **Awesome MyGo** 帮我们了解 MyGo 生态。 [Awesome MyGo](https://github.com/yldm-tech/awesome-mygo)
 
-- **Onevra Chat** 和 **MyGo Markdown chat** 示例提供了研究输入框、流式 Markdown、工具详情与滚动交互的参考。**GoRex** 提供了终端调整尺寸与重新连接的交互参考。[Onevra Chat](https://github.com/oneo-me/onevra/tree/main/source/components/chat) · [MyGo 示例](https://github.com/egoist/mygo/tree/v0.10.0/examples/markdown-chat) · [GoRex](https://github.com/egoist/gorex)
+- **Onevra Chat** 和 **MyGo Markdown chat** 示例提供了研究输入框、流式 Markdown、工具详情与滚动交互的参考。侧栏布局和可搜索的研究操作参考了 **Pi P2**。**GoRex** 提供了终端调整尺寸与重新连接的交互参考。[Onevra Chat](https://github.com/oneo-me/onevra/tree/main/source/components/chat) · [MyGo 示例](https://github.com/egoist/mygo/tree/v0.10.0/examples/markdown-chat) · [Pi 侧栏](https://github.com/earendil-works/pi/blob/main/apps/p2/src/web/SidePanel.tsx) · [Pi 命令页面](https://github.com/earendil-works/pi/blob/main/apps/p2/plugins/chat/commands.tsx) · [GoRex](https://github.com/egoist/gorex)
 
 ## 软件与资源
 

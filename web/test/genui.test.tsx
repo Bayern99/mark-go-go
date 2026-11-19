@@ -76,7 +76,7 @@ function reportHost(view?: string) {
 }
 
 describe('GenUI view mode', () => {
-  it('opens generation settings from the empty center view while preserving the selected right panel', async () => {
+  it('opens generation settings from the empty center view while preserving the selected navigation', async () => {
     const app = await mountApp(DOCUMENT)
     try {
       await showMode('genui')
@@ -85,8 +85,9 @@ describe('GenUI view mode', () => {
       expect(genui().getByRole('textbox').query()).toBeNull()
       expect(app.container.querySelector('[data-testid="genui-view"] [data-testid="model-menu-trigger"]')).toBeNull()
 
-      const rail = page.getByTestId('right-pane')
+      const rail = page.getByTestId('left-pane')
       const outline = rail.getByRole('tab', { name: 'Outline' })
+      await outline.click()
       await expect.element(outline).toHaveAttribute('aria-selected', 'true')
       expect(rail.getByRole('tab', { name: 'GenUI' }).query()).toBeNull()
       await genui().getByRole('button', { name: 'Set up generation' }).click()

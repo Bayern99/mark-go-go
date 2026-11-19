@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react'
+import { useLayoutEffect, useSyncExternalStore } from 'react'
 import type { PluginContext } from '../../core/types'
 import type { MarkdownHeading } from '../../markdown/headings'
 import { extractHeadings } from '../../markdown/headings'
@@ -11,6 +11,7 @@ export interface OutlineState {
 }
 
 export class OutlineStore {
+  scrollTop = 0
   private state: OutlineState
   private timer: number | undefined
   private readonly listeners = new Set<() => void>()
@@ -79,12 +80,21 @@ function sameHeadings(a: MarkdownHeading[], b: MarkdownHeading[]): boolean {
 export function OutlinePanel({
   ctx,
   store,
+  scrollElement,
 }: {
   ctx: PluginContext
   store: OutlineStore
+  scrollElement?: HTMLElement
 }): React.ReactElement {
   const { headings, cursorOffset } = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const active = activeHeadingIndex(headings, cursorOffset)
+  useLayoutEffect(() => {
+    if (!scrollElement) return
+    scrollElement.scrollTop = store.scrollTop
+    const remember = () => { store.scrollTop = scrollElement.scrollTop }
+    scrollElement.addEventListener('scroll', remember)
+    return () => scrollElement.removeEventListener('scroll', remember)
+  }, [scrollElement, store])
 
   return (
     <nav className="outline-panel" aria-label="Document outline">

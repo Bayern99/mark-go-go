@@ -1,3 +1,4 @@
+import './helpers/enable-feynman'
 import '../src/styles.css'
 import { describe, expect, it, vi } from 'vitest'
 import { cdp, page } from 'vitest/browser'
@@ -11,7 +12,7 @@ Body.
 <!-- note: 判断原文已改时不算批注 -->
 `
 
-it('renders the floating document panel and workspace menu opaque with reduced transparency', async () => {
+it('renders the floating research sidebar and workspace menu opaque with reduced transparency', async () => {
   const session = cdp()
   const app = await mountApp(DOCUMENT)
   try {

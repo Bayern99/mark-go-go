@@ -1,4 +1,5 @@
 import '../src/styles.css'
+import { page } from 'vitest/browser'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
@@ -37,7 +38,8 @@ describe('overlay scrollbars', () => {
     const app = await mountApp(LONG_DOCUMENT)
     try {
       const editor = app.container.querySelector<HTMLElement>('.editor-scroll')
-      const outline = app.container.querySelector<HTMLElement>('.right-view-body')
+      await page.getByRole('tab', { name: 'Outline' }).click()
+      const outline = app.container.querySelector<HTMLElement>('.outline-scroll')
       if (!editor || !outline) throw new Error('document scroll areas missing')
       for (const host of [editor, outline]) {
         expect(host.getAttribute('data-overlayscrollbars')).toContain('host')

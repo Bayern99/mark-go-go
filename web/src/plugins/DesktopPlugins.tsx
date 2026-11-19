@@ -3,7 +3,6 @@ import { DropdownMenu } from 'radix-ui'
 import { isMyGo } from 'mygo-runtime'
 import type { PluginRegistry } from '../core/PluginRegistry'
 import type { AppPlugin } from '../core/types'
-import { createFeynmanPlugin } from './feynman'
 import { ResearchSession } from './feynman/session'
 import { createGitPlugin } from './git'
 import './desktop-plugins.css'
@@ -31,18 +30,12 @@ function activate(registry: PluginRegistry, plugin: AppPlugin, onError: (message
   return () => entry.dispose()
 }
 
-export function DesktopPlugins({ registry, documentID, workspaceRoot, openDocument }: {
+export function DesktopPlugins({ registry, documentID }: {
   registry: PluginRegistry
   documentID: string
-  workspaceRoot: string
-  openDocument: (path: string, existingID?: string) => Promise<unknown>
 }) {
-  const research = usePluginEnabled('feynman')
   const git = usePluginEnabled('git')
   const [error, setError] = useState('')
-  useEffect(() => {
-    if (research) return activate(registry, createFeynmanPlugin(workspaceRoot, documentID, openDocument), setError)
-  }, [registry, research, workspaceRoot, documentID, openDocument])
   useEffect(() => {
     if (git) return activate(registry, createGitPlugin(documentID), setError)
   }, [registry, git, documentID])

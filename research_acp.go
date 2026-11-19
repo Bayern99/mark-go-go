@@ -22,6 +22,7 @@ type ResearchCommandInput struct {
 type ResearchCommand struct {
 	Name        string                `json:"name"`
 	Description string                `json:"description,omitempty"`
+	Source      string                `json:"source,omitempty"`
 	Input       *ResearchCommandInput `json:"input,omitempty"`
 }
 

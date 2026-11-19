@@ -59,6 +59,8 @@ trap cleanup EXIT INT TERM
 
 cp "$ROOT"/go.mod "$ROOT"/go.sum "$PROJECT"/
 ln -s "$ROOT"/third_party "$ROOT"/resources "$PROJECT"/
+mkdir -p "$PROJECT/scripts"
+cp "$ROOT/scripts/feynman-rpc.mjs" "$PROJECT/scripts/"
 ln -s "$ROOT"/*.go "$PROJECT"/
 mkdir -p "$PROJECT/web/node_modules"
 tar -C "$ROOT/web" --exclude=./node_modules --exclude=./dist -cf - . | tar -C "$PROJECT/web" -xf -
@@ -166,8 +168,13 @@ assert_js "document.querySelectorAll('.doc-tab[role=\"tab\"]').length === 1" 'in
 assert_js "document.querySelector('[data-testid=\"workspace-switcher\"]')?.textContent?.includes('Research')" 'initial Workspace selected'
 wait_js "document.querySelector('[data-testid=\"workspace-file-count\"]')?.textContent?.trim() === '1 file'"
 assert_js "!document.body.textContent.includes('resource.json')" 'non-Markdown resource stays out of navigation after indexing'
+assert_js "!document.querySelector('[data-testid=\"right-pane\"]:not([hidden])')" 'default workspace leaves the right edge available for editing'
+js "document.querySelector('[data-testid=\"left-tab-outline.panel\"]').focus(); true" > /dev/null
+assert_js "document.querySelector('[data-testid=\"left-pane\"] .outline-link')?.textContent === 'Discussion'" 'left Outline shows the open document'
 
 open -a "$APP" "$FIXTURES/Music Department/CC129.md"
+assert_js "document.querySelector('[data-testid=\"left-pane\"] .outline-link')?.textContent === 'CC129'" 'Outline follows the newly active document'
+js "document.querySelector('[data-testid=\"left-tab-workspace\"]').focus(); true" > /dev/null
 wait_js "document.querySelectorAll('.doc-tab[role=\"tab\"]').length === 2 && document.querySelector('[data-testid=\"workspace-switcher\"]')?.textContent?.includes('Music Department')"
 assert_js "document.querySelectorAll('.doc-tab[role=\"tab\"]').length === 2" 'second folder joins the same document group'
 assert_js "document.querySelector('.doc-tab.sel')?.textContent?.includes('CC129.md')" 'second document active'

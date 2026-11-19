@@ -13,7 +13,7 @@ export interface DocumentSnapshot {
   path: string
 }
 
-export type ViewLocation = 'left' | 'center' | 'right'
+export type ViewLocation = 'left' | 'center' | 'document'
 
 export type ViewStatusDot = {
   tone: 'warn' | 'danger'
@@ -29,7 +29,6 @@ export interface ViewRegistration {
   id: string
   title: string
   location: ViewLocation
-  workspaceScoped?: boolean
   status?: ViewStatusSource
   mount(el: HTMLElement, scrollElement?: HTMLElement): Disposable
 }

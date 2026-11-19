@@ -24,19 +24,22 @@ type ResearchOption struct {
 }
 
 type ResearchUpdate struct {
-	Root      string              `json:"root"`
-	Kind      string              `json:"kind"`
-	Text      string              `json:"text,omitempty"`
-	Commands  []ResearchCommand   `json:"commands,omitempty"`
-	Config    []ResearchConfig    `json:"config,omitempty"`
-	Tool      *ResearchTool       `json:"tool,omitempty"`
-	Plan      []ResearchPlanEntry `json:"plan,omitempty"`
-	Used      int64               `json:"used,omitempty"`
-	Size      int64               `json:"size,omitempty"`
-	Image     string              `json:"image,omitempty"`
-	MessageID string              `json:"messageId,omitempty"`
-	RequestID string              `json:"requestId,omitempty"`
-	Options   []ResearchOption    `json:"options,omitempty"`
+	Root        string              `json:"root"`
+	Kind        string              `json:"kind"`
+	Text        string              `json:"text,omitempty"`
+	Placeholder string              `json:"placeholder,omitempty"`
+	Prefill     string              `json:"prefill,omitempty"`
+	Commands    []ResearchCommand   `json:"commands,omitempty"`
+	Config      []ResearchConfig    `json:"config,omitempty"`
+	Tool        *ResearchTool       `json:"tool,omitempty"`
+	Plan        []ResearchPlanEntry `json:"plan,omitempty"`
+	Used        int64               `json:"used,omitempty"`
+	Size        int64               `json:"size,omitempty"`
+	Image       string              `json:"image,omitempty"`
+	MessageID   string              `json:"messageId,omitempty"`
+	Key         string              `json:"key,omitempty"`
+	RequestID   string              `json:"requestId,omitempty"`
+	Options     []ResearchOption    `json:"options,omitempty"`
 }
 
 var researchUpdate = mygo.NewEvent[ResearchUpdate]("researchUpdate")
@@ -56,16 +59,20 @@ type researchSession struct {
 	imagePrompts bool
 	win          *mygo.Window
 	agent        *acpAgent
+	ui           *researchUI
 	id           string
 	busy         bool
 	configuring  bool
 	switching    bool
 	updateMu     sync.Mutex
 	replay       []json.RawMessage
+	commands     []ResearchCommand
+	extensions   []ResearchCommand
 	config       []ResearchConfig
 	turn         chan struct{}
 	cancelled    bool
 	pending      *researchQuestion
+	questionSlot chan struct{}
 	emit         func(ResearchUpdate)
 	stopped      chan struct{}
 	drained      chan struct{}
@@ -77,7 +84,7 @@ type researchSession struct {
 type researchQuestion struct {
 	id      string
 	options []ResearchOption
-	answer  chan string
+	answer  chan *string
 }
 
 func newResearchHost(documents *documentHost) *researchHost {
@@ -164,18 +171,29 @@ func (h *researchHost) connect(w *workspace, emit func(ResearchUpdate)) error {
 		h.mu.Unlock()
 		return err
 	}
-	agent, err := newACPAgent(cmd, newLimitBuffer(4096))
+	ui, err := newResearchUI(cmd)
 	if err != nil {
 		h.mu.Unlock()
 		return err
 	}
-	s := &researchSession{agent: agent, win: w.win, ready: make(chan struct{}), stopped: make(chan struct{}), drained: make(chan struct{}), emit: func(e ResearchUpdate) { e.Root = root; emit(e) }}
+	agent, err := newACPAgent(cmd, newLimitBuffer(4096))
+	if err != nil {
+		ui.close()
+		h.mu.Unlock()
+		return err
+	}
+	s := &researchSession{
+		agent: agent, ui: ui, win: w.win, questionSlot: make(chan struct{}, 1),
+		ready: make(chan struct{}), stopped: make(chan struct{}), drained: make(chan struct{}),
+		emit: func(e ResearchUpdate) { e.Root = root; emit(e) },
+	}
 	h.sessions[root] = s
 	agent.setHandlers(func(method string, params json.RawMessage) (any, *acpError) { return h.request(s, method, params) }, func(method string, params json.RawMessage) { h.routeSessionUpdate(s, method, params) }, nil)
 	if w.win != nil {
 		s.offWindow = w.win.OnClosed(func() { go h.stop(root, s, "") })
 	}
 	agent.start()
+	go ui.serve(h, s)
 	h.mu.Unlock()
 	timeout := time.AfterFunc(45*time.Second, func() { h.stop(root, s, "") })
 	err = h.initialize(s, work)
@@ -281,8 +299,15 @@ func (h *researchHost) Prompt(ctx context.Context, root, text, documentID, buffe
 }
 
 func (h *researchHost) PromptWithSources(ctx context.Context, root, text, documentID, buffer string, sources []string) (string, error) {
-	if strings.TrimSpace(text) == "" {
+	parts := strings.Fields(text)
+	if len(parts) == 0 {
 		return "", errors.New("Enter a research question or command.")
+	}
+	switch parts[0] {
+	case "/new":
+		return "", errors.New("Open Conversation history and choose New to start a workspace conversation.")
+	case "/exit", "/quit":
+		return "", errors.New("Use the sidebar button to hide Feynman, or turn it off in Plugins.")
 	}
 	h.mu.Lock()
 	s, err := h.activeLocked(ctx, root)
@@ -395,6 +420,11 @@ func (h *researchHost) update(s *researchSession, method string, params json.Raw
 		h.setResearchConfig(s, e.Config)
 		return
 	}
+	if e.Kind == "commands" {
+		s.commands = e.Commands
+		s.emitCommands()
+		return
+	}
 	s.emit(e)
 }
 
@@ -413,37 +443,21 @@ func (h *researchHost) request(s *researchSession, method string, params json.Ra
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, &acpError{Code: -32602, Message: "Invalid research permission."}
 	}
-	q := &researchQuestion{id: newWorkspaceID(), answer: make(chan string, 1)}
+	event := ResearchUpdate{Kind: "permission", Text: p.ToolCall.Title}
 	for _, o := range p.Options {
 		if o.OptionID != "" {
-			q.options = append(q.options, ResearchOption{ID: o.OptionID, Name: o.Name, Kind: o.Kind})
+			event.Options = append(event.Options, ResearchOption{ID: o.OptionID, Name: o.Name, Kind: o.Kind})
 		}
 	}
 	outcome := map[string]string{"outcome": "cancelled"}
-	h.mu.Lock()
-	if p.SessionID != s.id || !s.busy || s.cancelled || len(q.options) == 0 {
-		h.mu.Unlock()
-		return map[string]any{"outcome": outcome}, nil
+	if msg := p.ToolCall.RawInput.Message; msg != "" && msg != event.Text {
+		event.Text = strings.TrimSpace(event.Text + "\n" + msg)
 	}
-	s.pending = q
-	h.mu.Unlock()
-	title := p.ToolCall.Title
-	if msg := p.ToolCall.RawInput.Message; msg != "" && msg != title {
-		title = strings.TrimSpace(title + "\n" + msg)
-	}
-	s.emit(ResearchUpdate{Kind: "permission", RequestID: q.id, Text: title, Options: q.options})
-	select {
-	case choice := <-q.answer:
-		if choice != "" {
-			outcome = map[string]string{"outcome": "selected", "optionId": choice}
+	if p.SessionID != "" && len(event.Options) > 0 {
+		if choice := h.askResearchQuestion(context.Background(), s, p.SessionID, event); choice != nil {
+			outcome = map[string]string{"outcome": "selected", "optionId": *choice}
 		}
-	case <-s.stopped:
-	case <-s.agent.exited:
 	}
-	h.mu.Lock()
-	s.pending = nil
-	h.mu.Unlock()
-	s.emit(ResearchUpdate{Kind: "permissionDone", RequestID: q.id})
 	return map[string]any{"outcome": outcome}, nil
 }
 
@@ -454,11 +468,16 @@ func (h *researchHost) Answer(ctx context.Context, root, requestID, optionID str
 	if err != nil {
 		return err
 	}
-	if q := s.pending; q != nil && !s.cancelled && q.id == requestID {
+	if q := s.pending; q != nil && len(q.options) > 0 && !s.cancelled && q.id == requestID {
+		if optionID == "" {
+			s.pending = nil
+			q.answer <- nil
+			return nil
+		}
 		for _, opt := range q.options {
 			if opt.ID == optionID {
 				s.pending = nil
-				q.answer <- optionID
+				q.answer <- &optionID
 				return nil
 			}
 		}
@@ -476,7 +495,7 @@ func (h *researchHost) Cancel(ctx context.Context, root string) error {
 	s.cancelled = true
 	if q := s.pending; q != nil {
 		select {
-		case q.answer <- "":
+		case q.answer <- nil:
 		default:
 		}
 	}
@@ -528,6 +547,7 @@ func (h *researchHost) stop(root string, s *researchSession, message string) {
 	}
 	stopResearchProcess(s.agent.cmd)
 	h.mu.Unlock()
+	s.ui.close()
 	s.agent.kill()
 	<-s.ready
 	if turn != nil {

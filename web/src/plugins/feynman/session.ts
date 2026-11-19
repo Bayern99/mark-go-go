@@ -27,6 +27,7 @@ export class ResearchSession {
   status: 'offline' | 'connecting' | 'ready' | 'working' = 'offline'
   messages: ConversationItem[] = []
   commands: ResearchCommand[] = []
+  activity = new Map<string, string>()
   config: ResearchConfig[] = []
   title = ''
   usage?: {used: number; size: number}
@@ -36,6 +37,7 @@ export class ResearchSession {
   cliRunning = false
   files: ResearchArtifact[] = []
   permission?: ResearchUpdate
+  suggestedDraft?: string
   proposal?: Proposal
   draft = ''
   progress = ''
@@ -148,10 +150,12 @@ export class ResearchSession {
     if (kind === 'reset') {
       this.messages = []
       this.commands = []
+      this.activity.clear()
       this.config = []
       this.title = ''
       this.usage = undefined
       this.permission = undefined
+      this.suggestedDraft = undefined
       this.progress = ''
     } else if (kind === 'assistant' || kind === 'user' || kind === 'notice' || kind === 'thought') {
       const last = this.messages.at(-1)
@@ -178,10 +182,19 @@ export class ResearchSession {
     else if (kind === 'usage' && update.size) this.usage = { used: update.used ?? 0, size: update.size }
     else if (kind === 'progress') this.progress = text
     else if (kind === 'commands') this.commands = update.commands ?? []
-    else if (kind === 'permission') this.permission = update
+    else if (kind === 'activity' && update.key) {
+      if (text) this.activity.set(update.key, text)
+      else this.activity.delete(update.key)
+    }
+    else if (kind === 'permission' || kind === 'input' || kind === 'editor') this.permission = update
+    else if (kind === 'editorText') {
+      if (!this.draft.trim()) this.draft = this.commands.some(command => text === '/' + command.name) ? text + ' ' : text
+      else if (text && text !== this.draft) this.suggestedDraft = text
+    }
     else if (kind === 'permissionDone' && this.permission?.requestId === update.requestId) this.permission = undefined
     else if (kind === 'error') {
       this.status = 'offline'
+      this.activity.clear()
       this.permission = undefined
       this.error = text
     }

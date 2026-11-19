@@ -7,6 +7,7 @@ import { ScrollArea } from '../../components/ScrollArea'
 import { ResearchHost, type ResearchTool, type ResearchArtifact } from '../../host/generated/mygo'
 import type { ConversationItem, ResearchSession } from './session'
 import { DocumentDiff } from '../DocumentDiff'
+import { actionLabel, activeAction } from './actions'
 
 export function ResearchIcon({ name }: { name: string }) {
   return <i aria-hidden="true" className={`ph ph-${name}`} />
@@ -74,12 +75,7 @@ function Step({ tool, files, open }: { tool: ResearchTool; files: ResearchArtifa
   </details>
 }
 
-const shortcuts = [
-  ['lit', 'Literature review', 'books'],
-  ['deepresearch', 'Deep research', 'binoculars'],
-  ['compare', 'Compare sources', 'scales'],
-  ['draft', 'Draft a paper', 'pen-nib'],
-]
+const shortcuts = [['lit', 'books'], ['deepresearch', 'binoculars'], ['compare', 'scales'], ['draft', 'pen-nib']]
 
 export function Conversation({ session, choose, open, reviewSlot }: {
   session: ResearchSession
@@ -97,9 +93,10 @@ export function Conversation({ session, choose, open, reviewSlot }: {
     return () => window.clearTimeout(timer)
   }, [copied])
   const revision = session.snapshot()
+  const firstPrompt = session.messages.findIndex(message => message.role === 'user')
   useLayoutEffect(() => {
-    if (pinned.current && viewport) viewport.scrollTop = viewport.scrollHeight
-  }, [viewport, revision])
+    if (pinned.current && viewport) viewport.scrollTop = firstPrompt >= 0 ? viewport.scrollHeight : 0
+  }, [viewport, revision, firstPrompt])
   function report(e: unknown) { session.error = String(e); session.changed() }
   const openFile = useRef(open)
   openFile.current = open
@@ -116,18 +113,19 @@ export function Conversation({ session, choose, open, reviewSlot }: {
       <ol>{msg.steps.map((step, n) => <li key={n} data-status={step.status}><ResearchIcon name={step.status === 'completed' ? 'check-circle' : 'circle'} />{step.content}</li>)}</ol></section>
     if (msg.role === 'thought') return <details key={i} className="fy-thought"><summary>Thinking</summary><p>{msg.text}</p></details>
     if (msg.role === 'notice') return <p key={i} className="fy-notice">{msg.text}</p>
-    if (msg.role === 'user') return <div key={i} className="fy-prompt">{msg.text}</div>
+    if (msg.role === 'user') {
+      const action = activeAction(msg.text, session.commands)
+      return <div key={i} className="fy-prompt">{action ? <><strong>{actionLabel(action.command.name)}</strong>{action.argument}</> : msg.text}</div>
+    }
     return <article className="fy-response" key={i}><div className="fy-author"><ResearchIcon name="atom" /> Feynman
       <button type="button" className="fy-icon" title="Copy response" aria-label="Copy response" onClick={() =>
         void navigator.clipboard.writeText(msg.text).then(() => setCopied(i)).catch(report)}><ResearchIcon name={copied === i ? 'check' : 'copy'} /></button>
     </div><RichMessage text={msg.text} followLink={followLink} />{msg.image && <img src={msg.image} alt="Research result" />}</article>
   }
   const content = []
-  let hasTurn = false
   for (let i = 0; i < session.messages.length; i++) {
     const msg = session.messages[i]
-    if (msg.role === 'user') hasTurn = true
-    if (!hasTurn && msg.role === 'assistant') {
+    if ((firstPrompt < 0 || i < firstPrompt) && msg.role === 'assistant') {
       content.push(<details className="fy-thought" key={i}><summary>Session details</summary><RichMessage text={msg.text} followLink={followLink} /></details>)
       continue
     }
@@ -139,8 +137,12 @@ export function Conversation({ session, choose, open, reviewSlot }: {
       if (next.role === 'tool') tools.push(next.tool)
     }
     const running = tools.some(tool => tool.status === 'pending' || tool.status === 'in_progress')
-    content.push(<details className="fy-activity" key={start}><summary><ResearchIcon name={running ? 'spinner-gap' : 'list-checks'} />
-      {tools.length === 1 ? toolTitle(tools[0]) : `${tools.length} tool calls`}
+    if (tools.length === 1) {
+      content.push(<Step key={start} tool={tools[0]} files={session.files} open={file => { void open(file).catch(report) }} />)
+      continue
+    }
+    content.push(<details className="fy-activity" key={start} open={running}><summary><ResearchIcon name={running ? 'spinner-gap' : 'list-checks'} />
+      {tools.length} tool calls
       <ResearchIcon name="caret-down" /></summary>{tools.map(tool => <Step key={tool.toolCallId} tool={tool} files={session.files} open={file => { void open(file).catch(report) }} />)}</details>)
   }
   return <div className="fy-thread">
@@ -150,12 +152,16 @@ export function Conversation({ session, choose, open, reviewSlot }: {
         pinned.current = viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop < 24
         setAtEnd(pinned.current)
       }}>
-      {!hasTurn && <div className="fy-start"><span className="fy-mark" aria-hidden="true"><ResearchIcon name="atom" /></span>
-        <h3>Start a research session</h3>
-        <div className="fy-launchers">{shortcuts.filter(([name]) => session.commands.some(c => c.name === name)).map(([name, label, icon]) =>
-          <button type="button" key={name} onClick={() => choose(name)}><ResearchIcon name={icon} /><span>{label}</span></button>)}</div>
+      {firstPrompt < 0 && shortcuts.some(([name]) => session.commands.some(c => c.name === name)) && <div className="fy-start">
+        <h3>Start with a workflow</h3>
+        <div className="fy-launchers">{shortcuts.filter(([name]) => session.commands.some(c => c.name === name)).map(([name, icon]) =>
+          <button type="button" key={name} onClick={() => choose(name)}><ResearchIcon name={icon} /><span>{actionLabel(name)}</span></button>)}</div>
       </div>}
       {content}
+      {session.activity.size > 0 && <details className="fy-activity"><summary>
+        <ResearchIcon name="pulse" /><span>Extension activity</span><ResearchIcon name="caret-down" /></summary>
+        {Array.from(session.activity, ([key, value]) => <pre key={key}>{value}</pre>)}
+      </details>}
       {session.status === 'working' && <p className="fy-working" role="status"><ResearchIcon name="circle-dashed" />{session.progress || 'Working…'}</p>}
       {reviewSlot}
     </ScrollArea>

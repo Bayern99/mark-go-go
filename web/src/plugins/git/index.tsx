@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { Popover } from 'radix-ui'
 import type { AppPlugin, DocumentSnapshot, PluginContext } from '../../core/types'
 import { CheckpointHost } from '../../host/generated/mygo'
 import { DocumentDiff } from '../DocumentDiff'
@@ -94,11 +95,23 @@ export function createGitPlugin(documentID: string): AppPlugin {
     activate(ctx) {
       ctx.views.register({
         id: 'git.panel',
-        title: 'Git',
-        location: 'right',
+        title: 'Git checkpoints',
+        location: 'document',
         mount(el) {
           const root = createRoot(el)
-          root.render(<GitPanel ctx={ctx} documentID={documentID} />)
+          root.render(<Popover.Root>
+            <Popover.Trigger asChild>
+              <button type="button" className="pill icon quiet" aria-label="Git checkpoints" title="Git checkpoints">
+                <i className="ph ph-git-branch" aria-hidden="true" />
+              </button>
+            </Popover.Trigger>
+            <Popover.Portal>
+              <Popover.Content className="doc-tab-menu checkpoint-menu" aria-label="Git checkpoints" sideOffset={6} align="end" collisionPadding={8}>
+                <h3>Git checkpoints</h3>
+                <GitPanel ctx={ctx} documentID={documentID} />
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover.Root>)
           return { dispose: () => queueMicrotask(() => root.unmount()) }
         },
       })

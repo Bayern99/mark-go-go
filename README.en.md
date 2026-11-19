@@ -6,15 +6,15 @@ Mark Go Go is a local Markdown editor for macOS. Folder workspaces share a windo
 
 ## Optional plugins
 
-Use **Plugins** in the desktop tab bar to enable Feynman and Git independently. Both start disabled.
+Use **Workspace / Outline** in the left sidebar to switch between workspace files and headings in the active document. Use **Plugins** in the desktop tab bar to enable Feynman and Git independently. Both start disabled.
 
-**Feynman** uses your local Feynman CLI and Node.js. Install its adapter with `npm install -g pi-acp`, then enable the plugin. Drag the left edge of the research pane to resize it. Narrow windows use a drawer. [Feynman setup guide](https://feynman.is/docs/getting-started/setup)
+**Feynman** uses your local Feynman CLI and Node.js. Install its adapter with `npm install -g pi-acp`, then enable the plugin. Feynman occupies the right sidebar. Switching documents in the same workspace preserves the conversation and unsent draft. Drag its left edge to resize it. Narrow windows use a drawer. [Feynman setup guide](https://feynman.is/docs/getting-started/setup)
 
-- **Chat**. Type `/` to find the workflows and skills advertised by your session. Enter selects a command or sends the message. Shift+Enter inserts a line break. Choose a model and thinking level, attach papers or images, inspect tool activity, follow citations, or use history to start and resume conversations in this workspace.
+- **Chat**. Open **Actions** to choose a workflow, skill, extension or session action by name. **Browse research tools** lists tools from the running Feynman installation. Select one to inspect its parameters or add it to the current question. Choose an action, enter any instructions and send. Answer extension forms, choices and confirmations in the conversation. Typing `/` also opens the picker. Enter sends the message. Shift+Enter inserts a line break. Choose a model and thinking level, attach papers or images, inspect tool activity, follow citations, or use history to start and resume conversations in this workspace.
 - **Files**. Reports, plans, drafts and provenance records open in regular Markdown tabs. The folder button opens other research outputs in Finder. To revise a document, choose **Edit document**, review the diff, then select **Apply in Markdown**. One Undo restores the preceding text.
 - **CLI**. Run Feynman itself inside the pane. Leave the arguments empty and click **Run** to open the interactive interface with the currently selected saved conversation, or run a command such as `setup`, `doctor`, `model login` or `mcp list`. Switching tabs keeps the process available. A successful exit publishes completed Markdown. **Stop CLI** interrupts the run. CLI and Chat take turns using the workspace’s research directory.
 
-**Git** uses an existing local repository. Save the document, then create a checkpoint in the **Git** panel. Choose a version to compare it with the current buffer and restore its text. Checkpoints use local Git refs associated with the document’s repository path. A renamed document starts a new history.
+**Git** uses an existing local repository. Save the document, then create a checkpoint under **Git checkpoints** in the document toolbar. Choose a version to compare it with the current buffer and restore its text. Checkpoints use local Git refs associated with the document’s repository path. A renamed document starts a new history.
 
 ## Development
 

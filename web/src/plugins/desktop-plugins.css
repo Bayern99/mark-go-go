@@ -41,5 +41,3 @@
 }
 .document-diff pre[aria-label='Removed lines'] { border-color: var(--danger); }
 .document-diff pre[aria-label='Proposed lines'] { border-color: var(--accent); }
-.empty-folder { display: flex; flex: 1; min-height: 0; }
-.empty-folder .workspace-empty { flex: 1; gap: 8px; flex-wrap: wrap; }

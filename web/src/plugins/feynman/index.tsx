@@ -1,40 +1,30 @@
-import { lazy, Suspense, useEffect, useMemo } from 'react'
-import { createRoot } from 'react-dom/client'
-import type { AppPlugin, PluginContext } from '../../core'
-import { RightPane } from '../../components/RightPane'
-import { ViewRegistry } from '../../core/ViewRegistry'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import type { DocumentSnapshot, PluginContext } from '../../core'
 import { ResearchSession } from './session'
 
 const ResearchPanel = lazy(() => import('./ResearchPanel'))
 
-function researchView(session: ResearchSession, documentID: string, open: (path: string, existingID?: string) => Promise<unknown>, ctx?: PluginContext) {
-  return {
-    id: 'feynman.panel', title: 'Feynman', location: 'right' as const, workspaceScoped: true,
-    mount(el: HTMLElement) {
-      const view = createRoot(el)
-      view.render(<Suspense fallback={<p role="status">Opening research…</p>}><ResearchPanel ctx={ctx} session={session} documentID={documentID} open={open} /></Suspense>)
-      return { dispose() { queueMicrotask(() => view.unmount()) } }
-    },
-  }
-}
+export type OpenResearchDocument = (path: string, existingID?: string) => Promise<{
+  id: string
+  snapshot: () => Promise<DocumentSnapshot>
+}>
 
-export function EmptyResearchPane({ root, open }: { root: string; open: (path: string, existingID?: string) => Promise<unknown> }) {
-  const views = useMemo(() => new ViewRegistry(), [])
+export function WorkspaceResearch({ root, ctx, documentID, open, openFolder }: {
+  root: string
+  ctx?: Pick<PluginContext, 'documents' | 'commands'>
+  documentID: string
+  open: OpenResearchDocument
+  openFolder: () => void
+}) {
+  const [session, setSession] = useState<ResearchSession>()
   useEffect(() => {
-    const session = ResearchSession.acquire(root)
-    const view = views.register(researchView(session, '', open))
-    return () => { view.dispose(); session.release() }
-  }, [views, root, open])
-  return <RightPane views={views} />
-}
-
-export function createFeynmanPlugin(root: string, documentID: string, open: (path: string, existingID?: string) => Promise<unknown>): AppPlugin {
-  return {
-    id: 'feynman', title: 'Feynman',
-    activate(ctx) {
-      const session = ResearchSession.acquire(root)
-      ctx.subscriptions.push({ dispose: () => session.release() })
-      ctx.views.register(researchView(session, documentID, open, ctx))
-    },
-  }
+    if (!root) return
+    const current = ResearchSession.acquire(root)
+    setSession(current)
+    return () => current.release()
+  }, [root])
+  if (!root) return <div className="research-empty"><h3>Feynman</h3><p>Open a folder to start research.</p>
+    <button type="button" className="pill" onClick={openFolder}>Open folder…</button></div>
+  const loading = <p className="nav-empty" role="status">Opening research…</p>
+  return session ? <Suspense fallback={loading}><ResearchPanel session={session} ctx={ctx} documentID={documentID} open={open} /></Suspense> : loading
 }

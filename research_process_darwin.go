@@ -33,7 +33,7 @@ func researchCommand(root, work string) (*exec.Cmd, error) {
 	if find("node") == "" {
 		return nil, errors.New("Install Node.js for pi-acp, then reconnect.")
 	}
-	return researchSandboxCommand(root, work, temp, state, sessions, paths, []string{adapter}, []string{"PI_ACP_PI_COMMAND=" + feynman})
+	return researchSandboxCommand(root, work, temp, state, sessions, paths, []string{adapter}, []string{"PI_ACP_PI_COMMAND=" + feynman, "MGO_FEYNMAN_EXECUTABLE=" + feynman})
 }
 
 func researchConsoleCommand(root, work string, args []string) (*exec.Cmd, error) {

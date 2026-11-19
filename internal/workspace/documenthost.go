@@ -70,6 +70,8 @@ type docSession struct {
 	genSlot      *generationSlot
 	closed       bool
 	pathFn       func() string
+	textFn       func() string
+	edited       bool
 	viewMode     string
 	restoreError string
 	actionError  string
@@ -129,7 +131,17 @@ func (s *docSession) documentState() mygo.DocumentState {
 	if name == "." || name == "/" || name == "" {
 		name = "untitled.md"
 	}
-	return mygo.DocumentState{Name: name, Path: path}
+	return mygo.DocumentState{Name: name, Path: path, Edited: s.edited}
+}
+
+func (s *docSession) currentText() string {
+	if s.doc != nil {
+		return s.doc.Content()
+	}
+	if s.textFn != nil {
+		return s.textFn()
+	}
+	return ""
 }
 
 func (s *docSession) currentPath() string {

@@ -425,11 +425,11 @@ func (h *ResearchManager) SessionStats(ctx context.Context, root string) (Resear
 	if err := s.rpc.Call("get_session_stats", nil, &stats); err != nil {
 		return ResearchSessionStats{}, err
 	}
-	s.emitStatsUpdate(stats)
+	h.emitStatsUpdate(s, stats)
 	return stats, nil
 }
 
-func (s *researchSession) emitStatsUpdate(stats ResearchSessionStats) {
+func (h *ResearchManager) emitStatsUpdate(s *researchSession, stats ResearchSessionStats) {
 	upd := ResearchUpdate{
 		Kind:  "usage",
 		Stats: &stats,
@@ -437,9 +437,17 @@ func (s *researchSession) emitStatsUpdate(stats ResearchSessionStats) {
 	if stats.ContextUsage != nil && stats.ContextUsage.ContextWindow > 0 {
 		upd.Used = stats.ContextUsage.Tokens
 		upd.Size = stats.ContextUsage.ContextWindow
-	} else if s.state.Model != nil && s.state.Model.ContextWindow > 0 {
-		upd.Used = stats.Tokens.Total
-		upd.Size = s.state.Model.ContextWindow
+	} else {
+		h.mu.Lock()
+		var contextWindow int64
+		if s.state.Model != nil {
+			contextWindow = s.state.Model.ContextWindow
+		}
+		h.mu.Unlock()
+		if contextWindow > 0 {
+			upd.Used = stats.Tokens.Total
+			upd.Size = contextWindow
+		}
 	}
 	s.emit(upd)
 }
@@ -725,13 +733,16 @@ func (h *ResearchManager) PromptWithSources(ctx context.Context, root, text, doc
 	if err != nil {
 		return "", err
 	}
-	if err := h.stageDocument(ctx, root, documentID, buffer); err != nil {
+	if err := h.ensureEditableDocument(ctx, root, documentID); err != nil {
 		return "", err
 	}
 
 	promptMessage := text
 	if documentID != "" {
-		promptMessage += "\n\nThe editable working copy of the selected Markdown document is current-document.md in the session directory. Apply the requested revision to that working copy."
+		promptMessage += fmt.Sprintf(
+			"\n\nTo edit the active Markdown document (documentId: %q), call the MCP tool `propose_edit` with `documentId: %q` (supplying targeted `oldText`/`newText`, `startLine`/`endLine`, or `proposedText`) so changes enter the review queue without overwriting the editor buffer directly.",
+			documentID, documentID,
+		)
 	}
 	var images []map[string]string
 	var fileRefs []string
@@ -811,10 +822,10 @@ func (h *ResearchManager) PromptWithSources(ctx context.Context, root, text, doc
 	}
 	var stats ResearchSessionStats
 	if s.rpc.Call("get_session_stats", nil, &stats) == nil {
-		s.emitStatsUpdate(stats)
+		h.emitStatsUpdate(s, stats)
 	}
 	if documentID != "" {
-		return h.readStagedDocument(root)
+		return buffer, nil
 	}
 	return "", nil
 }

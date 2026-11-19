@@ -365,6 +365,7 @@ describe('Feynman Settings & alphaXiv Portrait UI', () => {
       // Open Feynman Settings in-pane
       await userEvent.click(page.getByTestId('feynman-settings-toggle'))
 
+      await expect.element(page.getByRole('heading', { name: 'Feynman Settings', level: 3 })).toBeVisible()
       for (const heading of [
         'Status & Doctor',
         'Models & Tier',
@@ -373,7 +374,7 @@ describe('Feynman Settings & alphaXiv Portrait UI', () => {
         'MCP Servers',
         'Packages & Updates',
       ]) {
-        await expect.element(page.getByRole('heading', { name: heading })).toBeVisible()
+        await expect.element(page.getByRole('heading', { name: heading, level: 4 })).toBeVisible()
       }
 
       // Zero native <select> or <meter> anywhere in Feynman panel

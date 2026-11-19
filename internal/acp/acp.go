@@ -9,9 +9,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strings"
 	"sync"
 	"time"
+
+	"github.com/Bayern99/mark-go-go/internal/fsutil"
 )
 
 const (
@@ -44,30 +45,6 @@ type PermissionOption struct {
 	Kind     string `json:"kind"`
 }
 
-type LimitBuffer struct {
-	mu  sync.Mutex
-	max int
-	buf []byte
-}
-
-func NewLimitBuffer(max int) *LimitBuffer { return &LimitBuffer{max: max} }
-
-func (b *LimitBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.buf = append(b.buf, p...)
-	if len(b.buf) > b.max {
-		b.buf = append(b.buf[:0], b.buf[len(b.buf)-b.max:]...)
-	}
-	return len(p), nil
-}
-
-func (b *LimitBuffer) Tail() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return strings.TrimRight(string(b.buf), "\n")
-}
-
 type acpResponse struct {
 	result json.RawMessage
 	err    *RPCError
@@ -96,10 +73,10 @@ type Agent struct {
 	stderrDone chan struct{}
 	killOnce   sync.Once
 
-	stderr *LimitBuffer
+	stderr *fsutil.LimitBuffer
 }
 
-func NewAgent(cmd *exec.Cmd, stderr *LimitBuffer) (*Agent, error) {
+func NewAgent(cmd *exec.Cmd, stderr *fsutil.LimitBuffer) (*Agent, error) {
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err

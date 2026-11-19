@@ -110,6 +110,7 @@
     0 4px 12px rgb(0 0 0 / 7%),
     0 18px 40px -10px rgb(0 0 0 / 13%);
   --focus: color-mix(in srgb, var(--accent) 34%, transparent);
+  --scrim: rgba(29, 29, 31, 0.08);
   --ring-field: 0 0 0 0.5px var(--line-strong), 0 0 0 3px var(--focus);
   --ring-editing: 0 0 0 1px var(--accent), 0 0 0 3px var(--focus);
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -171,6 +172,7 @@
   --content-warning-soft: rgba(240, 165, 96, 0.12);
   --content-caution: #ef8a80;
   --content-caution-soft: rgba(239, 138, 128, 0.12);
+  --scrim: rgba(0, 0, 0, 0.32);
 
   --raised: linear-gradient(180deg, #3d3d41 0%, #333336 100%);
   --raised-press: linear-gradient(180deg, #2e2e31 0%, #333336 100%);
@@ -2251,12 +2253,7 @@ body {
   position: absolute;
   inset: 0;
   z-index: 14;
-  background: rgba(29, 29, 31, 0.08);
-}
-
-:root.dark .right-scrim,
-.mgg.dark .right-scrim {
-  background: rgba(0, 0, 0, 0.32);
+  background: var(--scrim);
 }
 
 .workspace-body {
@@ -2278,12 +2275,7 @@ body {
     position: absolute;
     inset: 0;
     z-index: 18;
-    background: rgba(29, 29, 31, 0.08);
-  }
-
-  :root.dark .workspace-body.library-open > .library-scrim,
-  .mgg.dark .workspace-body.library-open > .library-scrim {
-    background: rgba(0, 0, 0, 0.32);
+    background: var(--scrim);
   }
 
   .workspace-body.library-open > .side-pane {

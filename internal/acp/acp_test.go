@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Bayern99/mark-go-go/internal/fsutil"
 )
 
 func TestACPStopsWhenAnOutputRecordExceedsTheReadLimit(t *testing.T) {
@@ -26,7 +28,7 @@ func TestACPStopsWhenAnOutputRecordExceedsTheReadLimit(t *testing.T) {
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=^TestACPStopsWhenAnOutputRecordExceedsTheReadLimit$")
 	cmd.Env = append(os.Environ(), "MGO_LARGE_ACP_RESULT=1")
-	agent, err := NewAgent(cmd, NewLimitBuffer(1024))
+	agent, err := NewAgent(cmd, fsutil.NewLimitBuffer(1024))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +55,7 @@ func TestACPCallCleansPendingOnWriteFailure(t *testing.T) {
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=^TestACPCallCleansPendingOnWriteFailure$")
 	cmd.Env = append(os.Environ(), "MGO_HOLD_ACP_STDIN=1")
-	agent, err := NewAgent(cmd, NewLimitBuffer(1024))
+	agent, err := NewAgent(cmd, fsutil.NewLimitBuffer(1024))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +80,7 @@ func TestACPCallCleansPendingOnAgentExit(t *testing.T) {
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=^TestACPCallCleansPendingOnAgentExit$")
 	cmd.Env = append(os.Environ(), "MGO_EXIT_ACP_SILENT=1")
-	agent, err := NewAgent(cmd, NewLimitBuffer(1024))
+	agent, err := NewAgent(cmd, fsutil.NewLimitBuffer(1024))
 	if err != nil {
 		t.Fatal(err)
 	}

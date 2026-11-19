@@ -89,10 +89,10 @@ it('opens Git checkpoints beside the current document when Feynman is disabled',
   const root = createRoot(container)
   try {
     root.render(<App host={host} plugins={[createGitPlugin(host.id)]} />)
-    const git = page.getByRole('button', { name: 'Git checkpoints' })
+    const git = page.getByRole('button', { name: 'Checkpoints' })
     await git.click()
-    const dialog = page.getByRole('dialog', { name: 'Git checkpoints' })
-    await expect.element(dialog.getByText('Save this document to use Git checkpoints.')).toBeVisible()
+    const dialog = page.getByRole('dialog', { name: 'Checkpoints' })
+    await expect.element(dialog.getByText('Save this document to use Checkpoints.')).toBeVisible()
     expect(git.element().closest('.docbar')).not.toBeNull()
     expect(container.querySelector('[data-testid="right-pane"]')).toBeNull()
   } finally {

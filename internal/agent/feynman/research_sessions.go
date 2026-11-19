@@ -483,7 +483,7 @@ func (h *ResearchManager) syncConversationState(s *researchSession, work, fallba
 	}
 	s.emit(ResearchUpdate{Kind: "commands", Commands: filteredCmds})
 	if hasStats {
-		s.emitStatsUpdate(stats)
+		h.emitStatsUpdate(s, stats)
 	}
 	for _, rawMsg := range msgsResp.Messages {
 		s.replayMessage(rawMsg)

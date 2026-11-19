@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"github.com/Bayern99/mark-go-go/internal/genui"
 )
 
@@ -115,7 +116,7 @@ func (c *ProcessCache) startLease(executable string, env []string, fingerprint s
 	cmd := exec.Command(executable, "acp")
 	cmd.Dir = dir
 	cmd.Env = env
-	agent, err := NewAgent(cmd, NewLimitBuffer(4<<10))
+	agent, err := NewAgent(cmd, fsutil.NewLimitBuffer(4<<10))
 	if err != nil {
 		return nil, err
 	}

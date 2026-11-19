@@ -84,9 +84,9 @@ describe('Labeled Checkpoints with provenance & non-Git fallback UI', () => {
     try {
       root.render(<App host={host} plugins={[createGitPlugin(host.id)]} />)
 
-      const trigger = page.getByRole('button', { name: 'Git checkpoints' })
+      const trigger = page.getByRole('button', { name: 'Checkpoints' })
       await trigger.click()
-      const dialog = page.getByRole('dialog', { name: 'Git checkpoints' })
+      const dialog = page.getByRole('dialog', { name: 'Checkpoints' })
 
       await expect.element(dialog.getByText('Before Feynman edit')).toBeVisible()
       await expect.element(dialog.getByText('Feynman', { exact: true })).toBeVisible()
@@ -170,8 +170,8 @@ describe('Labeled Checkpoints with provenance & non-Git fallback UI', () => {
     try {
       root.render(<App host={host} plugins={[createGitPlugin(host.id)]} />)
 
-      await page.getByRole('button', { name: 'Git checkpoints' }).click()
-      const dialog = page.getByRole('dialog', { name: 'Git checkpoints' })
+      await page.getByRole('button', { name: 'Checkpoints' }).click()
+      const dialog = page.getByRole('dialog', { name: 'Checkpoints' })
 
       await expect.element(dialog.getByText('Before MCP edit')).toBeVisible()
       await expect.element(dialog.getByText('MCP', { exact: true })).toBeVisible()

@@ -179,7 +179,7 @@ func RunGeneration(ctx context.Context, job GenerationJob, progress func(genui.G
 		cmd := exec.Command(resolved, "acp")
 		cmd.Dir = dir
 		cmd.Env = job.Env
-		agent, err = NewAgent(cmd, NewLimitBuffer(4<<10))
+		agent, err = NewAgent(cmd, fsutil.NewLimitBuffer(4<<10))
 		if err != nil {
 			return genui.NewFailure(genui.FailAgentNotFound, fmt.Sprintf("Could not start the agent command %q: %v.", job.AgentCommand, err), genui.HintAgentNotFound)
 		}

@@ -389,7 +389,7 @@
   flex-wrap: wrap;
   gap: 6px;
 }
-.fy-settings-card-head h3 {
+.fy-settings-card-head h4 {
   margin: 0;
   font-family: var(--font-display);
   font-size: 14px;

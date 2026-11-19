@@ -20,6 +20,7 @@ import (
 	"time"
 	"unicode/utf16"
 
+	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"github.com/Bayern99/mark-go-go/internal/genui"
 )
 
@@ -1353,7 +1354,7 @@ func TestACPCancelDoesNotWaitForDescendantPipesOrBlockedWrite(t *testing.T) {
 		fakeSpecEnv+"="+string(specData),
 		fakeLogEnv+"="+logPath,
 	)
-	agent, err := NewAgent(cmd, NewLimitBuffer(4<<10))
+	agent, err := NewAgent(cmd, fsutil.NewLimitBuffer(4<<10))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1430,7 +1431,7 @@ func TestACPCallKeepsResponseWhenAgentExits(t *testing.T) {
 		fakeSpecEnv+"="+string(specData),
 		fakeLogEnv+"="+logPath,
 	)
-	agent, err := NewAgent(cmd, NewLimitBuffer(4<<10))
+	agent, err := NewAgent(cmd, fsutil.NewLimitBuffer(4<<10))
 	if err != nil {
 		t.Fatal(err)
 	}

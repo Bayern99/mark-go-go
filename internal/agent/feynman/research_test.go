@@ -1557,6 +1557,17 @@ func runFeynmanRPCFixture() {
 							}
 						}
 					}
+
+				case strings.Contains(msg, "mcp-propose-edit-check"):
+					sendRecord(map[string]any{
+						"type": "message_end",
+						"message": map[string]any{
+							"role":       "assistant",
+							"responseId": "msg-mcp-check",
+							"content":    []map[string]any{{"type": "text", "text": msg}},
+							"stopReason": "stop",
+						},
+					})
 				}
 
 				sendRecord(map[string]any{"type": "turn_end", "toolResults": []any{}})
@@ -1667,5 +1678,98 @@ func TestResearchManagerBeforeStartAndAfterStopHooks(t *testing.T) {
 	}
 	if !slices.Equal(events, []string{"beforeStart", "afterStop"}) {
 		t.Fatalf("events after Disconnect = %v, want [beforeStart afterStop]", events)
+	}
+}
+
+func TestEmitStatsUpdateConcurrentWithSetModelRace(t *testing.T) {
+	home := t.TempDir()
+	root := t.TempDir()
+	data := t.TempDir()
+
+	h := NewResearchManager(fakeWorkspaceLookup{dataDir: data})
+	defer h.Close()
+	h.command = fixtureCommand(home)
+	if err := h.connect(WorkspaceRef{Root: root}, func(ResearchUpdate) {}); err != nil {
+		t.Fatalf("connect failed: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	for i := range 4 {
+		wg.Add(1)
+		go func(worker int) {
+			defer wg.Done()
+			for j := range 15 {
+				if (worker+j)%2 == 0 {
+					_, _ = h.Host().SessionStats(ctx, root)
+				} else {
+					_, _ = h.Host().SetModel(ctx, root, "openai", "gpt-5.4")
+				}
+			}
+		}(i)
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		h.mu.Lock()
+		s := h.sessions[fsutil.CanonicalPath(root)]
+		h.mu.Unlock()
+		stats := ResearchSessionStats{Tokens: ResearchTokenStats{Total: 42}}
+		for range 100 {
+			h.emitStatsUpdate(s, stats)
+		}
+	}()
+	wg.Wait()
+}
+
+func TestPromptWithSourcesUsesMCPProposeEditInsteadOfStaging(t *testing.T) {
+	home := t.TempDir()
+	root := t.TempDir()
+	data := t.TempDir()
+
+	events := make(chan ResearchUpdate, 64)
+	h := NewResearchManager(fakeWorkspaceLookup{dataDir: data})
+	defer h.Close()
+	h.command = fixtureCommand(home)
+	if err := h.connect(WorkspaceRef{Root: root}, func(e ResearchUpdate) { events <- e }); err != nil {
+		t.Fatalf("connect failed: %v", err)
+	}
+	drainEvents(events)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	buf := "# Intro\n\nOriginal paragraph.\n"
+	got, err := h.Host().PromptWithSources(ctx, root, "mcp-propose-edit-check: tighten intro", "doc-42", buf, nil)
+	if err != nil {
+		t.Fatalf("PromptWithSources failed: %v", err)
+	}
+	if got != buf {
+		t.Fatalf("PromptWithSources returned %q, want unchanged buffer %q", got, buf)
+	}
+
+	var sawPrompt string
+	deadline := time.After(3 * time.Second)
+	for sawPrompt == "" {
+		select {
+		case ev := <-events:
+			if ev.Kind == "assistant" && strings.Contains(ev.Text, "mcp-propose-edit-check") {
+				sawPrompt = ev.Text
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for assistant echo of prompt")
+		}
+	}
+	if !strings.Contains(sawPrompt, "propose_edit") || !strings.Contains(sawPrompt, "doc-42") {
+		t.Fatalf("prompt did not direct agent to MCP propose_edit for doc-42: %q", sawPrompt)
+	}
+	if strings.Contains(sawPrompt, "current-document.md") {
+		t.Fatalf("prompt still referenced legacy current-document.md staging: %q", sawPrompt)
+	}
+	stagedPath := filepath.Join(review.WorkDir(data, root), review.ResearchDocumentCopy)
+	if _, err := os.Stat(stagedPath); !os.IsNotExist(err) {
+		t.Fatalf("legacy staged file %s should not exist, err=%v", stagedPath, err)
 	}
 }

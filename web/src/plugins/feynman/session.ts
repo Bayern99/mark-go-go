@@ -688,7 +688,7 @@ export class ResearchSession {
         ? await ResearchHost.promptWithSources(this.root, prompt, base ? documentID : '', base?.text ?? '', sources)
         : await ResearchHost.prompt(this.root, prompt, base ? documentID : '', base?.text ?? '')
       if (generation !== this.generation) return
-      if (base && base.text !== text) {
+      if (base && text && base.text !== text) {
         this.upsertProposal({ documentID, base, text, source: 'feynman' })
         this.tab = 'review'
       }

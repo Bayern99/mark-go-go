@@ -1,7 +1,8 @@
 import '../src/styles.css'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { afterEach, describe, expect, it } from 'vitest'
 import { mountApp, type MountedApp } from './helpers/app'
+import { MOD } from './helpers/platform'
 
 const WINDOW = { width: 1280, height: 820 }
 
@@ -119,4 +120,42 @@ describe('layout at the default window size', () => {
     await expect.poll(() => rightPane.hidden).toBe(true)
   })
 
+  it('moves keyboard focus into the floating panel and back on Escape', async () => {
+    await page.viewport(480, 360)
+    mounted = await mountApp(DOCUMENT)
+    const editor = mounted.container.querySelector<HTMLElement>('.ProseMirror')!
+    const original = editor.textContent
+    editor.focus()
+
+    await userEvent.keyboard(`{${MOD}>}{Alt>}[Digit0]{/Alt}{/${MOD}}`)
+    await expect.element(page.getByTestId('right-pane-close')).toHaveFocus()
+    expect(editor.contains(window.getSelection()?.anchorNode ?? null)).toBe(false)
+    await userEvent.keyboard('Q{Escape}')
+    await expect.element(page.getByTestId('right-pane')).not.toBeVisible()
+    await expect.element(page.getByTestId('right-pane-toggle')).toHaveFocus()
+    expect(editor.textContent).toBe(original)
+  })
+
+  it('reclaims reading space at the native minimum and resets the file drawer on resize', async () => {
+    await page.viewport(480, 360)
+    mounted = await mountApp(DOCUMENT)
+    const files = page.getByRole('button', { name: 'Show files' })
+    const library = page.getByTestId('left-pane')
+    await expect.element(library).not.toBeVisible()
+    const paragraph = mounted.container.querySelector('.ProseMirror > p')!
+    expect(paragraph.getBoundingClientRect().width).toBeGreaterThan(280)
+
+    await files.click()
+    await expect.element(library).toBeVisible()
+    await expect.element(page.getByTestId('library-close')).toHaveFocus()
+    await userEvent.keyboard('{Escape}')
+    await expect.element(files).toHaveFocus()
+    await files.click()
+    await page.viewport(800, 640)
+    await expect.element(library).toBeVisible()
+    await expect.element(page.getByTestId('library-close')).not.toBeInTheDocument()
+    await page.viewport(480, 360)
+    await expect.element(library).not.toBeVisible()
+    await expect.element(files).toBeVisible()
+  })
 })

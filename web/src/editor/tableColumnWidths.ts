@@ -235,16 +235,9 @@ function computeResizedWidths(
   }
 
   const right = startWidths[col + 1]!
-  if (delta < 0) {
-    const applied = Math.max(minWidth - left, delta)
-    next[col] = left + applied
-    next[col + 1] = right - applied
-  } else {
-    const availableFromRight = Math.max(0, right - minWidth)
-    const takenFromRight = Math.min(delta, availableFromRight)
-    next[col] = left + delta
-    next[col + 1] = right - takenFromRight
-  }
+  const applied = Math.min(right - minWidth, Math.max(minWidth - left, delta))
+  next[col] = left + applied
+  next[col + 1] = right - applied
   return next
 }
 

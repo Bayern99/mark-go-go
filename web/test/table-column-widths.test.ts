@@ -340,6 +340,24 @@ describe('table column widths', () => {
     }
   })
 
+  it('stops the internal divider when the adjacent column reaches its minimum', async () => {
+    const mounted = await mount('| A | B |\n| --- | --- |\n| a | b |\n')
+    try {
+      const widths = () => Array.from(
+        mounted.root.querySelectorAll('table.children th'),
+        (cell) => Math.round(cell.getBoundingClientRect().width),
+      )
+      expect(widths()).toEqual([312, 312])
+      const release = await previewFirstBoundary(mounted, 400)
+      const dragging = widths()
+      await release()
+      expect(dragging).toEqual([552, 72])
+      expect(widths()).toEqual([552, 72])
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
   it('pushes internal dividers 1:1 like Word without jumping non-adjacent columns or outer edge', async () => {
     const source = [
       '| Col A | Col B | Col C | Col D |',

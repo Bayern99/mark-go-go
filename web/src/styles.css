@@ -1636,7 +1636,7 @@ body {
   box-shadow: var(--glass-rim);
 }
 
-:is(.mmenu.pop, .doc-tab-menu, .right-pane.r-float, .workspace-body.library-open > .side-pane) {
+:is(.mmenu.pop, .doc-tab-menu, .right-pane.r-float, .library-open > .side-pane) {
   background: var(--glass-overlay-tint);
   -webkit-backdrop-filter: var(--glass-overlay-filter);
   backdrop-filter: var(--glass-overlay-filter);
@@ -2266,7 +2266,7 @@ body {
   position: relative;
 }
 
-@media (max-width: 400px) {
+@media (max-width: 640px) {
   .library-toggle {
     display: inline-flex;
     flex: none;

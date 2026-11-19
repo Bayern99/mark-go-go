@@ -183,10 +183,9 @@ export function DocumentPane({
   const toggleRightPane = () => {
     if (measureIsNarrow()) {
       setIsNarrow(true)
-      setRightFloatOpen((open) => {
-        if (!open) onOpenRightFloat?.()
-        return !open
-      })
+      onOpenRightFloat?.()
+      rightToggleRef.current?.focus({ preventScroll: true })
+      setRightFloatOpen((open) => !open)
     } else {
       setIsNarrow(false)
       setRightWantOpen((open) => !open)
@@ -196,6 +195,12 @@ export function DocumentPane({
   useEffect(() => {
     if (libraryOpen) setRightFloatOpen(false)
   }, [libraryOpen])
+
+  useLayoutEffect(() => {
+    if (!rightFloating && !libraryOpen) return
+    const selection = window.getSelection()
+    if (selection && editorRoot.current?.contains(selection.anchorNode)) selection.removeAllRanges()
+  }, [rightFloating, libraryOpen])
 
   useEffect(() => {
     if (!rightFloating) return
@@ -442,6 +447,7 @@ export function DocumentPane({
           }
           if (measureIsNarrow()) {
             setIsNarrow(true)
+            onOpenRightFloat?.()
             setRightFloatOpen(true)
           } else {
             setIsNarrow(false)
@@ -860,6 +866,12 @@ function WorkspaceApp({
 
   useEffect(() => {
     if (!libraryOpen) return
+    const toggle = libraryToggleRef.current
+    if (!toggle) return
+    const observer = new ResizeObserver(() => {
+      if (!toggle.getClientRects().length) setLibraryOpen(false)
+    })
+    observer.observe(toggle)
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented || event.repeat) return
       event.preventDefault()
@@ -867,7 +879,10 @@ function WorkspaceApp({
       libraryToggleRef.current?.focus()
     }
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('keydown', onKeyDown)
+    }
   }, [libraryOpen])
 
   const hiddenDocuments = useMemo(() => {

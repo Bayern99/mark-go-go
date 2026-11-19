@@ -76,18 +76,11 @@
   }
 }
 
-.genui-panel .composer,
-.genui-panel .genui-generate,
-.genui-panel .genui-generate-all {
-  position: relative;
-}
-
-.genui-panel[data-halo='true'] .composer::after,
-.genui-panel[data-halo='true'] .genui-generate::after {
+.genui-panel[data-halo='true'] .genui-progress::after {
   content: '';
   position: absolute;
   inset: -1px;
-  border-radius: inherit;
+  border-radius: 8px;
   padding: 1.5px;
   background: conic-gradient(
     from var(--mgo-halo-angle),
@@ -131,8 +124,7 @@
     opacity: 0;
   }
 
-  .genui-panel[data-halo='true'] .composer::after,
-  .genui-panel[data-halo='true'] .genui-generate::after {
+  .genui-panel[data-halo='true'] .genui-progress::after {
     display: none;
   }
 }
@@ -693,6 +685,7 @@
 }
 
 .genui-progress {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 10px;

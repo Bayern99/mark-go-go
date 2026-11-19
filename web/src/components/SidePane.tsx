@@ -323,6 +323,7 @@ export function SidePane({
                 data-testid="library-close"
                 aria-label="Close files panel"
                 title="Close files (Esc)"
+                autoFocus
                 onClick={onCloseFloating}
               >
                 <i className="ph ph-x" aria-hidden="true" />

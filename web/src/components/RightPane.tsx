@@ -100,6 +100,7 @@ export function RightPane({
             data-testid="right-pane-close"
             aria-label="Close document panel"
             title="Close panel (Esc)"
+            autoFocus
             onClick={onClose}
           >
             <i className="ph ph-x" aria-hidden="true" />

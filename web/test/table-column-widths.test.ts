@@ -339,4 +339,185 @@ describe('table column widths', () => {
       await mounted.cleanup()
     }
   })
+
+  it('pushes internal dividers 1:1 like Word without jumping non-adjacent columns or outer edge', async () => {
+    const source = [
+      '| Col A | Col B | Col C | Col D |',
+      '| --- | --- | --- | --- |',
+      '| alpha text | beta longer description here | gamma | delta |',
+      '| 1 | 2 | 3 | 4 |',
+      '',
+    ].join('\n')
+    const mounted = await mount(source)
+    try {
+      await document.fonts.ready
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      const readHeaders = () =>
+        [...mounted.root.querySelectorAll<HTMLElement>('.milkdown-table-block table.children th')].map(
+          (th) => Math.round(th.getBoundingClientRect().width),
+        )
+      const tableWidth = () =>
+        Math.round(
+          mounted.root
+            .querySelector<HTMLElement>('.milkdown-table-block table.children')!
+            .getBoundingClientRect().width,
+        )
+
+      const initial = readHeaders()
+      const initialTable = tableWidth()
+      expect(initial).toHaveLength(4)
+
+      const th0 = mounted.root.querySelector<HTMLElement>('.milkdown-table-block table.children th')!
+      const rect = th0.getBoundingClientRect()
+      const startX = rect.right - 1
+      const y = (rect.top + rect.bottom) / 2
+      const session = cdp()
+
+      await session.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: startX, y })
+      await session.send('Input.dispatchMouseEvent', {
+        type: 'mousePressed', x: startX, y, button: 'left', clickCount: 1,
+      })
+
+      await session.send('Input.dispatchMouseEvent', {
+        type: 'mouseMoved', x: startX + 1, y, button: 'left', buttons: 1,
+      })
+      const afterOnePx = readHeaders()
+      expect(Math.abs(afterOnePx[0]! - (initial[0]! + 1))).toBeLessThanOrEqual(1)
+      expect(Math.abs(afterOnePx[1]! - (initial[1]! - 1))).toBeLessThanOrEqual(1)
+      expect(afterOnePx[2]).toBe(initial[2])
+      expect(afterOnePx[3]).toBe(initial[3])
+      expect(tableWidth()).toBe(initialTable)
+
+      await session.send('Input.dispatchMouseEvent', {
+        type: 'mouseMoved', x: startX + 60, y, button: 'left', buttons: 1,
+      })
+      const afterPush = readHeaders()
+      expect(Math.abs(afterPush[0]! - (initial[0]! + 60))).toBeLessThanOrEqual(1)
+      expect(Math.abs(afterPush[1]! - (initial[1]! - 60))).toBeLessThanOrEqual(1)
+      expect(afterPush[2]).toBe(initial[2])
+      expect(afterPush[3]).toBe(initial[3])
+      expect(tableWidth()).toBe(initialTable)
+
+      await session.send('Input.dispatchMouseEvent', {
+        type: 'mouseReleased', x: startX + 60, y, button: 'left',
+      })
+      const committed = readHeaders()
+      expect(committed).toEqual(afterPush)
+
+      const thLast = mounted.root.querySelectorAll<HTMLElement>('.milkdown-table-block table.children th')[3]!
+      const lastRect = thLast.getBoundingClientRect()
+      const lastStartX = lastRect.right - 1
+      await session.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: lastStartX, y })
+      await session.send('Input.dispatchMouseEvent', {
+        type: 'mousePressed', x: lastStartX, y, button: 'left', clickCount: 1,
+      })
+      await session.send('Input.dispatchMouseEvent', {
+        type: 'mouseMoved', x: lastStartX - 40, y, button: 'left', buttons: 1,
+      })
+      const afterShrinkLast = readHeaders()
+      expect(afterShrinkLast[0]).toBe(committed[0])
+      expect(afterShrinkLast[1]).toBe(committed[1])
+      expect(afterShrinkLast[2]).toBe(committed[2])
+      expect(Math.abs(afterShrinkLast[3]! - (committed[3]! - 40))).toBeLessThanOrEqual(1)
+      expect(tableWidth()).toBe(initialTable - 40)
+
+      await userEvent.keyboard('{Escape}')
+      expect(readHeaders()).toEqual(committed)
+      expect(tableWidth()).toBe(initialTable)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
+
+  it('aligns narrow tables with the 624px prose column and breaks out symmetrically only when wide', async () => {
+    const source = [
+      '## Metrics',
+      '',
+      'Short summary paragraph above the metrics table.',
+      '',
+      '| Metric | Value |',
+      '| --- | --- |',
+      '| Width | 624 px |',
+      '| Rhythm | 4 px |',
+      '',
+    ].join('\n')
+    const mounted = await mount(source)
+    try {
+      await document.fonts.ready
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+
+      const paragraph = mounted.root.querySelector<HTMLElement>('.ProseMirror > p')!
+      const table = () => mounted.root.querySelector<HTMLElement>('.milkdown-table-block table.children')!
+      const proseRect = () => paragraph.getBoundingClientRect()
+      const tableRect = () => table().getBoundingClientRect()
+
+      expect(Math.round(proseRect().width)).toBe(624)
+      expect(Math.round(tableRect().width)).toBe(624)
+      expect(Math.abs(tableRect().left - proseRect().left)).toBeLessThanOrEqual(1)
+
+      const session = cdp()
+      const dragRightEdge = async (delta: number, checkMidDrag?: () => void) => {
+        const ths = mounted.root.querySelectorAll<HTMLElement>('.milkdown-table-block table.children th')
+        const lastRect = ths[ths.length - 1]!.getBoundingClientRect()
+        const startX = lastRect.right - 1
+        const y = (lastRect.top + lastRect.bottom) / 2
+        await session.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: startX, y })
+        await session.send('Input.dispatchMouseEvent', {
+          type: 'mousePressed', x: startX, y, button: 'left', clickCount: 1,
+        })
+        await session.send('Input.dispatchMouseEvent', {
+          type: 'mouseMoved', x: startX + delta, y, button: 'left', buttons: 1,
+        })
+        checkMidDrag?.()
+        await session.send('Input.dispatchMouseEvent', {
+          type: 'mouseReleased', x: startX + delta, y, button: 'left',
+        })
+      }
+
+      await dragRightEdge(-120, () => {
+        expect(Math.abs(tableRect().left - proseRect().left)).toBeLessThanOrEqual(1)
+        expect(Math.abs(tableRect().width - 504)).toBeLessThanOrEqual(1)
+      })
+      expect(Math.abs(tableRect().left - proseRect().left)).toBeLessThanOrEqual(1)
+      expect(Math.abs(tableRect().width - 504)).toBeLessThanOrEqual(1)
+
+      await dragRightEdge(240, () => {
+        expect(Math.abs(tableRect().left - proseRect().left)).toBeLessThanOrEqual(1)
+        expect(Math.abs(tableRect().width - 744)).toBeLessThanOrEqual(1)
+      })
+      const wideRect = tableRect()
+      const pRect = proseRect()
+      expect(Math.abs(wideRect.width - 744)).toBeLessThanOrEqual(1)
+      expect(wideRect.left).toBeLessThan(pRect.left)
+      expect(wideRect.right).toBeGreaterThan(pRect.right)
+      const leftBreakout = pRect.left - wideRect.left
+      const rightBreakout = wideRect.right - pRect.right
+      expect(Math.abs(leftBreakout - rightBreakout)).toBeLessThanOrEqual(1)
+
+      const ths = mounted.root.querySelectorAll<HTMLElement>('.milkdown-table-block table.children th')
+      const wideLast = ths[ths.length - 1]!.getBoundingClientRect()
+      const rx = wideLast.right - 1
+      const ry = (wideLast.top + wideLast.bottom) / 2
+      await session.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rx, y: ry })
+      await session.send('Input.dispatchMouseEvent', {
+        type: 'mousePressed', x: rx, y: ry, button: 'left', clickCount: 1,
+      })
+      await session.send('Input.dispatchMouseEvent', {
+        type: 'mouseMoved', x: rx + 30, y: ry, button: 'left', buttons: 1,
+      })
+      await session.send('Input.dispatchMouseEvent', {
+        type: 'mouseMoved', x: rx, y: ry, button: 'left', buttons: 1,
+      })
+      await session.send('Input.dispatchMouseEvent', {
+        type: 'mouseReleased', x: rx, y: ry, button: 'left',
+      })
+      expect(Math.abs(tableRect().left - wideRect.left)).toBeLessThanOrEqual(1)
+
+      await dragRightEdge(-200)
+      expect(Math.abs(tableRect().width - 544)).toBeLessThanOrEqual(1)
+      expect(Math.abs(tableRect().left - proseRect().left)).toBeLessThanOrEqual(1)
+    } finally {
+      await mounted.cleanup()
+    }
+  })
 })

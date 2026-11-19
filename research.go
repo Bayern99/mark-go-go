@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,15 +20,23 @@ import (
 type ResearchOption struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	Kind string `json:"kind,omitempty"`
 }
 
 type ResearchUpdate struct {
-	Root      string           `json:"root"`
-	Kind      string           `json:"kind"`
-	Text      string           `json:"text,omitempty"`
-	Commands  []string         `json:"commands,omitempty"`
-	RequestID string           `json:"requestId,omitempty"`
-	Options   []ResearchOption `json:"options,omitempty"`
+	Root      string              `json:"root"`
+	Kind      string              `json:"kind"`
+	Text      string              `json:"text,omitempty"`
+	Commands  []ResearchCommand   `json:"commands,omitempty"`
+	Config    []ResearchConfig    `json:"config,omitempty"`
+	Tool      *ResearchTool       `json:"tool,omitempty"`
+	Plan      []ResearchPlanEntry `json:"plan,omitempty"`
+	Used      int64               `json:"used,omitempty"`
+	Size      int64               `json:"size,omitempty"`
+	Image     string              `json:"image,omitempty"`
+	MessageID string              `json:"messageId,omitempty"`
+	RequestID string              `json:"requestId,omitempty"`
+	Options   []ResearchOption    `json:"options,omitempty"`
 }
 
 var researchUpdate = mygo.NewEvent[ResearchUpdate]("researchUpdate")
@@ -38,23 +47,31 @@ type researchHost struct {
 	command   func(root, work string) (*exec.Cmd, error)
 	mu        sync.Mutex
 	sessions  map[string]*researchSession
+	console   map[string]bool
 	closed    bool
 }
 
 type researchSession struct {
-	win       *mygo.Window
-	agent     *acpAgent
-	id        string
-	busy      bool
-	turn      chan struct{}
-	cancelled bool
-	pending   *researchQuestion
-	emit      func(ResearchUpdate)
-	stopped   chan struct{}
-	drained   chan struct{}
-	ready     chan struct{}
-	startErr  error
-	offWindow func()
+	sources      map[string]os.FileInfo
+	imagePrompts bool
+	win          *mygo.Window
+	agent        *acpAgent
+	id           string
+	busy         bool
+	configuring  bool
+	switching    bool
+	updateMu     sync.Mutex
+	replay       []json.RawMessage
+	config       []ResearchConfig
+	turn         chan struct{}
+	cancelled    bool
+	pending      *researchQuestion
+	emit         func(ResearchUpdate)
+	stopped      chan struct{}
+	drained      chan struct{}
+	ready        chan struct{}
+	startErr     error
+	offWindow    func()
 }
 
 type researchQuestion struct {
@@ -64,7 +81,7 @@ type researchQuestion struct {
 }
 
 func newResearchHost(documents *documentHost) *researchHost {
-	return &researchHost{documents: documents, dataDir: documents.settings.dir, command: researchCommand, sessions: make(map[string]*researchSession)}
+	return &researchHost{documents: documents, dataDir: documents.settings.dir, command: researchCommand, sessions: make(map[string]*researchSession), console: make(map[string]bool)}
 }
 
 func researchWorkDir(dataDir, root string) string {
@@ -104,6 +121,10 @@ func (h *researchHost) connect(w *workspace, emit func(ResearchUpdate)) error {
 		h.mu.Unlock()
 		return errors.New("Research is closing.")
 	}
+	if h.console[root] {
+		h.mu.Unlock()
+		return errors.New("Close the Feynman console before starting ACP research.")
+	}
 	if live := h.sessions[root]; live != nil {
 		select {
 		case <-live.stopped:
@@ -116,7 +137,17 @@ func (h *researchHost) connect(w *workspace, emit func(ResearchUpdate)) error {
 			return errors.New("This workspace is connected in another window.")
 		}
 		<-live.ready
-		return live.startErr
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		if live.startErr != nil {
+			return live.startErr
+		}
+		select {
+		case <-live.stopped:
+			return errors.New("Feynman disconnected.")
+		default:
+			return nil
+		}
 	}
 	if err := os.MkdirAll(work, 0700); err != nil {
 		h.mu.Unlock()
@@ -140,11 +171,10 @@ func (h *researchHost) connect(w *workspace, emit func(ResearchUpdate)) error {
 	}
 	s := &researchSession{agent: agent, win: w.win, ready: make(chan struct{}), stopped: make(chan struct{}), drained: make(chan struct{}), emit: func(e ResearchUpdate) { e.Root = root; emit(e) }}
 	h.sessions[root] = s
-	agent.setHandlers(func(method string, params json.RawMessage) (any, *acpError) { return h.request(s, method, params) }, func(method string, params json.RawMessage) { h.update(s, method, params) }, nil)
+	agent.setHandlers(func(method string, params json.RawMessage) (any, *acpError) { return h.request(s, method, params) }, func(method string, params json.RawMessage) { h.routeSessionUpdate(s, method, params) }, nil)
 	if w.win != nil {
 		s.offWindow = w.win.OnClosed(func() { go h.stop(root, s, "") })
 	}
-	s.emit(ResearchUpdate{Kind: "reset"})
 	agent.start()
 	h.mu.Unlock()
 	timeout := time.AfterFunc(45*time.Second, func() { h.stop(root, s, "") })
@@ -172,10 +202,35 @@ func (h *researchHost) connect(w *workspace, emit func(ResearchUpdate)) error {
 	return err
 }
 
+func (h *researchHost) reserveConsole(root string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed {
+		return errors.New("Research is closing.")
+	}
+	if h.console[root] {
+		return errors.New("The Feynman console is already open for this workspace.")
+	}
+	if h.sessions[root] != nil {
+		return errors.New("Close the ACP research conversation before opening the Feynman console.")
+	}
+	h.console[root] = true
+	return nil
+}
+
+func (h *researchHost) releaseConsole(root string) {
+	h.mu.Lock()
+	delete(h.console, root)
+	h.mu.Unlock()
+}
+
 func (h *researchHost) initialize(s *researchSession, work string) error {
 	var init struct {
 		ProtocolVersion   int
-		AgentCapabilities struct{ LoadSession bool }
+		AgentCapabilities struct {
+			LoadSession        bool
+			PromptCapabilities struct{ Image bool }
+		}
 	}
 	err := s.agent.call("initialize", map[string]any{"protocolVersion": acpProtocolVersion, "clientInfo": map[string]string{"name": acpClientName, "version": acpClientVersion}, "clientCapabilities": map[string]any{}}, &init)
 	if err != nil {
@@ -184,44 +239,32 @@ func (h *researchHost) initialize(s *researchSession, work string) error {
 	if init.ProtocolVersion != acpProtocolVersion {
 		return fmt.Errorf("Unsupported ACP protocol version %d.", init.ProtocolVersion)
 	}
+	h.mu.Lock()
+	s.imagePrompts = init.AgentCapabilities.PromptCapabilities.Image
+	h.mu.Unlock()
 	record := filepath.Join(filepath.Dir(work), "session")
 	id, err := os.ReadFile(record)
-	params := map[string]any{"cwd": work, "mcpServers": []any{}}
 	if err == nil {
 		if len(id) == 0 || !init.AgentCapabilities.LoadSession {
 			return errors.New("Feynman cannot restore this research session.")
 		}
-		h.mu.Lock()
-		s.id = string(id)
-		h.mu.Unlock()
-		params["sessionId"] = string(id)
-		err = s.agent.call("session/load", params, nil)
+		err = h.openConversation(s, work, string(id), "")
 		var rpc *acpError
 		if !errors.As(err, &rpc) || rpc.Code != -32602 || !strings.Contains(rpc.Message, "Unknown sessionId") {
 			return err
 		}
-		h.mu.Lock()
-		s.id = ""
-		h.mu.Unlock()
-		delete(params, "sessionId")
-		s.emit(ResearchUpdate{Kind: "notice", Text: "The previous Feynman session is no longer available. Starting a new conversation."})
-	} else if !errors.Is(err, os.ErrNotExist) {
+		return h.openConversation(s, work, "", "The previous Feynman session is no longer available. Starting a new conversation.")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	var resp struct{ SessionID string }
-	if err := s.agent.call("session/new", params, &resp); err != nil {
-		return err
-	}
-	if resp.SessionID == "" {
-		return errors.New("Feynman returned an empty session ID.")
-	}
-	h.mu.Lock()
-	s.id = resp.SessionID
-	h.mu.Unlock()
-	return writeFileAtomicMode(record, []byte(resp.SessionID), 0600)
+	return h.openConversation(s, work, "", "")
 }
 
 func (h *researchHost) activeLocked(ctx context.Context, root string) (*researchSession, error) {
+	if h.closed {
+		return nil, errors.New("Research is closing.")
+	}
 	s := h.sessions[canonicalPath(root)]
 	if s != nil && s.win == mygo.CallerWindow(ctx) {
 		select {
@@ -234,6 +277,10 @@ func (h *researchHost) activeLocked(ctx context.Context, root string) (*research
 }
 
 func (h *researchHost) Prompt(ctx context.Context, root, text, documentID, buffer string) (string, error) {
+	return h.PromptWithSources(ctx, root, text, documentID, buffer, nil)
+}
+
+func (h *researchHost) PromptWithSources(ctx context.Context, root, text, documentID, buffer string, sources []string) (string, error) {
 	if strings.TrimSpace(text) == "" {
 		return "", errors.New("Enter a research question or command.")
 	}
@@ -253,15 +300,21 @@ func (h *researchHost) Prompt(ctx context.Context, root, text, documentID, buffe
 		h.mu.Unlock()
 		return "", errors.New("Feynman is connecting.")
 	}
-	if s.busy {
+	if s.busy || s.configuring || s.switching {
 		h.mu.Unlock()
-		return "", errors.New("Feynman is working on the previous prompt.")
+		return "", errors.New("Wait for the current research operation to finish.")
 	}
+	approved := maps.Clone(s.sources)
+	imagePrompts := s.imagePrompts
 	s.busy = true
 	s.cancelled = false
 	s.turn = make(chan struct{})
 	h.mu.Unlock()
 	defer func() { h.mu.Lock(); s.busy = false; close(s.turn); h.mu.Unlock() }()
+	sourceBlocks, linkedImages, err := researchSourceBlocks(approved, sources, imagePrompts)
+	if err != nil {
+		return "", err
+	}
 	work := researchWorkDir(h.dataDir, root)
 	before, err := prepareResearchArtifacts(work, root)
 	if err != nil {
@@ -280,7 +333,15 @@ func (h *researchHost) Prompt(ctx context.Context, root, text, documentID, buffe
 	if cancelled {
 		return "", errors.New("Research cancelled.")
 	}
-	s.emit(ResearchUpdate{Kind: "user", Text: text})
+	prompt = append(prompt, sourceBlocks...)
+	message := text
+	if len(sources) > 0 {
+		message += "\n\nSources:\n" + strings.Join(sources, "\n")
+	}
+	s.emit(ResearchUpdate{Kind: "user", Text: message})
+	if len(linkedImages) > 0 {
+		s.emit(ResearchUpdate{Kind: "notice", Text: "Attached as file references without an inline image: " + strings.Join(linkedImages, ", ")})
+	}
 	var resp struct{ StopReason string }
 	if err := s.agent.call("session/prompt", map[string]any{"sessionId": s.id, "prompt": prompt}, &resp); err != nil {
 		return "", err
@@ -309,17 +370,13 @@ func (h *researchHost) update(s *researchSession, method string, params json.Raw
 	}
 	var p struct {
 		SessionID string
-		Update    struct {
-			SessionUpdate, Title, Status string
-			Content                      json.RawMessage
-			AvailableCommands            []struct{ Name string }
-		}
+		Update    json.RawMessage
 	}
 	if json.Unmarshal(params, &p) != nil || p.SessionID == "" {
 		return
 	}
 	h.mu.Lock()
-	valid := s.id == "" || p.SessionID == s.id
+	valid := p.SessionID == s.id
 	live := s.busy
 	h.mu.Unlock()
 	if !valid {
@@ -330,38 +387,15 @@ func (h *researchHost) update(s *researchSession, method string, params json.Raw
 		return
 	default:
 	}
-	u := p.Update
-	switch u.SessionUpdate {
-	case "agent_message_chunk", "user_message_chunk":
-		if live && u.SessionUpdate == "user_message_chunk" {
-			return
-		}
-		var c struct{ Type, Text string }
-		if json.Unmarshal(u.Content, &c) != nil || c.Type != "text" || c.Text == "" {
-			return
-		}
-		kind := "assistant"
-		if u.SessionUpdate == "user_message_chunk" {
-			kind = "user"
-		}
-		s.emit(ResearchUpdate{Kind: kind, Text: c.Text})
-	case "available_commands_update":
-		names := make([]string, 0, len(u.AvailableCommands))
-		for _, cmd := range u.AvailableCommands {
-			if cmd.Name != "" {
-				names = append(names, cmd.Name)
-			}
-		}
-		s.emit(ResearchUpdate{Kind: "commands", Commands: names})
-	case "tool_call", "tool_call_update":
-		msg := u.Title
-		if msg == "" {
-			msg = u.Status
-		}
-		if msg != "" {
-			s.emit(ResearchUpdate{Kind: "progress", Text: msg})
-		}
+	e := decodeResearchUpdate(p.Update)
+	if e.Kind == "" || (live && e.Kind == "user") {
+		return
 	}
+	if e.Kind == "config" {
+		h.setResearchConfig(s, e.Config)
+		return
+	}
+	s.emit(e)
 }
 
 func (h *researchHost) request(s *researchSession, method string, params json.RawMessage) (any, *acpError) {
@@ -382,7 +416,7 @@ func (h *researchHost) request(s *researchSession, method string, params json.Ra
 	q := &researchQuestion{id: newWorkspaceID(), answer: make(chan string, 1)}
 	for _, o := range p.Options {
 		if o.OptionID != "" {
-			q.options = append(q.options, ResearchOption{ID: o.OptionID, Name: o.Name})
+			q.options = append(q.options, ResearchOption{ID: o.OptionID, Name: o.Name, Kind: o.Kind})
 		}
 	}
 	outcome := map[string]string{"outcome": "cancelled"}
@@ -446,9 +480,9 @@ func (h *researchHost) Cancel(ctx context.Context, root string) error {
 		default:
 		}
 	}
-	turn := s.turn
+	turn, id := s.turn, s.id
 	h.mu.Unlock()
-	s.agent.cancelTurn(s.id)
+	s.agent.cancelTurn(id)
 	go func() {
 		select {
 		case <-turn:
@@ -486,7 +520,7 @@ func (h *researchHost) stop(root string, s *researchSession, message string) {
 	}
 	s.cancelled = true
 	var turn chan struct{}
-	if s.busy {
+	if s.busy || s.switching || s.configuring {
 		turn = s.turn
 	}
 	if s.offWindow != nil {

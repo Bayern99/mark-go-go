@@ -49,6 +49,8 @@ func main() {
 	mygo.BindAs("WorkspaceHost", host)
 	research := newResearchHost(host)
 	mygo.BindAs("ResearchHost", research)
+	console := newResearchConsoleHost(host, research)
+	mygo.BindAs("ResearchConsoleHost", console)
 	mygo.BindAs("CheckpointHost", &checkpointHost{documents: host})
 
 	mygo.App.WhenReady(func() {
@@ -79,6 +81,7 @@ func main() {
 		applyNativeEditMenu(false, false)
 	})
 	err := mygo.App.Run()
+	console.shutdown()
 	research.close()
 	host.waitForGenerations(5 * time.Second)
 	host.closeAgentCache()

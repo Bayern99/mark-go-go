@@ -8,7 +8,11 @@ Mark Go Go is a local Markdown editor for macOS. Folder workspaces share a windo
 
 Use **Plugins** in the desktop tab bar to enable Feynman and Git independently. Both start disabled.
 
-**Feynman** uses your local Feynman CLI, Node.js and `pi-acp`. Install the adapter with `npm install -g pi-acp`. Configure your model and sign in using Feynman’s setup guide, then enable the plugin. **Feynman** opens in the right pane, where you can also select **Outline**. Each workspace has a research conversation that follows its document tabs and resumes after restart. Open a report, plan, draft or provenance file under **Files** to edit it in a document tab. Select **Edit this document** to share the current buffer with Feynman. Review the changes and choose **Apply in Markdown** to apply them as one undoable edit. [Feynman setup guide](https://feynman.is/docs/getting-started/setup)
+**Feynman** uses your local Feynman CLI and Node.js. Install its adapter with `npm install -g pi-acp`, then enable the plugin. Drag the left edge of the research pane to resize it. Narrow windows use a drawer. [Feynman setup guide](https://feynman.is/docs/getting-started/setup)
+
+- **Chat**. Type `/` to find the workflows and skills advertised by your session. Enter selects a command or sends the message. Shift+Enter inserts a line break. Choose a model and thinking level, attach papers or images, inspect tool activity, follow citations, or use history to start and resume conversations in this workspace.
+- **Files**. Reports, plans, drafts and provenance records open in regular Markdown tabs. The folder button opens other research outputs in Finder. To revise a document, choose **Edit document**, review the diff, then select **Apply in Markdown**. One Undo restores the preceding text.
+- **CLI**. Run Feynman itself inside the pane. Leave the arguments empty and click **Run** to open the interactive interface with the currently selected saved conversation, or run a command such as `setup`, `doctor`, `model login` or `mcp list`. Switching tabs keeps the process available. A successful exit publishes completed Markdown. **Stop CLI** interrupts the run. CLI and Chat take turns using the workspace’s research directory.
 
 **Git** uses an existing local repository. Save the document, then create a checkpoint in the **Git** panel. Choose a version to compare it with the current buffer and restore its text. Checkpoints use local Git refs associated with the document’s repository path. A renamed document starts a new history.
 

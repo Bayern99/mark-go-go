@@ -1,6 +1,5 @@
 .plugin-panel,
-.plugin-panel form,
-.research-conversation {
+.plugin-panel form {
   display: grid;
   gap: 10px;
   min-width: 0;
@@ -14,8 +13,8 @@
 }
 
 .plugin-panel h3, .plugin-panel p { margin: 0; }
-.plugin-panel h3, .research-message strong { font-size: var(--text-meta-size); }
-.research-message p, .document-diff pre { white-space: pre-wrap; }
+.plugin-panel h3 { font-size: var(--text-meta-size); }
+.document-diff pre { white-space: pre-wrap; }
 .plugin-panel textarea, .plugin-panel select {
   box-sizing: border-box;
   width: 100%;
@@ -31,16 +30,6 @@
 .plugin-panel [role='alert'] { color: var(--danger); }
 .plugin-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .plugin-actions [role='status'] { flex: 1; font-size: var(--text-meta-size); }
-.research-file {
-  padding: 5px 0;
-  border: 0;
-  background: transparent;
-  color: var(--accent);
-  cursor: pointer;
-  text-align: start;
-  font: inherit;
-  overflow-wrap: anywhere;
-}
 .document-diff { margin: 6px 0; }
 .document-diff pre {
   padding: 5px;
@@ -54,5 +43,3 @@
 .document-diff pre[aria-label='Proposed lines'] { border-color: var(--accent); }
 .empty-folder { display: flex; flex: 1; min-height: 0; }
 .empty-folder .workspace-empty { flex: 1; gap: 8px; flex-wrap: wrap; }
-.research-transcript { max-height: 34vh; }
-.research-conversation { align-content: start; }

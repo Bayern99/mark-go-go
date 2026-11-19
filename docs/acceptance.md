@@ -10,6 +10,10 @@ CI 以 [工作流](../.github/workflows/ci.yml) 为准。原生窗口、菜单�
 
 480 px 宽窗口中，收到修改建议后继续编辑正文会使旧比较失效。重新比较、应用和原生 Undo 均通过。删除一份已完成报告后，从右栏显式恢复取得相同字节。[改名期间的修改建议](../web/test/feynman-edit.test.tsx) 由浏览器用例覆盖。单文档 Git 检查点在已有暂存内容的仓库中完成创建、比较与恢复。实测 HEAD、当前分支和暂存条目前后一致。[ACP 与权限用例](../research_test.go) · [产物用例](../artifact_test.go) · [Git 用例](../checkpoints_test.go) · [编辑器用例](../web/test/source-mode.test.ts)
 
+### 研究交互与原生 CLI
+
+Feynman 0.5.71 与 pi-acp 0.0.33 在隔离的本地模型上公布了 45 个命令。供应端实际收到了切换后的模型、推理级别、图片字节与所选文件引用。1280 × 820 和 480 × 360 的 macOS 原生构建验证了命令检索、Enter 发送、Markdown 表格和引用、研究文件、确认改文与撤销、会话切换和终端重连。原生 CLI 的 `status` 和交互模式中的 `/help` 使用真实可执行文件。[ACP 测试](../research_acp_test.go) · [附件测试](../research_sources_test.go) · [会话测试](../research_sessions_test.go) · [终端测试](../research_console_test.go)
+
 ## MyGo v0.10.0 升级证据
 
 - 最新升级合并在 `9559625`。Go、Web 构建、两组 Web 测试和 Windows 交叉编译通过。 [main CI](https://github.com/Bayern99/mark-go-go/actions/runs/44240578323)

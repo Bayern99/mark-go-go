@@ -125,16 +125,104 @@ export interface ResearchArtifact {
   error?: string;
 }
 
+export interface ResearchCommand {
+  name: string;
+  description?: string;
+  input?: ResearchCommandInput;
+}
+
+export interface ResearchCommandInput {
+  hint: string;
+}
+
+export interface ResearchConfig {
+  id: string;
+  name: string;
+  type: string;
+  category?: string;
+  description?: string;
+  currentValue: string;
+  options: ResearchConfigValue[];
+}
+
+export interface ResearchConfigValue {
+  value: string;
+  name: string;
+  description?: string;
+}
+
+export interface ResearchConsoleSnapshot {
+  text: string;
+  seq: number;
+  running: boolean;
+  complete: boolean;
+  exitCode?: number;
+}
+
+export interface ResearchConsoleUpdate {
+  root: string;
+  kind: string;
+  text?: string;
+  exitCode?: number;
+  seq?: number;
+}
+
+export interface ResearchConversation {
+  id: string;
+  title: string;
+  updatedAt: string;
+  current: boolean;
+}
+
 export interface ResearchOption {
   id: string;
   name: string;
+  kind?: string;
+}
+
+export interface ResearchPlanEntry {
+  content: string;
+  status: string;
+  priority: string;
+}
+
+export interface ResearchTool {
+  toolCallId: string;
+  title?: string;
+  kind?: string;
+  status?: string;
+  locations?: ResearchToolLocation[];
+  input?: string;
+  output?: string;
+  terminalDelta?: string;
+  exitCode?: number;
+  images?: string[];
+  diffs?: ResearchToolDiff[];
+}
+
+export interface ResearchToolDiff {
+  path: string;
+  oldText: string;
+  newText: string;
+}
+
+export interface ResearchToolLocation {
+  path: string;
+  line?: number;
 }
 
 export interface ResearchUpdate {
   root: string;
   kind: string;
   text?: string;
-  commands?: string[];
+  commands?: ResearchCommand[];
+  config?: ResearchConfig[];
+  tool?: ResearchTool;
+  plan?: ResearchPlanEntry[];
+  used?: number;
+  size?: number;
+  image?: string;
+  messageId?: string;
   requestId?: string;
   options?: ResearchOption[];
 }
@@ -240,10 +328,26 @@ export const ResearchHost = {
   artifacts: bind<[string], ResearchArtifact[]>("ResearchHost.Artifacts", (root: string) => [root]),
   cancel: bind<[string], void>("ResearchHost.Cancel", (root: string) => [root]),
   connect: bind<[string], void>("ResearchHost.Connect", (root: string) => [root]),
+  deleteSession: bind<[string, string], void>("ResearchHost.DeleteSession", (root: string, id: string) => [root, id]),
   disconnect: bind<[string], void>("ResearchHost.Disconnect", (root: string) => [root]),
+  openCitation: bind<[string, string], void>("ResearchHost.OpenCitation", (root: string, address: string) => [root, address]),
+  pickSources: bind<[string], string[]>("ResearchHost.PickSources", (root: string) => [root]),
   prompt: bind<[string, string, string, string], string>("ResearchHost.Prompt", (root: string, text: string, documentID: string, buffer: string) => [root, text, documentID, buffer]),
+  promptWithSources: bind<[string, string, string, string, string[]], string>("ResearchHost.PromptWithSources", (root: string, text: string, documentID: string, buffer: string, sources: string[]) => [root, text, documentID, buffer, sources]),
   readArtifact: bind<[string, string], string>("ResearchHost.ReadArtifact", (root: string, relative: string) => [root, relative]),
   recoverArtifact: bind<[string, string], string>("ResearchHost.RecoverArtifact", (root: string, relative: string) => [root, relative]),
+  revealOutputs: bind<[string], void>("ResearchHost.RevealOutputs", (root: string) => [root]),
+  selectSession: bind<[string, string], void>("ResearchHost.SelectSession", (root: string, id: string) => [root, id]),
+  sessions: bind<[string], ResearchConversation[]>("ResearchHost.Sessions", (root: string) => [root]),
+  setConfig: bind<[string, string, string], void>("ResearchHost.SetConfig", (root: string, id: string, value: string) => [root, id, value]),
+} as const;
+
+export const ResearchConsoleHost = {
+  connect: bind<[string, string[]], void>("ResearchConsoleHost.Connect", (root: string, args: string[]) => [root, args]),
+  disconnect: bind<[string], void>("ResearchConsoleHost.Disconnect", (root: string) => [root]),
+  input: bind<[string, string], void>("ResearchConsoleHost.Input", (root: string, data: string) => [root, data]),
+  resize: bind<[string, number, number], void>("ResearchConsoleHost.Resize", (root: string, cols: number, rows: number) => [root, cols, rows]),
+  snapshot: bind<[string], ResearchConsoleSnapshot>("ResearchConsoleHost.Snapshot", (root: string) => [root]),
 } as const;
 
 export const CheckpointHost = {
@@ -261,6 +365,7 @@ export const events = {
   navChanged: event<NavSnapshot>("navChanged"),
   navSearchReady: event<NavSearchResult>("navSearchReady"),
   researchUpdate: event<ResearchUpdate>("researchUpdate"),
+  researchConsoleUpdate: event<ResearchConsoleUpdate>("researchConsoleUpdate"),
   settingsChanged: event<Settings>("settingsChanged"),
   viewChanged: event<ViewEvent>("viewChanged"),
   workspaceChanged: event<WorkspaceSnapshot>("workspaceChanged"),

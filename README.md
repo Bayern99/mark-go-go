@@ -8,7 +8,11 @@ Mark Go Go 是 macOS 本地 Markdown 编辑器。多个文件夹工作区共享�
 
 桌面端在文档标签栏的 **Plugins** 菜单中分别启用 Feynman 和 Git。两项初始均关闭。
 
-**Feynman** 使用本机的 Feynman CLI、Node.js 和 `pi-acp`。通过 `npm install -g pi-acp` 安装适配器，按 Feynman 的设置指南配置模型和登录，启用插件后，最右栏会显示 **Feynman**，也可在同栏切换到 **Outline**。同一工作区共用研究对话，重开后可续接。在 **Files** 中打开报告、计划、草稿或来源记录，它们会进入普通文档标签。勾选 **Edit this document** 会把当前编辑内容交给 Feynman。查看差异后，**Apply in Markdown** 将改动作为一次可撤销编辑应用到 Markdown 原文。[Feynman 设置指南](https://feynman.is/docs/getting-started/setup)
+**Feynman** 使用本机的 Feynman CLI 和 Node.js。通过 `npm install -g pi-acp` 安装适配器，再启用插件。最右栏可以拖宽，窄窗会展开为抽屉。[Feynman 设置指南](https://feynman.is/docs/getting-started/setup)
+
+- **Chat**。输入 `/` 查找当前会话实际提供的工作流与 Skills。Enter 选取命令或发送问题，Shift+Enter 换行。可以选择模型和思考级别、附上论文或图片、展开工具记录、打开引用链接，以及从历史菜单新建或恢复本工作区的对话。
+- **Files**。报告、计划、草稿和来源记录作为普通 Markdown 文档打开。文件夹按钮可查看研究过程中产生的其他格式。要修改当前文档，选中 **Edit document**，审阅差异后点击 **Apply in Markdown**；这次修改可一次撤销。
+- **CLI**。在右栏直接运行原版 Feynman。留空参数并点 **Run** 进入交互界面，续接当前已保存的对话，也可以直接运行 `setup`、`doctor`、`model login` 或 `mcp list` 等命令。离开 CLI 页签后仍可返回同一个运行中的进程。正常退出时发布本轮完成的 Markdown，**Stop CLI** 中止运行。CLI 与 Chat 轮流使用同一研究工作目录。
 
 **Git** 使用现有本地仓库。先保存当前文档，再到右栏 **Git** 创建 Checkpoint。选取版本即可与当前缓冲区比较并恢复。Checkpoint 按仓库内的文件路径保存，使用独立的本地 Git 引用；改名后的文档从新路径开始记录。
 

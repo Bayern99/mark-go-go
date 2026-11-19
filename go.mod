@@ -2,7 +2,10 @@ module markgogo
 
 go 1.27.3
 
-require github.com/egoist/mygo v0.10.0
+require (
+	github.com/creack/pty v1.1.24
+	github.com/egoist/mygo v0.10.0
+)
 
 require (
 	github.com/ProtonMail/go-crypto v1.4.1 // indirect

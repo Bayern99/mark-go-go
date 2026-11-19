@@ -49,12 +49,27 @@ func TestResearchSession(t *testing.T) {
 	}
 	ctx := context.Background()
 	connect()
-	if cmds := wait("commands").Commands; len(cmds) != 1 || cmds[0] != "lit" {
+	if cmds := wait("commands").Commands; len(cmds) != 1 || cmds[0].Name != "lit" {
 		t.Fatal(cmds)
+	}
+	if err := h.SetConfig(ctx, root, "model", "missing"); err == nil {
+		t.Fatal("unadvertised model accepted")
+	}
+	if err := h.SetConfig(ctx, root, "model", "other"); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		config := wait("config").Config
+		if len(config) == 1 && config[0].CurrentValue == "other" {
+			break
+		}
 	}
 	done := make(chan error, 1)
 	go func() { _, err := h.Prompt(ctx, root, "/lit fixture", "", ""); done <- err }()
 	ask := wait("permission")
+	if err := h.SetConfig(ctx, root, "model", "initial"); err == nil {
+		t.Fatal("changed model mid-turn")
+	}
 	if !strings.Contains(ask.Text, "Save the fixture?") {
 		t.Fatalf("missing confirmation detail: %q", ask.Text)
 	}
@@ -104,6 +119,28 @@ func TestResearchSession(t *testing.T) {
 	if cmds := wait("commands").Commands; len(cmds) != 1 {
 		t.Fatal(cmds)
 	}
+
+	go func() { done <- h.SetConfig(ctx, root, "model", "hold") }()
+	if wait("assistant").Text != "Changing model" {
+		t.Fatal("did not start config change")
+	}
+	if _, err := h.Prompt(ctx, root, "overlap", "", ""); err == nil {
+		t.Fatal("allowed prompt while model was changing")
+	}
+	if err := h.SelectSession(ctx, root, ""); err == nil {
+		t.Fatal("allowed session switch while model was changing")
+	}
+	if err := h.Disconnect(ctx, root); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("disconnected model change reported success")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("disconnected model change did not drain")
+	}
 }
 
 func runResearchFixture() {
@@ -113,6 +150,9 @@ func runResearchFixture() {
 	}
 	update := func(v any) {
 		_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "fixture", "update": v}})
+	}
+	config := func(value string) []ResearchConfig {
+		return []ResearchConfig{{ID: "model", Name: "Model", Type: "select", Category: "model", CurrentValue: value, Options: []ResearchConfigValue{{Value: "initial", Name: "First model"}, {Value: "other", Name: "Another model"}, {Value: "hold", Name: "Slow model"}}}}
 	}
 	msg := func(text string) {
 		update(map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": text}})
@@ -149,8 +189,18 @@ func runResearchFixture() {
 				}
 				msg("replayed")
 			}
-			reply(r.ID, map[string]any{"sessionId": "fixture"})
+			reply(r.ID, map[string]any{"sessionId": "fixture", "configOptions": config("initial")})
 			update(map[string]any{"sessionUpdate": "available_commands_update", "availableCommands": []map[string]string{{"name": "lit"}}})
+		case "session/set_config_option":
+			var p struct{ SessionID, ConfigID, Value string }
+			if json.Unmarshal(r.Params, &p) != nil || p.SessionID != "fixture" || p.ConfigID != "model" || (p.Value != "other" && p.Value != "hold") {
+				os.Exit(4)
+			}
+			if p.Value == "hold" {
+				msg("Changing model")
+				continue
+			}
+			reply(r.ID, map[string]any{"configOptions": config(p.Value)})
 		case "session/prompt":
 			turn = r.ID
 			_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "id": 29, "method": "session/request_permission", "params": map[string]any{"sessionId": "fixture", "toolCall": map[string]any{"title": "Apply?", "rawInput": map[string]string{"message": "Save the fixture?"}}, "options": []map[string]string{{"name": "Accept", "kind": "allow_once", "optionId": "yes"}}}})

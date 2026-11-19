@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -43,5 +44,34 @@ echo revised >> current-document.md
 		if got, err := os.ReadFile(file); err != nil || string(got) != want {
 			t.Fatalf("file=%s content=%q err=%v", file, got, err)
 		}
+	}
+}
+
+func TestConsoleFollowsTheSelectedSavedConversation(t *testing.T) {
+	base := t.TempDir()
+	work := filepath.Join(base, "work")
+	state := filepath.Join(base, "feynman")
+	adapter := filepath.Join(base, "adapter")
+	for _, dir := range []string{work, filepath.Join(state, "sessions"), adapter} {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(base, "session"), []byte("chosen"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(state, "sessions", "chosen.jsonl")
+	index, _ := json.Marshal(map[string]any{"sessions": map[string]any{"chosen": map[string]string{"cwd": work, "sessionFile": path}}})
+	if err := os.WriteFile(filepath.Join(adapter, "session-map.json"), index, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if args := currentConsoleConversation(work, state, adapter); len(args) != 1 || args[0] != "--new-session" {
+		t.Fatalf("Unpersisted selection: %v", args)
+	}
+	if err := os.WriteFile(path, []byte("{}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if args := currentConsoleConversation(work, state, adapter); len(args) != 2 || args[0] != "--session" || args[1] != path {
+		t.Fatalf("Saved selection: %v", args)
 	}
 }

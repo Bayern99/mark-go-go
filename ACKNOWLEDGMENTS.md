@@ -15,7 +15,11 @@
 - **SoloMD** 为原地 Markdown 编辑和分开展示与保存提供了交互参考。[参考与版本](docs/adr/0006-preserved-blocks-and-semantic-colors.md)
 - **Awesome MyGo** 帮我们了解 MyGo 生态。 [Awesome MyGo](https://github.com/yldm-tech/awesome-mygo)
 
+- **Onevra Chat** 和 **MyGo Markdown chat** 示例提供了研究输入框、流式 Markdown、工具详情与滚动交互的参考。**GoRex** 提供了终端调整尺寸与重新连接的交互参考。[Onevra Chat](https://github.com/oneo-me/onevra/tree/main/source/components/chat) · [MyGo 示例](https://github.com/egoist/mygo/tree/v0.10.0/examples/markdown-chat) · [GoRex](https://github.com/egoist/gorex)
+
 ## 软件与资源
+
+- Feynman 插件使用 **MyGo** 选择本地来源文件和打开引用链接，使用 **react-markdown** 与 remark/rehype 插件显示回复，用 **xterm.js** 和 **creack/pty** 承载交互式 CLI。Feynman 和 pi-acp 由用户在本机安装。[react-markdown](https://github.com/remarkjs/react-markdown) · [xterm.js](https://github.com/xtermjs/xterm.js) · [PTY 许可证](resources/licenses/MIT-creack-pty.txt) · [Feynman](https://github.com/Companion-Inc/feynman) · [pi-acp](https://github.com/svkozak/pi-acp)
 
 - Egoist 与贡献者的 **MyGo** 提供原生桌面宿主。仓库包含 MIT 许可的 v0.10.0 代码，以及文档组和工作区生命周期补丁。命令行工具的拼音数据来自 Unicode Unihan 16.0.0。[上游](https://github.com/egoist/mygo/tree/v0.10.0) · [MyGo 许可证](third_party/mygo/LICENSE) · [Unicode 声明](third_party/mygo/cmd/mygo/LICENSE-Unicode.txt) · [补丁说明](docs/mygo-document-groups.md)
 - **Milkdown Crepe** 与 **ProseMirror** 提供可编辑的 Markdown 预览，**CodeMirror** 提供 Markdown 视图。**Radix Primitives** 提供提示和菜单等基础控件，**OverlayScrollbars** 提供滚动区域，**Mermaid** 在本地呈现图表，**A2UI** 提供 GenUI 组件协议。[前端依赖](web/package.json)

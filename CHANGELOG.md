@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- Feynman 右栏支持可搜索工作流和 Skills、模型与思考级别、文件与图片附件、Markdown 回复、引用、工具过程与会话历史。研究栏可调宽，输入框保持可见。内置终端提供 Feynman 原生交互界面及管理命令。
+
 - 桌面端新增独立启停的 Feynman 与 Git 插件。Feynman 通过 pi-acp 续接工作区研究，将 Markdown 产物带入文档标签。Git 为当前已保存文档记录本地 Checkpoint。两者均可在比较文字后通过 Markdown 编辑器应用修改并撤销。
 - 启用 Feynman 时，最右栏直接显示研究对话。GenUI 的模型、生成、进度和撤销集中在中央 GenUI 视图右上角的设置中。
 

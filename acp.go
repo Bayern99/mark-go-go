@@ -15,6 +15,7 @@ import (
 )
 
 const (
+	acpMaxRecordBytes = 16 << 20
 	acpPipeDrainGrace = 250 * time.Millisecond
 	acpPipeCloseGrace = 100 * time.Millisecond
 
@@ -206,7 +207,7 @@ func (a *acpAgent) waitForPipes(timeout time.Duration) bool {
 func (a *acpAgent) readLoop() {
 	defer close(a.readDone)
 	scanner := bufio.NewScanner(a.stdout)
-	scanner.Buffer(make([]byte, 0, 64<<10), 16<<20)
+	scanner.Buffer(make([]byte, 0, 64<<10), acpMaxRecordBytes)
 	for scanner.Scan() {
 		if line := bytes.TrimSpace(scanner.Bytes()); len(line) > 0 {
 			if observe := a.observeLine(); observe != nil {
@@ -214,6 +215,14 @@ func (a *acpAgent) readLoop() {
 			}
 			a.dispatch(line)
 		}
+	}
+	if err := scanner.Err(); err != nil && !errors.Is(err, os.ErrClosed) {
+		reason := err.Error()
+		if errors.Is(err, bufio.ErrTooLong) {
+			reason = fmt.Sprintf("a message exceeded the %d MiB limit", acpMaxRecordBytes>>20)
+		}
+		_, _ = fmt.Fprintf(a.stderr, "\nCould not read the agent's ACP output: %s", reason)
+		go a.kill()
 	}
 }
 

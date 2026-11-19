@@ -108,7 +108,7 @@ afterEach(async () => {
 async function openGenUI(host: BrowserHost): Promise<MountedApp> {
   app = await mountApp(DOCUMENT, host)
   await page.getByTestId('view-mode-genui').click()
-  await page.getByTestId('right-tab-genui.panel').click()
+  await page.getByTestId('genui-settings-toggle').click()
   await vi.waitFor(() => {
     const state = app?.container.querySelector('[data-testid="genui-view"]')?.getAttribute('data-state')
     const panelEl = app?.container.querySelector('[data-testid="genui-panel"]')
@@ -126,16 +126,15 @@ const undo = () => panel().getByRole('button', { name: 'Undo' })
 const requestBox = () => panel().getByRole('textbox', { name: 'Generation request' })
 
 describe('GenUI generation', () => {
-  it('shows the generation rim on the visible progress panel in Preview and respects reduced motion', async () => {
+  it('shows progress and respects reduced motion in GenUI settings', async () => {
     const agent = scripted()
-    app = await mountApp(DOCUMENT, createBrowserHost(DOCUMENT, 'report.md', { generator: agent.generator }))
-    await page.getByTestId('right-tab-genui.panel').click()
+    await openGenUI(createBrowserHost(DOCUMENT, 'report.md', { generator: agent.generator }))
     const progress = page.getByTestId('genui-progress')
     await generate().click()
     await expect.element(progress).toBeVisible()
     expect(getComputedStyle(progress.element(), '::after').animationName).toBe('genui-rim-sweep')
 
-    agent.finish(viewFile('Generated in Preview'))
+    agent.finish(viewFile('Generated view'))
     await regenerateAll().click()
     await expect.element(progress).toBeVisible()
     expect(getComputedStyle(progress.element(), '::after').animationName).toBe('genui-rim-sweep')
@@ -156,9 +155,6 @@ describe('GenUI generation', () => {
     const agent = scripted()
     const host = createBrowserHost(DOCUMENT, 'report.md', { generator: agent.generator })
     const mounted = await openGenUI(host)
-
-    expect(genui().getByRole('button', { name: 'Generate', exact: true }).query()).toBeNull()
-    expect(genui().getByRole('textbox').query()).toBeNull()
 
     await requestBox().fill('Focus on the metrics')
     await generate().click()
@@ -216,12 +212,13 @@ describe('GenUI generation', () => {
     expect(host.generations[0]?.text).toBe(DOCUMENT)
 
     await page.getByTestId('view-mode-genui').click()
+    await page.getByTestId('genui-settings-toggle').click()
     await expect.element(page.getByTestId('genui-progress')).toBeVisible()
     agent.finish(viewFile('After the edit'))
     await expect.element(genui().getByText('After the edit', { exact: false })).toBeVisible()
   })
 
-  it('keeps the old view, shows what the agent said in the right panel, and retries the same request', async () => {
+  it('keeps the old view, shows what the agent said in settings, and retries the same request', async () => {
     const agent = scripted()
     const host = createBrowserHost(DOCUMENT, 'report.md', {
       view: viewFile('The old view'),
@@ -242,11 +239,10 @@ describe('GenUI generation', () => {
       detail: quota,
     })
 
-    expect(genui().getByRole('alert').query()).toBeNull()
     const alert = panel().getByRole('alert')
     await containsText(alert, 'The agent finished without writing a view.')
     await containsText(alert, "Read the agent's message; retry once it is resolved.")
-    await expect.element(page.getByTestId('right-tab-dot-genui.panel')).toHaveAttribute('data-tone', 'danger')
+    await expect.element(page.getByTestId('view-mode-dot-genui')).toHaveAttribute('data-tone', 'danger')
     expect(alert.element().querySelector('pre')?.textContent).toBe(quota)
     await expect.element(genui().getByText('The old view', { exact: false })).toBeVisible()
     expect(panel().getByRole('button', { name: 'Cancel' }).query()).toBeNull()
@@ -259,7 +255,7 @@ describe('GenUI generation', () => {
     agent.finish(viewFile('Made on retry', 'Compare the metrics'))
     await expect.element(genui().getByText('Made on retry', { exact: false })).toBeVisible()
     expect(panel().getByRole('alert').query()).toBeNull()
-    expect(page.getByTestId('right-tab-dot-genui.panel').query()).toBeNull()
+    expect(page.getByTestId('view-mode-dot-genui').query()).toBeNull()
   })
 
   it('lists the models the agent offers and updates the model menu on model-invalid', async () => {
@@ -343,11 +339,11 @@ describe('GenUI generation', () => {
     await input.fill('Summarize key points')
     input.element().focus()
     expect(document.activeElement).toBe(input.element())
-    input.element().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await userEvent.keyboard('{Escape}')
     expect(document.activeElement).not.toBe(input.element())
 
     input.element().focus()
-    input.element().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }))
+    await userEvent.keyboard('{Meta>}{Enter}{/Meta}')
     await expect.element(page.getByTestId('genui-progress')).toBeVisible()
     expect(host.generations[0]?.request).toBe('Summarize key points')
     agent.finish(viewFile('Done', 'Summarize key points'))
@@ -396,14 +392,14 @@ describe('GenUI generation', () => {
     const input = requestBox()
     await expect.element(input).toHaveValue('Initial focus')
     await input.fill('Discarded focus')
-    input.element().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await userEvent.keyboard('{Escape}')
     await expect.poll(() => requestBox().query()).toBeNull()
     await expect.element(panel().getByTestId('focus-value')).toHaveTextContent('Initial focus')
 
     await panel().getByTestId('focus-edit').click()
     const input2 = requestBox()
     await input2.fill('Updated via shortcut')
-    input2.element().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }))
+    await userEvent.keyboard('{Meta>}{Enter}{/Meta}')
     await expect.poll(() => requestBox().query()).toBeNull()
     await expect.element(panel().getByTestId('focus-value')).toHaveTextContent('Updated via shortcut')
 
@@ -445,9 +441,11 @@ describe('GenUI generation', () => {
 
     await trigger.click()
     await expect.element(page.getByRole('listbox', { name: 'Model' })).toBeVisible()
-    document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    await page.getByTestId('right-tab-outline.panel').click()
     await expect.poll(() => page.getByRole('listbox', { name: 'Model' }).query()).toBeNull()
+    await expect.poll(() => panel().query()).toBeNull()
 
+    await page.getByTestId('genui-settings-toggle').click()
     await trigger.click()
     await page.getByRole('option', { name: 'claude-opus-5-5' }).click()
     await expect.poll(() => page.getByRole('listbox', { name: 'Model' }).query()).toBeNull()
@@ -515,6 +513,7 @@ async function editMetrics(mounted: MountedApp, host: BrowserHost): Promise<void
   await userEvent.keyboard('{End} More.')
   await vi.waitFor(() => expect(host.getState().edited).toBe(true))
   await page.getByTestId('view-mode-genui').click()
+  await page.getByTestId('genui-settings-toggle').click()
 }
 
 describe('GenUI regeneration', () => {
@@ -522,7 +521,7 @@ describe('GenUI regeneration', () => {
     const agent = scripted()
     const host = createBrowserHost(DOCUMENT, 'report.md', { view: trackedView(), generator: agent.generator })
     const mounted = await openGenUI(host)
-    await expect.element(genui().getByText('Old metrics', { exact: false })).toBeVisible()
+    await expect.element(genui().getByRole('heading', { name: 'Old metrics' })).toBeVisible()
     await expect.element(panel().getByText('Up to date')).toBeVisible()
     expect(regenerateChanged().query()).toBeNull()
     expect(undo().query()).toBeNull()
@@ -546,10 +545,10 @@ describe('GenUI regeneration', () => {
     agent.finish(trackedView({ id: 'metrics', title: 'New metrics' }))
     await expect.element(genui().getByText('New metrics', { exact: false })).toBeVisible()
     await expect.element(genui().getByText('Old overview', { exact: false })).toBeVisible()
-    expect(genui().getByText('Old metrics', { exact: false }).query()).toBeNull()
+    expect(genui().getByRole('heading', { name: 'Old metrics' }).query()).toBeNull()
 
     await undo().click()
-    await expect.element(genui().getByText('Old metrics', { exact: false })).toBeVisible()
+    await expect.element(genui().getByRole('heading', { name: 'Old metrics' })).toBeVisible()
     expect(genui().getByText('New metrics', { exact: false }).query()).toBeNull()
     await vi.waitFor(() => expect(undo().query()).toBeNull())
     expect(host.keptView()).toBeNull()

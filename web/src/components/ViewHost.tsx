@@ -1,7 +1,22 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ViewRegistry } from '../core/ViewRegistry'
-import type { ViewLocation, ViewRegistration } from '../core/types'
+import type { ViewLocation, ViewRegistration, ViewStatusSource } from '../core/types'
 import { ScrollArea } from './ScrollArea'
+
+export function ViewStatusIndicator({ status, testId }: { status: ViewStatusSource; testId: string }) {
+  const dot = useSyncExternalStore(status.subscribe, status.getSnapshot)
+  if (!dot) return null
+  return (
+    <span
+      className={`rdot${dot.tone === 'danger' ? ' bad' : ''}`}
+      data-testid={testId}
+      data-tone={dot.tone}
+      role="img"
+      aria-label={dot.title ?? (dot.tone === 'danger' ? 'Error' : 'Warning')}
+      title={dot.title}
+    />
+  )
+}
 
 export function useViews(views: ViewRegistry, location: ViewLocation): ViewRegistration[] {
   const [entries, setEntries] = useState(() => select(views, location))

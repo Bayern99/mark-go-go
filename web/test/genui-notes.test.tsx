@@ -263,7 +263,7 @@ Third body.`
       generator: () => new Promise<string>(() => {}),
     })
     await open(host, WITH_NOTE)
-    await page.getByTestId('right-tab-genui.panel').click()
+    await page.getByTestId('genui-settings-toggle').click()
 
     await page.getByRole('button', { name: 'Regenerate all' }).click()
     await vi.waitFor(() => expect(host.generations.length).toBe(1))

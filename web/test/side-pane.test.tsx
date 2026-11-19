@@ -104,8 +104,9 @@ describe('RightPane', () => {
     const mounts: string[] = []
     views.register(makeView('left.view', 'left', mounts))
     views.register(makeView('center.view', 'center', mounts))
+    views.register(makeView('feynman.panel', 'right', mounts, 'Feynman'))
+    views.register(makeView('git.panel', 'right', mounts, 'Git'))
     views.register(makeView('outline.panel', 'right', mounts, 'Outline'))
-    views.register(makeView('genui.panel', 'right', mounts, 'GenUI'))
 
     const rendered = renderRightPane(views)
     try {
@@ -113,11 +114,11 @@ describe('RightPane', () => {
       const right = rendered.container.querySelector('[data-testid="right-pane"]')
       expect(right).not.toBeNull()
       const tabs = right?.querySelectorAll('[role="tab"]')
-      expect(tabs).toHaveLength(2)
+      expect(Array.from(tabs ?? [], tab => tab.textContent)).toEqual(['Outline', 'Git', 'Feynman'])
       expect(tabs?.[0]?.getAttribute('aria-selected')).toBe('true')
       expect(tabs?.[1]?.getAttribute('aria-selected')).toBe('false')
       expect(right?.querySelector('[data-view-id="outline.panel"]')).not.toBeNull()
-      expect(right?.querySelector('[data-view-id="genui.panel"]')).toBeNull()
+      expect(right?.querySelector('[data-view-id="feynman.panel"]')).toBeNull()
     } finally {
       rendered.cleanup()
     }
@@ -128,9 +129,9 @@ describe('RightPane', () => {
     const mounts: string[] = []
     views.register(makeView('outline.panel', 'right', mounts, 'Outline'))
     views.register(
-      makeView('genui.panel', 'right', mounts, 'GenUI', {
+      makeView('feynman.panel', 'right', mounts, 'Feynman', {
         tone: 'warn',
-        title: 'A source changed',
+        title: 'Requires attention',
       }),
     )
 
@@ -138,21 +139,21 @@ describe('RightPane', () => {
     try {
       await vi.waitFor(() => expect(mounts).toEqual(['outline.panel']))
       const right = rendered.container.querySelector('[data-testid="right-pane"]')
-      const dot = right?.querySelector('[data-testid="right-tab-dot-genui.panel"]')
+      const dot = right?.querySelector('[data-testid="right-tab-dot-feynman.panel"]')
       expect(dot).not.toBeNull()
       expect(dot?.getAttribute('data-tone')).toBe('warn')
 
-      const genuiTab = right?.querySelector<HTMLButtonElement>(
-        '[data-testid="right-tab-genui.panel"]',
+      const researchTab = right?.querySelector<HTMLButtonElement>(
+        '[data-testid="right-tab-feynman.panel"]',
       )
-      expect(genuiTab).not.toBeNull()
+      expect(researchTab).not.toBeNull()
       flushSync(() => {
-        genuiTab?.click()
+        researchTab?.click()
       })
 
-      expect(mounts).toEqual(['outline.panel', 'genui.panel'])
-      expect(genuiTab?.getAttribute('aria-selected')).toBe('true')
-      expect(right?.querySelector('[data-view-id="genui.panel"]')).not.toBeNull()
+      await vi.waitFor(() => expect(mounts).toEqual(['outline.panel', 'feynman.panel']))
+      expect(researchTab?.getAttribute('aria-selected')).toBe('true')
+      expect(right?.querySelector('[data-view-id="feynman.panel"]')).not.toBeNull()
       expect(right?.querySelector('[data-view-id="outline.panel"]')).toBeNull()
     } finally {
       rendered.cleanup()

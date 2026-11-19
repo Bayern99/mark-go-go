@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ## [Unreleased]
 
 - 桌面端新增独立启停的 Feynman 与 Git 插件。Feynman 通过 pi-acp 续接工作区研究，将 Markdown 产物带入文档标签。Git 为当前已保存文档记录本地 Checkpoint。两者均可在比较文字后通过 Markdown 编辑器应用修改并撤销。
+- 启用 Feynman 时，最右栏直接显示研究对话。GenUI 的模型、生成、进度和撤销集中在中央 GenUI 视图右上角的设置中。
 
 - 多个文件夹工作区共用一个窗口和一组文档标签。`Ctrl+Tab` 在最近的文档间往返，工作区菜单可切换、打开或关闭当前工作区。重启恢复活动文档和视图模式。 Folder workspaces share one window and tab group, with recent-document switching and session restoration.
 - 将渲染后可编辑的视图统一命名为 Markdown Preview，视图按钮显示为 `Preview`。已有工作区能继续恢复之前的视图模式。 The editable rendered view is now Markdown Preview, with compatibility for saved sessions.

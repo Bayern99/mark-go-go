@@ -76,7 +76,7 @@ function reportHost(view?: string) {
 }
 
 describe('GenUI view mode', () => {
-  it('shows a quiet empty state in the center and opens the right GenUI panel to generate', async () => {
+  it('opens generation settings from the empty center view while preserving the selected right panel', async () => {
     const app = await mountApp(DOCUMENT)
     try {
       await showMode('genui')
@@ -85,11 +85,21 @@ describe('GenUI view mode', () => {
       expect(genui().getByRole('textbox').query()).toBeNull()
       expect(app.container.querySelector('[data-testid="genui-view"] [data-testid="model-menu-trigger"]')).toBeNull()
 
-      await genui().getByRole('button', { name: /GenUI panel/i }).click()
+      const rail = page.getByTestId('right-pane')
+      const outline = rail.getByRole('tab', { name: 'Outline' })
+      await expect.element(outline).toHaveAttribute('aria-selected', 'true')
+      expect(rail.getByRole('tab', { name: 'GenUI' }).query()).toBeNull()
+      await genui().getByRole('button', { name: 'Set up generation' }).click()
       const panel = page.getByTestId('genui-panel')
       await expect.element(panel).toBeVisible()
       await expect.element(panel.getByText('No GenUI view yet')).toBeVisible()
       await expect.element(panel.getByRole('button', { name: 'Generate', exact: true })).toBeEnabled()
+      expect(app.container.querySelector('[data-testid="center-pane"]')?.contains(panel.element())).toBe(true)
+      await expect.element(outline).toHaveAttribute('aria-selected', 'true')
+      panel.getByRole('button', { name: 'Generate', exact: true }).element().focus()
+      await userEvent.keyboard('{Escape}')
+      await expect.poll(() => panel.query()).toBeNull()
+      await expect.element(page.getByTestId('genui-settings-toggle')).toHaveFocus()
     } finally {
       await app.unmount()
     }
@@ -123,7 +133,7 @@ describe('GenUI view mode', () => {
       await expect.element(genui().getByRole('columnheader', { name: /Size \(MB\)/ })).toBeVisible()
       await expect.element(genui().getByText('First prototype')).toBeVisible()
 
-      await page.getByTestId('right-tab-genui.panel').click()
+      await page.getByTestId('genui-settings-toggle').click()
       const footer = page.getByTestId('genui-panel-footer')
       await expect.element(footer.getByText('Antigravity (agy)')).toBeVisible()
       await expect.element(footer.getByText('gemini-3.8-flash', { exact: false })).toBeVisible()
@@ -214,13 +224,13 @@ describe('GenUI view mode', () => {
           expect(genui()).toHaveAttribute('data-state', 'error')
           expect(app.container.querySelector('.genui-file-error')?.textContent).toContain(message)
         })
-        await expect.element(page.getByTestId('right-tab-dot-genui.panel')).toHaveAttribute('data-tone', 'danger')
-        await expect.element(page.getByTestId('right-tab-dot-genui.panel')).toHaveAttribute('title', 'GenUI view error')
+        await expect.element(page.getByTestId('view-mode-dot-genui')).toHaveAttribute('data-tone', 'danger')
+        await expect.element(page.getByTestId('view-mode-dot-genui')).toHaveAttribute('title', 'GenUI view error')
       }
 
       host.writeView(formatExample())
       await expect.element(genui().getByText('In short')).toBeVisible()
-      await expect.element(page.getByTestId('right-tab-dot-genui.panel')).toHaveAttribute('data-tone', 'warn')
+      await expect.element(page.getByTestId('view-mode-dot-genui')).toHaveAttribute('data-tone', 'warn')
 
       host.writeView(
         exampleWith(replaceComponent('nextCard', { id: 'nextCard', component: 'Card', child: 'missing' })),
@@ -229,11 +239,11 @@ describe('GenUI view mode', () => {
         expect(genui()).toHaveAttribute('data-state', 'error')
         expect(app.container.querySelector('.genui-surface')).toBeNull()
       })
-      await expect.element(page.getByTestId('right-tab-dot-genui.panel')).toHaveAttribute('data-tone', 'danger')
+      await expect.element(page.getByTestId('view-mode-dot-genui')).toHaveAttribute('data-tone', 'danger')
 
       host.writeView(null)
       await expect.element(genui().getByText('No view yet.')).toBeVisible()
-      expect(page.getByTestId('right-tab-dot-genui.panel').query()).toBeNull()
+      expect(page.getByTestId('view-mode-dot-genui').query()).toBeNull()
     } finally {
       await app.unmount()
     }
@@ -561,14 +571,14 @@ describe('GenUI source references', () => {
     }
   })
 
-  it('lists out-of-date components in the right panel, shows the tab warning dot, and scrolls to the card on click', async () => {
+  it('lists out-of-date components in settings, marks GenUI mode, and reveals the chosen card', async () => {
     const host = createBrowserHost(SOURCED, 'report.md', { view: sourcedView(SOURCED, POINTS, TABLE) })
     const app = await mountApp(SOURCED, host)
     try {
       await showMode('genui')
-      await page.getByTestId('right-tab-genui.panel').click()
+      await page.getByTestId('genui-settings-toggle').click()
 
-      expect(page.getByTestId('right-tab-dot-genui.panel').query()).toBeNull()
+      expect(page.getByTestId('view-mode-dot-genui').query()).toBeNull()
       const panel = page.getByTestId('genui-panel')
       await expect.element(panel.getByText('Up to date')).toBeVisible()
 
@@ -580,7 +590,7 @@ describe('GenUI source references', () => {
         { timeout: SOURCE_DEBOUNCE_MS + 2000 },
       )
 
-      const dot = page.getByTestId('right-tab-dot-genui.panel')
+      const dot = page.getByTestId('view-mode-dot-genui')
       await expect.element(dot).toHaveAttribute('data-tone', 'warn')
 
       const metricsCard = app.container.querySelector<HTMLElement>(
@@ -593,6 +603,7 @@ describe('GenUI source references', () => {
       const item = panel.getByTestId('changed-item-metrics')
       await item.click()
 
+      await expect.poll(() => panel.query()).toBeNull()
       expect(scrollSpy).toHaveBeenCalled()
       expect(metricsCard.getAttribute('data-highlighted')).toBe('true')
       expect(metricsCard.classList.contains('is-highlighted')).toBe(true)

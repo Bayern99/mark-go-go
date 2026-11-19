@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, u
 import { flushSync } from 'react-dom'
 import { RightPane } from './components/RightPane'
 import { PathCrumbs, SidePane } from './components/SidePane'
-import { useViews, ViewHost } from './components/ViewHost'
+import { useViews, ViewHost, ViewStatusIndicator } from './components/ViewHost'
 import { CommandRegistry } from './core/CommandRegistry'
 import { DocumentService } from './core/DocumentService'
 import { EditorAccess } from './core/EditorAccess'
@@ -122,11 +122,13 @@ export function DocumentPane({
   onOpenPath,
   onReadyReveal,
   workspaceView,
+  preferredRightView,
   onWorkspaceView,
   openDocument,
 }: {
   host: HostAdapter
   workspaceView?: string
+  preferredRightView?: string
   onWorkspaceView?: (id?: string) => void
   openDocument?: (path: string, existingID?: string) => Promise<unknown>
   plugins?: AppPlugin[]
@@ -147,7 +149,8 @@ export function DocumentPane({
   const [editorMode, setEditorMode] = useState<EditorMode>('preview')
   const [centerViewId, setCenterViewId] = useState<string | null>(null)
   const [returnToId, setReturnToId] = useState<string | null>(null)
-  const [rightViewId, setRightViewId] = useState<string | null>('outline.panel')
+  const [rightViewId, setRightViewId] = useState<string | null>(null)
+  const previousPreference = useRef(preferredRightView)
   const [isNarrow, setIsNarrow] = useState<boolean>(() => measureIsNarrow())
   const [rightWantOpen, setRightWantOpen] = useState<boolean>(true)
   const [rightFloatOpen, setRightFloatOpen] = useState<boolean>(false)
@@ -190,6 +193,15 @@ export function DocumentPane({
 
   const rightShown = rightViews.length > 0 && (isNarrow ? rightFloatOpen : rightWantOpen)
   const rightFloating = isNarrow && rightFloatOpen
+
+  useEffect(() => {
+    if (!ready) return
+    const previous = previousPreference.current
+    previousPreference.current = preferredRightView
+    if (active && preferredRightView && preferredRightView !== previous) {
+      void services.commands.execute('rightPane.show', preferredRightView)
+    }
+  }, [ready, active, preferredRightView, services])
 
   const toggleRightPane = () => {
     if (measureIsNarrow()) {
@@ -579,9 +591,9 @@ export function DocumentPane({
   }, [active, host.id, centerViewId, editorMode])
 
   const modeChoices = [
-    { id: 'preview', label: 'Preview', title: 'Markdown Preview (⌘/)' },
-    { id: 'markdown', label: 'Markdown', title: 'Markdown source (⌘/)' },
-    ...centerViews.map((view) => ({ id: view.id, label: view.title, title: view.title })),
+    { id: 'preview', label: 'Preview', title: 'Markdown Preview (⌘/)', status: undefined },
+    { id: 'markdown', label: 'Markdown', title: 'Markdown source (⌘/)', status: undefined },
+    ...centerViews.map((view) => ({ id: view.id, label: view.title, title: view.title, status: view.status })),
   ]
 
   const chooseMode = (id: string) => {
@@ -624,7 +636,7 @@ export function DocumentPane({
                     {docState.edited ? 'Edited' : ''}
                     {docState.conflict ? `${docState.edited ? ' · ' : ''}conflict` : ''}
                     {docState.generating
-                      ? `${docState.edited || docState.conflict ? ' · ' : ''}generating — wait or cancel in the GenUI panel`
+                      ? `${docState.edited || docState.conflict ? ' · ' : ''}generating — wait or cancel in GenUI settings`
                       : ''}
                   </span>
                 ) : null}
@@ -648,6 +660,7 @@ export function DocumentPane({
                       disabled={!ready}
                     >
                       {choice.label}
+                      {choice.status && <ViewStatusIndicator status={choice.status} testId={`view-mode-dot-${choice.id}`} />}
                     </button>
                   ))}
                 </div>
@@ -745,7 +758,9 @@ export function DocumentPane({
 
         <RightPane
           views={services.views}
-          activeId={rightViews.some(view => view.id === workspaceView) ? workspaceView : rightViewId}
+          activeId={rightViews.some(view => view.id === workspaceView)
+            ? workspaceView
+            : rightViewId ?? (active && rightShown ? preferredRightView : undefined)}
           onSelect={id => {
             const shared = rightViews.find(view => view.id === id)?.workspaceScoped
             onWorkspaceView?.(shared ? id : undefined)
@@ -1312,6 +1327,7 @@ function WorkspaceApp({
               active={doc.id === activeId}
               workspaceRoot={doc.workspaceRoot ?? (doc.id === activeId ? snap?.root : '') ?? ''}
               openDocument={openDocument}
+              preferredRightView={researchEnabled ? 'feynman.panel' : undefined}
               workspaceView={workspaceViews[doc.workspaceRoot ?? snap?.root ?? '']}
               onWorkspaceView={id => setWorkspaceViews(current => ({ ...current, [doc.workspaceRoot ?? snap?.root ?? '']: id }))}
               libraryOpen={libraryOpen}

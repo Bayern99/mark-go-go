@@ -34,7 +34,20 @@ it('reviews a proposal against the same document after it is renamed during rese
     await vi.waitFor(() => expect(button('Feynman')).toBeTruthy())
     button('Feynman')!.click()
     await vi.waitFor(() => expect(container.querySelector('textarea[aria-label="Research prompt"]')).toBeTruthy())
-    await userEvent.fill(container.querySelector('textarea[aria-label="Research prompt"]')!, 'Revise this draft')
+    const composer = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Research prompt"]')!
+    await userEvent.fill(composer, 'Revise this draft')
+    container.querySelector<HTMLButtonElement>('[data-testid="view-mode-genui"]')!.click()
+    const settings = await vi.waitFor(() => {
+      const trigger = container.querySelector<HTMLButtonElement>('[aria-label="GenUI settings"]')
+      if (!trigger) throw new Error('GenUI settings not ready')
+      return trigger
+    })
+    settings.click()
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="center-pane"] [data-testid="genui-panel"]')).not.toBeNull())
+    expect(container.querySelector('[data-testid="right-tab-feynman.panel"]')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('[data-testid="right-pane"] textarea[aria-label="Research prompt"]')).toBe(composer)
+    expect(composer.value).toBe('Revise this draft')
+    settings.click()
     container.querySelector<HTMLInputElement>('.plugin-panel input[type=checkbox]')!.click()
     button('Send')!.click()
     await vi.waitFor(() => expect(prompt).toHaveBeenCalled())

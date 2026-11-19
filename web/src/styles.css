@@ -1256,6 +1256,12 @@ body {
   flex: none;
 }
 
+.view-mode .rdot {
+  display: inline-block;
+  margin-inline-start: 4px;
+  vertical-align: middle;
+}
+
 .rdot.bad {
   background: var(--danger);
 }
@@ -1267,11 +1273,6 @@ body {
   margin: 0 -8px;
   display: flex;
   flex-direction: column;
-}
-
-.rp-body[data-view-id='genui.panel'] {
-  overflow: visible;
-  padding: 6px 8px 0;
 }
 
 .right-view-body {

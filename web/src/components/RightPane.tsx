@@ -1,39 +1,13 @@
-import { useRef, useState, useSyncExternalStore } from 'react'
+import { useRef, useState } from 'react'
 import type { ViewRegistry } from '../core/ViewRegistry'
 import { MovingCapsule } from './MovingCapsule'
-import type { ViewRegistration, ViewStatusSource } from '../core/types'
-import { useViews, ViewHost } from './ViewHost'
+import type { ViewRegistration } from '../core/types'
+import { useViews, ViewHost, ViewStatusIndicator } from './ViewHost'
 
-const emptySubscribe = () => () => {}
-const emptySnapshot = () => null
-
-function RightTabDot({
-  viewId,
-  status,
-}: {
-  viewId: string
-  status?: ViewStatusSource
-}): React.ReactElement | null {
-  const dot = useSyncExternalStore(
-    status ? status.subscribe : emptySubscribe,
-    status ? status.getSnapshot : emptySnapshot,
-  )
-  if (!dot) return null
-  return (
-    <span
-      className={`rdot${dot.tone === 'danger' ? ' bad' : ''}`}
-      data-testid={`right-tab-dot-${viewId}`}
-      data-tone={dot.tone}
-      title={dot.title}
-    />
-  )
-}
-
-function orderRightViews(entries: ViewRegistration[]): ViewRegistration[] {
-  const outlineIndex = entries.findIndex((view) => view.id === 'outline.panel')
-  if (outlineIndex <= 0) return entries
-  const outline = entries[outlineIndex] as ViewRegistration
-  return [outline, ...entries.slice(0, outlineIndex), ...entries.slice(outlineIndex + 1)]
+function tabPosition(view: ViewRegistration): number {
+  if (view.id === 'outline.panel') return -1
+  if (view.id === 'feynman.panel') return 1
+  return 0
 }
 
 export function RightPane({
@@ -52,7 +26,7 @@ export function RightPane({
   onClose?: () => void
 }): React.ReactElement | null {
   const rawEntries = useViews(views, 'right')
-  const entries = orderRightViews(rawEntries)
+  const entries = [...rawEntries].sort((a, b) => tabPosition(a) - tabPosition(b))
   const [internalId, setInternalId] = useState<string | null>(null)
   const tabsRef = useRef<HTMLDivElement>(null)
 
@@ -88,7 +62,7 @@ export function RightPane({
                 onClick={() => handleSelect(view.id)}
               >
                 <span>{view.title}</span>
-                <RightTabDot viewId={view.id} status={view.status} />
+                {view.status && <ViewStatusIndicator status={view.status} testId={`right-tab-dot-${view.id}`} />}
               </button>
             )
           })}
@@ -117,8 +91,8 @@ export function RightPane({
           key={active.id}
           view={active}
           className="right-view-body"
-          scrollable={active.id !== 'genui.panel'}
-          edgeFade={active.id !== 'genui.panel'}
+          scrollable
+          edgeFade
           contentClassName="right-view-content"
         />
       </div>

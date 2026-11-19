@@ -121,6 +121,7 @@ export interface ResearchArtifact {
   path: string;
   target: string;
   proposal: boolean;
+  missing?: boolean;
   error?: string;
 }
 
@@ -242,6 +243,7 @@ export const ResearchHost = {
   disconnect: bind<[string], void>("ResearchHost.Disconnect", (root: string) => [root]),
   prompt: bind<[string, string, string, string], string>("ResearchHost.Prompt", (root: string, text: string, documentID: string, buffer: string) => [root, text, documentID, buffer]),
   readArtifact: bind<[string, string], string>("ResearchHost.ReadArtifact", (root: string, relative: string) => [root, relative]),
+  recoverArtifact: bind<[string, string], string>("ResearchHost.RecoverArtifact", (root: string, relative: string) => [root, relative]),
 } as const;
 
 export const CheckpointHost = {

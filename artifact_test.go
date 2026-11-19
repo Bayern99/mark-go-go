@@ -43,11 +43,11 @@ func TestResearchArtifactsPublishMarkdownWithoutOverwritingTheWorkspace(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(found) != 3 {
+	if len(found) != 4 {
 		t.Fatalf("got %#v", found)
 	}
 	for _, file := range found {
-		if file.Proposal != (file.Path == report) || file.Target != filepath.Join(root, file.Path) {
+		if file.Missing != (file.Path == "papers/removed.md") || file.Proposal != (file.Path == report) || file.Target != filepath.Join(root, file.Path) {
 			t.Fatalf("unexpected artifact %#v", file)
 		}
 	}
@@ -64,6 +64,16 @@ func TestResearchArtifactsPublishMarkdownWithoutOverwritingTheWorkspace(t *testi
 	if _, err := os.Stat(filepath.Join(root, "papers/removed.md")); !os.IsNotExist(err) {
 		t.Fatal("a deleted document was recreated")
 	}
+	restored, err := recoverResearchArtifact(work, root, "papers/removed.md")
+	if err != nil || restored != filepath.Join(root, "papers/removed.md") {
+		t.Fatalf("restore: %q %v", restored, err)
+	}
+	checkFile("papers/removed.md", "a draft")
+	put(root, "papers/removed.md", "typed after recovery")
+	if _, err := recoverResearchArtifact(work, root, "papers/removed.md"); err == nil {
+		t.Fatal("recover overwrote an existing document")
+	}
+	checkFile("papers/removed.md", "typed after recovery")
 	put(root, plan, "edited in Mark Go Go")
 	found, err = collectResearchArtifacts(work, root)
 	if err != nil {
@@ -142,5 +152,72 @@ func TestOnlyCompletedTurnPublishesResearchArtifacts(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "cancelled.md")); !os.IsNotExist(err) {
 		t.Fatal("another turn published a cancelled file")
+	}
+}
+
+func TestResearchCandidateRecoveryHonoursCompletedContentAndAcceptance(t *testing.T) {
+	root := t.TempDir()
+	work := filepath.Join(t.TempDir(), "work")
+	name := "report.md"
+	target := filepath.Join(root, name)
+	stage := filepath.Join(work, name)
+	write := func(p, text string) {
+		t.Helper()
+		if err := os.WriteFile(p, []byte(text), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	item := func() ResearchArtifact {
+		t.Helper()
+		files, err := collectResearchArtifacts(work, root)
+		if err != nil || len(files) != 1 {
+			t.Fatalf("results %v, %v", files, err)
+		}
+		return files[0]
+	}
+	write(target, "user text")
+	before, err := prepareResearchArtifacts(work, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(stage, "completed replacement")
+	if err := finishResearchArtifacts(work, root, before); err != nil {
+		t.Fatal(err)
+	}
+	if file := item(); !file.Proposal || file.Target != target || file.Error != "" {
+		t.Fatal(file)
+	}
+	write(stage, "interrupted replacement")
+	if file := item(); file.Proposal || file.Missing || file.Target != target || file.Error == "" {
+		t.Fatalf("unavailable candidate: %+v", file)
+	}
+	if err := os.Remove(target); err != nil {
+		t.Fatal(err)
+	}
+	if file := item(); file.Target != "" || file.Error == "" {
+		t.Fatalf("incomplete bytes offered for recovery: %+v", file)
+	}
+	if _, err := recoverResearchArtifact(work, root, name); err == nil {
+		t.Fatal("recovered unapproved content")
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatal("recreated deleted file")
+	}
+	write(stage, "completed replacement")
+	if file := item(); !file.Missing || file.Error != "" || file.Target != target {
+		t.Fatal(file)
+	}
+	if _, err := recoverResearchArtifact(work, root, name); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(stage); err != nil {
+		t.Fatal(err)
+	}
+	if file := item(); file.Proposal || file.Missing || file.Target != target || file.Error != "" {
+		t.Fatalf("accepted content re-offered: %+v", file)
+	}
+	write(target, "edited after accepting")
+	if file := item(); file.Proposal || file.Missing || file.Error != "" {
+		t.Fatalf("old proposal reappeared: %+v", file)
 	}
 }

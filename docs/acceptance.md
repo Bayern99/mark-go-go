@@ -4,6 +4,12 @@
 
 CI 以 [工作流](../.github/workflows/ci.yml) 为准。原生窗口、菜单和重启在 macOS 上按 [Automation 指南](agents/native-automation.md) 验证。提交前选择覆盖实际改动的检查。
 
+## Feynman 与 Git 插件
+
+2026-11-19 在隔离的 macOS arm64 应用中，使用 Feynman 0.5.71、pi-acp 0.0.33 和本地固定响应模型验证了工作区对话。空文件夹可以发起研究；同一窗口内两个工作区各自保留对话和产物。生成文件可打开为文档标签，重启后可恢复文档和对话。
+
+480 px 宽窗口中，收到修改建议后继续编辑正文会使旧比较失效。重新比较、应用和原生 Undo 均通过。删除一份已完成报告后，从右栏显式恢复取得相同字节。[改名期间的修改建议](../web/test/feynman-edit.test.tsx) 由浏览器用例覆盖。单文档 Git 检查点在已有暂存内容的仓库中完成创建、比较与恢复。实测 HEAD、当前分支和暂存条目前后一致。[ACP 与权限用例](../research_test.go) · [产物用例](../artifact_test.go) · [Git 用例](../checkpoints_test.go) · [编辑器用例](../web/test/source-mode.test.ts)
+
 ## MyGo v0.10.0 升级证据
 
 - 最新升级合并在 `9559625`。Go、Web 构建、两组 Web 测试和 Windows 交叉编译通过。 [main CI](https://github.com/Bayern99/mark-go-go/actions/runs/44240578323)

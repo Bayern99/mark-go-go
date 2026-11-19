@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -46,14 +44,18 @@ func (h *researchHost) ReadArtifact(ctx context.Context, root, relative string) 
 	if !ok || !result.File.Proposal || result.File.Error != "" {
 		return "", errors.New("This file has no completed research proposal.")
 	}
-	data, err := readWorkingFile(work, relative)
+	data, err := result.completedBytes(work, relative)
+	return string(data), err
+}
+
+func (h *researchHost) RecoverArtifact(ctx context.Context, root, relative string) (string, error) {
+	w, err := h.workspace(ctx, root)
 	if err != nil {
 		return "", err
 	}
-	if fmt.Sprintf("%x", sha256.Sum256(data)) != result.Digest {
-		return "", errors.New("The working copy changed after the completed research proposal.")
-	}
-	return string(data), nil
+	researchArtifactsMu.Lock()
+	defer researchArtifactsMu.Unlock()
+	return recoverResearchArtifact(researchWorkDir(h.dataDir, w.root), w.root, relative)
 }
 
 func (h *researchHost) stageDocument(ctx context.Context, root, documentID, buffer string) error {

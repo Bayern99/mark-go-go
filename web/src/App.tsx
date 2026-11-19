@@ -128,7 +128,7 @@ export function DocumentPane({
   host: HostAdapter
   workspaceView?: string
   onWorkspaceView?: (id?: string) => void
-  openDocument?: (path: string) => Promise<unknown>
+  openDocument?: (path: string, existingID?: string) => Promise<unknown>
   plugins?: AppPlugin[]
   active?: boolean
   workspaceRoot?: string
@@ -749,7 +749,7 @@ export function DocumentPane({
           onSelect={id => {
             const shared = rightViews.find(view => view.id === id)?.workspaceScoped
             onWorkspaceView?.(shared ? id : undefined)
-            if (!shared) setRightViewId(id)
+            if (!shared || !onWorkspaceView) setRightViewId(id)
           }}
           open={rightShown}
           floating={rightFloating}
@@ -840,7 +840,12 @@ function WorkspaceApp({
   const [snap, setSnap] = useState<WorkspaceSnapshot | null>(null)
   const researchEnabled = usePluginEnabled('feynman')
   const [workspaceViews, setWorkspaceViews] = useState<Record<string, string | undefined>>({})
-  const openDocument = useCallback((path: string) => workspace.open(path), [workspace])
+  const openDocument = useCallback(async (path: string, existingID?: string) => {
+    if (existingID && (await workspace.snapshot()).documents.some(doc => doc.id === existingID)) {
+      return workspace.activate(existingID)
+    }
+    return workspace.open(path)
+  }, [workspace])
   const [recents, setRecents] = useState<RecentWorkspace[]>([])
   const panes = useRef(new Map<string, HostAdapter>())
   const reveals = useRef(new Map<string, (offset: number) => boolean>())

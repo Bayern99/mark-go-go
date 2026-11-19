@@ -110,6 +110,19 @@ function setup() {
 }
 
 describe('PluginRegistry', () => {
+  it('disposes only its own optional plugin registration', async () => {
+    const { registry } = setup()
+    const plugin = { id: 'optional', title: 'Optional', activate() {} }
+    const first = registry.register(plugin)
+    await registry.enable(plugin.id)
+    first.dispose()
+    expect(registry.isEnabled(plugin.id)).toBe(false)
+    registry.register(plugin)
+    await registry.enable(plugin.id)
+    first.dispose()
+    expect(registry.isEnabled(plugin.id)).toBe(true)
+  })
+
   it('starts disabled and activates on enable', async () => {
     const { registry, commands, views, documents, effects } = setup()
     expect(registry.isEnabled('demo')).toBe(false)

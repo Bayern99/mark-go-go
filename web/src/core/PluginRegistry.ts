@@ -42,13 +42,17 @@ export class PluginRegistry {
 
   register(plugin: AppPlugin): Disposable {
     if (this.plugins.has(plugin.id)) throw new Error(`Plugin already registered: ${plugin.id}`)
-    this.plugins.set(plugin.id, { plugin, disposables: null, subscriptions: null })
+    const record: PluginRecord = { plugin, disposables: null, subscriptions: null }
+    this.plugins.set(plugin.id, record)
     this.emit()
-    return { dispose: () => {
-      this.disable(plugin.id)
-      this.plugins.delete(plugin.id)
-      this.emit()
-    } }
+    return {
+      dispose: () => {
+        if (this.plugins.get(plugin.id) !== record) return
+        this.disable(plugin.id)
+        this.plugins.delete(plugin.id)
+        this.emit()
+      },
+    }
   }
 
   list(): PluginInfo[] {
@@ -60,7 +64,7 @@ export class PluginRegistry {
   }
 
   isEnabled(id: string): boolean {
-    return this.plugins.get(id)?.disposables !== null
+    return Boolean(this.plugins.get(id)?.disposables)
   }
 
   async enable(id: string): Promise<void> {

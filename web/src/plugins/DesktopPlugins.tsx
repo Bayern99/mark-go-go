@@ -35,7 +35,7 @@ export function DesktopPlugins({ registry, documentID, workspaceRoot, openDocume
   registry: PluginRegistry
   documentID: string
   workspaceRoot: string
-  openDocument: (path: string) => Promise<unknown>
+  openDocument: (path: string, existingID?: string) => Promise<unknown>
 }) {
   const research = usePluginEnabled('feynman')
   const git = usePluginEnabled('git')

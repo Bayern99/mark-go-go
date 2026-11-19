@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +21,7 @@ type ResearchArtifact struct {
 	Path     string `json:"path"`
 	Target   string `json:"target"`
 	Proposal bool   `json:"proposal"`
+	Missing  bool   `json:"missing,omitempty"`
 	Error    string `json:"error,omitempty"`
 }
 
@@ -279,6 +279,66 @@ func finishResearchArtifacts(work, workspace string, before researchBaseline) er
 	return nil
 }
 
+func (r artifactRecord) completedBytes(work, rel string) ([]byte, error) {
+	if r.File.Error != "" || r.Digest == "" {
+		return nil, errors.New("There is no completed research copy for this file.")
+	}
+	data, err := readWorkingFile(work, rel)
+	if err != nil {
+		return nil, fmt.Errorf("The completed research copy is unavailable: %w", err)
+	}
+	if fmt.Sprintf("%x", sha256.Sum256(data)) != r.Digest {
+		return nil, errors.New("The working copy has changed since the completed research turn.")
+	}
+	return data, nil
+}
+
+func inspectResearchArtifact(work string, root *os.Root, rel string, record artifactRecord) ResearchArtifact {
+	file := ResearchArtifact{Path: rel, Error: record.File.Error}
+	target := filepath.Join(root.Name(), filepath.FromSlash(rel))
+	name := path.Base(rel)
+	parent, err := artifactParent(root, rel, false)
+	if err == nil {
+		defer parent.Close()
+		var st fs.FileInfo
+		st, err = parent.Lstat(name)
+		if err == nil && !st.Mode().IsRegular() {
+			err = fmt.Errorf("Research target %q is not a regular file.", rel)
+		}
+	}
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		file.Error = err.Error()
+		return file
+	}
+	file.Missing = errors.Is(err, fs.ErrNotExist)
+	if !file.Missing {
+		file.Target = target
+	}
+	if file.Error != "" {
+		return file
+	}
+	if !file.Missing {
+		if !record.File.Proposal {
+			return file
+		}
+		text, err := readResearchFile(parent, name)
+		if err != nil {
+			file.Error = err.Error()
+			return file
+		}
+		if fmt.Sprintf("%x", sha256.Sum256(text)) == record.Digest {
+			return file
+		}
+	}
+	if _, err := record.completedBytes(work, rel); err != nil {
+		file.Error = err.Error()
+		return file
+	}
+	file.Target = target
+	file.Proposal = !file.Missing
+	return file
+}
+
 func collectResearchArtifacts(work, workspace string) ([]ResearchArtifact, error) {
 	history, err := readArtifactHistory(work)
 	if err != nil {
@@ -290,35 +350,66 @@ func collectResearchArtifacts(work, workspace string) ([]ResearchArtifact, error
 	}
 	defer root.Close()
 	files := []ResearchArtifact{}
+	accepted := false
 	for rel, record := range history {
 		if !allowedResearchPath(rel) {
 			continue
 		}
-		file := record.File
-		if file.Error == "" {
-			parent, err := artifactParent(root, rel, false)
-			if err == nil {
-				var st fs.FileInfo
-				st, err = parent.Lstat(path.Base(rel))
-				parent.Close()
-				if err == nil && !st.Mode().IsRegular() {
-					err = fmt.Errorf("Research target %q is not a regular file.", rel)
-				}
-			}
-			if errors.Is(err, fs.ErrNotExist) {
-				continue
-			}
-			if err != nil {
-				file.Error = err.Error()
-				file.Target = ""
-			} else {
-				file.Target = filepath.Join(workspace, filepath.FromSlash(rel))
-			}
+		file := inspectResearchArtifact(work, root, rel, record)
+		if record.File.Proposal && !file.Proposal && !file.Missing && file.Error == "" {
+			record.File = file
+			history[rel] = record
+			accepted = true
 		}
 		files = append(files, file)
 	}
+	if accepted {
+		if err := history.save(work); err != nil {
+			return nil, err
+		}
+	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	return files, nil
+}
+
+func recoverResearchArtifact(work, workspace, rel string) (string, error) {
+	if !allowedResearchPath(rel) {
+		return "", errors.New("Choose a research Markdown file.")
+	}
+	history, err := readArtifactHistory(work)
+	if err != nil {
+		return "", err
+	}
+	record := history[rel]
+	data, err := record.completedBytes(work, rel)
+	if err != nil {
+		return "", err
+	}
+	dest, err := os.OpenRoot(workspace)
+	if err != nil {
+		return "", err
+	}
+	defer dest.Close()
+	parent, err := artifactParent(dest, rel, true)
+	if err != nil {
+		return "", err
+	}
+	defer parent.Close()
+	if err := publishResearchFile(parent, path.Base(rel), data); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return "", errors.New("A workspace file already exists at this path.")
+		}
+		return "", err
+	}
+	target := filepath.Join(workspace, filepath.FromSlash(rel))
+	if record.File.Proposal {
+		record.File = ResearchArtifact{Path: rel, Target: target}
+		history[rel] = record
+		if err := history.save(work); err != nil {
+			return "", fmt.Errorf("File restored, but its research record could not be updated: %w", err)
+		}
+	}
+	return target, nil
 }
 
 func collectResearchFile(work string, dest *os.Root, rel string, known bool) (ResearchArtifact, string, error) {
@@ -328,21 +419,23 @@ func collectResearchFile(work string, dest *os.Root, rel string, known bool) (Re
 		return none, "", err
 	}
 	digest := sha256.Sum256(data)
-	hash := hex.EncodeToString(digest[:])
+	hash := fmt.Sprintf("%x", digest)
+	file := ResearchArtifact{Path: rel, Target: filepath.Join(dest.Name(), filepath.FromSlash(rel))}
 	parent, err := artifactParent(dest, rel, !known)
 	if known && errors.Is(err, fs.ErrNotExist) {
-		return none, "", nil
+		file.Proposal = true
+		return file, hash, nil
 	}
 	if err != nil {
 		return none, "", err
 	}
 	defer parent.Close()
-	file := ResearchArtifact{Path: rel, Target: filepath.Join(dest.Name(), filepath.FromSlash(rel))}
 	name := path.Base(rel)
 	stat, err := parent.Lstat(name)
 	if errors.Is(err, fs.ErrNotExist) {
 		if known {
-			return none, "", nil
+			file.Proposal = true
+			return file, hash, nil
 		}
 		err = publishResearchFile(parent, name, data)
 		if err == nil {

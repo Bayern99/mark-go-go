@@ -11,7 +11,6 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -22,7 +21,11 @@ import (
 
 var researchFocus = mygo.NewEvent[ResearchFocusEvent]("researchFocus")
 
-var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)`)
+var (
+	ansiEscapePattern          = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)`)
+	alphaSearchNumberedPattern = regexp.MustCompile(`^\d+\.\s+(.+)$`)
+	alphaSearchArxivIDPattern  = regexp.MustCompile(`\b(\d{4}\.\d{4,5}(?:v\d+)?)\b`)
+)
 
 const (
 	defaultCLITimeout     = 60 * time.Second
@@ -1111,21 +1114,19 @@ func parseAlphaSearchOutput(raw string, exitCode int, query, mode string) CLIAlp
 		return res
 	}
 	// Parse structured numbered text output fallback if not JSON.
-	numbered := regexp.MustCompile(`^\d+\.\s+(.+)$`)
-	arxivIDRe := regexp.MustCompile(`\b(\d{4}\.\d{4,5}(?:v\d+)?)\b`)
 	var cur *CLIAlphaPaper
 	for _, line := range strings.Split(raw, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if m := numbered.FindStringSubmatch(trimmed); m != nil {
+		if m := alphaSearchNumberedPattern.FindStringSubmatch(trimmed); m != nil {
 			res.Papers = append(res.Papers, CLIAlphaPaper{Title: strings.TrimSpace(m[1])})
 			cur = &res.Papers[len(res.Papers)-1]
-			if idm := arxivIDRe.FindStringSubmatch(m[1]); idm != nil {
+			if idm := alphaSearchArxivIDPattern.FindStringSubmatch(m[1]); idm != nil {
 				cur.ID = idm[1]
 			}
 			continue
 		}
 		if cur != nil && trimmed != "" {
-			if idm := arxivIDRe.FindStringSubmatch(trimmed); idm != nil && cur.ID == "" {
+			if idm := alphaSearchArxivIDPattern.FindStringSubmatch(trimmed); idm != nil && cur.ID == "" {
 				cur.ID = idm[1]
 			}
 			if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
@@ -1311,6 +1312,3 @@ func (h *ResearchManager) CLIAlphaAnnotate(ctx context.Context, root, action, pa
 	}
 	return res, nil
 }
-
-// Ensure strconv is referenced if needed for numeric parsing in future extensions.
-var _ = strconv.Itoa

@@ -335,7 +335,7 @@ export function FeynmanSettings({ root, session, onClose, onInsertToChat }: Feyn
       <ScrollArea className="fy-settings-scroll" contentClassName="fy-settings-content">
         <section className="fy-settings-card" aria-labelledby="fy-sec-status">
           <div className="fy-settings-card-head">
-            <h3 id="fy-sec-status">Status &amp; Doctor</h3>
+            <h4 id="fy-sec-status">Status &amp; Doctor</h4>
             <div className="fy-cli-actions">
               <button
                 type="button"
@@ -444,7 +444,7 @@ export function FeynmanSettings({ root, session, onClose, onInsertToChat }: Feyn
 
         <section className="fy-settings-card" aria-labelledby="fy-sec-models">
           <div className="fy-settings-card-head">
-            <h3 id="fy-sec-models">Models &amp; Tier</h3>
+            <h4 id="fy-sec-models">Models &amp; Tier</h4>
             <button
               type="button"
               className="pill xs"
@@ -550,7 +550,7 @@ export function FeynmanSettings({ root, session, onClose, onInsertToChat }: Feyn
 
         <section className="fy-settings-card" aria-labelledby="fy-sec-alpha">
           <div className="fy-settings-card-head">
-            <h3 id="fy-sec-alpha">alphaXiv</h3>
+            <h4 id="fy-sec-alpha">alphaXiv</h4>
             <div className="fy-cli-actions">
               <button
                 type="button"
@@ -607,7 +607,7 @@ export function FeynmanSettings({ root, session, onClose, onInsertToChat }: Feyn
 
         <section className="fy-settings-card" aria-labelledby="fy-sec-search">
           <div className="fy-settings-card-head">
-            <h3 id="fy-sec-search">Web Search</h3>
+            <h4 id="fy-sec-search">Web Search</h4>
             <button
               type="button"
               className="pill xs quiet"
@@ -678,7 +678,7 @@ export function FeynmanSettings({ root, session, onClose, onInsertToChat }: Feyn
 
         <section className="fy-settings-card" aria-labelledby="fy-sec-mcp">
           <div className="fy-settings-card-head">
-            <h3 id="fy-sec-mcp">MCP Servers</h3>
+            <h4 id="fy-sec-mcp">MCP Servers</h4>
             <button
               type="button"
               className="pill xs quiet"
@@ -873,7 +873,7 @@ export function FeynmanSettings({ root, session, onClose, onInsertToChat }: Feyn
 
         <section className="fy-settings-card" aria-labelledby="fy-sec-packages">
           <div className="fy-settings-card-head">
-            <h3 id="fy-sec-packages">Packages &amp; Updates</h3>
+            <h4 id="fy-sec-packages">Packages &amp; Updates</h4>
             <button
               type="button"
               className="pill xs primary"

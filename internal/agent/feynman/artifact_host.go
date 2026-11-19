@@ -39,7 +39,7 @@ func (h *ResearchManager) RecoverArtifact(ctx context.Context, root, relative st
 	return review.RecoverArtifact(review.WorkDir(h.dataDir, w.Root), w.Root, relative)
 }
 
-func (h *ResearchManager) stageDocument(ctx context.Context, root, documentID, buffer string) error {
+func (h *ResearchManager) ensureEditableDocument(ctx context.Context, root, documentID string) error {
 	work := review.WorkDir(h.dataDir, root)
 	if documentID == "" {
 		return review.ClearStagedDocument(work)
@@ -53,9 +53,5 @@ func (h *ResearchManager) stageDocument(ctx context.Context, root, documentID, b
 	if err := h.workspaces.EditableDocument(ctx, root, documentID); err != nil {
 		return err
 	}
-	return review.StageDocument(work, buffer)
-}
-
-func (h *ResearchManager) readStagedDocument(root string) (string, error) {
-	return review.ReadStagedDocument(review.WorkDir(h.dataDir, root))
+	return review.ClearStagedDocument(work)
 }

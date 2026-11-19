@@ -148,6 +148,15 @@ func checkpointGit(ctx context.Context, dir, input string, args ...string) (stri
 	return string(out), err
 }
 
+func hasGitSegment(rel string) bool {
+	for part := range strings.SplitSeq(rel, "/") {
+		if strings.EqualFold(part, ".git") {
+			return true
+		}
+	}
+	return false
+}
+
 func openCheckpointFile(ctx context.Context, workspace, path, userDataDir string) (checkpointFile, error) {
 	if !fsutil.MarkdownName(path) || !fsutil.FolderContains(workspace, path) {
 		return checkpointFile{}, errors.New("Open a saved Markdown document in its workspace.")
@@ -163,10 +172,8 @@ func openCheckpointFile(ctx context.Context, workspace, path, userDataDir string
 			rel, relErr := filepath.Rel(fsutil.CanonicalPath(repo), fsutil.CanonicalPath(path))
 			if relErr == nil && filepath.IsLocal(rel) {
 				rel = filepath.ToSlash(rel)
-				for part := range strings.SplitSeq(rel, "/") {
-					if strings.EqualFold(part, ".git") {
-						return checkpointFile{}, errors.New("Git metadata cannot be checkpointed.")
-					}
+				if hasGitSegment(rel) {
+					return checkpointFile{}, errors.New("Git metadata cannot be checkpointed.")
 				}
 				_, err = checkpointGit(ctx, repo, "", "check-ignore", "--quiet", "--no-index", "--", "./"+rel)
 				var exitErr *exec.ExitError
@@ -192,10 +199,8 @@ func openCheckpointFile(ctx context.Context, workspace, path, userDataDir string
 		return checkpointFile{}, errors.New("Open a saved Markdown document in its workspace.")
 	}
 	relSlash := filepath.ToSlash(rel)
-	for part := range strings.SplitSeq(relSlash, "/") {
-		if strings.EqualFold(part, ".git") {
-			return checkpointFile{}, errors.New("Git metadata cannot be checkpointed.")
-		}
+	if hasGitSegment(relSlash) {
+		return checkpointFile{}, errors.New("Git metadata cannot be checkpointed.")
 	}
 	if userDataDir == "" {
 		if cfg, err := os.UserConfigDir(); err == nil && cfg != "" {

@@ -93,7 +93,14 @@ it('manages a multi-file queue of Change proposals without blocking other files'
     await userEvent.click(button('Send'))
     await vi.waitFor(() => expect(comparison()?.textContent).toContain('Revised draft'))
 
-    // Multi-file queue: reviewing paper.md is NOT blocked while draft.md proposal is pending.
+    // Multi-file queue: reviewing paper.md is NOT blocked while draft.md proposal is pending,
+    // and Edit document in Chat remains enabled so additional edits can be queued.
+    await userEvent.click(container.querySelector<HTMLButtonElement>('.fy-tabs button:nth-of-type(1)')!)
+    const editToggle = container.querySelector<HTMLInputElement>('[aria-label="Edit this document"]')!
+    expect(editToggle.disabled).toBe(false)
+    await userEvent.fill(container.querySelector<HTMLTextAreaElement>('[aria-label="Research prompt"]')!, 'Queue another edit')
+    expect(button('Send').disabled).toBe(false)
+    await userEvent.fill(container.querySelector<HTMLTextAreaElement>('[aria-label="Research prompt"]')!, '')
     await workspace.activate(paper.id)
     await userEvent.click(files())
     expect(button('Review paper.md').disabled).toBe(false)

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 )
 
@@ -132,4 +133,26 @@ func TestMarkdownAndSkipDirHelpers(t *testing.T) {
 			t.Errorf("SkipDirName(%q) = true, want false", dir)
 		}
 	}
+}
+
+func TestLimitBufferRetainsTailAndIsConcurrencySafe(t *testing.T) {
+	buf := NewLimitBuffer(5)
+	_, _ = buf.Write([]byte("abcdef"))
+	_, _ = buf.Write([]byte("gh\n\n"))
+	if got := buf.Tail(); got != "fgh" {
+		t.Fatalf("Tail() = %q, want %q", got, "fgh")
+	}
+
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 50 {
+				_, _ = buf.Write([]byte("123456"))
+				_ = buf.Tail()
+			}
+		}()
+	}
+	wg.Wait()
 }

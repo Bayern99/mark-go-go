@@ -337,7 +337,7 @@ export function Composer({
   const offline = session.status === 'offline' || session.status === 'connecting'
   const locked = session.status !== 'ready' || session.configuring
   const hasDraft = Boolean(session.draft.trim())
-  const canSend = !locked && hasDraft && !(edit && !!session.proposal)
+  const canSend = !locked && hasDraft
   const totalQueued = session.queue.steering.length + session.queue.followUp.length
 
   function pick(name: string) {
@@ -618,7 +618,7 @@ export function Composer({
                 type="checkbox"
                 aria-label="Edit this document"
                 checked={edit}
-                disabled={busy || !!session.proposal}
+                disabled={busy}
                 onChange={(e) => setEdit(e.target.checked)}
               />
               <ResearchIcon name="note-pencil" />

@@ -70,12 +70,12 @@ function Checkpoints({ ctx, documentID, doc }: PanelProps & { doc: DocumentSnaps
     }
   }
 
-  if (!doc.path) return <p className="nav-empty">Save this document to use Git checkpoints.</p>
+  if (!doc.path) return <p className="nav-empty">Save this document to use Checkpoints.</p>
   const active = checkpoints?.find(item => item.id === selected) ?? checkpoints?.[0] ?? null
   const id = active?.id ?? ''
   const stale = preview && (preview.base.text !== doc.text || preview.base.version !== doc.version)
   return (
-    <section className="plugin-panel" aria-label="Git checkpoints">
+    <section className="plugin-panel" aria-label="Checkpoints">
       <form className="checkpoint-create-form" onSubmit={event => {
         event.preventDefault()
         void run(async () => {
@@ -161,19 +161,19 @@ export function createGitPlugin(documentID: string): AppPlugin {
     activate(ctx) {
       ctx.views.register({
         id: 'git.panel',
-        title: 'Git checkpoints',
+        title: 'Checkpoints',
         location: 'document',
         mount(el) {
           const root = createRoot(el)
           root.render(<Popover.Root>
             <Popover.Trigger asChild>
-              <button type="button" className="pill icon quiet" aria-label="Git checkpoints" title="Git checkpoints">
+              <button type="button" className="pill icon quiet" aria-label="Checkpoints" title="Checkpoints">
                 <i className="ph ph-git-branch" aria-hidden="true" />
               </button>
             </Popover.Trigger>
             <Popover.Portal>
-              <Popover.Content className="doc-tab-menu checkpoint-menu" aria-label="Git checkpoints" sideOffset={6} align="end" collisionPadding={8}>
-                <h3>Git checkpoints</h3>
+              <Popover.Content className="doc-tab-menu checkpoint-menu" aria-label="Checkpoints" sideOffset={6} align="end" collisionPadding={8}>
+                <h3>Checkpoints</h3>
                 <GitPanel ctx={ctx} documentID={documentID} />
               </Popover.Content>
             </Popover.Portal>

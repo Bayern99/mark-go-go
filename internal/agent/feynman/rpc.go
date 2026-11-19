@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Bayern99/mark-go-go/internal/acp"
+	"github.com/Bayern99/mark-go-go/internal/fsutil"
 )
 
 const (
@@ -49,7 +49,7 @@ type rpcClient struct {
 	stderrDone chan struct{}
 	killOnce   sync.Once
 
-	stderr *acp.LimitBuffer
+	stderr *fsutil.LimitBuffer
 }
 
 func newRPCClient(cmd *exec.Cmd) (*rpcClient, error) {
@@ -90,7 +90,7 @@ func newRPCClient(cmd *exec.Cmd) (*rpcClient, error) {
 		exited:     make(chan struct{}),
 		readDone:   make(chan struct{}),
 		stderrDone: make(chan struct{}),
-		stderr:     acp.NewLimitBuffer(8192),
+		stderr:     fsutil.NewLimitBuffer(8192),
 	}, nil
 }
 

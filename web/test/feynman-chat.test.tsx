@@ -58,7 +58,7 @@ it('returns extension form input and keeps a draft when an extension suggests a 
     expect(composer.value).toBe('compare two reviews')
     await userEvent.click(container.querySelector<HTMLButtonElement>('.fy-suggestion button')!)
     expect(composer.value).toBe('compare two reviews')
-    expect(container.querySelector('[aria-label="Remove Literature review"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Remove Lit"]')).not.toBeNull()
     emit({kind: 'input', requestId: 'follow-up', text: 'Source title'})
     const cancel = await vi.waitFor(() => {
       const field = container.querySelector<HTMLInputElement>('input[aria-label="Source title"]')
@@ -68,13 +68,14 @@ it('returns extension form input and keeps a draft when an extension suggests a 
     await userEvent.click(cancel)
     expect(adapter.answerText).toHaveBeenCalledWith('/forms', 'follow-up', '', true)
     emit({kind: 'permission', requestId: 'catalog', text: 'Tools', options: [{id: 'choice-0', name: 'web_search — Search the web'}]})
-    const select = await vi.waitFor(() => {
-      const field = container.querySelector<HTMLSelectElement>('[aria-label="Feynman choices"]')
-      expect(field).not.toBeNull()
-      return field!
+    const choiceBtn = await vi.waitFor(() => {
+      const btn = container.querySelector<HTMLButtonElement>('[role="listbox"][aria-label="Feynman choices"] [role="option"]')
+      expect(btn).not.toBeNull()
+      return btn!
     })
-    await userEvent.selectOptions(select, 'choice-0')
-    await userEvent.click(select.form!.querySelector<HTMLButtonElement>('button[value=use]')!)
+    expect(container.querySelector('.fy-panel select')).toBeNull()
+    await userEvent.click(choiceBtn)
+    await userEvent.click(Array.from(container.querySelectorAll('.fy-permission button')).find(b => b.textContent === 'Use in question')!)
     expect(adapter.answer).toHaveBeenCalledWith('/forms', 'catalog', 'choice-0')
     expect(composer.value).toBe('compare two reviews Use the web_search tool.')
   } finally {
@@ -111,7 +112,7 @@ it('chooses an exact slash workflow, sends with Enter and opens citations from t
     await vi.waitFor(() => expect(container.querySelector('[role="option"][aria-selected=true]')?.textContent).toContain('/lit'))
     await userEvent.keyboard('{Enter}')
     expect(field.value).toBe('')
-    expect(container.querySelector('[aria-label="Remove Literature review"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Remove Lit"]')).not.toBeNull()
     expect(adapter.send).not.toHaveBeenCalled()
     await userEvent.fill(field, 'score reading')
     await userEvent.keyboard('{Enter}')

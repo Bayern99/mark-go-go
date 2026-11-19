@@ -13,7 +13,9 @@ export interface DocumentSnapshot {
   path: string
 }
 
-export type ViewLocation = 'left' | 'center' | 'document'
+export type ViewLocation = 'left' | 'center' | 'right' | 'document'
+
+export type PluginScope = 'document' | 'workspace'
 
 export type ViewStatusDot = {
   tone: 'warn' | 'danger'
@@ -25,12 +27,37 @@ export interface ViewStatusSource {
   getSnapshot(): ViewStatusDot
 }
 
+export interface ViewBadgeSource {
+  subscribe(fn: () => void): () => void
+  getSnapshot(): number
+}
+
 export interface ViewRegistration {
   id: string
   title: string
   location: ViewLocation
   status?: ViewStatusSource
+  badge?: ViewBadgeSource
   mount(el: HTMLElement, scrollElement?: HTMLElement): Disposable
+}
+
+export interface ActiveDocumentContext {
+  snapshot(): DocumentSnapshot
+  onDidChange(fn: (s: DocumentSnapshot) => void): Disposable
+  applyMarkdown(base: DocumentSnapshot, next: string): Promise<void>
+}
+
+export interface WorkspaceContext {
+  root(): string
+  workspaces(): readonly { root: string; name: string }[]
+  activeDocumentId(): string
+  activeDocument(): ActiveDocumentContext | null
+  openDocument(path: string, existingID?: string): Promise<{
+    id: string
+    snapshot: () => Promise<DocumentSnapshot>
+  }>
+  openFolder(): void | Promise<void>
+  onDidChange(fn: () => void): Disposable
 }
 
 export interface PluginContext {
@@ -60,12 +87,14 @@ export interface PluginContext {
     setSettings(patch: SettingsPatch): Promise<GenerationSettings>
     onSettings(fn: (settings: GenerationSettings) => void): Disposable
   }
+  workspace?: WorkspaceContext
   subscriptions: Disposable[]
 }
 
 export interface AppPlugin {
   id: string
   title: string
+  scope?: PluginScope
   activate(ctx: PluginContext): void | Promise<void>
 }
 

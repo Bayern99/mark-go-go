@@ -1,31 +1,62 @@
 .research-history {
   box-sizing: border-box;
-  width: min(300px, var(--radix-popover-content-available-width));
-  max-height: min(24rem, var(--radix-popover-content-available-height));
+  width: min(320px, var(--radix-popover-content-available-width));
+  max-height: min(26rem, var(--radix-popover-content-available-height));
   overflow: auto;
   z-index: 55;
   padding: 8px;
   border-radius: 12px;
-  background: var(--paper);
+  border: 0.5px solid var(--line);
+  background: var(--glass-overlay-tint);
+  -webkit-backdrop-filter: var(--glass-overlay-filter);
+  backdrop-filter: var(--glass-overlay-filter);
   box-shadow: var(--glass-overlay-rim);
   color: var(--ink);
   font: var(--text-ui-size)/var(--text-ui-leading) var(--font-sans);
 }
-.research-history header, .research-history-row, .research-history-confirm {
+.research-history[data-state='open'] {
+  transform-origin: var(--radix-popover-content-transform-origin, top right);
+  animation: mgo-overlay-in var(--duration-menu) var(--ease-out);
+}
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  .research-history {
+    background: var(--paper);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: var(--pop-shadow);
+  }
+}
+:root[data-input='keyboard'] .research-history[data-state='open'] {
+  animation: none;
+}
+.research-history header,
+.research-history-tools,
+.research-history-row,
+.research-history-confirm,
+.research-rename-form {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
-.research-history header { justify-content: space-between; padding: 2px 4px 6px; }
+.research-history header { justify-content: space-between; padding: 2px 4px 6px; flex-wrap: wrap; }
+.research-history-tools { flex-wrap: wrap; }
+.research-history-tools .pill { height: 24px; padding: 0 7px; font-size: 11px; }
 .research-history h3 { margin: 0; font-size: inherit; }
 .research-history p { margin: 6px 4px; color: var(--ink-3); }
 .research-history p[role='alert'] { color: var(--danger); }
+.research-rename-form { margin-bottom: 6px; }
+.research-rename-form input {
+  flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 7px; padding: 4px 7px;
+  background: var(--paper); color: var(--ink); font: inherit;
+}
+.research-rename-form input:focus-visible { outline: none; box-shadow: var(--ring-field); }
 .research-history-row { border-top: 1px solid var(--line); }
 .research-conversation-choice {
   display: grid;
   gap: 2px;
   min-width: 0;
   flex: 1;
+  width: 100%;
   border: 0;
   padding: 7px 4px;
   background: transparent;
@@ -35,7 +66,7 @@
   cursor: pointer;
 }
 .research-conversation-choice > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.research-conversation-choice time { color: var(--ink-3); font-size: var(--text-meta-size); }
+.research-conversation-choice time { color: var(--ink-3); font-size: var(--text-meta-size); font-variant-numeric: tabular-nums; }
 .research-history-row [aria-current], .research-history-row > .ph-check { color: var(--accent); }
 .research-conversation-choice:enabled:hover { background: var(--raised); }
 .research-history-confirm { flex-wrap: wrap; padding: 6px 4px; }
@@ -52,8 +83,62 @@
   color: var(--ink);
   font: inherit;
 }
-
 .research-history-search:focus-visible {
   outline: none;
   box-shadow: var(--ring-field);
+}
+
+.research-fork-list,
+.research-tree-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-top: 1px solid var(--line);
+  padding-top: 4px;
+}
+
+.fy-tree-node {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fy-tree-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 7px;
+  font-size: 12px;
+}
+
+.fy-tree-item.current {
+  background: var(--accent-soft);
+}
+
+.fy-tree-role {
+  flex: none;
+  color: var(--ink-3);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.fy-tree-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fy-tree-leaf {
+  flex: none;
+  color: var(--accent);
+  font-size: 10px;
+}
+
+@supports (corner-shape: superellipse(1.25)) {
+  :is(.research-history, .fy-tree-item) {
+    corner-shape: superellipse(1.25);
+  }
 }

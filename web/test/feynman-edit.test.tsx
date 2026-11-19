@@ -1,3 +1,4 @@
+import '../src/styles.css'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 import { userEvent } from 'vitest/browser'
@@ -76,14 +77,17 @@ it('manages a multi-file queue of Change proposals without blocking other files'
   const container = document.body.appendChild(document.createElement('div'))
   const root = createRoot(container)
   const button = (text: string) => Array.from(container.querySelectorAll('button')).find(b => b.textContent?.trim() === text)!
-  const files = () => container.querySelector<HTMLButtonElement>('.fy-tabs button:nth-child(2)')!
+  const files = () => container.querySelector<HTMLButtonElement>('.fy-tabs button:nth-of-type(2)')!
   const comparison = () => container.querySelector('[aria-label="Proposed document edit"]')
   artifacts.mockResolvedValue([{ path: 'paper.md', target: '/demo/paper.md', proposal: true }])
   prompt.mockResolvedValue('# Revised draft\n')
   readArtifact.mockResolvedValue('# Revised paper\n')
   try {
     root.render(<App workspace={workspace} />)
+    await vi.waitFor(() => expect(files()).toBeTruthy())
+    await userEvent.click(files())
     await vi.waitFor(() => expect(button('Review paper.md')).toBeTruthy())
+    await userEvent.click(container.querySelector<HTMLButtonElement>('.fy-tabs button:nth-of-type(1)')!)
     await userEvent.click(container.querySelector<HTMLInputElement>('[aria-label="Edit this document"]')!)
     await userEvent.fill(container.querySelector<HTMLTextAreaElement>('[aria-label="Research prompt"]')!, 'Revise the draft')
     await userEvent.click(button('Send'))

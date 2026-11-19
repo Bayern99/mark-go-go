@@ -4,6 +4,14 @@ import { bind, event, type Channel } from "mygo-runtime";
 
 // ---- Types ----
 
+export interface Checkpoint {
+  id: string;
+  createdAt: number;
+  label?: string;
+  source?: string;
+  backend?: string;
+}
+
 export interface CloseResult {
   closed: boolean;
   canceled: boolean;
@@ -503,8 +511,8 @@ export const ResearchHost = {
 } as const;
 
 export const CheckpointHost = {
-  create: bind<[string, string, string], string[]>("CheckpointHost.Create", (documentID: string, path: string, expectedText: string) => [documentID, path, expectedText]),
-  list: bind<[string, string], string[]>("CheckpointHost.List", (documentID: string, path: string) => [documentID, path]),
+  create: bind<[string, string, string, string, string], Checkpoint[]>("CheckpointHost.Create", (documentID: string, path: string, expectedText: string, label: string, source: string) => [documentID, path, expectedText, label, source]),
+  list: bind<[string, string], Checkpoint[]>("CheckpointHost.List", (documentID: string, path: string) => [documentID, path]),
   read: bind<[string, string, string], string>("CheckpointHost.Read", (documentID: string, path: string, checkpointID: string) => [documentID, path, checkpointID]),
 } as const;
 

@@ -53,6 +53,24 @@ describe('layout at the default window size', () => {
     expect(frontmatter.getBoundingClientRect().width).toBeGreaterThanOrEqual(280)
   })
 
+  it('keeps fixed workspace regions free of gradient backgrounds', async () => {
+    await page.viewport(WINDOW.width, WINDOW.height)
+    mounted = await mountApp(DOCUMENT)
+
+    const selectors = ['.app', '.side-pane', '.right-pane', '.doc-tabs-row', '.status-bar', '.sheet']
+    for (const selector of selectors) {
+      const elements = mounted.container.querySelectorAll(selector)
+      expect(elements.length, selector).toBeGreaterThan(0)
+      for (const element of elements) {
+        expect(getComputedStyle(element).backgroundImage, selector).toBe('none')
+        for (const pseudo of ['::before', '::after']) {
+          if (element.matches('.side-pane, .right-pane')) continue
+          expect(getComputedStyle(element, pseudo).backgroundImage, `${selector}${pseudo}`).toBe('none')
+        }
+      }
+    }
+  })
+
   it('auto-collapses the right pane below 1180px, opens it as .r-float on toggle, and closes on center click', async () => {
     await page.viewport(940, 720)
     mounted = await mountApp(DOCUMENT)
@@ -76,6 +94,29 @@ describe('layout at the default window size', () => {
     expect(rightPane.hidden).toBe(true)
     expect(rightPane.classList.contains('r-float')).toBe(false)
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('provides a close button on .r-float and auto-closes it when jumping via Outline', async () => {
+    await page.viewport(940, 720)
+    mounted = await mountApp(DOCUMENT)
+
+    const rightPane = mounted.container.querySelector<HTMLElement>('[data-testid="right-pane"]')
+    if (!rightPane) throw new Error('right pane missing')
+
+    await page.getByTestId('right-pane-toggle').click()
+    expect(rightPane.hidden).toBe(false)
+    expect(rightPane.classList.contains('r-float')).toBe(true)
+
+    await page.getByTestId('right-pane-close').click()
+    expect(rightPane.hidden).toBe(true)
+
+    await page.getByTestId('right-pane-toggle').click()
+    expect(rightPane.hidden).toBe(false)
+
+    const outlineItem = mounted.container.querySelector<HTMLButtonElement>('.outline-link')
+    if (!outlineItem) throw new Error('outline item missing')
+    outlineItem.click()
+    await expect.poll(() => rightPane.hidden).toBe(true)
   })
 
 })

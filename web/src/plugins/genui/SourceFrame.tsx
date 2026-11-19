@@ -3,6 +3,7 @@ import {
   Fragment,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -46,9 +47,14 @@ export interface ComponentSource {
   addNote: ((text: string) => Promise<boolean>) | undefined
 }
 
-function CardSkeleton(): React.ReactElement {
+function CardSkeleton({ minHeight }: { minHeight?: number }): React.ReactElement {
   return (
-    <div className="genui-card-skeleton" data-testid="genui-card-skeleton" aria-hidden="true">
+    <div
+      className="genui-card-skeleton"
+      data-testid="genui-card-skeleton"
+      aria-hidden="true"
+      style={minHeight ? { minHeight } : undefined}
+    >
       <div className="genui-skeleton-line" />
       <div className="genui-skeleton-block" />
     </div>
@@ -99,6 +105,14 @@ export function SourceFrame({
   const [noteDraft, setNoteDraft] = useState('')
   const [noteFailed, setNoteFailed] = useState(false)
   const noteInputRef = useRef<HTMLTextAreaElement | null>(null)
+  const bodyRef = useRef<HTMLDivElement | null>(null)
+  const measuredHeightRef = useRef<number | undefined>(undefined)
+
+  useLayoutEffect(() => {
+    if (replacing) return
+    const height = bodyRef.current?.getBoundingClientRect().height ?? 0
+    if (height > 0) measuredHeightRef.current = Math.round(height)
+  }, [replacing, children])
 
   useEffect(() => {
     if (!composingNote || !noteInputRef.current) return
@@ -132,7 +146,13 @@ export function SourceFrame({
       aria-busy={replacing || undefined}
     >
       {title ? <h4>{title}</h4> : null}
-      {replacing ? <CardSkeleton /> : children}
+      {replacing ? (
+        <CardSkeleton minHeight={measuredHeightRef.current} />
+      ) : (
+        <div className="genui-block-body" ref={bodyRef}>
+          {children}
+        </div>
+      )}
       {!replacing && source.notes.length > 0 ? (
         <ul className="genui-notes" aria-label="Notes">
           {source.notes.map((note, index) => (

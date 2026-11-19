@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { MovingCapsule } from './MovingCapsule'
 import type { ViewRegistry } from '../core/ViewRegistry'
 import type {
   DocumentInfo,
@@ -12,6 +13,7 @@ import { breadcrumbs } from '../workspace/nav'
 import { useViews, ViewHost } from './ViewHost'
 import { ScrollArea } from './ScrollArea'
 import { AppTooltip } from './Tooltip'
+import { SearchClearButton } from './SearchClearButton'
 import { DropdownMenu } from 'radix-ui'
 
 const SIDEBAR_MIN = 190
@@ -20,12 +22,14 @@ const SIDEBAR_DEFAULT = 248
 const CENTER_MIN = 310
 const SIDEBAR_FLOOR = 140
 
-const TREE_INDENT = 16
+const TREE_INDENT = 8
 const TREE_INDENT_BASE = 8
 const TREE_INDENT_MAX = 0.4
 const ROW_TEXT_CHROME = 46
 const META_DATE_MIN_TEXT = 160
 const META_NOTES_MIN_TEXT = 96
+
+const countFormat = new Intl.NumberFormat()
 
 function treeIndent(depth: number, contentWidth: number): number {
   return Math.min(TREE_INDENT_BASE + Math.max(0, depth) * TREE_INDENT, contentWidth * TREE_INDENT_MAX)
@@ -203,18 +207,23 @@ export function SidePane({
   workspace,
   workspaceSnap,
   onJumpHeading,
+  floatingOpen = false,
+  onCloseFloating,
 }: {
   views: ViewRegistry
   doc?: DocumentInfo | null
   workspace?: WorkspaceAdapter
   workspaceSnap?: WorkspaceSnapshot | null
   onJumpHeading?: (documentId: string | undefined, path: string, offset: number) => void
+  floatingOpen?: boolean
+  onCloseFloating?: () => void
 }): React.ReactElement | null {
   const entries = useViews(views, 'left')
   const [filters, setFilters] = useState<Record<string, string>>({})
   const [nav, setNav] = useState<NavSnapshot | null>(null)
   const [search, setSearch] = useState<NavSearchResult | null>(null)
   const [width, setWidth] = useState(SIDEBAR_DEFAULT)
+  const [dragging, setDragging] = useState(false)
   const [winWidth, setWinWidth] = useState(() =>
     typeof window === 'undefined' ? SIDEBAR_DEFAULT : document.documentElement.clientWidth || window.innerWidth,
   )
@@ -274,6 +283,7 @@ export function SidePane({
 
   const onOpenFile = (path: string) => {
     if (!workspace) return
+    onCloseFloating?.()
     void workspace.open(path)
   }
 
@@ -285,10 +295,10 @@ export function SidePane({
   const tree = nav?.entries ?? []
   const fileCountLabel =
     nav?.status === 'scanning' || nav?.status === 'indexing'
-      ? `Indexing ${nav.indexed} of ${nav.total} files`
+      ? `Indexing ${countFormat.format(nav.indexed)} of ${countFormat.format(nav.total)} files`
       : nav?.status === 'error'
         ? nav.error || 'Could not index this folder'
-        : `${total} ${total === 1 ? 'file' : 'files'}`
+        : `${countFormat.format(total)} ${total === 1 ? 'file' : 'files'}`
 
   return (
     <>
@@ -299,12 +309,26 @@ export function SidePane({
         style={{ width: paneWidth, maxWidth: paneWidth, minWidth: paneWidth }}
       >
         <div className="ws">
-          <WorkspaceSwitcher
-            workspace={workspace}
-            snapshot={workspaceSnap}
-            selectedId={selectedWorkspaceId}
-            name={kind === 'untitled' ? 'Untitled' : name}
-          />
+          <div className="ws-top">
+            <WorkspaceSwitcher
+              workspace={workspace}
+              snapshot={workspaceSnap}
+              selectedId={selectedWorkspaceId}
+              name={kind === 'untitled' ? 'Untitled' : name}
+            />
+            {floatingOpen && onCloseFloating ? (
+              <button
+                type="button"
+                className="pill icon quiet ws-close"
+                data-testid="library-close"
+                aria-label="Close files panel"
+                title="Close files (Esc)"
+                onClick={onCloseFloating}
+              >
+                <i className="ph ph-x" aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
           <div className="ws-meta meta">
             <span className="p">{kind === 'folder' ? root || name : 'Untitled window'}</span>
             <span>·</span>
@@ -325,15 +349,9 @@ export function SidePane({
               }}
             />
             {filter ? (
-              <button
-                type="button"
-                className="clear"
-                aria-label="Clear filter"
-                data-testid="clear-filter"
-                onClick={() => setFilters((current) => ({ ...current, [selectedWorkspaceId]: '' }))}
-              >
-                ×
-              </button>
+              <SearchClearButton
+                onClear={() => setFilters((current) => ({ ...current, [selectedWorkspaceId]: '' }))}
+              />
             ) : null}
           </label>
         ) : null}
@@ -384,6 +402,7 @@ export function SidePane({
       </aside>
       <div
         className="sidebar-splitter"
+        data-dragging={dragging ? 'true' : undefined}
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize workspace sidebar"
@@ -394,6 +413,7 @@ export function SidePane({
         data-testid="sidebar-splitter"
         onPointerDown={(event) => {
           event.preventDefault()
+          setDragging(true)
           const startX = event.clientX
           const startW = width
           const move = (ev: PointerEvent) => {
@@ -401,6 +421,7 @@ export function SidePane({
             setWidth(next)
           }
           const up = () => {
+            setDragging(false)
             window.removeEventListener('pointermove', move)
             window.removeEventListener('pointerup', up)
           }
@@ -444,6 +465,7 @@ function FileTree({
   onOpenFile: (path: string) => void
   onToggle: (entry: NavEntry) => void
 }) {
+  const capsuleTrackRef = useRef<HTMLDivElement>(null)
   if (status === 'error') {
     return (
       <ScrollArea className="list" contentClassName="list-content" role="tree" aria-label="Files" data-testid="workspace-tree">
@@ -469,6 +491,7 @@ function FileTree({
     <ScrollArea
       className="list"
       contentClassName="list-content"
+      edgeFade
       role="tree"
       aria-label="Files"
       data-testid="workspace-tree"
@@ -525,25 +548,33 @@ function FileTree({
     >
       <div className="tree-section" aria-hidden="true">
         <span>Workspace</span>
-        <span>{entries.filter((entry) => entry.kind === 'file').length}</span>
+        <span>{countFormat.format(entries.filter((entry) => entry.kind === 'file').length)}</span>
       </div>
       {collapsedCount > 0 ? (
-        <p className="nav-collapsed meta" data-testid="collapsed-count">{collapsedCount} files hidden</p>
+        <p className="nav-collapsed meta" data-testid="collapsed-count">{countFormat.format(collapsedCount)} files hidden</p>
       ) : null}
-      {entries.map((entry) =>
-        entry.kind === 'folder' ? (
-          <FolderRow key={entry.id} entry={entry} onToggle={() => onToggle(entry)} />
-        ) : (
-          <FileRow
-            key={entry.id}
-            entry={entry}
-            selected={entry.path === activePath}
-            query=""
-            paneWidth={paneWidth}
-            onOpen={() => onOpenFile(entry.path)}
-          />
-        ),
-      )}
+      <div className="file-capsule-track" ref={capsuleTrackRef}>
+        <MovingCapsule
+          trackRef={capsuleTrackRef}
+          selector=".row.sel"
+          axis="y"
+          watch={[activePath, entries]}
+        />
+        {entries.map((entry) =>
+          entry.kind === 'folder' ? (
+            <FolderRow key={entry.id} entry={entry} onToggle={() => onToggle(entry)} />
+          ) : (
+            <FileRow
+              key={entry.id}
+              entry={entry}
+              selected={entry.path === activePath}
+              query=""
+              paneWidth={paneWidth}
+              onOpen={() => onOpenFile(entry.path)}
+            />
+          ),
+        )}
+      </div>
     </ScrollArea>
   )
 }
@@ -557,7 +588,7 @@ function FolderRow({ entry, onToggle }: { entry: NavEntry; onToggle: () => void 
       className="row folder"
       role="treeitem"
       aria-expanded={!collapsed}
-      aria-label={`${entry.name}, ${count} ${count === 1 ? 'file' : 'files'}`}
+      aria-label={`${entry.name}, ${countFormat.format(count)} ${count === 1 ? 'file' : 'files'}`}
       data-testid={`folder-${entry.name}`}
       data-nav-id={entry.id}
       data-depth={entry.depth}
@@ -570,7 +601,7 @@ function FolderRow({ entry, onToggle }: { entry: NavEntry; onToggle: () => void 
       <span className="body">
         <span className="l1">
           <span className="nm">{entry.name}</span>
-          <span className="count meta">{count}</span>
+          <span className="count meta">{countFormat.format(count)}</span>
         </span>
       </span>
     </button>
@@ -622,7 +653,7 @@ function FileRow({
         </span>
         <span className="l2">
           <span className="s">{highlight(subtitle, query)}</span>
-          {entry.notes && room.notes ? <span className="notes meta" title="Notes">{entry.notes}</span> : null}
+          {entry.notes && room.notes ? <span className="notes meta" title="Notes">{countFormat.format(entry.notes)}</span> : null}
           {entry.modifiedAt && room.date ? (
             <span className="mtime meta" title={fullModified}>{formatModified(entry.modifiedAt)}</span>
           ) : null}
@@ -655,8 +686,8 @@ function FilterResults({
     <div className="list" role="tree" aria-label="Filter results" data-testid="filter-results">
       <p className="nav-status meta" data-testid="filter-status" role="status">
         {incomplete
-          ? `Indexing ${search?.indexed ?? nav?.indexed ?? 0} of ${total} files — ${matched} so far`
-          : `${matched} of ${total} files`}
+          ? `Indexing ${countFormat.format(search?.indexed ?? nav?.indexed ?? 0)} of ${countFormat.format(total)} files — ${countFormat.format(matched)} so far`
+          : `${countFormat.format(matched)} of ${countFormat.format(total)} files`}
       </p>
       {incomplete && matched === 0 ? (
         <p className="nav-empty" data-testid="filter-indexing">Still indexing — not an empty result.</p>

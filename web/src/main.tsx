@@ -7,6 +7,13 @@ import './assets/fonts.css'
 import './assets/icons/phosphor.css'
 import './styles.css'
 
+window.addEventListener('keydown', () => {
+  document.documentElement.dataset.input = 'keyboard'
+}, true)
+window.addEventListener('pointerdown', () => {
+  document.documentElement.dataset.input = 'pointer'
+}, true)
+
 const workspace = isMyGo() ? createMyGoHost() : createBrowserWorkspace([createBrowserHost()])
 const container = document.getElementById('root')
 if (!container) throw new Error('#root is missing from index.html')

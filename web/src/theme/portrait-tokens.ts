@@ -16,6 +16,8 @@ export const PORTRAIT_TYPE_TOKENS = [
   '--text-meta-leading',
   '--text-code-size',
   '--text-code-leading',
+  '--text-control-size',
+  '--text-control-leading',
 ] as const
 
 export const PORTRAIT_SURFACE_TOKENS = [
@@ -41,11 +43,25 @@ export const PORTRAIT_MATERIAL_TOKENS = [
   '--raised-press',
   '--accent-raised',
   '--raised-shadow',
+  '--raised-hover-shadow',
+  '--raised-press-shadow',
   '--row-shadow',
   '--sunken-shadow',
+  '--track-shadow',
   '--sheet-shadow',
   '--pop-shadow',
+  '--glass-tint',
+  '--glass-filter',
+  '--glass-highlight',
+  '--glass-rim',
+  '--glass-hover',
+  '--glass-selected',
+  '--glass-overlay-tint',
+  '--glass-overlay-filter',
+  '--glass-overlay-rim',
   '--focus',
+  '--ring-field',
+  '--ring-editing',
 ] as const
 
 export const PORTRAIT_STATUS_TOKENS = [
@@ -75,6 +91,7 @@ export const PORTRAIT_MOTION_TOKENS = [
   '--duration-menu',
   '--duration-jump',
   '--ease-out',
+  '--ease-in-out',
 ] as const
 
 export const PORTRAIT_OFFLINE_FONT_FAMILIES = [

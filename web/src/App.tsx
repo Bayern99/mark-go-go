@@ -20,6 +20,8 @@ import {
 import { createGenUIPlugin } from './plugins/genui'
 import { createOutlinePlugin } from './plugins/outline'
 import { ScrollArea } from './components/ScrollArea'
+import { MovingCapsule } from './components/MovingCapsule'
+import { SearchClearButton } from './components/SearchClearButton'
 import { AppTooltip } from './components/Tooltip'
 import './components/ui.css'
 import { DropdownMenu, Tooltip } from 'radix-ui'
@@ -112,6 +114,8 @@ export function DocumentPane({
   plugins = [],
   active = true,
   workspaceRoot = '',
+  libraryOpen = false,
+  onOpenRightFloat,
   onOpenPath,
   onReadyReveal,
 }: {
@@ -119,12 +123,16 @@ export function DocumentPane({
   plugins?: AppPlugin[]
   active?: boolean
   workspaceRoot?: string
+  libraryOpen?: boolean
+  onOpenRightFloat?: () => void
   onOpenPath?: (path: string, isFile: boolean) => void
   onReadyReveal?: (id: string, reveal: (offset: number) => boolean) => () => void
 }): React.ReactElement {
   const editorRoot = useRef<HTMLDivElement>(null)
   const editorScroll = useRef<HTMLElement | null>(null)
   const editorRef = useRef<MarkdownEditor | null>(null)
+  const viewModesRef = useRef<HTMLDivElement>(null)
+  const rightToggleRef = useRef<HTMLButtonElement>(null)
   const [docState, setDocState] = useState<DocumentInfo | null>(null)
   const [version, setVersion] = useState(0)
   const [editorMode, setEditorMode] = useState<EditorMode>('preview')
@@ -175,12 +183,46 @@ export function DocumentPane({
   const toggleRightPane = () => {
     if (measureIsNarrow()) {
       setIsNarrow(true)
-      setRightFloatOpen((open) => !open)
+      setRightFloatOpen((open) => {
+        if (!open) onOpenRightFloat?.()
+        return !open
+      })
     } else {
       setIsNarrow(false)
       setRightWantOpen((open) => !open)
     }
   }
+
+  useEffect(() => {
+    if (libraryOpen) setRightFloatOpen(false)
+  }, [libraryOpen])
+
+  useEffect(() => {
+    if (!rightFloating) return
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.repeat || event.defaultPrevented) return
+      if (!activeRef.current) return
+      if (
+        document.querySelector(
+          '[role="menu"][data-state="open"], [role="listbox"][data-state="open"], [role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]',
+        )
+      ) {
+        return
+      }
+      const target = event.target instanceof Element ? event.target : null
+      if (
+        target?.closest(
+          'input, textarea, select, dialog, [contenteditable="true"], [role="menu"], [role="menubar"], [role="listbox"], [role="dialog"], [role="alertdialog"], [data-radix-popper-content-wrapper], .ProseMirror, .cm-editor',
+        )
+      ) {
+        return
+      }
+      setRightFloatOpen(false)
+      rightToggleRef.current?.focus()
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [rightFloating])
 
   useEffect(() => {
     const syncViewport = () => {
@@ -361,6 +403,7 @@ export function DocumentPane({
         services.commands.register('editor.reveal', (offset) => {
           const value = Number(offset)
           if (!Number.isFinite(value)) return false
+          if (measureIsNarrow()) setRightFloatOpen(false)
           modes.showSource()
           return editor.reveal(value)
         }),
@@ -371,6 +414,7 @@ export function DocumentPane({
           const start = Number(from)
           const end = Number(to)
           if (!Number.isFinite(start) || !Number.isFinite(end)) return false
+          if (measureIsNarrow()) setRightFloatOpen(false)
           modes.showSource()
           return editor.select(start, end)
         }),
@@ -542,15 +586,22 @@ export function DocumentPane({
                 {docState?.edited ? <span className="edited-dot" title="Unsaved edits" /> : null}
               </div>
               <div className="header-actions">
-                <span className="status meta">
-                  {docState?.edited ? 'Edited' : 'Saved'}
-                  {docState?.conflict ? ' · conflict' : ''}
-                  {docState?.generating
-                    ? ' · generating — wait or cancel in the GenUI panel'
-                    : ''}
-                </span>
+                {docState?.edited || docState?.conflict || docState?.generating ? (
+                  <span className="status meta">
+                    {docState.edited ? 'Edited' : ''}
+                    {docState.conflict ? `${docState.edited ? ' · ' : ''}conflict` : ''}
+                    {docState.generating
+                      ? `${docState.edited || docState.conflict ? ' · ' : ''}generating — wait or cancel in the GenUI panel`
+                      : ''}
+                  </span>
+                ) : null}
                 <span className="version-chip meta">v{version}</span>
-                <div className="view-modes seg" role="radiogroup" aria-label="View mode">
+                <div className="view-modes seg" role="radiogroup" aria-label="View mode" ref={viewModesRef}>
+                  <MovingCapsule
+                    trackRef={viewModesRef}
+                    selector="[aria-checked='true']"
+                    watch={[active, ready, viewMode, centerViews.length]}
+                  />
                   {modeChoices.map((choice) => (
                     <button
                       key={choice.id}
@@ -572,13 +623,14 @@ export function DocumentPane({
                   className="toggle-button pill icon quiet rp-tg"
                   data-testid="right-pane-toggle"
                   data-rp-toggle
+                  ref={rightToggleRef}
                   aria-expanded={rightShown}
                   aria-label={rightShown ? 'Hide right panel' : 'Show right panel'}
                   title={`${rightShown ? 'Hide' : 'Show'} right panel (⌥⌘0)`}
                   onClick={toggleRightPane}
                   disabled={!ready}
                 >
-                  <span aria-hidden="true">◨</span>
+                  <i className="ph ph-sidebar-simple rp-tg-icon" aria-hidden="true" />
                 </button>
               </div>
             </header>
@@ -662,13 +714,17 @@ export function DocumentPane({
           onSelect={setRightViewId}
           open={rightShown}
           floating={rightFloating}
+          onClose={() => {
+            setRightFloatOpen(false)
+            rightToggleRef.current?.focus()
+          }}
         />
       </div>
 
       <footer className="status-bar">
-        <span className="status-name">{docState?.path ?? '—'}</span>
+        <span className="status-name" title={docState?.path ?? '—'}>{docState?.path ?? '—'}</span>
         <span className="status-state">
-          {docState?.edited ? 'Edited' : 'Saved'}
+          {!docState ? 'Loading…' : docState.edited ? 'Edited' : 'Saved'}
           {docState?.conflict ? ' · conflict' : ''}
           {docState?.generating ? ' · generating' : ''}
         </span>
@@ -769,10 +825,13 @@ function WorkspaceApp({
   const tabRefs = useRef(new Map<string, HTMLButtonElement>())
   const tabFocusTarget = useRef<string | null>(null)
   const tabMenuButtonRef = useRef<HTMLButtonElement>(null)
+  const tabFilterRef = useRef<HTMLInputElement>(null)
   const tabMenuSelectedId = useRef<string | null>(null)
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 0 })
   const [tabMenuOpen, setTabMenuOpen] = useState(false)
   const [tabFilter, setTabFilter] = useState('')
+  const [libraryOpen, setLibraryOpen] = useState(false)
+  const libraryToggleRef = useRef<HTMLButtonElement>(null)
   const recentDocuments = useRef<string[]>([])
   useEffect(() => {
     const live = new Set(documents.map((doc) => doc.id))
@@ -794,6 +853,22 @@ function WorkspaceApp({
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [activeId, documents, workspace])
+
+  useEffect(() => {
+    setLibraryOpen(false)
+  }, [activeId])
+
+  useEffect(() => {
+    if (!libraryOpen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.repeat) return
+      event.preventDefault()
+      setLibraryOpen(false)
+      libraryToggleRef.current?.focus()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [libraryOpen])
 
   const hiddenDocuments = useMemo(() => {
     const hidden = [...documents.slice(0, visibleRange.start), ...documents.slice(visibleRange.end)]
@@ -929,8 +1004,12 @@ function WorkspaceApp({
   }
 
   const openPath = (path: string, isFile: boolean) => {
-    if (isFile) void workspace.open(path)
-    else void workspace.revealPath(path)
+    if (isFile) {
+      setLibraryOpen(false)
+      void workspace.open(path)
+    } else {
+      void workspace.revealPath(path)
+    }
   }
 
   const jumpHeading = (documentId: string | undefined, path: string, offset: number) => {
@@ -949,6 +1028,17 @@ function WorkspaceApp({
   const showWelcome = !snap || (snap.kind !== 'folder' && documents.length === 0)
   const documentTabs = (
     <div className="doc-tabs-row">
+      <button
+        type="button"
+        className="pill icon quiet library-toggle"
+        aria-label={libraryOpen ? 'Hide files' : 'Show files'}
+        aria-expanded={libraryOpen}
+        title={libraryOpen ? 'Hide files' : 'Show files'}
+        ref={libraryToggleRef}
+        onClick={() => setLibraryOpen((open) => !open)}
+      >
+        <i className="ph ph-sidebar-simple" aria-hidden="true" />
+      </button>
       <div
         className="doc-tabs"
         role="tablist"
@@ -957,6 +1047,11 @@ function WorkspaceApp({
         data-testid="doc-tabs"
         ref={tabsRef}
       >
+        <MovingCapsule
+          trackRef={tabsRef}
+          selector=".doc-tab.sel:not(.tab-hidden)"
+          watch={[activeId, visibleRange, documents.length]}
+        />
         {documents.map((doc, index) => {
           const hidden = index < visibleRange.start || index >= visibleRange.end
           return (
@@ -1052,6 +1147,7 @@ function WorkspaceApp({
               data-testid="doc-tab-filter"
               aria-label="Filter open tabs"
               placeholder="Filter open tabs…"
+              ref={tabFilterRef}
               value={tabFilter}
               onChange={(event) => setTabFilter(event.target.value)}
               onKeyDownCapture={(event) => {
@@ -1064,6 +1160,14 @@ function WorkspaceApp({
               }}
               autoFocus
             />
+            {tabFilter ? (
+              <SearchClearButton
+                onClear={() => {
+                  setTabFilter('')
+                  tabFilterRef.current?.focus()
+                }}
+              />
+            ) : null}
             </div>
             <DropdownMenu.RadioGroup
               className="doc-tab-menu-list"
@@ -1110,15 +1214,38 @@ function WorkspaceApp({
           {snap.restoreError}
         </div>
       ) : null}
-      <div className="workspace-body">
+      <div className={`workspace-body${libraryOpen ? ' library-open' : ''}`}>
+        {libraryOpen ? (
+          <div
+            className="library-scrim"
+            aria-hidden="true"
+            onClick={() => {
+              setLibraryOpen(false)
+              libraryToggleRef.current?.focus()
+            }}
+          />
+        ) : null}
         <SidePane
           views={emptyViews}
           workspace={workspace}
           workspaceSnap={snap}
           doc={documents.find((d) => d.id === activeId) ?? null}
-          onJumpHeading={jumpHeading}
+          onJumpHeading={(documentId, path, offset) => {
+            setLibraryOpen(false)
+            jumpHeading(documentId, path, offset)
+          }}
+          floatingOpen={libraryOpen}
+          onCloseFloating={() => {
+            setLibraryOpen(false)
+            libraryToggleRef.current?.focus()
+          }}
         />
-        <div className="workspace-main">
+        <div
+          className="workspace-main"
+          onClick={() => {
+            if (libraryOpen) setLibraryOpen(false)
+          }}
+        >
           {documentTabs}
           {documents.map((doc) => (
             <DocumentPane
@@ -1127,6 +1254,8 @@ function WorkspaceApp({
               plugins={plugins}
               active={doc.id === activeId}
               workspaceRoot={snap?.root ?? ''}
+              libraryOpen={libraryOpen}
+              onOpenRightFloat={() => setLibraryOpen(false)}
               onOpenPath={openPath}
               onReadyReveal={(id, reveal) => {
                 reveals.current.set(id, reveal)

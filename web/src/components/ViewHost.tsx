@@ -25,11 +25,13 @@ export function ViewHost({
   className,
   contentClassName,
   scrollable = false,
+  edgeFade = false,
 }: {
   view: ViewRegistration
   className?: string
   contentClassName?: string
   scrollable?: boolean
+  edgeFade?: boolean
 }): React.ReactElement {
   const host = useRef<HTMLDivElement>(null)
   const [scrollElement, setScrollElement] = useState<HTMLElement | null>(null)
@@ -44,7 +46,12 @@ export function ViewHost({
   const mount = <div className={scrollable ? 'view-mount' : className} ref={host} />
   if (!scrollable) return mount
   return (
-    <ScrollArea className={className} contentClassName={contentClassName} onViewport={setScrollElement}>
+    <ScrollArea
+      className={className}
+      contentClassName={contentClassName}
+      edgeFade={edgeFade}
+      onViewport={setScrollElement}
+    >
       {mount}
     </ScrollArea>
   )

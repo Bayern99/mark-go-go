@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { z } from 'zod'
 import {
   A2uiSurface,
@@ -214,6 +214,22 @@ export function ViewSurface({
 }): React.ReactElement {
   const problems = useSurfaceProblems(surface)
   const root = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    const el = root.current
+    if (!el) return
+    const assignStagger = () => {
+      const blocks = el.querySelectorAll<HTMLElement>('.genui-block')
+      blocks.forEach((block, index) => {
+        if (block.style.getPropertyValue('--genui-stagger')) return
+        block.style.setProperty('--genui-stagger', `${Math.min(index, 6) * 36}ms`)
+      })
+    }
+    assignStagger()
+    const observer = new MutationObserver(assignStagger)
+    observer.observe(el, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [surface])
   useEffect(() => {
     const el = root.current
     if (!el) return

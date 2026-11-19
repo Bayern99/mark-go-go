@@ -4,6 +4,231 @@ import { bind, event, type Channel } from "mygo-runtime";
 
 // ---- Types ----
 
+/** CLIAlphaAnnotateResult holds parsed `feynman alpha annotate` output. */
+export interface CLIAlphaAnnotateResult {
+  command: string;
+  parsed: boolean;
+  rawOutput: string;
+  exitCode: number;
+  error?: string;
+  paperId?: string;
+  note?: string;
+  annotations: CLIAlphaAnnotation[];
+}
+
+/** CLIAlphaAnnotation represents a local alphaXiv paper annotation. */
+export interface CLIAlphaAnnotation {
+  paperId: string;
+  note: string;
+  updatedAt?: string;
+}
+
+/** CLIAlphaPaper represents a paper result from `feynman alpha search`. */
+export interface CLIAlphaPaper {
+  id: string;
+  title: string;
+  authors?: string;
+  published?: string;
+  url?: string;
+  summary?: string;
+  snippet?: string;
+}
+
+/** CLIAlphaPaperResult holds parsed `feynman alpha get` output. */
+export interface CLIAlphaPaperResult {
+  command: string;
+  parsed: boolean;
+  rawOutput: string;
+  exitCode: number;
+  error?: string;
+  paperId: string;
+  title?: string;
+  content?: string;
+  annotation?: string;
+  fullText: boolean;
+}
+
+/** CLIAlphaSearchResult holds parsed `feynman alpha search` output. */
+export interface CLIAlphaSearchResult {
+  command: string;
+  parsed: boolean;
+  rawOutput: string;
+  exitCode: number;
+  error?: string;
+  query: string;
+  mode: string;
+  papers: CLIAlphaPaper[];
+}
+
+/** CLIAlphaStatusResult holds parsed `feynman alpha status` output. */
+export interface CLIAlphaStatusResult {
+  command: string;
+  parsed: boolean;
+  rawOutput: string;
+  exitCode: number;
+  error?: string;
+  loggedIn: boolean;
+  account?: string;
+  statusText?: string;
+}
+
+/** CLICommandResult captures the outcome of a generic Feynman CLI command with graceful raw fallback. */
+export interface CLICommandResult {
+  command: string;
+  parsed: boolean;
+  rawOutput: string;
+  exitCode: number;
+  error?: string;
+  summary?: string;
+}
+
+/** CLIDoctorResult holds parsed `feynman doctor` diagnostics and raw fallback text. */
+export interface CLIDoctorResult {
+  command: string;
+  parsed: boolean;
+  rawOutput: string;
+  exitCode: number;
+  error?: string;
+  entries: CLIKeyValue[];
+  issues: string[];
+  healthy: boolean;
+}
+
+/** CLIKeyValue represents a parsed label-value line from Feynman CLI output. */
+export interface CLIKeyValue {
+  key: string;
+  value: string;
+}
+
+/** CLIMCPAddInput specifies parameters for `feynman mcp add`. */
+export interface CLIMCPAddInput {
+  name: string;
+  /** "http" or "stdio" */
+  transport: string;
+  url?: string;
+  command?: string;
+  args?: string[];
+  headers?: string[];
+  env?: string[];
+  cwd?: string;
+  bearerTokenEnvVar?: string;
+  exposure?: string;
+  description?: string;
+  local?: boolean;
+}
+
+/** CLIMCPListResult holds parsed `feynman mcp list --json` output with raw fallback. */
+export interface CLIMCPListResult {
+  command: string;
+  parsed: boolean;
+  rawOutput: string;
+  exitCode: number;
+  error?: string;
+  servers: CLIMCPServer[];
+  errors: string[];
+}
+
+/** CLIMCPServer describes an MCP server returned by `feynman mcp list --json`. */
+export interface CLIMCPServer {
+  name: string;
+  transport?: string;
+  url?: string;
+  command?: string;
+  exposure?: string;
+  status?: string;
+  error?: string;
+  tools?: string[];
+}
+
+/** CLIModelEntry describes an authenticated model listed by `feynman model list`. */
+export interface CLIModelEntry {
+  id: string;
+  provider: string;
+  name: string;
+  current: boolean;
+  recommended: boolean;
+}
+
+/** CLIModelListResult holds parsed `feynman model list` and `feynman model tier` output. */
+export interface CLIModelListResult {
+  command: string;
+  parsed: boolean;
+  rawOutput: string;
+  exitCode: number;
+  error?: string;
+  models: CLIModelEntry[];
+  currentModel?: string;
+  recommendedModel?: string;
+  tier?: string;
+}
+
+/** CLIPackageEntry describes a core or optional Feynman Pi package preset. */
+export interface CLIPackageEntry {
+  name: string;
+  description?: string;
+  /** "core" or "optional" */
+  kind: string;
+  installed: boolean;
+}
+
+/** CLIPackageListResult holds parsed `feynman packages list` output. */
+export interface CLIPackageListResult {
+  command: string;
+  parsed: boolean;
+  rawOutput: string;
+  exitCode: number;
+  error?: string;
+  packages: CLIPackageEntry[];
+}
+
+/** CLISearchStatusResult holds parsed `feynman search status` output. */
+export interface CLISearchStatusResult {
+  command: string;
+  parsed: boolean;
+  rawOutput: string;
+  exitCode: number;
+  error?: string;
+  managedBy?: string;
+  searchRoute?: string;
+  requestRoute?: string;
+  searchWorkflow?: string;
+  savedApiKeys?: string;
+  configPath?: string;
+  configured: boolean;
+  entries: CLIKeyValue[];
+}
+
+/** CLISection groups key-value entries under a Feynman CLI section heading. */
+export interface CLISection {
+  title: string;
+  entries: CLIKeyValue[];
+}
+
+/** CLIStatusResult holds parsed `feynman status` output and raw fallback text. */
+export interface CLIStatusResult {
+  command: string;
+  parsed: boolean;
+  rawOutput: string;
+  exitCode: number;
+  error?: string;
+  sections: CLISection[];
+  model?: string;
+  modelValid?: string;
+  alphaStatus?: string;
+  webAccess?: string;
+  serviceTier?: string;
+  previewStatus?: string;
+  sessionsDir?: string;
+  piRuntime?: string;
+}
+
+/** CLITerminalLaunchResult confirms an interactive wizard handoff to the system Terminal. */
+export interface CLITerminalLaunchResult {
+  wizard: string;
+  command: string;
+  launched: boolean;
+}
+
 export interface ChangeProposal {
   id: string;
   workspaceRoot: string;
@@ -261,6 +486,11 @@ export interface ResearchConversation {
   parentSession?: string;
   sessionFile?: string;
   current: boolean;
+}
+
+/** ResearchFocusEvent notifies the frontend when a workspace window regains focus. */
+export interface ResearchFocusEvent {
+  root: string;
 }
 
 export interface ResearchForkMessage {
@@ -563,6 +793,25 @@ export const ResearchHost = {
   answerConfirm: bind<[string, string, boolean, boolean], void>("ResearchHost.AnswerConfirm", (root: string, requestID: string, confirmed: boolean, cancelled: boolean) => [root, requestID, confirmed, cancelled]),
   answerText: bind<[string, string, string, boolean], void>("ResearchHost.AnswerText", (root: string, requestID: string, text: string, cancelled: boolean) => [root, requestID, text, cancelled]),
   artifacts: bind<[string], ResearchArtifact[]>("ResearchHost.Artifacts", (root: string) => [root]),
+  cliAlphaAnnotate: bind<[string, string, string, string], CLIAlphaAnnotateResult>("ResearchHost.CLIAlphaAnnotate", (root: string, action: string, paperID: string, note: string) => [root, action, paperID, note]),
+  cliAlphaAsk: bind<[string, string, string], CLICommandResult>("ResearchHost.CLIAlphaAsk", (root: string, paperID: string, question: string) => [root, paperID, question]),
+  cliAlphaCode: bind<[string, string, string], CLICommandResult>("ResearchHost.CLIAlphaCode", (root: string, repoURL: string, filePath: string) => [root, repoURL, filePath]),
+  cliAlphaGet: bind<[string, string, boolean], CLIAlphaPaperResult>("ResearchHost.CLIAlphaGet", (root: string, paperID: string, fullText: boolean) => [root, paperID, fullText]),
+  cliAlphaLogout: bind<[string], CLICommandResult>("ResearchHost.CLIAlphaLogout", (root: string) => [root]),
+  cliAlphaSearch: bind<[string, string, string], CLIAlphaSearchResult>("ResearchHost.CLIAlphaSearch", (root: string, query: string, mode: string) => [root, query, mode]),
+  cliAlphaStatus: bind<[string], CLIAlphaStatusResult>("ResearchHost.CLIAlphaStatus", (root: string) => [root]),
+  cliDoctor: bind<[string], CLIDoctorResult>("ResearchHost.CLIDoctor", (root: string) => [root]),
+  climcpAdd: bind<[string, CLIMCPAddInput], CLICommandResult>("ResearchHost.CLIMCPAdd", (root: string, input: CLIMCPAddInput) => [root, input]),
+  climcpList: bind<[string], CLIMCPListResult>("ResearchHost.CLIMCPList", (root: string) => [root]),
+  climcpRemove: bind<[string, string, boolean], CLICommandResult>("ResearchHost.CLIMCPRemove", (root: string, name: string, local: boolean) => [root, name, local]),
+  cliModelAction: bind<[string, string, string], CLICommandResult>("ResearchHost.CLIModelAction", (root: string, action: string, value: string) => [root, action, value]),
+  cliModelList: bind<[string], CLIModelListResult>("ResearchHost.CLIModelList", (root: string) => [root]),
+  cliPackageAction: bind<[string, string, string], CLICommandResult>("ResearchHost.CLIPackageAction", (root: string, action: string, target: string) => [root, action, target]),
+  cliPackagesList: bind<[string], CLIPackageListResult>("ResearchHost.CLIPackagesList", (root: string) => [root]),
+  cliSearchAction: bind<[string, string, string, string], CLICommandResult>("ResearchHost.CLISearchAction", (root: string, action: string, provider: string, apiKey: string) => [root, action, provider, apiKey]),
+  cliSearchStatus: bind<[string], CLISearchStatusResult>("ResearchHost.CLISearchStatus", (root: string) => [root]),
+  cliSetupPreview: bind<[string], CLICommandResult>("ResearchHost.CLISetupPreview", (root: string) => [root]),
+  cliStatus: bind<[string], CLIStatusResult>("ResearchHost.CLIStatus", (root: string) => [root]),
   cancel: bind<[string], void>("ResearchHost.Cancel", (root: string) => [root]),
   clearQueue: bind<[string], ResearchQueueState>("ResearchHost.ClearQueue", (root: string) => [root]),
   clone: bind<[string], boolean>("ResearchHost.Clone", (root: string) => [root]),
@@ -574,6 +823,7 @@ export const ResearchHost = {
   followUp: bind<[string, string, string[]], void>("ResearchHost.FollowUp", (root: string, text: string, sources: string[]) => [root, text, sources]),
   fork: bind<[string, string], ResearchForkResult>("ResearchHost.Fork", (root: string, entryID: string) => [root, entryID]),
   forkMessages: bind<[string], ResearchForkMessage[]>("ResearchHost.ForkMessages", (root: string) => [root]),
+  launchTerminalWizard: bind<[string, string, string], CLITerminalLaunchResult>("ResearchHost.LaunchTerminalWizard", (root: string, wizard: string, target: string) => [root, wizard, target]),
   newSession: bind<[string, string], void>("ResearchHost.NewSession", (root: string, parentSession: string) => [root, parentSession]),
   openCitation: bind<[string, string], void>("ResearchHost.OpenCitation", (root: string, address: string) => [root, address]),
   pickSources: bind<[string], string[]>("ResearchHost.PickSources", (root: string) => [root]),
@@ -581,6 +831,7 @@ export const ResearchHost = {
   promptWithSources: bind<[string, string, string, string, string[]], string>("ResearchHost.PromptWithSources", (root: string, text: string, documentID: string, buffer: string, sources: string[]) => [root, text, documentID, buffer, sources]),
   readArtifact: bind<[string, string], string>("ResearchHost.ReadArtifact", (root: string, relative: string) => [root, relative]),
   recoverArtifact: bind<[string, string], string>("ResearchHost.RecoverArtifact", (root: string, relative: string) => [root, relative]),
+  refreshModels: bind<[string], ResearchModel[]>("ResearchHost.RefreshModels", (root: string) => [root]),
   revealOutputs: bind<[string], void>("ResearchHost.RevealOutputs", (root: string) => [root]),
   selectSession: bind<[string, string], void>("ResearchHost.SelectSession", (root: string, id: string) => [root, id]),
   sessionStats: bind<[string], ResearchSessionStats>("ResearchHost.SessionStats", (root: string) => [root]),
@@ -593,6 +844,7 @@ export const ResearchHost = {
   steer: bind<[string, string, string[]], void>("ResearchHost.Steer", (root: string, text: string, sources: string[]) => [root, text, sources]),
   switchSession: bind<[string, string], void>("ResearchHost.SwitchSession", (root: string, target: string) => [root, target]),
   tree: bind<[string], ResearchTree>("ResearchHost.Tree", (root: string) => [root]),
+  watchFocus: bind<[string], void>("ResearchHost.WatchFocus", (root: string) => [root]),
 } as const;
 
 export const CheckpointHost = {
@@ -607,6 +859,7 @@ export const CheckpointHost = {
 export const events = {
   viewChanged: event<ViewEvent>("viewChanged"),
   reviewUpdated: event<ReviewUpdateEvent>("reviewUpdated"),
+  researchFocus: event<ResearchFocusEvent>("researchFocus"),
   researchUpdate: event<ResearchUpdate>("researchUpdate"),
   docReloaded: event<Snapshot>("docReloaded"),
   docState: event<DocumentInfo>("docState"),

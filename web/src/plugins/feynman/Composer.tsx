@@ -280,6 +280,7 @@ export function Composer({
   choose,
   edit,
   setEdit,
+  onOpenAlpha,
 }: {
   session: ResearchSession
   doc?: DocumentSnapshot
@@ -288,6 +289,7 @@ export function Composer({
   choose: (name: string) => void
   edit: boolean
   setEdit: (value: boolean) => void
+  onOpenAlpha?: () => void
 }) {
   const [browse, setBrowse] = useState(false)
   const [filter, setFilter] = useState('')
@@ -597,6 +599,19 @@ export function Composer({
             <ResearchIcon name="squares-four" />
             Actions
           </button>
+          {onOpenAlpha && (
+            <button
+              className="fy-actions-trigger"
+              type="button"
+              data-testid="fy-alphaxiv-trigger"
+              aria-label="alphaXiv research"
+              title="Search and inspect alphaXiv papers"
+              onClick={onOpenAlpha}
+            >
+              <ResearchIcon name="books" />
+              alphaXiv
+            </button>
+          )}
           {doc?.path && (
             <label className={'fy-edit-toggle' + (edit ? ' selected' : '')} title={'Edit ' + doc.path.split('/').at(-1)}>
               <input

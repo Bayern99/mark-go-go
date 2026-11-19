@@ -34,6 +34,7 @@ func TestModulePathAndGeneratedTypeScriptBindings(t *testing.T) {
 		`export const WorkspaceHost = {`,
 		`export const ResearchHost = {`,
 		`export const CheckpointHost = {`,
+		`researchFocus: event<ResearchFocusEvent>("researchFocus"),`,
 	} {
 		if !strings.Contains(content, want) {
 			t.Errorf("generated mygo.ts missing %q", want)
@@ -51,7 +52,7 @@ func TestCompositionRootBindAsSurfacesAreNarrow(t *testing.T) {
 		want int
 	}{
 		{"WorkspaceHost", reflect.TypeFor[*workspace.Host](), 34},
-		{"ResearchHost", reflect.TypeFor[*feynman.ResearchHost](), 35},
+		{"ResearchHost", reflect.TypeFor[*feynman.ResearchHost](), 57},
 		{"CheckpointHost", reflect.TypeFor[*review.CheckpointHost](), 3},
 	}
 	for _, tc := range cases {

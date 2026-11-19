@@ -2,8 +2,9 @@ import { useEffect, useLayoutEffect, useReducer, useRef, useState, useSyncExtern
 import { MovingCapsule } from '../../components/MovingCapsule'
 import { ScrollArea } from '../../components/ScrollArea'
 import type { PluginContext } from '../../core'
-import { ResearchHost, type HunkDecision, type ResearchArtifact } from '../../host/generated/mygo'
+import { events, ResearchHost, type HunkDecision, type ResearchArtifact } from '../../host/generated/mygo'
 import { DocumentDiff, reconcileProposal } from '../DocumentDiff'
+import { AlphaXivPanel } from './AlphaXivPanel'
 import { Composer, useCommand } from './Composer'
 import { Conversation, ResearchIcon } from './Conversation'
 import type { FeynmanSettingsSlotProps, OpenResearchDocument } from './index'
@@ -38,6 +39,7 @@ export default function ResearchPanel({
   useSyncExternalStore(session.subscribe, session.snapshot)
   const [editTarget, setEditTarget] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [alphaOpen, setAlphaOpen] = useState(false)
   const edit = !!documentID && editTarget === documentID
   const setEdit = (value: boolean) => setEditTarget(value ? documentID : '')
   const input = useRef<HTMLTextAreaElement>(null)
@@ -47,6 +49,27 @@ export default function ResearchPanel({
   useEffect(() => {
     if (tab === 'chat') void session.connect()
   }, [session, tab])
+  useEffect(() => {
+    if (!session.root || settingsOpen) return
+    const refreshReadyModels = () => {
+      if (session.status === 'ready') {
+        void ResearchHost.refreshModels?.(session.root)?.catch?.(() => {})
+      }
+    }
+    window.addEventListener('focus', refreshReadyModels)
+    let offFocus: (() => void) | undefined
+    try {
+      offFocus = events.researchFocus?.on((ev) => {
+        if (ev.root === session.root) refreshReadyModels()
+      })
+    } catch {
+      // Standalone test mocks may omit researchFocus event.
+    }
+    return () => {
+      window.removeEventListener('focus', refreshReadyModels)
+      offFocus?.()
+    }
+  }, [session, session.root, settingsOpen])
   const [, refreshDoc] = useReducer((n: number) => n + 1, 0)
   useLayoutEffect(() => {
     const sub = ctx?.documents.onDidChange(refreshDoc)
@@ -141,8 +164,20 @@ export default function ResearchPanel({
           : 'Offline'
   const pane = (nextTab: ResearchSession['tab']) => {
     setSettingsOpen(false)
+    setAlphaOpen(false)
     session.tab = nextTab
     session.changed()
+  }
+
+  const insertToChat = (text: string) => {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    session.draft = session.draft.trim() ? `${session.draft.trimEnd()}\n\n${trimmed}` : trimmed
+    session.tab = 'chat'
+    session.changed()
+    setSettingsOpen(false)
+    setAlphaOpen(false)
+    requestAnimationFrame(() => input.current?.focus())
   }
 
   function fileButton(file: ResearchArtifact) {
@@ -216,7 +251,10 @@ export default function ResearchPanel({
               aria-label="Feynman settings"
               aria-pressed={settingsOpen}
               title="Feynman settings"
-              onClick={() => setSettingsOpen((openState) => !openState)}
+              onClick={() => {
+                setAlphaOpen(false)
+                setSettingsOpen((openState) => !openState)
+              }}
             >
               <ResearchIcon name="gear-six" />
             </button>
@@ -224,7 +262,7 @@ export default function ResearchPanel({
         </div>
       </header>
 
-      {!settingsOpen && (
+      {!settingsOpen && !alphaOpen && (
         <div className="fy-tabs seg" role="radiogroup" aria-label="Research views" ref={tabsRef}>
           <MovingCapsule
             trackRef={tabsRef}
@@ -281,7 +319,20 @@ export default function ResearchPanel({
 
       {settingsOpen && renderSettings ? (
         <div className="fy-settings-host">
-          {renderSettings({ root: session.root, onClose: () => setSettingsOpen(false) })}
+          {renderSettings({
+            root: session.root,
+            session,
+            onClose: () => setSettingsOpen(false),
+            onInsertToChat: insertToChat,
+          })}
+        </div>
+      ) : alphaOpen ? (
+        <div className="fy-settings-host">
+          <AlphaXivPanel
+            root={session.root}
+            onClose={() => setAlphaOpen(false)}
+            onInsertToChat={insertToChat}
+          />
         </div>
       ) : tab === 'review' ? (
         <ScrollArea className="fy-files" contentClassName="fy-files-content">
@@ -502,6 +553,10 @@ export default function ResearchPanel({
             choose={choose}
             edit={edit}
             setEdit={setEdit}
+            onOpenAlpha={() => {
+              setSettingsOpen(false)
+              setAlphaOpen(true)
+            }}
           />
           {belowWidgets.length > 0 && (
             <div className="fy-widgets" data-placement="belowEditor">

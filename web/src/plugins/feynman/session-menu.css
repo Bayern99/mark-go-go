@@ -52,3 +52,8 @@
   color: var(--ink);
   font: inherit;
 }
+
+.research-history-search:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-field);
+}

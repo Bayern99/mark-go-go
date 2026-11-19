@@ -1147,7 +1147,7 @@
   border-radius: 4px;
   font-size: 11px;
   line-height: 1;
-  color: var(--genui-surface);
+  color: var(--on-accent);
 }
 
 [data-done='true'] .genui-check {

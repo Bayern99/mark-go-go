@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ViewRegistry } from '../core/ViewRegistry'
-import type { ViewLocation, ViewRegistration, ViewStatusSource } from '../core/types'
+import type { ViewBadgeSource, ViewLocation, ViewRegistration, ViewStatusSource } from '../core/types'
 import { ScrollArea } from './ScrollArea'
 
 export function ViewStatusIndicator({ status, testId }: { status: ViewStatusSource; testId: string }) {
@@ -15,6 +15,16 @@ export function ViewStatusIndicator({ status, testId }: { status: ViewStatusSour
       aria-label={dot.title ?? (dot.tone === 'danger' ? 'Error' : 'Warning')}
       title={dot.title}
     />
+  )
+}
+
+export function ViewBadgeIndicator({ badge, testId }: { badge: ViewBadgeSource; testId: string }) {
+  const count = useSyncExternalStore(badge.subscribe, badge.getSnapshot)
+  if (!count || count <= 0) return null
+  return (
+    <span className="rp-badge meta" data-testid={testId} aria-label={`${count} pending`}>
+      {count}
+    </span>
   )
 }
 

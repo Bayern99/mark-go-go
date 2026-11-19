@@ -3,7 +3,7 @@ import { DropdownMenu } from 'radix-ui'
 import { isMyGo } from 'mygo-runtime'
 import type { PluginRegistry } from '../core/PluginRegistry'
 import type { AppPlugin } from '../core/types'
-import { ResearchSession } from './feynman/session'
+import { createFeynmanPlugin } from './feynman'
 import { createGitPlugin } from './git'
 import './desktop-plugins.css'
 
@@ -26,11 +26,14 @@ export function usePluginEnabled(id: PluginID) {
 
 function activate(registry: PluginRegistry, plugin: AppPlugin, onError: (message: string) => void) {
   const entry = registry.register(plugin)
-  void registry.enable(plugin.id).catch(err => onError(String(err)))
+  void registry.enable(plugin.id).catch((err) => onError(String(err)))
   return () => entry.dispose()
 }
 
-export function DesktopPlugins({ registry, documentID }: {
+export function DesktopPlugins({
+  registry,
+  documentID,
+}: {
   registry: PluginRegistry
   documentID: string
 }) {
@@ -43,32 +46,39 @@ export function DesktopPlugins({ registry, documentID }: {
   return error ? <span role="alert">{error}</span> : null
 }
 
-function WorkspaceSession({ root }: { root: string }) {
+export function WorkspacePlugins({ registry }: { registry: PluginRegistry }) {
+  const feynman = usePluginEnabled('feynman')
+  const [error, setError] = useState('')
   useEffect(() => {
-    const session = ResearchSession.acquire(root)
-    return () => session.release()
-  }, [root])
-  return null
+    if (feynman) return activate(registry, createFeynmanPlugin(), setError)
+  }, [registry, feynman])
+
+  return error ? <span role="alert">{error}</span> : null
 }
 
-export function PluginMenu({ workspaces }: { workspaces: readonly { root: string }[] }) {
+export function PluginMenu() {
   const research = usePluginEnabled('feynman')
   const git = usePluginEnabled('git')
   if (!isMyGo()) return null
-  return <>
-    {research && workspaces.filter(w => w.root).map(w => <WorkspaceSession key={w.root} root={w.root} />)}
+  return (
     <DropdownMenu.Root modal={false}>
       <DropdownMenu.Trigger asChild>
-        <button className="pill icon quiet" aria-label="Plugins" title="Plugins"><i className="ph ph-plugs" aria-hidden="true" /></button>
+        <button className="pill icon quiet" aria-label="Plugins" title="Plugins">
+          <i className="ph ph-plugs" aria-hidden="true" />
+        </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content className="mmenu pop" aria-label="Plugins" align="end" sideOffset={6}>
-          {(['feynman', 'git'] as const).map(id => (
-            <DropdownMenu.CheckboxItem key={id} className="mi" checked={id === 'feynman' ? research : git}
-              onCheckedChange={enabled => {
+          {(['feynman', 'git'] as const).map((id) => (
+            <DropdownMenu.CheckboxItem
+              key={id}
+              className="mi"
+              checked={id === 'feynman' ? research : git}
+              onCheckedChange={(enabled) => {
                 localStorage.setItem(setting(id), enabled ? 'on' : 'off')
                 window.dispatchEvent(new Event(changed))
-              }}>
+              }}
+            >
               {id === 'feynman' ? 'Feynman' : 'Git'}
               <DropdownMenu.ItemIndicator className="mi-check">✓</DropdownMenu.ItemIndicator>
             </DropdownMenu.CheckboxItem>
@@ -76,6 +86,5 @@ export function PluginMenu({ workspaces }: { workspaces: readonly { root: string
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
-
-  </>
+  )
 }

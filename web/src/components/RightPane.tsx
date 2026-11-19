@@ -1,4 +1,6 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { ViewRegistry } from '../core/ViewRegistry'
+import { useViews, ViewHost } from './ViewHost'
 import {
   readSavedRightWidth,
   RIGHT_DEFAULT,
@@ -12,11 +14,13 @@ function ResearchDivider({
   paneWidth,
   targetWidth,
   maxWidth,
+  panelTitle,
   onWidthChange,
 }: {
   paneWidth: number
   targetWidth: number
   maxWidth: number
+  panelTitle: string
   onWidthChange: (width: number) => void
 }) {
   const drag = useRef<{ x: number; width: number } | null>(null)
@@ -33,7 +37,7 @@ function ResearchDivider({
   return (
     <div
       role="separator"
-      aria-label="Resize research panel"
+      aria-label={`Resize ${panelTitle.toLowerCase()} panel`}
       aria-orientation="vertical"
       aria-valuemin={RIGHT_MIN}
       aria-valuemax={maxWidth}
@@ -65,6 +69,7 @@ function ResearchDivider({
 }
 
 export function RightPane({
+  views,
   children,
   open,
   floating,
@@ -73,8 +78,10 @@ export function RightPane({
   targetWidth: controlledTargetWidth,
   maxWidth: controlledMaxWidth,
   onWidthChange,
+  panelId = 'right-pane-panel',
 }: {
-  children: React.ReactNode
+  views?: ViewRegistry
+  children?: React.ReactNode
   open: boolean
   floating: boolean
   onClose: () => void
@@ -82,7 +89,11 @@ export function RightPane({
   targetWidth?: number
   maxWidth?: number
   onWidthChange?: (width: number) => void
+  panelId?: string
 }) {
+  const emptyViews = useMemo(() => new ViewRegistry(), [])
+  const rightViews = useViews(views ?? emptyViews, 'right')
+  const activeView = rightViews[0] ?? null
   const [localWidth, setLocalWidth] = useState(readSavedRightWidth)
   const targetWidth = controlledTargetWidth ?? localWidth
   const paneWidth = floating ? targetWidth : (controlledWidth ?? localWidth)
@@ -96,14 +107,17 @@ export function RightPane({
     document.documentElement.style.setProperty('--research-width', `${paneWidth}px`)
   }, [paneWidth])
 
+  if (views && rightViews.length === 0 && !children) return null
+
+  const title = activeView?.title ?? 'Panel'
   const handleWidthChange = onWidthChange ?? setLocalWidth
 
   return (
     <aside
-      id="feynman-sidebar"
+      id={panelId}
       className={`right-pane fy-rail${floating ? ' r-float' : ''}`}
       data-testid="right-pane"
-      aria-label="Feynman"
+      aria-label={title}
       hidden={!open}
       style={!floating ? { width: paneWidth, minWidth: paneWidth, maxWidth: paneWidth } : undefined}
     >
@@ -112,6 +126,7 @@ export function RightPane({
           paneWidth={paneWidth}
           targetWidth={targetWidth}
           maxWidth={maxWidth}
+          panelTitle={title}
           onWidthChange={handleWidthChange}
         />
       )}
@@ -120,15 +135,21 @@ export function RightPane({
           type="button"
           className="pill icon quiet rp-close"
           data-testid="right-pane-close"
-          aria-label="Close Feynman"
-          title="Close Feynman (Esc)"
+          aria-label={`Close ${title}`}
+          title={`Close ${title} (Esc)`}
           autoFocus
           onClick={onClose}
         >
           <i className="ph ph-x" aria-hidden="true" />
         </button>
       )}
-      {children}
+      {activeView ? (
+        <div className="right-view-host" data-view-id={activeView.id}>
+          <ViewHost key={activeView.id} view={activeView} className="right-view" />
+        </div>
+      ) : (
+        children
+      )}
     </aside>
   )
 }

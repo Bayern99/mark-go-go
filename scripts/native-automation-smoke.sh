@@ -58,7 +58,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 cp "$ROOT"/go.mod "$ROOT"/go.sum "$PROJECT"/
-ln -s "$ROOT"/third_party "$ROOT"/resources "$PROJECT"/
+ln -s "$ROOT"/third_party "$ROOT"/resources "$ROOT"/internal "$PROJECT"/
 mkdir -p "$PROJECT/scripts"
 cp "$ROOT/scripts/feynman-rpc.mjs" "$PROJECT/scripts/"
 ln -s "$ROOT"/*.go "$PROJECT"/

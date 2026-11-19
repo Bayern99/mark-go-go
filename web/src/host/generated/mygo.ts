@@ -365,14 +365,14 @@ export const CheckpointHost = {
 
 /** Events sent by the Go side. Subscribe with `events.name.on(listener)`. */
 export const events = {
+  viewChanged: event<ViewEvent>("viewChanged"),
+  researchUpdate: event<ResearchUpdate>("researchUpdate"),
+  researchConsoleUpdate: event<ResearchConsoleUpdate>("researchConsoleUpdate"),
   docReloaded: event<Snapshot>("docReloaded"),
   docState: event<DocumentInfo>("docState"),
   navChanged: event<NavSnapshot>("navChanged"),
   navSearchReady: event<NavSearchResult>("navSearchReady"),
-  researchUpdate: event<ResearchUpdate>("researchUpdate"),
-  researchConsoleUpdate: event<ResearchConsoleUpdate>("researchConsoleUpdate"),
   settingsChanged: event<Settings>("settingsChanged"),
-  viewChanged: event<ViewEvent>("viewChanged"),
   workspaceChanged: event<WorkspaceSnapshot>("workspaceChanged"),
   nativeCommand: event<NativeCommand>("nativeCommand"),
 } as const;

@@ -43,3 +43,56 @@ func TestACPStopsWhenAnOutputRecordExceedsTheReadLimit(t *testing.T) {
 		t.Fatal("pending ACP call did not finish after its result exceeded the read limit")
 	}
 }
+
+func TestACPCallCleansPendingOnWriteFailure(t *testing.T) {
+	if os.Getenv("MGO_HOLD_ACP_STDIN") == "1" {
+		in := bufio.NewScanner(os.Stdin)
+		for in.Scan() {
+		}
+		os.Exit(0)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestACPCallCleansPendingOnWriteFailure$")
+	cmd.Env = append(os.Environ(), "MGO_HOLD_ACP_STDIN=1")
+	agent, err := newACPAgent(cmd, newLimitBuffer(1024))
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent.start()
+	t.Cleanup(agent.kill)
+
+	_ = agent.stdin.Close()
+	if err := agent.call("session/prompt", nil, nil); err == nil {
+		t.Fatal("expected error when writing to closed ACP stdin")
+	}
+	agent.mu.Lock()
+	remaining := len(agent.pending)
+	agent.mu.Unlock()
+	if remaining != 0 {
+		t.Fatalf("pending entries after failed RPC write = %d, want 0", remaining)
+	}
+}
+
+func TestACPCallCleansPendingOnAgentExit(t *testing.T) {
+	if os.Getenv("MGO_EXIT_ACP_SILENT") == "1" {
+		os.Exit(0)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestACPCallCleansPendingOnAgentExit$")
+	cmd.Env = append(os.Environ(), "MGO_EXIT_ACP_SILENT=1")
+	agent, err := newACPAgent(cmd, newLimitBuffer(1024))
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent.start()
+	t.Cleanup(agent.kill)
+
+	<-agent.exited
+	if err := agent.call("initialize", nil, nil); err == nil {
+		t.Fatal("expected error after agent exited")
+	}
+	agent.mu.Lock()
+	remaining := len(agent.pending)
+	agent.mu.Unlock()
+	if remaining != 0 {
+		t.Fatalf("pending entries after agent exit = %d, want 0", remaining)
+	}
+}

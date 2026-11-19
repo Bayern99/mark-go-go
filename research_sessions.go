@@ -77,27 +77,28 @@ func (h *researchHost) Sessions(ctx context.Context, root string) ([]ResearchCon
 	return workspaceConversations(s, researchWorkDir(h.dataDir, root), id)
 }
 
-func (h *researchHost) beginConversationChange(ctx context.Context, root string) (*researchSession, func(), error) {
+func (h *researchHost) beginConversationChange(ctx context.Context, root string) (*researchSession, string, func(), error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	s, err := h.activeLocked(ctx, root)
 	if err != nil {
-		return nil, nil, err
+		return nil, "", nil, err
 	}
 	select {
 	case <-s.ready:
 		if s.startErr != nil {
-			return nil, nil, s.startErr
+			return nil, "", nil, s.startErr
 		}
 	default:
-		return nil, nil, errors.New("Feynman is connecting.")
+		return nil, "", nil, errors.New("Feynman is connecting.")
 	}
 	if s.busy || s.switching || s.configuring {
-		return nil, nil, errors.New("Wait for the current research operation to finish.")
+		return nil, "", nil, errors.New("Wait for the current research operation to finish.")
 	}
 	s.switching = true
 	s.turn = make(chan struct{})
-	return s, func() {
+	currentID := s.id
+	return s, currentID, func() {
 		h.mu.Lock()
 		s.switching = false
 		close(s.turn)
@@ -117,12 +118,12 @@ func checkWorkspaceConversation(s *researchSession, work, id string) error {
 }
 
 func (h *researchHost) SelectSession(ctx context.Context, root, id string) error {
-	s, release, err := h.beginConversationChange(ctx, root)
+	s, currentID, release, err := h.beginConversationChange(ctx, root)
 	if err != nil {
 		return err
 	}
 	work := researchWorkDir(h.dataDir, root)
-	if id == s.id {
+	if id == currentID {
 		release()
 		return nil
 	}
@@ -163,22 +164,30 @@ func (h *researchHost) openConversation(s *researchSession, work, id, notice str
 		ConfigOptions []ResearchConfig
 	}
 	err := s.agent.call(method, params, &opened)
-	s.updateMu.Lock()
-	defer s.updateMu.Unlock()
-	replay := s.replay
-	s.replay = nil
+	clearReplay := func() {
+		s.updateMu.Lock()
+		s.replay = nil
+		s.updateMu.Unlock()
+	}
 	if err != nil {
+		clearReplay()
 		return err
 	}
 	if id == "" {
 		id = opened.SessionID
 		if id == "" {
+			clearReplay()
 			return errors.New("Feynman returned an empty session ID.")
 		}
 	}
 	if err := h.rememberConversation(s, work, id); err != nil {
+		clearReplay()
 		return err
 	}
+	s.updateMu.Lock()
+	defer s.updateMu.Unlock()
+	replay := s.replay
+	s.replay = nil
 	s.emit(ResearchUpdate{Kind: "reset"})
 	if notice != "" {
 		s.emit(ResearchUpdate{Kind: "notice", Text: notice})
@@ -192,12 +201,14 @@ func (h *researchHost) openConversation(s *researchSession, work, id, notice str
 
 func (h *researchHost) rememberConversation(s *researchSession, work, id string) error {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	select {
 	case <-s.stopped:
+		h.mu.Unlock()
 		return errors.New("Feynman disconnected.")
 	default:
 	}
+	h.mu.Unlock()
+
 	path := filepath.Join(filepath.Dir(work), "session")
 	current, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -208,17 +219,25 @@ func (h *researchHost) rememberConversation(s *researchSession, work, id string)
 			return err
 		}
 	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	select {
+	case <-s.stopped:
+		return errors.New("Feynman disconnected.")
+	default:
+	}
 	s.id = id
 	return nil
 }
 
 func (h *researchHost) DeleteSession(ctx context.Context, root, id string) error {
-	s, release, err := h.beginConversationChange(ctx, root)
+	s, currentID, release, err := h.beginConversationChange(ctx, root)
 	if err != nil {
 		return err
 	}
 	defer release()
-	if id == "" || id == s.id {
+	if id == "" || id == currentID {
 		return errors.New("Switch to another conversation before deleting this one.")
 	}
 	if err := checkWorkspaceConversation(s, researchWorkDir(h.dataDir, root), id); err != nil {

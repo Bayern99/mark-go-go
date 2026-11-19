@@ -329,3 +329,42 @@ func followWithMidStart(t *testing.T, path string, during func()) []ViewSnapshot
 	p.noMore(t)
 	return []ViewSnapshot{first, second}
 }
+
+func TestEmitViewDoesNotHoldHostLock(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".notes.md.genui.json")
+	if err := os.WriteFile(path, []byte(`{"version":2}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	host := &documentHost{}
+	s := &docSession{host: host, id: "doc-1"}
+	gotInfo := make(chan DocumentInfo, 1)
+	s.emit = func(ViewSnapshot) {
+		done := make(chan DocumentInfo, 1)
+		go func() {
+			done <- s.info()
+		}()
+		select {
+		case info := <-done:
+			gotInfo <- info
+		case <-time.After(500 * time.Millisecond):
+			t.Error("docSession.emitView ran while host.mu was still held")
+		}
+	}
+	host.mu.Lock()
+	s.following = true
+	gen := s.retargetLocked(path)
+	host.mu.Unlock()
+
+	if !s.emitView(path, gen) {
+		t.Fatal("emitView returned false")
+	}
+	select {
+	case info := <-gotInfo:
+		if info.ID != "doc-1" {
+			t.Fatalf("info.ID = %q, want doc-1", info.ID)
+		}
+	default:
+		t.Fatal("emit callback could not read session info")
+	}
+}

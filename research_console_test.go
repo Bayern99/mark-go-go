@@ -74,3 +74,74 @@ func TestValidateResearchConsoleArgsPreservesFeynmanCLI(t *testing.T) {
 		}
 	}
 }
+
+func TestResearchConsoleEarlyExitReapsSpawnedChild(t *testing.T) {
+	root := t.TempDir()
+	data := t.TempDir()
+	docs := &documentHost{settings: &settingsStore{dir: data}}
+	research := newResearchHost(docs)
+	h := newResearchConsoleHost(docs, research)
+
+	var spawned *exec.Cmd
+	h.command = func(_, work string, _ []string) (*exec.Cmd, error) {
+		cmd := exec.Command("/bin/sh", "-c", "sleep 10")
+		cmd.Dir = work
+		spawned = cmd
+		// Simulate shutdown racing after command creation / start.
+		h.mu.Lock()
+		h.closed = true
+		h.mu.Unlock()
+		return cmd, nil
+	}
+
+	err := h.connect(&workspace{root: root}, nil)
+	if err == nil {
+		t.Fatal("expected connect to fail when console host is closing")
+	}
+	if spawned == nil || spawned.Process == nil {
+		t.Fatal("expected command to be started before early exit")
+	}
+	if spawned.ProcessState == nil {
+		_ = spawned.Process.Kill()
+		_ = spawned.Wait()
+		t.Fatal("early-exit path did not reap spawned child process (ProcessState is nil)")
+	}
+}
+
+func TestResearchConsoleWindowCloseTeardownIsAsync(t *testing.T) {
+	root := t.TempDir()
+	data := t.TempDir()
+	docs := &documentHost{settings: &settingsStore{dir: data}}
+	research := newResearchHost(docs)
+	h := newResearchConsoleHost(docs, research)
+	defer h.shutdown()
+
+	h.command = func(_, work string, _ []string) (*exec.Cmd, error) {
+		cmd := exec.Command("/bin/sh", "-c", "trap '' INT; sleep 10")
+		cmd.Dir = work
+		return cmd, nil
+	}
+
+	if err := h.connect(&workspace{root: root}, nil); err != nil {
+		t.Fatal(err)
+	}
+	canon := canonicalPath(root)
+	h.mu.Lock()
+	session := h.sessions[canon]
+	h.mu.Unlock()
+	if session == nil {
+		t.Fatal("missing console session")
+	}
+
+	started := time.Now()
+	h.handleWindowClosed(canon, session)
+	if elapsed := time.Since(started); elapsed > 100*time.Millisecond {
+		t.Fatalf("window-close teardown blocked caller for %v", elapsed)
+	}
+
+	select {
+	case <-session.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("async window-close teardown did not finish")
+	}
+}

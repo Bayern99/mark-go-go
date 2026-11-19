@@ -386,17 +386,44 @@ func (idx *workspaceIndex) recountLocked() {
 }
 
 func (h *documentHost) publishPartial(w *workspace, idx *workspaceIndex, gen int, files map[string]*indexedFile, folders map[string]*indexedFolder, status IndexStatus) {
+	clonedFiles := make(map[string]*indexedFile, len(files))
+	for k, f := range files {
+		cp := *f
+		clonedFiles[k] = &cp
+	}
+	clonedFolders := make(map[string]*indexedFolder, len(folders))
+	for k, f := range folders {
+		cp := *f
+		cp.children = append([]string(nil), f.children...)
+		clonedFolders[k] = &cp
+	}
 	idx.mu.Lock()
 	if idx.gen != gen {
 		idx.mu.Unlock()
 		return
 	}
-	idx.files = files
-	idx.folders = folders
+	idx.files = clonedFiles
+	idx.folders = clonedFolders
 	idx.recountLocked()
 	idx.status = status
 	idx.mu.Unlock()
 	h.emitNav(w)
+}
+
+type indexBatchItem struct {
+	rel  string
+	path string
+}
+
+type indexedFileUpdate struct {
+	rel      string
+	modTime  int64
+	title    string
+	excerpt  string
+	notes    int
+	headings []NavHeading
+	missing  bool
+	ok       bool
 }
 
 func (h *documentHost) indexPending(ctx context.Context, w *workspace, idx *workspaceIndex, gen int) {
@@ -411,12 +438,12 @@ func (h *documentHost) indexPending(ctx context.Context, w *workspace, idx *work
 			idx.mu.Unlock()
 			return
 		}
-		var batch []*indexedFile
-		for _, file := range idx.files {
+		var batch []indexBatchItem
+		for rel, file := range idx.files {
 			if file.indexed || file.missing {
 				continue
 			}
-			batch = append(batch, file)
+			batch = append(batch, indexBatchItem{rel: rel, path: file.path})
 			if len(batch) >= indexBatchSize {
 				break
 			}
@@ -426,23 +453,38 @@ func (h *documentHost) indexPending(ctx context.Context, w *workspace, idx *work
 			return
 		}
 		open := h.openTexts(w)
-		for _, file := range batch {
+		updates := make([]indexedFileUpdate, 0, len(batch))
+		for _, item := range batch {
 			select {
 			case <-ctx.Done():
 				return
 			default:
 			}
-			h.indexOne(file, open)
+			updates = append(updates, readIndexedFile(item.rel, item.path, open))
 		}
+		idx.mu.Lock()
+		if idx.gen != gen {
+			idx.mu.Unlock()
+			return
+		}
+		for _, upd := range updates {
+			if file := idx.files[upd.rel]; file != nil {
+				applyIndexedFileUpdate(file, upd)
+			}
+		}
+		idx.mu.Unlock()
 		h.emitNav(w)
 		h.emitSearch(w, idx)
 	}
 }
 
 func (h *documentHost) openTexts(w *workspace) map[string]string {
-	out := map[string]string{}
+	type docPath struct {
+		path string
+		text string
+	}
+	var open []docPath
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	for _, id := range w.tabs {
 		s := h.byID[id]
 		if s == nil || s.doc == nil {
@@ -452,32 +494,60 @@ func (h *documentHost) openTexts(w *workspace) map[string]string {
 		if p == "" {
 			continue
 		}
-		out[canonicalPath(p)] = s.doc.Content()
+		open = append(open, docPath{path: p, text: s.doc.Content()})
+	}
+	h.mu.Unlock()
+	out := make(map[string]string, len(open))
+	for _, item := range open {
+		out[canonicalPath(item.path)] = item.text
 	}
 	return out
 }
 
-func (h *documentHost) indexOne(file *indexedFile, open map[string]string) {
-	text, ok := open[canonicalPath(file.path)]
+func readIndexedFile(rel, path string, open map[string]string) indexedFileUpdate {
+	upd := indexedFileUpdate{rel: rel}
+	text, ok := open[canonicalPath(path)]
 	if !ok {
-		data, err := readCapped(file.path, maxIndexBytes)
+		data, err := readCapped(path, maxIndexBytes)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
-				file.missing = true
+				upd.missing = true
 			}
-			file.indexed = true
-			return
+			return upd
 		}
 		text = string(data)
-		if info, err := os.Stat(file.path); err == nil {
-			file.modTime = info.ModTime().UnixMilli()
+		if info, err := os.Stat(path); err == nil {
+			upd.modTime = info.ModTime().UnixMilli()
 		}
 	}
 	meta := parseMarkdownMeta(text)
-	file.title = meta.Title
-	file.excerpt = meta.Excerpt
-	file.notes = meta.Notes
-	file.headings = meta.Headings
+	upd.title = meta.Title
+	upd.excerpt = meta.Excerpt
+	upd.notes = meta.Notes
+	upd.headings = meta.Headings
+	upd.ok = true
+	return upd
+}
+
+func (h *documentHost) indexOne(file *indexedFile, open map[string]string) {
+	applyIndexedFileUpdate(file, readIndexedFile("", file.path, open))
+}
+
+func applyIndexedFileUpdate(file *indexedFile, upd indexedFileUpdate) {
+	if !upd.ok {
+		if upd.missing {
+			file.missing = true
+		}
+		file.indexed = true
+		return
+	}
+	if upd.modTime != 0 {
+		file.modTime = upd.modTime
+	}
+	file.title = upd.title
+	file.excerpt = upd.excerpt
+	file.notes = upd.notes
+	file.headings = upd.headings
 	file.indexed = true
 	file.missing = false
 }
@@ -597,21 +667,33 @@ func (h *documentHost) applyWatch(w *workspace, idx *workspaceIndex, evts []mygo
 			}
 		}
 	}
+	var pending []indexBatchItem
 	if changed {
 		idx.recountLocked()
+		for rel, file := range idx.files {
+			if !file.indexed && !file.missing {
+				pending = append(pending, indexBatchItem{rel: rel, path: file.path})
+			}
+		}
 	}
 	idx.mu.Unlock()
 	if !changed {
 		return
 	}
-	open := h.openTexts(w)
-	idx.mu.Lock()
-	for _, file := range idx.files {
-		if !file.indexed && !file.missing {
-			h.indexOne(file, open)
+	if len(pending) > 0 {
+		open := h.openTexts(w)
+		updates := make([]indexedFileUpdate, 0, len(pending))
+		for _, item := range pending {
+			updates = append(updates, readIndexedFile(item.rel, item.path, open))
 		}
+		idx.mu.Lock()
+		for _, upd := range updates {
+			if file := idx.files[upd.rel]; file != nil {
+				applyIndexedFileUpdate(file, upd)
+			}
+		}
+		idx.mu.Unlock()
 	}
-	idx.mu.Unlock()
 	h.emitNav(w)
 	h.emitSearch(w, idx)
 }
@@ -653,6 +735,7 @@ func (h *documentHost) navSnapshot(w *workspace) NavSnapshot {
 	openByRel := map[string]*docSession{}
 	extraTabs := []string{}
 	extraInfo := map[string]DocumentInfo{}
+	extraRel := map[string]string{}
 	h.mu.Lock()
 	extraTabs = append(extraTabs, w.tabs...)
 	for _, id := range w.tabs {
@@ -660,13 +743,23 @@ func (h *documentHost) navSnapshot(w *workspace) NavSnapshot {
 		if s == nil {
 			continue
 		}
-		info := s.infoLocked()
-		extraInfo[id] = info
-		if rel := relSlash(idx.root, info.Path); rel != "" {
-			openByRel[rel] = s
-		}
+		extraInfo[id] = s.infoLocked()
 	}
 	h.mu.Unlock()
+	for _, id := range extraTabs {
+		info, ok := extraInfo[id]
+		if !ok || info.Path == "" {
+			continue
+		}
+		if rel := relSlash(idx.root, info.Path); rel != "" {
+			if s, err := h.docSession(id); err == nil {
+				openByRel[rel] = s
+			}
+			if folderContains(idx.root, info.Path) {
+				extraRel[id] = rel
+			}
+		}
+	}
 
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -765,11 +858,11 @@ func (h *documentHost) navSnapshot(w *workspace) NavSnapshot {
 		if !ok {
 			continue
 		}
-		p := snap.Path
-		if p == "" || !folderContains(idx.root, p) {
+		rel, ok := extraRel[id]
+		if !ok {
 			continue
 		}
-		rel := relSlash(idx.root, p)
+		p := snap.Path
 		sortable = append(sortable, navSortEntry{rel: rel, entry: NavEntry{
 			ID:         "open:" + id,
 			Kind:       "file",
@@ -893,16 +986,24 @@ func (h *documentHost) searchLockedResult(w *workspace, idx *workspaceIndex, que
 			openByRel[rel] = text
 		}
 	}
-	openIDsByRel := map[string]string{}
+	type sessionPath struct {
+		id   string
+		path string
+	}
+	var sessionPaths []sessionPath
 	h.mu.Lock()
 	for _, s := range h.byID {
 		if p := s.currentPath(); p != "" {
-			if rel := relSlash(idx.root, p); rel != "" {
-				openIDsByRel[rel] = s.id
-			}
+			sessionPaths = append(sessionPaths, sessionPath{id: s.id, path: p})
 		}
 	}
 	h.mu.Unlock()
+	openIDsByRel := make(map[string]string, len(sessionPaths))
+	for _, sp := range sessionPaths {
+		if rel := relSlash(idx.root, sp.path); rel != "" {
+			openIDsByRel[rel] = sp.id
+		}
+	}
 
 	idx.mu.Lock()
 	indexed, total := 0, 0
@@ -1076,38 +1177,52 @@ func (h *documentHost) rememberRoot(root string) {
 }
 
 func (h *documentHost) forgetIndex(w *workspace) {
-	if w == nil || w.index == nil {
+	if w == nil {
 		return
 	}
-	w.index.mu.Lock()
-	w.index.stopLocked()
-	w.index.mu.Unlock()
+	h.mu.Lock()
+	idx := w.index
 	w.index = nil
+	h.mu.Unlock()
+	if idx == nil {
+		return
+	}
+	idx.mu.Lock()
+	idx.stopLocked()
+	idx.mu.Unlock()
 }
 
 func (h *documentHost) reindexOpenDocument(s *docSession) {
-	if s == nil || s.ws == nil {
+	if s == nil {
 		return
 	}
-	idx := h.indexOf(s.ws)
+	h.mu.Lock()
+	w := s.ws
+	h.mu.Unlock()
+	if w == nil {
+		return
+	}
+	idx := h.indexOf(w)
 	if idx == nil {
 		return
 	}
 	path := s.currentPath()
 	rel := relSlash(idx.root, path)
-	open := h.openTexts(s.ws)
+	open := h.openTexts(w)
+	upd := readIndexedFile(rel, path, open)
+	inFolder := path != "" && folderContains(idx.root, path)
 	idx.mu.Lock()
 	file := idx.files[rel]
-	if file == nil && path != "" && folderContains(idx.root, path) {
+	if file == nil && inFolder {
 		file = &indexedFile{path: path, name: filepath.Base(path), parent: parentSlash(rel)}
 		idx.files[rel] = file
 	}
 	if file != nil {
-		h.indexOne(file, open)
+		applyIndexedFileUpdate(file, upd)
 	}
 	idx.mu.Unlock()
-	h.emitNav(s.ws)
-	h.emitSearch(s.ws, idx)
+	h.emitNav(w)
+	h.emitSearch(w, idx)
 }
 
 func (h *documentHost) showWelcomeIfEmpty() {

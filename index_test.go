@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -462,4 +463,67 @@ func TestNavSnapshotAndReindexWithOpenTabDoNotDeadlock(t *testing.T) {
 	if !matched {
 		t.Fatalf("alpha.md missing from navSnapshot entries: %+v", snap.Entries)
 	}
+}
+
+func TestWorkspaceIndexConcurrentScanSnapshotFilterReindexAndForget(t *testing.T) {
+	dir := t.TempDir()
+	var firstFile string
+	for i := range 90 {
+		p := writeMD(t, dir, filepath.Join(fmt.Sprintf("dir-%02d", i%5), fmt.Sprintf("note-%03d.md", i)), fmt.Sprintf("# Note %03d\n\nBody text %d.\n", i, i))
+		if i == 0 {
+			firstFile = p
+		}
+	}
+
+	host := newDocumentHost()
+	host.disableWatch = true
+	host.settings = &settingsStore{dir: t.TempDir()}
+	w := &workspace{id: "ws-race", root: dir}
+	s := &docSession{
+		host:   host,
+		id:     "doc-0",
+		ws:     w,
+		pathFn: func() string { return firstFile },
+	}
+	host.mu.Lock()
+	host.byID[s.id] = s
+	w.tabs = []string{s.id}
+	w.active = s.id
+	host.mu.Unlock()
+
+	host.startIndex(w)
+
+	var wg sync.WaitGroup
+	wg.Add(4)
+	go func() {
+		defer wg.Done()
+		for range 50 {
+			_ = host.navSnapshot(w)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for range 50 {
+			idx := host.indexOf(w)
+			if idx != nil {
+				_ = host.searchLockedResult(w, idx, "Note")
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for range 30 {
+			host.reindexOpenDocument(s)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for range 5 {
+			time.Sleep(2 * time.Millisecond)
+			host.forgetIndex(w)
+			host.startIndex(w)
+		}
+	}()
+	wg.Wait()
+	host.forgetIndex(w)
 }

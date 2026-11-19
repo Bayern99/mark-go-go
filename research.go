@@ -156,45 +156,88 @@ func (h *researchHost) connect(w *workspace, emit func(ResearchUpdate)) error {
 			return nil
 		}
 	}
-	if err := os.MkdirAll(work, 0700); err != nil {
-		h.mu.Unlock()
-		return err
-	}
-	contextFile := filepath.Join(filepath.Dir(work), "AGENTS.md")
-	contextText := fmt.Sprintf("The reader's saved project files are in %q. Read existing inputs there. Write new research artifacts and proposed revisions at the corresponding relative paths in your working directory. Mark Go Go will publish new Markdown files and review changes to existing files.\n", root)
-	if err := writeFileAtomicMode(contextFile, []byte(contextText), 0600); err != nil {
-		h.mu.Unlock()
-		return err
-	}
-	cmd, err := h.command(root, work)
-	if err != nil {
-		h.mu.Unlock()
-		return err
-	}
-	ui, err := newResearchUI(cmd)
-	if err != nil {
-		h.mu.Unlock()
-		return err
-	}
-	agent, err := newACPAgent(cmd, newLimitBuffer(4096))
-	if err != nil {
-		ui.close()
-		h.mu.Unlock()
-		return err
-	}
 	s := &researchSession{
-		agent: agent, ui: ui, win: w.win, questionSlot: make(chan struct{}, 1),
+		win: w.win, questionSlot: make(chan struct{}, 1),
 		ready: make(chan struct{}), stopped: make(chan struct{}), drained: make(chan struct{}),
 		emit: func(e ResearchUpdate) { e.Root = root; emit(e) },
 	}
 	h.sessions[root] = s
-	agent.setHandlers(func(method string, params json.RawMessage) (any, *acpError) { return h.request(s, method, params) }, func(method string, params json.RawMessage) { h.routeSessionUpdate(s, method, params) }, nil)
-	if w.win != nil {
-		s.offWindow = w.win.OnClosed(func() { go h.stop(root, s, "") })
+	h.mu.Unlock()
+
+	failSetup := func(err error) error {
+		h.mu.Lock()
+		s.startErr = err
+		close(s.ready)
+		h.mu.Unlock()
+		h.stop(root, s, "")
+		return err
 	}
+
+	if err := os.MkdirAll(work, 0700); err != nil {
+		return failSetup(err)
+	}
+	contextFile := filepath.Join(filepath.Dir(work), "AGENTS.md")
+	contextText := fmt.Sprintf("The reader's saved project files are in %q. Read existing inputs there. Write new research artifacts and proposed revisions at the corresponding relative paths in your working directory. Mark Go Go will publish new Markdown files and review changes to existing files.\n", root)
+	if err := writeFileAtomicMode(contextFile, []byte(contextText), 0600); err != nil {
+		return failSetup(err)
+	}
+	cmd, err := h.command(root, work)
+	if err != nil {
+		return failSetup(err)
+	}
+	ui, err := newResearchUI(cmd)
+	if err != nil {
+		return failSetup(err)
+	}
+	agent, err := newACPAgent(cmd, newLimitBuffer(4096))
+	if err != nil {
+		ui.close()
+		return failSetup(err)
+	}
+	agent.setHandlers(func(method string, params json.RawMessage) (any, *acpError) { return h.request(s, method, params) }, func(method string, params json.RawMessage) { h.routeSessionUpdate(s, method, params) }, nil)
+
+	h.mu.Lock()
+	aborted := h.closed
+	if !aborted {
+		select {
+		case <-s.stopped:
+			aborted = true
+		default:
+		}
+	}
+	if aborted {
+		h.mu.Unlock()
+		agent.start()
+		ui.close()
+		stopResearchProcess(cmd)
+		agent.kill()
+		abortErr := errors.New("Research disconnected.")
+		h.mu.Lock()
+		s.startErr = abortErr
+		close(s.ready)
+		h.mu.Unlock()
+		h.stop(root, s, "")
+		return abortErr
+	}
+	s.ui = ui
+	s.agent = agent
+	h.mu.Unlock()
+
+	if w.win != nil {
+		off := w.win.OnClosed(func() { go h.stop(root, s, "") })
+		h.mu.Lock()
+		select {
+		case <-s.stopped:
+			h.mu.Unlock()
+			off()
+		default:
+			s.offWindow = off
+			h.mu.Unlock()
+		}
+	}
+
 	agent.start()
 	go ui.serve(h, s)
-	h.mu.Unlock()
 	timeout := time.AfterFunc(45*time.Second, func() { h.stop(root, s, "") })
 	err = h.initialize(s, work)
 	timeout.Stop()
@@ -331,6 +374,7 @@ func (h *researchHost) PromptWithSources(ctx context.Context, root, text, docume
 	}
 	approved := maps.Clone(s.sources)
 	imagePrompts := s.imagePrompts
+	sessionID := s.id
 	s.busy = true
 	s.cancelled = false
 	s.turn = make(chan struct{})
@@ -368,7 +412,7 @@ func (h *researchHost) PromptWithSources(ctx context.Context, root, text, docume
 		s.emit(ResearchUpdate{Kind: "notice", Text: "Attached as file references without an inline image: " + strings.Join(linkedImages, ", ")})
 	}
 	var resp struct{ StopReason string }
-	if err := s.agent.call("session/prompt", map[string]any{"sessionId": s.id, "prompt": prompt}, &resp); err != nil {
+	if err := s.agent.call("session/prompt", map[string]any{"sessionId": sessionID, "prompt": prompt}, &resp); err != nil {
 		return "", err
 	}
 	h.mu.Lock()
@@ -422,7 +466,7 @@ func (h *researchHost) update(s *researchSession, method string, params json.Raw
 	}
 	if e.Kind == "commands" {
 		s.commands = e.Commands
-		s.emitCommands()
+		s.emit(s.commandsUpdateLocked())
 		return
 	}
 	s.emit(e)
@@ -542,13 +586,23 @@ func (h *researchHost) stop(root string, s *researchSession, message string) {
 	if s.busy || s.switching || s.configuring {
 		turn = s.turn
 	}
-	if s.offWindow != nil {
-		s.offWindow()
-	}
-	stopResearchProcess(s.agent.cmd)
+	offWindow := s.offWindow
+	s.offWindow = nil
+	ui := s.ui
+	agent := s.agent
 	h.mu.Unlock()
-	s.ui.close()
-	s.agent.kill()
+	if offWindow != nil {
+		offWindow()
+	}
+	if agent != nil && agent.cmd != nil {
+		stopResearchProcess(agent.cmd)
+	}
+	if ui != nil {
+		ui.close()
+	}
+	if agent != nil {
+		agent.kill()
+	}
 	<-s.ready
 	if turn != nil {
 		<-turn
@@ -557,7 +611,9 @@ func (h *researchHost) stop(root string, s *researchSession, message string) {
 		s.emit(ResearchUpdate{Kind: "error", Text: message})
 	}
 	h.mu.Lock()
-	delete(h.sessions, root)
+	if h.sessions[root] == s {
+		delete(h.sessions, root)
+	}
 	close(s.drained)
 	h.mu.Unlock()
 }

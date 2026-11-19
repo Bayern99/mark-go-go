@@ -133,19 +133,34 @@ func (c *acpProcessCache) startLease(executable string, env []string, fingerprin
 
 func (c *acpProcessCache) processDir() (string, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.closed {
+		c.mu.Unlock()
 		return "", errAgentCacheClosed
 	}
 	if c.dir != "" {
-		return c.dir, nil
+		dir := c.dir
+		c.mu.Unlock()
+		return dir, nil
 	}
+	c.mu.Unlock()
+
 	dir, err := os.MkdirTemp("", "markgogo-acp-")
 	if err != nil {
 		return "", err
 	}
 	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
 		dir = resolved
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		_ = os.RemoveAll(dir)
+		return "", errAgentCacheClosed
+	}
+	if c.dir != "" {
+		_ = os.RemoveAll(dir)
+		return c.dir, nil
 	}
 	c.dir = dir
 	return dir, nil

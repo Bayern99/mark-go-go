@@ -2,6 +2,12 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, u
 import { flushSync } from 'react-dom'
 import { RightPane } from './components/RightPane'
 import { PathCrumbs, SidePane } from './components/SidePane'
+import {
+  readSavedRightWidth,
+  resolvePaneWidths,
+  SIDE_DOCKED_MIN_WIDTH,
+  SIDEBAR_DEFAULT,
+} from './components/paneLayout'
 import { useViews, ViewHost, ViewStatusIndicator } from './components/ViewHost'
 import { CommandRegistry } from './core/CommandRegistry'
 import { DocumentService } from './core/DocumentService'
@@ -53,10 +59,13 @@ function rememberViewMode(path: string, mode: ViewMode): void {
   }
 }
 
+function measureWindowWidth(): number {
+  if (typeof window === 'undefined') return NARROW_WINDOW_WIDTH
+  return document.documentElement.clientWidth || window.innerWidth
+}
+
 function measureIsNarrow(): boolean {
-  if (typeof window === 'undefined') return false
-  const width = document.documentElement.clientWidth || window.innerWidth
-  return width < NARROW_WINDOW_WIDTH
+  return measureWindowWidth() < NARROW_WINDOW_WIDTH
 }
 
 class ViewModeController {
@@ -756,11 +765,23 @@ function WorkspaceApp({
   const [libraryOpen, setLibraryOpen] = useState(false)
   const libraryToggleRef = useRef<HTMLButtonElement>(null)
   const rightToggleRef = useRef<HTMLButtonElement>(null)
-  const [isNarrow, setIsNarrow] = useState(measureIsNarrow)
+  const [winWidth, setWinWidth] = useState(measureWindowWidth)
+  const isNarrow = winWidth < NARROW_WINDOW_WIDTH
+  const [targetLeftWidth, setTargetLeftWidth] = useState(SIDEBAR_DEFAULT)
+  const [targetRightWidth, setTargetRightWidth] = useState(readSavedRightWidth)
   const [rightWantOpen, setRightWantOpen] = useState(true)
   const [rightFloatOpen, setRightFloatOpen] = useState(false)
   const rightShown = researchEnabled && (isNarrow ? rightFloatOpen : rightWantOpen)
   const rightFloating = rightShown && isNarrow
+  const leftDocked = winWidth >= SIDE_DOCKED_MIN_WIDTH
+  const rightDocked = Boolean(researchEnabled && snap && rightShown && !rightFloating)
+  const paneLayout = resolvePaneWidths({
+    winWidth,
+    targetLeft: targetLeftWidth,
+    targetRight: targetRightWidth,
+    leftDocked,
+    rightDocked,
+  })
   const closeDrawers = useCallback(() => {
     setLibraryOpen(false)
     setRightFloatOpen(false)
@@ -777,9 +798,9 @@ function WorkspaceApp({
 
   useEffect(() => {
     const resize = () => {
-      const narrow = measureIsNarrow()
-      setIsNarrow(narrow)
-      if (!narrow) setRightFloatOpen(false)
+      const nextWidth = measureWindowWidth()
+      setWinWidth(nextWidth)
+      if (nextWidth >= NARROW_WINDOW_WIDTH) setRightFloatOpen(false)
     }
     const observer = new ResizeObserver(resize)
     observer.observe(document.documentElement)
@@ -1212,14 +1233,25 @@ function WorkspaceApp({
           {snap.restoreError}
         </div>
       ) : null}
-      <div className={`workspace-body${libraryOpen ? ' library-open' : ''}`}>
+      <div className={`workspace-body${libraryOpen ? ' library-open' : ''}${rightFloating ? ' right-floating' : ''}`}>
         {libraryOpen ? (
           <div
-            className="library-scrim"
+            className="drawer-scrim library-scrim"
             aria-hidden="true"
             onClick={() => {
               setLibraryOpen(false)
               libraryToggleRef.current?.focus()
+            }}
+          />
+        ) : null}
+        {rightFloating ? (
+          <div
+            className="drawer-scrim right-scrim"
+            data-testid="right-scrim"
+            aria-hidden="true"
+            onClick={() => {
+              setRightFloatOpen(false)
+              rightToggleRef.current?.focus()
             }}
           />
         ) : null}
@@ -1237,6 +1269,9 @@ function WorkspaceApp({
             setLibraryOpen(false)
             libraryToggleRef.current?.focus()
           }}
+          width={leftDocked ? paneLayout.left : SIDEBAR_DEFAULT}
+          maxWidth={paneLayout.maxLeft}
+          onWidthChange={setTargetLeftWidth}
         />
         <div
           className="workspace-main"
@@ -1283,10 +1318,18 @@ function WorkspaceApp({
           ) : null}
         </div>
         {researchEnabled && snap && (
-          <RightPane open={rightShown} floating={rightFloating} onClose={() => {
-            setRightFloatOpen(false)
-            rightToggleRef.current?.focus()
-          }}>
+          <RightPane
+            open={rightShown}
+            floating={rightFloating}
+            width={paneLayout.right}
+            targetWidth={targetRightWidth}
+            maxWidth={paneLayout.maxRight}
+            onWidthChange={setTargetRightWidth}
+            onClose={() => {
+              setRightFloatOpen(false)
+              rightToggleRef.current?.focus()
+            }}
+          >
             <WorkspaceResearch key={snap.root} root={snap.root} ctx={activePane} documentID={activeId} open={openDocument}
               openFolder={() => void workspace.pickFolder()} />
           </RightPane>

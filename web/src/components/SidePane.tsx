@@ -14,13 +14,14 @@ import { useViews, ViewHost } from './ViewHost'
 import { ScrollArea } from './ScrollArea'
 import { AppTooltip } from './Tooltip'
 import { SearchClearButton } from './SearchClearButton'
+import {
+  resolvePaneWidths,
+  SIDEBAR_DEFAULT,
+  SIDEBAR_FLOOR,
+  SIDEBAR_MAX,
+  SIDEBAR_MIN,
+} from './paneLayout'
 import { DropdownMenu, Tabs } from 'radix-ui'
-
-const SIDEBAR_MIN = 190
-const SIDEBAR_MAX = 420
-const SIDEBAR_DEFAULT = 248
-const CENTER_MIN = 310
-const SIDEBAR_FLOOR = 140
 
 const TREE_INDENT = 8
 const TREE_INDENT_BASE = 8
@@ -209,6 +210,9 @@ export function SidePane({
   onJumpHeading,
   floatingOpen = false,
   onCloseFloating,
+  width: controlledWidth,
+  maxWidth: controlledMaxWidth,
+  onWidthChange,
 }: {
   views: ViewRegistry
   doc?: DocumentInfo | null
@@ -217,6 +221,9 @@ export function SidePane({
   onJumpHeading?: (documentId: string | undefined, path: string, offset: number) => void
   floatingOpen?: boolean
   onCloseFloating?: () => void
+  width?: number
+  maxWidth?: number
+  onWidthChange?: (width: number) => void
 }): React.ReactElement | null {
   const entries = useViews(views, 'left')
   const outline = entries.find(view => view.id === 'outline.panel')
@@ -225,13 +232,14 @@ export function SidePane({
   const [filters, setFilters] = useState<Record<string, string>>({})
   const [nav, setNav] = useState<NavSnapshot | null>(null)
   const [search, setSearch] = useState<NavSearchResult | null>(null)
-  const [width, setWidth] = useState(SIDEBAR_DEFAULT)
+  const [localWidth, setLocalWidth] = useState(SIDEBAR_DEFAULT)
   const [dragging, setDragging] = useState(false)
   const [winWidth, setWinWidth] = useState(() =>
     typeof window === 'undefined' ? SIDEBAR_DEFAULT : document.documentElement.clientWidth || window.innerWidth,
   )
 
   useEffect(() => {
+    if (controlledWidth !== undefined) return
     const onResize = () => setWinWidth(document.documentElement.clientWidth || window.innerWidth)
     window.addEventListener('resize', onResize)
     const observer = new ResizeObserver(onResize)
@@ -240,9 +248,23 @@ export function SidePane({
       window.removeEventListener('resize', onResize)
       observer.disconnect()
     }
-  }, [])
+  }, [controlledWidth])
 
-  const paneWidth = Math.min(width, Math.max(SIDEBAR_FLOOR, winWidth - CENTER_MIN))
+  const fallbackLayout = resolvePaneWidths({
+    winWidth,
+    targetLeft: localWidth,
+    targetRight: 0,
+    leftDocked: true,
+    rightDocked: false,
+  })
+  const paneWidth = controlledWidth ?? fallbackLayout.left
+  const maxWidth = controlledMaxWidth ?? fallbackLayout.maxLeft
+  const minWidth = Math.min(SIDEBAR_MIN, maxWidth)
+  const commitWidth = (next: number) => {
+    const clamped = Math.min(maxWidth, Math.max(minWidth, next))
+    if (onWidthChange) onWidthChange(clamped)
+    else setLocalWidth(clamped)
+  }
 
   const selectedWorkspaceId = workspaceSnap?.workspaces.find(
     (item) => item.root === workspaceSnap.root && item.kind === workspaceSnap.kind,
@@ -423,18 +445,17 @@ export function SidePane({
         aria-orientation="vertical"
         aria-label="Resize workspace sidebar"
         aria-valuemin={SIDEBAR_FLOOR}
-        aria-valuemax={SIDEBAR_MAX}
-        aria-valuenow={paneWidth}
+        aria-valuemax={maxWidth}
+        aria-valuenow={Math.round(paneWidth)}
         tabIndex={0}
         data-testid="sidebar-splitter"
         onPointerDown={(event) => {
           event.preventDefault()
           setDragging(true)
           const startX = event.clientX
-          const startW = width
+          const startW = paneWidth
           const move = (ev: PointerEvent) => {
-            const next = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, startW + (ev.clientX - startX)))
-            setWidth(next)
+            commitWidth(startW + (ev.clientX - startX))
           }
           const up = () => {
             setDragging(false)
@@ -447,16 +468,16 @@ export function SidePane({
         onKeyDown={(event) => {
           if (event.key === 'ArrowLeft') {
             event.preventDefault()
-            setWidth((w) => Math.max(SIDEBAR_MIN, w - 16))
+            commitWidth(paneWidth - 16)
           } else if (event.key === 'ArrowRight') {
             event.preventDefault()
-            setWidth((w) => Math.min(SIDEBAR_MAX, w + 16))
+            commitWidth(paneWidth + 16)
           } else if (event.key === 'Home') {
             event.preventDefault()
-            setWidth(SIDEBAR_MIN)
+            commitWidth(SIDEBAR_MIN)
           } else if (event.key === 'End') {
             event.preventDefault()
-            setWidth(SIDEBAR_MAX)
+            commitWidth(Math.min(SIDEBAR_MAX, maxWidth))
           }
         }}
       />

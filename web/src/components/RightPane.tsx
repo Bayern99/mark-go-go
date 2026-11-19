@@ -1,48 +1,133 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-function ResearchDivider() {
+import {
+  readSavedRightWidth,
+  RIGHT_DEFAULT,
+  RIGHT_MAX,
+  RIGHT_MAX_RATIO,
+  RIGHT_MIN,
+  saveRightWidth,
+} from './paneLayout'
+
+function ResearchDivider({
+  paneWidth,
+  targetWidth,
+  maxWidth,
+  onWidthChange,
+}: {
+  paneWidth: number
+  targetWidth: number
+  maxWidth: number
+  onWidthChange: (width: number) => void
+}) {
   const drag = useRef<{ x: number; width: number } | null>(null)
-  const [width, setWidth] = useState(() => {
-    const saved = Number(localStorage.getItem('mgo.researchWidth'))
-    return saved >= 310 && saved <= 800 ? saved : 376
-  })
-  useLayoutEffect(() => {
-    document.documentElement.style.setProperty('--research-width', width + 'px')
-  }, [width])
+  const latestWidth = useRef(targetWidth)
+  latestWidth.current = targetWidth
+
   const resize = (size: number) => {
-    const value = Math.min(800, Math.max(310, Math.min(window.innerWidth * 0.56, size)))
-    setWidth(value)
+    const value = Math.min(maxWidth, Math.max(RIGHT_MIN, size))
+    latestWidth.current = value
+    onWidthChange(value)
     return value
   }
-  return <div role="separator" aria-label="Resize research panel" aria-orientation="vertical"
-    aria-valuemin={310} aria-valuemax={Math.min(800, Math.floor(window.innerWidth * 0.56))} aria-valuenow={Math.round(width)}
-    tabIndex={0} className="fy-resize" onPointerDown={e => {
-      if (e.button !== 0) return
-      drag.current = { x: e.clientX, width: e.currentTarget.parentElement!.getBoundingClientRect().width }
-      e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault()
-    }} onPointerMove={e => {
-      if (drag.current) resize(drag.current.width + drag.current.x - e.clientX)
-    }} onLostPointerCapture={() => { drag.current = null; localStorage.setItem('mgo.researchWidth', String(width)) }}
-    onDoubleClick={() => localStorage.setItem('mgo.researchWidth', String(resize(376)))}
-    onKeyDown={e => {
-      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
-      e.preventDefault()
-      localStorage.setItem('mgo.researchWidth', String(resize(e.currentTarget.parentElement!.getBoundingClientRect().width + (e.key === 'ArrowLeft' ? 24 : -24))))
-    }} />
+
+  return (
+    <div
+      role="separator"
+      aria-label="Resize research panel"
+      aria-orientation="vertical"
+      aria-valuemin={RIGHT_MIN}
+      aria-valuemax={maxWidth}
+      aria-valuenow={Math.round(paneWidth)}
+      tabIndex={0}
+      className="fy-resize"
+      onPointerDown={(e) => {
+        if (e.button !== 0) return
+        drag.current = { x: e.clientX, width: e.currentTarget.parentElement!.getBoundingClientRect().width }
+        e.currentTarget.setPointerCapture(e.pointerId)
+        e.preventDefault()
+      }}
+      onPointerMove={(e) => {
+        if (drag.current) resize(drag.current.width + drag.current.x - e.clientX)
+      }}
+      onLostPointerCapture={() => {
+        drag.current = null
+        saveRightWidth(latestWidth.current)
+      }}
+      onDoubleClick={() => saveRightWidth(resize(RIGHT_DEFAULT))}
+      onKeyDown={(e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+        e.preventDefault()
+        const current = e.currentTarget.parentElement!.getBoundingClientRect().width
+        saveRightWidth(resize(current + (e.key === 'ArrowLeft' ? 24 : -24)))
+      }}
+    />
+  )
 }
 
-export function RightPane({ children, open, floating, onClose }: {
+export function RightPane({
+  children,
+  open,
+  floating,
+  onClose,
+  width: controlledWidth,
+  targetWidth: controlledTargetWidth,
+  maxWidth: controlledMaxWidth,
+  onWidthChange,
+}: {
   children: React.ReactNode
   open: boolean
   floating: boolean
   onClose: () => void
+  width?: number
+  targetWidth?: number
+  maxWidth?: number
+  onWidthChange?: (width: number) => void
 }) {
+  const [localWidth, setLocalWidth] = useState(readSavedRightWidth)
+  const targetWidth = controlledTargetWidth ?? localWidth
+  const paneWidth = floating ? targetWidth : (controlledWidth ?? localWidth)
+  const fallbackMax =
+    typeof window === 'undefined'
+      ? RIGHT_MAX
+      : Math.max(RIGHT_MIN, Math.min(RIGHT_MAX, Math.floor(window.innerWidth * RIGHT_MAX_RATIO)))
+  const maxWidth = controlledMaxWidth ?? fallbackMax
+
+  useLayoutEffect(() => {
+    document.documentElement.style.setProperty('--research-width', `${paneWidth}px`)
+  }, [paneWidth])
+
+  const handleWidthChange = onWidthChange ?? setLocalWidth
+
   return (
-    <aside id="feynman-sidebar" className={`right-pane fy-rail${floating ? ' r-float' : ''}`} data-testid="right-pane" aria-label="Feynman" hidden={!open}>
-      {!floating && <ResearchDivider />}
-      {floating && <button type="button" className="pill icon quiet rp-close" data-testid="right-pane-close"
-        aria-label="Close Feynman" title="Close Feynman (Esc)" autoFocus onClick={onClose}>
-        <i className="ph ph-x" aria-hidden="true" />
-      </button>}
+    <aside
+      id="feynman-sidebar"
+      className={`right-pane fy-rail${floating ? ' r-float' : ''}`}
+      data-testid="right-pane"
+      aria-label="Feynman"
+      hidden={!open}
+      style={!floating ? { width: paneWidth, minWidth: paneWidth, maxWidth: paneWidth } : undefined}
+    >
+      {!floating && (
+        <ResearchDivider
+          paneWidth={paneWidth}
+          targetWidth={targetWidth}
+          maxWidth={maxWidth}
+          onWidthChange={handleWidthChange}
+        />
+      )}
+      {floating && (
+        <button
+          type="button"
+          className="pill icon quiet rp-close"
+          data-testid="right-pane-close"
+          aria-label="Close Feynman"
+          title="Close Feynman (Esc)"
+          autoFocus
+          onClick={onClose}
+        >
+          <i className="ph ph-x" aria-hidden="true" />
+        </button>
+      )}
       {children}
     </aside>
   )

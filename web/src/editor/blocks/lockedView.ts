@@ -1,6 +1,8 @@
 import type { Node as PMNode } from '@milkdown/kit/prose/model'
 import type { EditorView, NodeView } from '@milkdown/kit/prose/view'
 import { highlightCode, classHighlighter } from '@lezer/highlight'
+import katex from 'katex'
+import 'katex/dist/katex.min.css'
 import { parseNote } from '../../markdown/notes'
 import { languages } from '../languages'
 import { LOCKED_NODE, lockedKindLabel, type LockedAttrs } from './locked'
@@ -239,14 +241,46 @@ function renderCodeFence(dom: HTMLElement, source: string, readonly: boolean): b
 
 function renderMath(dom: HTMLElement, source: string, readonly: boolean): void {
   dom.className = 'mgo-math'
-  dom.setAttribute('aria-label', 'Math block')
   const kicker = document.createElement('span')
   kicker.className = 'mgo-math-k'
   kicker.textContent = 'Math'
-  const body = document.createElement('pre')
-  body.className = 'mgo-math-source'
-  body.textContent = source.replace(/^\$\$\s*|\s*\$\$$/g, '')
-  dom.append(kicker, body, blockActions(readonly))
+
+  const render = document.createElement('div')
+  render.className = 'mgo-math-render'
+
+  const error = document.createElement('div')
+  error.className = 'mgo-math-error'
+  error.setAttribute('role', 'alert')
+  error.hidden = true
+
+  const raw = document.createElement('pre')
+  raw.className = 'mgo-math-source'
+  raw.hidden = true
+
+  const expr = source.trim().replace(/^\$\$\s*|\s*\$\$$/g, '').trim()
+  try {
+    if (expr === '') throw new Error('The math block is empty.')
+    render.innerHTML = katex.renderToString(expr, {
+      displayMode: true,
+      output: 'htmlAndMathml',
+      throwOnError: true,
+      strict: 'ignore',
+      trust: false,
+    })
+    dom.dataset.math = 'rendered'
+    dom.setAttribute('aria-label', 'Math block')
+  } catch (err: unknown) {
+    const detail = (err instanceof Error ? err.message : String(err)).replace(/\s+/g, ' ').trim().slice(0, 320)
+    dom.dataset.math = 'error'
+    dom.setAttribute('aria-label', 'Math block could not be rendered')
+    render.hidden = true
+    error.hidden = false
+    error.textContent = `KaTeX could not render this math block.${detail ? ` ${detail}` : ''}`
+    raw.hidden = false
+    raw.textContent = source
+  }
+
+  dom.append(kicker, render, error, raw, blockActions(readonly))
 }
 
 function renderKept(dom: HTMLElement, kind: LockKind, source: string, readonly: boolean): void {

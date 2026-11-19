@@ -3,7 +3,6 @@ import type { DocumentSnapshot } from '../../core'
 import {
   events,
   ReviewHost,
-  ResearchConsoleHost,
   ResearchHost,
   type ChangeProposal,
   type HunkDecision,
@@ -39,8 +38,6 @@ export class ResearchSession {
   private owners = 0
   private off?: () => void
   private offReview?: () => void
-  private offConsole?: () => void
-  private launchingCLI?: Promise<void>
   private closing?: Promise<void>
   private generation = 0
   private proposalSeq = 0
@@ -52,10 +49,9 @@ export class ResearchSession {
   config: ResearchConfig[] = []
   title = ''
   usage?: {used: number; size: number}
-  tab: 'chat' | 'files' | 'cli' = 'chat'
+  tab: 'chat' | 'files' = 'chat'
   sources: string[] = []
   configuring = false
-  cliRunning = false
   files: ResearchArtifact[] = []
   permission?: ResearchUpdate
   suggestedDraft?: string
@@ -252,45 +248,6 @@ export class ResearchSession {
     }
   }
 
-  async launchCLI(args: string[]) {
-    if (!this.root || !this.owners || this.cliRunning || this.status === 'working' ||
-        this.status === 'connecting' || this.configuring || this.sources.length || this.proposals.length > 0) {
-      throw new Error('Finish the current research action and clear attached files before starting the CLI.')
-    }
-    const connected = this.status === 'ready'
-    this.cliRunning = true
-    this.status = 'offline'
-    this.error = ''
-    this.offConsole ??= events.researchConsoleUpdate.on(event => {
-      if (event.root !== this.root) return
-      if (event.kind === 'error') { this.error = event.text || 'Feynman CLI failed.'; this.changed() }
-      if (event.kind === 'exit') this.endCLI()
-    })
-    this.changed()
-    const start = async () => {
-      if (connected) await ResearchHost.disconnect(this.root)
-      if (!this.owners) throw new Error('The research workspace was closed.')
-      await ResearchConsoleHost.connect(this.root, args)
-    }
-    const launch = start()
-    this.launchingCLI = launch
-    try {
-      await launch
-    } catch (error) {
-      this.endCLI()
-      throw error
-    } finally {
-      if (this.launchingCLI === launch) this.launchingCLI = undefined
-    }
-  }
-
-  endCLI() {
-    if (!this.cliRunning) return
-    this.cliRunning = false
-    this.changed()
-    if (this.owners) void this.refresh()
-  }
-
   release() {
     if (--this.owners > 0) return
     queueMicrotask(() => {
@@ -300,16 +257,10 @@ export class ResearchSession {
       this.off = undefined
       this.offReview?.()
       this.offReview = undefined
-      const usedCLI = Boolean(this.offConsole)
-      this.offConsole?.()
-      this.offConsole = undefined
-      this.cliRunning = false
       const wasOnline = this.status !== 'offline'
       this.status = 'offline'
-      this.closing = Promise.all([
-        wasOnline ? ResearchHost.disconnect(this.root) : Promise.resolve(),
-        usedCLI ? Promise.resolve(this.launchingCLI).catch(() => {}).then(() => ResearchConsoleHost.disconnect(this.root)) : Promise.resolve(),
-      ]).then(() => undefined)
+      this.closing = (wasOnline ? ResearchHost.disconnect(this.root) : Promise.resolve())
+        .then(() => undefined)
         .catch(error => { this.error = String(error) }).finally(() => {
           if (!this.owners && sessions.get(this.root) === this) sessions.delete(this.root)
         })
@@ -358,19 +309,22 @@ export class ResearchSession {
       const previous = this.messages.findLast(entry => entry.role === 'plan' || entry.role === 'user')
       if (previous?.role === 'plan') previous.steps = update.plan ?? []
       else this.messages.push({ role: 'plan', steps: update.plan ?? [] })
-    } else if (kind === 'session') this.title = text
+    } else if (kind === 'session' || kind === 'setTitle') this.title = text
     else if (kind === 'config') this.config = update.config ?? []
     else if (kind === 'usage' && update.size) this.usage = { used: update.used ?? 0, size: update.size }
     else if (kind === 'progress') this.progress = text
     else if (kind === 'commands') this.commands = update.commands ?? []
-    else if (kind === 'activity' && update.key) {
+    else if ((kind === 'activity' || kind === 'setStatus' || kind === 'setWidget') && update.key) {
       if (text) this.activity.set(update.key, text)
       else this.activity.delete(update.key)
     }
-    else if (kind === 'permission' || kind === 'input' || kind === 'editor') this.permission = update
-    else if (kind === 'editorText') {
+    else if (kind === 'permission' || kind === 'select' || kind === 'confirm' || kind === 'input' || kind === 'editor') this.permission = update
+    else if (kind === 'editorText' || kind === 'set_editor_text') {
       if (!this.draft.trim()) this.draft = this.commands.some(command => text === '/' + command.name) ? text + ' ' : text
       else if (text && text !== this.draft) this.suggestedDraft = text
+    }
+    else if (kind === 'notify') {
+      if (text) this.messages.push({ role: 'notice', text })
     }
     else if (kind === 'permissionDone' && this.permission?.requestId === update.requestId) this.permission = undefined
     else if (kind === 'error') {
@@ -383,7 +337,7 @@ export class ResearchSession {
   }
 
   async connect() {
-    if (this.status !== 'offline' || this.cliRunning || !this.root) return
+    if (this.status !== 'offline' || !this.root) return
     const generation = ++this.generation
     this.status = 'connecting'
     this.error = ''

@@ -19,7 +19,7 @@
 
 ## 软件与资源
 
-- Feynman 插件使用 **MyGo** 选择本地来源文件和打开引用链接，使用 **react-markdown** 与 remark/rehype 插件显示回复，用 **xterm.js** 和 **creack/pty** 承载交互式 CLI。Feynman 和 pi-acp 由用户在本机安装。[react-markdown](https://github.com/remarkjs/react-markdown) · [xterm.js](https://github.com/xtermjs/xterm.js) · [PTY 许可证](resources/licenses/MIT-creack-pty.txt) · [Feynman](https://github.com/Companion-Inc/feynman) · [pi-acp](https://github.com/svkozak/pi-acp)
+- Feynman 插件使用 **MyGo** 选择本地来源文件和打开引用链接，使用 **react-markdown** 与 remark/rehype 插件显示回复，并直接对接用户本机安装的 **Feynman** CLI。[react-markdown](https://github.com/remarkjs/react-markdown) · [Feynman](https://github.com/Companion-Inc/feynman)
 
 - Egoist 与贡献者的 **MyGo** 提供原生桌面宿主。仓库包含 MIT 许可的 v0.10.0 代码，以及文档组和工作区生命周期补丁。命令行工具的拼音数据来自 Unicode Unihan 16.0.0。[上游](https://github.com/egoist/mygo/tree/v0.10.0) · [MyGo 许可证](third_party/mygo/LICENSE) · [Unicode 声明](third_party/mygo/cmd/mygo/LICENSE-Unicode.txt) · [补丁说明](docs/mygo-document-groups.md)
 - **Milkdown Crepe** 与 **ProseMirror** 提供可编辑的 Markdown 预览，**CodeMirror** 提供 Markdown 视图。**Radix Primitives** 提供提示和菜单等基础控件，**OverlayScrollbars** 提供滚动区域，**Mermaid** 在本地呈现图表，**A2UI** 提供 GenUI 组件协议。[前端依赖](web/package.json)

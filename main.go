@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	_ "embed"
 	"io"
 	"log"
 	"time"
@@ -12,9 +11,6 @@ import (
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo"
 )
-
-//go:embed scripts/feynman-rpc.mjs
-var feynmanRelayScript []byte
 
 var documentAutosave = mygo.AutosaveInPlace
 
@@ -92,10 +88,8 @@ func main() {
 	reviewSvc := review.NewService()
 	mygo.BindAs("WorkspaceHost", workspace.NewHost(host))
 	mygo.BindAs("ReviewHost", reviewSvc.Host())
-	research := feynman.NewResearchManager(adapter, feynmanRelayScript)
+	research := feynman.NewResearchManager(adapter)
 	mygo.BindAs("ResearchHost", research.Host())
-	console := feynman.NewConsoleManager(adapter, research)
-	mygo.BindAs("ResearchConsoleHost", console.Host())
 	mygo.BindAs("CheckpointHost", review.NewCheckpointHost(adapter))
 
 	mygo.App.WhenReady(func() {
@@ -126,7 +120,6 @@ func main() {
 		workspace.ApplyNativeEditMenu(false, false)
 	})
 	err := mygo.App.Run()
-	console.Shutdown()
 	research.Close()
 	host.WaitForGenerations(5 * time.Second)
 	host.WaitForSessionWrites(2 * time.Second)

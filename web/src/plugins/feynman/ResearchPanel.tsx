@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react'
 import type { PluginContext } from '../../core'
 import { ResearchHost, type HunkDecision, type ResearchArtifact } from '../../host/generated/mygo'
 import { ScrollArea } from '../../components/ScrollArea'
@@ -10,8 +10,6 @@ import { ResearchQuestion } from './ResearchQuestion'
 import type { OpenResearchDocument } from './index'
 import type { Proposal, ResearchSession } from './session'
 import './research.css'
-
-const CLIConsole = lazy(() => import('./CLIConsole').then(m => ({ default: m.CLIConsole })))
 
 export default function ResearchPanel({ session, ctx, documentID, open }: {
   session: ResearchSession
@@ -25,8 +23,8 @@ export default function ResearchPanel({ session, ctx, documentID, open }: {
   const setEdit = (value: boolean) => setEditTarget(value ? documentID : '')
   const input = useRef<HTMLTextAreaElement>(null)
   const choose = useCommand(session, input)
-  const { tab, cliRunning } = session
-  useEffect(() => { if (tab === 'chat' && !cliRunning) void session.connect() }, [session, tab, cliRunning])
+  const { tab } = session
+  useEffect(() => { if (tab === 'chat') void session.connect() }, [session, tab])
   const [, refreshDoc] = useReducer(n => n + 1, 0)
   useLayoutEffect(() => {
     const sub = ctx?.documents.onDidChange(refreshDoc)
@@ -88,7 +86,7 @@ export default function ResearchPanel({ session, ctx, documentID, open }: {
     await session.refresh()
   }
 
-  const label = cliRunning ? 'CLI running' : status === 'ready' ? 'Connected' : status === 'working' ? 'Working' : status === 'connecting' ? 'Connecting…' : 'Offline'
+  const label = status === 'ready' ? 'Connected' : status === 'working' ? 'Working' : status === 'connecting' ? 'Connecting…' : 'Offline'
   const pane = (tab: ResearchSession['tab']) => { session.tab = tab; session.changed() }
   function fileButton(file: ResearchArtifact) {
     const queued = session.proposals.some(p => p.base.path === file.target)
@@ -156,15 +154,14 @@ export default function ResearchPanel({ session, ctx, documentID, open }: {
       <small title={session.root}>{[session.root.split('/').filter(Boolean).at(-1), session.title].filter(Boolean).join(' · ')}</small></div>
       <span className="fy-connection" data-status={status} title={label} aria-label={label} /><SessionMenu session={session} />
     </header>
-    <nav className="fy-tabs" aria-label="Research tools">{(['chat', 'files', 'cli'] as const).map(tab =>
+    <nav className="fy-tabs" aria-label="Research tools">{(['chat', 'files'] as const).map(tab =>
       <button type="button" key={tab} aria-pressed={session.tab === tab} onClick={() => pane(tab)}>
-        <ResearchIcon name={tab === 'chat' ? 'chat-circle' : tab === 'files' ? 'files' : 'terminal-window'} />
-        {tab === 'chat' ? 'Chat' : tab === 'files' ? 'Files' : 'CLI'}{tab === 'chat' && permission && <small aria-label="Action required">!</small>}{tab === 'files' && session.files.length > 0 && <small>{session.files.length}</small>}
+        <ResearchIcon name={tab === 'chat' ? 'chat-circle' : 'files'} />
+        {tab === 'chat' ? 'Chat' : 'Files'}{tab === 'chat' && permission && <small aria-label="Action required">!</small>}{tab === 'files' && session.files.length > 0 && <small>{session.files.length}</small>}
       </button>)}</nav>
     {session.error && <div className="fy-error" role="alert"><span>{session.error}</span><button className="fy-icon" aria-label="Dismiss error"
       onClick={() => { session.error = ''; session.changed() }}><ResearchIcon name="x" /></button></div>}
-    {session.tab === 'cli' ? <Suspense fallback={<p role="status">Opening console…</p>}><CLIConsole session={session} /></Suspense>
-      : session.tab === 'files' ? <ScrollArea className="fy-files" contentClassName="fy-files-content">
+    {session.tab === 'files' ? <ScrollArea className="fy-files" contentClassName="fy-files-content">
         <div className="fy-files-heading"><h4>Research files</h4><button className="fy-icon" type="button" aria-label="Refresh files" title="Refresh files"
           disabled={busy} onClick={() => void session.refresh()}><ResearchIcon name="arrow-clockwise" /></button>
           <button type="button" className="fy-icon" title="Open research output folder" aria-label="Open research output folder"
@@ -179,8 +176,7 @@ export default function ResearchPanel({ session, ctx, documentID, open }: {
       </ScrollArea> : <>
         <Conversation session={session} choose={choose} open={review} reviewSlot={reviewSlot} />
         {permission && <ResearchQuestion session={session} key={permission.requestId} question={permission} onError={report} />}
-        {cliRunning && <div className="fy-offline"><span>Feynman CLI is running.</span><button className="pill" onClick={() => pane('cli')}>Return to CLI</button></div>}
-        {status === 'offline' && !cliRunning && <div className="fy-offline"><button type="button" className="pill" onClick={() => void session.connect()}>Reconnect</button></div>}
+        {status === 'offline' && <div className="fy-offline"><button type="button" className="pill" onClick={() => void session.connect()}>Reconnect</button></div>}
         <Composer session={session} documentID={documentID} doc={doc} input={input} choose={choose} edit={edit} setEdit={setEdit} />
       </>}
   </section>

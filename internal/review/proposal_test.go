@@ -357,6 +357,3 @@ func TestReviewHostAndComposingMultipleTargetedEditsOnSameFile(t *testing.T) {
 		t.Fatalf("host.Complete = %+v, %v", afterComplete, err)
 	}
 }
-
-
-

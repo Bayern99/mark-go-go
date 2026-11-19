@@ -4,6 +4,14 @@
 
 Mark Go Go is a local Markdown editor for macOS. Folder workspaces share a window and its document tabs. `Ctrl+Tab` switches between recent documents, and `⌘/` switches between the editable Preview and Markdown views. Use the right pane to browse the outline or generate a read-only GenUI view with a configured ACP agent.
 
+## Optional plugins
+
+Use **Plugins** in the desktop tab bar to enable Feynman and Git independently. Both start disabled.
+
+**Feynman** uses your local Feynman CLI, Node.js and `pi-acp`. Install the adapter with `npm install -g pi-acp`. Configure your model and sign in using Feynman’s setup guide, then open **Feynman** in the right pane. Each workspace has a research conversation that follows its document tabs and resumes after restart. Open a report, plan, draft or provenance file under **Files** to edit it in a document tab. Select **Edit this document** to share the current buffer with Feynman. Review the changes and choose **Apply in Markdown** to apply them as one undoable edit. [Feynman setup guide](https://feynman.is/docs/getting-started/setup)
+
+**Git** uses an existing local repository. Save the document, then create a checkpoint in the **Git** panel. Choose a version to compare it with the current buffer and restore its text. Checkpoints use local Git refs associated with the document’s repository path. A renamed document starts a new history.
+
 ## Development
 
 See the [CI configuration](.github/workflows/ci.yml) for Go and Node versions.

@@ -12,6 +12,7 @@ export interface DocState {
 }
 
 export interface DocumentInfo extends DocState {
+  workspaceRoot?: string
   id: string
 }
 

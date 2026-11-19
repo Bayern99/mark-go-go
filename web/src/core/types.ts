@@ -29,6 +29,7 @@ export interface ViewRegistration {
   id: string
   title: string
   location: ViewLocation
+  workspaceScoped?: boolean
   status?: ViewStatusSource
   mount(el: HTMLElement, scrollElement?: HTMLElement): Disposable
 }

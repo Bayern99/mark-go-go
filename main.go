@@ -47,6 +47,9 @@ func main() {
 	})
 	host.setDocuments(ds)
 	mygo.BindAs("WorkspaceHost", host)
+	research := newResearchHost(host)
+	mygo.BindAs("ResearchHost", research)
+	mygo.BindAs("CheckpointHost", &checkpointHost{documents: host})
 
 	mygo.App.WhenReady(func() {
 		mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
@@ -76,6 +79,7 @@ func main() {
 		applyNativeEditMenu(false, false)
 	})
 	err := mygo.App.Run()
+	research.close()
 	host.waitForGenerations(5 * time.Second)
 	host.closeAgentCache()
 	if err != nil {

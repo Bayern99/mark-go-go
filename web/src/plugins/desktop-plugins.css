@@ -1,0 +1,58 @@
+.plugin-panel,
+.plugin-panel form,
+.research-conversation {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.plugin-panel {
+  padding: 8px;
+  color: var(--ink);
+  font: var(--text-ui-size)/var(--text-ui-leading) var(--font-sans);
+  overflow-wrap: anywhere;
+}
+
+.plugin-panel h3, .plugin-panel p { margin: 0; }
+.plugin-panel h3, .research-message strong { font-size: var(--text-meta-size); }
+.research-message p, .document-diff pre { white-space: pre-wrap; }
+.plugin-panel textarea, .plugin-panel select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: inherit;
+  font: inherit;
+}
+.plugin-panel textarea { resize: vertical; }
+.plugin-panel input { accent-color: var(--accent); }
+.plugin-panel [role='alert'] { color: var(--danger); }
+.plugin-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.plugin-actions [role='status'] { flex: 1; font-size: var(--text-meta-size); }
+.research-file {
+  padding: 5px 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  text-align: start;
+  font: inherit;
+  overflow-wrap: anywhere;
+}
+.document-diff { margin: 6px 0; }
+.document-diff pre {
+  padding: 5px;
+  margin: 4px 0;
+  border-inline-start: 2px solid var(--line);
+  font: var(--text-meta-size)/1.45 var(--font-mono);
+  max-height: 16em;
+  overflow: auto;
+}
+.document-diff pre[aria-label='Removed lines'] { border-color: var(--danger); }
+.document-diff pre[aria-label='Proposed lines'] { border-color: var(--accent); }
+.empty-folder { display: flex; flex: 1; min-height: 0; }
+.empty-folder .workspace-empty { flex: 1; gap: 8px; flex-wrap: wrap; }
+.research-transcript { max-height: 34vh; }
+.research-conversation { align-content: start; }

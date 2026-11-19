@@ -40,10 +40,15 @@ export class PluginRegistry {
     this.viewFile = viewFile
   }
 
-  register(plugin: AppPlugin): void {
+  register(plugin: AppPlugin): Disposable {
     if (this.plugins.has(plugin.id)) throw new Error(`Plugin already registered: ${plugin.id}`)
     this.plugins.set(plugin.id, { plugin, disposables: null, subscriptions: null })
     this.emit()
+    return { dispose: () => {
+      this.disable(plugin.id)
+      this.plugins.delete(plugin.id)
+      this.emit()
+    } }
   }
 
   list(): PluginInfo[] {

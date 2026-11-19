@@ -10,6 +10,7 @@ export interface CloseResult {
 }
 
 export interface DocumentInfo {
+  workspaceRoot?: string;
   id: string;
   name: string;
   path: string;
@@ -116,6 +117,27 @@ export interface RecentWorkspace {
   openedAt: number;
 }
 
+export interface ResearchArtifact {
+  path: string;
+  target: string;
+  proposal: boolean;
+  error?: string;
+}
+
+export interface ResearchOption {
+  id: string;
+  name: string;
+}
+
+export interface ResearchUpdate {
+  root: string;
+  kind: string;
+  text?: string;
+  commands?: string[];
+  requestId?: string;
+  options?: ResearchOption[];
+}
+
 export interface SectionRef {
   heading: string;
   occurrence: number;
@@ -212,6 +234,22 @@ export const WorkspaceHost = {
   watchView: bind<[string], void>("WorkspaceHost.WatchView", (documentID: string) => [documentID]),
 } as const;
 
+export const ResearchHost = {
+  answer: bind<[string, string, string], void>("ResearchHost.Answer", (root: string, requestID: string, optionID: string) => [root, requestID, optionID]),
+  artifacts: bind<[string], ResearchArtifact[]>("ResearchHost.Artifacts", (root: string) => [root]),
+  cancel: bind<[string], void>("ResearchHost.Cancel", (root: string) => [root]),
+  connect: bind<[string], void>("ResearchHost.Connect", (root: string) => [root]),
+  disconnect: bind<[string], void>("ResearchHost.Disconnect", (root: string) => [root]),
+  prompt: bind<[string, string, string, string], string>("ResearchHost.Prompt", (root: string, text: string, documentID: string, buffer: string) => [root, text, documentID, buffer]),
+  readArtifact: bind<[string, string], string>("ResearchHost.ReadArtifact", (root: string, relative: string) => [root, relative]),
+} as const;
+
+export const CheckpointHost = {
+  create: bind<[string, string, string], string[]>("CheckpointHost.Create", (documentID: string, path: string, expectedText: string) => [documentID, path, expectedText]),
+  list: bind<[string, string], string[]>("CheckpointHost.List", (documentID: string, path: string) => [documentID, path]),
+  read: bind<[string, string, string], string>("CheckpointHost.Read", (documentID: string, path: string, checkpointID: string) => [documentID, path, checkpointID]),
+} as const;
+
 // ---- Events ----
 
 /** Events sent by the Go side. Subscribe with `events.name.on(listener)`. */
@@ -220,6 +258,7 @@ export const events = {
   docState: event<DocumentInfo>("docState"),
   navChanged: event<NavSnapshot>("navChanged"),
   navSearchReady: event<NavSearchResult>("navSearchReady"),
+  researchUpdate: event<ResearchUpdate>("researchUpdate"),
   settingsChanged: event<Settings>("settingsChanged"),
   viewChanged: event<ViewEvent>("viewChanged"),
   workspaceChanged: event<WorkspaceSnapshot>("workspaceChanged"),

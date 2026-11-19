@@ -144,18 +144,23 @@ func (s *docSession) currentPath() string {
 }
 
 func (s *docSession) makeInfo(st mygo.DocumentState, generating bool) DocumentInfo {
+	root := ""
+	if s.ws != nil {
+		root = s.ws.root
+	}
 	return DocumentInfo{
-		ID:           s.id,
-		Name:         st.Name,
-		Path:         st.Path,
-		Edited:       st.Edited,
-		Conflict:     st.Conflict,
-		Deleted:      st.Deleted,
-		ReadOnly:     st.ReadOnly,
-		Generating:   generating,
-		ViewMode:     s.viewMode,
-		ActionError:  s.actionError,
-		RestoreError: s.restoreError,
+		WorkspaceRoot: root,
+		ID:            s.id,
+		Name:          st.Name,
+		Path:          st.Path,
+		Edited:        st.Edited,
+		Conflict:      st.Conflict,
+		Deleted:       st.Deleted,
+		ReadOnly:      st.ReadOnly,
+		Generating:    generating,
+		ViewMode:      s.viewMode,
+		ActionError:   s.actionError,
+		RestoreError:  s.restoreError,
 	}
 }
 

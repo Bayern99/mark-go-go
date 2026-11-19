@@ -72,6 +72,7 @@ export interface MarkdownEditor {
   toggleMode(): void
   onModeChange(fn: (mode: EditorMode) => void): Disposable
   getMarkdown(): string
+  applyMarkdown(expected: string, text: string): boolean
   setMarkdown(text: string): void
   onChange(fn: (markdown: string) => void): Disposable
   reveal(offset: number): boolean
@@ -671,7 +672,7 @@ export async function createMarkdownEditor(
 
   editor.action((ctx) => {
     ctx.get(listenerCtx).markdownUpdated(() => {
-      notify(compose(view.state.doc))
+      if (mode === 'preview') notify(compose(view.state.doc))
     })
   })
 
@@ -797,6 +798,14 @@ export async function createMarkdownEditor(
     },
     getMarkdown: () =>
       mode === 'source' ? (sourceEditor?.getText() ?? '') : compose(view.state.doc),
+    applyMarkdown(expected, text) {
+      const current = mode === 'source' ? sourceEditor?.getText() : compose(view.state.doc)
+      if (readonly || current !== expected) return false
+      if (current === text) return true
+      setMode('source')
+      sourceEditor!.replace(text)
+      return true
+    },
     setMarkdown(text) {
       if (mode === 'source') {
         sourceBaseText = undefined

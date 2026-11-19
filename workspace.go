@@ -31,17 +31,18 @@ type WorkspaceSnapshot struct {
 }
 
 type DocumentInfo struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Path         string `json:"path"`
-	Edited       bool   `json:"edited"`
-	Conflict     bool   `json:"conflict"`
-	Deleted      bool   `json:"deleted"`
-	ReadOnly     bool   `json:"readOnly"`
-	Generating   bool   `json:"generating"`
-	ViewMode     string `json:"viewMode,omitempty"`
-	ActionError  string `json:"actionError,omitempty"`
-	RestoreError string `json:"restoreError,omitempty"`
+	WorkspaceRoot string `json:"workspaceRoot,omitempty"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Path          string `json:"path"`
+	Edited        bool   `json:"edited"`
+	Conflict      bool   `json:"conflict"`
+	Deleted       bool   `json:"deleted"`
+	ReadOnly      bool   `json:"readOnly"`
+	Generating    bool   `json:"generating"`
+	ViewMode      string `json:"viewMode,omitempty"`
+	ActionError   string `json:"actionError,omitempty"`
+	RestoreError  string `json:"restoreError,omitempty"`
 }
 
 type CloseResult struct {

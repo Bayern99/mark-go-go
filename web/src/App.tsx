@@ -18,6 +18,9 @@ import {
   registerNativeEditTarget,
 } from './editor/nativeEdit'
 import { createGenUIPlugin } from './plugins/genui'
+import { DesktopPlugins, PluginMenu, usePluginEnabled } from './plugins/DesktopPlugins'
+import { EmptyResearchPane } from './plugins/feynman'
+import { isRecord } from './lib/guards'
 import { createOutlinePlugin } from './plugins/outline'
 import { ScrollArea } from './components/ScrollArea'
 import { MovingCapsule } from './components/MovingCapsule'
@@ -118,8 +121,14 @@ export function DocumentPane({
   onOpenRightFloat,
   onOpenPath,
   onReadyReveal,
+  workspaceView,
+  onWorkspaceView,
+  openDocument,
 }: {
   host: HostAdapter
+  workspaceView?: string
+  onWorkspaceView?: (id?: string) => void
+  openDocument?: (path: string) => Promise<unknown>
   plugins?: AppPlugin[]
   active?: boolean
   workspaceRoot?: string
@@ -148,6 +157,8 @@ export function DocumentPane({
   const restored = useRef(false)
   const reportedMode = useRef(false)
   const activeRef = useRef(active)
+  const sharedPanelSelection = useRef(onWorkspaceView)
+  sharedPanelSelection.current = onWorkspaceView
   const revealBinder = useRef(onReadyReveal)
   activeRef.current = active
   revealBinder.current = onReadyReveal
@@ -289,8 +300,10 @@ export function DocumentPane({
       },
     })
 
+    let latestState: DocumentInfo | undefined
     const applyDocumentState = (state: DocumentInfo) => {
       if (disposed) return
+      latestState = state
       setDocState(state)
       services.documents.setPath(state.path)
       editorRef.current?.setReadonly(state.readOnly)
@@ -425,6 +438,18 @@ export function DocumentPane({
         }),
       )
 
+      cleanups.push(services.commands.register('editor.applyMarkdown', (base, next) => {
+        const state = latestState
+        if (!activeRef.current || !state || state.readOnly || state.conflict || state.deleted ||
+            !isRecord(base) || typeof base.text !== 'string' || typeof next !== 'string' ||
+            base.path !== state.path || base.version !== appliedVersion ||
+            !editor.applyMarkdown(base.text, next)) {
+          throw new Error('The document changed. Review the current text before applying this edit.')
+        }
+        modes.showEditor('source')
+        return true
+      }))
+
       cleanups.push(
         services.commands.register('editor.addNote', (offset, text) => {
           const at = Number(offset)
@@ -443,6 +468,8 @@ export function DocumentPane({
       cleanups.push(
         services.commands.register('rightPane.show', (targetViewId) => {
           if (typeof targetViewId === 'string' && targetViewId !== '') {
+            const shared = services.views.getAll().find(view => view.id === targetViewId)?.workspaceScoped
+            sharedPanelSelection.current?.(shared ? targetViewId : undefined)
             setRightViewId(targetViewId)
           }
           if (measureIsNarrow()) {
@@ -624,6 +651,8 @@ export function DocumentPane({
                     </button>
                   ))}
                 </div>
+                {ready && openDocument && <DesktopPlugins registry={services.plugins} documentID={host.id}
+                  workspaceRoot={workspaceRoot} openDocument={openDocument} />}
                 <button
                   type="button"
                   className="toggle-button pill icon quiet rp-tg"
@@ -716,8 +745,12 @@ export function DocumentPane({
 
         <RightPane
           views={services.views}
-          activeId={rightViewId}
-          onSelect={setRightViewId}
+          activeId={rightViews.some(view => view.id === workspaceView) ? workspaceView : rightViewId}
+          onSelect={id => {
+            const shared = rightViews.find(view => view.id === id)?.workspaceScoped
+            onWorkspaceView?.(shared ? id : undefined)
+            if (!shared) setRightViewId(id)
+          }}
           open={rightShown}
           floating={rightFloating}
           onClose={() => {
@@ -805,6 +838,9 @@ function WorkspaceApp({
   plugins?: AppPlugin[]
 }): React.ReactElement {
   const [snap, setSnap] = useState<WorkspaceSnapshot | null>(null)
+  const researchEnabled = usePluginEnabled('feynman')
+  const [workspaceViews, setWorkspaceViews] = useState<Record<string, string | undefined>>({})
+  const openDocument = useCallback((path: string) => workspace.open(path), [workspace])
   const [recents, setRecents] = useState<RecentWorkspace[]>([])
   const panes = useRef(new Map<string, HostAdapter>())
   const reveals = useRef(new Map<string, (offset: number) => boolean>())
@@ -1219,6 +1255,7 @@ function WorkspaceApp({
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
+      <PluginMenu workspaces={snap?.workspaces ?? []} />
     </div>
   )
 
@@ -1268,7 +1305,10 @@ function WorkspaceApp({
               host={panes.current.get(doc.id)!}
               plugins={plugins}
               active={doc.id === activeId}
-              workspaceRoot={snap?.root ?? ''}
+              workspaceRoot={doc.workspaceRoot ?? (doc.id === activeId ? snap?.root : '') ?? ''}
+              openDocument={openDocument}
+              workspaceView={workspaceViews[doc.workspaceRoot ?? snap?.root ?? '']}
+              onWorkspaceView={id => setWorkspaceViews(current => ({ ...current, [doc.workspaceRoot ?? snap?.root ?? '']: id }))}
               libraryOpen={libraryOpen}
               onOpenRightFloat={() => setLibraryOpen(false)}
               onOpenPath={openPath}
@@ -1295,8 +1335,14 @@ function WorkspaceApp({
                 }}
               />
             ) : (
-              <div className="workspace-empty" data-testid="workspace-empty">
-                Open a Markdown file from this folder.
+              <div className="empty-folder">
+                <div className="workspace-empty" data-testid="workspace-empty">
+                  Open a Markdown file from this folder.
+                  {snap?.root && researchEnabled && workspaceViews[snap.root] !== 'feynman.panel' &&
+                    <button className="pill" onClick={() => setWorkspaceViews(current => ({ ...current, [snap.root]: 'feynman.panel' }))}>Start research</button>}
+                </div>
+                {snap?.root && researchEnabled && workspaceViews[snap.root] === 'feynman.panel' &&
+                  <EmptyResearchPane key={snap.root} root={snap.root} open={openDocument} />}
               </div>
             )
           ) : null}

@@ -375,3 +375,24 @@ describe('source mode external state', () => {
     }
   })
 })
+
+it('restores the exact previous buffer with one Undo after applying a reviewed Markdown edit', async () => {
+  const original = '# Original\r\n\r\nText with  spacing.'
+  const proposed = '\n# New heading\n\nChanged draft.\n'
+  const mounted = await mountEditor(original)
+  try {
+    const editor = mounted.editor
+    expect(editor.applyMarkdown('stale buffer', proposed)).toBe(false)
+    expect(editor.getMarkdown()).toBe(original)
+    expect(editor.applyMarkdown(original, proposed)).toBe(true)
+    expect(editor.getMarkdown()).toBe(proposed)
+    expect(editor.undo()).toBe(true)
+    expect(editor.getMarkdown()).toBe(original)
+    expect(editor.redo()).toBe(true)
+    expect(editor.getMarkdown()).toBe(proposed)
+    editor.setReadonly(true)
+    expect(editor.applyMarkdown(proposed, '')).toBe(false)
+  } finally {
+    await mounted.cleanup()
+  }
+})

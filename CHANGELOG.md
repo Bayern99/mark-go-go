@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- 桌面端新增独立启停的 Feynman 与 Git 插件。Feynman 通过 pi-acp 续接工作区研究，将 Markdown 产物带入文档标签。Git 为当前已保存文档记录本地 Checkpoint。两者均可在比较文字后通过 Markdown 编辑器应用修改并撤销。
+
 - 多个文件夹工作区共用一个窗口和一组文档标签。`Ctrl+Tab` 在最近的文档间往返，工作区菜单可切换、打开或关闭当前工作区。重启恢复活动文档和视图模式。 Folder workspaces share one window and tab group, with recent-document switching and session restoration.
 - 将渲染后可编辑的视图统一命名为 Markdown Preview，视图按钮显示为 `Preview`。已有工作区能继续恢复之前的视图模式。 The editable rendered view is now Markdown Preview, with compatibility for saved sessions.
 - MyGo 与 Web 运行时升级到 v0.10.0。官方原生 Automation 在独立 QA 应用中验证保存、撤销重做和恢复，并检查应用退出码。 MyGo v0.10.0 adds an isolated native smoke test for save, undo and redo, session restoration, and exit status.

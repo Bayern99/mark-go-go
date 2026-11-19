@@ -111,7 +111,7 @@ describe('Labeled Checkpoints with provenance & non-Git fallback UI', () => {
       await dialog.getByRole('option', { name: /Initial outline/i }).click()
       await dialog.getByRole('button', { name: 'Compare' }).click()
 
-      await expect.element(dialog.getByText('Changes from line 3')).toBeVisible()
+      await expect.element(dialog.getByText('@@ -1,3 +1,3 @@')).toBeVisible()
       await expect.element(dialog.getByText(/Original paragraph\./)).toBeVisible()
 
       await dialog.getByRole('button', { name: 'Restore shown version' }).click()

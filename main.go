@@ -85,7 +85,9 @@ func main() {
 	})
 	host.SetDocuments(ds)
 	adapter := workspaceAdapter{svc: host}
+	reviewSvc := review.NewService()
 	mygo.BindAs("WorkspaceHost", workspace.NewHost(host))
+	mygo.BindAs("ReviewHost", reviewSvc.Host())
 	research := feynman.NewResearchManager(adapter)
 	mygo.BindAs("ResearchHost", research.Host())
 	mygo.BindAs("CheckpointHost", review.NewCheckpointHost(adapter))

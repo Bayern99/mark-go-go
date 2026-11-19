@@ -4,6 +4,24 @@ import { bind, event, type Channel } from "mygo-runtime";
 
 // ---- Types ----
 
+export interface ChangeProposal {
+  id: string;
+  workspaceRoot: string;
+  documentId?: string;
+  path: string;
+  relPath?: string;
+  source?: string;
+  summary?: string;
+  baseVersion?: number;
+  baseText: string;
+  proposedText: string;
+  liveText: string;
+  mergedText: string;
+  hunks: DiffHunk[];
+  hasConflict?: boolean;
+  createdAt: number;
+}
+
 export interface Checkpoint {
   id: string;
   createdAt: number;
@@ -16,6 +34,32 @@ export interface CloseResult {
   closed: boolean;
   canceled: boolean;
 }
+
+export interface DiffHunk {
+  id: string;
+  header: string;
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  changeOldLine: number;
+  changeOldCount: number;
+  changeNewLine: number;
+  changeNewCount: number;
+  lines: DiffLine[];
+  decision: HunkDecision;
+  conflict?: boolean;
+  conflictReason?: string;
+}
+
+export interface DiffLine {
+  kind: DiffLineKind;
+  text: string;
+  oldLine?: number;
+  newLine?: number;
+}
+
+export type DiffLineKind = "context" | "delete" | "insert";
 
 export interface DocumentInfo {
   workspaceRoot?: string;
@@ -62,6 +106,8 @@ export interface HeadingHit {
   offset: number;
   level: number;
 }
+
+export type HunkDecision = "pending" | "accepted" | "rejected";
 
 export type IndexStatus = "idle" | "scanning" | "indexing" | "ready" | "error";
 
@@ -117,6 +163,22 @@ export interface NavSnapshot {
   error?: string;
   entries: NavEntry[];
   collapsedCount: number;
+}
+
+export interface ProposeInput {
+  id?: string;
+  workspaceRoot: string;
+  documentId?: string;
+  path: string;
+  source?: string;
+  summary?: string;
+  baseVersion?: number;
+  baseText: string;
+  proposedText?: string;
+  oldText?: string;
+  newText?: string;
+  startLine?: number;
+  endLine?: number;
 }
 
 export interface RecentWorkspace {
@@ -376,6 +438,11 @@ export interface ResearchUpdate {
   options?: ResearchOption[];
 }
 
+export interface ReviewUpdateEvent {
+  workspaceRoot: string;
+  proposals: ChangeProposal[];
+}
+
 export interface SectionRef {
   heading: string;
   occurrence: number;
@@ -472,6 +539,18 @@ export const WorkspaceHost = {
   watchView: bind<[string], void>("WorkspaceHost.WatchView", (documentID: string) => [documentID]),
 } as const;
 
+export const ReviewHost = {
+  acceptAll: bind<[string, string, string], ChangeProposal>("ReviewHost.AcceptAll", (workspaceRoot: string, proposalID: string, liveText: string) => [workspaceRoot, proposalID, liveText]),
+  complete: bind<[string, string], ChangeProposal[]>("ReviewHost.Complete", (workspaceRoot: string, proposalID: string) => [workspaceRoot, proposalID]),
+  decideHunk: bind<[string, string, string, HunkDecision, string], ChangeProposal>("ReviewHost.DecideHunk", (workspaceRoot: string, proposalID: string, hunkID: string, decision: HunkDecision, liveText: string) => [workspaceRoot, proposalID, hunkID, decision, liveText]),
+  diff: bind<[string, string], DiffHunk[]>("ReviewHost.Diff", (before: string, after: string) => [before, after]),
+  dismiss: bind<[string, string], ChangeProposal[]>("ReviewHost.Dismiss", (workspaceRoot: string, proposalID: string) => [workspaceRoot, proposalID]),
+  get: bind<[string, string], ChangeProposal>("ReviewHost.Get", (workspaceRoot: string, proposalID: string) => [workspaceRoot, proposalID]),
+  list: bind<[string], ChangeProposal[]>("ReviewHost.List", (workspaceRoot: string) => [workspaceRoot]),
+  submit: bind<[ProposeInput], ChangeProposal>("ReviewHost.Submit", (input: ProposeInput) => [input]),
+  sync: bind<[string, string, string], ChangeProposal>("ReviewHost.Sync", (workspaceRoot: string, proposalID: string, liveText: string) => [workspaceRoot, proposalID, liveText]),
+} as const;
+
 export const ResearchHost = {
   abort: bind<[string], void>("ResearchHost.Abort", (root: string) => [root]),
   answer: bind<[string, string, string], void>("ResearchHost.Answer", (root: string, requestID: string, optionID: string) => [root, requestID, optionID]),
@@ -521,6 +600,7 @@ export const CheckpointHost = {
 /** Events sent by the Go side. Subscribe with `events.name.on(listener)`. */
 export const events = {
   viewChanged: event<ViewEvent>("viewChanged"),
+  reviewUpdated: event<ReviewUpdateEvent>("reviewUpdated"),
   researchUpdate: event<ResearchUpdate>("researchUpdate"),
   docReloaded: event<Snapshot>("docReloaded"),
   docState: event<DocumentInfo>("docState"),

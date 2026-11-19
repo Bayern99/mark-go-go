@@ -382,11 +382,14 @@ it('restores the exact previous buffer with one Undo after applying a reviewed M
   const mounted = await mountEditor(original)
   try {
     const editor = mounted.editor
+    expect(editor.getMode()).toBe('preview')
     expect(editor.applyMarkdown('stale buffer', proposed)).toBe(false)
     expect(editor.getMarkdown()).toBe(original)
     expect(editor.applyMarkdown(original, proposed)).toBe(true)
+    expect(editor.getMode()).toBe('preview')
     expect(editor.getMarkdown()).toBe(proposed)
     expect(editor.undo()).toBe(true)
+    expect(editor.getMode()).toBe('preview')
     expect(editor.getMarkdown()).toBe(original)
     expect(editor.redo()).toBe(true)
     expect(editor.getMarkdown()).toBe(proposed)
@@ -396,3 +399,61 @@ it('restores the exact previous buffer with one Undo after applying a reviewed M
     await mounted.cleanup()
   }
 })
+
+it('updates only affected blocks in place in Markdown Preview and preserves single-step Undo across mode switches', async () => {
+  const original = '# Title\n\nFirst paragraph.\n\nSecond paragraph.\n\nThird paragraph.\n'
+  const proposed = '# Title\n\nFirst paragraph.\n\nSecond paragraph updated.\n\nThird paragraph.\n'
+  const mounted = await mountEditor(original)
+  try {
+    const editor = mounted.editor
+    const view = editor.getView()
+    const headingBefore = view.state.doc.child(0)
+    const firstParaBefore = view.state.doc.child(1)
+    const thirdParaBefore = view.state.doc.child(3)
+
+    expect(editor.getMode()).toBe('preview')
+    expect(editor.applyMarkdown(original, proposed)).toBe(true)
+    expect(editor.getMode()).toBe('preview')
+    expect(editor.getMarkdown()).toBe(proposed)
+
+    // Unchanged blocks keep their exact ProseMirror node instances in place.
+    expect(view.state.doc.child(0)).toBe(headingBefore)
+    expect(view.state.doc.child(1)).toBe(firstParaBefore)
+    expect(view.state.doc.child(3)).toBe(thirdParaBefore)
+    expect(view.state.doc.child(2).textContent).toBe('Second paragraph updated.')
+
+    // Switch Preview -> Source -> Undo in Source -> switch back to Preview -> Redo in Preview.
+    editor.setMode('source')
+    expect(editor.getMode()).toBe('source')
+    expect(editor.canUndo()).toBe(true)
+    expect(editor.undo()).toBe(true)
+    expect(editor.getMarkdown()).toBe(original)
+
+    editor.setMode('preview')
+    expect(editor.getMode()).toBe('preview')
+    expect(editor.getMarkdown()).toBe(original)
+    expect(editor.canRedo()).toBe(true)
+    expect(editor.redo()).toBe(true)
+    expect(editor.getMarkdown()).toBe(proposed)
+
+    // Switch Preview -> Source -> Preview -> Undo in Preview.
+    editor.setMode('source')
+    editor.setMode('preview')
+    expect(editor.canUndo()).toBe(true)
+    expect(editor.undo()).toBe(true)
+    expect(editor.getMarkdown()).toBe(original)
+
+    // Apply while in Source mode -> switch to Preview -> Undo in Preview.
+    editor.setMode('source')
+    expect(editor.applyMarkdown(original, proposed)).toBe(true)
+    expect(editor.getMode()).toBe('source')
+    editor.setMode('preview')
+    expect(editor.getMode()).toBe('preview')
+    expect(editor.canUndo()).toBe(true)
+    expect(editor.undo()).toBe(true)
+    expect(editor.getMarkdown()).toBe(original)
+  } finally {
+    await mounted.cleanup()
+  }
+})
+

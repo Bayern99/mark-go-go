@@ -32,6 +32,8 @@ const mocks = vi.hoisted(() => ({
   })),
   setThinkingLevel: vi.fn(async () => {}),
   setSessionName: vi.fn(async () => {}),
+  clone: vi.fn(async () => true),
+  compact: vi.fn(async () => ({ summary: 'Earlier research', tokensBefore: 1000 })),
   forkMessages: vi.fn<() => Promise<ResearchForkMessage[]>>(async () => [
     { entryId: 'entry-1', text: 'First prompt about attention' },
     { entryId: 'entry-2', text: 'Second prompt about scaling' },
@@ -203,6 +205,8 @@ vi.mock('../src/host/generated/mygo', async (original) => {
       setModel: mocks.setModel,
       setThinkingLevel: mocks.setThinkingLevel,
       setSessionName: mocks.setSessionName,
+      clone: mocks.clone,
+      compact: mocks.compact,
       forkMessages: mocks.forkMessages,
       fork: mocks.fork,
       tree: mocks.tree,
@@ -362,6 +366,30 @@ describe('Portrait Chat | Review right-pane shell', () => {
       finishPrompt('')
     } finally {
       finishPrompt?.('')
+      root.unmount()
+      container.remove()
+    }
+  })
+
+  it('lets Chat clone a conversation and compact its context', async () => {
+    const host = createBrowserHost('# Paper\n', 'paper.md')
+    const workspace = createBrowserWorkspace([host], { root: '/ws', name: 'ws', kind: 'folder' })
+    const container = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(container)
+    try {
+      root.render(<App workspace={workspace} />)
+      const history = page.getByRole('button', { name: 'Conversation history' })
+      await userEvent.click(history)
+      const clone = page.getByRole('button', { name: 'Clone conversation' })
+      await expect.element(clone).toBeEnabled()
+      await userEvent.click(clone)
+      await expect.poll(() => mocks.clone.mock.calls.length).toBe(1)
+      expect(mocks.clone).toHaveBeenCalledWith('/ws')
+      await userEvent.click(history)
+      await userEvent.click(page.getByRole('button', { name: 'Compact conversation' }))
+      await expect.poll(() => mocks.compact.mock.calls.length).toBe(1)
+      expect(mocks.compact).toHaveBeenCalledWith('/ws', '')
+    } finally {
       root.unmount()
       container.remove()
     }

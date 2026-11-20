@@ -165,6 +165,23 @@ export function SessionMenu({ session }: { session: ResearchSession }) {
     }
   }
 
+  async function runConversationAction(action: 'clone' | 'compact') {
+    setPending(true)
+    setError('')
+    try {
+      if (action === 'clone') {
+        if (await ResearchHost.clone(session.root)) setOpen(false)
+      } else {
+        await ResearchHost.compact(session.root, '')
+        setOpen(false)
+      }
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setPending(false)
+    }
+  }
+
   const matches = rows?.filter((row) =>
     (row.title || 'Untitled conversation').toLowerCase().includes(search.trim().toLowerCase()),
   )
@@ -226,6 +243,26 @@ export function SessionMenu({ session }: { session: ResearchSession }) {
                   >
                     <i className="ph ph-git-fork" aria-hidden="true" />
                     Fork
+                  </button>
+                  <button
+                    type="button"
+                    className="pill quiet"
+                    aria-label="Clone conversation"
+                    disabled={busy || unsent}
+                    onClick={() => void runConversationAction('clone')}
+                  >
+                    <i className="ph ph-copy" aria-hidden="true" />
+                    Clone
+                  </button>
+                  <button
+                    type="button"
+                    className="pill quiet"
+                    aria-label="Compact conversation"
+                    disabled={busy}
+                    onClick={() => void runConversationAction('compact')}
+                  >
+                    <i className="ph ph-arrows-in" aria-hidden="true" />
+                    Compact
                   </button>
                   <button
                     type="button"

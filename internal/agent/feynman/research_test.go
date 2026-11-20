@@ -169,6 +169,10 @@ func TestResearchNativeRPCStreamingAndMidTurnControls(t *testing.T) {
 	if skill.Source != "skill" || skill.SourceInfo == nil || skill.SourceInfo.BaseDir != "/opt/feynman/skills/paper-search" || skill.SourceInfo.Origin != "package" {
 		t.Fatalf("skill command lost source or sourceInfo: %+v", skill)
 	}
+	sourceJSON, err := json.Marshal(skill.SourceInfo)
+	if err != nil || !bytes.Contains(sourceJSON, []byte(`"changelogPath":"/opt/feynman/CHANGELOG.md"`)) {
+		t.Fatalf("skill command lost changelog path: %s (%v)", sourceJSON, err)
+	}
 	ext := byName["tools"]
 	if ext.Source != "extension" || ext.SourceInfo == nil || ext.SourceInfo.Source != "local" {
 		t.Fatalf("extension command lost source or sourceInfo: %+v", ext)
@@ -365,6 +369,27 @@ drainLoop:
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("aborted prompt hung")
+	}
+}
+
+func TestResearchPublishesArtifactWrittenBeforeAgentSettled(t *testing.T) {
+	home, root, data := t.TempDir(), t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("FEYNMAN_HOME", home)
+	h := NewResearchManager(fakeWorkspaceLookup{dataDir: data})
+	defer h.Close()
+	h.command = fixtureCommand(home)
+	events := make(chan ResearchUpdate, 128)
+	if err := h.connect(WorkspaceRef{Root: root}, func(e ResearchUpdate) { events <- e }); err != nil {
+		t.Fatal(err)
+	}
+	waitUpdate(t, events, "commands")
+	if _, err := h.Host().Prompt(context.Background(), root, "write after agent_end", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(filepath.Join(root, "late.md"))
+	if err != nil || string(content) != "# Late artifact\n" {
+		t.Fatalf("settled artifact was not published in the same turn: %q, %v", content, err)
 	}
 }
 
@@ -992,11 +1017,12 @@ func runFeynmanRPCFixture() {
 						"description": "Search academic papers",
 						"source":      "skill",
 						"sourceInfo": map[string]string{
-							"path":    "/opt/feynman/skills/paper-search/SKILL.md",
-							"source":  "package",
-							"scope":   "user",
-							"origin":  "package",
-							"baseDir": "/opt/feynman/skills/paper-search",
+							"path":          "/opt/feynman/skills/paper-search/SKILL.md",
+							"source":        "package",
+							"scope":         "user",
+							"origin":        "package",
+							"baseDir":       "/opt/feynman/skills/paper-search",
+							"changelogPath": "/opt/feynman/CHANGELOG.md",
 						},
 					},
 					{
@@ -1661,6 +1687,12 @@ func runFeynmanRPCFixture() {
 
 				sendRecord(map[string]any{"type": "turn_end", "toolResults": []any{}})
 				sendRecord(map[string]any{"type": "agent_end", "messages": []any{}, "willRetry": false})
+				if msg == "write after agent_end" {
+					time.Sleep(100 * time.Millisecond)
+					if err := os.WriteFile("late.md", []byte("# Late artifact\n"), 0600); err != nil {
+						os.Exit(2)
+					}
+				}
 				sendRecord(map[string]any{"type": "agent_settled", "aborted": false})
 			}(promptMsg)
 		}

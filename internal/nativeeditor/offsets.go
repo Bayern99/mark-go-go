@@ -91,3 +91,7 @@ func (s *sourceIndex) utf16AtEditor(off int) int {
 	}
 	return n
 }
+
+func validByteBoundary(text string, off int) bool {
+	return off >= 0 && off <= len(text) && (off == len(text) || utf8.RuneStart(text[off]))
+}

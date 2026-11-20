@@ -27,6 +27,9 @@ type Block struct {
 	// Height is how high it is taken to be until it has shown, as only
 	// those in view are laid out: a row when 0. Its element then says.
 	Height float32
+	// Width, when greater than the reading column, lets a wide block use
+	// the space between the viewport margins.
+	Width float32
 	// Interactive keeps the presses on Content's element for what is in
 	// it, as a button's, rather than the text's, the wheel still
 	// scrolling. Give a button KeepFocus to keep the typing in the editor.
@@ -329,7 +332,12 @@ func (ed *editor) placeBlocks(y0, y1 float64, dst []placed) []placed {
 	}
 	ed.eachBlock(h.lineAt(y0), min(h.lineAt(y1), h.n-1), func(b *block, top float64) {
 		if b.kind == blockApp {
-			dst = append(dst, placed{blockIndex: b.to, block: true, rect: ui.Rect{Y: float32(top - ed.scrollY), W: ed.textWidth(), H: b.height}})
+			w := ed.textWidth()
+			width := w
+			if column := ed.o.readingColumn; column.Width > 0 && ed.view.blocks[b.to].Width > w {
+				width = max(w, min(ed.view.blocks[b.to].Width, ed.laidW-column.Left-column.Right))
+			}
+			dst = append(dst, placed{blockIndex: b.to, block: true, rect: ui.Rect{X: (w - width) / 2, Y: float32(top - ed.scrollY), W: width, H: b.height}})
 		}
 	})
 	return dst
@@ -344,7 +352,7 @@ func (ed *editor) buildBlock(c *ui.Context, p placed) {
 	}
 	b := &v.blocks[p.blockIndex]
 	e := ui.Box(c).Key("block " + strconv.Itoa(b.id)).Absolute().
-		Left(ed.textX - ed.gutterW).Top(p.rect.Y).
+		Left(ed.textX - ed.gutterW + p.rect.X).Top(p.rect.Y).
 		Width(p.rect.W)
 	ed.describeElement(e, b.Label, b.Interactive)
 	built := builtBlock{p.blockIndex, b.id, e}

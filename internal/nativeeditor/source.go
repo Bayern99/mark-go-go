@@ -62,7 +62,7 @@ func (d *Document) Apply(revision uint64, start, end int, expected, replacement 
 		return ErrRevision
 	}
 	raw := idx.raw
-	if start < 0 || end < start || end > len(raw) || start < len(raw) && !utf8.RuneStart(raw[start]) || end < len(raw) && !utf8.RuneStart(raw[end]) || !utf8.ValidString(replacement) {
+	if end < start || !validByteBoundary(raw, start) || !validByteBoundary(raw, end) || !utf8.ValidString(replacement) {
 		return ErrPosition
 	}
 	if raw[start:end] != expected {
@@ -127,6 +127,7 @@ func (d *Document) SetScrollY(y float32) { d.state.SetScrollY(float64(y)) }
 func (d *Document) View(c *ui.Context, readOnly bool) ui.Element {
 	d.state.ReadOnly = readOnly
 	d.prepareView()
+	d.state.Theme = documentTheme(c.Theme(), d.mode)
 	return editor.View(c, &d.state)
 }
 

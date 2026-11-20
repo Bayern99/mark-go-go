@@ -167,10 +167,7 @@ func (b *Buffer) ReplaceAtVersion(version uint64, start, end int, replacement st
 }
 
 func (b *Buffer) exactEdit(start, end int, replacement string) {
-	text, codes := readEnds(replacement)
-	if codes == "" {
-		codes = strings.Repeat(string(endLF), strings.Count(text, "\n"))
-	}
+	text, codes := exactEnds(replacement)
 	b.editEnds([]Edit{{Start: start, End: end, Text: text}}, []string{codes}, editOther, nil, nil)
 }
 
@@ -1129,4 +1126,27 @@ func publicChanges(cs []change) []Change {
 		out[i] = Change{c.oldStart, c.oldEnd, c.newStart, c.newEnd}
 	}
 	return out
+}
+
+// RawSlice returns a normalized byte range using the saved spelling of
+// each line ending, for source clipboard transfers.
+func (s Snapshot) RawSlice(start, end int) string {
+	part := s.t.Slice(start, end)
+	if s.ends.cr+s.ends.crlf == 0 || !strings.Contains(part, "\n") {
+		return part
+	}
+	line := s.t.LineOf(start)
+	var out strings.Builder
+	for {
+		i := strings.IndexByte(part, '\n')
+		if i < 0 {
+			out.WriteString(part)
+			break
+		}
+		out.WriteString(part[:i])
+		out.WriteString(ending(s.ends.at(line)))
+		part = part[i+1:]
+		line++
+	}
+	return out.String()
 }

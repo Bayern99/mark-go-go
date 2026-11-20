@@ -87,3 +87,40 @@ func TestContinuousEditingAcrossModes(t *testing.T) {
 		}
 	}
 }
+
+func TestPasteKeepsMixedEndingsInMarkdown(t *testing.T) {
+	d := nativeeditor.New("left\r\nright\n")
+	d.SetMode(nativeeditor.Markdown)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill().AutoFocus() }, 480, 260)
+	tt.Frame()
+	if err := d.SelectUTF16(6, 6); err != nil {
+		t.Fatal(err)
+	}
+	tt.SetClipboard("a\nb\rc\r\n")
+	tt.Command("paste")
+	if want := "left\r\na\nb\rc\r\nright\n"; d.Source() != want {
+		t.Fatalf("pasted %q, want %q", d.Source(), want)
+	}
+	if !d.Undo() || d.Source() != "left\r\nright\n" {
+		t.Fatal("Undo failed to restore paste")
+	}
+}
+
+func TestRawEditsSpliceBytesAcrossLineEndings(t *testing.T) {
+	for _, src := range []string{"\r\n\n\r", "a\rX\n\rb\nc", "\r\n\r\n", "\rQ\nR\n"} {
+		for a := 0; a <= len(src); a++ {
+			for z := a; z <= len(src); z++ {
+				for _, insert := range []string{"", "X", "\n", "\r", "\r\n", "\r\n\r", "Q\r\nR\n"} {
+					d := nativeeditor.New(src)
+					want := src[:a] + insert + src[z:]
+					if err := d.Apply(d.Version(), a, z, src[a:z], insert); err != nil || d.Source() != want {
+						t.Fatalf("%q[%d:%d] + %q produced %q instead of %q: %v", src, a, z, insert, d.Source(), want, err)
+					}
+					if want != src && (!d.Undo() || d.Source() != src || !d.Redo() || d.Source() != want) {
+						t.Fatalf("history %q[%d:%d] + %q -> %q", src, a, z, insert, d.Source())
+					}
+				}
+			}
+		}
+	}
+}

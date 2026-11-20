@@ -417,6 +417,10 @@ func (ed *editor) undo(redo bool) bool {
 // VS Code do.
 func (ed *editor) copy(cut bool) {
 	r := &ed.view.text
+	slice := r.Slice
+	if b := ed.buf(); b.exactSource {
+		slice = b.Snapshot().RawSlice
+	}
 	var pieces []string
 	var whole []bool
 	var edits []Edit
@@ -424,9 +428,9 @@ func (ed *editor) copy(cut bool) {
 		if s.empty() {
 			line := r.LineOf(s.head)
 			a, z := r.LineStart(line), min(r.Len(), r.LineEnd(line)+1)
-			t := r.Slice(a, z)
+			t := slice(a, z)
 			from := a
-			if !strings.HasSuffix(t, "\n") {
+			if !strings.HasSuffix(t, "\n") && !strings.HasSuffix(t, "\r") {
 				t += "\n"
 				// The last line has no newline of its own to take along, so
 				// a cut would leave an empty line (or, when it is empty,
@@ -439,10 +443,11 @@ func (ed *editor) copy(cut bool) {
 			edits = append(edits, Edit{Start: from, End: z})
 			continue
 		}
-		pieces, whole = append(pieces, r.Slice(s.start(), s.end())), append(whole, false)
+		pieces, whole = append(pieces, slice(s.start(), s.end())), append(whole, false)
 		edits = append(edits, Edit{Start: s.start(), End: s.end()})
 	}
 	if p := ed.o.projection; p != nil {
+		lastClip = clipboard{}
 		var plain, md []string
 		for _, s := range ed.sels {
 			a, z := s.start(), s.end()
@@ -483,7 +488,9 @@ func (ed *editor) paste(text string) {
 	if ed.o.readOnly || text == "" {
 		return
 	}
-	text = strings.ReplaceAll(text, "\r\n", "\n")
+	if !ed.buf().exactSource {
+		text = strings.ReplaceAll(text, "\r\n", "\n")
+	}
 	r := &ed.view.text
 	pieces := []string{text}
 	whole := []bool{false}
@@ -511,7 +518,15 @@ func (ed *editor) paste(text string) {
 		edits = append(edits, Edit{Start: s.start(), End: s.end(), Text: p})
 	}
 	sels := slices.Clone(ed.sels)
-	ed.apply(edits, editOther, func(move func(int, bias) int) []sel {
+	var endings func(lineEnds) []string
+	if ed.buf().exactSource {
+		codes := make([]string, len(edits))
+		for i, e := range edits {
+			edits[i].Text, codes[i] = exactEnds(e.Text)
+		}
+		endings = func(lineEnds) []string { return codes }
+	}
+	ed.applyEnds(edits, endings, editOther, func(move func(int, bias) int) []sel {
 		for i := range sels {
 			sels[i].collapse(move(sels[i].end(), biasRight))
 		}

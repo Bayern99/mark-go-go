@@ -308,6 +308,15 @@ func (w *Window) contentCommand(cmd string) {
 	(&windowHandler{w}).SurfaceEvent(platform.SurfaceEvent{Kind: platform.SurfaceCommand, Text: cmd})
 }
 
+// CanEditContent reports whether the focused native control handles the
+// edit command. Call on the UI thread when validating the Edit menu.
+func (w *Window) CanEditContent(cmd string) bool {
+	return (&windowHandler{w}).SurfaceEvent(platform.SurfaceEvent{Kind: platform.SurfaceCommandEnabled, Text: cmd})
+}
+
+// EditContent sends an Edit menu command to the focused native control.
+func (w *Window) EditContent(cmd string) { w.contentCommand(cmd) }
+
 // detachContent tells the Content its window closed. Main thread only.
 func (w *Window) detachContent() {
 	if c := w.conn; c != nil {

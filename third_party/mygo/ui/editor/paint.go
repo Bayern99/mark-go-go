@@ -48,6 +48,11 @@ func (ed *editor) layout(w, h, scale float32) {
 		ed.textX += 2 * v.charWidth
 	}
 	ed.viewH, ed.laidW = h, w
+	if column := ed.o.readingColumn; column.Width > 0 {
+		left := max(ed.textX, column.Left)
+		available := max(0, w-left-max(ed.trackWidth()+4, column.Right))
+		ed.textX = left + max(0, (available-column.Width)/2)
+	}
 	wrap := ed.o.wrap != ed.toggledWrap
 	v.setWrap(wrap, ed.textWidth())
 	if wrap {
@@ -71,6 +76,9 @@ func (ed *editor) layout(w, h, scale float32) {
 func (ed *editor) textWidth() float32 {
 	v := &ed.view
 	w := ed.laidW - ed.textX - ed.trackWidth() - 4
+	if column := ed.o.readingColumn; column.Width > 0 {
+		w = min(column.Width, ed.laidW-ed.textX-max(ed.trackWidth()+4, column.Right))
+	}
 	if ed.o.wrapColumn > 0 {
 		w = min(w, float32(ed.o.wrapColumn)*v.charWidth)
 	}

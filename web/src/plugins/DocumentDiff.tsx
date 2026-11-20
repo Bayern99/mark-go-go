@@ -649,7 +649,11 @@ export function DocumentDiff({ before, after, hunks, onDecideHunk, onAcceptAll }
                 <span className="diff-ln" aria-hidden="true">
                   {line.newLine ?? ''}
                 </span>
-                <span className="diff-sigil" aria-hidden="true">
+                <span
+                  className="diff-sigil"
+                  role="img"
+                  aria-label={line.kind === 'delete' ? 'Removed line' : line.kind === 'insert' ? 'Added line' : 'Context line'}
+                >
                   {line.kind === 'delete' ? '−' : line.kind === 'insert' ? '+' : ' '}
                 </span>
                 <span className="diff-text">{line.text}</span>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Popover } from 'radix-ui'
 import { ScrollArea } from '../../components/ScrollArea'
+import { radioKeys } from '../../components/radioKeys'
 import {
   events,
   ResearchHost,
@@ -742,13 +743,14 @@ export function FeynmanSettings({ root, session, onClose, onInsertToChat }: Feyn
                 value={mcpName}
                 onChange={(e) => setMCPName(e.target.value)}
               />
-              <div className="seg" role="radiogroup" aria-label="MCP transport">
+              <div className="seg" role="radiogroup" aria-label="MCP transport" onKeyDown={radioKeys}>
                 {(['http', 'stdio'] as const).map((t) => (
                   <button
                     key={t}
                     type="button"
                     role="radio"
                     aria-checked={mcpTransport === t}
+                    tabIndex={mcpTransport === t ? 0 : -1}
                     className={`pill xs${mcpTransport === t ? ' primary' : ' quiet'}`}
                     onClick={() => setMCPTransport(t)}
                   >

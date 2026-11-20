@@ -1,7 +1,7 @@
 import '../src/styles.css'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
-import { userEvent } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { applyNativeEdit, nativeEditCapabilities } from '../src/editor/nativeEdit'
 import { App } from '../src/App'
 import type { ProposeInput, ResearchArtifact, ReviewUpdateEvent } from '../src/host/generated/mygo'
@@ -290,6 +290,9 @@ it('supports selective per-hunk Accept/Reject, concurrent non-overlapping merge 
     const hunksAfterUnrelated = container.querySelectorAll<HTMLElement>('.diff-hunk')
     expect(hunksAfterUnrelated[0].dataset.conflict).toBe('false')
     expect(hunksAfterUnrelated[1].dataset.conflict).toBe('false')
+    for (const label of ['Added line', 'Removed line', 'Context line']) {
+      await expect.element(page.getByRole('img', { name: label }).first()).toBeVisible()
+    }
 
     // Selectively Accept hunk-1 and Reject hunk-2.
     await userEvent.click(container.querySelector<HTMLButtonElement>('button[aria-label="Accept hunk-1"]')!)

@@ -473,6 +473,7 @@ describe('Portrait Chat | Review right-pane shell', () => {
 
       // 6. confirm
       emit({ kind: 'confirm', uiMethod: 'confirm', requestId: 'c1', text: 'Proceed with edit?', options: [{ id: 'yes', name: 'Confirm', kind: 'confirm' }, { id: 'no', name: 'Cancel', kind: 'cancel' }] })
+      await expect.element(page.getByText('Action required', { exact: true })).toBeVisible()
       await userEvent.click(page.getByRole('button', { name: 'Confirm' }))
       expect(mocks.answerConfirm).toHaveBeenCalledWith('/ws', 'c1', true, false)
       emit({ kind: 'permissionDone', requestId: 'c1' })
@@ -587,7 +588,9 @@ describe('Portrait Chat | Review right-pane shell', () => {
       expect(getComputedStyle(badge).fontVariantNumeric).toContain('tabular-nums')
 
       // Switch to Review tab and verify proposal + Restore missing file
-      await userEvent.click(page.getByRole('radio', { name: /Review/ }))
+      ;(container.querySelector('[role="radio"][aria-checked="true"]') as HTMLElement).focus()
+      await userEvent.keyboard('{ArrowRight}')
+      await expect.element(page.getByRole('radio', { name: /Review/ })).toHaveFocus()
       await expect.element(page.getByText('Fix citation')).toBeVisible()
       await userEvent.click(page.getByRole('button', { name: /Restore lost\.md/ }))
       expect(mocks.recoverArtifact).toHaveBeenCalledWith('/ws', 'outputs/lost.md')
@@ -597,7 +600,7 @@ describe('Portrait Chat | Review right-pane shell', () => {
       await userEvent.click(page.getByTestId('feynman-settings-toggle'))
       await expect.element(page.getByTestId('feynman-settings-stub')).toBeVisible()
       await userEvent.click(page.getByRole('button', { name: 'Back to research' }))
-      await expect.element(page.getByRole('radio', { name: /Review/ })).toBeVisible()
+      await expect.element(page.getByRole('radio', { name: /Chat/ })).toHaveFocus()
     } finally {
       root.unmount()
       container.remove()

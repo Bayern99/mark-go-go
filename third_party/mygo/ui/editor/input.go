@@ -4,6 +4,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/egoist/mygo/internal/rope"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -71,6 +72,9 @@ func (ed *editor) dispatch(ev ui.InputEvent) bool {
 			ed.setSels([]sel{ed.newSel(p.SourceOffset(ev.Start), p.SourceOffset(ev.End))}, revealFit)
 			return true
 		}
+		root := ed.view.text.Root()
+		ed.setSels([]sel{ed.newSel(rope.ByteOfRune(root, ev.Start), rope.ByteOfRune(root, ev.End))}, revealFit)
+		return true
 	case ui.InputText:
 		if !ed.o.readOnly {
 			ed.insert(ev.Text)

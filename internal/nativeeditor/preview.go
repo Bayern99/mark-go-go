@@ -17,6 +17,7 @@ type previewLayout struct {
 	applied      bool
 	replacements []editor.Replacement
 	styles       []editor.LineStyle
+	blocks       []editor.Block
 	display      string
 	segments     []displaySegment
 }
@@ -41,12 +42,13 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	p.document.Set(src)
 	p.replacements = p.replacements[:0]
 	p.styles = p.styles[:0]
+	p.blocks = append(p.blocks[:0], pageMargin(0, true, 44), pageMargin(snap.LineCount()-1, false, 120))
 	for i := 1; i < p.document.Len(); i++ {
 		b := p.document.Block(i)
 		switch b.Kind {
 		case parser.Heading:
 			line := snap.LineOf(b.Start)
-			p.styles = append(p.styles, editor.LineStyle{Line: line, Font: ui.Font{Family: "Barlow Semi Condensed", Size: float32(32 - 2*b.Level), Weight: 700}, LineHeight: 1.5})
+			p.styles = append(p.styles, headingStyle(line, b.Level))
 			if p.document.LineCount(i) > 0 {
 				_, start := p.document.Line(i, 0)
 				p.replace(b.Start, start, "")
@@ -124,6 +126,24 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	}
 	slices.SortStableFunc(p.replacements, func(a, b editor.Replacement) int { return a.Start - b.Start })
 	p.indexDisplay(src)
+}
+
+func pageMargin(line int, above bool, height float32) editor.Block {
+	return editor.Block{Line: line, Above: above, Height: height, Content: func(_ *ui.Context, e ui.Element, _ editor.Block) { e.Height(height) }}
+}
+
+func headingStyle(line, level int) editor.LineStyle {
+	sizes := [6]float32{28, 20, 16, 15, 14, 13}
+	size := sizes[level-1]
+	family := "IBM Plex Sans"
+	leading := float32(28)
+	if level <= 2 {
+		family = "Barlow Semi Condensed"
+	}
+	if level == 1 {
+		leading = 36
+	}
+	return editor.LineStyle{Line: line, Font: ui.Font{Family: family, Size: size, Weight: 600}, LineHeight: leading / size}
 }
 
 func (p *previewLayout) literal(src string, in parser.Inline) {
@@ -213,8 +233,12 @@ func (d *Document) prepareView() {
 	if d.mode == Markdown {
 		st.Label = "Markdown source"
 		st.Font = ui.Font{Family: "IBM Plex Mono", Size: 14}
-		if p.applied {
+		st.ReadingColumn = editor.ReadingColumn{}
+		st.LineNumbers = editor.LineNumbersOn
+		st.LineHeight = 1.5
+		if st.Projection != nil {
 			st.SetReplacements(nil)
+			st.SetBlocks(nil)
 			st.SetLineStyles(nil)
 			st.Projection = nil
 			p.applied = false
@@ -222,17 +246,30 @@ func (d *Document) prepareView() {
 		return
 	}
 	st.Label = "Markdown Preview"
-	st.Font = ui.Font{Family: "IBM Plex Sans", Size: 17}
+	st.Font = ui.Font{Family: "IBM Plex Sans", Size: 16}
+	st.LineHeight = 28.0 / 16.0
+	st.LineNumbers = editor.LineNumbersOff
+	st.ReadingColumn = editor.ReadingColumn{Width: 624, Left: 56, Right: 40}
 	if p.applied && p.version == d.Version() {
 		return
 	}
-	p.build(st.Buffer)
+	if p.document == nil || p.version != d.Version() {
+		p.build(st.Buffer)
+	}
+	st.SetBlocks(p.blocks)
 	st.SetReplacements(p.replacements)
 	st.SetLineStyles(p.styles)
 	p.applied = true
 	st.Projection = &editor.TextProjection{
-		Text:         func(a, z int) string { return p.display[p.displayOffset(a):p.displayOffset(z)] },
-		SourceOffset: p.sourceOffset,
+		Text:         func(a, z int) string { d.refreshProjection(); return p.display[p.displayOffset(a):p.displayOffset(z)] },
+		SourceOffset: func(n int) int { d.refreshProjection(); return p.sourceOffset(n) },
 		Markdown:     func(a, z int) string { idx := d.sourceIndex(); return idx.raw[idx.rawAtEditor(a):idx.rawAtEditor(z)] },
+	}
+}
+
+func (d *Document) refreshProjection() {
+	if d.preview.version != d.Version() {
+		d.preview.build(d.state.Buffer)
+		d.preview.applied = false
 	}
 }

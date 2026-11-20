@@ -52,3 +52,41 @@ func TestRenderedPreviewAcceptsPointerInputAndCrossBlockSelection(t *testing.T) 
 		t.Fatalf("accessible Markdown %q", node.Value)
 	}
 }
+
+func TestPreviewUsesTheReadingColumn(t *testing.T) {
+	for _, tc := range []struct {
+		width int
+		left  float32
+	}{{1000, 196}, {480, 56}} {
+		d := nativeeditor.New("A line of text")
+		tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, tc.width, 300)
+		tt.Frame()
+		r, ok := d.RectUTF16(0)
+		if !ok || r.X < tc.left-2 || r.X > tc.left+2 || r.Y < 43 || r.Y > 45 {
+			t.Errorf("width %d first caret %+v, want (%.0f,44)", tc.width, r, tc.left)
+		}
+	}
+}
+
+func TestPreviewEditsAtHiddenDelimiters(t *testing.T) {
+	d := nativeeditor.New("**汉字**。\r\n")
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill().AutoFocus() }, 510, 300)
+	tt.Frame()
+	if err := d.SelectUTF16(6, 6); err != nil {
+		t.Fatal(err)
+	}
+	tt.Key(0, ui.KeyBackspace)
+	if got := d.Source(); got != "**汉**。\r\n" {
+		t.Fatalf("backspace through bold delimiter %q", got)
+	}
+	tt.Command("undo")
+	r, ok := d.RectUTF16(2)
+	if !ok {
+		t.Fatal("missing glyph")
+	}
+	tt.ClickAt(r.X+.15, r.Y+r.H/2)
+	tt.Type("新")
+	if got := d.Source(); got != "**新汉字**。\r\n" {
+		t.Fatalf("click at first bold character inserted outside its run: %q", got)
+	}
+}

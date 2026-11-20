@@ -2,6 +2,9 @@ github.com/egoist/mygo v0.10.0
 Upstream commit ebde9399baf2734b3361856a53f4036859973d1d.
 The native UI, editor, rich text, Markdown and chart packages and their renderer
 dependencies are copied from this commit. Tests and examples remain upstream.
-Local changes support document groups, workspace lifecycle and loading WebKit
+The ui/editor package includes upstream changes through f098a223fcbccfb2ce772f8d12f171f1b79c5c7a
+for native block layout and caret geometry. Local changes preserve original source bytes,
+project editable Markdown and direct edit commands to focused native controls.
+Other local changes support document groups, workspace lifecycle and loading WebKit
 on macOS only when an application requests a web feature.
 See docs/mygo-document-groups.md.

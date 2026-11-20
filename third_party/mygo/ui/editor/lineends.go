@@ -77,6 +77,14 @@ func readEnds(s string) (text, codes string) {
 	return t.String(), c.String()
 }
 
+func exactEnds(raw string) (string, string) {
+	text, codes := readEnds(raw)
+	if codes == "" {
+		codes = strings.Repeat(string(endLF), strings.Count(text, "\n"))
+	}
+	return text, codes
+}
+
 // lf returns s with each line break \n, as the buffer keeps it.
 func lf(s string) string {
 	t, _ := readEnds(s)

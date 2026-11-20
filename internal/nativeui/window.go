@@ -19,13 +19,14 @@ type openDocument struct {
 }
 
 type Window struct {
-	host        *workspace.Service
-	win         *mygo.Window
-	ctx         context.Context
-	snapshot    workspace.WorkspaceSnapshot
-	documents   map[string]*openDocument
-	focusSource bool
-	failure     string
+	host                          *workspace.Service
+	win                           *mygo.Window
+	ctx                           context.Context
+	snapshot                      workspace.WorkspaceSnapshot
+	documents                     map[string]*openDocument
+	focusSource                   bool
+	menuKnown, menuUndo, menuRedo bool
+	failure                       string
 }
 
 func NewWindow(host *workspace.Service, opts mygo.WindowOptions) *mygo.Window {
@@ -37,7 +38,7 @@ func NewWindow(host *workspace.Service, opts mygo.WindowOptions) *mygo.Window {
 		workspace.WorkspaceChanged.Listen(w.win, func(_ workspace.WorkspaceSnapshot) { w.refresh() })
 		workspace.DocumentReloaded.Listen(w.win, w.reload)
 		workspace.CommandRequested.Listen(w.win, w.command)
-		w.win.OnFocus(w.updateMenu)
+		w.win.OnFocus(func() { w.menuKnown = false; w.updateMenu() })
 	})
 	return w.win
 }
@@ -63,7 +64,13 @@ func (w *Window) refresh() {
 			return
 		}
 		d := nativeeditor.New(snap.Text)
+		d.SetMode(nativeeditor.Mode(snap.State.ViewMode))
 		w.documents[id] = &openDocument{source: d, published: d.Version(), reloadVersion: snap.Version}
+	}
+	for _, info := range next.Documents {
+		if d := w.documents[info.ID]; d != nil && !info.Edited && !info.Conflict && d.published == d.source.Version() {
+			d.source.MarkSaved()
+		}
 	}
 	w.updateMenu()
 }
@@ -76,15 +83,8 @@ func (w *Window) reload(s workspace.Snapshot) {
 	}
 }
 
-func (w *Window) updateMenu() {
-	if w.win == nil || !w.win.IsFocused() {
-		return
-	}
-	d := w.documents[w.snapshot.ActiveID]
-	workspace.ApplyNativeEditMenu(d != nil && d.source.CanUndo(), d != nil && d.source.CanRedo())
-}
-
 func (w *Window) publish(id string, attempt int) error {
+	defer w.updateMenu()
 	d := w.documents[id]
 	if d == nil || d.published == d.source.Version() {
 		return nil
@@ -97,7 +97,6 @@ func (w *Window) publish(id string, attempt int) error {
 	}
 	if err == nil {
 		d.published = d.source.Version()
-		w.updateMenu()
 	}
 	return err
 }
@@ -119,10 +118,8 @@ func (w *Window) command(cmd workspace.NativeCommand) {
 		return
 	}
 	switch cmd.Command {
-	case "undo":
-		d.source.Undo()
-	case "redo":
-		d.source.Redo()
+	case "undo", "redo":
+		w.editCommand(cmd.Command, d)
 	}
 	if err := w.publish(cmd.ID, 0); err != nil {
 		w.failure = err.Error()
@@ -207,6 +204,7 @@ func (w *Window) View(c *ui.Context) {
 		if active.ReadOnly {
 			ui.Text(c, "Read only")
 		}
+		w.editorModeSelector(c, d)
 		field := d.source.View(c.Key("source"), active.ReadOnly).Grow(1).FillWidth()
 		if w.focusSource {
 			field.Focus()

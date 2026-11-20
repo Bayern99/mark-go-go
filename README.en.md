@@ -14,7 +14,7 @@ Use **Workspace / Outline** in the left sidebar to switch between workspace file
 - **Review**. Inspect proposed Markdown edits and apply them in the editor. One Undo restores the preceding text. Completed reports, plans and drafts appear under **Research files** and open in regular document tabs.
 - **Feynman settings**. Use the gear button to view status and manage models and MCP servers. Interactive setup and login open in the system Terminal.
 
-**Git** uses an existing local repository. Save the document, then create a checkpoint under **Git checkpoints** in the document toolbar. Choose a version to compare it with the current buffer and restore its text. Checkpoints use local Git refs associated with the document’s repository path. A renamed document starts a new history.
+**Git** checkpoints use local Git refs associated with the document’s repository path. Outside Git, the app keeps up to 50 local snapshots per document; those snapshots remain available if you later run `git init`. Save the document, then use **Checkpoints** in the document toolbar to create a snapshot or compare and restore an earlier version. A renamed document starts a new history.
 
 ## Development
 

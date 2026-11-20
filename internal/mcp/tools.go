@@ -579,18 +579,14 @@ func (s *Server) toolCreateCheckpoint(ctx context.Context, binding *sessionBindi
 	if s.deps.Workspace != nil {
 		userDataDir = s.deps.Workspace.UserDataDir()
 	}
-	list, err := review.CreateCheckpoint(ctx, binding.root, doc.Path, doc.Text, strings.TrimSpace(args.Label), source, userDataDir)
+	created, count, err := review.CreateCheckpoint(ctx, binding.root, doc.Path, doc.Text, strings.TrimSpace(args.Label), source, userDataDir)
 	if err != nil {
 		return toolError(err.Error()), nil
 	}
-	var newest review.Checkpoint
-	if len(list) > 0 {
-		newest = list[0]
-	}
 	return toolJSON(map[string]any{
 		"created":          true,
-		"checkpoint":       newest,
-		"checkpointsCount": len(list),
+		"checkpoint":       created,
+		"checkpointsCount": count,
 		"path":             doc.Path,
 		"relPath":          doc.RelPath,
 	})

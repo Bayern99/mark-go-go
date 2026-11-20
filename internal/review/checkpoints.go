@@ -1,6 +1,7 @@
 package review
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -112,14 +114,11 @@ func createdAtFromID(id string) int64 {
 func parseCheckpointBlob(id, raw string) (Checkpoint, string) {
 	if strings.HasPrefix(raw, "{") {
 		var payload checkpointPayload
-		if err := json.Unmarshal([]byte(raw), &payload); err == nil && payload.Format == checkpointPayloadFormat {
-			createdAt := payload.CreatedAt
-			if createdAt <= 0 {
-				createdAt = createdAtFromID(id)
-			}
+		if err := json.Unmarshal([]byte(raw), &payload); err == nil && payload.Format == checkpointPayloadFormat &&
+			payload.ID == id && payload.CreatedAt == createdAtFromID(id) {
 			return Checkpoint{
 				ID:        id,
-				CreatedAt: createdAt,
+				CreatedAt: payload.CreatedAt,
 				Label:     strings.TrimSpace(payload.Label),
 				Source:    normalizeCheckpointSource(payload.Source),
 				Backend:   "git",
@@ -165,11 +164,22 @@ func openCheckpointFile(ctx context.Context, workspace, path, userDataDir string
 	if err != nil || !file.Mode().IsRegular() {
 		return checkpointFile{}, errors.New("Checkpoints require a regular Markdown file.")
 	}
+	canonWorkspace := fsutil.CanonicalPath(workspace)
+	canonPath := fsutil.CanonicalPath(path)
+	if userDataDir == "" {
+		if cfg, err := os.UserConfigDir(); err == nil && cfg != "" {
+			userDataDir = filepath.Join(cfg, "markgogo")
+		} else {
+			userDataDir = filepath.Join(os.TempDir(), "markgogo")
+		}
+	}
+	docKey := fmt.Sprintf("%x", sha256.Sum256([]byte(canonPath)))
+	snapshotDir := filepath.Join(userDataDir, "checkpoints", docKey)
 	if _, err := checkpointGit(ctx, filepath.Dir(path), "", "rev-parse", "--git-dir"); err == nil {
 		top, topErr := checkpointGit(ctx, filepath.Dir(path), "", "rev-parse", "--show-toplevel")
 		if topErr == nil {
 			repo := strings.TrimSuffix(top, "\n")
-			rel, relErr := filepath.Rel(fsutil.CanonicalPath(repo), fsutil.CanonicalPath(path))
+			rel, relErr := filepath.Rel(fsutil.CanonicalPath(repo), canonPath)
 			if relErr == nil && filepath.IsLocal(rel) {
 				rel = filepath.ToSlash(rel)
 				if hasGitSegment(rel) {
@@ -184,16 +194,15 @@ func openCheckpointFile(ctx context.Context, workspace, path, userDataDir string
 					return checkpointFile{}, errors.New("Git could not check the document's ignore rules.")
 				}
 				return checkpointFile{
-					backend: "git",
-					repo:    repo,
-					path:    rel,
-					prefix:  fmt.Sprintf("refs/markgogo/checkpoints/%x/", sha256.Sum256([]byte(rel))),
+					backend:     "git",
+					repo:        repo,
+					path:        rel,
+					prefix:      fmt.Sprintf("refs/markgogo/checkpoints/%x/", sha256.Sum256([]byte(rel))),
+					snapshotDir: snapshotDir,
 				}, nil
 			}
 		}
 	}
-	canonWorkspace := fsutil.CanonicalPath(workspace)
-	canonPath := fsutil.CanonicalPath(path)
 	rel, err := filepath.Rel(canonWorkspace, canonPath)
 	if err != nil || !filepath.IsLocal(rel) {
 		return checkpointFile{}, errors.New("Open a saved Markdown document in its workspace.")
@@ -202,19 +211,11 @@ func openCheckpointFile(ctx context.Context, workspace, path, userDataDir string
 	if hasGitSegment(relSlash) {
 		return checkpointFile{}, errors.New("Git metadata cannot be checkpointed.")
 	}
-	if userDataDir == "" {
-		if cfg, err := os.UserConfigDir(); err == nil && cfg != "" {
-			userDataDir = filepath.Join(cfg, "markgogo")
-		} else {
-			userDataDir = filepath.Join(os.TempDir(), "markgogo")
-		}
-	}
-	docKey := fmt.Sprintf("%x", sha256.Sum256([]byte(canonPath)))
 	return checkpointFile{
 		backend:     "local",
 		repo:        canonWorkspace,
 		path:        relSlash,
-		snapshotDir: filepath.Join(userDataDir, "checkpoints", docKey),
+		snapshotDir: snapshotDir,
 	}, nil
 }
 
@@ -283,19 +284,19 @@ func (d checkpointFile) readLocalIndexLocked() ([]Checkpoint, error) {
 	return result, nil
 }
 
-func (d checkpointFile) createLocal(text, label, source string) error {
+func (d checkpointFile) createLocal(text, label, source string) (Checkpoint, error) {
 	localCheckpointsMu.Lock()
 	defer localCheckpointsMu.Unlock()
 	if err := os.MkdirAll(d.snapshotDir, 0o700); err != nil {
-		return err
+		return Checkpoint{}, err
 	}
 	entries, err := d.readLocalIndexLocked()
 	if err != nil {
-		return err
+		return Checkpoint{}, err
 	}
 	id, createdAt := nextCheckpointID()
 	if err := fsutil.WriteFileAtomic(d.localBlobPath(id), []byte(text)); err != nil {
-		return fmt.Errorf("could not write the checkpoint: %w", err)
+		return Checkpoint{}, fmt.Errorf("could not write the checkpoint: %w", err)
 	}
 	entry := Checkpoint{
 		ID:        id,
@@ -315,23 +316,23 @@ func (d checkpointFile) createLocal(text, label, source string) error {
 	indexBytes, err := json.Marshal(next)
 	if err != nil {
 		_ = os.Remove(d.localBlobPath(id))
-		return err
+		return Checkpoint{}, err
 	}
 	if err := fsutil.WriteFileAtomic(d.localIndexPath(), indexBytes); err != nil {
 		_ = os.Remove(d.localBlobPath(id))
-		return fmt.Errorf("could not record the checkpoint: %w", err)
+		return Checkpoint{}, fmt.Errorf("could not record the checkpoint: %w", err)
 	}
 	for _, old := range pruned {
 		if validCheckpointID(old.ID) {
 			_ = os.Remove(d.localBlobPath(old.ID))
 		}
 	}
-	return nil
+	return entry, nil
 }
 
-func (d checkpointFile) create(ctx context.Context, text, label, source string) error {
+func (d checkpointFile) create(ctx context.Context, text, label, source string) (Checkpoint, error) {
 	if err := d.verifySavedText(text); err != nil {
-		return err
+		return Checkpoint{}, err
 	}
 	if d.backend == "local" {
 		return d.createLocal(text, label, source)
@@ -347,30 +348,35 @@ func (d checkpointFile) create(ctx context.Context, text, label, source string) 
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return Checkpoint{}, err
 	}
 	object, err := checkpointGit(ctx, d.repo, string(encoded), "hash-object", "-w", "--no-filters", "--stdin")
 	if err != nil {
-		return fmt.Errorf("could not write the checkpoint: %w", err)
+		return Checkpoint{}, fmt.Errorf("could not write the checkpoint: %w", err)
 	}
 	_, err = checkpointGit(ctx, d.repo, "", "update-ref", "--no-deref", d.prefix+id, strings.TrimSpace(object), "")
 	if err != nil {
-		return fmt.Errorf("could not record the checkpoint: %w", err)
+		return Checkpoint{}, fmt.Errorf("could not record the checkpoint: %w", err)
 	}
-	return nil
+	return Checkpoint{ID: id, CreatedAt: createdAt, Label: payload.Label, Source: payload.Source, Backend: "git"}, nil
 }
 
 func (d checkpointFile) list(ctx context.Context) ([]Checkpoint, error) {
+	localCheckpointsMu.Lock()
+	local, err := d.readLocalIndexLocked()
+	localCheckpointsMu.Unlock()
+	if err != nil {
+		return nil, err
+	}
 	if d.backend == "local" {
-		localCheckpointsMu.Lock()
-		defer localCheckpointsMu.Unlock()
-		return d.readLocalIndexLocked()
+		return local, nil
 	}
 	out, err := checkpointGit(ctx, d.repo, "", "for-each-ref", "--sort=-refname", "--format=%(refname)", d.prefix)
 	if err != nil {
 		return nil, fmt.Errorf("could not list checkpoints: %w", err)
 	}
-	checkpoints := []Checkpoint{}
+	checkpoints := make([]Checkpoint, 0, len(local))
+	gitIDs := make(map[string]bool)
 	for ref := range strings.Lines(out) {
 		id := strings.TrimPrefix(strings.TrimSuffix(ref, "\n"), d.prefix)
 		if !validCheckpointID(id) {
@@ -382,7 +388,19 @@ func (d checkpointFile) list(ctx context.Context) ([]Checkpoint, error) {
 		}
 		cp, _ := parseCheckpointBlob(id, raw)
 		checkpoints = append(checkpoints, cp)
+		gitIDs[id] = true
 	}
+	for _, cp := range local {
+		if !gitIDs[cp.ID] {
+			checkpoints = append(checkpoints, cp)
+		}
+	}
+	slices.SortFunc(checkpoints, func(a, b Checkpoint) int {
+		if byLength := cmp.Compare(len(b.ID), len(a.ID)); byLength != 0 {
+			return byLength
+		}
+		return cmp.Compare(b.ID, a.ID)
+	})
 	return checkpoints, nil
 }
 
@@ -395,46 +413,35 @@ func (d checkpointFile) read(ctx context.Context, id string) (string, error) {
 	if !validCheckpointID(id) {
 		return "", errors.New("Select a checkpoint of this document.")
 	}
-	if d.backend == "local" {
-		localCheckpointsMu.Lock()
-		defer localCheckpointsMu.Unlock()
-		entries, err := d.readLocalIndexLocked()
-		if err != nil {
-			return "", errors.New("This checkpoint is no longer available.")
+	if d.backend == "git" {
+		raw, err := checkpointGit(ctx, d.repo, "", "cat-file", "blob", d.prefix+id)
+		if err == nil {
+			_, content := parseCheckpointBlob(id, raw)
+			return content, nil
 		}
-		found := false
-		for _, entry := range entries {
-			if entry.ID == id {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return "", errors.New("This checkpoint is no longer available.")
-		}
-		data, err := os.ReadFile(d.localBlobPath(id))
-		if err != nil {
-			return "", errors.New("This checkpoint is no longer available.")
-		}
-		return string(data), nil
 	}
-	raw, err := checkpointGit(ctx, d.repo, "", "cat-file", "blob", d.prefix+id)
-	if err != nil {
-		return "", errors.New("This checkpoint is no longer available.")
+	localCheckpointsMu.Lock()
+	defer localCheckpointsMu.Unlock()
+	entries, err := d.readLocalIndexLocked()
+	if err == nil && slices.ContainsFunc(entries, func(entry Checkpoint) bool { return entry.ID == id }) {
+		if data, err := os.ReadFile(d.localBlobPath(id)); err == nil {
+			return string(data), nil
+		}
 	}
-	_, content := parseCheckpointBlob(id, raw)
-	return content, nil
+	return "", errors.New("This checkpoint is no longer available.")
 }
 
-func CreateCheckpoint(ctx context.Context, workspaceRoot, path, expectedText, label, source, userDataDir string) ([]Checkpoint, error) {
+func CreateCheckpoint(ctx context.Context, workspaceRoot, path, expectedText, label, source, userDataDir string) (Checkpoint, int, error) {
 	file, err := openCheckpointFile(ctx, workspaceRoot, path, userDataDir)
 	if err != nil {
-		return nil, err
+		return Checkpoint{}, 0, err
 	}
-	if err := file.create(ctx, expectedText, label, source); err != nil {
-		return nil, err
+	created, err := file.create(ctx, expectedText, label, source)
+	if err != nil {
+		return Checkpoint{}, 0, err
 	}
-	return file.list(ctx)
+	list, err := file.list(ctx)
+	return created, len(list), err
 }
 
 func ListCheckpoints(ctx context.Context, workspaceRoot, path, userDataDir string) ([]Checkpoint, error) {
@@ -488,7 +495,7 @@ func (h *CheckpointHost) Create(ctx context.Context, documentID, path, expectedT
 	if doc.Path != path || doc.Edited || doc.Conflict || doc.Deleted || doc.Content != expectedText {
 		return nil, errors.New("Save the current document and resolve any conflicts before creating a checkpoint.")
 	}
-	if err := file.create(ctx, expectedText, label, source); err != nil {
+	if _, err := file.create(ctx, expectedText, label, source); err != nil {
 		return nil, err
 	}
 	return file.list(ctx)

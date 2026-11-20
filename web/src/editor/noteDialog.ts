@@ -89,6 +89,7 @@ function openComposer(config: OpenComposerConfig): Promise<string | null> {
     const finish = (result: string | null) => {
       if (closed) return
       closed = true
+      if (document.activeElement === input) input.blur()
       history.dispose()
       config.scope.track(null)
       if (unmount) unmount()

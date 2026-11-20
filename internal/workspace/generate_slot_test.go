@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"github.com/egoist/mygo"
 )
 
@@ -115,10 +116,11 @@ func TestWorkspaceHostExposesOnlyNarrowRPCSurface(t *testing.T) {
 
 func TestServiceDomainLookupSeam(t *testing.T) {
 	root := t.TempDir()
-	docPath := filepath.Join(root, "paper.md")
+	canonicalRoot := fsutil.CanonicalPath(root)
+	docPath := filepath.Join(canonicalRoot, "paper.md")
 	win := &mygo.Window{}
 	h := NewService()
-	w := &workspace{id: "ws-1", root: root, win: win, tabs: []string{"doc-1"}, active: "doc-1"}
+	w := &workspace{id: "ws-1", root: canonicalRoot, win: win, tabs: []string{"doc-1"}, active: "doc-1"}
 	h.mu.Lock()
 	h.byWindow[win] = w
 	h.byWorkspace[w.id] = w
@@ -136,7 +138,7 @@ func TestServiceDomainLookupSeam(t *testing.T) {
 		t.Fatalf("WindowWorkspace without caller = %v, want errNoWorkspace", err)
 	}
 	ref, err := h.windowWorkspace(win, root)
-	if err != nil || ref.Root != root || ref.Window != win {
+	if err != nil || ref.Root != canonicalRoot || ref.Window != win {
 		t.Fatalf("windowWorkspace = %+v, %v", ref, err)
 	}
 	if err := h.editableDocument(win, root, "doc-1"); err != nil {

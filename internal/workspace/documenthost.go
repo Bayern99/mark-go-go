@@ -65,22 +65,24 @@ type docSession struct {
 	win  *mygo.Window
 	ws   *workspace
 
-	version      int
-	mcpVersion   int
-	mcpText      string
-	offReload    func()
-	offState     func()
-	offClosed    func()
-	generating   bool
-	genSlot      *generationSlot
-	closed       bool
-	pathFn       func() string
-	textFn       func() string
-	edited       bool
-	viewMode     string
-	scrollY      float32
-	restoreError string
-	actionError  string
+	version         int
+	mcpVersion      int
+	mcpText         string
+	offReload       func()
+	offState        func()
+	offClosed       func()
+	generating      bool
+	genSlot         *generationSlot
+	closed          bool
+	pathFn          func() string
+	textFn          func() string
+	edited          bool
+	viewMode        string
+	scrollY         float32
+	restoredScrollY float32
+	scrollRestore   uint64
+	restoreError    string
+	actionError     string
 
 	view *genui.ViewFollower
 }
@@ -166,18 +168,20 @@ func (s *docSession) makeInfo(st mygo.DocumentState, generating bool) DocumentIn
 		root = s.ws.root
 	}
 	return DocumentInfo{
-		WorkspaceRoot: root,
-		ID:            s.id,
-		Name:          st.Name,
-		Path:          st.Path,
-		Edited:        st.Edited,
-		Conflict:      st.Conflict,
-		Deleted:       st.Deleted,
-		ReadOnly:      st.ReadOnly,
-		Generating:    generating,
-		ViewMode:      s.viewMode,
-		ActionError:   s.actionError,
-		RestoreError:  s.restoreError,
+		WorkspaceRoot:   root,
+		ID:              s.id,
+		Name:            st.Name,
+		Path:            st.Path,
+		Edited:          st.Edited,
+		Conflict:        st.Conflict,
+		Deleted:         st.Deleted,
+		ReadOnly:        st.ReadOnly,
+		Generating:      generating,
+		ViewMode:        s.viewMode,
+		RestoredScrollY: s.restoredScrollY,
+		ScrollRestore:   s.scrollRestore,
+		ActionError:     s.actionError,
+		RestoreError:    s.restoreError,
 	}
 }
 
@@ -719,6 +723,9 @@ func (h *Service) SetDocumentScrollY(documentID string, scrollY float32) {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if h.restoring {
+		return
+	}
 	if s := h.byID[documentID]; s != nil {
 		s.scrollY = scrollY
 	}

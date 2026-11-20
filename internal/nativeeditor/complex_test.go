@@ -1,6 +1,7 @@
 package nativeeditor_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -556,5 +557,28 @@ func TestLegacyReadingPreferencesRestoreByContent(t *testing.T) {
 	}
 	if written["folds"] != `{"entries":[]}` {
 		t.Errorf("saved folds %s", written["folds"])
+	}
+}
+
+func TestSetScrollYBeforeFirstLayoutAppliesAfterLayout(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("# Long Document\n\n")
+	for i := 1; i <= 200; i++ {
+		fmt.Fprintf(&b, "## Section %03d\n\nParagraph text for section %03d.\n\n", i, i)
+	}
+	d := nativeeditor.New(b.String())
+	d.SetScrollY(900)
+	if got := d.ScrollY(); got != 900 {
+		t.Fatalf("pending ScrollY() before first frame = %v, want 900", got)
+	}
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 820, 640)
+	tt.Frame()
+	if got := d.ScrollY(); got != 900 {
+		t.Fatalf("ScrollY() after frame 1 before pending apply = %v, want 900", got)
+	}
+	tt.Frame()
+	tt.Frame()
+	if got := d.ScrollY(); got < 898 || got > 902 {
+		t.Fatalf("ScrollY() after layout settled = %v, want ~900", got)
 	}
 }

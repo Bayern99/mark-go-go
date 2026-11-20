@@ -24,6 +24,7 @@ type openDocument struct {
 	crumbs               []workspace.Crumb
 	source               *nativeeditor.Document
 	readingPreferenceKey string
+	scrollRestore        uint64
 	published            uint64
 	reloadVersion        int
 	outlineVersion       uint64
@@ -132,7 +133,7 @@ func (w *Window) refresh() {
 		}
 		d := nativeeditor.New(snap.Text)
 		d.SetScrollY(snap.ScrollY)
-		w.documents[id] = &openDocument{source: d, published: d.Version(), reloadVersion: snap.Version}
+		w.documents[id] = &openDocument{source: d, published: d.Version(), reloadVersion: snap.Version, scrollRestore: snap.State.ScrollRestore}
 	}
 	for _, info := range next.Documents {
 		if d := w.documents[info.ID]; d != nil {
@@ -141,6 +142,10 @@ func (w *Window) refresh() {
 				directory = filepath.Dir(info.Path)
 			}
 			d.source.SetImageDirectory(directory)
+			if info.ScrollRestore != 0 && d.scrollRestore != info.ScrollRestore {
+				d.scrollRestore = info.ScrollRestore
+				d.source.SetScrollY(info.RestoredScrollY)
+			}
 		}
 	}
 	if doc := w.Active(); doc.ID != "" && w.documents[doc.ID] != nil {

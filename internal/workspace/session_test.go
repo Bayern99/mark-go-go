@@ -197,11 +197,21 @@ func TestRestoreKeepsSavedScrollForInactiveTab(t *testing.T) {
 	}}}
 	h.applyRestorePlan(planSessionRestore(file, h.liveRestoreState(nil)))
 
-	if active.scrollY != 480.5 {
-		t.Fatalf("active scroll = %v, want 480.5", active.scrollY)
+	if active.scrollY != 480.5 || active.restoredScrollY != 480.5 || active.scrollRestore != 1 {
+		t.Fatalf("active scroll = %v restored=%v token=%d, want 480.5 / 480.5 / 1", active.scrollY, active.restoredScrollY, active.scrollRestore)
 	}
-	if other.scrollY != 96 {
-		t.Fatalf("inactive restored tab lost its scroll: %v, want 96", other.scrollY)
+	if other.scrollY != 96 || other.restoredScrollY != 96 || other.scrollRestore != 1 {
+		t.Fatalf("inactive restored tab lost its scroll: %v restored=%v token=%d, want 96 / 96 / 1", other.scrollY, other.restoredScrollY, other.scrollRestore)
+	}
+	if info := active.info(); info.RestoredScrollY != 480.5 || info.ScrollRestore != 1 {
+		t.Fatalf("active DocumentInfo restore fields = %+v", info)
+	}
+	if info := other.info(); info.RestoredScrollY != 96 || info.ScrollRestore != 1 {
+		t.Fatalf("other DocumentInfo restore fields = %+v", info)
+	}
+	h.SetDocumentScrollY("active", 0)
+	if active.scrollY != 480.5 {
+		t.Fatalf("SetDocumentScrollY during restore overwrote active.scrollY to %v", active.scrollY)
 	}
 	h.mu.Lock()
 	captured := h.captureSessionLocked()
@@ -851,6 +861,13 @@ func TestSetDocumentScrollYUpdatesSnapshotWithoutWritingSession(t *testing.T) {
 	}
 	s := &docSession{host: h, id: "doc", doc: &mygo.Document[string]{}}
 	h.byID[s.id] = s
+
+	h.restoring = true
+	h.SetDocumentScrollY("doc", 12)
+	if s.scrollY != 0 {
+		t.Fatalf("SetDocumentScrollY wrote %v while restoring", s.scrollY)
+	}
+	h.restoring = false
 
 	h.SetDocumentScrollY("doc", 77.5)
 	snap, err := h.Load(context.Background(), "doc")

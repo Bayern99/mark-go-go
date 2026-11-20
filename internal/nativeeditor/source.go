@@ -23,19 +23,21 @@ var (
 )
 
 type Document struct {
-	preferences readingPreferences
-	state       editor.State
-	preview     previewLayout
-	mode        Mode
-	index       *sourceIndex
-	tables      map[int]*readingTable
-	draft       *blockDraft
-	artwork     map[string]blockImage
-	imageDir    string
-	images      *inlineImages
-	refocus     bool
-	folded      map[string]bool
-	returns     map[string]int
+	preferences      readingPreferences
+	state            editor.State
+	preview          previewLayout
+	mode             Mode
+	index            *sourceIndex
+	tables           map[int]*readingTable
+	draft            *blockDraft
+	artwork          map[string]blockImage
+	imageDir         string
+	images           *inlineImages
+	refocus          bool
+	pendingScrollY   float32
+	hasPendingScroll bool
+	folded           map[string]bool
+	returns          map[string]int
 }
 
 func New(source string) *Document {
@@ -133,22 +135,49 @@ func (d *Document) Reload(source string) {
 	d.state.Buffer.Reset(source)
 	d.retryFailedInlineImages()
 }
-func (d *Document) Version() uint64      { return d.state.Buffer.Version() }
-func (d *Document) CanUndo() bool        { return !d.state.ReadOnly && d.state.Buffer.CanUndo() }
-func (d *Document) CanRedo() bool        { return !d.state.ReadOnly && d.state.Buffer.CanRedo() }
-func (d *Document) Undo() bool           { return d.CanUndo() && d.state.Run(editor.Undo) }
-func (d *Document) Redo() bool           { return d.CanRedo() && d.state.Run(editor.Redo) }
-func (d *Document) Modified() bool       { return d.state.Buffer.Modified() }
-func (d *Document) MarkSaved()           { d.state.Buffer.MarkSaved() }
-func (d *Document) Focused() bool        { return d.state.Focused() }
-func (d *Document) ScrollY() float32     { return float32(d.state.ScrollY()) }
-func (d *Document) SetScrollY(y float32) { d.state.SetScrollY(float64(y)) }
+func (d *Document) Version() uint64 { return d.state.Buffer.Version() }
+func (d *Document) CanUndo() bool   { return !d.state.ReadOnly && d.state.Buffer.CanUndo() }
+func (d *Document) CanRedo() bool   { return !d.state.ReadOnly && d.state.Buffer.CanRedo() }
+func (d *Document) Undo() bool      { return d.CanUndo() && d.state.Run(editor.Undo) }
+func (d *Document) Redo() bool      { return d.CanRedo() && d.state.Run(editor.Redo) }
+func (d *Document) Modified() bool  { return d.state.Buffer.Modified() }
+func (d *Document) MarkSaved()      { d.state.Buffer.MarkSaved() }
+func (d *Document) Focused() bool   { return d.state.Focused() }
+func (d *Document) ScrollY() float32 {
+	if d.hasPendingScroll {
+		return d.pendingScrollY
+	}
+	return float32(d.state.ScrollY())
+}
+
+func (d *Document) SetScrollY(y float32) {
+	if y < 0 {
+		y = 0
+	}
+	if d.state.ViewportHeight() <= 0 {
+		if y == 0 && !d.hasPendingScroll {
+			return
+		}
+		d.pendingScrollY = y
+		d.hasPendingScroll = y > 0
+		return
+	}
+	d.hasPendingScroll = false
+	d.state.SetScrollY(float64(y))
+}
 
 func (d *Document) View(c *ui.Context, readOnly bool) ui.Element {
 	d.state.ReadOnly = readOnly
 	d.prepareView()
 	d.state.Theme = documentTheme(c.Theme(), d.mode)
+	if d.hasPendingScroll && d.state.ViewportHeight() > 0 {
+		d.hasPendingScroll = false
+		d.state.SetScrollY(float64(d.pendingScrollY))
+	}
 	field := editor.View(c, &d.state)
+	if d.hasPendingScroll {
+		c.Invalidate()
+	}
 	if d.refocus {
 		field.Focus()
 		d.refocus = false

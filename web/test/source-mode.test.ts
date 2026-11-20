@@ -376,6 +376,44 @@ describe('source mode external state', () => {
   })
 })
 
+it('keeps earlier Markdown typing when undoing a proposal in Preview', async () => {
+  const original = '# Original\n\nReader notes.\n'
+  const mounted = await mountEditor(original)
+  try {
+    const editor = mounted.editor
+    editor.setMode('source')
+    const beforeApply = replaceSourceText(getSourceView(mounted.root), 'Reader notes.', 'Reader notes. New thought.')
+    const proposed = beforeApply.replace('# Original', '# Revised')
+    expect(editor.applyMarkdown(beforeApply, proposed)).toBe(true)
+    editor.setMode('preview')
+    expect(editor.undo()).toBe(true)
+    expect(editor.getMarkdown()).toBe(beforeApply)
+    expect(editor.undo()).toBe(true)
+    expect(editor.getMarkdown()).toBe(original)
+  } finally {
+    await mounted.cleanup()
+  }
+})
+
+it('undoes immediate Preview typing separately from a proposal', async () => {
+  const original = 'Original paragraph.\n'
+  const proposed = 'Revised paragraph.\n'
+  const mounted = await mountEditor(original)
+  try {
+    const editor = mounted.editor
+    expect(editor.applyMarkdown(original, proposed)).toBe(true)
+    const view = editor.getView()
+    view.dispatch(view.state.tr.insertText(' Reader note.', 19))
+    expect(editor.getMarkdown()).toBe('Revised paragraph. Reader note.\n')
+    expect(editor.undo()).toBe(true)
+    expect(editor.getMarkdown()).toBe(proposed)
+    expect(editor.undo()).toBe(true)
+    expect(editor.getMarkdown()).toBe(original)
+  } finally {
+    await mounted.cleanup()
+  }
+})
+
 it('restores the exact previous buffer with one Undo after applying a reviewed Markdown edit', async () => {
   const original = '# Original\r\n\r\nText with  spacing.'
   const proposed = '\n# New heading\n\nChanged draft.\n'
@@ -456,4 +494,3 @@ it('updates only affected blocks in place in Markdown Preview and preserves sing
     await mounted.cleanup()
   }
 })
-

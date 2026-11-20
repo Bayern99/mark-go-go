@@ -135,6 +135,27 @@ func TestOpenResolvesReadOnlyA2UIDataBindingsAndComponentUpdates(t *testing.T) {
 	}
 }
 
+func TestOpenResolvesLegacyPathAndCallAliases(t *testing.T) {
+	const view = `{"version":2,"sources":{},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"v","catalogId":"markgogo.dev:genui/v1","dataModel":{"title":"Alias title","body":"Alias body","description":"Alias description","hidden":true},"components":[{"id":"root","component":"Column","children":["body","tabs","prompt","aria"]},{"id":"body","component":"Text","text":{"path":"/body"}},{"id":"tabs","component":"Tabs","tabs":[{"title":{"path":"/title"},"child":"tabBody"}]},{"id":"tabBody","component":"Text","text":"Tab body"},{"id":"prompt","component":"Text","text":{"call":"formatString","args":{"value":{"path":"/title"}}}},{"id":"aria","component":"Column","children":["ariaBody"],"accessibility":{"label":{"path":"/title"},"description":{"call":"formatString","args":{"value":{"path":"/description"}}},"hidden":{"path":"/hidden"}}},{"id":"ariaBody","component":"Text","text":"Accessible content"}]}}]}`
+	surface, err := Open(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := surface.Nodes["body"].Text.String(); got != "Alias body" {
+		t.Errorf("path alias Text = %q, want Alias body", got)
+	}
+	if got := surface.Nodes["tabs"].Tabs[0].Title.String(); got != "Alias title" {
+		t.Errorf("path alias tab title = %q, want Alias title", got)
+	}
+	if got := surface.Nodes["prompt"].Text.String(); got != "Alias title" {
+		t.Errorf("nested path/call aliases in prompt text = %q, want Alias title", got)
+	}
+	accessibility := surface.Nodes["aria"].Accessibility
+	if accessibility.Label.String() != "Alias title" || accessibility.Description.String() != "Alias description" || string(accessibility.Hidden) != "true" {
+		t.Errorf("accessibility aliases resolved to label=%q description=%q hidden=%s", accessibility.Label.String(), accessibility.Description.String(), accessibility.Hidden)
+	}
+}
+
 func TestOpenResolvesPureBasicFunctionCallsAndReadingShowsTheResult(t *testing.T) {
 	const view = `{"version":2,"sources":{},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"v","catalogId":"markgogo.dev:genui/v1","dataModel":{"user":{"name":"Mira","suffix":"!"},"display/name":"Ada","ready":true,"approved":false,"email":"mira@example.com","empty":""},"components":[{"id":"root","component":"Column","children":["formatted","and","or","not","required","length","email","emptyRequired","unknown","effectful","hidden"]},{"id":"formatted","component":"Text","text":{"@call":"formatString","args":{"value":"Hello ${/user/name}${user/suffix} ${/display~1name} \\${literal}"}}},{"id":"and","component":"Text","text":{"@call":"and","args":{"values":[{"@call":"required","args":{"value":{"@path":"/user/name"}}},{"@call":"not","args":{"value":{"@path":"/approved"}}}]}}},{"id":"or","component":"Text","text":{"@call":"or","args":{"values":[{"@path":"/approved"},{"@path":"/ready"}]}}},{"id":"not","component":"Text","text":{"@call":"not","args":{"value":{"@path":"/approved"}}}},{"id":"required","component":"Text","text":{"@call":"required","args":{"value":{"@path":"/user/name"}}}},{"id":"length","component":"Text","text":{"@call":"length","args":{"value":{"@path":"/user/name"},"min":4}}},{"id":"email","component":"Text","text":{"@call":"email","args":{"value":{"@path":"/email"}}}},{"id":"emptyRequired","component":"Text","text":{"@call":"required","args":{"value":{"@path":"/empty"}}}},{"id":"unknown","component":"Text","text":{"@call":"customRenderer","args":{"value":"This stays inert."}}},{"id":"effectful","component":"Text","text":{"@call":"openUrl","args":{"url":"https://example.com"}}},{"id":"hidden","component":"Column","children":[],"accessibility":{"hidden":{"@call":"and","args":{"values":[{"@path":"/ready"},{"@call":"not","args":{"value":{"@path":"/approved"}}}]}}}}]}}]}`
 	surface, err := Open(view)

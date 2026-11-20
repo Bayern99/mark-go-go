@@ -64,12 +64,10 @@ func (t *literal) UnmarshalJSON(raw []byte) error {
 	if err := json.Unmarshal(raw, &object); err != nil {
 		return err
 	}
-	if rawPath, ok := object["@path"]; ok {
-		if err := json.Unmarshal(rawPath, &t.path); err != nil {
-			return err
-		}
+	if path, ok := dataBindingPath(object); ok {
+		t.path = path
 		t.bound = true
-	} else if _, ok := object["@call"]; ok {
+	} else if _, ok := functionCallName(object); ok {
 		t.call = append(t.call[:0], raw...)
 		t.bound = true
 	}

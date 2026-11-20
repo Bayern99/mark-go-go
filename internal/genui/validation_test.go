@@ -82,6 +82,18 @@ func assertValidationError(t *testing.T, raw string, wantSubstrings ...string) *
 	return ve
 }
 
+func TestValidateGeneratedViewDistinguishesNullSourceHashFromOmittedHash(t *testing.T) {
+	omitted := strings.Replace(validFullView, `, "hash": "fnv1a32:00000000"`, "", 1)
+	if err := ValidateGeneratedView([]byte(omitted)); err != nil {
+		t.Fatalf("ValidateGeneratedView with omitted hash: %v", err)
+	}
+	explicitNull := strings.Replace(validFullView, `"fnv1a32:00000000"`, "null", 1)
+	err := assertValidationError(t, explicitNull, `"hash" must be a string`)
+	if err.Code != "INVALID_SOURCES" || err.Path != "/sources/overview/hash" {
+		t.Fatalf("unexpected diagnostic: %+v", err)
+	}
+}
+
 func TestValidateGeneratedViewAcceptsWholeMergedAndFormatExample(t *testing.T) {
 	if err := ValidateGeneratedView([]byte(validFullView)); err != nil {
 		t.Fatalf("ValidateGeneratedView(validFullView) = %v, want nil", err)

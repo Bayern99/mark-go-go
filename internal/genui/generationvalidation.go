@@ -152,7 +152,7 @@ func validateSourcesObject(sources map[string]any) error {
 				return newValidationError("INVALID_SOURCES", fmt.Sprintf("Source %q: \"occurrence\" must be a whole number from 1.", id), "/sources/"+id+"/occurrence", "")
 			}
 		}
-		if hashVal, exists := entry["hash"]; exists && hashVal != nil {
+		if hashVal, exists := entry["hash"]; exists {
 			if _, ok := hashVal.(string); !ok {
 				return newValidationError("INVALID_SOURCES", fmt.Sprintf("Source %q: \"hash\" must be a string.", id), "/sources/"+id+"/hash", "")
 			}

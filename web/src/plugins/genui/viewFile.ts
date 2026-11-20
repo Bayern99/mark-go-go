@@ -52,7 +52,7 @@ export function parseViewFile(text: string): ParsedViewFile {
   }
 }
 
-function parseSources(value: unknown): Record<string, SourceRef> | string {
+export function parseSources(value: unknown): Record<string, SourceRef> | string {
   if (value === undefined) return {}
   if (!isRecord(value)) return '"sources" must be an object of source references.'
   const sources: Record<string, SourceRef> = {}

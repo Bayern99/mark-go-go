@@ -13,8 +13,9 @@ func (h *ResearchManager) Artifacts(ctx context.Context, root string) ([]review.
 	if err != nil {
 		return nil, err
 	}
+	canonRoot := fsutil.CanonicalPath(w.Root)
 	h.mu.Lock()
-	session := h.sessions[fsutil.CanonicalPath(w.Root)]
+	session := h.sessions[canonRoot]
 	busy := session != nil && session.busy
 	h.mu.Unlock()
 	if busy {

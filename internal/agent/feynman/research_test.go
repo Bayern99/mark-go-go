@@ -17,6 +17,7 @@ import (
 
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"github.com/Bayern99/mark-go-go/internal/review"
+	"github.com/egoist/mygo"
 )
 
 func TestMain(m *testing.M) {
@@ -551,6 +552,36 @@ func TestResearchConnectConcurrencyAndCrashReconnect(t *testing.T) {
 	waitUpdate(t, events, "commands")
 }
 
+func TestResearchListsSessionsWhileConnecting(t *testing.T) {
+	home := t.TempDir()
+	root := t.TempDir()
+	h := NewResearchManager(fakeWorkspaceLookup{dataDir: t.TempDir()})
+	defer h.Close()
+
+	commandReady := make(chan struct{})
+	start := make(chan struct{})
+	h.command = func(root, work string) (*exec.Cmd, error) {
+		cmd, err := fixtureCommand(home)(root, work)
+		close(commandReady)
+		<-start
+		return cmd, err
+	}
+	connected := make(chan error, 1)
+	go func() {
+		connected <- h.connect(WorkspaceRef{Root: root}, func(ResearchUpdate) {})
+	}()
+	<-commandReady
+	close(start)
+	for range 32 {
+		if _, err := h.Sessions(context.Background(), root); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := <-connected; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestResearchStopWhileConnectingReapsChildAndUnblocks(t *testing.T) {
 	home := t.TempDir()
 	root := t.TempDir()
@@ -605,6 +636,64 @@ func TestResearchStopWhileConnectingReapsChildAndUnblocks(t *testing.T) {
 			t.Fatal("spawned child process was not reaped after connect aborted")
 		}
 	default:
+	}
+}
+
+func TestResearchWindowCloseWhileStarting(t *testing.T) {
+	home := t.TempDir()
+	root := t.TempDir()
+	h := NewResearchManager(fakeWorkspaceLookup{dataDir: t.TempDir()})
+	defer h.Close()
+	watch := make(chan func(), 1)
+	h.onWindowClosed = func(_ *mygo.Window, closed func()) func() {
+		watch <- closed
+		return func() {}
+	}
+	commandReady := make(chan *exec.Cmd, 1)
+	release := make(chan struct{})
+	releaseCommand := sync.OnceFunc(func() { close(release) })
+	defer releaseCommand()
+	h.command = func(root, work string) (*exec.Cmd, error) {
+		cmd, err := fixtureCommand(home)(root, work)
+		commandReady <- cmd
+		<-release
+		return cmd, err
+	}
+	released := make(chan string, 1)
+	h.SetAfterStop(func(root, _ string) { released <- root })
+	done := make(chan error, 1)
+	go func() {
+		done <- h.connect(WorkspaceRef{Root: root, Window: new(mygo.Window)}, func(ResearchUpdate) {})
+	}()
+	cmd := <-commandReady
+	var closeWindow func()
+	select {
+	case closeWindow = <-watch:
+	default:
+		t.Fatal("window close is not observed during command startup")
+	}
+	closeWindow()
+	releaseCommand()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	select {
+	case <-ctx.Done():
+		t.Fatal("connect did not return after window close")
+	case err := <-done:
+		if err == nil {
+			t.Fatal("connect succeeded after window close")
+		}
+	}
+	select {
+	case <-ctx.Done():
+		t.Fatal("window teardown did not complete during startup")
+	case got := <-released:
+		if got != fsutil.CanonicalPath(root) {
+			t.Fatalf("cleaned up workspace %q, want %q", got, root)
+		}
+	}
+	if cmd.Process != nil {
+		t.Fatal("started the Feynman process after window close")
 	}
 }
 

@@ -49,7 +49,7 @@ func feynmanCLICommand(ctx context.Context, work string, args ...string) (*exec.
 	pathEnv := "PATH=" + strings.Join(paths, string(os.PathListSeparator))
 	feynmanBin := findExecutable([]string{pathEnv}, "feynman")
 	if feynmanBin == "" {
-		return nil, errors.New("Install Feynman CLI, then run feynman setup in Terminal.")
+		return nil, errors.New("Install Feynman CLI, then open Feynman settings to set up the app profile.")
 	}
 	cmd := exec.CommandContext(ctx, feynmanBin, args...)
 	if work != "" {
@@ -99,6 +99,9 @@ func (h *ResearchManager) runCLI(ctx context.Context, root string, timeout time.
 	if _, wsErr := h.workspace(ctx, root); wsErr != nil {
 		return "", 0, wsErr
 	}
+	if err := h.checkPrivateWorkspace(root, review.WorkDir(h.dataDir, root)); err != nil {
+		return "", 0, err
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -117,6 +120,7 @@ func (h *ResearchManager) runCLI(ctx context.Context, root string, timeout time.
 	if err != nil {
 		return "", 0, err
 	}
+	cmd.Env = h.feynmanEnv(cmd)
 	out, runErr := cmd.CombinedOutput()
 	raw = cleanCLIOutput(out)
 	if runErr != nil {
@@ -274,6 +278,9 @@ func (h *ResearchManager) LaunchTerminalWizard(ctx context.Context, root, wizard
 	if err != nil {
 		return CLITerminalLaunchResult{}, err
 	}
+	if err := h.checkPrivateWorkspace(root, review.WorkDir(h.dataDir, root)); err != nil {
+		return CLITerminalLaunchResult{}, err
+	}
 	h.ensureFocusWatch(w)
 
 	wizard = strings.TrimSpace(wizard)
@@ -312,7 +319,7 @@ func (h *ResearchManager) LaunchTerminalWizard(ctx context.Context, root, wizard
 		ctx, cancel = context.WithTimeout(ctx, terminalLaunchTimeout)
 		defer cancel()
 	}
-	if err := launcher(ctx, command); err != nil {
+	if err := launcher(ctx, command, h.profileHome()); err != nil {
 		return CLITerminalLaunchResult{Wizard: wizard, Command: command, Launched: false}, err
 	}
 	return CLITerminalLaunchResult{Wizard: wizard, Command: command, Launched: true}, nil
@@ -350,12 +357,14 @@ func appleScriptString(s string) string {
 	return `"` + s + `"`
 }
 
-func openSystemTerminal(ctx context.Context, command string) error {
-	launchCmd := command
+func openSystemTerminal(ctx context.Context, command, profile string) error {
+	sessions := filepath.Join(profile, ".feynman", "sessions")
+	launchCmd := "FEYNMAN_HOME=" + shellQuoteArg(profile) +
+		" PI_CODING_AGENT_SESSION_DIR=" + shellQuoteArg(sessions) + " " + command
 	if bin := findExecutable(nil, "feynman"); bin != "" {
 		binDir := filepath.Dir(bin)
 		if runtime.GOOS != "windows" && strings.HasPrefix(command, "feynman") {
-			launchCmd = fmt.Sprintf("PATH=%s:\"$PATH\" %s", shellQuoteArg(binDir), command)
+			launchCmd = fmt.Sprintf("PATH=%s:\"$PATH\" %s", shellQuoteArg(binDir), launchCmd)
 		}
 	}
 	switch runtime.GOOS {
@@ -374,6 +383,7 @@ func openSystemTerminal(ctx context.Context, command string) error {
 		return nil
 	case "windows":
 		cmd := exec.CommandContext(ctx, "cmd.exe", "/c", "start", "", "cmd.exe", "/k", command)
+		cmd.Env = append(cmd.Environ(), "FEYNMAN_HOME="+profile, "PI_CODING_AGENT_SESSION_DIR="+sessions)
 		return cmd.Start()
 	default:
 		if term := strings.TrimSpace(os.Getenv("TERMINAL")); term != "" {
@@ -394,7 +404,7 @@ func openSystemTerminal(ctx context.Context, command string) error {
 				return exec.CommandContext(ctx, path, candidate.args...).Start()
 			}
 		}
-		return errors.New("No supported terminal emulator found. Run the command in your terminal: " + command)
+		return errors.New("No supported terminal emulator found. Run the command in your terminal: " + launchCmd)
 	}
 }
 

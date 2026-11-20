@@ -45,7 +45,7 @@ type ResearchManager struct {
 	dataDir        string
 	command        func(root, work string) (*exec.Cmd, error)
 	cliCommand     func(ctx context.Context, work string, args ...string) (*exec.Cmd, error)
-	openTerminal   func(ctx context.Context, command string) error
+	openTerminal   func(ctx context.Context, command, profile string) error
 	onWindowClosed func(*mygo.Window, func()) func()
 	beforeStart    func(root, work string) error
 	afterStop      func(root, work string)
@@ -113,16 +113,17 @@ func NewResearchManager(workspaces WorkspaceLookup) *ResearchManager {
 	if workspaces != nil {
 		dataDir = workspaces.UserDataDir()
 	}
-	return &ResearchManager{
+	h := &ResearchManager{
 		workspaces:     workspaces,
 		dataDir:        dataDir,
-		command:        researchCommand,
 		cliCommand:     feynmanCLICommand,
 		openTerminal:   openSystemTerminal,
 		onWindowClosed: (*mygo.Window).OnClosed,
 		sessions:       make(map[string]*researchSession),
 		focusWatchers:  make(map[*mygo.Window]*focusWatcher),
 	}
+	h.command = h.researchCommand
+	return h
 }
 
 func (h *ResearchManager) SetBeforeStart(fn func(root, work string) error) {
@@ -158,11 +159,11 @@ func (h *ResearchManager) Connect(ctx context.Context, root string) error {
 
 func (h *ResearchManager) connect(w WorkspaceRef, emit func(ResearchUpdate)) error {
 	root := fsutil.CanonicalPath(w.Root)
-	if h.dataDir == "" {
-		return errors.New("The research data folder is unavailable.")
-	}
 	work := review.WorkDir(h.dataDir, root)
-	_, sessionsDir, _ := resolveFeynmanDirs()
+	if err := h.checkPrivateWorkspace(root, work); err != nil {
+		return err
+	}
+	sessionsDir := h.profileSessionsDir()
 	h.mu.Lock()
 	if h.closed {
 		h.mu.Unlock()

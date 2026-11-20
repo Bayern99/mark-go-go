@@ -43,17 +43,28 @@ func TestDirectFeynmanCommandAndFraming(t *testing.T) {
 	t.Setenv("PI_CODING_AGENT_SESSION_DIR", "")
 	t.Setenv("PATH", bin)
 
+	manager := NewResearchManager(fakeWorkspaceLookup{dataDir: data})
+	defer manager.Close()
 	work := review.WorkDir(data, root)
-	if _, err := researchCommand(root, work); err == nil || !strings.Contains(err.Error(), "Install Feynman CLI") {
+	if _, err := manager.researchCommand(root, work); err == nil || !strings.Contains(err.Error(), "Install Feynman CLI") {
 		t.Fatalf("expected missing feynman error without pi-acp/node mentions, got: %v", err)
 	}
 
 	fakeFeynman := filepath.Join(bin, "feynman")
-	if err := os.WriteFile(fakeFeynman, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+	if err := os.WriteFile(fakeFeynman, []byte("#!/bin/sh\nprintf '%s' \"$FEYNMAN_HOME\"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	profile := filepath.Join(fsutil.CanonicalPath(data), "feynman")
+	globalTrust := filepath.Join(home, ".feynman", "agent", "trust.json")
+	if err := os.MkdirAll(filepath.Dir(globalTrust), 0700); err != nil {
+		t.Fatal(err)
+	}
+	const denied = `{"/unrelated":false}`
+	if err := os.WriteFile(globalTrust, []byte(denied), 0600); err != nil {
 		t.Fatal(err)
 	}
 
-	cmd, err := researchCommand(root, work)
+	cmd, err := manager.researchCommand(root, work)
 	if err != nil {
 		t.Fatalf("researchCommand failed: %v", err)
 	}
@@ -73,7 +84,7 @@ func TestDirectFeynmanCommandAndFraming(t *testing.T) {
 	if !fsutil.SameRoot(cmd.Dir, work) {
 		t.Fatalf("cmd.Dir = %q, want %q", cmd.Dir, work)
 	}
-	wantSessions := fsutil.CanonicalPath(filepath.Join(home, ".feynman", "sessions"))
+	wantSessions := filepath.Join(profile, ".feynman", "sessions")
 	if !containsArgPair(cmd.Args, "--mode", "rpc") {
 		t.Fatalf("missing --mode rpc in args: %v", cmd.Args)
 	}
@@ -83,8 +94,22 @@ func TestDirectFeynmanCommandAndFraming(t *testing.T) {
 	if !containsArgPair(cmd.Args, "--cwd", fsutil.CanonicalPath(work)) {
 		t.Fatalf("missing --cwd %q in args: %v", fsutil.CanonicalPath(work), cmd.Args)
 	}
+	if !slices.Contains(cmd.Environ(), "FEYNMAN_HOME="+profile) {
+		t.Error("Research must launch with the app-private Feynman home")
+	}
+	trust, err := os.ReadFile(filepath.Join(profile, ".feynman", "agent", "trust.json"))
+	var decisions map[string]bool
+	if err != nil || json.Unmarshal(trust, &decisions) != nil || len(decisions) != 1 || !decisions[fsutil.CanonicalPath(work)] {
+		t.Errorf("wanted only the app-managed work directory trusted, got %s (%v)", trust, err)
+	}
+	if got, err := os.ReadFile(globalTrust); err != nil || string(got) != denied {
+		t.Errorf("global trust changed: %v", err)
+	}
+	if doctor, err := manager.CLIDoctor(context.Background(), root); err != nil || doctor.RawOutput != profile {
+		t.Errorf("Doctor used a different profile: %q (%v)", doctor.RawOutput, err)
+	}
 
-	if _, err := researchCommand(work, work); err == nil {
+	if _, err := manager.researchCommand(work, work); err == nil {
 		t.Fatal("expected overlap between workspace root and work dir to fail")
 	}
 

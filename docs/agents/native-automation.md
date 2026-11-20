@@ -22,3 +22,9 @@ scripts/native-automation-smoke.sh
 另一组实机验收从此 QA app 自己的 WebKit LocalStorage 载入插件开关、研究栏宽度、视图模式、折叠与列宽数据。验证了 Markdown 恢复、研究开关与旧键值迁入原生配置。折叠与列宽的视觉恢复由对应编辑功能验证。大纲跳转、文件和标题搜索、打开结果及 Ctrl+Tab 返回原文通过。对合成文件制造外部冲突和删除后，告警及未保存草稿均保留。
 
 [#68](https://github.com/Bayern99/mark-go-go/issues/68) 须在最终集成构建复跑 Save As、Duplicate 后续存盘、Rename、Move To、未命名关闭、取消与多窗口退出失败重试，另以真实 Finder 拖入及单根目录关闭核对范围。旧版的实机操作与结果见 [PR #41](https://github.com/Bayern99/mark-go-go/pull/41)、[PR #43](https://github.com/Bayern99/mark-go-go/pull/43) 和[既有验收记录](../acceptance.md)。当前的退出失败与重试服务回归见 [session_test.go](../../internal/workspace/session_test.go)。
+
+## GenUI 阅读和生成
+
+2026 年 11 月 20 日，在独立应用标识的 macOS 调试包中打开带两处同名标题、CRLF 和 emoji 的文稿。通过原生控件打开已有旁车，核对缺失与已改来源，点击清单进入第二个标题的原文。Preview 的可访问选区为 36–50，对应引用的完整文字。返回 GenUI、切换内页并对金额排序后，原地添加含评论结束符和 emoji 的批注。保存后比对整份原文，只有转义后的批注和分隔换行增加。
+
+生成验收使用实际工作区服务、文件观察器和独立 ACP 测试进程。完整生成保存了所选模型、生成要求与对应章节的哈希。局部更新保留另一页的表格，恢复操作逐字节还原前一份旁车。无效输出、已接收 prompt 后取消、重试及外部创建、损坏、删除和重建旁车均通过。两个文档同时生成时，挂起文档的要求、取消操作和结果均归属该文档。切换模型后再次生成，新旁车记录了新模型。本次使用测试进程提供可复现的 ACP 回复。

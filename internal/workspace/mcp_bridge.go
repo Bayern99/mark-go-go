@@ -37,17 +37,18 @@ type WorkspaceMCPState struct {
 }
 
 type DocumentMCPState struct {
-	ID       string `json:"id,omitempty"`
-	Name     string `json:"name"`
-	Path     string `json:"path"`
-	RelPath  string `json:"relPath"`
-	Open     bool   `json:"open"`
-	Edited   bool   `json:"edited"`
-	Conflict bool   `json:"conflict"`
-	Deleted  bool   `json:"deleted"`
-	ReadOnly bool   `json:"readOnly"`
-	Version  int    `json:"version"`
-	Text     string `json:"text"`
+	ID            string `json:"id,omitempty"`
+	Name          string `json:"name"`
+	Path          string `json:"path"`
+	RelPath       string `json:"relPath"`
+	Open          bool   `json:"open"`
+	Edited        bool   `json:"edited"`
+	Conflict      bool   `json:"conflict"`
+	Deleted       bool   `json:"deleted"`
+	ReadOnly      bool   `json:"readOnly"`
+	Version       int    `json:"version"`
+	EditorVersion int    `json:"-"`
+	Text          string `json:"text"`
 }
 
 type DocReveal struct {
@@ -240,6 +241,27 @@ func (h *Service) MCPWorkspaceState(root string) (WorkspaceMCPState, error) {
 	}, nil
 }
 
+func (s *docSession) mcpDocument(root string) DocumentMCPState {
+	s.host.mu.Lock()
+	text := s.currentText()
+	switch {
+	case s.mcpVersion == 0:
+		s.mcpVersion = max(s.version, 1)
+	case text != s.mcpText:
+		s.mcpVersion++
+	}
+	s.mcpText = text
+	version := s.mcpVersion
+	editorVersion := s.version
+	s.host.mu.Unlock()
+	info := s.info()
+	return DocumentMCPState{
+		ID: info.ID, Name: info.Name, Path: info.Path, RelPath: relSlash(root, info.Path),
+		Open: true, Edited: info.Edited, Conflict: info.Conflict, Deleted: info.Deleted,
+		ReadOnly: info.ReadOnly, Version: version, EditorVersion: editorVersion, Text: text,
+	}
+}
+
 func (h *Service) MCPDocument(root, idOrPath string) (DocumentMCPState, error) {
 	canonRoot := fsutil.CanonicalPath(root)
 	if canonRoot == "" {
@@ -248,24 +270,7 @@ func (h *Service) MCPDocument(root, idOrPath string) (DocumentMCPState, error) {
 	sessions, _ := h.openSessionsForWorkspace(canonRoot)
 	for _, s := range sessions {
 		if s.id == idOrPath {
-			h.mu.Lock()
-			version := s.version
-			h.mu.Unlock()
-			di := s.info()
-			rel := relSlash(canonRoot, di.Path)
-			return DocumentMCPState{
-				ID:       di.ID,
-				Name:     di.Name,
-				Path:     di.Path,
-				RelPath:  rel,
-				Open:     true,
-				Edited:   di.Edited,
-				Conflict: di.Conflict,
-				Deleted:  di.Deleted,
-				ReadOnly: di.ReadOnly,
-				Version:  version,
-				Text:     s.currentText(),
-			}, nil
+			return s.mcpDocument(canonRoot), nil
 		}
 	}
 
@@ -275,23 +280,7 @@ func (h *Service) MCPDocument(root, idOrPath string) (DocumentMCPState, error) {
 	}
 	for _, s := range sessions {
 		if p := s.currentPath(); p != "" && fsutil.SameFile(p, absPath) {
-			h.mu.Lock()
-			version := s.version
-			h.mu.Unlock()
-			di := s.info()
-			return DocumentMCPState{
-				ID:       di.ID,
-				Name:     di.Name,
-				Path:     di.Path,
-				RelPath:  rel,
-				Open:     true,
-				Edited:   di.Edited,
-				Conflict: di.Conflict,
-				Deleted:  di.Deleted,
-				ReadOnly: di.ReadOnly,
-				Version:  version,
-				Text:     s.currentText(),
-			}, nil
+			return s.mcpDocument(canonRoot), nil
 		}
 	}
 

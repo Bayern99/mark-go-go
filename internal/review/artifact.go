@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"unicode/utf8"
 
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
@@ -69,6 +70,7 @@ func walkResearchMarkdown(dir *os.Root, fn func(string) error) error {
 type artifactRecord struct {
 	File   ResearchArtifact `json:"file"`
 	Digest string           `json:"digest,omitempty"`
+	MCP    bool             `json:"mcp,omitempty"`
 }
 type artifactHistory map[string]artifactRecord
 
@@ -219,9 +221,9 @@ func ReadWorkingFile(work, rel string) ([]byte, error) {
 	return readResearchFile(parent, path.Base(rel))
 }
 
-func publishResearchFile(parent *os.Root, name string, data []byte) error {
+func publishResearchFile(parent *os.Root, name string, data []byte, mode fs.FileMode) error {
 	tmp := ".markgogo-" + rand.Text()
-	f, err := parent.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	f, err := parent.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
 	if err != nil {
 		return err
 	}
@@ -237,7 +239,74 @@ func publishResearchFile(parent *os.Root, name string, data []byte) error {
 	if closeErr != nil {
 		return closeErr
 	}
-	return parent.Link(tmp, name)
+	err = parent.Link(tmp, name)
+	if !errors.Is(err, errors.ErrUnsupported) && !errors.Is(err, syscall.EOPNOTSUPP) &&
+		!errors.Is(err, syscall.EPERM) && !errors.Is(err, syscall.ENOSYS) {
+		return err
+	}
+	target, err := parent.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return err
+	}
+	created, statErr := target.Stat()
+	_, err = target.Write(data)
+	if err == nil {
+		err = target.Sync()
+	}
+	err = errors.Join(err, target.Close())
+	if err != nil && statErr == nil {
+		if current, statErr := parent.Lstat(name); statErr == nil && os.SameFile(created, current) {
+			_ = parent.Remove(name)
+		}
+	}
+	return err
+}
+
+func mcpArtifactCopyDir(work string) string {
+	return filepath.Join(filepath.Dir(work), "mcp-artifacts")
+}
+
+func CreateDocumentArtifact(work, workspace, rel string, data []byte) error {
+	if !AllowedPath(rel) || len(data) > MaxResearchArtifactBytes || !utf8.Valid(data) {
+		return errors.New("Choose a workspace Markdown path and valid UTF-8 content within 8 MiB.")
+	}
+	artifactsMu.Lock()
+	defer artifactsMu.Unlock()
+	root, err := os.OpenRoot(workspace)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	parent, err := artifactParent(root, rel, true)
+	if err != nil {
+		return err
+	}
+	defer parent.Close()
+	if _, err := parent.Lstat(path.Base(rel)); err == nil {
+		return fs.ErrExist
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	history, err := readArtifactHistory(work)
+	if err != nil {
+		return err
+	}
+	copies := mcpArtifactCopyDir(work)
+	if err := os.MkdirAll(copies, 0700); err != nil {
+		return err
+	}
+	hash := fmt.Sprintf("%x", sha256.Sum256(data))
+	if err := fsutil.WriteFileAtomicMode(filepath.Join(copies, hash), data, 0600); err != nil {
+		return err
+	}
+	if err := publishResearchFile(parent, path.Base(rel), data, 0644); err != nil {
+		return err
+	}
+	history[rel] = artifactRecord{File: ResearchArtifact{Path: rel}, Digest: hash, MCP: true}
+	if err := history.save(work); err != nil {
+		return fmt.Errorf("created %q, but could not record it in Review: %w", rel, err)
+	}
+	return nil
 }
 
 func FinishArtifacts(work, workspace string, before Baseline) error {
@@ -291,7 +360,21 @@ func (r artifactRecord) completedBytes(work, rel string) ([]byte, error) {
 	if r.File.Error != "" || r.Digest == "" {
 		return nil, errors.New("There is no completed research copy for this file.")
 	}
-	data, err := ReadWorkingFile(work, rel)
+	var data []byte
+	var err error
+	if r.MCP {
+		dir, openErr := os.OpenRoot(mcpArtifactCopyDir(work))
+		if openErr != nil {
+			return nil, openErr
+		}
+		defer dir.Close()
+		if len(r.Digest) != 64 || strings.ContainsAny(r.Digest, `/\`) {
+			return nil, errors.New("The completed research copy has an invalid digest.")
+		}
+		data, err = readResearchFile(dir, r.Digest)
+	} else {
+		data, err = ReadWorkingFile(work, rel)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("The completed research copy is unavailable: %w", err)
 	}
@@ -429,7 +512,7 @@ func RecoverArtifact(work, workspace, rel string) (string, error) {
 		return "", err
 	}
 	defer parent.Close()
-	if err := publishResearchFile(parent, path.Base(rel), data); err != nil {
+	if err := publishResearchFile(parent, path.Base(rel), data, 0600); err != nil {
 		if errors.Is(err, fs.ErrExist) {
 			return "", errors.New("A workspace file already exists at this path.")
 		}
@@ -491,7 +574,7 @@ func collectResearchFile(work string, dest *os.Root, rel string, known bool) (Re
 			file.Proposal = true
 			return file, hash, nil
 		}
-		err = publishResearchFile(parent, name, data)
+		err = publishResearchFile(parent, name, data, 0600)
 		if err == nil {
 			return file, hash, nil
 		}

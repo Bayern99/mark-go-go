@@ -370,6 +370,42 @@ func TestUndoView(t *testing.T) {
 	}
 }
 
+func TestOverlappingViewReplacementsKeepImmediatePredecessor(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "document.genui.json")
+	first := []byte("first")
+	second := []byte("second")
+	third := []byte("third")
+	if err := ReplaceView(path, first, nil); err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	done := make(chan error, 2)
+	for _, update := range [][]byte{second, third} {
+		go func() {
+			<-start
+			done <- ReplaceView(path, update, nil)
+		}()
+	}
+	close(start)
+	for range 2 {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	current, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := UndoView(path); err != nil {
+		t.Fatal(err)
+	}
+	previous, err := os.ReadFile(path)
+	if err != nil || !((string(current) == "second" && string(previous) == "third") ||
+		(string(current) == "third" && string(previous) == "second")) {
+		t.Fatalf("overlapping updates produced current %q, undo %q (%v), want both committed revisions", current, previous, err)
+	}
+}
+
 func TestAgentToolAllowed(t *testing.T) {
 	dir := t.TempDir()
 	if !AgentToolAllowed(dir, "think", nil) {

@@ -13,7 +13,6 @@ import {
   type CLIModelListResult,
   type CLIPackageListResult,
   type CLISearchStatusResult,
-  type CLIStatusResult,
 } from '../../host/generated/mygo'
 import { AlphaXivPanel, CLIRawFallback } from './AlphaXivPanel'
 import { ResearchIcon } from './Conversation'
@@ -81,8 +80,7 @@ function OptionPopover({
   )
 }
 
-export function FeynmanSettings({ root, session, onClose, onInsertToChat }: FeynmanSettingsSlotProps) {
-  const [statusRes, setStatusRes] = useState<CLIStatusResult | null>(null)
+export function FeynmanSettings({ root, session, cliStatus: statusRes, refreshCLIStatus, onClose, onInsertToChat }: FeynmanSettingsSlotProps) {
   const [doctorRes, setDoctorRes] = useState<CLIDoctorResult | null>(null)
   const [previewRes, setPreviewRes] = useState<CLICommandResult | null>(null)
   const [modelsRes, setModelsRes] = useState<CLIModelListResult | null>(null)
@@ -116,18 +114,17 @@ export function FeynmanSettings({ root, session, onClose, onInsertToChat }: Feyn
   const refreshingFocus = useRef(false)
 
   const loadCore = useCallback(async () => {
-    const [st, models, alpha] = await Promise.all([
-      ResearchHost.cliStatus?.(root),
+    const [, models, alpha] = await Promise.all([
+      refreshCLIStatus(),
       ResearchHost.cliModelList?.(root),
       ResearchHost.cliAlphaStatus?.(root),
     ])
-    if (st) setStatusRes(st)
     if (models) {
       setModelsRes(models)
       if (models.tier && models.tier !== 'not set') setTierInput(models.tier)
     }
     if (alpha) setAlphaStatus(alpha)
-  }, [root])
+  }, [refreshCLIStatus, root])
 
   const loadAll = useCallback(async () => {
     setLoading(true)
@@ -345,11 +342,10 @@ export function FeynmanSettings({ root, session, onClose, onInsertToChat }: Feyn
                 disabled={busyOp !== ''}
                 onClick={() =>
                   void runOp('doctor', async () => {
-                    const [st, doc] = await Promise.all([
-                      ResearchHost.cliStatus(root),
+                    const [, doc] = await Promise.all([
+                      refreshCLIStatus(),
                       ResearchHost.cliDoctor(root),
                     ])
-                    setStatusRes(st)
                     setDoctorRes(doc)
                   })
                 }

@@ -7,7 +7,7 @@ import { PluginRegistry } from '../core/PluginRegistry'
 import { ViewRegistry } from '../core/ViewRegistry'
 import type { AppPlugin } from '../core/types'
 import { createMarkdownEditor, type EditorMode, type MarkdownEditor } from '../editor/createEditor'
-import { nativeEditCapabilities, registerNativeEditTarget } from '../editor/nativeEdit'
+import { hasNativeFieldHistory, nativeEditCapabilities, registerNativeEditTarget } from '../editor/nativeEdit'
 import { reportNativeEditState } from '../host/mygoHost'
 import type { Disposable, DocumentInfo, HostAdapter, HostDocSnapshot } from '../host/types'
 import { isRecord } from '../lib/guards'
@@ -312,12 +312,17 @@ export function DocumentPane({
       const onFocus = () => {
         if (activeRef.current) reportHistory()
       }
+      const onTextInput = (event: Event) => {
+        if (hasNativeFieldHistory(event.target)) reportHistory()
+      }
       document.addEventListener('focusin', onFocus, true)
       document.addEventListener('focusout', onFocus, true)
+      document.addEventListener('input', onTextInput)
       cleanups.push({
         dispose() {
           document.removeEventListener('focusin', onFocus, true)
           document.removeEventListener('focusout', onFocus, true)
+          document.removeEventListener('input', onTextInput)
         },
       })
 

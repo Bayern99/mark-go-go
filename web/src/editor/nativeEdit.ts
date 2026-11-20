@@ -13,7 +13,10 @@ export interface NativeEditTarget {
   editorVisible(): boolean
 }
 
-const nativeFields = new Set<HTMLTextAreaElement | HTMLInputElement>()
+type NativeField = HTMLTextAreaElement | HTMLInputElement
+type NativeFieldHistory = Pick<NativeEditTarget, 'capabilities' | 'perform'>
+
+const nativeFields = new WeakMap<NativeField, NativeFieldHistory>()
 const targetRoots = new Map<string, ParentNode>()
 
 function isNativeField(el: Element | null): el is HTMLTextAreaElement | HTMLInputElement {
@@ -49,13 +52,18 @@ export function nativeComposerHasFocus(root?: ParentNode | null): boolean {
   return composerField(active) !== null
 }
 
-export function registerNativeField(field: HTMLTextAreaElement | HTMLInputElement): Disposable {
-  nativeFields.add(field)
+export function registerNativeField(field: NativeField, history: NativeFieldHistory): Disposable {
+  nativeFields.set(field, history)
   return {
     dispose() {
       nativeFields.delete(field)
     },
   }
+}
+
+export function hasNativeFieldHistory(target: EventTarget | null): boolean {
+  const field = nativeFieldAt(target)
+  return field !== null && nativeFields.has(field)
 }
 
 export function nativeFieldCapabilities(
@@ -64,7 +72,7 @@ export function nativeFieldCapabilities(
   ),
 ): NativeEditCapabilities {
   if (!field || field.readOnly || field.disabled) return { canUndo: false, canRedo: false }
-  return { canUndo: true, canRedo: true }
+  return nativeFields.get(field)?.capabilities() ?? { canUndo: true, canRedo: true }
 }
 
 const targets = new Map<string, NativeEditTarget>()
@@ -98,7 +106,10 @@ function execNative(command: NativeEditCommand): boolean {
 
 export function applyNativeEdit(id: string, command: NativeEditCommand): boolean {
   const root = targetRoots.get(id)
-  if (nativeComposerHasFocus(root)) return execNative(command)
+  const field = nativeFieldAt(document.activeElement)
+  if (field && nativeComposerHasFocus(root)) {
+    return nativeFields.get(field)?.perform(command) ?? execNative(command)
+  }
   const target = targets.get(id)
   if (!target || !target.editorVisible()) return false
   return target.perform(command)

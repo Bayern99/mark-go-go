@@ -9,6 +9,7 @@ import (
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
 	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"github.com/Bayern99/mark-go-go/internal/mcp"
+	"github.com/Bayern99/mark-go-go/internal/nativereview"
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
 	"github.com/Bayern99/mark-go-go/internal/review"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
@@ -54,7 +55,6 @@ func (a workspaceAdapter) CheckpointDocument(ctx context.Context, documentID, pa
 
 func main() {
 	host := workspace.NewService()
-	host.CreateWindow = func(opts mygo.WindowOptions) *mygo.Window { return nativeui.NewWindow(host, opts) }
 	configureReadBench(host)
 	mygo.App.OnBeforeQuit(host.OnBeforeQuit)
 
@@ -90,6 +90,9 @@ func main() {
 	host.SetDocuments(ds)
 	adapter := workspaceAdapter{svc: host}
 	reviewSvc := review.NewService()
+	host.CreateWindow = func(opts mygo.WindowOptions) *mygo.Window {
+		return nativeui.NewWindow(host, opts, nativereview.Install(host, reviewSvc, review.NewCheckpointHost(adapter)))
+	}
 	research := feynman.NewResearchManager(adapter)
 	mcpServer := mcp.NewServer(mcp.Dependencies{
 		Workspace: host,

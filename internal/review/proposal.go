@@ -16,6 +16,7 @@ import (
 
 type ChangeProposal struct {
 	ID            string     `json:"id"`
+	Revision      int64      `json:"revision"`
 	WorkspaceRoot string     `json:"workspaceRoot"`
 	DocumentID    string     `json:"documentId,omitempty"`
 	Path          string     `json:"path"`
@@ -252,6 +253,7 @@ func (s *Service) submitProposal(input ProposeInput, expectedText *string, liveT
 		queue = append(queue, sp)
 	}
 	s.byRoot[rootKey] = queue
+	sp.proposal.Revision = s.revision + 1
 	result := cloneProposal(sp.proposal)
 	snap := s.changedLocked(rootKey, input.WorkspaceRoot)
 	sink := s.onEvent
@@ -292,6 +294,7 @@ func (s *Service) SyncProposal(workspaceRoot, proposalID, liveText string) (Chan
 		return ChangeProposal{}, errors.New("Change proposal not found.")
 	}
 	recomputeProposalLocked(sp, liveText)
+	sp.proposal.Revision = s.revision + 1
 	result := cloneProposal(sp.proposal)
 	snap := s.changedLocked(rootKey, workspaceRoot)
 	sink := s.onEvent
@@ -332,6 +335,7 @@ func (s *Service) DecideHunk(workspaceRoot, proposalID, hunkID string, decision 
 	}
 	sp.decisions[hunkID] = decision
 	recomputeProposalLocked(sp, sp.proposal.LiveText)
+	sp.proposal.Revision = s.revision + 1
 	result := cloneProposal(sp.proposal)
 	snap := s.changedLocked(rootKey, workspaceRoot)
 	sink := s.onEvent
@@ -358,6 +362,7 @@ func (s *Service) AcceptAllHunks(workspaceRoot, proposalID, liveText string) (Ch
 		}
 	}
 	recomputeProposalLocked(sp, sp.proposal.LiveText)
+	sp.proposal.Revision = s.revision + 1
 	result := cloneProposal(sp.proposal)
 	snap := s.changedLocked(rootKey, workspaceRoot)
 	sink := s.onEvent
@@ -365,6 +370,78 @@ func (s *Service) AcceptAllHunks(workspaceRoot, proposalID, liveText string) (Ch
 
 	emitReviewUpdate(sink, snap)
 	return result, nil
+}
+
+var ErrStaleComparison = errors.New("The text or proposal changed. Compare again before applying.")
+
+func (s *Service) ApplyReviewed(root, id string, revision int64, live string, decisions map[string]HunkDecision, apply func(string) error) error {
+	key := canonicalRootKey(root)
+	s.mu.Lock()
+	queue := s.byRoot[key]
+	for index, entry := range queue {
+		if entry.proposal.ID != id {
+			continue
+		}
+		remaining, err := applyDecision(entry, revision, live, decisions, apply)
+		if err != nil {
+			s.mu.Unlock()
+			return err
+		}
+		if remaining == nil {
+			s.byRoot[key] = slices.Delete(queue, index, index+1)
+		} else {
+			remaining.proposal.Revision = s.revision + 1
+			queue[index] = remaining
+		}
+		event, sink := s.changedLocked(key, root), s.onEvent
+		s.mu.Unlock()
+		emitReviewUpdate(sink, event)
+		return nil
+	}
+	s.mu.Unlock()
+	return ErrStaleComparison
+}
+
+func applyDecision(entry *storedProposal, revision int64, live string, decisions map[string]HunkDecision, apply func(string) error) (*storedProposal, error) {
+	if entry.proposal.Revision != revision || entry.proposal.LiveText != live {
+		return nil, ErrStaleComparison
+	}
+	selected := &storedProposal{proposal: entry.proposal, baseClusters: entry.baseClusters, decisions: decisions}
+	remaining := &storedProposal{proposal: entry.proposal}
+	hasAccepted := false
+	for i, hunk := range entry.proposal.Hunks {
+		switch decisions[hunk.ID] {
+		case HunkAccepted:
+			if hunk.Conflict {
+				return nil, errors.New("An accepted hunk conflicts with the current text.")
+			}
+			hasAccepted = true
+		case HunkRejected:
+		default:
+			remaining.baseClusters = append(remaining.baseClusters, entry.baseClusters[i])
+		}
+	}
+	if len(remaining.baseClusters) == len(entry.baseClusters) {
+		return nil, errors.New("Accept or reject at least one hunk.")
+	}
+
+	next := live
+	if hasAccepted {
+		recomputeProposalLocked(selected, live)
+		next = selected.proposal.MergedText
+		if next != live {
+			if err := apply(next); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if len(remaining.baseClusters) == 0 {
+		return nil, nil
+	}
+	remaining.proposal.ProposedText = compareProposalText(remaining, remaining.proposal.BaseText)
+	_, _, _, remaining.baseClusters = extractClusters(remaining.proposal.BaseText, remaining.proposal.ProposedText)
+	recomputeProposalLocked(remaining, next)
+	return remaining, nil
 }
 
 func (s *Service) DismissProposal(workspaceRoot, proposalID string) ([]ChangeProposal, error) {
@@ -480,7 +557,8 @@ func clustersConflict(prop changeCluster, user changeCluster) (bool, bool) {
 }
 
 func compareProposalText(sp *storedProposal, liveText string) string {
-	base, _, _, live := extractClusters(sp.proposal.BaseText, liveText)
+	base := splitTextLines(sp.proposal.BaseText)
+	_, _, _, live := extractClusters(sp.proposal.BaseText, liveText)
 	changes := slices.Clone(sp.baseClusters)
 	for _, change := range live {
 		if !slices.ContainsFunc(sp.baseClusters, func(proposed changeCluster) bool {

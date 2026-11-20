@@ -434,7 +434,7 @@ export function FeynmanSettings({ root, session, cliStatus: statusRes, refreshCL
               Sign in in Terminal (Models)
             </button>
           </div>
-          <p className="meta">Start setup and sign-in here. Mark Go Go uses a separate Feynman profile and does not import your existing CLI login.</p>
+          <p className="meta">Mark Go Go links existing Feynman files, including sign-in and shared MCP settings. New or conflicting files can stay separate. Project trust is private: only app-managed projects are trusted. If you are not signed in, use Terminal here.</p>
 
           <div className="fy-cli-row">
             <input

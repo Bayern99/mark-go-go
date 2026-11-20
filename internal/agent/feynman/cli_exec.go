@@ -105,6 +105,9 @@ func (h *ResearchManager) runCLI(ctx context.Context, root string, timeout time.
 	if factory == nil {
 		factory = feynmanCLICommand
 	}
+	if err := h.prepareProfile(""); err != nil {
+		return "", 0, err
+	}
 	cmd, err := factory(ctx, h.cliWorkDir(root), args...)
 	if err != nil {
 		return "", 0, err

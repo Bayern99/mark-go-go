@@ -1,19 +1,15 @@
 package feynman
 
 import (
-	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"github.com/Bayern99/mark-go-go/internal/review"
 )
-
-var profileTrustMu sync.Mutex
 
 func (h *ResearchManager) profileHome() string {
 	return filepath.Join(fsutil.CanonicalPath(h.dataDir), "feynman")
@@ -32,7 +28,7 @@ func (h *ResearchManager) checkPrivateWorkspace(root, work string) error {
 		return errors.New("Choose a project folder separate from the application data folder.")
 	}
 	expectedWork := review.WorkDir(dataDir, root)
-	for _, dir := range []string{expectedWork, filepath.Join(filepath.Dir(expectedWork), "tmp"), filepath.Join(h.profileHome(), ".feynman", "agent"), h.profileSessionsDir()} {
+	for _, dir := range []string{expectedWork, filepath.Join(filepath.Dir(expectedWork), "tmp"), filepath.Join(h.profileHome(), ".feynman", "agent")} {
 		if fsutil.CanonicalPath(dir) != dir {
 			return errors.New("The research data folder contains a redirected path.")
 		}
@@ -43,44 +39,12 @@ func (h *ResearchManager) checkPrivateWorkspace(root, work string) error {
 	return nil
 }
 
-func (h *ResearchManager) trustManagedProject(work string) error {
-	dir := filepath.Join(h.profileHome(), ".feynman", "agent")
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return err
-	}
-	trustPath := filepath.Join(dir, "trust.json")
-	if fsutil.CanonicalPath(trustPath) != trustPath {
-		return errors.New("The private Feynman trust file is redirected.")
-	}
-	profileTrustMu.Lock()
-	defer profileTrustMu.Unlock()
-	trust := map[string]*bool{}
-	data, err := os.ReadFile(trustPath)
-	if err == nil {
-		if json.Unmarshal(data, &trust) != nil || trust == nil {
-			return errors.New("The private Feynman trust file is invalid.")
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	if decision := trust[work]; decision != nil && *decision {
-		return nil
-	}
-	approved := true
-	trust[work] = &approved
-	data, err = json.MarshalIndent(trust, "", "  ")
-	if err != nil {
-		return err
-	}
-	return fsutil.WriteFileAtomicMode(trustPath, append(data, '\n'), 0600)
-}
-
 func (h *ResearchManager) feynmanEnv(cmd *exec.Cmd) []string {
 	return feynmanProfileEnv(cmd.Environ(), h.profileHome())
 }
 
 func feynmanProfileEnv(env []string, profile string) []string {
-	return append(env, "HOME="+profile, "USERPROFILE="+profile, "FEYNMAN_HOME="+profile,
+	return append(env, "FEYNMAN_HOME="+profile, "PI_CODING_AGENT_DIR="+filepath.Join(profile, ".feynman", "agent"),
 		"PI_CODING_AGENT_SESSION_DIR="+filepath.Join(profile, ".feynman", "sessions"))
 }
 
@@ -108,13 +72,13 @@ func (h *ResearchManager) researchCommand(root, work string) (*exec.Cmd, error) 
 	canonWork := fsutil.CanonicalPath(work)
 	temp := filepath.Join(filepath.Dir(canonWork), "tmp")
 	sessions := h.profileSessionsDir()
+	if err := h.prepareProfile(canonWork); err != nil {
+		return nil, err
+	}
 	for _, dir := range []string{canonWork, temp, sessions} {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return nil, err
 		}
-	}
-	if err := h.trustManagedProject(canonWork); err != nil {
-		return nil, err
 	}
 	cmd := exec.Command(feynmanBin, "--mode", "rpc", "--session-dir", sessions, "--cwd", canonWork)
 	cmd.Dir = canonWork

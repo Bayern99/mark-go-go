@@ -366,7 +366,7 @@ describe('Feynman Settings & alphaXiv Portrait UI', () => {
       await userEvent.click(page.getByTestId('feynman-settings-toggle'))
 
       await expect.element(page.getByRole('heading', { name: 'Feynman Settings', level: 3 })).toBeVisible()
-      await expect.element(page.getByText(/uses a separate Feynman profile/)).toBeVisible()
+      await expect.element(page.getByText(/links existing Feynman files/)).toBeVisible()
       const transport = container.querySelector<HTMLElement>('[role="radiogroup"][aria-label="MCP transport"] [aria-checked="true"]')!
       transport.focus()
       await userEvent.keyboard('{ArrowRight}')

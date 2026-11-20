@@ -16,28 +16,34 @@ func TestMacTerminalHandsOffWizard(t *testing.T) {
 		t.Skip("uses the macOS Terminal launcher")
 	}
 	bin := t.TempDir()
+	fixtureHome := t.TempDir()
+	fnmBin := filepath.Join(fixtureHome, ".local", "share", "fnm", "aliases", "default", "bin")
+	if err := os.MkdirAll(fnmBin, 0700); err != nil {
+		t.Fatal(err)
+	}
 	launchDir := t.TempDir()
 	profile := filepath.Join(t.TempDir(), "Test's Feynman profile")
 	output := filepath.Join(bin, "wizard-output")
 	request := filepath.Join(bin, "open-request")
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("HOME", fixtureHome)
+	t.Setenv("PATH", strings.Join([]string{bin, "/usr/bin", "/bin"}, string(os.PathListSeparator)))
 	t.Setenv("TMPDIR", launchDir)
 	t.Setenv("MGO_TERMINAL_TEST_OUTPUT", output)
 	t.Setenv("MGO_TERMINAL_TEST_REQUEST", request)
 	for name, script := range map[string]string{
-		"osascript": "#!/bin/sh\nexec /bin/sleep 10\n",
-		"open": `#!/bin/sh
+		filepath.Join(bin, "osascript"): "#!/bin/sh\nexec /bin/sleep 10\n",
+		filepath.Join(bin, "open"): `#!/bin/sh
 set -eu
 [ "$#" -eq 3 ]
 [ "$1" = -b ]
 [ "$2" = com.apple.Terminal ]
 printf '%s\n' "$3" > "$MGO_TERMINAL_TEST_REQUEST"
 `,
-		"feynman": `#!/bin/sh
+		filepath.Join(fnmBin, "feynman"): `#!/bin/sh
 printf '%s\n' "$FEYNMAN_HOME" "$PI_CODING_AGENT_DIR" "$PI_CODING_AGENT_SESSION_DIR" "$@" > "$MGO_TERMINAL_TEST_OUTPUT"
 `,
 	} {
-		if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0700); err != nil {
+		if err := os.WriteFile(name, []byte(script), 0700); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -48,13 +48,10 @@ func feynmanProfileEnv(env []string, profile string) []string {
 		"PI_CODING_AGENT_SESSION_DIR="+filepath.Join(profile, ".feynman", "sessions"))
 }
 
-func (h *ResearchManager) researchCommand(root, work string) (*exec.Cmd, error) {
-	if err := h.checkPrivateWorkspace(root, work); err != nil {
-		return nil, err
-	}
+func resolveFeynmanExecutable() (string, string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil, err
+		return "", "", err
 	}
 	dirs := append(filepath.SplitList(os.Getenv("PATH")), fsutil.DefaultUserBinDirs()...)
 	dirs = append(dirs, filepath.Join(home, ".local", "share", "fnm", "aliases", "default", "bin"), "/usr/bin", "/bin")
@@ -67,7 +64,18 @@ func (h *ResearchManager) researchCommand(root, work string) (*exec.Cmd, error) 
 	pathEnv := "PATH=" + strings.Join(paths, string(os.PathListSeparator))
 	feynmanBin, ok := fsutil.ResolveExecutable("feynman", []string{pathEnv}, nil)
 	if !ok {
-		return nil, errors.New("Install Feynman CLI, then open Feynman settings to set up the app profile.")
+		return "", "", errors.New("Install Feynman CLI, then open Feynman settings to set up the app profile.")
+	}
+	return feynmanBin, pathEnv, nil
+}
+
+func (h *ResearchManager) researchCommand(root, work string) (*exec.Cmd, error) {
+	if err := h.checkPrivateWorkspace(root, work); err != nil {
+		return nil, err
+	}
+	feynmanBin, pathEnv, err := resolveFeynmanExecutable()
+	if err != nil {
+		return nil, err
 	}
 	canonWork := fsutil.CanonicalPath(work)
 	temp := filepath.Join(filepath.Dir(canonWork), "tmp")

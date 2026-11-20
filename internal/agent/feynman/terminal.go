@@ -106,10 +106,9 @@ func openSystemTerminal(ctx context.Context, command, profile string) error {
 	launchCmd := "FEYNMAN_HOME=" + shellQuoteArg(profile) +
 		" PI_CODING_AGENT_DIR=" + shellQuoteArg(filepath.Join(profile, ".feynman", "agent")) +
 		" PI_CODING_AGENT_SESSION_DIR=" + shellQuoteArg(sessions) + " " + command
-	if bin, ok := fsutil.ResolveExecutable("feynman", nil, fsutil.DefaultUserBinDirs()); ok {
-		binDir := filepath.Dir(bin)
-		if runtime.GOOS != "windows" && strings.HasPrefix(command, "feynman") {
-			launchCmd = fmt.Sprintf("PATH=%s:\"$PATH\" %s", shellQuoteArg(binDir), launchCmd)
+	if runtime.GOOS != "windows" && strings.HasPrefix(command, "feynman") {
+		if bin, _, err := resolveFeynmanExecutable(); err == nil {
+			launchCmd = fmt.Sprintf("PATH=%s:\"$PATH\" %s", shellQuoteArg(filepath.Dir(bin)), launchCmd)
 		}
 	}
 	switch runtime.GOOS {

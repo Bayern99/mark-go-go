@@ -1,6 +1,7 @@
 package feynman
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -46,10 +47,12 @@ func TestFeynmanClearsOnlyTheSelectedWebSearchCredential(t *testing.T) {
 	}`
 	for _, tc := range []struct {
 		name            string
+		prefix          string
 		linked          bool
 		wrongConfigPath bool
 	}{
 		{name: "private profile"},
+		{name: "UTF-8 BOM", prefix: "\ufeff"},
 		{name: "linked profile", linked: true},
 		{name: "CLI reports a different config path", wrongConfigPath: true},
 	} {
@@ -72,7 +75,8 @@ func TestFeynmanClearsOnlyTheSelectedWebSearchCredential(t *testing.T) {
 			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(path, []byte(before), 0640); err != nil {
+			input := tc.prefix + before
+			if err := os.WriteFile(path, []byte(input), 0640); err != nil {
 				t.Fatal(err)
 			}
 			info, err := os.Stat(path)
@@ -88,7 +92,7 @@ func TestFeynmanClearsOnlyTheSelectedWebSearchCredential(t *testing.T) {
 				t.Fatal(err)
 			}
 			if tc.wrongConfigPath {
-				if clearErr == nil || string(data) != before {
+				if clearErr == nil || string(data) != input {
 					t.Fatalf("expected rejection without changes when CLI reports another file, got %v", clearErr)
 				}
 				return
@@ -102,7 +106,10 @@ func TestFeynmanClearsOnlyTheSelectedWebSearchCredential(t *testing.T) {
 				t.Fatalf("clearing Exa should preserve other Web Search settings: %+v (%v)", after, err)
 			}
 			var config map[string]json.RawMessage
-			if err := json.Unmarshal(data, &config); err != nil {
+			if !bytes.HasPrefix(data, []byte(tc.prefix)) {
+				t.Fatal("clearing a key removed the UTF-8 BOM")
+			}
+			if err := json.Unmarshal(data[len(tc.prefix):], &config); err != nil {
 				t.Fatal(err)
 			}
 			if config["exaApiKey"] != nil || string(config["braveApiKey"]) != `"fake-brave"` || string(config["route"]) != `"gemini"` ||
@@ -769,7 +776,7 @@ func runSearchKeyFixture(args []string) {
 	path := filepath.Join(os.Getenv("PI_CODING_AGENT_DIR"), "web-search.json")
 	config := map[string]any{}
 	if data, err := os.ReadFile(path); err == nil {
-		if err := json.Unmarshal(data, &config); err != nil {
+		if err := json.Unmarshal(bytes.TrimPrefix(data, []byte("\ufeff")), &config); err != nil {
 			panic(err)
 		}
 	}

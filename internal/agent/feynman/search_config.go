@@ -28,8 +28,10 @@ func removeSearchAPIKey(path, provider string) error {
 	if err != nil {
 		return fmt.Errorf("read Web Search settings: %w", err)
 	}
+	const utf8BOM = "\ufeff"
+	jsonData, hadBOM := bytes.CutPrefix(before, []byte(utf8BOM))
 	var config map[string]json.RawMessage
-	if json.Unmarshal(before, &config) != nil || config == nil {
+	if json.Unmarshal(jsonData, &config) != nil || config == nil {
 		return errors.New("The Web Search settings are not a JSON object.")
 	}
 	field := provider + "ApiKey"
@@ -41,6 +43,9 @@ func removeSearchAPIKey(path, provider string) error {
 	after, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return err
+	}
+	if hadBOM {
+		after = append([]byte(utf8BOM), after...)
 	}
 	currentTarget, err := filepath.EvalSymlinks(path)
 	if err != nil || currentTarget != target {

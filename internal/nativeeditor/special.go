@@ -148,6 +148,7 @@ func (p *previewLayout) special(snap editor.Snapshot, i int) bool {
 
 func (p *previewLayout) codeBlock(snap editor.Snapshot, i int) {
 	b := p.document.Block(i)
+	body := strings.TrimSuffix(p.document.Lines(i), "\n")
 	firstLine := snap.LineOf(b.Start)
 	lastLine := snap.LineOf(max(b.End-1, b.Start))
 	if b.Fenced {
@@ -175,11 +176,12 @@ func (p *previewLayout) codeBlock(snap editor.Snapshot, i int) {
 		headerLine++
 	}
 	p.blocks = append(p.blocks, editor.Block{
-		Line:    headerLine,
-		Above:   true,
-		Height:  26,
-		Label:   "Code block: " + label,
-		Content: codeHeader(label),
+		Line:        headerLine,
+		Above:       true,
+		Height:      26,
+		Interactive: true,
+		Label:       "Code block: " + label,
+		Content:     codeHeader(label, body),
 	})
 }
 
@@ -191,11 +193,15 @@ func (p *previewLayout) hideFenceLine(snap editor.Snapshot, line int) {
 	p.replace(start, end, "")
 }
 
-func codeHeader(label string) func(*ui.Context, ui.Element, editor.Block) {
+func codeHeader(label, body string) func(*ui.Context, ui.Element, editor.Block) {
 	return func(c *ui.Context, e ui.Element, _ editor.Block) {
 		e.Children(func() {
 			ui.Row(c).AlignItems(ui.Center).Padding(4, 8).Children(func() {
 				ui.Text(c, label).Font("IBM Plex Sans").FontSize(12).TextColor(c.Theme().TextMuted)
+				ui.Spacer(c)
+				if ui.Button(c, "Copy code").KeepFocus().Clicked() {
+					c.Services().WriteClipboard(body)
+				}
 			})
 		})
 	}

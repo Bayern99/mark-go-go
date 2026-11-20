@@ -2,6 +2,7 @@ package genui
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
 )
@@ -217,7 +219,17 @@ func PrevViewPath(viewPath string) string {
 	return strings.TrimSuffix(viewPath, ".json") + ".prev.json"
 }
 
+var viewPublicationLocks [64]sync.Mutex
+
+func lockViewPublication(path string) func() {
+	key := sha256.Sum256([]byte(fsutil.CanonicalPath(path)))
+	mu := &viewPublicationLocks[int(key[0])%len(viewPublicationLocks)]
+	mu.Lock()
+	return mu.Unlock
+}
+
 func ReplaceView(path string, data, expect []byte) error {
+	defer lockViewPublication(path)()
 	current, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return AgentErrorf("Could not read the current view file: %v.", err)
@@ -253,6 +265,7 @@ func ReplaceView(path string, data, expect []byte) error {
 }
 
 func UndoView(path string) error {
+	defer lockViewPublication(path)()
 	prev := PrevViewPath(path)
 	if fi, err := os.Lstat(prev); err != nil || !fi.Mode().IsRegular() {
 		return errors.New("There is no earlier view to go back to.")

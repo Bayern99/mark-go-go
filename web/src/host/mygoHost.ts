@@ -263,6 +263,9 @@ export function createMyGoHost(): WorkspaceAdapter {
     subscribe(fn: (snap: WorkspaceSnapshot) => void): Disposable {
       return disposable(events.workspaceChanged.on((snap) => fn(workspaceSnapshot(snap))));
     },
+    subscribeReveal(fn): Disposable {
+      return disposable(events.docReveal.on(fn));
+    },
     open(path: string): Promise<DocumentInfo> {
       return WorkspaceHost.open(path).then(documentInfo);
     },

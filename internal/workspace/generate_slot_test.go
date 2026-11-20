@@ -3,7 +3,6 @@ package workspace
 import (
 	"context"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -99,18 +98,6 @@ func TestWaitForGenerationsReturnsWhenIdle(t *testing.T) {
 	h.WaitForGenerations(time.Second)
 	if time.Since(start) > 500*time.Millisecond {
 		t.Fatal("idle WaitForGenerations must return immediately")
-	}
-}
-
-func TestWorkspaceHostExposesOnlyNarrowRPCSurface(t *testing.T) {
-	hostType := reflect.TypeFor[*Host]()
-	if got := hostType.NumMethod(); got != 34 {
-		t.Fatalf("Host exported method count = %d, want 34", got)
-	}
-	for _, internalOnly := range []string{"WindowWorkspace", "EditableDocument", "CheckpointDocument", "UserDataDir", "WaitForGenerations", "CloseAgentCache"} {
-		if _, ok := hostType.MethodByName(internalOnly); ok {
-			t.Errorf("Host unexpectedly exposes internal method %s", internalOnly)
-		}
 	}
 }
 

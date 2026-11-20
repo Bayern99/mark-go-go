@@ -10,7 +10,7 @@ macOS 正式构建的窗口、编辑、滚动、切换与内存对照见 [Portra
 
 2026-11-19 在隔离的 macOS arm64 应用中，使用 Feynman 0.5.71、pi-acp 0.0.33 和本地固定响应模型验证了工作区对话。空文件夹可以发起研究；同一窗口内两个工作区各自保留对话和产物。生成文件可打开为文档标签，重启后可恢复文档和对话。
 
-480 px 宽窗口中，收到修改建议后继续编辑正文会使旧比较失效。重新比较、应用和原生 Undo 均通过。删除一份已完成报告后，从右栏显式恢复取得相同字节。[改名期间的修改建议](../web/test/feynman-edit.test.tsx) 由浏览器用例覆盖。单文档 Git 检查点在已有暂存内容的仓库中完成创建、比较与恢复。实测 HEAD、当前分支和暂存条目前后一致。现行回归入口：[Research](../internal/agent/feynman/research_test.go) · [产物](../internal/review/artifact_test.go) · [Git](../internal/review/checkpoints_test.go) · [编辑器](../web/test/source-mode.test.ts)。
+480 px 宽窗口中，收到修改建议后继续编辑正文会使旧比较失效。重新比较、应用和原生 Undo 均通过。删除一份已完成报告后，从右栏显式恢复取得相同字节。改名期间的修改建议由迁移前 [固定版本的浏览器回归](https://github.com/Bayern99/mark-go-go/blob/81522cb48ec9718bffbda0255df1039692a2f6cd/web/test/feynman-edit.test.tsx) 覆盖。单文档 Git 检查点在已有暂存内容的仓库中完成创建、比较与恢复。实测 HEAD、当前分支和暂存条目前后一致。现行回归入口：[Research](../internal/agent/feynman/research_test.go) · [产物](../internal/review/artifact_test.go) · [Git](../internal/review/checkpoints_test.go) · [原生编辑器](../internal/nativeeditor/)。
 
 ### 研究交互与原生 CLI
 
@@ -26,9 +26,9 @@ Feynman 0.5.71 与 pi-acp 0.0.33 在隔离的本地模型上公布了 45 个命�
 
 第一次通过系统文件对话框和界面导航后，夹具的 select 与 confirm 提问分别在 10 秒及 5 秒超时；没有确认这两种问题的实机回答结果。原生控件的选择和确认入口由 [headless UI 用例](../internal/nativefeynman/chat_test.go)验证，回答协议由 [Feynman 服务用例](../internal/agent/feynman/research_test.go)验证。此次没有实测附件选择器、会话切换、alphaXiv 查询、提案送审、重启恢复、480 × 360、IME 或 VoiceOver；这些仍是迁移实机待验项。
 
-## MyGo v0.10.0 升级证据
+## 迁移前历史记录
 
-- 最新升级合并在 `9559625`。Go、Web 构建、两组 Web 测试和 Windows 交叉编译通过。 [main CI](https://github.com/Bayern99/mark-go-go/actions/runs/44240578323)
+- MyGo v0.10.0 升级合并在 `9559625`。当时的 Go、Web 构建、两组 Web 测试和 Windows 交叉编译通过。 [main CI](https://github.com/Bayern99/mark-go-go/actions/runs/44240578323)
 - `5b68b5c` 的隔离应用在 macOS 完整跑了两次原生 smoke，均退出 `0`。四个文档同窗、切换、磁盘保存、原生撤销重做和重启恢复通过。空正文退出 `1`，应用退出 `23` 时脚本返回 `23`。QA 数据与 Vite 临时缓存随运行目录清理。 [升级 PR](https://github.com/Bayern99/mark-go-go/pull/41)
 - 升级后的 macOS 包另行验证了 Save As、Rename、Move To、未命名原文关闭确认、外部冲突取消，以及真实 `Ctrl+Tab`。 [升级 PR](https://github.com/Bayern99/mark-go-go/pull/41)
 
@@ -38,4 +38,4 @@ Feynman 0.5.71 与 pi-acp 0.0.33 在隔离的本地模型上公布了 45 个命�
 
 ## 原生覆盖缺口
 
-精确光标与滚动位置、VoiceOver 和 Linux/Windows 界面仍需相应平台的复验。ComparisonTable 的键盘排序由 [Chromium 用例](../web/test/genui-catalog.test.tsx) 覆盖。历史验收与范围见 [工作区集成 #32](https://github.com/Bayern99/mark-go-go/issues/32) 和仓库历史。
+精确光标与滚动位置、VoiceOver 和 Linux/Windows 界面仍需相应平台的复验。ComparisonTable 的键盘排序由 [原生 GenUI 阅读器测试](../internal/nativegenui/reading_test.go) 覆盖；迁移前的 [Chromium 用例](https://github.com/Bayern99/mark-go-go/blob/81522cb48ec9718bffbda0255df1039692a2f6cd/web/test/genui-catalog.test.tsx) 保留为历史参照。既有验收与范围见 [工作区集成 #32](https://github.com/Bayern99/mark-go-go/issues/32) 和仓库历史。

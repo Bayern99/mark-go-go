@@ -27,16 +27,14 @@ go tool mygo dev
 go tool mygo build
 ```
 
-The migration keeps the original web implementation and tests for comparison. To run the browser reference, use `npm --prefix web ci` followed by `npm --prefix web run dev`.
+MyGo Native UI draws Preview, Markdown, GenUI and the workspace. Go regression tests load the 26 Markdown fixtures and shared section vectors directly. The format and protocol example live in the [GenUI format guide](docs/genui/view-format.md).
 
 ## Verification
 
 ```sh
-npx --prefix web playwright install chromium-headless-shell
-npm --prefix web test
-go test -race ./...
+scripts/verify.sh
 ```
 
-Use the [native Automation and macOS checks](docs/agents/native-automation.md) for menus, opening from Finder, saving and restoring a session.
+The script checks Go formatting, vet, MyGo vet, race tests and a Windows amd64 cross-build. Use the [native Automation and macOS checks](docs/agents/native-automation.md) for native windows, menus and session recovery. The [Portrait performance record](docs/agents/portrait-performance.md) preserves the WebKit baseline and the same-machine comparison method.
 
 [Architecture and code entry points](ARCHITECTURE.md) · [Interface design](DESIGN.md) · [Changelog](CHANGELOG.md) · [Acceptance evidence](docs/acceptance.md) · [MIT license](LICENSE)

@@ -4,11 +4,10 @@ build/
 /node_modules/
 web/node_modules/
 web/dist/
+web/.vitest/
 
 .DS_Store
 
 /markgogo
-
-web/.vitest/
 
 /docs/research/

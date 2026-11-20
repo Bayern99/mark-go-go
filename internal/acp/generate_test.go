@@ -577,7 +577,7 @@ type sectionVectors struct {
 
 func loadVectors(t *testing.T) sectionVectors {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "..", "web", "test", "fixtures", "section-vectors.json"))
+	data, err := os.ReadFile(filepath.Join("..", "testdata", "markdown", "section-vectors.json"))
 	if err != nil {
 		t.Fatalf("read section vectors: %v", err)
 	}

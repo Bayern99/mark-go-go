@@ -27,16 +27,14 @@ go tool mygo dev
 go tool mygo build
 ```
 
-迁移期间保留起点版本的网页实现和测试。运行浏览器参照时，先执行 `npm --prefix web ci`，再执行 `npm --prefix web run dev`。
+预览、Markdown、GenUI 和工作区界面由 MyGo Native UI 绘制。26 份 Markdown 语料和共享章节向量由 Go 回归测试直接载入；格式与协议示例见 [GenUI 格式](docs/genui/view-format.md)。
 
 ## 验证
 
 ```sh
-npx --prefix web playwright install chromium-headless-shell
-npm --prefix web test
-go test -race ./...
+scripts/verify.sh
 ```
 
-原生菜单、Finder 打开、保存和重启使用 [原生 Automation 与 macOS 验证流程](docs/agents/native-automation.md)。
+脚本运行 Go 格式、vet、MyGo vet、竞态测试及 Windows amd64 交叉编译。macOS 原生窗口、菜单和重启使用 [原生 Automation 与 macOS 验证流程](docs/agents/native-automation.md)。历史 WebKit 基线及同机对照方法见 [Portrait 性能记录](docs/agents/portrait-performance.md)。
 
 [架构与代码入口](ARCHITECTURE.md) · [界面设计](DESIGN.md) · [更新日志](CHANGELOG.md) · [验收记录](docs/acceptance.md) · [MIT 许可证](LICENSE)

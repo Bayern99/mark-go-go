@@ -339,6 +339,7 @@ func (h *Service) applyRestorePlan(plan restorePlan) {
 			}
 			h.mu.Lock()
 			s.viewMode = tab.ViewMode
+			s.scrollY = tab.ScrollY
 			s.restoreError = tab.RestoreError
 			h.mu.Unlock()
 			h.moveTab(s, dest)

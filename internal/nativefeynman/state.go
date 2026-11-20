@@ -99,6 +99,15 @@ func newPaneState(root string) *paneState {
 	}
 }
 
+// restoreDraft returns submitted input to the composer after a failure without
+// overwriting anything the user typed while the request was in flight.
+func (s *paneState) restoreDraft(prompt string, sources []string) {
+	if strings.TrimSpace(s.draft) == "" {
+		s.draft = prompt
+	}
+	s.sources = mergeSources(sources, s.sources)
+}
+
 func (s *paneState) resetConversation() {
 	s.messages = nil
 	s.commands = nil

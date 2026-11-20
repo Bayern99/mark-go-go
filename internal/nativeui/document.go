@@ -29,9 +29,11 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 					ui.Text(c, "No recent workspaces yet.").TextColor(muted)
 				}
 				for _, r := range m.Recents {
-					if control(c, r.Name, r.Name).Tooltip(r.Root).Clicked() && a.OpenRecent != nil {
-						a.OpenRecent(r.Root)
-					}
+					ui.Row(c.Key(r.Root)).Children(func() {
+						if control(c, r.Name, r.Name).Tooltip(r.Root).Clicked() && a.OpenRecent != nil {
+							a.OpenRecent(r.Root)
+						}
+					})
 				}
 			})
 			return

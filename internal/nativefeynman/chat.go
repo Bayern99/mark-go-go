@@ -53,7 +53,7 @@ func (p *panel) chat(c *ui.Context) {
 			if s.status == statusConnecting {
 				mutedText(c, "Connecting to Feynman…")
 			} else if controlButton(c, "Reconnect", "Reconnect to Feynman").Clicked() {
-				p.syncConnection()
+				p.reconnect()
 			}
 		})
 	}

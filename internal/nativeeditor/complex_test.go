@@ -1,6 +1,7 @@
 package nativeeditor_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -24,6 +25,52 @@ func TestTableCellEditsPreserveOtherCellsAndUndo(t *testing.T) {
 	}
 	if !d.Undo() || d.Source() != src {
 		t.Fatalf("Undo produced %q", d.Source())
+	}
+}
+
+func TestTableCellEditsKeepLineBreaksAndEscapedPipeCaret(t *testing.T) {
+	const multiline = "| Name | Tag |\n| --- | --- |\n| cat | x |\n\nafter"
+	d := nativeeditor.New(multiline)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 760, 420)
+	tt.Frame()
+	if err := tt.Click("Table row 2 column 1"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Command("selectAll")
+	tt.Type("one\ntwo")
+	tt.Frame()
+	want := "| Name | Tag |\n| --- | --- |\n| one<br>two | x |\n\nafter"
+	if d.Source() != want {
+		t.Fatalf("multiline cell produced %q", d.Source())
+	}
+	if !d.Undo() || d.Source() != multiline {
+		t.Fatal("multiline cell edit did not undo in one step")
+	}
+
+	const piped = "| Name | Tag |\n| --- | --- |\n| ab | x |\n\nafter"
+	d = nativeeditor.New(piped)
+	tt = ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 760, 420)
+	tt.Frame()
+	if err := tt.Click("Table row 2 column 1"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Command("selectAll")
+	tt.Type("a|b")
+	tt.Frame()
+	if want := "| Name | Tag |\n| --- | --- |\n| a\\|b | x |\n\nafter"; d.Source() != want {
+		t.Fatalf("inserting an escaped pipe produced %q", d.Source())
+	}
+	if a, z := d.SelectionUTF16(); a != 35 || z != 35 {
+		t.Fatalf("escaped pipe caret = %d..%d", a, z)
+	}
+	tt.Frame()
+	tt.Type("c")
+	tt.Frame()
+	if want := "| Name | Tag |\n| --- | --- |\n| a\\|bc | x |\n\nafter"; d.Source() != want {
+		t.Fatalf("typing after an escaped pipe produced %q", d.Source())
+	}
+	if a, z := d.SelectionUTF16(); a != 36 || z != 36 {
+		t.Fatalf("caret after typing past an escaped pipe = %d..%d", a, z)
 	}
 }
 
@@ -211,6 +258,103 @@ func TestAddNoteFromContextMenuAndKeyboardFolding(t *testing.T) {
 	tt.Frame()
 	if _, ok := tt.Find("Fold Heading"); !ok {
 		t.Fatal("keyboard did not expand section")
+	}
+}
+
+func TestChevronFoldMovesCaretOutOfHiddenSection(t *testing.T) {
+	const src = "# One\n\nBody text.\n\n# Two\n\nLast.\n"
+	d := nativeeditor.New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill().AutoFocus() }, 740, 420)
+	tt.Frame()
+	if err := d.SelectUTF16(8, 8); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if err := tt.Click("Fold One"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if a, z := d.SelectionUTF16(); a != 0 || z != 0 {
+		t.Fatalf("chevron fold left the caret at %d..%d", a, z)
+	}
+	if err := tt.Click("Expand One"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if a, z := d.SelectionUTF16(); a != 0 || z != 0 {
+		t.Fatalf("expanding moved the caret to %d..%d", a, z)
+	}
+	if err := d.SelectUTF16(8, 12); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if err := tt.Click("Fold One"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if a, z := d.SelectionUTF16(); a != 0 || z != 0 {
+		t.Fatalf("chevron fold left the selection at %d..%d", a, z)
+	}
+	tt.Type("X")
+	tt.Frame()
+	if want := "X# One\n\nBody text.\n\n# Two\n\nLast.\n"; d.Source() != want {
+		t.Fatalf("typing after folding changed hidden source: %q", d.Source())
+	}
+}
+
+func TestFoldStopsAtTopLevelHeadingPastQuotedHeading(t *testing.T) {
+	const src = "# Top\n\nIntro.\n\n> # Quoted\n\nInside quote.\n\n## Child\n\nStill top.\n\n# Next\n\nDone.\n"
+	d := nativeeditor.New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 740, 720)
+	tt.Frame()
+	if err := tt.Click("Fold Top"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	visible := func(text string) bool {
+		_, ok := d.RectUTF16(strings.Index(src, text))
+		return ok
+	}
+	for _, hidden := range []string{"Quoted", "Child", "Still top."} {
+		if visible(hidden) {
+			t.Fatalf("folding Top kept %q on screen", hidden)
+		}
+	}
+	if !visible("Done.") {
+		t.Fatal("folding Top hid the next top-level section")
+	}
+	if err := tt.Click("Expand Top"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if d.Source() != src {
+		t.Fatalf("folding a quoted heading changed source %q", d.Source())
+	}
+}
+
+func TestAddNoteAtDefaultCaretStaysOutOfFrontmatter(t *testing.T) {
+	const src = "---\ntitle: \"Read\"\ntags:\n  - one\n---\n\n# Heading\n\nBody.\n"
+	d := nativeeditor.New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill().AutoFocus() }, 740, 520)
+	tt.Frame()
+	if err := d.SelectUTF16(0, 0); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	r, ok := tt.Find("Frontmatter block")
+	if !ok {
+		t.Fatal("missing frontmatter block")
+	}
+	tt.RightClickAt(r.X+8, r.Y+8)
+	if err := tt.ChooseMenuItem("Add note"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Type("Metadata safe")
+	tt.Key(ui.Cmd, ui.KeyEnter)
+	tt.Frame()
+	want := "---\ntitle: \"Read\"\ntags:\n  - one\n---\n\n<!-- note: Metadata safe -->\n\n# Heading\n\nBody.\n"
+	if d.Source() != want {
+		t.Fatalf("note at the default caret produced %q", d.Source())
 	}
 }
 

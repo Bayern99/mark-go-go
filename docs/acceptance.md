@@ -40,4 +40,4 @@ Feynman 0.5.71 与 pi-acp 0.0.33 在隔离的本地模型上公布了 45 个命�
 
 ## 原生覆盖缺口
 
-本轮原生界面验收在 macOS arm64 进行。精确光标与滚动位置仍有复验缺口，Linux 和 Windows 的覆盖来自自动化和构建。ComparisonTable 的键盘排序由 [原生 GenUI 阅读器测试](../internal/nativegenui/reading_test.go) 覆盖。迁移前的 [Chromium 用例](https://github.com/Bayern99/mark-go-go/blob/81522cb48ec9718bffbda0255df1039692a2f6cd/web/test/genui-catalog.test.tsx) 与 [工作区集成 #32](https://github.com/Bayern99/mark-go-go/issues/32) 保留作历史参照。
+本轮原生界面验收在 macOS arm64 进行。精确光标与滚动位置的 macOS 实机复验仍有缺口；跨重启滚动位置的会话序列化、恢复和非活动标签保留由 [会话测试](../internal/workspace/session_test.go) 覆盖。Linux 和 Windows 的覆盖来自自动化和构建。ComparisonTable 的键盘排序由 [原生 GenUI 阅读器测试](../internal/nativegenui/reading_test.go) 覆盖。迁移前的 [Chromium 用例](https://github.com/Bayern99/mark-go-go/blob/81522cb48ec9718bffbda0255df1039692a2f6cd/web/test/genui-catalog.test.tsx) 与 [工作区集成 #32](https://github.com/Bayern99/mark-go-go/issues/32) 保留作历史参照。

@@ -117,7 +117,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 			if child == nil {
 				child = New(cell.raw)
 				model.cells[r][k] = child
-			} else if child.Source() != cell.raw {
+			} else if !cellMatches(child.Source(), cell.raw) {
 				child.Reload(cell.raw)
 			}
 		}
@@ -179,15 +179,19 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 										model.resizeHandle(c, k, doc)
 									}
 									if next := child.Source(); next != cell.raw && version == doc.Version() {
-										idx := doc.sourceIndex()
-										a, z := idx.rawAtEditor(cell.start), idx.rawAtEditor(cell.end)
-										if err := doc.Apply(version, a, z, idx.raw[a:z], escapeCell(next)); err != nil {
-											child.Reload(cell.raw)
+										replacement := escapeCell(next)
+										if replacement != cell.raw {
+											idx := doc.sourceIndex()
+											a, z := idx.rawAtEditor(cell.start), idx.rawAtEditor(cell.end)
+											if err := doc.Apply(version, a, z, idx.raw[a:z], replacement); err != nil {
+												child.Reload(cell.raw)
+											}
 										}
 									}
 									if field.Focused() && (!model.selected) {
 										sel := child.state.Selection()
-										a, z := cell.start+min(sel.Anchor, len(child.Source())), cell.start+min(sel.Head, len(child.Source()))
+										source := child.Source()
+										a, z := cell.start+cellRawOffset(source, sel.Anchor), cell.start+cellRawOffset(source, sel.Head)
 										if prior := doc.state.Selection(); prior.Anchor != a || prior.Head != z {
 											doc.state.Select(a, z)
 										}
@@ -202,16 +206,29 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 	}})
 }
 
+// escapeCell writes text as one table cell: pipes escaped, line breaks as
+// the HTML breaks Markdown tables read.
 func escapeCell(s string) string {
 	var out strings.Builder
 	slashes := 0
-	for _, r := range s {
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		i += size
 		switch r {
 		case '|':
 			if slashes%2 == 0 {
 				out.WriteByte('\\')
 			}
-		case '\r', '\n':
+		case '\r':
+			if i < len(s) && s[i] == '\n' {
+				i++
+			}
+			out.WriteString("<br>")
+			slashes = 0
+			continue
+		case '\n':
+			out.WriteString("<br>")
+			slashes = 0
 			continue
 		}
 		out.WriteRune(r)
@@ -222,6 +239,17 @@ func escapeCell(s string) string {
 		}
 	}
 	return out.String()
+}
+
+// cellMatches reports whether the child text and the raw cell differ only
+// by table escaping, so a rebuild keeps its caret, selection and history.
+func cellMatches(source, raw string) bool {
+	return source == raw || escapeCell(source) == raw
+}
+
+// cellRawOffset maps an offset in the child text to the escaped cell source.
+func cellRawOffset(source string, off int) int {
+	return len(escapeCell(source[:max(0, min(off, len(source)))]))
 }
 
 type cellPosition struct{ row, col int }

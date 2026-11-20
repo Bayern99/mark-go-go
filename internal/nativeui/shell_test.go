@@ -123,3 +123,31 @@ func TestDraggedPathsReachTheWorkspaceInOrder(t *testing.T) {
 		t.Fatalf("dropped group was lost or reordered: %v", paths)
 	}
 }
+
+func TestRecentWorkspacesWithSameNameOpenOnlySelectedRoot(t *testing.T) {
+	var shell nativeui.Shell
+	var opened []string
+	model := nativeui.Model{Recents: []workspace.RecentWorkspace{
+		{Name: "notes", Root: "/work/notes"},
+		{Name: "notes", Root: "/personal/notes"},
+	}}
+	app := ui.NewTester(func(c *ui.Context) {
+		shell.Draw(c, model, nativeui.Actions{OpenRecent: func(root string) { opened = append(opened, root) }}, nativeui.Slots{})
+	}, 480, 360)
+	app.Frame()
+	var buttons []ui.AccessInfo
+	for _, info := range app.AccessAll() {
+		if info.Role == ui.RoleButton && info.Name == "notes" {
+			buttons = append(buttons, info)
+		}
+	}
+	if len(buttons) != 2 {
+		t.Fatalf("recent workspace buttons = %d, want 2", len(buttons))
+	}
+	second := buttons[1].Bounds
+	app.ClickAt(second.X+second.W/2, second.Y+second.H/2)
+	app.Frame()
+	if len(opened) != 1 || opened[0] != "/personal/notes" {
+		t.Fatalf("opened roots = %v, want only /personal/notes", opened)
+	}
+}

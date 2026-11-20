@@ -25,9 +25,10 @@ type sessionWorkspace struct {
 }
 
 type sessionTab struct {
-	ID       string `json:"id"`
-	Path     string `json:"path,omitempty"`
-	ViewMode string `json:"viewMode,omitempty"`
+	ID       string  `json:"id"`
+	Path     string  `json:"path,omitempty"`
+	ViewMode string  `json:"viewMode,omitempty"`
+	ScrollY  float32 `json:"scrollY,omitempty"`
 }
 
 func normalizeViewMode(mode string) string {
@@ -71,6 +72,7 @@ type plannedTab struct {
 	ID           string
 	Path         string
 	ViewMode     string
+	ScrollY      float32
 	ReuseID      string
 	OpenPath     string
 	RestoreError string
@@ -235,7 +237,7 @@ func planSessionRestore(file sessionFileData, live restoreLive) restorePlan {
 		}
 
 		for _, tab := range w.Tabs {
-			pt := plannedTab{ID: tab.ID, Path: tab.Path, ViewMode: tab.ViewMode}
+			pt := plannedTab{ID: tab.ID, Path: tab.Path, ViewMode: tab.ViewMode, ScrollY: tab.ScrollY}
 			if tab.ID != "" {
 				if doc, ok := live.OpenByID[tab.ID]; ok && !usedID[doc.ID] {
 					pt.ReuseID = doc.ID
@@ -340,6 +342,7 @@ func (h *Service) captureSessionLocked() sessionFileData {
 				ID:       s.id,
 				Path:     s.currentPath(),
 				ViewMode: s.viewMode,
+				ScrollY:  s.scrollY,
 			})
 		}
 		file.Workspaces = append(file.Workspaces, sw)

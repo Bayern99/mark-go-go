@@ -44,6 +44,9 @@ func (d *Document) beginNote() {
 			break
 		}
 	}
+	if at < d.preview.frontEnd {
+		at = d.preview.frontEnd
+	}
 	idx := d.sourceIndex()
 	raw := idx.rawAtEditor(at)
 	newline := "\n"

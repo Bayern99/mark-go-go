@@ -95,8 +95,7 @@ func (p *panel) send() {
 		p.update(root, func() {
 			if err != nil {
 				p.state.error = err.Error()
-				p.state.draft = prompt
-				p.state.sources = mergeSources(sources, p.state.sources)
+				p.state.restoreDraft(prompt, sources)
 			}
 			if p.state.status == statusWorking {
 				p.state.status = statusReady
@@ -135,8 +134,7 @@ func (p *panel) queueMessage(steer bool) {
 		p.update(root, func() {
 			if err != nil {
 				p.state.error = err.Error()
-				p.state.draft = text
-				p.state.sources = mergeSources(sources, p.state.sources)
+				p.state.restoreDraft(text, sources)
 			}
 		})
 	}()
@@ -307,6 +305,10 @@ func (p *panel) openDocumentPath(path string, proposal bool, proposed string) {
 func (p *panel) selectSession(id string) {
 	if p.state.status != statusReady || p.state.draft != "" || len(p.state.sources) > 0 {
 		p.state.error = "Finish the current draft and remove attached sources before switching conversations."
+		return
+	}
+	if p.state.cliBusy {
+		p.state.error = "Feynman is busy. Try again when the current action finishes."
 		return
 	}
 	root := p.state.root

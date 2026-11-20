@@ -98,6 +98,16 @@ func (p *panel) collapsibleState(key string) *bool {
 }
 
 func (p *panel) syncConnection() {
+	p.connectRoot(false)
+}
+
+// reconnect tears down the current connection and starts a new one. It is only
+// called from explicit user actions, so failures never start a retry loop.
+func (p *panel) reconnect() {
+	p.connectRoot(true)
+}
+
+func (p *panel) connectRoot(force bool) {
 	if p.closed || p.host == nil || p.window.Native() == nil {
 		return
 	}
@@ -112,14 +122,17 @@ func (p *panel) syncConnection() {
 		return
 	}
 	root = p.stateRoot(root)
-	if root == p.connected {
+	if root == p.connected && !force {
+		return
+	}
+	if force && p.state.status == statusConnecting {
 		return
 	}
 	previous := p.connected
 	p.connected = root
-	p.settingsRoot = ""
-	p.state = newPaneState(root)
-	p.decodedImages = nil
+	if previous != root {
+		p.switchRoot(root)
+	}
 	p.state.status = statusConnecting
 	p.state.error = ""
 	p.window.Native().Invalidate()
@@ -168,6 +181,17 @@ func (p *panel) syncConnection() {
 
 func (p *panel) stateRoot(root string) string {
 	return fsutil.CanonicalPath(root)
+}
+
+// switchRoot drops every view that describes the previous workspace so
+// stale conversations, forks, and trees cannot leak into the new root.
+func (p *panel) switchRoot(root string) {
+	p.settingsRoot = ""
+	p.state = newPaneState(root)
+	p.decodedImages = nil
+	p.sessionView = ""
+	p.forkMessages = nil
+	p.researchTree = nil
 }
 
 func (p *panel) update(root string, change func()) {

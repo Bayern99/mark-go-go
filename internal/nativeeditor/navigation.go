@@ -22,7 +22,7 @@ func (p *previewLayout) heading(snap editor.Snapshot, i, firstText int) {
 	end := snap.Len()
 	for j := b.Next; j < p.document.Len(); j++ {
 		next := p.document.Block(j)
-		if next.Kind == parser.Heading && next.Level <= b.Level {
+		if next.Parent == 0 && next.Kind == parser.Heading && next.Level <= b.Level {
 			end = snap.LineStart(snap.LineOf(next.Start))
 			break
 		}
@@ -61,7 +61,21 @@ func (p *previewLayout) toggleFold(key string) {
 	if p.owner.folded == nil {
 		p.owner.folded = map[string]bool{}
 	}
-	p.owner.folded[key] = !p.owner.folded[key]
+	folded := !p.owner.folded[key]
+	p.owner.folded[key] = folded
+	if folded {
+		sel := p.owner.state.Selection()
+		for _, section := range p.sections {
+			if section.key != key {
+				continue
+			}
+			inside := func(off int) bool { return off >= section.start && off < section.end }
+			if inside(sel.Anchor) || inside(sel.Head) || (min(sel.Anchor, sel.Head) < section.start && max(sel.Anchor, sel.Head) >= section.end) {
+				p.owner.state.Select(section.start, section.start)
+			}
+			break
+		}
+	}
 	p.saveFolds()
 	p.dirty = true
 }

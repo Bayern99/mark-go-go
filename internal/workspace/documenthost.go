@@ -19,6 +19,7 @@ type Snapshot struct {
 	ID      string       `json:"id"`
 	Text    string       `json:"text"`
 	Version int          `json:"version"`
+	ScrollY float32      `json:"scrollY,omitempty"`
 	State   DocumentInfo `json:"state"`
 }
 
@@ -77,6 +78,7 @@ type docSession struct {
 	textFn       func() string
 	edited       bool
 	viewMode     string
+	scrollY      float32
 	restoreError string
 	actionError  string
 
@@ -181,12 +183,13 @@ func (s *docSession) makeInfo(st mygo.DocumentState, generating bool) DocumentIn
 
 func (s *docSession) snapshot() Snapshot {
 	s.host.mu.Lock()
-	version := s.version
+	version, scrollY := s.version, s.scrollY
 	s.host.mu.Unlock()
 	return Snapshot{
 		ID:      s.id,
 		Text:    s.doc.Content(),
 		Version: version,
+		ScrollY: scrollY,
 		State:   s.info(),
 	}
 }
@@ -705,6 +708,20 @@ func (h *Service) Load(ctx context.Context, documentID string) (Snapshot, error)
 		return Snapshot{}, err
 	}
 	return s.snapshot(), nil
+}
+
+// SetDocumentScrollY records a document's scroll position for the session.
+// It does not save the session: callers that want the value on disk reach
+// the usual tab, view or quit persistence paths.
+func (h *Service) SetDocumentScrollY(documentID string, scrollY float32) {
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if s := h.byID[documentID]; s != nil {
+		s.scrollY = scrollY
+	}
 }
 
 func (h *Service) Update(ctx context.Context, documentID, text string) error {

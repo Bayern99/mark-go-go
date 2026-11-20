@@ -84,6 +84,12 @@ func NewWindow(host *workspace.Service, opts mygo.WindowOptions, extensions ...f
 		w.preferences.windows[w] = true
 		w.win.OnClosed(func() { delete(w.preferences.windows, w) })
 	})
+	if w.win == nil {
+		// RunOnMain drops its closure once the loop has shut down. Ask mygo
+		// for the same destroyed placeholder it returns in that case, rather
+		// than handing nil to callers that expect a window.
+		w.win = mygo.NewWindow(opts)
+	}
 	return w.win
 }
 
@@ -125,6 +131,7 @@ func (w *Window) refresh() {
 			return
 		}
 		d := nativeeditor.New(snap.Text)
+		d.SetScrollY(snap.ScrollY)
 		w.documents[id] = &openDocument{source: d, published: d.Version(), reloadVersion: snap.Version}
 	}
 	for _, info := range next.Documents {
@@ -173,7 +180,14 @@ func (w *Window) reload(s workspace.Snapshot) {
 func (w *Window) publish(id string, attempt int) error {
 	defer w.updateMenu()
 	d := w.documents[id]
-	if d == nil || d.published == d.source.Version() {
+	if d == nil {
+		return nil
+	}
+	// Keep the session's scroll position current without writing it to disk
+	// here: every frame would then write the session. The tab, view and quit
+	// persistence paths save whichever value is latest.
+	w.host.SetDocumentScrollY(id, d.source.ScrollY())
+	if d.published == d.source.Version() {
 		return nil
 	}
 	var err error

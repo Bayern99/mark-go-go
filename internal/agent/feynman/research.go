@@ -41,17 +41,18 @@ type focusWatcher struct {
 }
 
 type ResearchManager struct {
-	workspaces    WorkspaceLookup
-	dataDir       string
-	command       func(root, work string) (*exec.Cmd, error)
-	cliCommand    func(ctx context.Context, work string, args ...string) (*exec.Cmd, error)
-	openTerminal  func(ctx context.Context, command string) error
-	beforeStart   func(root, work string) error
-	afterStop     func(root, work string)
-	mu            sync.Mutex
-	sessions      map[string]*researchSession
-	focusWatchers map[*mygo.Window]*focusWatcher
-	closed        bool
+	workspaces     WorkspaceLookup
+	dataDir        string
+	command        func(root, work string) (*exec.Cmd, error)
+	cliCommand     func(ctx context.Context, work string, args ...string) (*exec.Cmd, error)
+	openTerminal   func(ctx context.Context, command string) error
+	onWindowClosed func(*mygo.Window, func()) func()
+	beforeStart    func(root, work string) error
+	afterStop      func(root, work string)
+	mu             sync.Mutex
+	sessions       map[string]*researchSession
+	focusWatchers  map[*mygo.Window]*focusWatcher
+	closed         bool
 }
 
 type researchSession struct {
@@ -112,13 +113,14 @@ func NewResearchManager(workspaces WorkspaceLookup) *ResearchManager {
 		dataDir = workspaces.UserDataDir()
 	}
 	return &ResearchManager{
-		workspaces:    workspaces,
-		dataDir:       dataDir,
-		command:       researchCommand,
-		cliCommand:    feynmanCLICommand,
-		openTerminal:  openSystemTerminal,
-		sessions:      make(map[string]*researchSession),
-		focusWatchers: make(map[*mygo.Window]*focusWatcher),
+		workspaces:     workspaces,
+		dataDir:        dataDir,
+		command:        researchCommand,
+		cliCommand:     feynmanCLICommand,
+		openTerminal:   openSystemTerminal,
+		onWindowClosed: (*mygo.Window).OnClosed,
+		sessions:       make(map[string]*researchSession),
+		focusWatchers:  make(map[*mygo.Window]*focusWatcher),
 	}
 }
 
@@ -159,6 +161,7 @@ func (h *ResearchManager) connect(w WorkspaceRef, emit func(ResearchUpdate)) err
 		return errors.New("The research data folder is unavailable.")
 	}
 	work := review.WorkDir(h.dataDir, root)
+	_, sessionsDir, _ := resolveFeynmanDirs()
 	h.mu.Lock()
 	if h.closed {
 		h.mu.Unlock()
@@ -188,11 +191,10 @@ func (h *ResearchManager) connect(w WorkspaceRef, emit func(ResearchUpdate)) err
 			return nil
 		}
 	}
-	_, defaultSessions, _ := resolveFeynmanDirs()
 	s := &researchSession{
 		work:         work,
 		win:          w.Window,
-		sessionsDir:  defaultSessions,
+		sessionsDir:  sessionsDir,
 		imagePrompts: true,
 		questionSlot: make(chan struct{}, 1),
 		ready:        make(chan struct{}),
@@ -211,6 +213,40 @@ func (h *ResearchManager) connect(w WorkspaceRef, emit func(ResearchUpdate)) err
 		h.mu.Unlock()
 		h.stop(root, s, "")
 		return err
+	}
+
+	windowClosed := make(chan struct{})
+	if w.Window != nil {
+		onClosed := sync.OnceFunc(func() {
+			close(windowClosed)
+			go h.stop(root, s, "")
+		})
+		off := h.onWindowClosed(w.Window, onClosed)
+		h.mu.Lock()
+		select {
+		case <-s.stopped:
+			h.mu.Unlock()
+			off()
+		default:
+			s.offWindow = off
+			h.mu.Unlock()
+		}
+		if w.Window.IsDestroyed() {
+			onClosed()
+		}
+	}
+	startCancelled := func() bool {
+		select {
+		case <-windowClosed:
+			return true
+		case <-s.stopped:
+			return true
+		default:
+			return false
+		}
+	}
+	if startCancelled() {
+		return failSetup(errors.New("Research disconnected."))
 	}
 
 	if err := os.MkdirAll(work, 0700); err != nil {
@@ -232,9 +268,12 @@ func (h *ResearchManager) connect(w WorkspaceRef, emit func(ResearchUpdate)) err
 	}
 	for i := 0; i+1 < len(cmd.Args); i++ {
 		if cmd.Args[i] == "--session-dir" && cmd.Args[i+1] != "" {
-			s.sessionsDir = fsutil.CanonicalPath(cmd.Args[i+1])
+			sessionsDir = fsutil.CanonicalPath(cmd.Args[i+1])
 			break
 		}
+	}
+	if startCancelled() {
+		return failSetup(errors.New("Research disconnected."))
 	}
 	rpc, err := newRPCClient(cmd)
 	if err != nil {
@@ -246,15 +285,7 @@ func (h *ResearchManager) connect(w WorkspaceRef, emit func(ResearchUpdate)) err
 	)
 
 	h.mu.Lock()
-	aborted := h.closed
-	if !aborted {
-		select {
-		case <-s.stopped:
-			aborted = true
-		default:
-		}
-	}
-	if aborted {
+	if h.closed || startCancelled() {
 		h.mu.Unlock()
 		rpc.Start()
 		stopResearchProcess(cmd)
@@ -267,21 +298,12 @@ func (h *ResearchManager) connect(w WorkspaceRef, emit func(ResearchUpdate)) err
 		h.stop(root, s, "")
 		return abortErr
 	}
+	s.sessionsDir = sessionsDir
 	s.rpc = rpc
 	h.mu.Unlock()
 
-	if w.Window != nil {
+	if w.Window != nil && !w.Window.IsDestroyed() {
 		h.ensureFocusWatch(w)
-		off := w.Window.OnClosed(func() { go h.stop(root, s, "") })
-		h.mu.Lock()
-		select {
-		case <-s.stopped:
-			h.mu.Unlock()
-			off()
-		default:
-			s.offWindow = off
-			h.mu.Unlock()
-		}
 	}
 
 	rpc.Start()
@@ -343,7 +365,7 @@ func (h *ResearchManager) activeLocked(ctx context.Context, root string) (*resea
 	if h.closed {
 		return nil, errors.New("Research is closing.")
 	}
-	s := h.sessions[fsutil.CanonicalPath(root)]
+	s := h.sessions[root]
 	if s != nil && s.win == mygo.CallerWindow(ctx) {
 		select {
 		case <-s.stopped:
@@ -355,6 +377,7 @@ func (h *ResearchManager) activeLocked(ctx context.Context, root string) (*resea
 }
 
 func (h *ResearchManager) readySession(ctx context.Context, root string) (*researchSession, error) {
+	root = fsutil.CanonicalPath(root)
 	h.mu.Lock()
 	s, err := h.activeLocked(ctx, root)
 	if err != nil {
@@ -453,6 +476,7 @@ func (h *ResearchManager) emitStatsUpdate(s *researchSession, stats ResearchSess
 }
 
 func (h *ResearchManager) Compact(ctx context.Context, root, customInstructions string) (ResearchCompactionResult, error) {
+	root = fsutil.CanonicalPath(root)
 	h.mu.Lock()
 	s, err := h.activeLocked(ctx, root)
 	if err != nil {
@@ -495,6 +519,7 @@ func (h *ResearchManager) Compact(ctx context.Context, root, customInstructions 
 }
 
 func (h *ResearchManager) SetModel(ctx context.Context, root, provider, modelID string) (ResearchModel, error) {
+	root = fsutil.CanonicalPath(root)
 	provider = strings.TrimSpace(provider)
 	modelID = strings.TrimSpace(modelID)
 	if provider == "" && modelID != "" {
@@ -575,6 +600,7 @@ func (h *ResearchManager) SetModel(ctx context.Context, root, provider, modelID 
 }
 
 func (h *ResearchManager) SetThinkingLevel(ctx context.Context, root, level string) error {
+	root = fsutil.CanonicalPath(root)
 	level = strings.TrimSpace(level)
 	if level == "" {
 		return errors.New("Choose an available thinking level.")
@@ -668,6 +694,7 @@ func (h *ResearchManager) Prompt(ctx context.Context, root, text, documentID, bu
 }
 
 func (h *ResearchManager) PromptWithSources(ctx context.Context, root, text, documentID, buffer string, sources []string) (string, error) {
+	root = fsutil.CanonicalPath(root)
 	parts := strings.Fields(text)
 	if len(parts) == 0 {
 		return "", errors.New("Enter a research question or command.")
@@ -924,6 +951,7 @@ func (h *ResearchManager) Abort(ctx context.Context, root string) error {
 }
 
 func (h *ResearchManager) Cancel(ctx context.Context, root string) error {
+	root = fsutil.CanonicalPath(root)
 	h.mu.Lock()
 	s, err := h.activeLocked(ctx, root)
 	if err != nil || !s.busy {
@@ -957,8 +985,9 @@ func (h *ResearchManager) Cancel(ctx context.Context, root string) error {
 }
 
 func (h *ResearchManager) Disconnect(ctx context.Context, root string) error {
+	root = fsutil.CanonicalPath(root)
 	h.mu.Lock()
-	s := h.sessions[fsutil.CanonicalPath(root)]
+	s := h.sessions[root]
 	h.mu.Unlock()
 	if s != nil && s.win == mygo.CallerWindow(ctx) {
 		h.stop(fsutil.CanonicalPath(root), s, "")
@@ -1859,6 +1888,7 @@ func (h *ResearchManager) runExtensionUIDialog(s *researchSession, req wireExten
 }
 
 func (h *ResearchManager) Answer(ctx context.Context, root, requestID, optionID string) error {
+	root = fsutil.CanonicalPath(root)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	s, err := h.activeLocked(ctx, root)
@@ -1899,6 +1929,7 @@ func (h *ResearchManager) Answer(ctx context.Context, root, requestID, optionID 
 }
 
 func (h *ResearchManager) AnswerConfirm(ctx context.Context, root, requestID string, confirmed, cancelled bool) error {
+	root = fsutil.CanonicalPath(root)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	s, err := h.activeLocked(ctx, root)
@@ -1919,6 +1950,7 @@ func (h *ResearchManager) AnswerConfirm(ctx context.Context, root, requestID str
 }
 
 func (h *ResearchManager) AnswerText(ctx context.Context, root, requestID, text string, cancelled bool) error {
+	root = fsutil.CanonicalPath(root)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	s, err := h.activeLocked(ctx, root)

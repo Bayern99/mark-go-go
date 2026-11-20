@@ -66,7 +66,7 @@ func (h *Service) workspaceByRoot(root string) *workspace {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for _, w := range h.allWorkspacesLocked() {
-		if w != nil && w.root != "" && fsutil.SameRoot(w.root, canon) {
+		if w != nil && w.root == canon {
 			return w
 		}
 	}
@@ -80,7 +80,7 @@ func (h *Service) openSessionsForWorkspace(root string) ([]*docSession, string) 
 	var sessions []*docSession
 	var activeID string
 	for _, w := range h.allWorkspacesLocked() {
-		if w == nil || w.root == "" || !fsutil.SameRoot(w.root, canon) {
+		if w == nil || w.root == "" || w.root != canon {
 			continue
 		}
 		if activeID == "" {

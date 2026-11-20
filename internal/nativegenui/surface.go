@@ -1,7 +1,6 @@
 package nativegenui
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -50,10 +49,12 @@ type Node struct {
 type literal struct {
 	value string
 	path  string
+	call  json.RawMessage
 	bound bool
 }
 
 func (t *literal) UnmarshalJSON(raw []byte) error {
+	*t = literal{}
 	var value string
 	if err := json.Unmarshal(raw, &value); err == nil {
 		*t = literal{value: value}
@@ -63,10 +64,11 @@ func (t *literal) UnmarshalJSON(raw []byte) error {
 	if err := json.Unmarshal(raw, &object); err != nil {
 		return err
 	}
-	if rawPath, ok := object["@path"]; ok {
-		if err := json.Unmarshal(rawPath, &t.path); err != nil {
-			return err
-		}
+	if path, ok := dataBindingPath(object); ok {
+		t.path = path
+		t.bound = true
+	} else if _, ok := functionCallName(object); ok {
+		t.call = append(t.call[:0], raw...)
 		t.bound = true
 	}
 	return nil
@@ -335,66 +337,24 @@ func resolveLiteral(value *literal, dataModel any, dataPath string) error {
 	if !value.bound {
 		return nil
 	}
-	resolved, found, err := dataModelAtPath(dataModel, resolveDataPath(value.path, dataPath))
+	var resolved any
+	var err error
+	if len(value.call) > 0 {
+		resolved, err = resolveDynamicValue(value.call, dataModel, dataPath, 0, 0)
+	} else {
+		var found bool
+		resolved, found, err = dataModelAtPath(dataModel, resolveDataPath(value.path, dataPath))
+		if !found {
+			resolved = nil
+		}
+	}
 	if err != nil {
 		return err
 	}
-	if found {
-		value.value, err = dataString(resolved)
-	}
+	value.value, err = dataString(resolved)
 	value.path = ""
+	value.call = nil
 	value.bound = false
-	return err
-}
-
-func dataString(value any) (string, error) {
-	if value == nil {
-		return "", nil
-	}
-	if text, ok := value.(string); ok {
-		return text, nil
-	}
-	if _, ok := value.(map[string]any); ok {
-		return compactJSON(value)
-	}
-	if _, ok := value.([]any); ok {
-		return compactJSON(value)
-	}
-	return fmt.Sprint(value), nil
-}
-
-func compactJSON(value any) (string, error) {
-	var data bytes.Buffer
-	encoder := json.NewEncoder(&data)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(value); err != nil {
-		return "", err
-	}
-	return strings.TrimSuffix(data.String(), "\n"), nil
-}
-
-func resolveHidden(value *json.RawMessage, dataModel any, dataPath string) error {
-	var object map[string]json.RawMessage
-	if err := json.Unmarshal(*value, &object); err != nil || object == nil {
-		return nil
-	}
-	rawPath, ok := object["@path"]
-	if !ok {
-		return nil
-	}
-	var path string
-	if err := json.Unmarshal(rawPath, &path); err != nil {
-		return err
-	}
-	resolved, found, err := dataModelAtPath(dataModel, resolveDataPath(path, dataPath))
-	if err != nil {
-		return err
-	}
-	hidden, _ := resolved.(bool)
-	if !found {
-		hidden = false
-	}
-	*value, err = json.Marshal(hidden)
 	return err
 }
 

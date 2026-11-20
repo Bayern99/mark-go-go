@@ -143,10 +143,13 @@ func (p *previewLayout) special(snap editor.Snapshot, i int) bool {
 
 func (p *previewLayout) specialBlock(snap editor.Snapshot, start, end int, kind, label, body string) {
 	d := p.owner
+	if d.draft != nil && d.draft.anchor == start && d.draft.kind == kind {
+		p.draftAnchored = true
+	}
 	p.standIn(snap, start, end, body, editor.Block{Label: label + " block", Height: 80, Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
 		e.Children(func() {
 			ui.Column(c).FillWidth().Padding(8, 12).Gap(5).Children(func() {
-				if draft := d.draft; draft != nil && draft.anchor == start {
+				if draft := d.draft; draft != nil && draft.anchor == start && draft.kind == kind {
 					d.drawDraft(c, draft)
 					return
 				}
@@ -172,15 +175,15 @@ func (p *previewLayout) specialBlock(snap editor.Snapshot, start, end int, kind,
 					ui.Text(c, label).FontSize(12).TextColor(c.Theme().TextMuted)
 					ui.Text(c, body).Wrap().Selectable()
 				}
-				if kind == "footnote" && ui.Button(c, "Return to reference "+label).Clicked() {
+				if kind == "footnote" && ui.Button(c, "Return to reference "+label).AlignSelf(ui.Start).Clicked() {
 					p.returnTo(label)
 					c.Invalidate()
 				}
-				if kind == "note" && !d.state.ReadOnly && ui.Button(c, "Delete note").Clicked() {
+				if kind == "note" && !d.state.ReadOnly && ui.Button(c, "Delete note").AlignSelf(ui.Start).Clicked() {
 					d.deleteNote(snap, start, end)
 					c.Invalidate()
 				}
-				if !d.state.ReadOnly && ui.Button(c, "Edit "+kind).Clicked() && d.Version() == snap.Version() {
+				if !d.state.ReadOnly && ui.Button(c, "Edit "+kind).AlignSelf(ui.Start).Clicked() && d.Version() == snap.Version() {
 					d.openDraft(start, end, kind)
 				}
 			})
@@ -241,7 +244,7 @@ func (d *Document) drawDraft(c *ui.Context, draft *blockDraft) {
 	}
 	save, cancel := entry.Shortcut(ui.Cmd, ui.KeyEnter), entry.Shortcut(0, ui.KeyEscape)
 	ui.Row(c).Gap(6).Children(func() {
-		if ui.Button(c, "Save").Clicked() {
+		if ui.Button(c, "Save").Disabled(d.state.ReadOnly || ((draft.kind == "note" || draft.kind == "new note") && strings.TrimSpace(draft.text) == "")).Clicked() {
 			save = true
 		}
 		if ui.Button(c, "Cancel").Clicked() {

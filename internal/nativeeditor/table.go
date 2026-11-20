@@ -10,6 +10,8 @@ import (
 )
 
 type readingTable struct {
+	signature                    string
+	seen                         uint64
 	focus                        *Document
 	cells                        [][]*Document
 	widths                       []float32
@@ -52,6 +54,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 	}
 	rows := [][]tableCell{}
 	var visible []string
+	var labels [][]string
 	for row := range p.document.Children(idx) {
 		var cells []tableCell
 		var text []string
@@ -67,12 +70,24 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 			}
 			raw := snap.Slice(from, end)
 			cells = append(cells, tableCell{from, end, raw})
-			text = append(text, raw)
+			text = append(text, inlineText(p.document, col))
 		}
 		rows = append(rows, cells)
+		labels = append(labels, text)
 		visible = append(visible, strings.Join(text, "\t"))
 	}
+	sig := tableSignature(ncols, labels)
 	model := doc.tables[b.Start]
+	if model == nil {
+		for old, t := range doc.tables {
+			if t.signature == sig && t.seen != p.version {
+				model = t
+				delete(doc.tables, old)
+				doc.tables[b.Start] = model
+				break
+			}
+		}
+	}
 	if model == nil || len(model.widths) != ncols {
 		model = &readingTable{bounds: map[cellPosition]ui.Rect{}, widths: make([]float32, ncols), minimum: make([]float32, ncols)}
 		for i := range model.widths {
@@ -83,9 +98,13 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 				}
 			}
 		}
+		model.signature = sig
 		model.fit(624)
+		doc.preferences.restoreTable(model)
 		doc.tables[b.Start] = model
 	}
+	model.signature = sig
+	model.seen = p.version
 	for len(model.cells) < len(rows) {
 		model.cells = append(model.cells, make([]*Document, ncols))
 	}
@@ -157,7 +176,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 										model.focus = nil
 									}
 									if r == 0 && k+1 < len(model.widths) {
-										model.resizeHandle(c, k)
+										model.resizeHandle(c, k, doc)
 									}
 									if next := child.Source(); next != cell.raw && version == doc.Version() {
 										idx := doc.sourceIndex()
@@ -283,7 +302,7 @@ func (m *readingTable) cellInput(pos cellPosition, doc *Document, services ui.Se
 	}
 }
 
-func (m *readingTable) resizeHandle(c *ui.Context, col int) {
+func (m *readingTable) resizeHandle(c *ui.Context, col int, doc *Document) {
 	h := ui.Box(c).Absolute().Right(0).Top(0).Width(7).Height(36).Cursor(ui.CursorResizeColumn).Label(fmt.Sprintf("Resize table column %d", col+1))
 	left := h.Bounds().X
 	h.HandleInput(func(ev ui.InputEvent) bool {
@@ -296,6 +315,8 @@ func (m *readingTable) resizeHandle(c *ui.Context, col int) {
 		case ui.InputPointerUp:
 			if ev.Canceled {
 				m.widths[col], m.widths[col+1] = m.leftWidth, m.rightWidth
+			} else {
+				doc.saveTables()
 			}
 			return true
 		case ui.InputPointerMove:

@@ -17,7 +17,7 @@ type foldSection struct {
 func (p *previewLayout) heading(snap editor.Snapshot, i, firstText int) {
 	b := p.document.Block(i)
 	title := strings.TrimSpace(p.document.Lines(i))
-	key := fmt.Sprintf("%d:%s:%d", b.Level, title, p.headings[title])
+	key := headingKey(b.Level, title, p.headings[title])
 	p.headings[title]++
 	end := snap.Len()
 	for j := b.Next; j < p.document.Len(); j++ {
@@ -62,6 +62,7 @@ func (p *previewLayout) toggleFold(key string) {
 		p.owner.folded = map[string]bool{}
 	}
 	p.owner.folded[key] = !p.owner.folded[key]
+	p.saveFolds()
 	p.dirty = true
 }
 

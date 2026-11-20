@@ -12,22 +12,23 @@ import (
 )
 
 type previewLayout struct {
-	document     *parser.Document
-	owner        *Document
-	dirty        bool
-	foldUntil    int
-	hiddenRanges [][2]int
-	sections     []foldSection
-	headings     map[string]int
-	refs         map[string][]int
-	version      uint64
-	applied      bool
-	replacements []editor.Replacement
-	readable     map[int]string
-	styles       []editor.LineStyle
-	blocks       []editor.Block
-	display      string
-	segments     []displaySegment
+	document      *parser.Document
+	owner         *Document
+	dirty         bool
+	draftAnchored bool
+	foldUntil     int
+	hiddenRanges  [][2]int
+	sections      []foldSection
+	headings      map[string]int
+	refs          map[string][]int
+	version       uint64
+	applied       bool
+	replacements  []editor.Replacement
+	readable      map[int]string
+	styles        []editor.LineStyle
+	blocks        []editor.Block
+	display       string
+	segments      []displaySegment
 }
 
 type displaySegment struct {
@@ -46,6 +47,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	}
 	p.version = buffer.Version()
 	p.dirty = false
+	p.draftAnchored = false
 	p.foldUntil = 0
 	p.hiddenRanges = p.hiddenRanges[:0]
 	p.sections = p.sections[:0]
@@ -54,6 +56,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	snap := buffer.Snapshot()
 	src := snap.String()
 	p.document.Set(src)
+	p.restoreFolds()
 	p.readable = make(map[int]string)
 	p.replacements = p.replacements[:0]
 	p.styles = p.styles[:0]
@@ -156,8 +159,23 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 			}
 		}
 	}
+	for offset, t := range p.owner.tables {
+		if t.seen == p.version {
+			continue
+		}
+		hidden := false
+		for _, limits := range p.hiddenRanges {
+			if offset >= limits[0] && offset < limits[1] {
+				hidden = true
+				break
+			}
+		}
+		if !hidden {
+			delete(p.owner.tables, offset)
+		}
+	}
 	p.referenceDefinitions(snap, frontEnd)
-	if draft := p.owner.draft; draft != nil && draft.kind == "new note" {
+	if draft := p.owner.draft; draft != nil && (draft.kind == "new note" || !p.draftAnchored) {
 		p.blocks = append(p.blocks, editor.Block{Line: snap.LineOf(min(snap.Len(), draft.anchor)), Height: 140, Interactive: true, Label: "Note composer", Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
 			if p.owner.draft == draft {
 				e.Children(func() { p.owner.drawDraft(c, draft) })

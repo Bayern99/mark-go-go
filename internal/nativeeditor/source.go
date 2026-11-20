@@ -23,16 +23,17 @@ var (
 )
 
 type Document struct {
-	state   editor.State
-	preview previewLayout
-	mode    Mode
-	index   *sourceIndex
-	tables  map[int]*readingTable
-	draft   *blockDraft
-	artwork map[string]blockImage
-	refocus bool
-	folded  map[string]bool
-	returns map[string]int
+	preferences readingPreferences
+	state       editor.State
+	preview     previewLayout
+	mode        Mode
+	index       *sourceIndex
+	tables      map[int]*readingTable
+	draft       *blockDraft
+	artwork     map[string]blockImage
+	refocus     bool
+	folded      map[string]bool
+	returns     map[string]int
 }
 
 func New(source string) *Document {

@@ -377,6 +377,7 @@ func (ed *editor) measureBlock(built builtBlock) {
 	b := &v.blocks[built.i]
 	if b.rowHeight(v.lineHeight) != r.H {
 		v.blocksStale = true
+		ed.services.Invalidate()
 	}
 	b.height, b.measured = r.H, true
 }

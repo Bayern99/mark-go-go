@@ -255,3 +255,36 @@ func TestCellSelectionReturnsToItsSourceAfterAModeSwitch(t *testing.T) {
 		t.Fatalf("source caret after editing cell = %d..%d", a, z)
 	}
 }
+
+func TestInitialNativeLayoutKeepsTallDiagramsAboveFollowingTables(t *testing.T) {
+	const src = "# Reading\n\n$$\nx^2\n$$\n\n```mermaid\ngraph TD\n A[Start] --> B[Done]\n```\n\n| A | B |\n|---|---|\n| 1 | 2 |\n"
+	d := nativeeditor.New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 1000, 820)
+	diagram, _ := tt.Find("Mermaid block")
+	table, _ := tt.Find("Markdown table")
+	if diagram.H < 150 || table.Y < diagram.Y+diagram.H {
+		t.Fatalf("first presented frame overlaps: diagram %v table %v", diagram, table)
+	}
+}
+
+func TestLegacyReadingPreferencesRestoreByContent(t *testing.T) {
+	d := nativeeditor.New("# Read\n\nBody\n\n# More\n\n| A | B |\n|---|---|\n| x | y |\n")
+	written := map[string]string{}
+	d.SetReadingPreferences(`{"entries":[{"base":"h1:read","idx":0,"sig":"2517378916"}]}`, `{"4:2:emrdlh":[410,214]}`, func(key, value string) { written[key] = value })
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 900, 540)
+	tt.Frame()
+	if _, ok := tt.Find("Expand Read"); !ok {
+		t.Error("legacy fold did not restore")
+	}
+	a, _ := tt.Find("Table row 1 column 1")
+	b, _ := tt.Find("Table row 1 column 2")
+	if a.W != 400 || b.W != 204 {
+		t.Errorf("legacy column widths %v %v", a, b)
+	}
+	if err := tt.Click("Expand Read"); err != nil {
+		t.Fatal(err)
+	}
+	if written["folds"] != `{"entries":[]}` {
+		t.Errorf("saved folds %s", written["folds"])
+	}
+}

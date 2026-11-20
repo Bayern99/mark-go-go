@@ -69,6 +69,6 @@ python3 scripts/portrait/summarize.py "$evidence/narrow"
 
 宽窗长会话在 600 秒内完成 20 组操作、21/21 次采样。进程组从 901.8 MiB 到 568.2 MiB，期间最低 560.7 MiB。成功的五轮均单独观察到 WebKit 内容、GPU 和网络进程，宿主也映射了 WebKit、JavaScriptCore 和 AppKit。采样期间同机还有开发任务运行，逐次负载随内存记录保存。
 
-本机归档的 `wide-series`、`pilot3` 和 `narrow-measured/trial-1` 分别保留上表三列的窗口 PNG、文件和逐项记录。宽窗可见停靠文件栏、标签、居中的正文和独立滚动区域；480 点宽的工作区显示文件栏入口，正文仍可编辑。直接缩窗的一张启动截图捕获到 Welcome，之后的编辑和保存核对成功。窄窗稳定的长文阅读截图在 `exploration/narrow.png`，可用 `pilot3/trial-1/480-edited.png`、`480-scrolled.png` 和 `480-second.png` 对照状态。另行提供的 `--layout` 六档捕获流程等待正式执行。
+本机归档的 `wide-series`、`pilot3` 和 `narrow-measured/trial-1` 分别保留上表三列的窗口 PNG、文件和逐项记录。宽窗可见停靠文件栏、标签、居中的正文和独立滚动区域；480 点宽的工作区显示文件栏入口，正文仍可编辑。直接缩窗的一张启动截图捕获到 Welcome，之后的编辑和保存核对成功。窄窗稳定的长文阅读截图在 `exploration/narrow.png`，可用 `pilot3/trial-1/480-edited.png`、`480-scrolled.png` 和 `480-second.png` 对照状态。`layout-boundaries/trial-1` 保存 1280、1180、1179、641、640 和 480 点宽的 Preview，以及默认和最小窗口的 Markdown 截图。初次尝试在从 1180 调到 1179 点时超时；驱动先调整 16 点再设定目标，随后以 WindowServer 返回的精确尺寸通过全部六档。
 
 连同校准，本机保留了 12 次带状态的尝试，5 次完成、7 次失败。除三次直接缩窗失败外，校准中各有一次多字符输入未写入、菜单打开时退出超时、窗口动画期间尺寸偏差 2 点，以及滚动观察区域未检测到移动。失败记录保留原始输入与截图；上表采用完成相应流程的试验。归档时逐字节复查了 5 轮的全部 10 份文件，长文均只插入 6 个数字 7，短文与原夹具一致。20 张流程截图均与记录的窗口尺寸相符。

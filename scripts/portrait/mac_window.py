@@ -87,6 +87,11 @@ class Window:
     def resize(self, width, height):
         args = dict(session=self.session, pid=self.pid, window_id=self.window_id,
                     x=250, y=60, width=width, height=height)
+        self.refresh()
+        if self.width != width and abs(self.width - width) <= 2:
+            intermediate = dict(args, width=width + 16)
+            subprocess.run(["cua-driver", "call", "set_window_frame", json.dumps(intermediate)],
+                           stdout=subprocess.DEVNULL, check=True)
         subprocess.run(["cua-driver", "call", "set_window_frame", json.dumps(args)],
                        stdout=subprocess.DEVNULL, check=True)
         time.sleep(0.25)

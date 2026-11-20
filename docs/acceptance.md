@@ -4,6 +4,8 @@
 
 CI 以 [工作流](../.github/workflows/ci.yml) 为准。原生窗口、菜单和重启在 macOS 上按 [Automation 指南](agents/native-automation.md) 验证。提交前选择覆盖实际改动的检查。
 
+macOS 正式构建的窗口、编辑、滚动、切换与内存对照见 [Portrait 性能基线](agents/portrait-performance.md)。
+
 ## Feynman 与 Git 插件
 
 2026-11-19 在隔离的 macOS arm64 应用中，使用 Feynman 0.5.71、pi-acp 0.0.33 和本地固定响应模型验证了工作区对话。空文件夹可以发起研究；同一窗口内两个工作区各自保留对话和产物。生成文件可打开为文档标签，重启后可恢复文档和对话。

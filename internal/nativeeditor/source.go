@@ -129,7 +129,10 @@ func (d *Document) SetMode(mode Mode) bool {
 	return true
 }
 
-func (d *Document) Reload(source string) { d.state.Buffer.Reset(source) }
+func (d *Document) Reload(source string) {
+	d.state.Buffer.Reset(source)
+	d.retryFailedInlineImages()
+}
 func (d *Document) Version() uint64      { return d.state.Buffer.Version() }
 func (d *Document) CanUndo() bool        { return !d.state.ReadOnly && d.state.Buffer.CanUndo() }
 func (d *Document) CanRedo() bool        { return !d.state.ReadOnly && d.state.Buffer.CanRedo() }

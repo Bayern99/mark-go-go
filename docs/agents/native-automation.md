@@ -11,7 +11,7 @@ scripts/native-automation-smoke.sh
 
 手动检查时，在具有独立应用标识的测试副本中，用 `GOFLAGS=-tags=e2e` 和 `MYGO_AUTOMATION=<私有 socket 路径>` 启动 `go tool mygo dev`。通过 `go tool mygo-automation` 的 `windows`、`snapshot --full`、`key`、`type` 和 `menu` 观察和驱动真实控件。系统文件对话框、输入法和 VoiceOver 使用对应的 macOS 服务实测，记录构建标识和操作结果。[测试构建入口](../../automation_e2e.go) · [MyGo 发布守卫](../../third_party/mygo/plugins/automation/off.go)
 
-2026 年 11 月 20 日在 macOS 27.2（26B123）arm64、Go 1.27.3 和 MyGo 0.10.0 上，首个原生窗口通过上述 smoke。Automation 读到 `[content] "Discussion.md"` 和 `[textField] "Markdown source"`。在含 CRLF 与 LF 的夹具开头输入 `前🙂` 后，菜单保存写入预期字节，撤销和重做改变控件文本。退出后，新进程重新显示相同文稿，完整文件比较通过。同一源码的默认构建产出 macOS app 和 DMG，Linux amd64 与 Windows amd64 完成交叉编译。
+2026 年 11 月 20 日在 macOS 27.2（26B123）arm64、Go 1.27.3 和 MyGo 0.10.0 上，首个原生窗口通过上述 smoke。Automation 读到 `[content] "Discussion.md"` 和 `[textField] "Markdown source"`。在含 CRLF 与 LF 的夹具开头输入 `前` 和 U+1F642 后，菜单保存写入预期字节，撤销和重做改变控件文本。退出后，新进程重新显示相同文稿，完整文件比较通过。同一源码的默认构建产出 macOS app 和 DMG，Linux amd64 与 Windows amd64 完成交叉编译。
 
 ## Portrait 工作区迁移验收
 
@@ -29,13 +29,17 @@ scripts/native-automation-smoke.sh
 
 运行 `go test ./internal/nativeeditor` 可复核对齐、单元格编辑与撤销、矩形复制、相邻列拖动、宽表独立横滚、脚注往返、键盘折叠、批注冲突及混合换行保真。兼容用例载入旧版折叠和列宽签名。[原生编辑用例](../../internal/nativeeditor/complex_test.go)
 
+在原生 Preview 切换任务复选框，保存后只有该任务的 Markdown 标记变化。通过链接浮层编辑目的地址，保存后完整文件只有 URL 变化，原有标题、标签格式和混合换行均保留。两项操作分别切到 Markdown 撤销及保存，原文件逐字节恢复。 [Preview 用例](../../internal/nativeeditor/preview_test.go)
+
+用带 `title="demo.py" linenos` 的 Python 围栏复验特殊代码块。原生窗口分别显示语言和元数据，正文以等宽字体显示并保留缩进，Preview 和 GenUI 往返后保存文件与夹具完全一致。
+
 ## GenUI 阅读和生成
 
 2026 年 11 月 20 日，在独立应用标识的 macOS 调试包中打开带两处同名标题、CRLF 和 emoji 的文稿。通过原生控件打开已有旁车，核对缺失与已改来源，点击清单进入第二个标题的原文。Preview 的可访问选区为 36–50，对应引用的完整文字。返回 GenUI、切换内页并对金额排序后，原地添加含评论结束符和 emoji 的批注。保存后比对整份原文，只有转义后的批注和分隔换行增加。
 
 生成验收使用实际工作区服务、文件观察器和独立 ACP 测试进程。完整生成保存了所选模型、生成要求与对应章节的哈希。局部更新保留另一页的表格，恢复操作逐字节还原前一份旁车。无效输出、已接收 prompt 后取消、重试及外部创建、损坏、删除和重建旁车均通过。两个文档同时生成时，挂起文档的要求、取消操作和结果均归属该文档。切换模型后再次生成，新旁车记录了新模型。本次使用测试进程提供可复现的 ACP 回复。
 
-在原生窗口打开版本 2 旁车，确认基于文档数据的标题在 GenUI 中显示为 `Read Native sidecar`，模板按数组渲染 `Alpha row` 和 `Beta row`。切回 Preview 后确认本地图像按阅读宽度呈现，普通 Go 代码块有语言、语法配色与 Copy code，链接有可访问的打开控件。视图往返前后原文逐字节一致。原生旁车已覆盖 JSON Pointer、数据模板、字符串插值、逻辑和部分校验函数。旧渲染器的本地化数字、货币、日期和复数格式，以及插值中的嵌套函数仍有兼容差异。 [GenUI 读者用例](../../internal/nativegenui/surface_test.go) · [原生编辑用例](../../internal/nativeeditor/preview_test.go)
+在原生窗口打开版本 2 旁车，确认基于文档数据的标题在 GenUI 中显示为 `Read Native sidecar`，模板按数组渲染 `Alpha row` 和 `Beta row`。另以旧格式 `path` 和 `call` 读取标题和模板数据。切回 Preview 后确认本地图像按阅读宽度呈现，普通 Go 代码块有语言、语法配色与 Copy code，链接有可访问的打开控件。视图往返前后原文逐字节一致。原生旁车已覆盖 JSON Pointer、数据模板、字符串插值、逻辑和部分校验函数。旧渲染器的本地化数字、货币、日期和复数格式，以及插值中的嵌套函数仍有兼容差异。 [GenUI 读者用例](../../internal/nativegenui/surface_test.go) · [原生编辑用例](../../internal/nativeeditor/preview_test.go)
 
 ## Agent 提案和检查点
 
@@ -49,7 +53,7 @@ scripts/native-automation-smoke.sh
 
 在集成提交 `5968525` 上，先在 Preview 修改标题，再切到 Markdown 在正文尾部追加文字，切回 Preview。第一次 Undo 保留标题修改，第二次还原完整原文。两次 Redo 恢复两次修改。每一步保存后与预期文件逐字节比较。
 
-VoiceOver 系统字幕读出了 Preview 编辑区的名称、类型、插入位置和标题。启用 VoiceOver 后，使用投递到 macOS HID 层的系统键盘事件修改标题，以 ⌘S 保存，再用 ⌘Z 撤销并重新保存。逐字节检查改动和恢复。以方向键移动时，字幕跟随插入位置朗读正文。合入 AppKit 按键修复后，在 VoiceOver 启用的 480 × 360 窗口中通过 Ctrl+Tab 切换文稿，以 ⌥⌘0 打开研究抽屉，聚焦输入框并用系统键盘输入和发送。真实 Feynman 测试进程接收了本轮请求。核对系统开关恢复关闭。
+VoiceOver 系统字幕读出了 Preview 编辑区的名称、类型、插入位置和标题。启用 VoiceOver 后，使用投递到 macOS HID 层的系统键盘事件修改标题，以 ⌘S 保存，再用 ⌘Z 撤销并重新保存。逐字节检查改动和恢复。以方向键移动时，字幕跟随插入位置朗读正文。合入 AppKit 按键修复后，在 VoiceOver 启用的 480 × 360 窗口中通过 Ctrl+Tab 切换文稿，以 ⌥⌘0 打开研究抽屉，聚焦输入框并用系统键盘输入和发送。发送后输入框清空，消息出现在测试会话中。核对系统开关恢复关闭。
 
 在系统设置开启 Reduce Motion 后，用 480 × 360 原生窗口打开导航抽屉，按 Esc 关闭并将焦点还给入口。使用 ⌘/ 往返 Preview 与 Markdown。测试后恢复原来的 Reduce Motion 值。
 

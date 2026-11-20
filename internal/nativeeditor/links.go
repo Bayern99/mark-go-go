@@ -42,7 +42,6 @@ func (d *Document) previewHover(req editor.HoverRequest) {
 					return
 				}
 				ui.Column(c).Gap(6).Children(func() {
-					ui.Text(c, destination).Font("IBM Plex Mono").FontSize(12).Wrap().Selectable()
 					if canOpen {
 						ui.Link(c, "Open link", destination).Description(destination)
 					}

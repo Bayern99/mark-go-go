@@ -42,8 +42,9 @@ var remoteImageClient = &http.Client{
 type inlineImages struct{ entries sync.Map }
 
 type inlineImageEntry struct {
-	mu  sync.Mutex
-	src ui.ImageSource
+	mu   sync.Mutex
+	src  ui.ImageSource
+	done bool
 }
 
 func (d *Document) SetImageDirectory(dir string) {
@@ -76,6 +77,7 @@ func (d *Document) loadInlineImage(c *ui.Context, url string) ui.ImageSource {
 			src, _ := loadPreviewImage(directory, url)
 			entry.mu.Lock()
 			entry.src = src
+			entry.done = true
 			entry.mu.Unlock()
 			services.Invalidate()
 		}()
@@ -83,6 +85,42 @@ func (d *Document) loadInlineImage(c *ui.Context, url string) ui.ImageSource {
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
 	return entry.src
+}
+
+func (d *Document) pruneInlineImages(used map[string]struct{}) {
+	if d.images == nil {
+		return
+	}
+	d.images.entries.Range(func(key, _ any) bool {
+		url, ok := key.(string)
+		if !ok {
+			return true
+		}
+		if _, ok := used[url]; !ok {
+			d.images.entries.Delete(url)
+		}
+		return true
+	})
+}
+
+func (d *Document) retryFailedInlineImages() {
+	if d.images == nil {
+		return
+	}
+	d.images.entries.Range(func(key, value any) bool {
+		url, ok := key.(string)
+		entry, validEntry := value.(*inlineImageEntry)
+		if !ok || !validEntry {
+			return true
+		}
+		entry.mu.Lock()
+		failed := entry.done && entry.src == nil
+		entry.mu.Unlock()
+		if failed {
+			d.images.entries.CompareAndDelete(url, entry)
+		}
+		return true
+	})
 }
 
 func loadPreviewImage(directory, rawURL string) (ui.ImageSource, error) {

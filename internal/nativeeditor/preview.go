@@ -57,6 +57,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	snap := buffer.Snapshot()
 	src := snap.String()
 	p.document.Set(src)
+	p.owner.pruneInlineImages(previewImageURLs(p.document))
 	p.restoreFolds()
 	p.readable = make(map[int]string)
 	p.replacements = p.replacements[:0]
@@ -271,6 +272,18 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	}
 	slices.SortStableFunc(p.replacements, func(a, b editor.Replacement) int { return a.Start - b.Start })
 	p.indexDisplay(src)
+}
+
+func previewImageURLs(doc *parser.Document) map[string]struct{} {
+	used := map[string]struct{}{}
+	for i := 1; i < doc.Len(); i++ {
+		for _, in := range doc.Inlines(i) {
+			if in.Kind == parser.Image {
+				used[in.Dest] = struct{}{}
+			}
+		}
+	}
+	return used
 }
 
 type previewImage struct {

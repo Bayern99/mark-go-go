@@ -24,7 +24,9 @@ Feynman 0.5.71 与 pi-acp 0.0.33 在隔离的本地模型上公布了 45 个命�
 
 连接和研究使用仓库内可复现的 Feynman RPC 供应端。发送 `stream full lifecycle` 后，原生 Markdown 对话显示流式回复，并可展开 `read · notes.md · completed` 工具查看输出和改动前后文本。第二次发送后，服务发布 `late.md`；Files 中打开为原生文档标签。删除该文件后刷新显示 Restore，恢复后文件内容为 `# Late artifact\n`，SHA-256 为 `46aa7a389515e7912bb52bc9ebc2b1acf519dc92e0bafc604c55b100b4a324ff`。扩展问题的 input 和 editor 回答提交成功，供应端收到 `Native Fixture` 与 `Final native fixture abstract`；状态、进度小组件和研究标题也更新到界面。
 
-第一次通过系统文件对话框和界面导航后，夹具的 select 与 confirm 提问分别在 10 秒及 5 秒超时；没有确认这两种问题的实机回答结果。原生控件的选择和确认入口由 [headless UI 用例](../internal/nativefeynman/chat_test.go)验证，回答协议由 [Feynman 服务用例](../internal/agent/feynman/research_test.go)验证。此次没有实测附件选择器、会话切换、alphaXiv 查询、提案送审、重启恢复、480 × 360、IME 或 VoiceOver；这些仍是迁移实机待验项。
+首轮通过系统文件对话框和界面导航后，夹具的 select 与 confirm 提问分别在 10 秒及 5 秒超时。原生控件的选择和确认入口由 [无窗口界面测试](../internal/nativefeynman/chat_test.go)覆盖，回答协议由 [Feynman 服务测试](../internal/agent/feynman/research_test.go)覆盖。
+
+随后在实机补验 480 × 360 窗口、附件选择、会话切换与跨根隔离，以及提案审阅、重启恢复、系统拼音和 VoiceOver。alphaXiv 面板在实机检查了入口，查询行为以 Go 测试为依据。 [窄窗研究](agents/native-automation.md#feynman-窄窗) · [原生提案和检查点](agents/native-automation.md#agent-提案和检查点) · [系统输入和会话](agents/native-automation.md#系统输入文件菜单和会话)
 
 ## 迁移前历史记录
 
@@ -38,4 +40,4 @@ Feynman 0.5.71 与 pi-acp 0.0.33 在隔离的本地模型上公布了 45 个命�
 
 ## 原生覆盖缺口
 
-精确光标与滚动位置、VoiceOver 和 Linux/Windows 界面仍需相应平台的复验。ComparisonTable 的键盘排序由 [原生 GenUI 阅读器测试](../internal/nativegenui/reading_test.go) 覆盖；迁移前的 [Chromium 用例](https://github.com/Bayern99/mark-go-go/blob/81522cb48ec9718bffbda0255df1039692a2f6cd/web/test/genui-catalog.test.tsx) 保留为历史参照。既有验收与范围见 [工作区集成 #32](https://github.com/Bayern99/mark-go-go/issues/32) 和仓库历史。
+本轮原生界面验收在 macOS arm64 进行。精确光标与滚动位置仍有复验缺口，Linux 和 Windows 的覆盖来自自动化和构建。ComparisonTable 的键盘排序由 [原生 GenUI 阅读器测试](../internal/nativegenui/reading_test.go) 覆盖。迁移前的 [Chromium 用例](https://github.com/Bayern99/mark-go-go/blob/81522cb48ec9718bffbda0255df1039692a2f6cd/web/test/genui-catalog.test.tsx) 与 [工作区集成 #32](https://github.com/Bayern99/mark-go-go/issues/32) 保留作历史参照。

@@ -90,7 +90,7 @@ func (p *previewLayout) inlineMath(in parser.Inline) {
 
 func (p *previewLayout) special(snap editor.Snapshot, i int) bool {
 	b := p.document.Block(i)
-	kind, body := "", ""
+	kind, body, detail := "", "", ""
 	switch b.Kind {
 	case parser.MathBlock:
 		kind = "math"
@@ -140,9 +140,10 @@ func (p *previewLayout) special(snap editor.Snapshot, i int) bool {
 		label = b.Label()
 	}
 	if kind == "code" && b.Language() != "" {
-		label = b.Info()
+		label = b.Language()
+		detail = strings.TrimSpace(strings.TrimPrefix(b.Info(), b.Language()))
 	}
-	p.specialBlock(snap, b.Start, b.End, kind, label, body)
+	p.specialBlock(snap, b.Start, b.End, kind, label, detail, body)
 	return true
 }
 
@@ -207,7 +208,7 @@ func codeHeader(label, body string) func(*ui.Context, ui.Element, editor.Block) 
 	}
 }
 
-func (p *previewLayout) specialBlock(snap editor.Snapshot, start, end int, kind, label, body string) {
+func (p *previewLayout) specialBlock(snap editor.Snapshot, start, end int, kind, label, detail, body string) {
 	d := p.owner
 	if d.draft != nil && d.draft.anchor == start && d.draft.kind == kind {
 		p.draftAnchored = true
@@ -237,6 +238,14 @@ func (p *previewLayout) specialBlock(snap editor.Snapshot, start, end int, kind,
 				} else if kind == "frontmatter" {
 					ui.Text(c, label).FontSize(12).TextColor(c.Theme().TextMuted)
 					frontmatterRows(c, body)
+				} else if kind == "code" {
+					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
+						ui.Text(c, label).Font("IBM Plex Sans").FontSize(12).TextColor(c.Theme().TextMuted)
+						if detail != "" {
+							ui.Text(c, detail).Font("IBM Plex Sans").FontSize(12).TextColor(c.Theme().TextMuted)
+						}
+					})
+					ui.Text(c, body).Font("IBM Plex Mono").FontSize(14).Wrap().PreserveSpaces().Selectable()
 				} else {
 					ui.Text(c, label).FontSize(12).TextColor(c.Theme().TextMuted)
 					ui.Text(c, body).Wrap().Selectable()

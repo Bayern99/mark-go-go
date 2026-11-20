@@ -232,18 +232,38 @@ func TestOpenCodeFenceKeepsItsLastLineEditable(t *testing.T) {
 }
 
 func TestCodeFenceWithMetadataKeepsItsEditLayer(t *testing.T) {
-	const src = "```go linenos\r\nfmt.Println(1)\r\n```\r\n"
+	const src = "~~~python title=\"demo.py\"\ndef f():\n    return \"~~~ inside\"\n~~~\n"
+	if err := nativeui.RegisterFonts(); err != nil {
+		t.Fatal(err)
+	}
 	d := nativeeditor.New(src)
-	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 600, 300)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 720, 360)
 	tt.Frame()
 	if _, ok := tt.Find("Edit code"); !ok {
 		t.Fatal("code fence metadata lost its in-place Markdown editor")
 	}
-	if _, ok := tt.Find("go linenos"); !ok {
-		t.Fatal("code fence metadata disappeared from Preview")
+	if _, ok := tt.Find("python"); !ok {
+		t.Fatal("code fence language was not shown separately")
+	}
+	if _, ok := tt.Find(`title="demo.py"`); !ok {
+		t.Fatal("code fence metadata was not shown separately")
 	}
 	if d.Source() != src || d.Modified() {
 		t.Fatal("presenting code metadata changed the source")
+	}
+	if err := tt.Click("Edit code"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if draft, ok := tt.Access("Markdown block editor"); !ok || draft.Value != strings.TrimSuffix(src, "\n") {
+		t.Fatalf("metadata fence edit draft did not preserve the raw fence: %q", draft.Value)
+	}
+	if err := tt.Click("Cancel"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if d.Source() != src || d.Modified() {
+		t.Fatal("canceling code metadata edit changed the source")
 	}
 }
 

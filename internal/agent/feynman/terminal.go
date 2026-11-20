@@ -98,12 +98,6 @@ func shellJoinCommand(bin string, args ...string) string {
 	return strings.Join(parts, " ")
 }
 
-func appleScriptString(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	return `"` + s + `"`
-}
-
 func openSystemTerminal(ctx context.Context, command, profile string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -112,7 +106,7 @@ func openSystemTerminal(ctx context.Context, command, profile string) error {
 	launchCmd := "FEYNMAN_HOME=" + shellQuoteArg(profile) +
 		" PI_CODING_AGENT_DIR=" + shellQuoteArg(filepath.Join(profile, ".feynman", "agent")) +
 		" PI_CODING_AGENT_SESSION_DIR=" + shellQuoteArg(sessions) + " " + command
-	if bin, ok := fsutil.ResolveExecutable("feynman", nil, nil); ok {
+	if bin, ok := fsutil.ResolveExecutable("feynman", nil, fsutil.DefaultUserBinDirs()); ok {
 		binDir := filepath.Dir(bin)
 		if runtime.GOOS != "windows" && strings.HasPrefix(command, "feynman") {
 			launchCmd = fmt.Sprintf("PATH=%s:\"$PATH\" %s", shellQuoteArg(binDir), launchCmd)
@@ -120,17 +114,39 @@ func openSystemTerminal(ctx context.Context, command, profile string) error {
 	}
 	switch runtime.GOOS {
 	case "darwin":
-		cmd := exec.CommandContext(ctx, "osascript",
-			"-e", `tell application "Terminal" to activate`,
-			"-e", fmt.Sprintf(`tell application "Terminal" to do script %s`, appleScriptString(launchCmd)),
-		)
+		file, err := os.CreateTemp("", "mark-go-go-feynman-*.command")
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		path := file.Name()
+		opened := false
+		defer func() {
+			if !opened {
+				_ = os.Remove(path)
+			}
+		}()
+		if _, err := fmt.Fprintf(file, "#!/bin/sh\n/bin/rm -f -- %s\n%s\n", shellQuoteArg(path), launchCmd); err != nil {
+			return err
+		}
+		if err := file.Chmod(0700); err != nil {
+			return err
+		}
+		if err := file.Close(); err != nil {
+			return err
+		}
+		cmd := exec.CommandContext(ctx, "open", "-b", "com.apple.Terminal", path)
 		if out, err := cmd.CombinedOutput(); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			msg := strings.TrimSpace(string(out))
 			if msg != "" {
 				return fmt.Errorf("open Terminal: %s", msg)
 			}
 			return err
 		}
+		opened = true
 		return nil
 	case "windows":
 		cmd := exec.Command("cmd.exe", "/c", "start", "", "cmd.exe", "/k", command)

@@ -75,7 +75,7 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 		r.states[id] = state
 	}
 	children := func() {
-		for _, child := range n.Children {
+		for _, child := range n.Children.IDs {
 			r.node(c, child, parents)
 		}
 	}
@@ -108,7 +108,7 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 			markdown.View(c, n.Text.String(), opts)
 		})
 	default:
-		busy := slices.Contains(r.Replacing, id)
+		busy := slices.Contains(r.Replacing, id) || (n.ComponentID != "" && slices.Contains(r.Replacing, n.ComponentID))
 		if !busy {
 			state.height = state.frame.Bounds(c).H
 		}

@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/egoist/mygo/ui"
 )
 
 func TestOpenPublishedCatalogExample(t *testing.T) {
@@ -44,8 +46,65 @@ func TestOpenViewWithUnboundTemplateAndLiteralSibling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(surface.Nodes["list"].Children) != 0 || surface.Nodes["saved"].Text.String() != "Saved report" {
+	if len(surface.Nodes["list"].Children.IDs) != 0 || surface.Nodes["list"].Children.Template != nil || surface.Nodes["saved"].Text.String() != "Saved report" {
 		t.Fatalf("unbound template hid the saved report: %+v", surface)
+	}
+}
+
+func TestOpenExpandsReadOnlyChildListTemplates(t *testing.T) {
+	const view = `{"version":2,"sources":{"overview":{"heading":"Overview"}},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"v","catalogId":"markgogo.dev:genui/v1","dataModel":{"items":[{"name":"Alpha"},{"name":"Beta"}]},"components":[{"id":"root","component":"Column","children":["rows"]},{"id":"rows","component":"Column","children":{"componentId":"row","path":"/items"}},{"id":"row","component":"Column","children":["label","points","functionText"]},{"id":"label","component":"Text","text":{"@path":"name"}},{"id":"points","component":"KeyPoints","title":"Source details","items":["A source-bound point."],"sources":["overview"]},{"id":"functionText","component":"Text","text":{"@call":"formatString","args":{"value":"This stays inert."}}}]}}]}`
+	first, err := Open(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := Open(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rowIDs := first.Nodes["rows"].Children.IDs
+	if len(rowIDs) != 2 || rowIDs[0] != "row-[/items/0]" || rowIDs[1] != "row-[/items/1]" {
+		t.Fatalf("expanded row identities = %v", rowIDs)
+	}
+	labelIDs := []string{"label-[/items/0]", "label-[/items/1]"}
+	pointIDs := []string{"points-[/items/0]", "points-[/items/1]"}
+	functionIDs := []string{"functionText-[/items/0]", "functionText-[/items/1]"}
+	for i, name := range []string{"Alpha", "Beta"} {
+		rowID := rowIDs[i]
+		labelID := labelIDs[i]
+		label, ok := first.Nodes[labelID]
+		if !ok || label.Text.String() != name || label.ComponentID != "label" {
+			t.Errorf("row %q label = %+v, want %q from template component label", rowID, label, name)
+		}
+		pointsID := pointIDs[i]
+		points, ok := first.Nodes[pointsID]
+		if !ok || len(points.Sources) != 1 || points.Sources[0] != "overview" || first.Sources["overview"].Heading != "Overview" {
+			t.Errorf("row %q source mapping = %+v, source = %+v", rowID, points.Sources, first.Sources["overview"])
+		}
+		functionID := functionIDs[i]
+		if got := first.Nodes[functionID].Text.String(); got != "" {
+			t.Errorf("renderer function produced text %q", got)
+		}
+		if _, ok := second.Nodes[labelID]; !ok {
+			t.Errorf("row identity %q changed when the same view was reopened", labelID)
+		}
+	}
+	renderedSources := []string{}
+	var reader Reading
+	reader.Sources = func(_ *ui.Context, node Node) {
+		if len(node.Sources) > 0 {
+			renderedSources = append(renderedSources, node.ID)
+		}
+	}
+	reader.Load(first)
+	tt := ui.NewTester(reader.View, 600, 400)
+	if _, ok := tt.Access("Alpha"); !ok {
+		t.Fatal("first generated row was not visible in the native reader")
+	}
+	if _, ok := tt.Access("Beta"); !ok {
+		t.Fatal("second generated row was not visible in the native reader")
+	}
+	if len(renderedSources) != 2 || renderedSources[0] == renderedSources[1] {
+		t.Fatalf("source controls were not bound to distinct row instances: %v", renderedSources)
 	}
 }
 
@@ -56,7 +115,7 @@ func TestOpenResolvesReadOnlyA2UIDataBindingsAndComponentUpdates(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := surface.Nodes["body"].Text.String(); got != "Updated" {
-		t.Errorf("bound Text = %q, want updated data", got)
+		t.Errorf("bound Text = %q, want updated data; nodes: %+v", got, surface.Nodes)
 	}
 	if got := surface.Nodes["tabs"].Tabs[0].Title.String(); got != "Sections" {
 		t.Errorf("bound tab title = %q, want updated data", got)

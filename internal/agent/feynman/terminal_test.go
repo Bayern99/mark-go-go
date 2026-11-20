@@ -28,7 +28,9 @@ func TestMacTerminalHandsOffWizard(t *testing.T) {
 		"osascript": "#!/bin/sh\nexec /bin/sleep 10\n",
 		"open": `#!/bin/sh
 set -eu
-[ "$#" -eq 3 ] && [ "$1" = -b ] && [ "$2" = com.apple.Terminal ]
+[ "$#" -eq 3 ]
+[ "$1" = -b ]
+[ "$2" = com.apple.Terminal ]
 printf '%s\n' "$3" > "$MGO_TERMINAL_TEST_REQUEST"
 `,
 		"feynman": `#!/bin/sh

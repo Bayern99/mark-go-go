@@ -811,7 +811,6 @@ func (f fakeWorkspaceLookup) UserDataDir() string {
 	return f.dataDir
 }
 
-
 func runFeynmanRPCFixture() {
 	cwd, _ := os.Getwd()
 	sessionDir := os.Getenv("PI_CODING_AGENT_SESSION_DIR")

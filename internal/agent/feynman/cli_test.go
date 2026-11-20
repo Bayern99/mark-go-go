@@ -484,7 +484,6 @@ func TestFeynmanTerminalHandoffAndRefreshModels(t *testing.T) {
 	}
 }
 
-
 func runFeynmanCLIFixture() {
 	mode := os.Getenv("MGO_FIXTURE_CLI_MODE")
 	args := os.Args[1:]

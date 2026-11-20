@@ -2,6 +2,8 @@ package workspace
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"io"
 	"io/fs"
@@ -46,7 +48,7 @@ type DocumentMCPState struct {
 	Conflict      bool   `json:"conflict"`
 	Deleted       bool   `json:"deleted"`
 	ReadOnly      bool   `json:"readOnly"`
-	Version       int    `json:"version"`
+	Version       int64  `json:"version"`
 	EditorVersion int    `json:"-"`
 	Text          string `json:"text"`
 }
@@ -258,7 +260,7 @@ func (s *docSession) mcpDocument(root string) DocumentMCPState {
 	return DocumentMCPState{
 		ID: info.ID, Name: info.Name, Path: info.Path, RelPath: relSlash(root, info.Path),
 		Open: true, Edited: info.Edited, Conflict: info.Conflict, Deleted: info.Deleted,
-		ReadOnly: info.ReadOnly, Version: version, EditorVersion: editorVersion, Text: text,
+		ReadOnly: info.ReadOnly, Version: int64(version), EditorVersion: editorVersion, Text: text,
 	}
 }
 
@@ -291,11 +293,15 @@ func (h *Service) MCPDocument(root, idOrPath string) (DocumentMCPState, error) {
 	if err != nil {
 		return DocumentMCPState{}, err
 	}
+	digest := sha256.Sum256([]byte(text))
+	// Reserve bit 52 for disk versions without exceeding JavaScript's safe integer range.
+	diskVersion := int64(1<<52 | binary.BigEndian.Uint64(digest[:8])>>12)
 	return DocumentMCPState{
 		Name:    filepath.Base(absPath),
 		Path:    absPath,
 		RelPath: rel,
 		Open:    false,
+		Version: diskVersion,
 		Text:    text,
 	}, nil
 }

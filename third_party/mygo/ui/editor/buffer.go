@@ -35,9 +35,10 @@ import (
 // Methods are safe from any goroutine; schedule changes with
 // Window.Update so the window shows them.
 type Buffer struct {
-	mu      sync.Mutex
-	text    rope.Text
-	version uint64
+	exactSource bool
+	mu          sync.Mutex
+	text        rope.Text
+	version     uint64
 	// log is the changes of the last versions, and the text each made,
 	// which editors, the highlighter and diffs follow to keep their state
 	// of the text.
@@ -144,6 +145,37 @@ func NewBuffer(text string) *Buffer {
 	b.saved, b.savedEnds = b.text, b.ends
 	return b
 }
+
+// NewSourceBuffer keeps the raw bytes of untouched line endings, including
+// when removing text brings a lone CR and LF together into a single CRLF.
+func NewSourceBuffer(text string) *Buffer {
+	b := NewBuffer(text)
+	b.exactSource = true
+	return b
+}
+
+// ReplaceAtVersion applies exact replacement bytes at normalized byte
+// offsets only while the caller's revision is current.
+func (b *Buffer) ReplaceAtVersion(version uint64, start, end int, replacement string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.version != version || start < 0 || end < start || end > b.text.Len() {
+		return false
+	}
+	b.exactEdit(start, end, replacement)
+	return true
+}
+
+func (b *Buffer) exactEdit(start, end int, replacement string) {
+	text, codes := readEnds(replacement)
+	if codes == "" {
+		codes = strings.Repeat(string(endLF), strings.Count(text, "\n"))
+	}
+	b.editEnds([]Edit{{Start: start, End: end, Text: text}}, []string{codes}, editOther, nil, nil)
+}
+
+// EndTyping commits the current typing group before a change of editing mode.
+func (b *Buffer) EndTyping() { b.endGroup() }
 
 // LineEnding returns the line ending most of the text's lines have, \r\n,
 // \r or \n, the first line's on a tie, and \n for a text of one line.
@@ -305,6 +337,10 @@ func (b *Buffer) Reset(text string) {
 func (b *Buffer) Set(text string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.exactSource {
+		b.exactEdit(0, b.text.Len(), text)
+		return
+	}
 	b.edit([]Edit{{Start: 0, End: b.text.Len(), Text: text}}, editOther, nil, nil)
 }
 
@@ -564,8 +600,10 @@ func (b *Buffer) replace(edits []Edit, codes []string) (_ rope.Text, _ lineEnds,
 		start := max(last, min(e.Start, before.Len()))
 		end := max(start, min(e.End, before.Len()))
 		last = end
-		if start == end && e.Text == "" || end-start == len(e.Text) && before.Slice(start, end) == e.Text {
-			continue
+		if end-start == len(e.Text) && before.Slice(start, end) == e.Text {
+			if i >= len(codes) || beforeEnds.codes.Slice(before.LineOf(start), before.LineOf(end)) == codes[i] {
+				continue
+			}
 		}
 		c := change{oldStart: start, oldEnd: end}
 		c.oldLine = before.LineOf(start)
@@ -617,6 +655,9 @@ func (b *Buffer) replace(edits []Edit, codes []string) (_ rope.Text, _ lineEnds,
 		if after[i] != 0 && owns(i) && ends.at(c.newEndLine) != after[i] {
 			ends = ends.replace(c.newEndLine, c.newEndLine+1, string(after[i]))
 		}
+	}
+	if b.exactSource && ends.cr > 0 {
+		return joinSourceCRLF(before, text, ends, changes)
 	}
 	for _, c := range changes {
 		ends = fixCR(text, ends, c.newLine-1, c.newEndLine)

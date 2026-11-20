@@ -173,6 +173,48 @@ func fixCR(text rope.Text, ends lineEnds, from, to int) lineEnds {
 	return ends
 }
 
+// joinSourceCRLF combines CR and LF that an edit brought together. Include
+// both breaks in the change so inverse can restore their distinct endings.
+func joinSourceCRLF(before, text rope.Text, ends lineEnds, changes []change) (rope.Text, lineEnds, []change, []byte) {
+	var joins []span
+	last := -1
+	for _, c := range changes {
+		for line := max(0, c.newLine-1, last+1); line <= c.newEndLine && line+1 < ends.codes.Len(); line++ {
+			if ends.at(line) == endCR && ends.at(line+1) == endLF && text.LineStart(line+1) == text.LineEnd(line+1) {
+				start := text.LineEnd(line)
+				joins = append(joins, span{start, start + 2, 1})
+				last = line
+			}
+		}
+	}
+	if len(joins) == 0 {
+		return text, ends, changes, nil
+	}
+	for i := len(joins) - 1; i >= 0; i-- {
+		j := joins[i]
+		line := text.LineOf(j.start)
+		text = text.Replace(j.start, j.end, "\n")
+		ends = ends.replace(line, line+2, string(endCRLF))
+	}
+	spans := make([]span, len(changes))
+	for i, c := range changes {
+		spans[i] = span{c.oldStart, c.oldEnd, c.newEnd - c.newStart}
+	}
+	changes = nil
+	delta := 0
+	for _, s := range composeSpans(spans, joins) {
+		start := s.start + delta
+		end := start + s.n
+		changes = append(changes, change{
+			oldStart: s.start, oldEnd: s.end, newStart: start, newEnd: end,
+			oldLine: before.LineOf(s.start), oldEndLine: before.LineOf(s.end),
+			newLine: text.LineOf(start), newEndLine: text.LineOf(end),
+		})
+		delta += s.n - (s.end - s.start)
+	}
+	return text, ends, changes, nil
+}
+
 // dominant returns the ending most lines have, the first line's on a tie
 // with it, and \n for a text of one line.
 func (e lineEnds) dominant() string {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/egoist/mygo/internal/rope"
 	"github.com/egoist/mygo/internal/text"
+	"github.com/egoist/mygo/transfer"
 )
 
 // apply makes edits to the buffer as one step of undo, and gives the
@@ -424,15 +425,42 @@ func (ed *editor) copy(cut bool) {
 			line := r.LineOf(s.head)
 			a, z := r.LineStart(line), min(r.Len(), r.LineEnd(line)+1)
 			t := r.Slice(a, z)
+			from := a
 			if !strings.HasSuffix(t, "\n") {
 				t += "\n"
+				// The last line has no newline of its own to take along, so
+				// a cut would leave an empty line (or, when it is empty,
+				// nothing at all): take the one before it instead.
+				if line > 0 {
+					from = r.LineEnd(line - 1)
+				}
 			}
 			pieces, whole = append(pieces, t), append(whole, true)
-			edits = append(edits, Edit{Start: a, End: z})
+			edits = append(edits, Edit{Start: from, End: z})
 			continue
 		}
 		pieces, whole = append(pieces, r.Slice(s.start(), s.end())), append(whole, false)
 		edits = append(edits, Edit{Start: s.start(), End: s.end()})
+	}
+	if p := ed.o.projection; p != nil {
+		var plain, md []string
+		for _, s := range ed.sels {
+			a, z := s.start(), s.end()
+			if s.empty() {
+				line := r.LineOf(a)
+				a, z = r.LineStart(line), min(r.Len(), r.LineEnd(line)+1)
+			}
+			plain = append(plain, p.Text(a, z))
+			md = append(md, p.Markdown(a, z))
+		}
+		ed.services.WriteClipboardData(transfer.New(transfer.NewItem(
+			transfer.Bytes(transfer.Text, []byte(strings.Join(plain, "\n"))),
+			transfer.Bytes(transfer.Markdown, []byte(strings.Join(md, "\n"))),
+		)))
+		if cut && !ed.o.readOnly {
+			ed.apply(edits, editOther, nil)
+		}
+		return
 	}
 	var text strings.Builder
 	for i, p := range pieces {

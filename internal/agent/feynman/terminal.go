@@ -48,6 +48,9 @@ func (h *ResearchManager) LaunchTerminalWizard(ctx context.Context, root, wizard
 		return CLITerminalLaunchResult{}, fmt.Errorf("Unsupported interactive wizard %q.", wizard)
 	}
 
+	if err := h.prepareProfile(""); err != nil {
+		return CLITerminalLaunchResult{}, err
+	}
 	command := shellJoinCommand("feynman", args...)
 	h.mu.Lock()
 	launcher := h.openTerminal
@@ -106,7 +109,8 @@ func openSystemTerminal(ctx context.Context, command, profile string) error {
 		return err
 	}
 	sessions := filepath.Join(profile, ".feynman", "sessions")
-	launchCmd := "HOME=" + shellQuoteArg(profile) + " FEYNMAN_HOME=" + shellQuoteArg(profile) +
+	launchCmd := "FEYNMAN_HOME=" + shellQuoteArg(profile) +
+		" PI_CODING_AGENT_DIR=" + shellQuoteArg(filepath.Join(profile, ".feynman", "agent")) +
 		" PI_CODING_AGENT_SESSION_DIR=" + shellQuoteArg(sessions) + " " + command
 	if bin, ok := fsutil.ResolveExecutable("feynman", nil, nil); ok {
 		binDir := filepath.Dir(bin)

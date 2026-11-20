@@ -30,7 +30,19 @@ func TestMain(m *testing.M) {
 		runFeynmanCLIFixture()
 		os.Exit(0)
 	}
-	os.Exit(m.Run())
+	home, err := os.MkdirTemp("", "feynman-test-home-")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("HOME", home); err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("USERPROFILE", home); err != nil {
+		panic(err)
+	}
+	code := m.Run()
+	_ = os.RemoveAll(home)
+	os.Exit(code)
 }
 
 func TestDirectFeynmanCommandAndFraming(t *testing.T) {
@@ -99,13 +111,18 @@ func TestDirectFeynmanCommandAndFraming(t *testing.T) {
 	}
 	trust, err := os.ReadFile(filepath.Join(profile, ".feynman", "agent", "trust.json"))
 	var decisions map[string]bool
-	if err != nil || json.Unmarshal(trust, &decisions) != nil || len(decisions) != 1 || !decisions[fsutil.CanonicalPath(work)] {
-		t.Errorf("wanted only the app-managed work directory trusted, got %s (%v)", trust, err)
+	if err != nil || json.Unmarshal(trust, &decisions) != nil || !decisions[fsutil.CanonicalPath(work)] {
+		t.Errorf("wanted the app-managed work directory trusted, got %s (%v)", trust, err)
+	}
+	for dir, trusted := range decisions {
+		if trusted && dir != fsutil.CanonicalPath(work) {
+			t.Errorf("unexpected trusted directory %s", dir)
+		}
 	}
 	if got, err := os.ReadFile(globalTrust); err != nil || string(got) != denied {
 		t.Errorf("global trust changed: %v", err)
 	}
-	if doctor, err := manager.CLIDoctor(context.Background(), root); err != nil || doctor.RawOutput != profile+"|"+profile {
+	if doctor, err := manager.CLIDoctor(context.Background(), root); err != nil || doctor.RawOutput != profile+"|"+home {
 		t.Errorf("Doctor used a different profile: %q (%v)", doctor.RawOutput, err)
 	}
 

@@ -399,7 +399,7 @@ func TestTerminalWizardOutlivesLaunchContext(t *testing.T) {
 	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
 		data, _ := os.ReadFile(output)
 		got := string(data)
-		profiles := "|" + h.profileHome() + "|" + h.profileHome() + "\n"
+		profiles := "|" + h.profileHome() + "|" + os.Getenv("HOME") + "\n"
 		if strings.Contains(got, "model login"+profiles) &&
 			strings.Contains(got, "alpha login"+profiles) &&
 			strings.Contains(got, "setup"+profiles) {

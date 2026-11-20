@@ -7,7 +7,7 @@ import (
 )
 
 func TestOpenPublishedCatalogExample(t *testing.T) {
-	doc, err := os.ReadFile("../../web/src/plugins/genui/view-format.md")
+	doc, err := os.ReadFile("../../docs/genui/view-format.md")
 	if err != nil {
 		t.Fatal(err)
 	}

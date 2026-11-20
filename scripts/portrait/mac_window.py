@@ -40,10 +40,15 @@ def wait_for(check, description, seconds=12):
     raise RuntimeError("Timed out waiting for " + description)
 
 
-def app_window(name):
+def app_window(bundle_identifier):
+    applications = AppKit.NSRunningApplication.runningApplicationsWithBundleIdentifier_(bundle_identifier)
+    pids = {int(application.processIdentifier()) for application in applications}
+    if not pids:
+        return None
     windows = cg.CGWindowListCopyWindowInfo(cg.kCGWindowListOptionOnScreenOnly, 0)
     for window in windows:
-        if window.get("kCGWindowOwnerName") == name and window.get("kCGWindowLayer") == 0:
+        owner_pid = window.get("kCGWindowOwnerPID")
+        if owner_pid is not None and int(owner_pid) in pids and window.get("kCGWindowLayer") == 0:
             return window
     return None
 

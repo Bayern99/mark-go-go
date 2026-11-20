@@ -13,7 +13,7 @@ import Quartz as cg
 from mac_window import Window, app_window, clock, fixture, ink_change, sha, wait_for
 
 
-def run_trial(args, folder, name, trial):
+def run_trial(args, folder, bundle_identifier, trial):
     first, second = fixture(folder / "documents")
     log_file = folder / "events.jsonl"
 
@@ -77,7 +77,7 @@ def run_trial(args, folder, name, trial):
     record("fixtures", firstBytes=first.stat().st_size, firstSHA256=sha(first), secondSHA256=sha(second))
     started = clock()
     subprocess.run(["open", "-na", str(args.app), str(first)], check=True)
-    info = wait_for(lambda: app_window(name), "application window")
+    info = wait_for(lambda: app_window(bundle_identifier), "application window")
     window = Window(info)
     AppKit.NSRunningApplication.runningApplicationWithProcessIdentifier_(window.pid).activateWithOptions_(
         AppKit.NSApplicationActivateIgnoringOtherApps)
@@ -85,16 +85,19 @@ def run_trial(args, folder, name, trial):
     def anchor():
         return args.wide_x if window.width >= 900 else args.narrow_x
 
+    def heading_y():
+        return args.heading_y if window.width >= 900 else args.narrow_heading_y
+
     def heading():
-        return (anchor() - 8, args.heading_y - 15, min(300, window.width - anchor()), 55)
+        return (anchor() - 8, heading_y() - 15, min(300, window.width - anchor()), 55)
 
     def focus():
-        window.click(anchor() + 8, args.heading_y)
+        window.click(anchor() + 8, heading_y())
         time.sleep(0.04)
 
     def wait_heading():
         def has_title_ink():
-            image = window.image((anchor(), args.heading_y - 11, 150, 24))
+            image = window.image((anchor(), heading_y() - 11, 150, 24))
             upper = image.crop((0, 0, 100, 5))
             return sum(upper.histogram()[:130]) > 20 and sum(image.histogram()[:130]) > 550
 
@@ -135,7 +138,7 @@ def run_trial(args, folder, name, trial):
             result = edit(window, heading())
             record("input", width=width, **result)
         capture(window, "edited")
-        region = (anchor() - 6, args.heading_y - 18, min(280, width - anchor() - 2), min(96, height - args.heading_y))
+        region = (anchor() - 6, heading_y() - 18, min(280, width - anchor() - 2), min(96, height - heading_y()))
         scroll_region = region if width == 480 else (anchor() - 6, 135, 350, 644)
         for direction in [-1, 1, -1]:
             scroll(window, scroll_region, direction)
@@ -174,7 +177,7 @@ def run_trial(args, folder, name, trial):
         raise
     finally:
         AppKit.NSRunningApplication.runningApplicationWithProcessIdentifier_(window.pid).terminate()
-        wait_for(lambda: not app_window(name), "application quit")
+        wait_for(lambda: not app_window(bundle_identifier), "application quit")
         wait_for(lambda: AppKit.NSRunningApplication.runningApplicationWithProcessIdentifier_(window.pid) is None,
                  "host process exit")
 
@@ -191,7 +194,10 @@ def main():
     parser.add_argument("--wide-x", type=int, default=470)
     parser.add_argument("--narrow-x", type=int, default=73)
     parser.add_argument("--heading-y", type=int, default=231)
+    parser.add_argument("--narrow-heading-y", type=int)
     args = parser.parse_args()
+    if args.narrow_heading_y is None:
+        args.narrow_heading_y = args.heading_y
     if args.layout:
         args.trials = 1
     args.app = args.app.resolve()
@@ -200,9 +206,10 @@ def main():
         parser.error("Store evidence outside the checkout")
     config = plistlib.loads((args.app / "Contents/Info.plist").read_bytes())
     name = config["CFBundleName"]
-    if not (name.startswith("Mark Go Go Portrait ") and config["CFBundleIdentifier"].startswith("dev.markgogo.portrait.")):
+    bundle_identifier = config["CFBundleIdentifier"]
+    if not (name.startswith("Mark Go Go Portrait ") and bundle_identifier.startswith("dev.markgogo.portrait.")):
         parser.error("Build an isolated Portrait application using build.sh")
-    if AppKit.NSRunningApplication.runningApplicationsWithBundleIdentifier_(config["CFBundleIdentifier"]):
+    if AppKit.NSRunningApplication.runningApplicationsWithBundleIdentifier_(bundle_identifier):
         parser.error("Quit the isolated application before measuring")
     if args.trials < 1 or args.soak_minutes < 0:
         parser.error("Require a positive trial count and a nonnegative soak duration")
@@ -214,7 +221,7 @@ def main():
         if profile.exists():
             profile.rename(folder / "previous-profile")
         try:
-            run_trial(args, folder, name, trial)
+            run_trial(args, folder, bundle_identifier, trial)
             (folder / "status").write_text("passed\n")
         except Exception as error:
             (folder / "status").write_text(f"failed: {error}\n")

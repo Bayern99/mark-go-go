@@ -2,31 +2,23 @@
 
 [English](ACKNOWLEDGMENTS.en.md)
 
-## Portrait 界面
+## 原生 Portrait 界面
 
-浏览器预览使用样例原文和内存宿主。运行方式见 [开发说明](README.md#开发)。
+MyGo Native UI 提供窗口和控件基础，应用以 Go 代码绘制工作区、编辑器、GenUI 与 Feynman 面板。
 
-- [Portrait 样式变量](web/src/theme/portrait-tokens.ts) · [应用样式](web/src/styles.css) · [Markdown 预览样式](web/src/editor/crepe-theme.css)
-- [工作区与文档标签](web/src/App.tsx) · [公用组件](web/src/components/) · [GenUI 视图与组件](web/src/plugins/genui/)
+- [窗口外壳、标签与导航](internal/nativeui/) · [Markdown Preview 与 Markdown 编辑](internal/nativeeditor/) · [GenUI 阅读视图](internal/nativegenui/)
+- IBM Plex Sans、Sans SC、Mono 与 Barlow Semi Condensed 字体，以及 Phosphor 图标随原生应用打包。[字体与随附许可证](internal/nativeui/fonts/) · [Portrait 样式](internal/nativeui/portrait.go)
 
 ## 设计与交互参考
 
 - **Tactile Design** 为选中、焦点、边线与控件的审查提供了参考。其作者也感谢 Emil Kowalski、Radix Colors 和 Apple Human Interface Guidelines。该技能采用 MIT 许可。[上游](https://github.com/kosta4a/tactile-design) · [随附许可证](.devin/skills/tactile-design/LICENSE)
-- **SoloMD** 为原地 Markdown 编辑和分开展示与保存提供了交互参考。[参考与版本](docs/adr/0006-preserved-blocks-and-semantic-colors.md)
-- **Awesome MyGo** 帮我们了解 MyGo 生态。 [Awesome MyGo](https://github.com/yldm-tech/awesome-mygo)
-
-- **Onevra Chat** 和 **MyGo Markdown chat** 示例提供了研究输入框、流式 Markdown、工具详情与滚动交互的参考。侧栏布局和可搜索的研究操作参考了 **Pi P2**。**GoRex** 提供了终端调整尺寸与重新连接的交互参考。[Onevra Chat](https://github.com/oneo-me/onevra/tree/main/source/components/chat) · [MyGo 示例](https://github.com/egoist/mygo/tree/v0.10.0/examples/markdown-chat) · [Pi 侧栏](https://github.com/earendil-works/pi/blob/main/apps/p2/src/web/SidePanel.tsx) · [Pi 命令页面](https://github.com/earendil-works/pi/blob/main/apps/p2/plugins/chat/commands.tsx) · [GoRex](https://github.com/egoist/gorex)
+- **SoloMD** 为原地 Markdown 编辑和分开展示与保存提供了交互参考。[决策记录](docs/adr/0006-preserved-blocks-and-semantic-colors.md)
+- **Onevra Chat**、**MyGo Markdown chat**、**Pi P2** 与 **GoRex** 为研究面板、输入、工具详情、侧栏操作和终端交互提供了参考。[Onevra Chat](https://github.com/oneo-me/onevra/tree/main/source/components/chat) · [MyGo 示例](https://github.com/egoist/mygo/tree/v0.10.0/examples/markdown-chat) · [Pi 侧栏](https://github.com/earendil-works/pi/blob/main/apps/p2/src/web/SidePanel.tsx) · [GoRex](https://github.com/egoist/gorex)
+- **Awesome MyGo** 帮我们了解 MyGo 生态。[Awesome MyGo](https://github.com/yldm-tech/awesome-mygo)
 
 ## 软件与资源
 
-- Feynman 插件使用 **MyGo** 选择本地来源文件和打开引用链接，使用 **react-markdown** 与 remark/rehype 插件显示回复，并直接对接用户本机安装的 **Feynman** CLI。[react-markdown](https://github.com/remarkjs/react-markdown) · [Feynman](https://github.com/Companion-Inc/feynman)
-
-- Egoist 与贡献者的 **MyGo** 提供原生桌面宿主。仓库包含 MIT 许可的 v0.10.0 代码，以及文档组和工作区生命周期补丁。命令行工具的拼音数据来自 Unicode Unihan 16.0.0。[上游](https://github.com/egoist/mygo/tree/v0.10.0) · [MyGo 许可证](third_party/mygo/LICENSE) · [Unicode 声明](third_party/mygo/cmd/mygo/LICENSE-Unicode.txt) · [补丁说明](docs/mygo-document-groups.md)
-- **Milkdown Crepe** 与 **ProseMirror** 提供可编辑的 Markdown 预览，**CodeMirror** 提供 Markdown 视图。**Radix Primitives** 提供提示和菜单等基础控件，**OverlayScrollbars** 提供滚动区域，**Mermaid** 在本地呈现图表，**A2UI** 提供 GenUI 组件协议。[前端依赖](web/package.json)
-- Marijn Haverbeke 与贡献者的 **ProseMirror Tables** 提供预览中的表格模型和选区。[上游](https://github.com/ProseMirror/prosemirror-tables) · [随附许可证](web/public/licenses/LICENSE-ProseMirror-Tables.txt)
-- 随应用提供的 **IBM Plex Sans、Sans SC、Mono** 和 **Barlow Semi Condensed** 采用 SIL 开放字体许可证。`MGG Condensed` 是同一组 Barlow 字体在 CSS 中应用尺寸调整后的名称。[IBM Plex](https://github.com/IBM/plex) · [Barlow](https://github.com/jpt/barlow) · [字体许可证](web/src/assets/licenses/)
-- 随应用提供的界面图标字体来自 Helena Zhang 和 Tobias Fried 的 **Phosphor Icons**，采用 MIT 许可。[Phosphor Icons](https://phosphoricons.com/) · [图标许可证](web/src/assets/licenses/LICENSE-Phosphor.txt)
-
-生产构建会生成 `licenses/Frontend-Licenses.md`，与随包资源的许可声明一起分发。桌面应用的资源目录也包含 MyGo、purego、Go 库和 Unicode CLDR 的许可声明。[前端声明](web/public/licenses/README.md) · [桌面端声明](resources/licenses/)
-
-MyGo 的本地化表由 **Unicode CLDR 48.2.0** 生成。[CLDR 数据](https://github.com/unicode-org/cldr-json/tree/48.2.0) · [随附许可证](resources/licenses/Unicode-3.0-CLDR.txt)
+- Egoist 与贡献者的 **MyGo** 提供原生桌面宿主和 UI 工具包。仓库包含 MIT 许可的 v0.10.0 代码，以及文档组和工作区生命周期补丁。[上游](https://github.com/egoist/mygo/tree/v0.10.0) · [MyGo 许可证](third_party/mygo/LICENSE) · [补丁说明](docs/mygo-document-groups.md)
+- 原生 Markdown 与图表功能使用 [go.mod](go.mod) 中声明的 Go 模块。Feynman 插件直接连接本机的 **Feynman** CLI；GenUI 文件遵循保存于 [格式说明](docs/genui/view-format.md) 的 A2UI 协议。
+- **IBM Plex** 与 **Barlow Semi Condensed** 采用 SIL Open Font License，**Phosphor Icons** 采用 MIT 许可证。[字体和图标许可证](internal/nativeui/fonts/) · [应用 MIT 许可证](LICENSE)
+- 随附资源中的 Go 依赖、数学字体与 Unicode CLDR 许可记录位于 [resources/licenses](resources/licenses/)。MyGo 的本地化表由 **Unicode CLDR 48.2.0** 生成。[CLDR 数据](https://github.com/unicode-org/cldr-json/tree/48.2.0) · [随附许可证](resources/licenses/Unicode-3.0-CLDR.txt)

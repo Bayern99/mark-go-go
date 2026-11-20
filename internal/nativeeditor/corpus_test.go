@@ -13,7 +13,7 @@ import (
 )
 
 func TestMarkdownCorpusSourceAndPreview(t *testing.T) {
-	paths, err := filepath.Glob("../../web/test/fixtures/*.md")
+	paths, err := filepath.Glob("../testdata/markdown/*.md")
 	if err != nil || len(paths) != 26 {
 		t.Fatalf("expected 26 original Markdown fixtures, found %d: %v", len(paths), err)
 	}

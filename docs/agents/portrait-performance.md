@@ -6,7 +6,7 @@
 
 需要屏幕录制与辅助功能权限、Go、Python、PyObjC 的 Cocoa 和 Quartz 框架、Pillow 以及 `cua-driver`。旧版构建另需 Node 和 npm。使用项目的 macOS 桌面，接通电源，保持显示器分辨率、刷新率、输入法、系统设置和后台负载尽可能一致。测量期间将键盘与指针交给测试应用，驱动在每个输入事件前核对前台 PID，通过 Quartz 向 macOS HID 事件流派发鼠标、键盘与滚轮操作。
 
-从仓库根目录指定目标提交和全新的绝对目录。命令中的 Python 解释器须能导入 `AppKit`、`Quartz`、`CoreFoundation` 和 `PIL`。
+从仓库根目录指定目标提交和全新的绝对目录。命令中的 Python 解释器须能导入 `AppKit`、`Quartz`、`CoreFoundation` 和 `PIL`。构建脚本把指定提交导出到证据目录，并把解析后的完整提交 SHA 写入 `revision.txt`。基线固定为 `81522cb48ec9718bffbda0255df1039692a2f6cd`；该提交的 `mygo.json` 请求 Web 构建，因此导出的旧版源码会执行 `npm ci`。新提交按自身配置构建原生界面。
 
 ```sh
 evidence="$HOME/Library/Application Support/Mark Go Go Benchmarks/new-baseline"
@@ -21,7 +21,7 @@ python3 scripts/portrait/summarize.py "$evidence/narrow"
 
 对候选提交更换 revision 和输出目录。构建脚本从 Git 对象导出源码，为包名、slug、bundle identifier 分配独立值。正式编译使用 `go tool mygo build -skip-dmg -skip-notarize`。驱动按应用默认宽窗启动并验证首键。窄窗流程随后调整到 480 × 360。每次启动都生成一对文档，把上一次 QA 专用的 Application Support 目录移入本次记录，再从 Launch Services 打开一份新路径的原文。每次退出都等待应用进程结束。系统文件缓存及该测试包的 WebKit 缓存可跨次保留。
 
-夹具包含一份 256 节、56,791 字节的英文长文和一份 55 字节短文。长文 SHA-256 为 `72325788cd3a0272af9aa78fee7f9dca80dec623a03c7470cf88f3ea93266e61`，短文为 `ab72d34013b27a3349574349f67ecaccf76768e3821b81cc3417549784a5be21`。原文由 [夹具与窗口驱动](../../scripts/portrait/mac_window.py) 创建。若候选布局移动标题，先查看其稳定窗口，用 `--wide-x`、`--narrow-x`、`--heading-y` 指向同一个可编辑标题，记录所用坐标。
+夹具包含一份 256 节、56,791 字节的英文长文和一份 55 字节短文。长文 SHA-256 为 `72325788cd3a0272af9aa78fee7f9dca80dec623a03c7470cf88f3ea93266e61`，短文为 `ab72d34013b27a3349574349f67ecaccf76768e3821b81cc3417549784a5be21`。原文由 [夹具与窗口驱动](../../scripts/portrait/mac_window.py) 创建。若候选布局移动标题，先查看其稳定窗口，用 `--wide-x`、`--narrow-x` 和 `--heading-y` 指向可编辑标题；窄窗标题垂直位置不同时，用 `--narrow-heading-y` 单独指定，默认沿用 `--heading-y`。记录所用坐标。
 
 ## 读数含义
 

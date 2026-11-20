@@ -19,7 +19,7 @@ scripts/native-automation-smoke.sh
 
 使用与 [#60](https://github.com/Bayern99/mark-go-go/issues/60) 相同的 256 节长文，实机截图与可访问树覆盖 1280 × 820、1180 × 820、1179 × 820、641 × 500、640 × 500 和 480 × 360。实测 640 以下导航浮层、641 起左栏停靠、1179 与 1280 的研究栏切换，以及浮层 Esc 返回入口焦点。通过截图发现选中胶囊曾覆盖文字，修正后复拍六档。最小窗的 Preview 标题和首段距顶仍大于旧版，对照截图已交编辑器验收。 [原生控件与像素回归](../../internal/nativeui/shell_test.go)
 
-另一组实机验收从此 QA app 自己的 WebKit LocalStorage 载入插件开关、研究栏宽度、视图模式、折叠与列宽数据。验证了 Markdown 恢复、研究开关与旧键值迁入原生配置。折叠与列宽的视觉恢复由对应编辑功能验证。大纲跳转、文件和标题搜索、打开结果及 Ctrl+Tab 返回原文通过。对合成文件制造外部冲突和删除后，告警及未保存草稿均保留。
+另一组迁移验收将旧版 WebKit LocalStorage 中的插件开关、研究栏宽度、视图模式、折叠与列宽数据导入原生偏好文件。它验证了 Markdown 恢复、研究开关与旧键值迁移。折叠与列宽的视觉恢复由对应编辑功能验证。大纲跳转、文件和标题搜索、打开结果及 Ctrl+Tab 返回原文通过。对合成文件制造外部冲突和删除后，告警及未保存草稿均保留。
 
 [#68](https://github.com/Bayern99/mark-go-go/issues/68) 须在最终集成构建复跑 Save As、Duplicate 后续存盘、Rename、Move To、未命名关闭、取消与多窗口退出失败重试，另以真实 Finder 拖入及单根目录关闭核对范围。旧版的实机操作与结果见 [PR #41](https://github.com/Bayern99/mark-go-go/pull/41)、[PR #43](https://github.com/Bayern99/mark-go-go/pull/43) 和[既有验收记录](../acceptance.md)。当前的退出失败与重试服务回归见 [session_test.go](../../internal/workspace/session_test.go)。
 

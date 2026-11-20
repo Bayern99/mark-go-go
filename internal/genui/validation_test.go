@@ -120,7 +120,7 @@ func TestValidateGeneratedViewAcceptsWholeMergedAndFormatExample(t *testing.T) {
 		t.Fatalf("ValidateGeneratedView(merged) = %v, want nil", err)
 	}
 
-	formatDoc, err := os.ReadFile(filepath.Join("..", "..", "web", "src", "plugins", "genui", "view-format.md"))
+	formatDoc, err := os.ReadFile(filepath.Join("..", "..", "docs", "genui", "view-format.md"))
 	if err != nil {
 		t.Fatalf("read view-format.md: %v", err)
 	}

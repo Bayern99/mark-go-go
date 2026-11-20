@@ -2,13 +2,9 @@
 build/
 
 /node_modules/
-web/node_modules/
-web/dist/
 
 .DS_Store
 
 /markgogo
-
-web/.vitest/
 
 /docs/research/

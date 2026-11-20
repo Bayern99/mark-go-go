@@ -1,16 +1,16 @@
 # 架构与代码入口
 
-桌面端用 Go/MyGo 管理原文 I/O、工作区窗口和原生生命周期，用 WKWebView 承载 React 界面。浏览器预览和测试使用同一界面的内存宿主。
+正式桌面窗口由 Go 和 MyGo Native UI 绘制。Go 服务管理原文、工作区、会话、插件与文件操作；窗口中的编辑、导航和阅读视图使用同一份原文状态。
 
 | 任务 | 代码入口 |
 |---|---|
-| 启动与 Go 绑定 | [main.go](main.go) · [Web 宿主契约](web/src/host/types.ts) · [IPC 适配](web/src/host/mygoHost.ts) |
-| 文档标签、导航与恢复 | [workspace.go](internal/workspace/workspace.go) · [documenthost.go](internal/workspace/documenthost.go) · [index.go](internal/workspace/index.go) · [session.go](internal/workspace/session.go) · [restore_host.go](internal/workspace/restore_host.go) |
-| 外壳、三栏与命令 | [WorkspaceShell.tsx](web/src/components/WorkspaceShell.tsx) · [DocumentPane.tsx](web/src/components/DocumentPane.tsx) · [DocumentTabs.tsx](web/src/components/DocumentTabs.tsx) · [core](web/src/core/) · [界面设计](DESIGN.md) |
-| 原文编辑与逐块保真 | [编辑器](web/src/editor/createEditor.ts) · [块组合](web/src/editor/blocks/compose.ts) · [Markdown 编辑器](web/src/editor/source/sourceEditor.ts) |
-| GenUI 视图与格式 | [viewfile.go](internal/genui/viewfile.go) · [组件目录](web/src/plugins/genui/a2ui.tsx) · [格式和示例](web/src/plugins/genui/view-format.md) |
-| ACP 生成、局部更新和缓存 | [generate.go](internal/acp/generate.go) · [update.go](internal/genui/update.go) · [process_cache.go](internal/acp/process_cache.go) |
-| 可选插件与安全改文 | [插件开关](web/src/plugins/DesktopPlugins.tsx) · [Feynman 右栏](web/src/plugins/feynman/) · [直接 `--mode rpc` 与异步 CLI](internal/agent/feynman/research.go) · [应用内 MCP](internal/mcp/) · [研究产物](internal/review/artifact.go) · [检查点](internal/review/checkpoints.go) · [插件范围决策](docs/adr/0007-research-and-checkpoints.md) |
-| MyGo 升级 | [受控补丁](docs/mygo-document-groups.md) · [验收](docs/acceptance.md) |
+| 应用启动与原生窗口 | [main.go](main.go) · [窗口适配](internal/nativeui/window.go) |
+| 窗口外壳、导航、标签和抽屉 | [Shell](internal/nativeui/shell.go) · [导航](internal/nativeui/navigation.go) · [标签](internal/nativeui/tabs.go) |
+| Markdown Preview、Markdown 编辑与字节保真 | [原文缓冲](internal/nativeeditor/source.go) · [Preview 布局](internal/nativeeditor/preview.go) · [特殊块](internal/nativeeditor/special.go) · [表格](internal/nativeeditor/table.go) |
+| 工作区、磁盘 I/O、会话恢复与章节位置 | [工作区服务](internal/workspace/) · [章节定位](internal/workspace/sections.go) |
+| GenUI 格式校验、生成与原生阅读 | [格式与生成](internal/genui/) · [原生阅读器](internal/nativegenui/) · [格式说明和示例](docs/genui/view-format.md) |
+| Feynman、应用内 MCP、提案和检查点 | [Feynman RPC](internal/agent/feynman/) · [MCP](internal/mcp/) · [提案](internal/review/) · [原生审阅面板](internal/nativereview/) |
+| Portrait 样式、字体与图标 | [原生主题](internal/nativeui/portrait.go) · [打包字体和许可](internal/nativeui/fonts/) |
+| MyGo 版本与项目补丁 | [MyGo 文档组记录](docs/mygo-document-groups.md) · [MyGo 源码](third_party/mygo/) |
 
-行为以实现和测试为准。相关 [ADR](docs/adr/) 记录产品与技术取舍，[术语表](GLOSSARY.md) 统一命名。
+当前行为以 Go 实现、测试和配置为准。产品与技术取舍见 [ADR](docs/adr/)，界面说明见 [DESIGN.md](DESIGN.md)，术语见 [GLOSSARY.md](GLOSSARY.md)。迁移前的 WebView 实现可在 [固定提交 81522cb](https://github.com/Bayern99/mark-go-go/tree/81522cb) 查看。

@@ -418,6 +418,9 @@ func (p *panel) composer(c *ui.Context) {
 				key.SetText("")
 				return true
 			})
+		if compact {
+			entry.MinHeight(promptHeight)
+		}
 		if entry.Changed() && strings.HasPrefix(s.draft, "/") {
 			s.actionsOpen = true
 		}

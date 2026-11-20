@@ -66,6 +66,9 @@ func TestResearchDrawerAt480By360KeepsComposerVisibleAndFocusable(t *testing.T) 
 		if target.role == ui.RoleButton && info.Disabled {
 			t.Errorf("%s is disabled with a ready fixture pane", target.name)
 		}
+		if target.role == ui.RoleTextField && info.Bounds.H > 50 {
+			t.Errorf("research prompt takes %v DIP, leaving too little room for the conversation", info.Bounds.H)
+		}
 	}
 	if _, ok := app.AccessByRole(ui.RoleButton, "Research model and thinking settings"); !ok {
 		t.Fatal("compact model and thinking controls are unavailable")

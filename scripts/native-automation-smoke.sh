@@ -73,7 +73,7 @@ config.out = 'build'
 fs.writeFileSync(`${process.env.PROJECT}/mygo.json`, JSON.stringify(config, null, 2) + '\n')
 NODE
 
-printf '# Discussion\n\nResearch notes.\n' > "$FIXTURES/Research/Discussion.md"
+printf '# Discussion\n\nResearch notes.\n\n$$\na+b=c\n$$\n' > "$FIXTURES/Research/Discussion.md"
 printf '# CC129\n\nMusic notes.\n' > "$FIXTURES/Music Department/CC129.md"
 printf '# Ideas\n\nPersonal notes.\n' > "$FIXTURES/Personal Notes/Ideas.md"
 printf '{}\n' > "$FIXTURES/Research/resource.json"
@@ -240,6 +240,20 @@ assert_js "document.querySelector('.doc-tab.sel')?.textContent?.includes('Discus
 assert_js "document.querySelector('[data-testid=\"view-mode-markdown\"]')?.getAttribute('aria-checked') === 'true'" 'view mode restored after restart'
 assert_js "document.querySelector('[data-testid=\"workspace-switcher\"]')?.textContent?.includes('Research')" 'selected Workspace restored after restart'
 assert_js "document.querySelector('.app:not([hidden]) .cm-content')?.textContent?.includes('Automation edit')" 'saved editor content restored after restart'
+
+js 'document.querySelector("[data-testid=\"view-mode-preview\"]")?.click(); true' > /dev/null
+wait_js 'Boolean(document.querySelector(".app:not([hidden]) .mgo-math [data-block-action=\"edit\"]"))'
+js 'document.querySelector(".app:not([hidden]) .mgo-math [data-block-action=\"edit\"]").click(); true' > /dev/null
+wait_js 'document.activeElement?.matches(".mgo-block-composer textarea")'
+js 'document.execCommand("insertText", false, "7")' > /dev/null
+assert_js 'document.activeElement?.value?.endsWith("7")' 'math Composer receives typed text'
+auto menu Edit Undo --settle > /dev/null
+assert_js 'document.activeElement?.matches(".mgo-block-composer textarea") && document.activeElement.value === "$$\na+b=c\n$$"' 'native Edit > Undo restores only the math Composer'
+auto menu Edit Redo --settle > /dev/null
+assert_js 'document.activeElement?.matches(".mgo-block-composer textarea") && document.activeElement.value === "$$\na+b=c\n$$7"' 'native Edit > Redo restores the same Composer edit'
+js 'Array.from(document.querySelectorAll(".mgo-block-composer button")).find(button => button.textContent === "Cancel").click(); true' > /dev/null
+js 'document.querySelector("[data-testid=\"view-mode-markdown\"]")?.click(); true' > /dev/null
+assert_js 'document.querySelector(".app:not([hidden]) .cm-content")?.textContent?.includes("a+b=c") && !document.querySelector(".app:not([hidden]) .cm-content")?.textContent?.includes("$$7")' 'math Composer undo and redo leave the Markdown document untouched'
 
 quit
 auto close > /dev/null || true

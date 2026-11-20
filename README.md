@@ -34,7 +34,7 @@ go tool mygo dev
 ```sh
 npx --prefix web playwright install chromium-headless-shell
 npm --prefix web test
-go test -race .
+go test -race ./...
 ```
 
 菜单、保存对话框和重启使用 [原生 Automation 与 macOS 验证流程](docs/agents/native-automation.md)。

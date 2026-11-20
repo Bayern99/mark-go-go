@@ -164,6 +164,7 @@ export function AlphaXivPanel({
             type="search"
             className="fy-cli-input"
             aria-label="alphaXiv search query"
+            autoFocus={!embedded}
             placeholder="Search alphaXiv papers (e.g. sparse attention)…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}

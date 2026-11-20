@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
+	"github.com/egoist/mygo"
 )
 
 type ResearchArtifact struct {
@@ -28,12 +29,18 @@ type ResearchArtifact struct {
 	Error    string `json:"error,omitempty"`
 }
 
+type ResearchFilePublishedEvent struct {
+	WorkspaceRoot string           `json:"workspaceRoot"`
+	File          ResearchArtifact `json:"file"`
+}
+
 const (
 	ResearchDocumentCopy     = "current-document.md"
 	MaxResearchArtifactBytes = 8 << 20
 )
 
 var artifactsMu sync.Mutex
+var ResearchFilePublished = mygo.NewEvent[ResearchFilePublishedEvent]("researchFilePublished")
 
 func WorkDir(dataDir, root string) string {
 	return filepath.Join(dataDir, "research", fmt.Sprintf("%x", sha256.Sum256([]byte(fsutil.CanonicalPath(root)))), "work")
@@ -271,7 +278,18 @@ func CreateDocumentArtifact(work, workspace, rel string, data []byte) error {
 		return errors.New("Choose a workspace Markdown path and valid UTF-8 content within 8 MiB.")
 	}
 	artifactsMu.Lock()
-	defer artifactsMu.Unlock()
+	err := createDocumentArtifactLocked(work, workspace, rel, data)
+	artifactsMu.Unlock()
+	if err == nil {
+		_ = ResearchFilePublished.Broadcast(ResearchFilePublishedEvent{
+			WorkspaceRoot: workspace,
+			File:          ResearchArtifact{Path: rel, Target: filepath.Join(workspace, filepath.FromSlash(rel))},
+		})
+	}
+	return err
+}
+
+func createDocumentArtifactLocked(work, workspace, rel string, data []byte) error {
 	root, err := os.OpenRoot(workspace)
 	if err != nil {
 		return err

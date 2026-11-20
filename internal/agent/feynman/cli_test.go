@@ -1,6 +1,7 @@
 package feynman
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -38,29 +39,92 @@ func cliFixtureCommand(home, mode string) func(ctx context.Context, work string,
 }
 
 func TestFeynmanClearsOnlyTheSelectedWebSearchCredential(t *testing.T) {
-	ctx := context.Background()
-	home, root := t.TempDir(), t.TempDir()
-	h := NewResearchManager(fakeWorkspaceLookup{dataDir: t.TempDir()})
-	defer h.Close()
-	h.cliCommand = cliFixtureCommand(home, "search-key")
-	for _, provider := range []string{"exa", "brave"} {
-		if res, err := h.CLISearchAction(ctx, root, "set", provider, "fake-"+provider); err != nil || res.ExitCode != 0 {
-			t.Fatalf("save %s: exit %d (%v)", provider, res.ExitCode, err)
-		}
-	}
-	if res, err := h.CLISearchAction(ctx, root, "clear", "", ""); err != nil || res.ExitCode != 0 {
-		t.Fatalf("reset route: exit %d (%v)", res.ExitCode, err)
-	}
-	before, err := h.CLISearchStatus(ctx, root)
-	if err != nil || before.RequestRoute != "auto" || !strings.Contains(before.SavedAPIKeys, "exa") {
-		t.Fatalf("reset route should keep the saved credential: %+v (%v)", before, err)
-	}
-	if res, err := h.CLISearchAction(ctx, root, "clear-key", "exa", ""); err != nil || res.ExitCode != 0 {
-		t.Fatalf("clear Exa: exit %d (%v)", res.ExitCode, err)
-	}
-	after, err := h.CLISearchStatus(ctx, root)
-	if err != nil || after.RequestRoute != "auto" || after.SavedAPIKeys != "brave" {
-		t.Fatalf("expected Auto and only Brave saved: %+v (%v)", after, err)
+	const before = `{
+		"provider": "auto", "searchProvider": "brave", "route": "gemini",
+		"exaApiKey": "fake-exa", "braveApiKey": "fake-brave",
+		"workflow": "summary-review", "allowBrowserCookies": true,
+		"futurePreference": {"quota": 9223372036854775807}
+	}`
+	for _, tc := range []struct {
+		name            string
+		prefix          string
+		linked          bool
+		wrongConfigPath bool
+	}{
+		{name: "private profile"},
+		{name: "UTF-8 BOM", prefix: "\ufeff"},
+		{name: "linked profile", linked: true},
+		{name: "CLI reports a different config path", wrongConfigPath: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.linked && runtime.GOOS == "windows" {
+				t.Skip("symbolic links require Developer Mode or privileges on Windows")
+			}
+			ctx := context.Background()
+			home, root := fsutil.CanonicalPath(t.TempDir()), t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("USERPROFILE", home)
+			h := NewResearchManager(fakeWorkspaceLookup{dataDir: t.TempDir()})
+			defer h.Close()
+			h.cliCommand = cliFixtureCommand(home, "search-key")
+			appPath := filepath.Join(h.profileHome(), ".feynman", "agent", "web-search.json")
+			path := appPath
+			if tc.linked {
+				path = filepath.Join(home, ".feynman", "agent", "web-search.json")
+			}
+			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+				t.Fatal(err)
+			}
+			input := tc.prefix + before
+			if err := os.WriteFile(path, []byte(input), 0640); err != nil {
+				t.Fatal(err)
+			}
+			info, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.wrongConfigPath {
+				t.Setenv("MGO_FIXTURE_SEARCH_STATUS_PATH", filepath.Join(t.TempDir(), "web-search.json"))
+			}
+			result, clearErr := h.CLISearchAction(ctx, root, "clear-key", "exa", "")
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.wrongConfigPath {
+				if clearErr == nil || string(data) != input {
+					t.Fatalf("expected rejection without changes when CLI reports another file, got %v", clearErr)
+				}
+				return
+			}
+			if clearErr != nil || result.ExitCode != 0 {
+				t.Fatalf("clear Exa: exit %d (%v)", result.ExitCode, clearErr)
+			}
+			after, err := h.CLISearchStatus(ctx, root)
+			if err != nil || after.SavedAPIKeys != "brave" || after.RequestRoute != "auto" || after.SearchRoute != "brave" ||
+				after.SearchWorkflow != "summary-review" || !strings.Contains(after.RawOutput, "Gemini browser fallback: enabled") {
+				t.Fatalf("clearing Exa should preserve other Web Search settings: %+v (%v)", after, err)
+			}
+			var config map[string]json.RawMessage
+			if !bytes.HasPrefix(data, []byte(tc.prefix)) {
+				t.Fatal("clearing a key removed the UTF-8 BOM")
+			}
+			if err := json.Unmarshal(data[len(tc.prefix):], &config); err != nil {
+				t.Fatal(err)
+			}
+			if config["exaApiKey"] != nil || string(config["braveApiKey"]) != `"fake-brave"` || string(config["route"]) != `"gemini"` ||
+				!strings.Contains(string(config["futurePreference"]), "9223372036854775807") {
+				t.Fatal("clearing a key changed an unrelated Web Search config field")
+			}
+			if tc.linked {
+				if link, err := os.Readlink(appPath); err != nil || link != path {
+					t.Fatalf("app profile link was replaced: %q (%v)", link, err)
+				}
+			}
+			if current, err := os.Stat(path); err != nil || current.Mode().Perm() != info.Mode().Perm() {
+				t.Fatalf("file permissions changed: %v (%v)", current, err)
+			}
+		})
 	}
 }
 
@@ -709,35 +773,52 @@ pi runtime: ok
 }
 
 func runSearchKeyFixture(args []string) {
-	type searchConfig struct {
-		Route string
-		Keys  map[string]string
-	}
-	path := filepath.Join(os.Getenv("HOME"), "search-fixture.json")
-	config := searchConfig{Route: "auto", Keys: map[string]string{}}
+	path := filepath.Join(os.Getenv("PI_CODING_AGENT_DIR"), "web-search.json")
+	config := map[string]any{}
 	if data, err := os.ReadFile(path); err == nil {
-		if err := json.Unmarshal(data, &config); err != nil {
+		if err := json.Unmarshal(bytes.TrimPrefix(data, []byte("\ufeff")), &config); err != nil {
 			panic(err)
 		}
 	}
 	switch args[0] {
 	case "status":
 		var saved []string
-		for _, provider := range []string{"exa", "brave"} {
-			if config.Keys[provider] != "" {
+		for _, provider := range []string{"brave", "exa"} {
+			if key, _ := config[provider+"ApiKey"].(string); key != "" {
 				saved = append(saved, provider)
 			}
 		}
-		fmt.Printf("Search route: %s\nRequest route: %s\nSaved API keys: %s\n", config.Route, config.Route, strings.Join(saved, ", "))
+		search, _ := config["searchProvider"].(string)
+		if search == "" {
+			search = "auto"
+		}
+		request, _ := config["provider"].(string)
+		if request == "" {
+			request = search
+		}
+		fallback := "disabled"
+		if config["allowBrowserCookies"] == true {
+			fallback = "enabled"
+		}
+		if reported := os.Getenv("MGO_FIXTURE_SEARCH_STATUS_PATH"); reported != "" {
+			path = reported
+		}
+		fmt.Printf("Managed by: pi-web-access\nSearch route: %s\nRequest route: %s\nSearch workflow: %s\nSaved API keys: %s\nGemini browser fallback: %s\nConfig path: %s\n",
+			search, request, config["workflow"], strings.Join(saved, ", "), fallback, path)
 		return
 	case "clear":
-		config.Route = "auto"
+		delete(config, "provider")
+		delete(config, "searchProvider")
 	case "set":
-		config.Route = args[1]
+		config["provider"] = args[1]
+		config["searchProvider"] = args[1]
 		if len(args) == 3 {
-			config.Keys[args[1]] = args[2]
+			config[args[1]+"ApiKey"] = args[2]
 		}
 	}
+	delete(config, "route")
+	config["workflow"] = "none"
+	config["allowBrowserCookies"] = false
 	data, err := json.Marshal(config)
 	if err != nil {
 		panic(err)

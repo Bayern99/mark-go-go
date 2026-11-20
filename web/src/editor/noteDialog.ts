@@ -1,3 +1,5 @@
+import { trackComposerHistory } from './composerHistory'
+
 export interface ComposerMount {
   anchor?: Element | null
   container?: Element | null
@@ -80,12 +82,15 @@ function openComposer(config: OpenComposerConfig): Promise<string | null> {
     foot.append(hint, cancel, save)
     composer.append(input, foot)
 
+    const history = trackComposerHistory(input)
     let closed = false
     let unmount: (() => void) | void
 
     const finish = (result: string | null) => {
       if (closed) return
       closed = true
+      if (document.activeElement === input) input.blur()
+      history.dispose()
       config.scope.track(null)
       if (unmount) unmount()
       composer.remove()

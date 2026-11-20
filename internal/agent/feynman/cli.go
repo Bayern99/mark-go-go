@@ -4,9 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 )
+
+var searchConfigMu sync.Mutex
 
 func (h *ResearchManager) CLIStatus(ctx context.Context, root string) (CLIStatusResult, error) {
 	raw, exitCode, err := h.runCLI(ctx, root, defaultCLITimeout, "status")
@@ -92,6 +96,8 @@ func (h *ResearchManager) CLISearchAction(ctx context.Context, root, action, pro
 	if strings.HasPrefix(provider, "-") {
 		return CLICommandResult{}, errors.New("Invalid web search provider.")
 	}
+	searchConfigMu.Lock()
+	defer searchConfigMu.Unlock()
 	var args []string
 	switch action {
 	case "set":
@@ -125,8 +131,9 @@ func (h *ResearchManager) clearSearchKey(ctx context.Context, root, provider str
 	if err != nil {
 		return CLICommandResult{}, err
 	}
-	if !status.Parsed || status.RequestRoute == "" {
-		return CLICommandResult{}, errors.New("Could not determine the current Web Search route.")
+	path := filepath.Join(h.profileHome(), ".feynman", "agent", "web-search.json")
+	if !status.Parsed || !strings.EqualFold(status.ManagedBy, "pi-web-access") || filepath.Clean(status.ConfigPath) != path {
+		return CLICommandResult{}, errors.New("Could not verify the app's Web Search settings file.")
 	}
 	keys := strings.Split(status.SavedAPIKeys, ",")
 	if provider == "" || provider == "none" || !slices.ContainsFunc(keys, func(key string) bool {
@@ -134,30 +141,13 @@ func (h *ResearchManager) clearSearchKey(ctx context.Context, root, provider str
 	}) {
 		return CLICommandResult{}, errors.New("No saved API key for that Web Search provider.")
 	}
-	args := []string{"search", "set", provider, ""}
-	raw, exitCode, err := h.runCLI(ctx, root, defaultCLITimeout, args...)
-	if err != nil {
+	if ctx != nil && ctx.Err() != nil {
+		return CLICommandResult{}, ctx.Err()
+	}
+	if err := removeSearchAPIKey(path, provider); err != nil {
 		return CLICommandResult{}, err
 	}
-	res := commandResult(formatCLICommand("search", "set", provider, `""`), raw, exitCode)
-	if exitCode != 0 {
-		return res, nil
-	}
-	if status.RequestRoute != provider {
-		restore := []string{"search", "set", status.RequestRoute}
-		if status.RequestRoute == "auto" {
-			restore = []string{"search", "clear"}
-		}
-		result, err := h.runCLICommand(ctx, root, defaultCLITimeout, restore...)
-		if err != nil {
-			return CLICommandResult{}, fmt.Errorf("Cleared the saved API key, but could not restore the Web Search route: %w", err)
-		}
-		if result.ExitCode != 0 {
-			return result, fmt.Errorf("Cleared the saved API key, but could not restore the Web Search route: %s", result.Error)
-		}
-	}
-	res.Summary = fmt.Sprintf("Cleared the saved %s API key.", provider)
-	return res, nil
+	return CLICommandResult{Parsed: true, Summary: fmt.Sprintf("Cleared the saved %s API key.", provider)}, nil
 }
 
 func (h *ResearchManager) CLIMCPList(ctx context.Context, root string) (CLIMCPListResult, error) {

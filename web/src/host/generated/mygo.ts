@@ -474,6 +474,11 @@ export interface ResearchConversation {
   current: boolean;
 }
 
+export interface ResearchFilePublishedEvent {
+  workspaceRoot: string;
+  file: ResearchArtifact;
+}
+
 export interface ResearchFocusEvent {
   root: string;
 }
@@ -846,6 +851,7 @@ export const CheckpointHost = {
 /** Events sent by the Go side. Subscribe with `events.name.on(listener)`. */
 export const events = {
   viewChanged: event<ViewEvent>("viewChanged"),
+  researchFilePublished: event<ResearchFilePublishedEvent>("researchFilePublished"),
   reviewUpdated: event<ReviewUpdateEvent>("reviewUpdated"),
   researchFocus: event<ResearchFocusEvent>("researchFocus"),
   researchUpdate: event<ResearchUpdate>("researchUpdate"),

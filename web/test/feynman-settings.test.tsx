@@ -558,6 +558,7 @@ describe('Feynman Settings & alphaXiv Portrait UI', () => {
       await expect.element(page.getByTestId('fy-alphaxiv-trigger')).toBeVisible()
 
       await userEvent.click(page.getByTestId('fy-alphaxiv-trigger'))
+      await expect.element(page.getByRole('searchbox', { name: 'alphaXiv search query' })).toHaveFocus()
       await userEvent.click(page.getByRole('button', { name: 'Back to Chat' }))
       await expect.element(page.getByRole('radio', { name: /Chat/ })).toHaveFocus()
       await userEvent.click(page.getByTestId('fy-alphaxiv-trigger'))

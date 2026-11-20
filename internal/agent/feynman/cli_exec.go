@@ -23,22 +23,9 @@ const (
 )
 
 func feynmanCLICommand(ctx context.Context, work string, args ...string) (*exec.Cmd, error) {
-	home, err := os.UserHomeDir()
+	feynmanBin, pathEnv, err := resolveFeynmanExecutable()
 	if err != nil {
 		return nil, err
-	}
-	dirs := append(filepath.SplitList(os.Getenv("PATH")), fsutil.DefaultUserBinDirs()...)
-	dirs = append(dirs, filepath.Join(home, ".local", "share", "fnm", "aliases", "default", "bin"), "/usr/bin", "/bin")
-	var paths []string
-	for _, dir := range dirs {
-		if filepath.IsAbs(dir) {
-			paths = append(paths, dir)
-		}
-	}
-	pathEnv := "PATH=" + strings.Join(paths, string(os.PathListSeparator))
-	feynmanBin, ok := fsutil.ResolveExecutable("feynman", []string{pathEnv}, nil)
-	if !ok {
-		return nil, errors.New("Install Feynman CLI, then open Feynman settings to set up the app profile.")
 	}
 	cmd := exec.CommandContext(ctx, feynmanBin, args...)
 	if work != "" {

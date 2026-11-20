@@ -155,7 +155,7 @@ describe('native Edit command routing', () => {
     }
   })
 
-  it('does not apply document undo while a composer textarea is focused', async () => {
+  it('undoes and redoes Composer typing without changing the document', async () => {
     const source = 'One.\n\n<!-- note: keep -->\n'
     const mounted = await mountEditor(source)
     try {
@@ -183,7 +183,15 @@ describe('native Edit command routing', () => {
         mounted.root,
       )
       try {
-        applyNativeEdit(id, 'undo')
+        expect(nativeEditCapabilities(id)).toEqual({ canUndo: false, canRedo: false })
+        await userEvent.keyboard('7')
+        expect(input.value).toBe('keep7')
+        expect(nativeEditCapabilities(id)).toEqual({ canUndo: true, canRedo: false })
+        expect(applyNativeEdit(id, 'undo')).toBe(true)
+        expect(input.value).toBe('keep')
+        expect(nativeEditCapabilities(id)).toEqual({ canUndo: false, canRedo: true })
+        expect(applyNativeEdit(id, 'redo')).toBe(true)
+        expect(input.value).toBe('keep7')
         expect(mounted.editor.getMarkdown()).toBe(source)
       } finally {
         registration.dispose()

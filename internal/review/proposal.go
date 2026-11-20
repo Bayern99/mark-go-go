@@ -48,6 +48,7 @@ type ProposeInput struct {
 
 type ReviewUpdateEvent struct {
 	WorkspaceRoot string           `json:"workspaceRoot"`
+	Revision      int64            `json:"revision"`
 	Proposals     []ChangeProposal `json:"proposals"`
 }
 
@@ -60,10 +61,11 @@ type storedProposal struct {
 }
 
 type Service struct {
-	mu      sync.Mutex
-	seq     int64
-	byRoot  map[string][]*storedProposal
-	onEvent func(ReviewUpdateEvent)
+	mu       sync.Mutex
+	seq      int64
+	revision int64
+	byRoot   map[string][]*storedProposal
+	onEvent  func(ReviewUpdateEvent)
 }
 
 func NewService() *Service {
@@ -151,6 +153,14 @@ func sameProposalTarget(p ChangeProposal, input ProposeInput) bool {
 }
 
 func (s *Service) SubmitProposal(input ProposeInput) (ChangeProposal, error) {
+	return s.submitProposal(input, nil, input.BaseText)
+}
+
+func (s *Service) ReviseProposal(input ProposeInput, expectedText, liveText string) (ChangeProposal, error) {
+	return s.submitProposal(input, &expectedText, liveText)
+}
+
+func (s *Service) submitProposal(input ProposeInput, expectedText *string, liveText string) (ChangeProposal, error) {
 	if strings.TrimSpace(input.Path) == "" && strings.TrimSpace(input.DocumentID) == "" {
 		return ChangeProposal{}, errors.New("A target document path or ID is required.")
 	}
@@ -158,12 +168,20 @@ func (s *Service) SubmitProposal(input ProposeInput) (ChangeProposal, error) {
 	relPath := relativeProposalPath(input.WorkspaceRoot, input.Path)
 
 	s.mu.Lock()
+	queue := s.byRoot[rootKey]
+	match := -1
 	var existingMatch *storedProposal
-	for _, existing := range s.byRoot[rootKey] {
-		if sameProposalTarget(existing.proposal, input) {
+	for i, existing := range queue {
+		if (expectedText == nil && sameProposalTarget(existing.proposal, input)) ||
+			(expectedText != nil && existing.proposal.ID == input.ID) {
+			match = i
 			existingMatch = existing
 			break
 		}
+	}
+	if expectedText != nil && (existingMatch == nil || existingMatch.proposal.ProposedText != *expectedText) {
+		s.mu.Unlock()
+		return ChangeProposal{}, errors.New("The proposal changed during review.")
 	}
 
 	if existingMatch != nil && existingMatch.proposal.BaseText == input.BaseText && input.ProposedText == "" && input.OldText != "" {
@@ -188,9 +206,13 @@ func (s *Service) SubmitProposal(input ProposeInput) (ChangeProposal, error) {
 	}
 
 	id := input.ID
-	for id == "" || s.findLocked(rootKey, id) != nil {
-		s.seq++
-		id = fmt.Sprintf("proposal-%d", s.seq)
+	if existingMatch != nil {
+		id = existingMatch.proposal.ID
+	} else {
+		for id == "" || s.findLocked(rootKey, id) != nil {
+			s.seq++
+			id = fmt.Sprintf("proposal-%d", s.seq)
+		}
 	}
 
 	decisions := make(map[string]HunkDecision, len(clusters))
@@ -216,24 +238,16 @@ func (s *Service) SubmitProposal(input ProposeInput) (ChangeProposal, error) {
 		baseClusters: clusters,
 		decisions:    decisions,
 	}
-	recomputeProposalLocked(sp, input.BaseText)
+	recomputeProposalLocked(sp, liveText)
 
-	queue := s.byRoot[rootKey]
-	replaced := false
-	for i, existing := range queue {
-		if sameProposalTarget(existing.proposal, input) {
-			sp.proposal.ID = existing.proposal.ID
-			queue[i] = sp
-			replaced = true
-			break
-		}
-	}
-	if !replaced {
+	if match >= 0 {
+		queue[match] = sp
+	} else {
 		queue = append(queue, sp)
 	}
 	s.byRoot[rootKey] = queue
 	result := cloneProposal(sp.proposal)
-	snap := s.snapshotLocked(rootKey, input.WorkspaceRoot)
+	snap := s.changedLocked(rootKey, input.WorkspaceRoot)
 	sink := s.onEvent
 	s.mu.Unlock()
 
@@ -242,15 +256,14 @@ func (s *Service) SubmitProposal(input ProposeInput) (ChangeProposal, error) {
 }
 
 func (s *Service) ListProposals(workspaceRoot string) []ChangeProposal {
+	return s.Snapshot(workspaceRoot).Proposals
+}
+
+func (s *Service) Snapshot(workspaceRoot string) ReviewUpdateEvent {
 	rootKey := canonicalRootKey(workspaceRoot)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	queue := s.byRoot[rootKey]
-	out := make([]ChangeProposal, 0, len(queue))
-	for _, sp := range queue {
-		out = append(out, cloneProposal(sp.proposal))
-	}
-	return out
+	return s.snapshotLocked(rootKey, workspaceRoot)
 }
 
 func (s *Service) GetProposal(workspaceRoot, proposalID string) (ChangeProposal, error) {
@@ -274,7 +287,7 @@ func (s *Service) SyncProposal(workspaceRoot, proposalID, liveText string) (Chan
 	}
 	recomputeProposalLocked(sp, liveText)
 	result := cloneProposal(sp.proposal)
-	snap := s.snapshotLocked(rootKey, workspaceRoot)
+	snap := s.changedLocked(rootKey, workspaceRoot)
 	sink := s.onEvent
 	s.mu.Unlock()
 
@@ -314,7 +327,7 @@ func (s *Service) DecideHunk(workspaceRoot, proposalID, hunkID string, decision 
 	sp.decisions[hunkID] = decision
 	recomputeProposalLocked(sp, sp.proposal.LiveText)
 	result := cloneProposal(sp.proposal)
-	snap := s.snapshotLocked(rootKey, workspaceRoot)
+	snap := s.changedLocked(rootKey, workspaceRoot)
 	sink := s.onEvent
 	s.mu.Unlock()
 
@@ -340,7 +353,7 @@ func (s *Service) AcceptAllHunks(workspaceRoot, proposalID, liveText string) (Ch
 	}
 	recomputeProposalLocked(sp, sp.proposal.LiveText)
 	result := cloneProposal(sp.proposal)
-	snap := s.snapshotLocked(rootKey, workspaceRoot)
+	snap := s.changedLocked(rootKey, workspaceRoot)
 	sink := s.onEvent
 	s.mu.Unlock()
 
@@ -373,7 +386,7 @@ func (s *Service) removeProposal(workspaceRoot, proposalID string) ([]ChangeProp
 	}
 	queue = append(queue[:idx], queue[idx+1:]...)
 	s.byRoot[rootKey] = queue
-	snap := s.snapshotLocked(rootKey, workspaceRoot)
+	snap := s.changedLocked(rootKey, workspaceRoot)
 	sink := s.onEvent
 	s.mu.Unlock()
 
@@ -390,6 +403,11 @@ func (s *Service) findLocked(rootKey, proposalID string) *storedProposal {
 	return nil
 }
 
+func (s *Service) changedLocked(rootKey, workspaceRoot string) ReviewUpdateEvent {
+	s.revision++
+	return s.snapshotLocked(rootKey, workspaceRoot)
+}
+
 func (s *Service) snapshotLocked(rootKey, workspaceRoot string) ReviewUpdateEvent {
 	queue := s.byRoot[rootKey]
 	proposals := make([]ChangeProposal, 0, len(queue))
@@ -398,6 +416,7 @@ func (s *Service) snapshotLocked(rootKey, workspaceRoot string) ReviewUpdateEven
 	}
 	return ReviewUpdateEvent{
 		WorkspaceRoot: workspaceRoot,
+		Revision:      s.revision,
 		Proposals:     proposals,
 	}
 }
@@ -517,10 +536,6 @@ func recomputeProposalLocked(sp *storedProposal, liveText string) {
 		}
 		if conflict {
 			hasConflict = true
-			if decision == HunkAccepted {
-				decision = HunkPending
-				sp.decisions[hunkID] = HunkPending
-			}
 		}
 
 		liveStart := baseToLive(c.oldStart)
@@ -650,7 +665,7 @@ func recomputeProposalLocked(sp *storedProposal, liveText string) {
 	anyAccepted := false
 	anyRejected := false
 	for _, rc := range resolved {
-		if rc.decision == HunkAccepted && !rc.conflict {
+		if rc.decision == HunkAccepted {
 			anyAccepted = true
 		}
 		if rc.decision == HunkRejected {

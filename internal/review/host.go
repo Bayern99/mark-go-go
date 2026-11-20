@@ -14,8 +14,16 @@ func (h *ReviewHost) Submit(_ context.Context, input ProposeInput) (ChangePropos
 	return h.s.SubmitProposal(input)
 }
 
+func (h *ReviewHost) Revise(_ context.Context, input ProposeInput, expectedText, liveText string) (ChangeProposal, error) {
+	return h.s.ReviseProposal(input, expectedText, liveText)
+}
+
 func (h *ReviewHost) List(_ context.Context, workspaceRoot string) ([]ChangeProposal, error) {
 	return h.s.ListProposals(workspaceRoot), nil
+}
+
+func (h *ReviewHost) Snapshot(_ context.Context, workspaceRoot string) (ReviewUpdateEvent, error) {
+	return h.s.Snapshot(workspaceRoot), nil
 }
 
 func (h *ReviewHost) Get(_ context.Context, workspaceRoot, proposalID string) (ChangeProposal, error) {

@@ -147,10 +147,39 @@ export class ResearchSession {
     }
   }
 
-  updateProposalBase(id: string, documentID: string, base: DocumentSnapshot) {
-    this.proposals = this.proposals.map((p) =>
-      p.id === id ? { ...p, documentID, base, decisions: {} } : p,
-    )
+  async updateProposalBase(id: string, documentID: string, base: DocumentSnapshot) {
+    const proposal = this.proposals.find(p => p.id === id)
+    if (!proposal) return
+    if (base.text === proposal.text) {
+      this.completeProposal(id)
+      return
+    }
+    await this.reviseProposal(proposal, { ...proposal, documentID, base, decisions: {} }, base.text)
+  }
+
+  async applyProposal(proposal: Proposal, remainingText: string, liveText: string) {
+    if (remainingText === proposal.base.text) {
+      this.completeProposal(proposal.id)
+      return
+    }
+    await this.reviseProposal(proposal, { ...proposal, text: remainingText, decisions: {} }, liveText)
+  }
+
+  private async reviseProposal(previous: Proposal, next: Proposal, liveText: string) {
+    if (isMyGo()) {
+      await ReviewHost.revise({
+        id: next.id,
+        workspaceRoot: this.root,
+        documentId: next.documentID,
+        path: next.base.path,
+        source: next.source,
+        summary: next.summary,
+        baseVersion: next.base.version,
+        baseText: next.base.text,
+        proposedText: next.text,
+      }, previous.text, liveText)
+    }
+    this.proposals = this.proposals.map(p => p.id === previous.id && p.text === previous.text ? next : p)
     this.changed()
   }
 
@@ -188,7 +217,7 @@ export class ResearchSession {
     this.changed()
   }
 
-  completeProposal(proposalId: string) {
+  private completeProposal(proposalId: string) {
     this.proposals = this.proposals.filter((p) => p.id !== proposalId)
     if (this.activeProposalId === proposalId) {
       this.activeProposalId = this.proposals[0]?.id ?? ''
@@ -199,8 +228,12 @@ export class ResearchSession {
     this.changed()
   }
 
-  private mergeBackendProposals(backend: ChangeProposal[]) {
-    const mapped: Proposal[] = backend.map((cp) => {
+  private reviewRevision = -1
+
+  private mergeBackendProposals(event: ReviewUpdateEvent) {
+    if (event.revision <= this.reviewRevision) return
+    this.reviewRevision = event.revision
+    const mapped: Proposal[] = event.proposals.map((cp: ChangeProposal) => {
       const decisions: Record<string, HunkDecision> = {}
       for (const h of cp.hunks) decisions[h.id] = h.decision
       const existing = this.proposals.find((p) => p.id === cp.id)
@@ -236,7 +269,7 @@ export class ResearchSession {
       try {
         session.offReview = events.reviewUpdated?.on((event: ReviewUpdateEvent) => {
           if (event.workspaceRoot === root && session.owners > 0) {
-            session.mergeBackendProposals(event.proposals)
+            session.mergeBackendProposals(event)
           }
         })
       } catch {
@@ -244,9 +277,9 @@ export class ResearchSession {
       }
     }
     if (isMyGo() && session.owners === 1) {
-      void ReviewHost.list?.(root)
-        .then((list) => {
-          if (session.owners > 0 && list.length > 0) session.mergeBackendProposals(list)
+      void ReviewHost.snapshot?.(root)
+        .then((snapshot) => {
+          if (session.owners > 0) session.mergeBackendProposals(snapshot)
         })
         .catch(() => {})
     }

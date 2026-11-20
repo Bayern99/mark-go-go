@@ -676,6 +676,7 @@ export interface ResearchUpdate {
 
 export interface ReviewUpdateEvent {
   workspaceRoot: string;
+  revision: number;
   proposals: ChangeProposal[];
 }
 
@@ -783,6 +784,8 @@ export const ReviewHost = {
   dismiss: bind<[string, string], ChangeProposal[]>("ReviewHost.Dismiss", (workspaceRoot: string, proposalID: string) => [workspaceRoot, proposalID]),
   get: bind<[string, string], ChangeProposal>("ReviewHost.Get", (workspaceRoot: string, proposalID: string) => [workspaceRoot, proposalID]),
   list: bind<[string], ChangeProposal[]>("ReviewHost.List", (workspaceRoot: string) => [workspaceRoot]),
+  revise: bind<[ProposeInput, string, string], ChangeProposal>("ReviewHost.Revise", (input: ProposeInput, expectedText: string, liveText: string) => [input, expectedText, liveText]),
+  snapshot: bind<[string], ReviewUpdateEvent>("ReviewHost.Snapshot", (workspaceRoot: string) => [workspaceRoot]),
   submit: bind<[ProposeInput], ChangeProposal>("ReviewHost.Submit", (input: ProposeInput) => [input]),
   sync: bind<[string, string, string], ChangeProposal>("ReviewHost.Sync", (workspaceRoot: string, proposalID: string, liveText: string) => [workspaceRoot, proposalID, liveText]),
 } as const;

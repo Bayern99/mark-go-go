@@ -1,6 +1,7 @@
 import type { DiffHunk, DiffLine, DiffLineKind, HunkDecision } from '../host/generated/mygo'
 
 const DEFAULT_CONTEXT_LINES = 3
+const MAX_MYERS_TRACE_ENTRIES = 512 * 1024
 
 interface TextLine {
   raw: string
@@ -107,6 +108,9 @@ function myersCore(
 
   let foundD = maxD
   for (let d = 0; d <= maxD; d += 1) {
+    if (d >= Math.floor(MAX_MYERS_TRACE_ENTRIES / size)) {
+      return linearSpaceDiff(a, b, offsetA, offsetB)
+    }
     trace.push(v.slice())
     let done = false
     for (let k = -d; k <= d; k += 2) {
@@ -156,6 +160,72 @@ function myersCore(
     rev.push({ kind: 'equal', oldIdx: offsetA + x, newIdx: offsetB + y, text: a[x].content, raw: a[x].raw })
   }
   return rev.reverse()
+}
+
+function linearSpaceDiff(a: TextLine[], b: TextLine[], offsetA: number, offsetB: number): EditOp[] {
+  const forward = new Int32Array(b.length + 1)
+  const backward = new Int32Array(b.length + 1)
+  const ops: EditOp[] = []
+  let old = 0
+  let next = 0
+  const consume = (oldEnd: number, nextEnd: number) => {
+    while (old < oldEnd) {
+      const line = a[old]
+      ops.push({ kind: 'delete', oldIdx: offsetA + old, newIdx: offsetB + next, text: line.content, raw: line.raw })
+      old += 1
+    }
+    while (next < nextEnd) {
+      const line = b[next]
+      ops.push({ kind: 'insert', oldIdx: offsetA + old, newIdx: offsetB + next, text: line.content, raw: line.raw })
+      next += 1
+    }
+  }
+  const align = (left: number, right: number, start: number, end: number) => {
+    if (left === right || start === end) return
+    if (right - left === 1) {
+      for (let j = start; j < end; j += 1) {
+        if (a[left].raw !== b[j].raw) continue
+        consume(left, j)
+        const line = a[left]
+        ops.push({ kind: 'equal', oldIdx: offsetA + old, newIdx: offsetB + next, text: line.content, raw: line.raw })
+        old += 1
+        next += 1
+        break
+      }
+      return
+    }
+    const mid = Math.floor((left + right) / 2)
+    const width = end - start
+    forward.fill(0, 0, width + 1)
+    backward.fill(0, 0, width + 1)
+    const row = (scores: Int32Array, first: number, last: number, step: number, edge: number) => {
+      for (let i = first; i !== last; i += step) {
+        let prev = 0
+        for (let j = 1; j <= width; j += 1) {
+          const above = scores[j]
+          scores[j] = a[i].raw === b[edge + (j - 1) * step].raw ? prev + 1 : Math.max(above, scores[j - 1])
+          prev = above
+        }
+      }
+    }
+    row(forward, left, mid, 1, start)
+    row(backward, right - 1, mid - 1, -1, end - 1)
+    let split = 0
+    let best = 0
+    for (let j = 0; j <= width; j += 1) {
+      const score = forward[j] + backward[width - j]
+      if (score > best) {
+        split = j
+        best = score
+      }
+    }
+    if (best === 0) return
+    align(left, mid, start, start + split)
+    align(mid, right, start + split, end)
+  }
+  align(0, a.length, 0, b.length)
+  consume(a.length, b.length)
+  return ops
 }
 
 function extractClusters(before: string, after: string): { ops: EditOp[]; clusters: ChangeCluster[] } {
@@ -326,10 +396,10 @@ export function reconcileProposal(
   proposedText: string,
   liveText: string,
   decisions: Record<string, HunkDecision> = {},
-): { hunks: DiffHunk[]; mergedText: string; hasConflict: boolean } {
+): { hunks: DiffHunk[]; mergedText: string; remainingText: string; hasConflict: boolean } {
   const { clusters: baseClusters } = extractClusters(baseText, proposedText)
   if (baseClusters.length === 0) {
-    return { hunks: [], mergedText: liveText, hasConflict: false }
+    return { hunks: [], mergedText: liveText, remainingText: baseText, hasConflict: false }
   }
 
   const liveLines = splitTextLines(liveText)
@@ -352,6 +422,7 @@ export function reconcileProposal(
     liveEnd: number
     inserts: EditOp[]
     blocked: boolean
+    alreadyApplied: boolean
   }> = []
 
   for (let idx = 0; idx < baseClusters.length; idx += 1) {
@@ -374,10 +445,9 @@ export function reconcileProposal(
       }
     }
 
-    let decision: HunkDecision = decisions[hunkId] ?? 'pending'
+    const decision: HunkDecision = decisions[hunkId] ?? 'pending'
     if (conflict) {
       hasConflict = true
-      if (decision === 'accepted') decision = 'pending'
     }
 
     const liveStart = Math.min(liveLines.length, baseToLive(c.oldStart))
@@ -450,10 +520,11 @@ export function reconcileProposal(
       liveEnd,
       inserts: c.inserts,
       blocked: conflict || alreadyApplied,
+      alreadyApplied,
     })
   }
 
-  const anyAccepted = resolved.some((r) => r.hunk.decision === 'accepted' && !r.blocked)
+  const anyAccepted = resolved.some((r) => r.hunk.decision === 'accepted')
   const anyRejected = resolved.some((r) => r.hunk.decision === 'rejected')
   const shouldApply = (r: (typeof resolved)[number]) => {
     if (r.blocked) return false
@@ -480,15 +551,26 @@ export function reconcileProposal(
     cursor += 1
   }
 
-  let mergedText = ''
-  for (let i = 0; i < outRaw.length; i += 1) {
-    const raw = outRaw[i]
-    mergedText += i + 1 < outRaw.length && !/[\r\n]$/.test(raw) ? raw + nl : raw
+  const joinLines = (lines: string[], ending: string) => lines
+    .map((raw, i) => i + 1 < lines.length && !/[\r\n]$/.test(raw) ? raw + ending : raw)
+    .join('')
+
+  const baseLines = splitTextLines(baseText)
+  const remainingRaw: string[] = []
+  let baseCursor = 0
+  for (const [i, r] of resolved.entries()) {
+    if (shouldApply(r) || r.alreadyApplied || r.hunk.decision === 'rejected') continue
+    const cluster = baseClusters[i]
+    while (baseCursor < cluster.oldStart) remainingRaw.push(baseLines[baseCursor++].raw)
+    for (const ins of cluster.inserts) remainingRaw.push(ins.raw)
+    baseCursor = cluster.oldEnd
   }
+  while (baseCursor < baseLines.length) remainingRaw.push(baseLines[baseCursor++].raw)
 
   return {
     hunks: resolved.map((r) => r.hunk),
-    mergedText,
+    mergedText: joinLines(outRaw, nl),
+    remainingText: joinLines(remainingRaw, defaultLineEnding(baseText)),
     hasConflict,
   }
 }

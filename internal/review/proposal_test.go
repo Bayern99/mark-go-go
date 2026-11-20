@@ -105,6 +105,21 @@ func TestWholeDocumentRewriteUsesBoundedMemory(t *testing.T) {
 	}
 }
 
+func TestRewriteWithSharedLinesUsesBoundedMemory(t *testing.T) {
+	base := strings.Repeat("old line\n", 1200) + "shared section\n" + strings.Repeat("earlier line\n", 1200)
+	after := strings.Repeat("new line\n", 1200) + "shared section\n" + strings.Repeat("later line\n", 1200)
+	var before, end runtime.MemStats
+	runtime.ReadMemStats(&before)
+	hunks := ComputeDiff(base, after)
+	runtime.ReadMemStats(&end)
+	if len(hunks) != 2 || hunks[0].ChangeOldCount != 1200 || hunks[1].ChangeNewCount != 1200 {
+		t.Fatalf("want two 1,200-line hunks around the shared section, got %d", len(hunks))
+	}
+	if bytes := end.TotalAlloc - before.TotalAlloc; bytes > 16<<20 {
+		t.Fatalf("rewrite retaining a shared section allocated %d bytes; bound is 16 MiB", bytes)
+	}
+}
+
 func TestMyersDiffComputesMinimalHunksWithLineNumbersAndContext(t *testing.T) {
 	if hunks := ComputeDiff("# Same\n\nBody.\n", "# Same\n\nBody.\n"); len(hunks) != 0 {
 		t.Fatalf("expected 0 hunks for identical text, got %d", len(hunks))
@@ -294,6 +309,27 @@ func TestSelectiveHunkAcceptRejectAndAcceptAll(t *testing.T) {
 		if h.Decision != HunkAccepted {
 			t.Fatalf("expected hunk %s to be accepted, got %s", h.ID, h.Decision)
 		}
+	}
+}
+
+func TestSelectedHunkConflictDoesNotApplyPendingHunks(t *testing.T) {
+	s := NewService()
+	root := t.TempDir()
+	base := "first old\n\nlast old\n"
+	p, err := s.SubmitProposal(ProposeInput{WorkspaceRoot: root, Path: "doc.md", BaseText: base, ProposedText: "first proposed\n\nlast proposed\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DecideHunk(root, p.ID, p.Hunks[0].ID, HunkAccepted, base); err != nil {
+		t.Fatal(err)
+	}
+	live := "first reader\n\nlast old\n"
+	p, err = s.SyncProposal(root, p.ID, live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.Hunks[0].Conflict || p.Hunks[1].Decision != HunkPending || p.MergedText != live {
+		t.Fatalf("pending hunk must not be applied after selected hunk conflicts; got merge %q", p.MergedText)
 	}
 }
 

@@ -110,7 +110,7 @@ export default function ResearchPanel({
       const live = !targetProposal.documentID ? await target.snapshot() : null
       const nextBase =
         live && live.text === targetProposal.base.text ? live : targetProposal.base
-      session.updateProposalBase(targetProposal.id, target.id, nextBase)
+      await session.updateProposalBase(targetProposal.id, target.id, nextBase)
     }
     showComparison()
   }
@@ -150,7 +150,7 @@ export default function ResearchPanel({
     if (nextText !== doc.text) {
       await ctx.commands.execute('editor.applyMarkdown', doc, nextText)
     }
-    session.completeProposal(proposal.id)
+    await session.applyProposal(proposal, reconciled.remainingText, nextText)
     await session.refresh()
   }
 
@@ -403,11 +403,11 @@ export default function ResearchPanel({
                             className="pill"
                             onClick={() => {
                               if (ctx) {
-                                session.updateProposalBase(
+                                void session.updateProposalBase(
                                   proposal.id,
                                   documentID,
                                   ctx.documents.snapshot(),
-                                )
+                                ).catch(report)
                               }
                             }}
                           >

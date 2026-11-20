@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"maps"
 	"os"
 	"os/exec"
@@ -22,7 +23,7 @@ import (
 
 const maxResearchUIBytes = 1 << 20
 
-var researchUpdate = mygo.NewEvent[ResearchUpdate]("researchUpdate")
+var Updated = desktop.Event[ResearchUpdate]{}
 
 type WorkspaceRef struct {
 	Root   string
@@ -154,7 +155,7 @@ func (h *ResearchManager) Connect(ctx context.Context, root string) error {
 	if err != nil {
 		return err
 	}
-	return h.connect(w, func(e ResearchUpdate) { _ = researchUpdate.Emit(w.Window, e) })
+	return h.connect(w, func(e ResearchUpdate) { _ = Updated.Emit(w.Window, e) })
 }
 
 func (h *ResearchManager) connect(w WorkspaceRef, emit func(ResearchUpdate)) error {
@@ -368,7 +369,7 @@ func (h *ResearchManager) activeLocked(ctx context.Context, root string) (*resea
 		return nil, errors.New("Research is closing.")
 	}
 	s := h.sessions[root]
-	if s != nil && s.win == mygo.CallerWindow(ctx) {
+	if s != nil && s.win == desktop.Window(ctx) {
 		select {
 		case <-s.stopped:
 		default:
@@ -998,7 +999,7 @@ func (h *ResearchManager) Disconnect(ctx context.Context, root string) error {
 	h.mu.Lock()
 	s := h.sessions[root]
 	h.mu.Unlock()
-	if s != nil && s.win == mygo.CallerWindow(ctx) {
+	if s != nil && s.win == desktop.Window(ctx) {
 		h.stop(fsutil.CanonicalPath(root), s, "")
 	}
 	return nil

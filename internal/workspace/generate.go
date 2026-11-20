@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"errors"
+	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/acp"
@@ -48,7 +49,7 @@ func (s *Service) UserDataDir() string {
 }
 
 func (s *Service) WindowWorkspace(ctx context.Context, root string) (WorkspaceRef, error) {
-	return s.windowWorkspace(mygo.CallerWindow(ctx), root)
+	return s.windowWorkspace(desktop.Window(ctx), root)
 }
 
 func (s *Service) windowWorkspace(win *mygo.Window, root string) (WorkspaceRef, error) {
@@ -71,7 +72,7 @@ func (s *Service) windowWorkspace(win *mygo.Window, root string) (WorkspaceRef, 
 }
 
 func (s *Service) EditableDocument(ctx context.Context, root, documentID string) error {
-	return s.editableDocument(mygo.CallerWindow(ctx), root, documentID)
+	return s.editableDocument(desktop.Window(ctx), root, documentID)
 }
 
 func (s *Service) editableDocument(win *mygo.Window, root, documentID string) error {
@@ -102,7 +103,7 @@ func (s *Service) editableDocument(win *mygo.Window, root, documentID string) er
 }
 
 func (s *Service) CheckpointDocument(ctx context.Context, documentID, path string) (CheckpointDoc, error) {
-	return s.checkpointDocument(mygo.CallerWindow(ctx), documentID, path)
+	return s.checkpointDocument(desktop.Window(ctx), documentID, path)
 }
 
 func (s *Service) checkpointDocument(win *mygo.Window, documentID, path string) (CheckpointDoc, error) {
@@ -254,7 +255,7 @@ func (h *Service) generate(ctx context.Context, documentID string, req genui.Gen
 	h.mu.Unlock()
 	h.emitWorkspace(w)
 	if win != nil {
-		_ = docState.Emit(win, s.info())
+		_ = DocumentStateChanged.Emit(win, s.info())
 	}
 	h.refreshPathMenus()
 	defer h.releaseGeneration(s, slot)
@@ -322,7 +323,7 @@ func (h *Service) releaseGeneration(s *docSession, slot *generationSlot) {
 	}
 	h.emitWorkspace(w)
 	if win != nil {
-		_ = docState.Emit(win, s.info())
+		_ = DocumentStateChanged.Emit(win, s.info())
 	}
 	h.refreshPathMenus()
 }

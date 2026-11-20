@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -11,7 +12,6 @@ import (
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
-	"github.com/egoist/mygo"
 )
 
 type ChangeProposal struct {
@@ -54,7 +54,7 @@ type ReviewUpdateEvent struct {
 	Proposals     []ChangeProposal `json:"proposals"`
 }
 
-var ReviewUpdated = mygo.NewEvent[ReviewUpdateEvent]("reviewUpdated")
+var ReviewUpdated = desktop.Event[ReviewUpdateEvent]{}
 
 type storedProposal struct {
 	proposal     ChangeProposal

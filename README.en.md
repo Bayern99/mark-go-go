@@ -20,14 +20,14 @@ Mark Go Go links existing files and directories in `~/.feynman`, including login
 
 ## Development
 
-See the [CI configuration](.github/workflows/ci.yml) for Go and Node versions.
+The native app uses the Go version in [go.mod](go.mod).
 
 ```sh
-npm --prefix web ci
 go tool mygo dev
+go tool mygo build
 ```
 
-Run `npm --prefix web run dev` for the browser preview. Run `go tool mygo generate` after changing bindings. Build the release with `go tool mygo build`.
+The migration keeps the original web implementation and tests for comparison. To run the browser reference, use `npm --prefix web ci` followed by `npm --prefix web run dev`.
 
 ## Verification
 
@@ -37,6 +37,6 @@ npm --prefix web test
 go test -race ./...
 ```
 
-Use the [native Automation and macOS checks](docs/agents/native-automation.md) for menus, save dialogs, and restart behavior.
+Use the [native Automation and macOS checks](docs/agents/native-automation.md) for menus, opening from Finder, saving and restoring a session.
 
 [Architecture and code entry points](ARCHITECTURE.md) · [Interface design](DESIGN.md) · [Changelog](CHANGELOG.md) · [Acceptance evidence](docs/acceptance.md) · [MIT license](LICENSE)

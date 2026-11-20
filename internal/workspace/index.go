@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"io"
 	"io/fs"
@@ -111,8 +112,8 @@ type Crumb struct {
 }
 
 var (
-	navChanged     = mygo.NewEvent[NavSnapshot]("navChanged")
-	navSearchReady = mygo.NewEvent[NavSearchResult]("navSearchReady")
+	NavigationChanged = desktop.Event[NavSnapshot]{}
+	SearchReady       = desktop.Event[NavSearchResult]{}
 )
 
 type indexedFile struct {
@@ -695,7 +696,7 @@ func (h *Service) emitNav(w *workspace) {
 	if !selected {
 		return
 	}
-	_ = navChanged.Emit(w.win, h.navSnapshot(w))
+	_ = NavigationChanged.Emit(w.win, h.navSnapshot(w))
 }
 
 func (h *Service) emitSearch(w *workspace, idx *workspaceIndex) {
@@ -711,7 +712,7 @@ func (h *Service) emitSearch(w *workspace, idx *workspaceIndex) {
 	idx.mu.Lock()
 	query := idx.query
 	idx.mu.Unlock()
-	_ = navSearchReady.Emit(w.win, h.searchLockedResult(w, idx, query))
+	_ = SearchReady.Emit(w.win, h.searchLockedResult(w, idx, query))
 }
 
 func (h *Service) navSnapshot(w *workspace) NavSnapshot {
@@ -1086,7 +1087,7 @@ func (h *Service) SetFilter(ctx context.Context, query string) (NavSearchResult,
 	idx.query = strings.TrimSpace(query)
 	idx.mu.Unlock()
 	result := h.searchLockedResult(w, idx, query)
-	_ = navSearchReady.Emit(w.win, result)
+	_ = SearchReady.Emit(w.win, result)
 	return result, nil
 }
 

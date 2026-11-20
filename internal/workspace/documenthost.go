@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/Bayern99/mark-go-go/internal/acp"
+	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"github.com/Bayern99/mark-go-go/internal/genui"
 	"path/filepath"
@@ -21,11 +22,12 @@ type Snapshot struct {
 	State   DocumentInfo `json:"state"`
 }
 
-var docReloaded = mygo.NewEvent[Snapshot]("docReloaded")
+var DocumentReloaded = desktop.Event[Snapshot]{}
 
-var docState = mygo.NewEvent[DocumentInfo]("docState")
+var DocumentStateChanged = desktop.Event[DocumentInfo]{}
 
 type Service struct {
+	CreateWindow   func(mygo.WindowOptions) *mygo.Window
 	mu             sync.Mutex
 	sessionWriteMu sync.Mutex
 
@@ -91,7 +93,7 @@ func NewService() *Service {
 	dir, _ := mygo.App.Path(mygo.PathUserData)
 	settings := &settingsStore{dir: dir}
 	settings.onChange = func(s Settings) {
-		_ = settingsChanged.Broadcast(s)
+		_ = SettingsChanged.Broadcast(s)
 	}
 	return &Service{
 		byWindow:    make(map[*mygo.Window]*workspace),
@@ -337,7 +339,7 @@ func (h *Service) adopt(doc *mygo.Document[string], win *mygo.Window) {
 		currentWin := s.win
 		h.mu.Unlock()
 		if currentWin != nil {
-			_ = docReloaded.Emit(currentWin, s.snapshot())
+			_ = DocumentReloaded.Emit(currentWin, s.snapshot())
 		}
 	})
 	offState := doc.OnStateChange(func(state mygo.DocumentState) {
@@ -345,7 +347,7 @@ func (h *Service) adopt(doc *mygo.Document[string], win *mygo.Window) {
 		currentWin := s.win
 		h.mu.Unlock()
 		if currentWin != nil {
-			_ = docState.Emit(currentWin, s.info())
+			_ = DocumentStateChanged.Emit(currentWin, s.info())
 		}
 		s.viewMoved(state.Path)
 		h.migrateIfNeeded(s)
@@ -682,7 +684,7 @@ func (h *Service) noteAction(s *docSession, err error) {
 		return
 	}
 	if win != nil && !win.IsDestroyed() {
-		_ = docState.Emit(win, s.info())
+		_ = DocumentStateChanged.Emit(win, s.info())
 	}
 	h.emitWorkspace(w)
 }

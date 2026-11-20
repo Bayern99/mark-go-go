@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
+	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"github.com/Bayern99/mark-go-go/internal/mcp"
+	"github.com/Bayern99/mark-go-go/internal/nativeui"
 	"github.com/Bayern99/mark-go-go/internal/review"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo"
@@ -52,6 +54,7 @@ func (a workspaceAdapter) CheckpointDocument(ctx context.Context, documentID, pa
 
 func main() {
 	host := workspace.NewService()
+	host.CreateWindow = func(opts mygo.WindowOptions) *mygo.Window { return nativeui.NewWindow(host, opts) }
 	configureReadBench(host)
 	mygo.App.OnBeforeQuit(host.OnBeforeQuit)
 
@@ -87,8 +90,6 @@ func main() {
 	host.SetDocuments(ds)
 	adapter := workspaceAdapter{svc: host}
 	reviewSvc := review.NewService()
-	mygo.BindAs("WorkspaceHost", workspace.NewHost(host))
-	mygo.BindAs("ReviewHost", reviewSvc.Host())
 	research := feynman.NewResearchManager(adapter)
 	mcpServer := mcp.NewServer(mcp.Dependencies{
 		Workspace: host,
@@ -96,8 +97,6 @@ func main() {
 	})
 	research.SetBeforeStart(mcpServer.BeforeResearchStart)
 	research.SetAfterStop(mcpServer.AfterResearchStop)
-	mygo.BindAs("ResearchHost", research.Host())
-	mygo.BindAs("CheckpointHost", review.NewCheckpointHost(adapter))
 
 	mygo.App.WhenReady(func() {
 		mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
@@ -105,9 +104,9 @@ func main() {
 			{Role: mygo.RoleFileMenu, Submenu: []*mygo.MenuItem{
 				{Role: mygo.RoleNew},
 				{Role: mygo.RoleOpen},
-				{Label: "Open Folder…", Accelerator: "CmdOrCtrl+Shift+O", Click: func(_ *mygo.MenuItem, _ *mygo.Window) {
+				{Label: "Open Folder…", Accelerator: "CmdOrCtrl+Shift+O", Click: func(_ *mygo.MenuItem, win *mygo.Window) {
 					go func() {
-						_, _ = host.PickFolder(context.Background())
+						_, _ = host.PickFolder(desktop.WithWindow(context.Background(), win))
 					}()
 				}},
 				{Role: mygo.RoleOpenRecent},

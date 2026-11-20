@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"io"
 	"io/fs"
 	"os"
@@ -14,7 +15,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
-	"github.com/egoist/mygo"
 )
 
 const maxMCPDocumentBytes = 8 << 20
@@ -59,7 +59,7 @@ type DocReveal struct {
 	Offset int    `json:"offset"`
 }
 
-var docReveal = mygo.NewEvent[DocReveal]("docReveal")
+var DocumentRevealed = desktop.Event[DocReveal]{}
 
 func (h *Service) workspaceByRoot(root string) *workspace {
 	canon := fsutil.CanonicalPath(root)
@@ -347,7 +347,7 @@ func (h *Service) MCPOpenDocument(ctx context.Context, root, idOrPath string, re
 			if hasReveal {
 				if s, sErr := h.docSession(info.ID); sErr == nil {
 					if win := h.sessionWindow(s); win != nil && !win.IsDestroyed() {
-						_ = docReveal.Emit(win, DocReveal{ID: info.ID, Path: info.Path, Offset: revealOffset})
+						_ = DocumentRevealed.Emit(win, DocReveal{ID: info.ID, Path: info.Path, Offset: revealOffset})
 					}
 				}
 			}
@@ -360,7 +360,7 @@ func (h *Service) MCPOpenDocument(ctx context.Context, root, idOrPath string, re
 		win.Show()
 		win.Focus()
 		if hasReveal {
-			_ = docReveal.Emit(win, DocReveal{ID: targetSession.id, Path: targetSession.currentPath(), Offset: revealOffset})
+			_ = DocumentRevealed.Emit(win, DocReveal{ID: targetSession.id, Path: targetSession.currentPath(), Offset: revealOffset})
 		}
 	}
 	return targetSession.info(), nil

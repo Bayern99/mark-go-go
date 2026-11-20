@@ -20,14 +20,14 @@ Mark Go Go 将 `~/.feynman` 中已有的登录凭据、模型、记忆、MCP 配
 
 ## 开发
 
-Go 和 Node 版本见 [CI 配置](.github/workflows/ci.yml)。
+原生应用使用 [go.mod](go.mod) 指定的 Go 版本。
 
 ```sh
-npm --prefix web ci
 go tool mygo dev
+go tool mygo build
 ```
 
-浏览器预览运行 `npm --prefix web run dev`。绑定变更后运行 `go tool mygo generate`。正式构建运行 `go tool mygo build`。
+迁移期间保留起点版本的网页实现和测试。运行浏览器参照时，先执行 `npm --prefix web ci`，再执行 `npm --prefix web run dev`。
 
 ## 验证
 
@@ -37,6 +37,6 @@ npm --prefix web test
 go test -race ./...
 ```
 
-菜单、保存对话框和重启使用 [原生 Automation 与 macOS 验证流程](docs/agents/native-automation.md)。
+原生菜单、Finder 打开、保存和重启使用 [原生 Automation 与 macOS 验证流程](docs/agents/native-automation.md)。
 
 [架构与代码入口](ARCHITECTURE.md) · [界面设计](DESIGN.md) · [更新日志](CHANGELOG.md) · [验收记录](docs/acceptance.md) · [MIT 许可证](LICENSE)

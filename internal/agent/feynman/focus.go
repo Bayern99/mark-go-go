@@ -3,13 +3,14 @@ package feynman
 import (
 	"context"
 	"errors"
+	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"slices"
 
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"github.com/egoist/mygo"
 )
 
-var researchFocus = mygo.NewEvent[ResearchFocusEvent]("researchFocus")
+var FocusRequested = desktop.Event[ResearchFocusEvent]{}
 
 func (h *ResearchManager) WatchFocus(ctx context.Context, root string) error {
 	w, err := h.workspace(ctx, root)
@@ -56,7 +57,7 @@ func (h *ResearchManager) ensureFocusWatch(w WorkspaceRef) {
 			return
 		}
 		go func() {
-			_ = researchFocus.Emit(win, ResearchFocusEvent{Root: r})
+			_ = FocusRequested.Emit(win, ResearchFocusEvent{Root: r})
 		}()
 	})
 	offClosed := win.OnClosed(func() {

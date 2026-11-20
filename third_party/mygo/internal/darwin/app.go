@@ -268,7 +268,6 @@ func registerClasses() {
 	registerClipboardClass()
 	registerAccessClass()
 	registerMenuTarget()
-	registerSchemeHandler()
 	registerTrayTarget()
 	registerNotificationDelegate()
 }
@@ -532,4 +531,7 @@ func (appController) SetJumpList(platform.JumpList) error { return nil }
 
 // WebViewAvailable reports whether a window showing a web page can have
 // one. WKWebView is part of macOS, so this holds wherever the app runs.
-func (b *Backend) WebViewAvailable() bool { return hasClass("WKWebView") }
+func (b *Backend) WebViewAvailable() bool {
+	loadWebKit()
+	return hasClass("WKWebView")
+}

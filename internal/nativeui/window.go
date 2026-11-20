@@ -127,6 +127,15 @@ func (w *Window) refresh() {
 		d := nativeeditor.New(snap.Text)
 		w.documents[id] = &openDocument{source: d, published: d.Version(), reloadVersion: snap.Version}
 	}
+	for _, info := range next.Documents {
+		if d := w.documents[info.ID]; d != nil {
+			directory := ""
+			if info.Path != "" {
+				directory = filepath.Dir(info.Path)
+			}
+			d.source.SetImageDirectory(directory)
+		}
+	}
 	if doc := w.Active(); doc.ID != "" && w.documents[doc.ID] != nil {
 		open := w.documents[doc.ID]
 		key := doc.Path

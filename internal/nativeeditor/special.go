@@ -96,6 +96,11 @@ func (p *previewLayout) special(snap editor.Snapshot, i int) bool {
 		kind = "math"
 		body = strings.TrimSuffix(p.document.Lines(i), "\n")
 	case parser.CodeBlock:
+		info := b.Info()
+		meta := strings.TrimSpace(strings.TrimPrefix(info, b.Language()))
+		if !strings.EqualFold(b.Language(), "mermaid") && meta == "" {
+			return false
+		}
 		kind = "code"
 		if strings.EqualFold(b.Language(), "mermaid") {
 			kind = "Mermaid"
@@ -139,6 +144,61 @@ func (p *previewLayout) special(snap editor.Snapshot, i int) bool {
 	}
 	p.specialBlock(snap, b.Start, b.End, kind, label, body)
 	return true
+}
+
+func (p *previewLayout) codeBlock(snap editor.Snapshot, i int) {
+	b := p.document.Block(i)
+	firstLine := snap.LineOf(b.Start)
+	lastLine := snap.LineOf(max(b.End-1, b.Start))
+	if b.Fenced {
+		p.hideFenceLine(snap, firstLine)
+		if !b.Open && lastLine > firstLine {
+			p.hideFenceLine(snap, lastLine)
+		}
+	}
+
+	for line := range p.document.LineCount(i) {
+		_, start := p.document.Line(i, line)
+		p.styles = append(p.styles, editor.LineStyle{
+			Line:       snap.LineOf(start),
+			Font:       ui.Font{Family: "IBM Plex Mono", Size: 14},
+			LineHeight: 1.5,
+		})
+	}
+
+	label := b.Language()
+	if label == "" {
+		label = "Code"
+	}
+	headerLine := firstLine
+	if b.Fenced && firstLine < lastLine {
+		headerLine++
+	}
+	p.blocks = append(p.blocks, editor.Block{
+		Line:    headerLine,
+		Above:   true,
+		Height:  26,
+		Label:   "Code block: " + label,
+		Content: codeHeader(label),
+	})
+}
+
+func (p *previewLayout) hideFenceLine(snap editor.Snapshot, line int) {
+	start, end := snap.LineStart(line), snap.LineEnd(line)
+	if end < snap.Len() && snap.Slice(end, end+1) == "\n" {
+		end++
+	}
+	p.replace(start, end, "")
+}
+
+func codeHeader(label string) func(*ui.Context, ui.Element, editor.Block) {
+	return func(c *ui.Context, e ui.Element, _ editor.Block) {
+		e.Children(func() {
+			ui.Row(c).AlignItems(ui.Center).Padding(4, 8).Children(func() {
+				ui.Text(c, label).Font("IBM Plex Sans").FontSize(12).TextColor(c.Theme().TextMuted)
+			})
+		})
+	}
 }
 
 func (p *previewLayout) specialBlock(snap editor.Snapshot, start, end int, kind, label, body string) {

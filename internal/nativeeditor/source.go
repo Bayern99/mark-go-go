@@ -31,6 +31,8 @@ type Document struct {
 	tables      map[int]*readingTable
 	draft       *blockDraft
 	artwork     map[string]blockImage
+	imageDir    string
+	images      *inlineImages
 	refocus     bool
 	folded      map[string]bool
 	returns     map[string]int
@@ -39,7 +41,7 @@ type Document struct {
 func New(source string) *Document {
 	buffer := editor.NewSourceBuffer(source)
 	buffer.SetLanguage(editor.LanguageNamed("Markdown"))
-	return &Document{mode: Preview, state: editor.State{
+	return &Document{mode: Preview, images: &inlineImages{}, state: editor.State{
 		Buffer: buffer, Label: "Markdown Preview", SoftWrap: true,
 		NoAutoClose: true, NoIndentGuides: true, NoScrollPastEnd: true,
 	}}

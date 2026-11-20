@@ -13,11 +13,12 @@ import (
 )
 
 type ResearchCommandSourceInfo struct {
-	Path    string `json:"path,omitempty"`
-	Source  string `json:"source,omitempty"`
-	Scope   string `json:"scope,omitempty"`
-	Origin  string `json:"origin,omitempty"`
-	BaseDir string `json:"baseDir,omitempty"`
+	Path          string `json:"path,omitempty"`
+	Source        string `json:"source,omitempty"`
+	Scope         string `json:"scope,omitempty"`
+	Origin        string `json:"origin,omitempty"`
+	BaseDir       string `json:"baseDir,omitempty"`
+	ChangelogPath string `json:"changelogPath,omitempty"`
 }
 
 type ResearchCommandInput struct {

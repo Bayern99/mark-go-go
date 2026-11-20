@@ -444,6 +444,7 @@ export interface ResearchCommandSourceInfo {
   scope?: string;
   origin?: string;
   baseDir?: string;
+  changelogPath?: string;
 }
 
 export interface ResearchCompactionResult {

@@ -77,6 +77,7 @@ type researchSession struct {
 	switching      bool
 	turn           chan struct{}
 	settled        chan bool
+	legacyEnded    chan struct{}
 	settleMu       sync.Mutex
 	settleTimer    *time.Timer
 	streamMu       sync.Mutex
@@ -732,8 +733,10 @@ func (h *ResearchManager) PromptWithSources(ctx context.Context, root, text, doc
 	s.turnErr = nil
 	s.turn = make(chan struct{})
 	settled := make(chan bool, 1)
+	legacyEnded := make(chan struct{}, 1)
 	s.settleMu.Lock()
 	s.settled = settled
+	s.legacyEnded = legacyEnded
 	s.settleMu.Unlock()
 	h.mu.Unlock()
 
@@ -744,6 +747,7 @@ func (h *ResearchManager) PromptWithSources(ctx context.Context, root, text, doc
 			s.settleTimer = nil
 		}
 		s.settled = nil
+		s.legacyEnded = nil
 		s.settleMu.Unlock()
 		h.mu.Lock()
 		s.busy = false
@@ -824,10 +828,14 @@ func (h *ResearchManager) PromptWithSources(ctx context.Context, root, text, doc
 			s.notifySettled(false)
 		}
 	}
+	if promptResp.Disposition != "" {
+		legacyEnded = nil
+	}
 
 	var aborted bool
 	select {
 	case aborted = <-settled:
+	case <-legacyEnded:
 	case <-s.stopped:
 		return "", errors.New("Feynman disconnected.")
 	case <-s.rpc.Exited():
@@ -1084,9 +1092,14 @@ func (s *researchSession) scheduleSettleTimer(delay time.Duration) {
 	if s.settleTimer != nil {
 		s.settleTimer.Stop()
 	}
-	s.settleTimer = time.AfterFunc(delay, func() {
-		s.notifySettled(false)
-	})
+	if ended := s.legacyEnded; ended != nil {
+		s.settleTimer = time.AfterFunc(delay, func() {
+			select {
+			case ended <- struct{}{}:
+			default:
+			}
+		})
+	}
 	s.settleMu.Unlock()
 }
 

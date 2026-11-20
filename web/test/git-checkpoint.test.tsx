@@ -6,6 +6,7 @@ import { applyNativeEdit, nativeEditCapabilities } from '../src/editor/nativeEdi
 import { createBrowserHost } from '../src/host/browserHost'
 import type { Checkpoint } from '../src/host/generated/mygo'
 import { createGitPlugin } from '../src/plugins/git'
+import { getSourceView, replaceSourceText } from './helpers/source'
 
 const listCheckpoints = vi.hoisted(() => vi.fn<(documentID: string, path: string) => Promise<Checkpoint[]>>())
 const createCheckpoint = vi.hoisted(() =>
@@ -124,6 +125,34 @@ describe('Labeled Checkpoints with provenance & non-Git fallback UI', () => {
       await vi.waitFor(async () => {
         expect((await host.load()).text).toBe('# Draft\n\nLive edited paragraph.\n')
       })
+    } finally {
+      root.unmount()
+      container.remove()
+    }
+  })
+
+  it('keeps earlier Markdown typing when undoing a checkpoint restore in Preview', async () => {
+    const original = '# Draft\n\nCurrent paragraph.\n'
+    const saved = '# Draft\n\nEarlier checkpoint paragraph.\n'
+    const host = createBrowserHost(original, 'draft.md')
+    listCheckpoints.mockResolvedValue([{ id: 'snapshot', createdAt: 1700000001000 }])
+    readCheckpoint.mockResolvedValue(saved)
+    const container = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(container)
+
+    try {
+      root.render(<App host={host} plugins={[createGitPlugin(host.id)]} />)
+      await page.getByTestId('view-mode-markdown').click()
+      const beforeRestore = replaceSourceText(getSourceView(container), 'Current paragraph.', 'Current paragraph. Later typing.')
+      await vi.waitFor(async () => expect((await host.load()).text).toBe(beforeRestore))
+      await page.getByRole('button', { name: 'Checkpoints' }).click()
+      const dialog = page.getByRole('dialog', { name: 'Checkpoints' })
+      await dialog.getByRole('button', { name: 'Compare' }).click()
+      await dialog.getByRole('button', { name: 'Restore shown version' }).click()
+      await vi.waitFor(async () => expect((await host.load()).text).toBe(saved))
+      await page.getByTestId('view-mode-preview').click()
+      expect(applyNativeEdit(host.id, 'undo')).toBe(true)
+      await vi.waitFor(async () => expect((await host.load()).text).toBe(beforeRestore))
     } finally {
       root.unmount()
       container.remove()

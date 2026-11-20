@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/Bayern99/mark-go-go/internal/desktop"
+	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"github.com/Bayern99/mark-go-go/internal/nativeeditor"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo"
@@ -18,6 +19,7 @@ import (
 )
 
 type openDocument struct {
+	returnToGenUI        bool
 	crumbPath, crumbRoot string
 	crumbs               []workspace.Crumb
 	source               *nativeeditor.Document
@@ -64,10 +66,6 @@ func NewWindow(host *workspace.Service, opts mygo.WindowOptions, extensions ...f
 		workspace.CommandRequested.Listen(w.win, w.command)
 		w.win.OnFocus(func() { w.menuKnown = false; w.updateMenu() })
 		w.win.OnShow(w.refresh)
-		w.win.OnFileDrop(func(e *mygo.FileDropEvent) {
-			paths := slices.Clone(e.Paths)
-			go w.action(func() error { return w.openDropped(paths) })
-		})
 		workspace.NavigationChanged.Listen(w.win, func(n workspace.NavSnapshot) {
 			if n.Root == w.snapshot.Root {
 				w.navigation = n
@@ -115,6 +113,8 @@ func (w *Window) refresh() {
 	for id := range w.documents {
 		if !slices.ContainsFunc(next.Documents, func(info workspace.DocumentInfo) bool { return info.ID == id }) {
 			delete(w.documents, id)
+			delete(w.shell.scrolls, "outline:"+id)
+			delete(w.shell.openCheckpoints, id)
 		}
 	}
 	if id := next.ActiveID; id != "" && w.documents[id] == nil {
@@ -124,7 +124,6 @@ func (w *Window) refresh() {
 			return
 		}
 		d := nativeeditor.New(snap.Text)
-		d.SetMode(nativeeditor.Mode(snap.State.ViewMode))
 		w.documents[id] = &openDocument{source: d, published: d.Version(), reloadVersion: snap.Version}
 	}
 	if doc := w.Active(); doc.ID != "" && w.documents[doc.ID] != nil && doc.ViewMode != "genui" {
@@ -181,9 +180,6 @@ func (w *Window) command(cmd workspace.NativeCommand) {
 		return
 	}
 	d := w.documents[cmd.ID]
-	if cmd.ID != "" && d == nil {
-		return
-	}
 	switch cmd.Command {
 	case "undo", "redo":
 		w.editCommand(cmd.Command, d)
@@ -246,7 +242,7 @@ func (w *Window) openDropped(paths []string) error {
 			switch {
 			case info.IsDir():
 				err = w.host.OpenWorkspace(w.ctx, path)
-			case strings.EqualFold(filepath.Ext(path), ".md") || strings.EqualFold(filepath.Ext(path), ".markdown"):
+			case fsutil.MarkdownName(path):
 				_, err = w.host.Open(w.ctx, path)
 			default:
 				err = fmt.Errorf("%s is not a Markdown file", filepath.Base(path))
@@ -266,7 +262,7 @@ func (w *Window) openPath(path string, offset int) {
 			return err
 		}
 		if offset >= 0 {
-			w.win.Update(func() { w.pendingReveal = &workspace.DocReveal{ID: doc.ID, Offset: offset}; w.applyReveal() })
+			return w.host.RevealDocument(doc.ID, offset)
 		}
 		return nil
 	})
@@ -287,6 +283,7 @@ func (w *Window) View(c *ui.Context) {
 			d.crumbPath, d.crumbRoot = doc.Path, doc.WorkspaceRoot
 			d.crumbs = workspace.Breadcrumbs(doc.WorkspaceRoot, doc.Path)
 		}
+		model.ReturnToGenUI = d.returnToGenUI
 		model.Crumbs = d.crumbs
 		model.Version = d.reloadVersion
 	}
@@ -316,6 +313,7 @@ func (w *Window) View(c *ui.Context) {
 		}
 	}
 	actions := Actions{
+		Drop: func(paths []string) { go w.action(func() error { return w.openDropped(paths) }) },
 		RevealPath: func(path string) {
 			if err := w.host.RevealPath(w.ctx, path); err != nil {
 				w.failure = err.Error()
@@ -326,8 +324,11 @@ func (w *Window) View(c *ui.Context) {
 		ActivateWorkspace: func(id string) { go w.action(func() error { return w.host.ActivateWorkspace(w.ctx, id) }) },
 		CloseDocument:     func(id string) { w.command(workspace.NativeCommand{Command: "close", ID: id}) },
 		CloseWorkspace: func(id string) {
-			for docID := range w.documents {
-				if err := w.publish(docID, 0); err != nil {
+			for _, doc := range w.snapshot.Documents {
+				if doc.WorkspaceRoot != w.snapshot.Root {
+					continue
+				}
+				if err := w.publish(doc.ID, 0); err != nil {
 					w.failure = err.Error()
 					return
 				}
@@ -353,6 +354,7 @@ func (w *Window) View(c *ui.Context) {
 	}
 	oldWidth := w.shell.rightWidth
 	w.shell.Draw(c, model, actions, slots)
+	w.updateMenu()
 	if oldWidth != 0 && oldWidth != w.shell.rightWidth {
 		w.setPreference("mgo.researchWidth", strconv.Itoa(int(w.shell.rightWidth)))
 	}

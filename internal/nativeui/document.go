@@ -94,6 +94,11 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 			ui.Text(c, "Read only").TextColor(muted)
 		}
 
+		if m.ReturnToGenUI && slots.GenUI != nil {
+			if control(c, "← Back to GenUI", "Back to GenUI").Clicked() && a.SetMode != nil {
+				a.SetMode("genui")
+			}
+		}
 		if slots.Review != nil {
 			slots.Review(c)
 		}

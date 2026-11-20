@@ -88,7 +88,7 @@ func discrete(c *ui.Context, title, label string, selected bool, group ...string
 			}
 			capsule(c, key, b.FocusVisible())
 		}
-		ui.Text(c, title).Font(bodyFont(title)).FontSize(13).MaxLines(1).Ellipsis("…").TextColor(ink)
+		ui.Text(c, title).ZIndex(1).Font(bodyFont(title)).FontSize(13).MaxLines(1).Ellipsis("…").TextColor(ink)
 	})
 	return b
 }

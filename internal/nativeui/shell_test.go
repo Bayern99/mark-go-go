@@ -66,3 +66,38 @@ func TestHiddenTabCanBeChosenBySearchAndReturnedToByKeyboard(t *testing.T) {
 		t.Fatal("Control Tab did not return to the last active document")
 	}
 }
+
+func TestSelectedViewLabelIsPaintedAboveItsCapsule(t *testing.T) {
+	var shell nativeui.Shell
+	m := nativeui.Model{Workspace: workspace.WorkspaceSnapshot{ActiveID: "a", Documents: []workspace.DocumentInfo{{ID: "a", Name: "Paper.md", ViewMode: "preview"}}}}
+	app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, m, nativeui.Actions{}, nativeui.Slots{}) }, 1280, 820)
+	tab, ok := app.AccessByRole(ui.RoleTab, "Preview")
+	if !ok {
+		t.Fatal("missing Preview tab")
+	}
+	img := app.Image()
+	box := tab.Bounds
+	dark := 0
+	for y := int(box.Y) + 4; y < int(box.Y+box.H)-4; y++ {
+		for x := int(box.X) + 4; x < int(box.X+box.W)-4; x++ {
+			r, g, b, _ := img.At(x, y).RGBA()
+			if r < 0x7000 && g < 0x7000 && b < 0x7000 {
+				dark++
+			}
+		}
+	}
+	if dark < 10 {
+		t.Fatalf("selected Preview label was obscured (%d dark pixels)", dark)
+	}
+}
+
+func TestDraggedPathsReachTheWorkspaceInOrder(t *testing.T) {
+	var shell nativeui.Shell
+	var paths []string
+	app := ui.NewTester(func(c *ui.Context) {
+		shell.Draw(c, nativeui.Model{}, nativeui.Actions{Drop: func(files []string) { paths = append(paths, files...) }}, nativeui.Slots{})
+	}, 480, 360)
+	if !app.DropFiles(200, 120, "/tmp/library", "/tmp/library/notes.md") || len(paths) != 2 || paths[0] != "/tmp/library" || paths[1] != "/tmp/library/notes.md" {
+		t.Fatalf("dropped group was lost or reordered: %v", paths)
+	}
+}

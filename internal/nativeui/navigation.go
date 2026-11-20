@@ -131,7 +131,10 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions) {
 			}
 			for _, entry := range m.Navigation.Entries {
 				folder := entry.Kind == "folder"
-				detail := entry.Excerpt
+				detail := entry.Parent
+				if detail == "" {
+					detail = entry.Path
+				}
 				if status := stateLabel(entry.Edited, entry.Conflict, entry.Deleted, false, false); status != "" {
 					detail = status
 				}

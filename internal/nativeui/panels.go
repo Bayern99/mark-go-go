@@ -36,13 +36,17 @@ func (w *Window) Reveal(offset int) {
 	}
 	if w.Active().ViewMode == "genui" {
 		w.SetMode("preview")
+		w.documents[w.snapshot.ActiveID].returnToGenUI = true
 	}
 	w.focusSource = true
 	w.win.Invalidate()
 }
 func (w *Window) SetMode(mode string) {
 	id := w.snapshot.ActiveID
-	if id == "" || w.Active().ViewMode == mode {
+	if d := w.documents[id]; d != nil {
+		d.returnToGenUI = false
+	}
+	if id == "" || w.Source() == nil || w.Active().ViewMode == mode {
 		return
 	}
 	if mode != "genui" && mode != "preview" && mode != "markdown" {

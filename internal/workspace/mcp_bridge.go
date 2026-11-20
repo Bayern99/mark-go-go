@@ -306,6 +306,18 @@ func (h *Service) MCPDocument(root, idOrPath string) (DocumentMCPState, error) {
 	}, nil
 }
 
+func (h *Service) RevealDocument(id string, offset int) error {
+	s, err := h.docSession(id)
+	if err != nil {
+		return err
+	}
+	win := h.sessionWindow(s)
+	if win == nil || win.IsDestroyed() {
+		return errNoWorkspace
+	}
+	return DocumentRevealed.Emit(win, DocReveal{ID: id, Path: s.currentPath(), Offset: offset})
+}
+
 func (h *Service) MCPOpenDocument(ctx context.Context, root, idOrPath string, revealOffset int, hasReveal bool) (DocumentInfo, error) {
 	canonRoot := fsutil.CanonicalPath(root)
 	if canonRoot == "" {
@@ -345,11 +357,7 @@ func (h *Service) MCPOpenDocument(ctx context.Context, root, idOrPath string, re
 				return DocumentInfo{}, err
 			}
 			if hasReveal {
-				if s, sErr := h.docSession(info.ID); sErr == nil {
-					if win := h.sessionWindow(s); win != nil && !win.IsDestroyed() {
-						_ = DocumentRevealed.Emit(win, DocReveal{ID: info.ID, Path: info.Path, Offset: revealOffset})
-					}
-				}
+				_ = h.RevealDocument(info.ID, revealOffset)
 			}
 			return info, nil
 		}

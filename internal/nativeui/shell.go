@@ -8,18 +8,20 @@ import (
 )
 
 type Model struct {
-	Crumbs       []workspace.Crumb
-	Version      int
-	Workspace    workspace.WorkspaceSnapshot
-	Navigation   workspace.NavSnapshot
-	Sections     []workspace.Section
-	Recents      []workspace.RecentWorkspace
-	Search       workspace.NavSearchResult
-	Feynman, Git bool
-	Message      string
+	ReturnToGenUI bool
+	Crumbs        []workspace.Crumb
+	Version       int
+	Workspace     workspace.WorkspaceSnapshot
+	Navigation    workspace.NavSnapshot
+	Sections      []workspace.Section
+	Recents       []workspace.RecentWorkspace
+	Search        workspace.NavSearchResult
+	Feynman, Git  bool
+	Message       string
 }
 
 type Actions struct {
+	Drop                                                       func([]string)
 	RevealPath                                                 func(string)
 	Activate, CloseDocument, ActivateWorkspace, CloseWorkspace func(string)
 	OpenRecent, ToggleFolder, Filter, SetMode                  func(string)
@@ -34,21 +36,23 @@ type Slots struct {
 }
 
 type Shell struct {
-	ready, outline, leftOpen, hideResearch, rightOpen, overflow, focusFilter, checkpoints bool
-	workspaceID, activeID, query, tabQuery                                                string
-	history                                                                               []string
-	leftWidth, rightWidth                                                                 float32
-	leftToggle, rightToggle                                                               ui.Element
-	queries                                                                               map[string]string
-	scrolls                                                                               map[string]*ui.ScrollState
-	navFocus                                                                              bool
-	tabFocus                                                                              string
-	focusedTab                                                                            bool
+	ready, outline, navFocus                         bool
+	leftOpen, rightOpen, hideResearch                bool
+	overflow, focusFilter, focusedTab                bool
+	checkpoints                                      bool
+	workspaceID, activeID, query, tabQuery, tabFocus string
+	history                                          []string
+	leftWidth, rightWidth                            float32
+	leftToggle, rightToggle                          ui.Element
+	queries                                          map[string]string
+	scrolls                                          map[string]*ui.ScrollState
+	openCheckpoints                                  map[string]bool
 }
 
 func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 	if !s.ready {
 		s.queries = map[string]string{}
+		s.openCheckpoints = map[string]bool{}
 		s.leftWidth, s.ready = 248, true
 		if s.rightWidth == 0 {
 			s.rightWidth = 376
@@ -58,8 +62,11 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 		s.workspaceID, s.query = m.Workspace.Root, s.queries[m.Workspace.Root]
 	}
 	if s.activeID != m.Workspace.ActiveID {
+		if s.activeID != "" {
+			s.openCheckpoints[s.activeID] = s.checkpoints
+		}
 		s.activeID = m.Workspace.ActiveID
-		s.leftOpen, s.checkpoints = false, false
+		s.leftOpen, s.checkpoints = false, s.openCheckpoints[s.activeID]
 	}
 	s.history = slices.DeleteFunc(s.history, func(id string) bool {
 		return !slices.ContainsFunc(m.Workspace.Documents, func(d workspace.DocumentInfo) bool { return d.ID == id })
@@ -94,7 +101,11 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 		s.toggleResearch(width)
 	}
 	t := portraitTheme()
-	ui.Themed(c, &t).Fill().Children(func() {
+	root := ui.Themed(c, &t).Fill()
+	if paths := root.DroppedFiles(); len(paths) > 0 && a.Drop != nil {
+		a.Drop(slices.Clone(paths))
+	}
+	root.Children(func() {
 		ui.Column(c).Fill().Background(paper).TextColor(ink).Font("IBM Plex Sans").Children(func() {
 
 			if m.Message != "" {

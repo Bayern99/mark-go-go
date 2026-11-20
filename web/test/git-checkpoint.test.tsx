@@ -159,6 +159,44 @@ describe('Labeled Checkpoints with provenance & non-Git fallback UI', () => {
     }
   })
 
+  it('undoes Preview typing, checkpoint restore, and earlier Markdown typing with the keyboard', async () => {
+    const original = '# Draft\n\nCurrent paragraph.\n'
+    const saved = '# Draft\n\nEarlier checkpoint paragraph.\n'
+    const host = createBrowserHost(original, 'draft.md')
+    listCheckpoints.mockResolvedValue([{ id: 'snapshot', createdAt: 1700000001000 }])
+    readCheckpoint.mockResolvedValue(saved)
+    const container = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(container)
+
+    try {
+      root.render(<App host={host} plugins={[createGitPlugin(host.id)]} />)
+      await page.getByTestId('view-mode-markdown').click()
+      const beforeRestore = replaceSourceText(getSourceView(container), 'Current paragraph.', 'Current paragraph. X')
+      const expectText = (expected: string) => vi.waitFor(async () => expect((await host.load()).text).toBe(expected))
+      await expectText(beforeRestore)
+
+      await page.getByRole('button', { name: 'Checkpoints' }).click()
+      const dialog = page.getByRole('dialog', { name: 'Checkpoints' })
+      await dialog.getByRole('button', { name: 'Compare' }).click()
+      await dialog.getByRole('button', { name: 'Restore shown version' }).click()
+      await expectText(saved)
+      await page.getByTestId('view-mode-preview').click()
+      await userEvent.click(container.querySelector<HTMLElement>('.ProseMirror p')!)
+      await userEvent.keyboard('{End} Y')
+      await expectText('# Draft\n\nEarlier checkpoint paragraph. Y\n')
+
+      await userEvent.keyboard('{Control>}z{/Control}')
+      await expectText(saved)
+      await userEvent.keyboard('{Control>}z{/Control}')
+      await expectText(beforeRestore)
+      await userEvent.keyboard('{Control>}z{/Control}')
+      await expectText(original)
+    } finally {
+      root.unmount()
+      container.remove()
+    }
+  })
+
   it('restores a checkpoint that differs only in the final newline', async () => {
     const original = '# Draft\n\nSame paragraph.'
     const saved = original + '\n'

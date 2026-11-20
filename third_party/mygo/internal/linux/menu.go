@@ -90,13 +90,20 @@ func initMenuCallbacks() {
 				break
 			}
 		}
-		if cmd, ok := editCommands[itemRoles[id]]; ok {
+		role := itemRoles[id]
+		if cmd, ok := editCommands[role]; ok {
 			if w == nil {
 				for _, x := range b.windows {
 					if !x.closed && gtkWindowIsActive(x.win) {
 						w = x
 						break
 					}
+				}
+			}
+			if w != nil && w.surface == nil && (role == "undo" || role == "redo") {
+				if h, ok := w.h.(interface{ HandlesDocumentHistory() bool }); ok && h.HandlesDocumentHistory() {
+					w.h.MenuItemClicked(id)
+					return
 				}
 			}
 			var v *window
@@ -108,7 +115,6 @@ func initMenuCallbacks() {
 				webkitWebViewExecuteEditingCommand(v.web, cs(cmd))
 			} else if w != nil {
 				if w.surface != nil {
-					role := itemRoles[id]
 					w.h.SurfaceEvent(platform.SurfaceEvent{Kind: platform.SurfaceCommand, Text: role})
 				} else {
 					webkitWebViewExecuteEditingCommand(w.web, cs(cmd))

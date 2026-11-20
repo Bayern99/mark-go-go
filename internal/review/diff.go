@@ -53,28 +53,33 @@ type textLine struct {
 }
 
 func splitTextLines(text string) []textLine {
-	if text == "" {
-		return nil
-	}
 	var out []textLine
-	for raw := range strings.Lines(text) {
-		out = append(out, textLine{
-			raw:     raw,
-			content: trimLineEnding(raw),
-		})
+	for text != "" {
+		i := strings.IndexAny(text, "\r\n")
+		if i < 0 {
+			out = append(out, textLine{raw: text, content: text})
+			break
+		}
+		end := i + 1
+		if text[i] == '\r' && end < len(text) && text[end] == '\n' {
+			end++
+		}
+		out = append(out, textLine{raw: text[:end], content: text[:i]})
+		text = text[end:]
 	}
 	return out
 }
 
-func trimLineEnding(s string) string {
-	s = strings.TrimSuffix(s, "\n")
-	s = strings.TrimSuffix(s, "\r")
-	return s
+func endsLine(s string) bool {
+	return strings.HasSuffix(s, "\n") || strings.HasSuffix(s, "\r")
 }
 
 func defaultLineEnding(text string) string {
 	if strings.Contains(text, "\r\n") {
 		return "\r\n"
+	}
+	if !strings.Contains(text, "\n") && strings.Contains(text, "\r") {
+		return "\r"
 	}
 	return "\n"
 }
@@ -104,14 +109,11 @@ type changeCluster struct {
 	inserts  []editOp
 }
 
-func myersEditScript(a, b []textLine, strictRaw bool) []editOp {
+func myersEditScript(a, b []textLine) []editOp {
 	n := len(a)
 	m := len(b)
 	equal := func(x, y int) bool {
-		if strictRaw {
-			return a[x].raw == b[y].raw
-		}
-		return a[x].content == b[y].content
+		return a[x].raw == b[y].raw
 	}
 
 	prefix := 0
@@ -137,7 +139,7 @@ func myersEditScript(a, b []textLine, strictRaw bool) []editOp {
 	midA := a[prefix : n-suffix]
 	midB := b[prefix : m-suffix]
 	if len(midA) > 0 || len(midB) > 0 {
-		midOps := myersCore(midA, midB, prefix, prefix, strictRaw)
+		midOps := myersCore(midA, midB, prefix, prefix)
 		ops = append(ops, midOps...)
 	}
 
@@ -155,19 +157,37 @@ func myersEditScript(a, b []textLine, strictRaw bool) []editOp {
 	return ops
 }
 
-func myersCore(a, b []textLine, offsetA, offsetB int, strictRaw bool) []editOp {
+func myersCore(a, b []textLine, offsetA, offsetB int) []editOp {
 	n := len(a)
 	m := len(b)
+	lines := make(map[string]struct{}, n)
+	for _, line := range a {
+		lines[line.raw] = struct{}{}
+	}
+	shared := false
+	for _, line := range b {
+		if _, ok := lines[line.raw]; ok {
+			shared = true
+			break
+		}
+	}
+	if !shared {
+		ops := make([]editOp, 0, n+m)
+		for i, line := range a {
+			ops = append(ops, editOp{kind: opDelete, oldIdx: offsetA + i, newIdx: offsetB, text: line.content, raw: line.raw})
+		}
+		for i, line := range b {
+			ops = append(ops, editOp{kind: opInsert, oldIdx: offsetA + n, newIdx: offsetB + i, text: line.content, raw: line.raw})
+		}
+		return ops
+	}
 	maxD := n + m
 	size := 2*maxD + 1
 	v := make([]int, size)
 	var trace [][]int
 
 	equal := func(x, y int) bool {
-		if strictRaw {
-			return a[x].raw == b[y].raw
-		}
-		return a[x].content == b[y].content
+		return a[x].raw == b[y].raw
 	}
 
 	foundD := maxD
@@ -274,17 +294,7 @@ func extractClusters(before, after string) ([]textLine, []textLine, []editOp, []
 	}
 	a := splitTextLines(before)
 	b := splitTextLines(after)
-	ops := myersEditScript(a, b, false)
-	hasChange := false
-	for _, op := range ops {
-		if op.kind != opEqual {
-			hasChange = true
-			break
-		}
-	}
-	if !hasChange {
-		ops = myersEditScript(a, b, true)
-	}
+	ops := myersEditScript(a, b)
 
 	var clusters []changeCluster
 	i := 0

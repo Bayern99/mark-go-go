@@ -1,6 +1,8 @@
 package review
 
 import (
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -20,6 +22,36 @@ func TestQueueKeepsDifferentTargetsWhenIDsCoincide(t *testing.T) {
 	}
 }
 
+func TestConcurrentTargetedSubmissionsKeepBothEdits(t *testing.T) {
+	root := t.TempDir()
+	base := "first\n" + strings.Repeat("keep\n", 3000) + "last\n"
+	for range 10 {
+		s := NewService()
+		start := make(chan struct{})
+		errs := make(chan error, 2)
+		for _, old := range []string{"first", "last"} {
+			go func() {
+				<-start
+				_, err := s.SubmitProposal(ProposeInput{
+					WorkspaceRoot: root, Path: "doc.md", BaseText: base,
+					OldText: old, NewText: strings.ToUpper(old),
+				})
+				errs <- err
+			}()
+		}
+		close(start)
+		for range 2 {
+			if err := <-errs; err != nil {
+				t.Fatal(err)
+			}
+		}
+		p := s.ListProposals(root)
+		if len(p) != 1 || !strings.HasPrefix(p[0].ProposedText, "FIRST\n") || !strings.HasSuffix(p[0].ProposedText, "\nLAST\n") {
+			t.Fatal("one successful concurrent targeted edit disappeared")
+		}
+	}
+}
+
 func TestProposalMergesLiveInsertionsAtBothReplacementBoundaries(t *testing.T) {
 	s := NewService()
 	root := t.TempDir()
@@ -33,6 +65,43 @@ func TestProposalMergesLiveInsertionsAtBothReplacementBoundaries(t *testing.T) {
 	}
 	if got.HasConflict || got.MergedText != "above\nbefore\nnew\nafter\nbelow\n" {
 		t.Fatalf("boundary insertions: conflict=%t, merged=%q", got.HasConflict, got.MergedText)
+	}
+}
+
+func TestProposalPreservesLineEndings(t *testing.T) {
+	for _, tc := range []struct {
+		name, base, proposed string
+		changes              int
+	}{
+		{"final newline with content", "old\nkeep\nlast", "new\nkeep\nlast\n", 2},
+		{"CR-only Markdown", "old\rkeep\rlast\r", "new\rkeep\rlast\r", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := NewService()
+			p, err := s.SubmitProposal(ProposeInput{WorkspaceRoot: t.TempDir(), Path: "doc.md", BaseText: tc.base, ProposedText: tc.proposed})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p.MergedText != tc.proposed || len(p.Hunks) != tc.changes || p.Hunks[0].Lines[0].Text != "old" {
+				t.Fatalf("merge=%q, hunks=%+v", p.MergedText, p.Hunks)
+			}
+		})
+	}
+}
+
+func TestWholeDocumentRewriteUsesBoundedMemory(t *testing.T) {
+	const lines = 2500
+	base := strings.Repeat("old line\n", lines)
+	after := strings.Repeat("new line\n", lines)
+	var before, end runtime.MemStats
+	runtime.ReadMemStats(&before)
+	hunks := ComputeDiff(base, after)
+	runtime.ReadMemStats(&end)
+	if len(hunks) != 1 || hunks[0].ChangeOldCount != lines || hunks[0].ChangeNewCount != lines {
+		t.Fatalf("want one %d-line replacement, got %d hunks", lines, len(hunks))
+	}
+	if bytes := end.TotalAlloc - before.TotalAlloc; bytes > 16<<20 {
+		t.Fatalf("whole-document rewrite allocated %d bytes; bound is 16 MiB", bytes)
 	}
 }
 

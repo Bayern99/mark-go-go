@@ -124,7 +124,7 @@ func resolveProposedText(base string, input ProposeInput) (string, error) {
 		}
 		if input.NewText != "" {
 			b.WriteString(input.NewText)
-			if !strings.HasSuffix(input.NewText, "\n") && (endIdx < len(lines) || strings.HasSuffix(base, "\n")) {
+			if !endsLine(input.NewText) && (endIdx < len(lines) || endsLine(base)) {
 				b.WriteString(nl)
 			}
 		}
@@ -166,27 +166,27 @@ func (s *Service) SubmitProposal(input ProposeInput) (ChangeProposal, error) {
 		}
 	}
 
-	baseForResolve := input.BaseText
 	if existingMatch != nil && existingMatch.proposal.BaseText == input.BaseText && input.ProposedText == "" && input.OldText != "" {
 		if combined, err := resolveProposedText(existingMatch.proposal.ProposedText, input); err == nil {
 			input.ProposedText = combined
 		}
 	}
-	s.mu.Unlock()
 
-	proposed, err := resolveProposedText(baseForResolve, input)
+	proposed, err := resolveProposedText(input.BaseText, input)
 	if err != nil {
+		s.mu.Unlock()
 		return ChangeProposal{}, err
 	}
 	if proposed == input.BaseText {
+		s.mu.Unlock()
 		return ChangeProposal{}, errors.New("The proposed edit makes no changes to the document.")
 	}
 	_, _, _, clusters := extractClusters(input.BaseText, proposed)
 	if len(clusters) == 0 {
+		s.mu.Unlock()
 		return ChangeProposal{}, errors.New("The proposed edit makes no changes to the document.")
 	}
 
-	s.mu.Lock()
 	id := input.ID
 	for id == "" || s.findLocked(rootKey, id) != nil {
 		s.seq++
@@ -430,7 +430,7 @@ func clustersConflict(prop changeCluster, user changeCluster) (bool, bool) {
 	if prop.oldStart == user.oldStart && prop.oldEnd == user.oldEnd && len(prop.inserts) == len(user.inserts) {
 		same := true
 		for i := range prop.inserts {
-			if prop.inserts[i].text != user.inserts[i].text {
+			if prop.inserts[i].raw != user.inserts[i].raw {
 				same = false
 				break
 			}
@@ -672,8 +672,8 @@ func recomputeProposalLocked(sp *storedProposal, liveText string) {
 	}
 
 	nl := defaultLineEnding(liveText)
-	if nl == "\n" && strings.Contains(sp.proposal.ProposedText, "\r\n") && !strings.Contains(liveText, "\n") {
-		nl = "\r\n"
+	if !strings.ContainsAny(liveText, "\r\n") {
+		nl = defaultLineEnding(sp.proposal.ProposedText)
 	}
 	var outRaw []string
 	cursor := 0
@@ -697,7 +697,7 @@ func recomputeProposalLocked(sp *storedProposal, liveText string) {
 
 	var b strings.Builder
 	for i, raw := range outRaw {
-		if i+1 < len(outRaw) && !strings.HasSuffix(raw, "\n") {
+		if i+1 < len(outRaw) && !endsLine(raw) {
 			b.WriteString(raw)
 			b.WriteString(nl)
 		} else {

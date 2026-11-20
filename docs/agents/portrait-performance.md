@@ -100,3 +100,5 @@ python3 scripts/portrait/summarize.py "$evidence/narrow"
 同一套布局流程在两个版本均保存 1280、1180、1179、641、640 和 480 点宽的 Preview，另保存 1280 和 480 点宽的 Markdown。截图中，默认宽窗的首标题约从距顶 219 点移至 177 点，模式往返后的最小窗约从 143 点移至 145 点。记录保留了这些可见差异以及输入、滚动和切换后的画面。
 
 原始档案为采样 Mac 的 `~/Library/Application Support/Mark Go Go Benchmarks/ab-5k.c7XbVH/`。其中四组正式试验保存 `events.jsonl`、状态、夹具和截图，`paired-summary.txt` 记录汇总与字节复核。`old-layout-clear/` 和 `native-layout-clear/` 保留将指针移出窗后的无遮挡布局对照。候选一次试跑因 macOS Ctrl+Tab 没有切换标签而终止。补齐原生按键传递后重新开始标准流程，试跑资料仍在 `native-calibration/`。
+
+合入 Preview 与 GenUI 评审修复后，`b6e6f97` 的干净正式构建在两种宽度各复跑一轮。同一驱动确认每轮的五次输入、七次切换、三个滚动序列和保存字节。两轮均未观察到专属 WebKit 进程，宽窗进程表还记录到系统的 Metal 编译和语音合成服务。这两轮单列在 `recheck-b6e6f97/`，未计入上表的配对统计。

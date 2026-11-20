@@ -37,7 +37,7 @@ func (s *Server) handleToolsList() any {
 						"newText":      map[string]any{"type": "string", "description": "Replacement text for oldText or startLine..endLine"},
 						"startLine":    map[string]any{"type": "integer", "description": "1-based start line for targeted replacement"},
 						"endLine":      map[string]any{"type": "integer", "description": "1-based inclusive end line for targeted replacement"},
-						"baseVersion":  map[string]any{"type": "integer", "description": "Optional base buffer version observed when reading the document"},
+						"baseVersion":  map[string]any{"type": "integer", "description": "Optional base version observed when reading the document"},
 					},
 				},
 			},
@@ -188,7 +188,7 @@ func (s *Server) toolProposeEdit(binding *sessionBinding, rawArgs json.RawMessag
 		NewText      string `json:"newText"`
 		StartLine    int    `json:"startLine"`
 		EndLine      int    `json:"endLine"`
-		BaseVersion  *int   `json:"baseVersion"`
+		BaseVersion  *int64 `json:"baseVersion"`
 	}
 	if err := json.Unmarshal(rawArgs, &args); err != nil {
 		return toolError("invalid arguments: " + err.Error()), nil

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -183,6 +184,57 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 		})
 		if !result.IsError || len(revSvc.ListProposals(root)) != 1 {
 			t.Errorf("stale line range accepted: %+v", result)
+		}
+	})
+	t.Run("unopened document rejects a stale disk version", func(t *testing.T) {
+		const rel = "unopened.md"
+		path := filepath.Join(root, rel)
+		const before = "# Draft\n\nTarget passage.\n"
+		const after = "# Draft\n\nInserted line.\nTarget passage.\n"
+		if err := os.WriteFile(path, []byte(before), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		read := func() workspace.DocumentMCPState {
+			t.Helper()
+			res := callMCPJSON(t, srv.URL(), token, sid, "resources/read", map[string]any{"uri": "markgogo://document/" + rel})
+			if res.Error != nil {
+				t.Fatalf("read disk document: %+v", res.Error)
+			}
+			var payload struct {
+				Contents []mcpTextResourceContents
+			}
+			raw, err := json.Marshal(res.Result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(raw, &payload); err != nil || len(payload.Contents) != 1 {
+				t.Fatalf("unexpected resource payload: %s (%v)", raw, err)
+			}
+			var doc workspace.DocumentMCPState
+			if err := json.Unmarshal([]byte(payload.Contents[0].Text), &doc); err != nil || doc.Open {
+				t.Fatalf("expected unopened document: %+v (%v)", doc, err)
+			}
+			return doc
+		}
+		oldDoc := read()
+		if err := os.WriteFile(path, []byte(after), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		got := callTool(t, srv.URL(), token, sid, "propose_edit", map[string]any{
+			"path": rel, "baseVersion": oldDoc.Version, "startLine": 3, "endLine": 3, "newText": "Updated passage.",
+		})
+		if !got.IsError || !strings.Contains(got.Content[0].Text, "document version changed") {
+			t.Fatalf("stale disk range accepted (version %d): %+v", oldDoc.Version, got)
+		}
+		current := read()
+		if current.Version == 0 || current.Version == oldDoc.Version || current.Version != read().Version {
+			t.Fatalf("disk versions are not stable by content: old=%d, current=%d", oldDoc.Version, current.Version)
+		}
+		fresh := callTool(t, srv.URL(), token, sid, "propose_edit", map[string]any{
+			"path": rel, "baseVersion": current.Version, "startLine": 4, "endLine": 4, "newText": "Updated passage.",
+		})
+		if fresh.IsError {
+			t.Fatalf("fresh disk range rejected: %+v", fresh)
 		}
 	})
 

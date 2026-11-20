@@ -1,4 +1,12 @@
 
+.moving-capsule {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
 .mgo-tooltip {
   z-index: 60;
   max-width: 320px;
@@ -38,7 +46,15 @@
 }
 
 @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
-  .mgo-tooltip {
+  .moving-capsule {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.mgo-tooltip {
     background: var(--paper);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;

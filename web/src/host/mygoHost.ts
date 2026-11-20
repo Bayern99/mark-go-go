@@ -31,7 +31,6 @@ import {
 } from "./generated/mygo";
 import { cancelled, failureOf, GenerationError, isFailureKind } from "./generationError";
 import { applyNativeEdit } from "../editor/nativeEdit";
-import { validateGeneratedView, type GeneratedViewVerdict } from "../plugins/genui/a2ui";
 
 function asNativeCommand(cmd: WireNativeCommand): NativeCommand {
   return { id: cmd.id, command: cmd.command as NativeCommandName, attempt: cmd.attempt };
@@ -248,18 +247,6 @@ export function reportNativeEditState(id: string, canUndo: boolean, canRedo: boo
   void WorkspaceHost.setNativeEditState(id, canUndo, canRedo);
 }
 
-declare global {
-  interface Window {
-    __mgoValidateGeneratedView?: (raw: string) => Promise<GeneratedViewVerdict>
-  }
-}
-
-export function installGeneratedViewValidator(): void {
-  window.__mgoValidateGeneratedView = async (raw: string) => validateGeneratedView(raw)
-}
-
-installGeneratedViewValidator()
-
 async function flushDocument(id: string): Promise<void> {
   const read = flushers.get(id);
   if (!read) return;
@@ -275,6 +262,9 @@ export function createMyGoHost(): WorkspaceAdapter {
     },
     subscribe(fn: (snap: WorkspaceSnapshot) => void): Disposable {
       return disposable(events.workspaceChanged.on((snap) => fn(workspaceSnapshot(snap))));
+    },
+    subscribeReveal(fn): Disposable {
+      return disposable(events.docReveal.on(fn));
     },
     open(path: string): Promise<DocumentInfo> {
       return WorkspaceHost.open(path).then(documentInfo);

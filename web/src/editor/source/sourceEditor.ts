@@ -1,4 +1,4 @@
-import { defaultKeymap, history, historyKeymap, redo, redoDepth, undo, undoDepth } from '@codemirror/commands'
+import { defaultKeymap, history, historyKeymap, isolateHistory, redo, redoDepth, undo, undoDepth } from '@codemirror/commands'
 import { markdown } from '@codemirror/lang-markdown'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { Compartment, EditorState } from '@codemirror/state'
@@ -19,6 +19,7 @@ export interface SourceEditor {
   setText(text: string): void
   setReadonly(value: boolean): void
   reveal(from: number, to?: number): boolean
+  replace(text: string): void
   insert(at: number, text: string): void
   canUndo(): boolean
   canRedo(): boolean
@@ -128,6 +129,12 @@ export function createSourceEditor(options: SourceEditorOptions): SourceEditor {
       })
       view.focus()
       return true
+    },
+    replace(text) {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: text },
+        annotations: isolateHistory.of('full'),
+      })
     },
     insert(at, text) {
       view.dispatch({ changes: { from: at, insert: text } })

@@ -1,127 +1,155 @@
-import { useRef, useState, useSyncExternalStore } from 'react'
-import type { ViewRegistry } from '../core/ViewRegistry'
-import { MovingCapsule } from './MovingCapsule'
-import type { ViewRegistration, ViewStatusSource } from '../core/types'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { ViewRegistry } from '../core/ViewRegistry'
 import { useViews, ViewHost } from './ViewHost'
+import {
+  readSavedRightWidth,
+  RIGHT_DEFAULT,
+  RIGHT_MAX,
+  RIGHT_MAX_RATIO,
+  RIGHT_MIN,
+  saveRightWidth,
+} from './paneLayout'
 
-const emptySubscribe = () => () => {}
-const emptySnapshot = () => null
-
-function RightTabDot({
-  viewId,
-  status,
+function ResearchDivider({
+  paneWidth,
+  targetWidth,
+  maxWidth,
+  panelTitle,
+  onWidthChange,
 }: {
-  viewId: string
-  status?: ViewStatusSource
-}): React.ReactElement | null {
-  const dot = useSyncExternalStore(
-    status ? status.subscribe : emptySubscribe,
-    status ? status.getSnapshot : emptySnapshot,
-  )
-  if (!dot) return null
+  paneWidth: number
+  targetWidth: number
+  maxWidth: number
+  panelTitle: string
+  onWidthChange: (width: number) => void
+}) {
+  const drag = useRef<{ x: number; width: number } | null>(null)
+  const latestWidth = useRef(targetWidth)
+  latestWidth.current = targetWidth
+
+  const resize = (size: number) => {
+    const value = Math.min(maxWidth, Math.max(RIGHT_MIN, size))
+    latestWidth.current = value
+    onWidthChange(value)
+    return value
+  }
+
   return (
-    <span
-      className={`rdot${dot.tone === 'danger' ? ' bad' : ''}`}
-      data-testid={`right-tab-dot-${viewId}`}
-      data-tone={dot.tone}
-      title={dot.title}
+    <div
+      role="separator"
+      aria-label={`Resize ${panelTitle.toLowerCase()} panel`}
+      aria-orientation="vertical"
+      aria-valuemin={RIGHT_MIN}
+      aria-valuemax={maxWidth}
+      aria-valuenow={Math.round(paneWidth)}
+      tabIndex={0}
+      className="fy-resize"
+      onPointerDown={(e) => {
+        if (e.button !== 0) return
+        drag.current = { x: e.clientX, width: e.currentTarget.parentElement!.getBoundingClientRect().width }
+        e.currentTarget.setPointerCapture(e.pointerId)
+        e.preventDefault()
+      }}
+      onPointerMove={(e) => {
+        if (drag.current) resize(drag.current.width + drag.current.x - e.clientX)
+      }}
+      onLostPointerCapture={() => {
+        drag.current = null
+        saveRightWidth(latestWidth.current)
+      }}
+      onDoubleClick={() => saveRightWidth(resize(RIGHT_DEFAULT))}
+      onKeyDown={(e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+        e.preventDefault()
+        const current = e.currentTarget.parentElement!.getBoundingClientRect().width
+        saveRightWidth(resize(current + (e.key === 'ArrowLeft' ? 24 : -24)))
+      }}
     />
   )
 }
 
-function orderRightViews(entries: ViewRegistration[]): ViewRegistration[] {
-  const outlineIndex = entries.findIndex((view) => view.id === 'outline.panel')
-  if (outlineIndex <= 0) return entries
-  const outline = entries[outlineIndex] as ViewRegistration
-  return [outline, ...entries.slice(0, outlineIndex), ...entries.slice(outlineIndex + 1)]
-}
-
 export function RightPane({
   views,
-  activeId,
-  onSelect,
-  open = true,
-  floating = false,
+  children,
+  open,
+  floating,
   onClose,
+  width: controlledWidth,
+  targetWidth: controlledTargetWidth,
+  maxWidth: controlledMaxWidth,
+  onWidthChange,
+  panelId = 'right-pane-panel',
 }: {
-  views: ViewRegistry
-  activeId?: string | null
-  onSelect?: (id: string) => void
-  open?: boolean
-  floating?: boolean
-  onClose?: () => void
-}): React.ReactElement | null {
-  const rawEntries = useViews(views, 'right')
-  const entries = orderRightViews(rawEntries)
-  const [internalId, setInternalId] = useState<string | null>(null)
-  const tabsRef = useRef<HTMLDivElement>(null)
+  views?: ViewRegistry
+  children?: React.ReactNode
+  open: boolean
+  floating: boolean
+  onClose: () => void
+  width?: number
+  targetWidth?: number
+  maxWidth?: number
+  onWidthChange?: (width: number) => void
+  panelId?: string
+}) {
+  const emptyViews = useMemo(() => new ViewRegistry(), [])
+  const rightViews = useViews(views ?? emptyViews, 'right')
+  const activeView = rightViews[0] ?? null
+  const [localWidth, setLocalWidth] = useState(readSavedRightWidth)
+  const targetWidth = controlledTargetWidth ?? localWidth
+  const paneWidth = floating ? targetWidth : (controlledWidth ?? localWidth)
+  const fallbackMax =
+    typeof window === 'undefined'
+      ? RIGHT_MAX
+      : Math.max(RIGHT_MIN, Math.min(RIGHT_MAX, Math.floor(window.innerWidth * RIGHT_MAX_RATIO)))
+  const maxWidth = controlledMaxWidth ?? fallbackMax
 
-  if (entries.length === 0) return null
+  useLayoutEffect(() => {
+    document.documentElement.style.setProperty('--research-width', `${paneWidth}px`)
+  }, [paneWidth])
 
-  const selectedId = activeId !== undefined ? activeId : internalId
-  const active = entries.find((view) => view.id === selectedId) ?? (entries[0] as ViewRegistration)
+  if (views && rightViews.length === 0 && !children) return null
 
-  const handleSelect = (id: string) => {
-    setInternalId(id)
-    onSelect?.(id)
-  }
+  const title = activeView?.title ?? 'Panel'
+  const handleWidthChange = onWidthChange ?? setLocalWidth
 
   return (
     <aside
-      className={`right-pane rp${floating ? ' r-float' : ''}`}
+      id={panelId}
+      className={`right-pane fy-rail${floating ? ' r-float' : ''}`}
       data-testid="right-pane"
-      aria-label="Document panel"
+      aria-label={title}
       hidden={!open}
+      style={!floating ? { width: paneWidth, minWidth: paneWidth, maxWidth: paneWidth } : undefined}
     >
-      <div className="rp-bar">
-        <div className="seg" role="tablist" aria-label="Panel" ref={tabsRef}>
-          <MovingCapsule trackRef={tabsRef} watch={[selectedId, open, floating, entries.length]} />
-          {entries.map((view) => {
-            const isSelected = view.id === active.id
-            return (
-              <button
-                key={view.id}
-                type="button"
-                role="tab"
-                data-testid={`right-tab-${view.id}`}
-                aria-selected={isSelected}
-                onClick={() => handleSelect(view.id)}
-              >
-                <span>{view.title}</span>
-                <RightTabDot viewId={view.id} status={view.status} />
-              </button>
-            )
-          })}
-        </div>
-        {floating && onClose ? (
-          <button
-            type="button"
-            className="pill icon quiet rp-close"
-            data-testid="right-pane-close"
-            aria-label="Close document panel"
-            title="Close panel (Esc)"
-            autoFocus
-            onClick={onClose}
-          >
-            <i className="ph ph-x" aria-hidden="true" />
-          </button>
-        ) : null}
-      </div>
-      <div
-        className="rp-body right-view"
-        data-view-id={active.id}
-        role="tabpanel"
-        aria-label={active.title}
-      >
-        <ViewHost
-          key={active.id}
-          view={active}
-          className="right-view-body"
-          scrollable={active.id !== 'genui.panel'}
-          edgeFade={active.id !== 'genui.panel'}
-          contentClassName="right-view-content"
+      {!floating && (
+        <ResearchDivider
+          paneWidth={paneWidth}
+          targetWidth={targetWidth}
+          maxWidth={maxWidth}
+          panelTitle={title}
+          onWidthChange={handleWidthChange}
         />
-      </div>
+      )}
+      {floating && (
+        <button
+          type="button"
+          className="pill icon quiet rp-close"
+          data-testid="right-pane-close"
+          aria-label={`Close ${title}`}
+          title={`Close ${title} (Esc)`}
+          autoFocus
+          onClick={onClose}
+        >
+          <i className="ph ph-x" aria-hidden="true" />
+        </button>
+      )}
+      {activeView ? (
+        <div className="right-view-host" data-view-id={activeView.id}>
+          <ViewHost key={activeView.id} view={activeView} className="right-view" />
+        </div>
+      ) : (
+        children
+      )}
     </aside>
   )
 }

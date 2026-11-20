@@ -1,0 +1,11 @@
+# ADR 0007 · 工作区研究会话与单文档检查点
+
+> Note: 本 ADR 中关于 `pi-acp`、Pi RPC 中继与 `sandbox-exec` 的决策已由 [ADR 0008](0008-direct-feynman-rpc-and-gui-shell.md) 取代；单文档 Git 检查点与变更审阅原则继续有效。
+
+研究者会在计划、草稿和来源记录之间切换。每个文件夹工作区因此保留同一场 Feynman 会话，插件通过 pi-acp 恢复会话，并使用 Feynman 的模型和认证配置。
+
+研究栏从已运行的 Feynman 读取工作流、Skills 与扩展清单。pi-acp 管理模型、认证、会话和工具流。宿主的 Pi RPC 中继把同一进程中的扩展表单、预填和可见消息送入研究栏，并在纯扩展操作完成后恢复输入。 [旧宿主](https://github.com/Bayern99/mark-go-go/blob/d7ab3257a14960480629b320549ba0c4d3b1b1ec/research_ui.go) · [旧中继](https://github.com/Bayern99/mark-go-go/blob/d7ab3257a14960480629b320549ba0c4d3b1b1ec/scripts/feynman-rpc.mjs) · [现行宿主](../../internal/agent/feynman/research.go) · [现行 RPC](../../internal/agent/feynman/rpc.go)
+
+Feynman 的工具在本机写文件，工具通知可能晚于写入。研究进程在独立目录生成 Markdown，宿主将新文件发布到工作区。修改已有原文时，编辑器提供当前缓冲区副本，用户审阅差异后应用。编辑器在应用时核对文档身份、版本和正文，并通过 Markdown 编辑事务保留撤销能力。
+
+Git 检查点面向正在编辑的一份原文。宿主按仓库内的路径将已保存的文字记录为独立本地引用，让该文件的版本恢复与同仓库的其他暂存工作互不干扰。恢复使用相同的编辑事务。

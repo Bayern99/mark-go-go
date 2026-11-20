@@ -1,12 +1,37 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ViewRegistry } from '../core/ViewRegistry'
-import type { ViewLocation, ViewRegistration } from '../core/types'
+import type { ViewBadgeSource, ViewLocation, ViewRegistration, ViewStatusSource } from '../core/types'
 import { ScrollArea } from './ScrollArea'
+
+export function ViewStatusIndicator({ status, testId }: { status: ViewStatusSource; testId: string }) {
+  const dot = useSyncExternalStore(status.subscribe, status.getSnapshot)
+  if (!dot) return null
+  return (
+    <span
+      className={`rdot${dot.tone === 'danger' ? ' bad' : ''}`}
+      data-testid={testId}
+      data-tone={dot.tone}
+      role="img"
+      aria-label={dot.title ?? (dot.tone === 'danger' ? 'Error' : 'Warning')}
+      title={dot.title}
+    />
+  )
+}
+
+export function ViewBadgeIndicator({ badge, testId }: { badge: ViewBadgeSource; testId: string }) {
+  const count = useSyncExternalStore(badge.subscribe, badge.getSnapshot)
+  if (!count || count <= 0) return null
+  return (
+    <span className="rp-badge meta" data-testid={testId} aria-label={`${count} pending`}>
+      {count}
+    </span>
+  )
+}
 
 export function useViews(views: ViewRegistry, location: ViewLocation): ViewRegistration[] {
   const [entries, setEntries] = useState(() => select(views, location))
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const update = () => setEntries(select(views, location))
     update()
     const subscription = views.onDidChange(update)

@@ -17,10 +17,10 @@ export function createOutlinePlugin(): AppPlugin {
       ctx.views.register({
         id: 'outline.panel',
         title: 'Outline',
-        location: 'right',
-        mount(el: HTMLElement) {
+        location: 'left',
+        mount(el, scrollElement) {
           const root = createRoot(el)
-          root.render(<OutlinePanel ctx={ctx} store={store} />)
+          root.render(<OutlinePanel ctx={ctx} store={store} scrollElement={scrollElement} />)
           return {
             dispose() {
               queueMicrotask(() => root.unmount())

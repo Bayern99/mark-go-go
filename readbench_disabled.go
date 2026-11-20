@@ -2,4 +2,6 @@
 
 package main
 
-func configureReadBench(_ *documentHost) {}
+import "github.com/Bayern99/mark-go-go/internal/workspace"
+
+func configureReadBench(_ *workspace.Service) {}

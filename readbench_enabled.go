@@ -18,9 +18,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Bayern99/mark-go-go/internal/acp"
+	"github.com/Bayern99/mark-go-go/internal/genui"
+	"github.com/Bayern99/mark-go-go/internal/workspace"
 )
 
-func configureReadBench(h *documentHost) {
+func configureReadBench(h *workspace.Service) {
 	root := os.Getenv("MARKGOGO_READBENCH_DIR")
 	if root == "" {
 		return
@@ -31,7 +35,7 @@ func configureReadBench(h *documentHost) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		log.Fatal(err)
 	}
-	h.prepareJob = func(job *generationJob) {
+	h.SetPrepareJob(func(job *acp.GenerationJob) {
 		var active struct {
 			RunID        string `json:"runId"`
 			TestID       string `json:"testId"`
@@ -114,14 +118,14 @@ func configureReadBench(h *documentHost) {
 		switch active.Strategy {
 		case "", "full":
 		case "jev-controlled":
-			job.Prepare = func(ctx context.Context, req GenerateRequest, dir string) (string, func([]byte) ([]byte, error), error) {
+			job.Prepare = func(ctx context.Context, req genui.GenerateRequest, dir string) (string, func([]byte) ([]byte, error), error) {
 				if req.Mode != "full" {
 					return "", nil, fmt.Errorf("jev-controlled experiment supports full generation only")
 				}
 				return prepareControlledReading(ctx, req, dir, observe)
 			}
 		default:
-			job.Prepare = func(context.Context, GenerateRequest, string) (string, func([]byte) ([]byte, error), error) {
+			job.Prepare = func(context.Context, genui.GenerateRequest, string) (string, func([]byte) ([]byte, error), error) {
 				return "", nil, fmt.Errorf("unknown ReadBench strategy %q", active.Strategy)
 			}
 		}
@@ -160,7 +164,7 @@ func configureReadBench(h *documentHost) {
 			info["vcs"] = vcs
 		}
 		observe("app", info)
-	}
+	})
 }
 
 var readBenchRunID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,150}$`)

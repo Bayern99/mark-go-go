@@ -4,12 +4,281 @@ import { bind, event, type Channel } from "mygo-runtime";
 
 // ---- Types ----
 
+export interface CLIAlphaAnnotateResult {
+  command: string;
+  parsed: boolean;
+  rawOutput: string;
+  exitCode: number;
+  error?: string;
+  paperId?: string;
+  note?: string;
+  annotations: CLIAlphaAnnotation[];
+}
+
+export interface CLIAlphaAnnotation {
+  paperId: string;
+  note: string;
+  updatedAt?: string;
+}
+
+export interface CLIAlphaPaper {
+  id: string;
+  title: string;
+  authors?: string;
+  published?: string;
+  url?: string;
+  summary?: string;
+  snippet?: string;
+}
+
+export interface CLIAlphaPaperResult {
+  command: string;
+  parsed: boolean;
+  rawOutput: string;
+  exitCode: number;
+  error?: string;
+  paperId: string;
+  title?: string;
+  content?: string;
+  annotation?: string;
+  fullText: boolean;
+}
+
+export interface CLIAlphaSearchGroup {
+  mode: string;
+  papers: CLIAlphaPaper[];
+}
+
+export interface CLIAlphaSearchResult {
+  command: string;
+  parsed: boolean;
+  rawOutput: string;
+  exitCode: number;
+  error?: string;
+  query: string;
+  mode: string;
+  papers: CLIAlphaPaper[];
+  groups?: CLIAlphaSearchGroup[];
+}
+
+export interface CLIAlphaStatusResult {
+  command: string;
+  parsed: boolean;
+  rawOutput: string;
+  exitCode: number;
+  error?: string;
+  loggedIn: boolean;
+  account?: string;
+  statusText?: string;
+}
+
+export interface CLICommandResult {
+  command: string;
+  parsed: boolean;
+  rawOutput: string;
+  exitCode: number;
+  error?: string;
+  summary?: string;
+}
+
+export interface CLIDoctorResult {
+  command: string;
+  parsed: boolean;
+  rawOutput: string;
+  exitCode: number;
+  error?: string;
+  entries: CLIKeyValue[];
+  issues: string[];
+  healthy: boolean;
+}
+
+export interface CLIKeyValue {
+  key: string;
+  value: string;
+}
+
+export interface CLIMCPAddInput {
+  name: string;
+  transport: string;
+  url?: string;
+  command?: string;
+  args?: string[];
+  headers?: string[];
+  env?: string[];
+  cwd?: string;
+  bearerTokenEnvVar?: string;
+  exposure?: string;
+  description?: string;
+  local?: boolean;
+}
+
+export interface CLIMCPListResult {
+  command: string;
+  parsed: boolean;
+  rawOutput: string;
+  exitCode: number;
+  error?: string;
+  servers: CLIMCPServer[];
+  errors: string[];
+}
+
+export interface CLIMCPServer {
+  name: string;
+  scope?: string;
+  transport?: string;
+  url?: string;
+  command?: string;
+  exposure?: string;
+  status?: string;
+  error?: string;
+  tools?: string[];
+}
+
+export interface CLIModelEntry {
+  id: string;
+  provider: string;
+  name: string;
+  current: boolean;
+  recommended: boolean;
+}
+
+export interface CLIModelListResult {
+  command: string;
+  parsed: boolean;
+  rawOutput: string;
+  exitCode: number;
+  error?: string;
+  models: CLIModelEntry[];
+  currentModel?: string;
+  recommendedModel?: string;
+  tier?: string;
+}
+
+export interface CLIPackageEntry {
+  name: string;
+  description?: string;
+  kind: string;
+  installed: boolean;
+}
+
+export interface CLIPackageListResult {
+  command: string;
+  parsed: boolean;
+  rawOutput: string;
+  exitCode: number;
+  error?: string;
+  packages: CLIPackageEntry[];
+}
+
+export interface CLISearchStatusResult {
+  command: string;
+  parsed: boolean;
+  rawOutput: string;
+  exitCode: number;
+  error?: string;
+  managedBy?: string;
+  searchRoute?: string;
+  requestRoute?: string;
+  searchWorkflow?: string;
+  savedApiKeys?: string;
+  configPath?: string;
+  configured: boolean;
+  entries: CLIKeyValue[];
+}
+
+export interface CLISection {
+  title: string;
+  entries: CLIKeyValue[];
+}
+
+export interface CLIStatusResult {
+  command: string;
+  parsed: boolean;
+  rawOutput: string;
+  exitCode: number;
+  error?: string;
+  sections: CLISection[];
+  model?: string;
+  modelValid?: string;
+  alphaStatus?: string;
+  webAccess?: string;
+  serviceTier?: string;
+  previewStatus?: string;
+  sessionsDir?: string;
+  piRuntime?: string;
+}
+
+export interface CLITerminalLaunchResult {
+  wizard: string;
+  command: string;
+  launched: boolean;
+}
+
+export interface ChangeProposal {
+  id: string;
+  workspaceRoot: string;
+  documentId?: string;
+  path: string;
+  relPath?: string;
+  source?: string;
+  summary?: string;
+  baseVersion?: number;
+  baseText: string;
+  proposedText: string;
+  liveText: string;
+  mergedText: string;
+  hunks: DiffHunk[];
+  hasConflict?: boolean;
+  createdAt: number;
+}
+
+export interface Checkpoint {
+  id: string;
+  createdAt: number;
+  label?: string;
+  source?: string;
+  backend?: string;
+}
+
 export interface CloseResult {
   closed: boolean;
   canceled: boolean;
 }
 
+export interface DiffHunk {
+  id: string;
+  header: string;
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  changeOldLine: number;
+  changeOldCount: number;
+  changeNewLine: number;
+  changeNewCount: number;
+  lines: DiffLine[];
+  decision: HunkDecision;
+  conflict?: boolean;
+  conflictReason?: string;
+}
+
+export interface DiffLine {
+  kind: DiffLineKind;
+  text: string;
+  oldLine?: number;
+  newLine?: number;
+}
+
+export type DiffLineKind = "context" | "delete" | "insert";
+
+export interface DocReveal {
+  id: string;
+  path?: string;
+  offset: number;
+}
+
 export interface DocumentInfo {
+  workspaceRoot?: string;
   id: string;
   name: string;
   path: string;
@@ -53,6 +322,8 @@ export interface HeadingHit {
   offset: number;
   level: number;
 }
+
+export type HunkDecision = "pending" | "accepted" | "rejected";
 
 export type IndexStatus = "idle" | "scanning" | "indexing" | "ready" | "error";
 
@@ -110,10 +381,288 @@ export interface NavSnapshot {
   collapsedCount: number;
 }
 
+export interface ProposeInput {
+  id?: string;
+  workspaceRoot: string;
+  documentId?: string;
+  path: string;
+  source?: string;
+  summary?: string;
+  baseVersion?: number;
+  baseText: string;
+  proposedText?: string;
+  oldText?: string;
+  newText?: string;
+  startLine?: number;
+  endLine?: number;
+}
+
 export interface RecentWorkspace {
   root: string;
   name: string;
   openedAt: number;
+}
+
+export interface ResearchArtifact {
+  path: string;
+  target: string;
+  proposal: boolean;
+  missing?: boolean;
+  error?: string;
+}
+
+export interface ResearchCommand {
+  name: string;
+  description?: string;
+  source?: string;
+  sourceInfo?: ResearchCommandSourceInfo;
+  input?: ResearchCommandInput;
+}
+
+export interface ResearchCommandInput {
+  hint: string;
+}
+
+export interface ResearchCommandSourceInfo {
+  path?: string;
+  source?: string;
+  scope?: string;
+  origin?: string;
+  baseDir?: string;
+  changelogPath?: string;
+}
+
+export interface ResearchCompactionResult {
+  summary: string;
+  firstKeptEntryId?: string;
+  tokensBefore: number;
+  estimatedTokensAfter?: number;
+}
+
+export interface ResearchConfig {
+  id: string;
+  name: string;
+  type: string;
+  category?: string;
+  description?: string;
+  currentValue: string;
+  options: ResearchConfigValue[];
+}
+
+export interface ResearchConfigValue {
+  value: string;
+  name: string;
+  description?: string;
+}
+
+export interface ResearchContextUsage {
+  tokens: number;
+  contextWindow: number;
+  percent: number;
+}
+
+export interface ResearchConversation {
+  id: string;
+  title: string;
+  name?: string;
+  preview?: string;
+  cwd?: string;
+  timestamp?: string;
+  updatedAt: string;
+  parentSession?: string;
+  sessionFile?: string;
+  current: boolean;
+}
+
+export interface ResearchFocusEvent {
+  root: string;
+}
+
+export interface ResearchForkMessage {
+  entryId: string;
+  text: string;
+}
+
+export interface ResearchForkResult {
+  text?: string;
+  cancelled: boolean;
+  sessionId?: string;
+}
+
+export interface ResearchModel {
+  id: string;
+  name?: string;
+  api?: string;
+  provider: string;
+  baseUrl?: string;
+  reasoning?: boolean;
+  input?: string[];
+  contextWindow?: number;
+  maxTokens?: number;
+  cost?: ResearchModelCost;
+}
+
+export interface ResearchModelCost {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total?: number;
+}
+
+export interface ResearchOption {
+  id: string;
+  name: string;
+  kind?: string;
+}
+
+export interface ResearchPlanEntry {
+  content: string;
+  status: string;
+  priority: string;
+}
+
+export interface ResearchQueueState {
+  steering: string[];
+  followUp: string[];
+}
+
+export interface ResearchSessionState {
+  model?: ResearchModel;
+  thinkingLevel: string;
+  isStreaming: boolean;
+  isCompacting: boolean;
+  steeringMode?: string;
+  followUpMode?: string;
+  sessionFile?: string;
+  sessionId: string;
+  sessionName?: string;
+  autoCompactionEnabled: boolean;
+  messageCount: number;
+  pendingMessageCount: number;
+}
+
+export interface ResearchSessionStats {
+  sessionFile?: string;
+  sessionId: string;
+  userMessages: number;
+  assistantMessages: number;
+  toolCalls: number;
+  toolResults: number;
+  totalMessages: number;
+  tokens: ResearchTokenStats;
+  cost: number;
+  contextUsage?: ResearchContextUsage;
+}
+
+export interface ResearchTokenStats {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+}
+
+export interface ResearchTool {
+  toolCallId: string;
+  title?: string;
+  kind?: string;
+  status?: string;
+  locations?: ResearchToolLocation[];
+  input?: string;
+  output?: string;
+  terminalDelta?: string;
+  exitCode?: number;
+  durationMs?: number;
+  images?: string[];
+  diffs?: ResearchToolDiff[];
+}
+
+export interface ResearchToolDiff {
+  path: string;
+  oldText: string;
+  newText: string;
+}
+
+export interface ResearchToolLocation {
+  path: string;
+  line?: number;
+}
+
+export interface ResearchTree {
+  tree: ResearchTreeNode[];
+  leafId?: string;
+}
+
+export interface ResearchTreeEntry {
+  type: string;
+  id: string;
+  parentId?: string;
+  timestamp?: string;
+  role?: string;
+  text?: string;
+  name?: string;
+  summary?: string;
+  customType?: string;
+  provider?: string;
+  modelId?: string;
+  thinkingLevel?: string;
+}
+
+export interface ResearchTreeNode {
+  entry: ResearchTreeEntry;
+  children: ResearchTreeNode[];
+  label?: string;
+  labelTimestamp?: string;
+}
+
+export interface ResearchUpdate {
+  root: string;
+  kind: string;
+  eventType?: string;
+  uiMethod?: string;
+  title?: string;
+  message?: string;
+  text?: string;
+  placeholder?: string;
+  prefill?: string;
+  notifyType?: string;
+  statusKey?: string;
+  widgetKey?: string;
+  widgetLines?: string[];
+  widgetPlacement?: string;
+  timeout?: number;
+  commands?: ResearchCommand[];
+  config?: ResearchConfig[];
+  models?: ResearchModel[];
+  thinkingLevels?: string[];
+  thinkingLevel?: string;
+  state?: ResearchSessionState;
+  queue?: ResearchQueueState;
+  stats?: ResearchSessionStats;
+  compaction?: ResearchCompactionResult;
+  reason?: string;
+  willRetry?: boolean;
+  aborted?: boolean;
+  retryAttempt?: number;
+  retryMaxAttempts?: number;
+  retryDelayMs?: number;
+  retrySuccess?: boolean;
+  tool?: ResearchTool;
+  plan?: ResearchPlanEntry[];
+  used?: number;
+  size?: number;
+  image?: string;
+  messageId?: string;
+  key?: string;
+  requestId?: string;
+  options?: ResearchOption[];
+}
+
+export interface ReviewUpdateEvent {
+  workspaceRoot: string;
+  revision: number;
+  proposals: ChangeProposal[];
 }
 
 export interface SectionRef {
@@ -212,16 +761,100 @@ export const WorkspaceHost = {
   watchView: bind<[string], void>("WorkspaceHost.WatchView", (documentID: string) => [documentID]),
 } as const;
 
+export const ReviewHost = {
+  acceptAll: bind<[string, string, string], ChangeProposal>("ReviewHost.AcceptAll", (workspaceRoot: string, proposalID: string, liveText: string) => [workspaceRoot, proposalID, liveText]),
+  complete: bind<[string, string], ChangeProposal[]>("ReviewHost.Complete", (workspaceRoot: string, proposalID: string) => [workspaceRoot, proposalID]),
+  decideHunk: bind<[string, string, string, HunkDecision, string], ChangeProposal>("ReviewHost.DecideHunk", (workspaceRoot: string, proposalID: string, hunkID: string, decision: HunkDecision, liveText: string) => [workspaceRoot, proposalID, hunkID, decision, liveText]),
+  diff: bind<[string, string], DiffHunk[]>("ReviewHost.Diff", (before: string, after: string) => [before, after]),
+  dismiss: bind<[string, string], ChangeProposal[]>("ReviewHost.Dismiss", (workspaceRoot: string, proposalID: string) => [workspaceRoot, proposalID]),
+  get: bind<[string, string], ChangeProposal>("ReviewHost.Get", (workspaceRoot: string, proposalID: string) => [workspaceRoot, proposalID]),
+  list: bind<[string], ChangeProposal[]>("ReviewHost.List", (workspaceRoot: string) => [workspaceRoot]),
+  revise: bind<[ProposeInput, string, string], ChangeProposal>("ReviewHost.Revise", (input: ProposeInput, expectedText: string, liveText: string) => [input, expectedText, liveText]),
+  snapshot: bind<[string], ReviewUpdateEvent>("ReviewHost.Snapshot", (workspaceRoot: string) => [workspaceRoot]),
+  submit: bind<[ProposeInput], ChangeProposal>("ReviewHost.Submit", (input: ProposeInput) => [input]),
+  sync: bind<[string, string, string], ChangeProposal>("ReviewHost.Sync", (workspaceRoot: string, proposalID: string, liveText: string) => [workspaceRoot, proposalID, liveText]),
+} as const;
+
+export const ResearchHost = {
+  abort: bind<[string], void>("ResearchHost.Abort", (root: string) => [root]),
+  answer: bind<[string, string, string], void>("ResearchHost.Answer", (root: string, requestID: string, optionID: string) => [root, requestID, optionID]),
+  answerConfirm: bind<[string, string, boolean, boolean], void>("ResearchHost.AnswerConfirm", (root: string, requestID: string, confirmed: boolean, cancelled: boolean) => [root, requestID, confirmed, cancelled]),
+  answerText: bind<[string, string, string, boolean], void>("ResearchHost.AnswerText", (root: string, requestID: string, text: string, cancelled: boolean) => [root, requestID, text, cancelled]),
+  artifacts: bind<[string], ResearchArtifact[]>("ResearchHost.Artifacts", (root: string) => [root]),
+  cliAlphaAnnotate: bind<[string, string, string, string], CLIAlphaAnnotateResult>("ResearchHost.CLIAlphaAnnotate", (root: string, action: string, paperID: string, note: string) => [root, action, paperID, note]),
+  cliAlphaAsk: bind<[string, string, string], CLICommandResult>("ResearchHost.CLIAlphaAsk", (root: string, paperID: string, question: string) => [root, paperID, question]),
+  cliAlphaCode: bind<[string, string, string], CLICommandResult>("ResearchHost.CLIAlphaCode", (root: string, repoURL: string, filePath: string) => [root, repoURL, filePath]),
+  cliAlphaGet: bind<[string, string, boolean], CLIAlphaPaperResult>("ResearchHost.CLIAlphaGet", (root: string, paperID: string, fullText: boolean) => [root, paperID, fullText]),
+  cliAlphaLogout: bind<[string], CLICommandResult>("ResearchHost.CLIAlphaLogout", (root: string) => [root]),
+  cliAlphaSearch: bind<[string, string, string], CLIAlphaSearchResult>("ResearchHost.CLIAlphaSearch", (root: string, query: string, mode: string) => [root, query, mode]),
+  cliAlphaStatus: bind<[string], CLIAlphaStatusResult>("ResearchHost.CLIAlphaStatus", (root: string) => [root]),
+  cliDoctor: bind<[string], CLIDoctorResult>("ResearchHost.CLIDoctor", (root: string) => [root]),
+  climcpAdd: bind<[string, CLIMCPAddInput], CLICommandResult>("ResearchHost.CLIMCPAdd", (root: string, input: CLIMCPAddInput) => [root, input]),
+  climcpList: bind<[string], CLIMCPListResult>("ResearchHost.CLIMCPList", (root: string) => [root]),
+  climcpRemove: bind<[string, string, boolean], CLICommandResult>("ResearchHost.CLIMCPRemove", (root: string, name: string, local: boolean) => [root, name, local]),
+  cliModelAction: bind<[string, string, string], CLICommandResult>("ResearchHost.CLIModelAction", (root: string, action: string, value: string) => [root, action, value]),
+  cliModelList: bind<[string], CLIModelListResult>("ResearchHost.CLIModelList", (root: string) => [root]),
+  cliPackageAction: bind<[string, string, string], CLICommandResult>("ResearchHost.CLIPackageAction", (root: string, action: string, target: string) => [root, action, target]),
+  cliPackagesList: bind<[string], CLIPackageListResult>("ResearchHost.CLIPackagesList", (root: string) => [root]),
+  cliSearchAction: bind<[string, string, string, string], CLICommandResult>("ResearchHost.CLISearchAction", (root: string, action: string, provider: string, apiKey: string) => [root, action, provider, apiKey]),
+  cliSearchStatus: bind<[string], CLISearchStatusResult>("ResearchHost.CLISearchStatus", (root: string) => [root]),
+  cliSetupPreview: bind<[string], CLICommandResult>("ResearchHost.CLISetupPreview", (root: string) => [root]),
+  cliStatus: bind<[string], CLIStatusResult>("ResearchHost.CLIStatus", (root: string) => [root]),
+  cancel: bind<[string], void>("ResearchHost.Cancel", (root: string) => [root]),
+  clearQueue: bind<[string], ResearchQueueState>("ResearchHost.ClearQueue", (root: string) => [root]),
+  clone: bind<[string], boolean>("ResearchHost.Clone", (root: string) => [root]),
+  commands: bind<[string], ResearchCommand[]>("ResearchHost.Commands", (root: string) => [root]),
+  compact: bind<[string, string], ResearchCompactionResult>("ResearchHost.Compact", (root: string, customInstructions: string) => [root, customInstructions]),
+  connect: bind<[string], void>("ResearchHost.Connect", (root: string) => [root]),
+  deleteSession: bind<[string, string], void>("ResearchHost.DeleteSession", (root: string, id: string) => [root, id]),
+  disconnect: bind<[string], void>("ResearchHost.Disconnect", (root: string) => [root]),
+  followUp: bind<[string, string, string[]], void>("ResearchHost.FollowUp", (root: string, text: string, sources: string[]) => [root, text, sources]),
+  fork: bind<[string, string], ResearchForkResult>("ResearchHost.Fork", (root: string, entryID: string) => [root, entryID]),
+  forkMessages: bind<[string], ResearchForkMessage[]>("ResearchHost.ForkMessages", (root: string) => [root]),
+  launchTerminalWizard: bind<[string, string, string], CLITerminalLaunchResult>("ResearchHost.LaunchTerminalWizard", (root: string, wizard: string, target: string) => [root, wizard, target]),
+  newSession: bind<[string, string], void>("ResearchHost.NewSession", (root: string, parentSession: string) => [root, parentSession]),
+  openCitation: bind<[string, string], void>("ResearchHost.OpenCitation", (root: string, address: string) => [root, address]),
+  pickSources: bind<[string], string[]>("ResearchHost.PickSources", (root: string) => [root]),
+  prompt: bind<[string, string, string, string], string>("ResearchHost.Prompt", (root: string, text: string, documentID: string, buffer: string) => [root, text, documentID, buffer]),
+  promptWithSources: bind<[string, string, string, string, string[]], string>("ResearchHost.PromptWithSources", (root: string, text: string, documentID: string, buffer: string, sources: string[]) => [root, text, documentID, buffer, sources]),
+  readArtifact: bind<[string, string], string>("ResearchHost.ReadArtifact", (root: string, relative: string) => [root, relative]),
+  recoverArtifact: bind<[string, string], string>("ResearchHost.RecoverArtifact", (root: string, relative: string) => [root, relative]),
+  refreshModels: bind<[string], ResearchModel[]>("ResearchHost.RefreshModels", (root: string) => [root]),
+  revealOutputs: bind<[string], void>("ResearchHost.RevealOutputs", (root: string) => [root]),
+  selectSession: bind<[string, string], void>("ResearchHost.SelectSession", (root: string, id: string) => [root, id]),
+  sessionStats: bind<[string], ResearchSessionStats>("ResearchHost.SessionStats", (root: string) => [root]),
+  sessions: bind<[string], ResearchConversation[]>("ResearchHost.Sessions", (root: string) => [root]),
+  setConfig: bind<[string, string, string], void>("ResearchHost.SetConfig", (root: string, id: string, value: string) => [root, id, value]),
+  setModel: bind<[string, string, string], ResearchModel>("ResearchHost.SetModel", (root: string, provider: string, modelID: string) => [root, provider, modelID]),
+  setSessionName: bind<[string, string], void>("ResearchHost.SetSessionName", (root: string, name: string) => [root, name]),
+  setThinkingLevel: bind<[string, string], void>("ResearchHost.SetThinkingLevel", (root: string, level: string) => [root, level]),
+  state: bind<[string], ResearchSessionState>("ResearchHost.State", (root: string) => [root]),
+  steer: bind<[string, string, string[]], void>("ResearchHost.Steer", (root: string, text: string, sources: string[]) => [root, text, sources]),
+  switchSession: bind<[string, string], void>("ResearchHost.SwitchSession", (root: string, target: string) => [root, target]),
+  tree: bind<[string], ResearchTree>("ResearchHost.Tree", (root: string) => [root]),
+  watchFocus: bind<[string], void>("ResearchHost.WatchFocus", (root: string) => [root]),
+} as const;
+
+export const CheckpointHost = {
+  create: bind<[string, string, string, string, string], Checkpoint[]>("CheckpointHost.Create", (documentID: string, path: string, expectedText: string, label: string, source: string) => [documentID, path, expectedText, label, source]),
+  list: bind<[string, string], Checkpoint[]>("CheckpointHost.List", (documentID: string, path: string) => [documentID, path]),
+  read: bind<[string, string, string], string>("CheckpointHost.Read", (documentID: string, path: string, checkpointID: string) => [documentID, path, checkpointID]),
+} as const;
+
 // ---- Events ----
 
 /** Events sent by the Go side. Subscribe with `events.name.on(listener)`. */
 export const events = {
+  viewChanged: event<ViewEvent>("viewChanged"),
+  reviewUpdated: event<ReviewUpdateEvent>("reviewUpdated"),
+  researchFocus: event<ResearchFocusEvent>("researchFocus"),
+  researchUpdate: event<ResearchUpdate>("researchUpdate"),
   docReloaded: event<Snapshot>("docReloaded"),
   docState: event<DocumentInfo>("docState"),
   navChanged: event<NavSnapshot>("navChanged"),
   navSearchReady: event<NavSearchResult>("navSearchReady"),
+  docReveal: event<DocReveal>("docReveal"),
   settingsChanged: event<Settings>("settingsChanged"),
-  viewChanged: event<ViewEvent>("viewChanged"),
   workspaceChanged: event<WorkspaceSnapshot>("workspaceChanged"),
   nativeCommand: event<NativeCommand>("nativeCommand"),
 } as const;

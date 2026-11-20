@@ -375,3 +375,118 @@ describe('source mode external state', () => {
     }
   })
 })
+
+it('keeps earlier Markdown typing when undoing a proposal in Preview', async () => {
+  const original = '# Original\n\nReader notes.\n'
+  const mounted = await mountEditor(original)
+  try {
+    const editor = mounted.editor
+    editor.setMode('source')
+    const beforeApply = replaceSourceText(getSourceView(mounted.root), 'Reader notes.', 'Reader notes. New thought.')
+    const proposed = beforeApply.replace('# Original', '# Revised')
+    expect(editor.applyMarkdown(beforeApply, proposed)).toBe(true)
+    editor.setMode('preview')
+    expect(editor.undo()).toBe(true)
+    expect(editor.getMarkdown()).toBe(beforeApply)
+    expect(editor.undo()).toBe(true)
+    expect(editor.getMarkdown()).toBe(original)
+  } finally {
+    await mounted.cleanup()
+  }
+})
+
+it('undoes immediate Preview typing separately from a proposal', async () => {
+  const original = 'Original paragraph.\n'
+  const proposed = 'Revised paragraph.\n'
+  const mounted = await mountEditor(original)
+  try {
+    const editor = mounted.editor
+    expect(editor.applyMarkdown(original, proposed)).toBe(true)
+    const view = editor.getView()
+    view.dispatch(view.state.tr.insertText(' Reader note.', 19))
+    expect(editor.getMarkdown()).toBe('Revised paragraph. Reader note.\n')
+    expect(editor.undo()).toBe(true)
+    expect(editor.getMarkdown()).toBe(proposed)
+    expect(editor.undo()).toBe(true)
+    expect(editor.getMarkdown()).toBe(original)
+  } finally {
+    await mounted.cleanup()
+  }
+})
+
+it('restores the exact previous buffer with one Undo after applying a reviewed Markdown edit', async () => {
+  const original = '# Original\r\n\r\nText with  spacing.'
+  const proposed = '\n# New heading\n\nChanged draft.\n'
+  const mounted = await mountEditor(original)
+  try {
+    const editor = mounted.editor
+    expect(editor.getMode()).toBe('preview')
+    expect(editor.applyMarkdown('stale buffer', proposed)).toBe(false)
+    expect(editor.getMarkdown()).toBe(original)
+    expect(editor.applyMarkdown(original, proposed)).toBe(true)
+    expect(editor.getMode()).toBe('preview')
+    expect(editor.getMarkdown()).toBe(proposed)
+    expect(editor.undo()).toBe(true)
+    expect(editor.getMode()).toBe('preview')
+    expect(editor.getMarkdown()).toBe(original)
+    expect(editor.redo()).toBe(true)
+    expect(editor.getMarkdown()).toBe(proposed)
+    editor.setReadonly(true)
+    expect(editor.applyMarkdown(proposed, '')).toBe(false)
+  } finally {
+    await mounted.cleanup()
+  }
+})
+
+it('updates only affected blocks in place in Markdown Preview and preserves single-step Undo across mode switches', async () => {
+  const original = '# Title\n\nFirst paragraph.\n\nSecond paragraph.\n\nThird paragraph.\n'
+  const proposed = '# Title\n\nFirst paragraph.\n\nSecond paragraph updated.\n\nThird paragraph.\n'
+  const mounted = await mountEditor(original)
+  try {
+    const editor = mounted.editor
+    const view = editor.getView()
+    const headingBefore = view.state.doc.child(0)
+    const firstParaBefore = view.state.doc.child(1)
+    const thirdParaBefore = view.state.doc.child(3)
+
+    expect(editor.getMode()).toBe('preview')
+    expect(editor.applyMarkdown(original, proposed)).toBe(true)
+    expect(editor.getMode()).toBe('preview')
+    expect(editor.getMarkdown()).toBe(proposed)
+
+    expect(view.state.doc.child(0)).toBe(headingBefore)
+    expect(view.state.doc.child(1)).toBe(firstParaBefore)
+    expect(view.state.doc.child(3)).toBe(thirdParaBefore)
+    expect(view.state.doc.child(2).textContent).toBe('Second paragraph updated.')
+
+    editor.setMode('source')
+    expect(editor.getMode()).toBe('source')
+    expect(editor.canUndo()).toBe(true)
+    expect(editor.undo()).toBe(true)
+    expect(editor.getMarkdown()).toBe(original)
+
+    editor.setMode('preview')
+    expect(editor.getMode()).toBe('preview')
+    expect(editor.getMarkdown()).toBe(original)
+    expect(editor.canRedo()).toBe(true)
+    expect(editor.redo()).toBe(true)
+    expect(editor.getMarkdown()).toBe(proposed)
+
+    editor.setMode('source')
+    editor.setMode('preview')
+    expect(editor.canUndo()).toBe(true)
+    expect(editor.undo()).toBe(true)
+    expect(editor.getMarkdown()).toBe(original)
+
+    editor.setMode('source')
+    expect(editor.applyMarkdown(original, proposed)).toBe(true)
+    expect(editor.getMode()).toBe('source')
+    editor.setMode('preview')
+    expect(editor.getMode()).toBe('preview')
+    expect(editor.canUndo()).toBe(true)
+    expect(editor.undo()).toBe(true)
+    expect(editor.getMarkdown()).toBe(original)
+  } finally {
+    await mounted.cleanup()
+  }
+})

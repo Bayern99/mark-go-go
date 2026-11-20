@@ -1,4 +1,4 @@
-module markgogo
+module github.com/Bayern99/mark-go-go
 
 go 1.27.3
 

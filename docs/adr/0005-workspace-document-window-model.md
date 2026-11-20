@@ -4,4 +4,4 @@
 
 窗口、根目录与文档各有身份，改名或迁移时延续文档会话。关闭文档、当前工作区与窗口分别确认同一范围，全部确认后才关闭该范围。原生菜单跟随活动文档。恢复布局时复用已有窗口，MyGo 保留未保存内容的恢复副本。
 
-从 [宿主](../../workspace.go)、[恢复](../../restore_host.go) 和 [MyGo 受控补丁](../mygo-document-groups.md) 核对流程。
+从 [宿主](../../internal/workspace/workspace.go)、[恢复](../../internal/workspace/restore_host.go) 和 [MyGo 受控补丁](../mygo-document-groups.md) 核对流程。

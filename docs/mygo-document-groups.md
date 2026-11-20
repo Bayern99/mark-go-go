@@ -6,6 +6,6 @@
 |---|---|
 | 文档身份、活动槽、关闭事务 | [document_group.go](../third_party/mygo/document_group.go) · [用例](../third_party/mygo/document_group_test.go) |
 | 保存目标、文档打开与会话 | [document.go](../third_party/mygo/document.go) · [document_file.go](../third_party/mygo/document_file.go) · [document_flow.go](../third_party/mygo/document_flow.go) |
-| 菜单路由和原生校验 | [document_menu.go](../third_party/mygo/document_menu.go) · [menu.go](../third_party/mygo/menu.go) · [Darwin WebKit](../third_party/mygo/internal/darwin/webview.go) · [Darwin window](../third_party/mygo/internal/darwin/window.go) · [Windows menu](../third_party/mygo/internal/windows/menu.go) |
+| 菜单路由和原生校验 | [document_menu.go](../third_party/mygo/document_menu.go) · [menu.go](../third_party/mygo/menu.go) · [Darwin WebKit](../third_party/mygo/internal/darwin/webview.go) · [Darwin window](../third_party/mygo/internal/darwin/window.go) · [Linux menu](../third_party/mygo/internal/linux/menu.go) · [Windows menu](../third_party/mygo/internal/windows/menu.go) |
 
 升级前对照 `SOURCE.txt` 指定的上游版本核对补丁。同步 `mygo-runtime` 和生成绑定，跑文档组用例与三平台编译，再做 [macOS 原生 smoke](agents/native-automation.md)。

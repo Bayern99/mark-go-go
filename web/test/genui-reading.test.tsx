@@ -251,7 +251,7 @@ describe('card-local generation feedback',
         })
         const host = createBrowserHost(DOCUMENT, 'report.md', { view: current, generator: agent.generator })
         const mounted = await showGenUI(host)
-        await vi.waitFor(() => expect(genui().getByText('Old metrics', { exact: false }).query()).not.toBeNull())
+        await vi.waitFor(() => expect(genui().getByRole('heading', { name: 'Old metrics' }).query()).not.toBeNull())
 
         await page.getByTestId('view-mode-preview').click()
         const paragraph = Array.from(mounted.container.querySelectorAll<HTMLElement>('.ProseMirror p')).find(
@@ -262,7 +262,7 @@ describe('card-local generation feedback',
         await userEvent.keyboard('{End} More.')
         await vi.waitFor(() => expect(host.getState().edited).toBe(true))
         await page.getByTestId('view-mode-genui').click()
-        await page.getByTestId('right-tab-genui.panel').click()
+        await page.getByTestId('genui-settings-toggle').click()
         await vi.waitFor(
           () => expect(page.getByRole('button', { name: /^Regenerate changed/ }).query()).not.toBeNull(),
           { timeout: SOURCE_DEBOUNCE_MS + 2000 },
@@ -284,7 +284,7 @@ describe('card-local generation feedback',
         await vi.waitFor(() => {
           expect(mounted.container.querySelector('[data-testid="genui-card-skeleton"]')).toBeNull()
         })
-        await expect.element(genui().getByText('Old metrics', { exact: false })).toBeVisible()
+        await expect.element(genui().getByRole('heading', { name: 'Old metrics' })).toBeVisible()
         await expect.element(genui().getByText('Old overview', { exact: false })).toBeVisible()
       })
   },
@@ -328,7 +328,7 @@ describe('first view snapshot feedback',
         errorHost.writeView('{ not json')
         await vi.waitFor(() => expect(genui()).toHaveAttribute('data-state', 'error'))
         await expect.element(broken.container.querySelector('.genui-file-error') as HTMLElement).toBeVisible()
-        await expect.element(genui().getByRole('button', { name: 'Open the GenUI panel' })).toBeVisible()
+        await expect.element(genui().getByRole('button', { name: 'View generation details' })).toBeVisible()
         expect(page.getByTestId('genui-loading').query()).toBeNull()
       })
   },

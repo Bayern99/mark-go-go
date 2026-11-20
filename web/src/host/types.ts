@@ -12,6 +12,7 @@ export interface DocState {
 }
 
 export interface DocumentInfo extends DocState {
+  workspaceRoot?: string
   id: string
 }
 
@@ -236,6 +237,7 @@ export interface HostAdapter extends ViewFileSource, ViewGenerator {
 export interface WorkspaceAdapter {
   snapshot(): Promise<WorkspaceSnapshot>
   subscribe(fn: (snap: WorkspaceSnapshot) => void): Disposable
+  subscribeReveal?(fn: (detail: { id: string; offset: number }) => void): Disposable
   open(path: string): Promise<DocumentInfo>
   openWorkspace(root: string): Promise<void>
   activateWorkspace(id: string): Promise<void>

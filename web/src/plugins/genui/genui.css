@@ -165,6 +165,34 @@
   color: var(--accent);
 }
 
+.genui-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  align-self: flex-end;
+}
+
+.genui-toolbar > .pill {
+  gap: 6px;
+  background: var(--paper);
+}
+
+.genui-settings-popover {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: min(320px, var(--radix-popover-content-available-width));
+  max-height: min(32rem, var(--radix-popover-content-available-height));
+  padding: 10px;
+  border-radius: 14px;
+  color: var(--ink);
+  font: var(--text-ui-size)/var(--text-ui-leading) var(--font-sans);
+  letter-spacing: normal;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  box-shadow: var(--glass-overlay-rim);
+}
+
 .genui-panel {
   flex: 1;
   min-height: 0;
@@ -174,7 +202,7 @@
 }
 
 .genui-panel-scroll {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
 }
 
@@ -1119,7 +1147,7 @@
   border-radius: 4px;
   font-size: 11px;
   line-height: 1;
-  color: var(--genui-surface);
+  color: var(--on-accent);
 }
 
 [data-done='true'] .genui-check {

@@ -21,12 +21,6 @@ export function createGenUIPlugin(): AppPlugin {
         id: 'genui',
         title: 'GenUI',
         location: 'center',
-        mount: (el, scrollElement) => mountLazily(el, ctx, memory, 'center', scrollElement),
-      })
-      ctx.views.register({
-        id: 'genui.panel',
-        title: 'GenUI',
-        location: 'right',
         status: {
           subscribe(fn) {
             memory.statusListeners.add(fn)
@@ -38,7 +32,7 @@ export function createGenUIPlugin(): AppPlugin {
             return memory.session?.getStatusDot() ?? null
           },
         },
-        mount: (el) => mountLazily(el, ctx, memory, 'right'),
+        mount: (el, scrollElement) => mountLazily(el, ctx, memory, scrollElement),
       })
       ctx.subscriptions.push({
         dispose() {
@@ -57,18 +51,14 @@ function mountLazily(
   el: HTMLElement,
   ctx: PluginContext,
   memory: GenUIMemory,
-  target: 'center' | 'right',
   scrollElement?: HTMLElement,
 ): Disposable {
   let inner: Disposable | undefined
   let disposed = false
   void import('./GenUIView').then(
-    ({ mountGenUIView, mountGenUIPanel }) => {
+    ({ mountGenUIView }) => {
       if (disposed) return
-      inner =
-        target === 'center'
-          ? mountGenUIView(el, ctx, memory, scrollElement)
-          : mountGenUIPanel(el, ctx, memory)
+      inner = mountGenUIView(el, ctx, memory, scrollElement)
     },
     (error: unknown) => {
       if (disposed) return

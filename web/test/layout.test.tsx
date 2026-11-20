@@ -1,6 +1,7 @@
+import './helpers/enable-feynman'
 import '../src/styles.css'
-import { page, userEvent } from 'vitest/browser'
-import { afterEach, describe, expect, it } from 'vitest'
+import { cdp, page, userEvent } from 'vitest/browser'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mountApp, type MountedApp } from './helpers/app'
 import { MOD } from './helpers/platform'
 
@@ -25,11 +26,12 @@ let mounted: MountedApp | undefined
 afterEach(async () => {
   await mounted?.unmount()
   mounted = undefined
+  localStorage.removeItem('mgo.researchWidth')
   await page.viewport(1280, 900)
 })
 
 describe('layout at the default window size', () => {
-  it('keeps a readable text column with the outline open', async () => {
+  it('keeps a readable text column with research docked', async () => {
     await page.viewport(WINDOW.width, WINDOW.height)
     mounted = await mountApp(DOCUMENT)
 
@@ -91,7 +93,7 @@ describe('layout at the default window size', () => {
     expect(rightPane.classList.contains('r-float')).toBe(true)
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
 
-    await page.getByText('结论').first().click()
+    await page.getByTestId('right-scrim').click({ position: { x: 12, y: 120 } })
     expect(rightPane.hidden).toBe(true)
     expect(rightPane.classList.contains('r-float')).toBe(false)
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
@@ -111,6 +113,8 @@ describe('layout at the default window size', () => {
     await page.getByTestId('right-pane-close').click()
     expect(rightPane.hidden).toBe(true)
 
+    await page.getByRole('tab', { name: 'Outline' }).click()
+    await expect.element(page.getByRole('navigation', { name: 'Document outline' })).toBeVisible()
     await page.getByTestId('right-pane-toggle').click()
     expect(rightPane.hidden).toBe(false)
 
@@ -136,10 +140,28 @@ describe('layout at the default window size', () => {
     expect(editor.textContent).toBe(original)
   })
 
+  it('uses glass at the minimum window size and solid paper with reduced transparency', async () => {
+    await page.viewport(480, 360)
+    mounted = await mountApp(DOCUMENT)
+    await page.getByTestId('right-pane-toggle').click()
+    const drawer = mounted.container.querySelector<HTMLElement>('[data-testid="right-pane"]')!
+    const session = cdp()
+    try {
+      expect(getComputedStyle(drawer).backdropFilter).toContain('blur(')
+      await session.send('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-reduced-transparency', value: 'reduce' }],
+      })
+      expect(getComputedStyle(drawer).backdropFilter).toBe('none')
+      expect(getComputedStyle(drawer).backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+    } finally {
+      await session.send('Emulation.setEmulatedMedia', { features: [] })
+    }
+  })
+
   it('reclaims reading space at the native minimum and resets the file drawer on resize', async () => {
     await page.viewport(480, 360)
     mounted = await mountApp(DOCUMENT)
-    const files = page.getByRole('button', { name: 'Show files' })
+    const files = page.getByRole('button', { name: 'Show navigation' })
     const library = page.getByTestId('left-pane')
     await expect.element(library).not.toBeVisible()
     const paragraph = mounted.container.querySelector('.ProseMirror > p')!
@@ -157,5 +179,89 @@ describe('layout at the default window size', () => {
     await page.viewport(480, 360)
     await expect.element(library).not.toBeVisible()
     await expect.element(files).toBeVisible()
+  })
+
+  it('enforces a joint width budget across SidePane and RightPane at 1180px, 641px, and on resize', async () => {
+    await page.viewport(1180, 820)
+    mounted = await mountApp(DOCUMENT)
+
+    const leftPane = mounted.container.querySelector<HTMLElement>('[data-testid="left-pane"]')!
+    const rightPane = mounted.container.querySelector<HTMLElement>('[data-testid="right-pane"]')!
+    const leftSplitter = mounted.container.querySelector<HTMLElement>('[data-testid="sidebar-splitter"]')!
+    const rightSplitter = mounted.container.querySelector<HTMLElement>('.fy-resize')!
+    const workspaceMain = mounted.container.querySelector<HTMLElement>('.workspace-main')!
+    const paragraph = () =>
+      Array.from(mounted!.container.querySelectorAll('.ProseMirror p')).find((p) =>
+        p.textContent?.startsWith('Intro paragraph'),
+      )!
+
+    rightSplitter.focus()
+    for (let i = 0; i < 16; i += 1) {
+      await userEvent.keyboard('{ArrowLeft}')
+    }
+    expect(workspaceMain.getBoundingClientRect().width).toBeGreaterThanOrEqual(412)
+    expect(paragraph().getBoundingClientRect().width).toBeGreaterThanOrEqual(280)
+
+    leftSplitter.focus()
+    for (let i = 0; i < 16; i += 1) {
+      await userEvent.keyboard('{ArrowRight}')
+    }
+    expect(workspaceMain.getBoundingClientRect().width).toBeGreaterThanOrEqual(412)
+    expect(paragraph().getBoundingClientRect().width).toBeGreaterThanOrEqual(280)
+
+    await page.viewport(1440, 820)
+    await vi.waitFor(() => expect(leftSplitter.getAttribute('aria-valuemax')).toBe('420'))
+    leftSplitter.focus()
+    await userEvent.keyboard('{End}')
+    await vi.waitFor(() => expect(Math.round(leftPane.getBoundingClientRect().width)).toBe(420))
+    rightSplitter.focus()
+    for (let i = 0; i < 8; i += 1) {
+      await userEvent.keyboard('{ArrowLeft}')
+    }
+    const wideLeft = Math.round(leftPane.getBoundingClientRect().width)
+    const wideRight = Math.round(rightPane.getBoundingClientRect().width)
+    expect(wideLeft).toBeGreaterThanOrEqual(400)
+    expect(wideRight).toBeGreaterThan(450)
+
+    await page.viewport(1180, 820)
+    await vi.waitFor(() => {
+      expect(workspaceMain.getBoundingClientRect().width).toBeGreaterThanOrEqual(412)
+      expect(paragraph().getBoundingClientRect().width).toBeGreaterThanOrEqual(280)
+    })
+
+    await page.viewport(1440, 820)
+    await vi.waitFor(() => {
+      expect(Math.round(leftPane.getBoundingClientRect().width)).toBe(wideLeft)
+      expect(Math.round(rightPane.getBoundingClientRect().width)).toBe(wideRight)
+    })
+
+    await page.viewport(641, 720)
+    await vi.waitFor(() => {
+      expect(workspaceMain.getBoundingClientRect().width).toBeGreaterThanOrEqual(412)
+      expect(paragraph().getBoundingClientRect().width).toBeGreaterThanOrEqual(280)
+    })
+  })
+
+  it('renders a dismissal scrim for the right floating drawer matching the left drawer and restores focus on outside click', async () => {
+    await page.viewport(940, 720)
+    mounted = await mountApp(DOCUMENT)
+
+    expect(mounted.container.querySelector('[data-testid="right-scrim"]')).toBeNull()
+
+    await page.getByTestId('right-pane-toggle').click()
+    const scrim = mounted.container.querySelector<HTMLElement>('[data-testid="right-scrim"]')
+    const rightPane = mounted.container.querySelector<HTMLElement>('[data-testid="right-pane"]')!
+    if (!scrim) throw new Error('right scrim missing')
+
+    await expect.element(page.getByTestId('right-scrim')).toBeVisible()
+    const scrimStyle = getComputedStyle(scrim)
+    const rightStyle = getComputedStyle(rightPane)
+    expect(scrimStyle.backgroundColor).toBe('rgba(29, 29, 31, 0.08)')
+    expect(Number(scrimStyle.zIndex)).toBeLessThan(Number(rightStyle.zIndex))
+
+    await page.getByTestId('right-scrim').click({ position: { x: 240, y: 12 } })
+    expect(rightPane.hidden).toBe(true)
+    expect(mounted.container.querySelector('[data-testid="right-scrim"]')).toBeNull()
+    await expect.element(page.getByTestId('right-pane-toggle')).toHaveFocus()
   })
 })

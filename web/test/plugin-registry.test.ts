@@ -4,7 +4,7 @@ import { DocumentService } from '../src/core/DocumentService'
 import { EditorAccess } from '../src/core/EditorAccess'
 import { PluginRegistry } from '../src/core/PluginRegistry'
 import { ViewRegistry } from '../src/core/ViewRegistry'
-import type { AppPlugin, PluginContext } from '../src/core/types'
+import type { AppPlugin, PluginContext, WorkspaceContext } from '../src/core/types'
 import type { ViewFileSource, ViewGenerator, ViewSnapshot } from '../src/host/types'
 
 const noGeneration: ViewGenerator & Pick<ViewFileSource, 'undoView'> = {
@@ -110,6 +110,19 @@ function setup() {
 }
 
 describe('PluginRegistry', () => {
+  it('disposes only its own optional plugin registration', async () => {
+    const { registry } = setup()
+    const plugin = { id: 'optional', title: 'Optional', activate() {} }
+    const first = registry.register(plugin)
+    await registry.enable(plugin.id)
+    first.dispose()
+    expect(registry.isEnabled(plugin.id)).toBe(false)
+    registry.register(plugin)
+    await registry.enable(plugin.id)
+    first.dispose()
+    expect(registry.isEnabled(plugin.id)).toBe(true)
+  })
+
   it('starts disabled and activates on enable', async () => {
     const { registry, commands, views, documents, effects } = setup()
     expect(registry.isEnabled('demo')).toBe(false)
@@ -250,5 +263,89 @@ describe('PluginRegistry', () => {
     expect(registry.isEnabled('broken')).toBe(false)
     expect(disposed).toBe(true)
     await expect(commands.execute('broken.run')).rejects.toThrow(/Unknown command/)
+  })
+
+  it('supports workspace-scoped plugins with right-pane views and disposes workspace listeners on disable', async () => {
+    const documents = new DocumentService()
+    const commands = new CommandRegistry()
+    const views = new ViewRegistry()
+    const listeners = new Set<() => void>()
+    let workspaceDisposals = 0
+    let workspaceEvents = 0
+    const workspace: WorkspaceContext = {
+      root: () => '/repo',
+      workspaces: () => [{ root: '/repo', name: 'repo' }],
+      activeDocumentId: () => 'doc-1',
+      activeDocument: () => ({
+        snapshot: () => documents.snapshot(),
+        onDidChange: (fn) => documents.onDidChange(fn),
+        applyMarkdown: async () => {},
+      }),
+      openDocument: async (path) => ({
+        id: 'doc-1',
+        snapshot: async () => ({ path, text: '# Doc', version: 1 }),
+      }),
+      openFolder: () => {},
+      onDidChange(fn) {
+        listeners.add(fn)
+        return {
+          dispose() {
+            if (listeners.delete(fn)) workspaceDisposals += 1
+          },
+        }
+      },
+    }
+
+    const registry = new PluginRegistry(
+      documents,
+      views,
+      commands,
+      new EditorAccess(),
+      { ...noGeneration, watchView: () => ({ dispose() {} }) },
+      { scope: 'workspace', workspace },
+    )
+    expect(registry.scope).toBe('workspace')
+
+    const workspacePlugin: AppPlugin = {
+      id: 'ws.right',
+      title: 'Workspace Right',
+      scope: 'workspace',
+      activate(ctx) {
+        expect(ctx.workspace?.root()).toBe('/repo')
+        ctx.workspace?.onDidChange(() => {
+          workspaceEvents += 1
+        })
+        ctx.views.register({
+          id: 'ws.right.panel',
+          title: 'Right Inspector',
+          location: 'right',
+          mount(el) {
+            el.textContent = `root:${ctx.workspace?.root()}`
+            return { dispose() {} }
+          },
+        })
+      },
+    }
+
+    registry.register(workspacePlugin)
+    await registry.enable('ws.right')
+    expect(views.getAll().map((v) => `${v.location}:${v.id}`)).toEqual(['right:ws.right.panel'])
+
+    for (const fn of listeners) fn()
+    expect(workspaceEvents).toBe(1)
+
+    registry.disable('ws.right')
+    expect(workspaceDisposals).toBe(1)
+    expect(views.getAll()).toHaveLength(0)
+
+    for (const fn of listeners) fn()
+    expect(workspaceEvents).toBe(1)
+
+    const docRegistry = new PluginRegistry(documents, new ViewRegistry(), commands, new EditorAccess(), {
+      ...noGeneration,
+      watchView: () => ({ dispose() {} }),
+    })
+    expect(docRegistry.scope).toBe('document')
+    expect(() => docRegistry.register(workspacePlugin)).toThrow(/scope/i)
   })
 })

@@ -37,6 +37,24 @@ function hiddenCount(editor: { getView(): any }): number {
 }
 
 describe('section folding', () => {
+  it('keeps an untouched section folded between two applied edits', async () => {
+    const original = '# Intro\n\nOld introduction.\n\n# Inner\n\nFolded body.\n\n# End\n\nOld conclusion.\n'
+    const proposed = original.replace('Old introduction.', 'New introduction.').replace('Old conclusion.', 'New conclusion.')
+    const { editor, cleanup } = await mountEditor(original)
+    try {
+      editor.toggleFold(headingPositions(editor)[1])
+      expect(hiddenCount(editor)).toBe(1)
+      expect(editor.applyMarkdown(original, proposed)).toBe(true)
+      expect(editor.getMarkdown()).toBe(proposed)
+      expect(hiddenCount(editor)).toBe(1)
+      expect(editor.undo()).toBe(true)
+      expect(editor.getMarkdown()).toBe(original)
+      expect(hiddenCount(editor)).toBe(1)
+    } finally {
+      await cleanup()
+    }
+  })
+
   it('folds a section up to the next same-or-higher heading', async () => {
     const { editor, cleanup } = await mountEditor(DOC)
     const [alpha] = headingPositions(editor)

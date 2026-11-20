@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
+import { Popover } from 'radix-ui'
 import type { PluginContext, ViewStatusDot } from '../../core/types'
 import { ScrollArea } from '../../components/ScrollArea'
 import { autoGrowTextarea } from '../../editor/noteDialog'
@@ -181,9 +182,6 @@ export class GenUISession {
   private unsubSources: (() => void) | undefined
   private highlightedId: string | null = null
   private readonly highlightListeners = new Set<() => void>()
-  private focusRequests = 0
-  private pendingFocusComposer = false
-  private readonly focusListeners = new Set<() => void>()
   private haloSeq = 0
   private readonly haloListeners = new Set<() => void>()
   private statusDot: ViewStatusDot = null
@@ -240,27 +238,6 @@ export class GenUISession {
   }
 
   readonly getHighlightedId = (): string | null => this.highlightedId
-
-  readonly subscribeFocusComposer = (listener: () => void): (() => void) => {
-    this.focusListeners.add(listener)
-    return () => {
-      this.focusListeners.delete(listener)
-    }
-  }
-
-  readonly getFocusRequests = (): number => this.focusRequests
-
-  requestFocusComposer(): void {
-    this.pendingFocusComposer = true
-    this.focusRequests += 1
-    for (const listener of this.focusListeners) listener()
-  }
-
-  consumeFocusComposer(): boolean {
-    if (!this.pendingFocusComposer) return false
-    this.pendingFocusComposer = false
-    return true
-  }
 
   readonly subscribeHalo = (listener: () => void): (() => void) => {
     this.haloListeners.add(listener)
@@ -343,7 +320,6 @@ export class GenUISession {
     this.unsubGen()
     this.store.dispose()
     this.highlightListeners.clear()
-    this.focusListeners.clear()
     this.haloListeners.clear()
   }
 }
@@ -421,6 +397,7 @@ function GenUIView({
   const highlightedId = useSyncExternalStore(session.subscribeHighlight, session.getHighlightedId)
   const haloSeq = useSyncExternalStore(session.subscribeHalo, session.getHaloSeq)
   const [haloKey, setHaloKey] = useState(0)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const content = useRef<HTMLDivElement>(null)
   const running = run.kind === 'running'
   const replacing =
@@ -459,11 +436,6 @@ function GenUIView({
     [sources, highlightedId, replacing, ctx, scroller, memory],
   )
 
-  const openPanel = () => {
-    void ctx.commands.execute('rightPane.show', 'genui.panel')
-    session.requestFocusComposer()
-  }
-
   return (
     <div
       className="genui-view"
@@ -472,7 +444,32 @@ function GenUIView({
       aria-busy={awaitingFirstView || generatingWithoutView || undefined}
       ref={content}
     >
-      {haloKey > 0 ? <div key={haloKey} className="genui-halo" aria-hidden="true" /> : null}
+      <div className="genui-toolbar">
+        <Popover.Root open={settingsOpen} onOpenChange={setSettingsOpen}>
+          <Popover.Trigger asChild>
+            <button type="button" className="pill quiet" aria-label="GenUI settings" data-testid="genui-settings-toggle">
+              <i className="ph ph-sliders-horizontal" aria-hidden="true" />
+              {running ? 'Generating…' : 'GenUI settings'}
+            </button>
+          </Popover.Trigger>
+          <Popover.Content
+            className="genui-settings-popover"
+            aria-label="GenUI settings"
+            align="end"
+            sideOffset={6}
+            collisionBoundary={scroller}
+            collisionPadding={8}
+            onEscapeKeyDown={(event) => {
+              if (event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement) {
+                event.preventDefault()
+              }
+            }}
+          >
+            <GenUIPanel session={session} ctx={ctx} memory={memory} onShowComponent={() => setSettingsOpen(false)} />
+          </Popover.Content>
+        </Popover.Root>
+      </div>
+      {haloKey > 0 ? <div key={`halo-${haloKey}`} className="genui-halo" aria-hidden="true" /> : null}
       {awaitingFirstView ? <InitialLoading /> : null}
       {generatingWithoutView ? <LoadingSkeleton /> : null}
 
@@ -481,11 +478,11 @@ function GenUIView({
           <h2>No view yet.</h2>
           <p>
             {run.kind === 'failed'
-              ? 'The last generation failed. What went wrong, and what to do next, is in the GenUI panel.'
-              : 'A view lays this document out with the catalog’s components. The document itself stays as it is.'}
+              ? 'The last generation failed.'
+              : 'Generate a reading view from this document.'}
           </p>
-          <button type="button" className="pill quiet" onClick={openPanel}>
-            {run.kind === 'failed' ? 'Open the GenUI panel' : 'Generate from the GenUI panel'}
+          <button type="button" className="pill quiet" onClick={() => setSettingsOpen(true)}>
+            {run.kind === 'failed' ? 'View generation details' : 'Set up generation'}
           </button>
         </div>
       ) : null}
@@ -494,14 +491,14 @@ function GenUIView({
         <div className="gen-empty genui-empty" data-testid="genui-empty">
           <h2>Cannot show this view</h2>
           <p className="genui-file-error">{state.error}</p>
-          <button type="button" className="pill quiet" onClick={openPanel}>
-            Open the GenUI panel
+          <button type="button" className="pill quiet" onClick={() => setSettingsOpen(true)}>
+            View generation details
           </button>
         </div>
       ) : null}
 
       {state.kind === 'view' && actions ? (
-        <ViewSurface key={state.revision} surface={state.surface} sources={actions} reading={memory.reading} />
+        <ViewSurface key={`surface-${state.revision}`} surface={state.surface} sources={actions} reading={memory.reading} />
       ) : null}
     </div>
   )
@@ -513,10 +510,12 @@ function GenUIPanel({
   session,
   ctx,
   memory,
+  onShowComponent,
 }: {
   session: GenUISession
   ctx: PluginContext
   memory: GenUIMemory
+  onShowComponent(): void
 }): React.ReactElement {
   const state = useSyncExternalStore(session.store.subscribe, session.store.getSnapshot)
   const run = useSyncExternalStore(session.generation.subscribe, session.generation.getSnapshot)
@@ -536,7 +535,6 @@ function GenUIPanel({
   const [haloActive, setHaloActive] = useState(false)
   const focusTextareaRef = useRef<HTMLTextAreaElement>(null)
   const inlineTextareaRef = useRef<HTMLTextAreaElement>(null)
-  const focusRequests = useSyncExternalStore(session.subscribeFocusComposer, session.getFocusRequests)
 
   const [settings, setSettings] = useState<GenerationSettings>({
     model: 'gemini-3.8-flash',
@@ -599,20 +597,6 @@ function GenUIPanel({
     if (!el) return
     autoGrowTextarea(el)
   }, [hasView, request])
-
-  useEffect(() => {
-    if (!session.consumeFocusComposer()) return
-    const frame = window.requestAnimationFrame(() => {
-      if (inlineTextareaRef.current && !inlineTextareaRef.current.disabled) {
-        inlineTextareaRef.current.focus()
-        return
-      }
-      if (focusTextareaRef.current && !focusTextareaRef.current.disabled) {
-        focusTextareaRef.current.focus()
-      }
-    })
-    return () => window.cancelAnimationFrame(frame)
-  }, [session, focusRequests])
 
   useEffect(() => {
     if (!haloActive) return
@@ -766,8 +750,10 @@ function GenUIPanel({
                   type="button"
                   className="gp-item changed-item"
                   data-testid={`changed-item-${item.id}`}
-                  data-component-id={item.id}
-                  onClick={() => session.highlightComponent(item.id)}
+                  onClick={() => {
+                    onShowComponent()
+                    session.highlightComponent(item.id)
+                  }}
                 >
                   <span className={`rdot${item.status === 'missing' ? ' bad' : ''}`} aria-hidden="true" />
                   <span className="t">
@@ -897,30 +883,29 @@ function GenUIPanel({
             )}
           </div>
         ) : null}
-      </ScrollArea>
-
-      <footer className="genui-panel-footer rp-foot r-foot" data-testid="genui-panel-footer">
-        <div className="gp-kv">
-          <span>Agent</span>
-          <span className="meta">Antigravity (agy)</span>
-        </div>
-        <div className="gp-kv">
-          <span>Model</span>
-          <ModelMenu value={settings.model} models={models} disabled={running} onChange={selectModel} />
-        </div>
-        {generatedAt || canUndo ? (
-          <div className="gp-when">
-            <span className="meta" data-testid="genui-generated-at">
-              {generatedAt ? `Generated ${generatedAt}` : ''}
-            </span>
-            {canUndo ? (
-              <button type="button" className="genui-undo" disabled={running} onClick={goBack}>
-                Undo
-              </button>
-            ) : null}
+        <footer className="genui-panel-footer rp-foot r-foot" data-testid="genui-panel-footer">
+          <div className="gp-kv">
+            <span>Agent</span>
+            <span className="meta">Antigravity (agy)</span>
           </div>
-        ) : null}
-      </footer>
+          <div className="gp-kv">
+            <span>Model</span>
+            <ModelMenu value={settings.model} models={models} disabled={running} onChange={selectModel} />
+          </div>
+          {generatedAt || canUndo ? (
+            <div className="gp-when">
+              <span className="meta" data-testid="genui-generated-at">
+                {generatedAt ? `Generated ${generatedAt}` : ''}
+              </span>
+              {canUndo ? (
+                <button type="button" className="genui-undo" disabled={running} onClick={goBack}>
+                  Undo
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </footer>
+      </ScrollArea>
     </div>
   )
 }
@@ -1091,21 +1076,6 @@ export function mountGenUIView(
     dispose() {
       scroller.removeEventListener('scroll', remember)
       view.dispose()
-      watch.dispose()
-      queueMicrotask(() => {
-        root.unmount()
-      })
-    },
-  }
-}
-
-export function mountGenUIPanel(el: HTMLElement, ctx: PluginContext, memory: GenUIMemory): Disposable {
-  const session = ensureSession(ctx, memory)
-  const watch = session.retainWatch()
-  const root = createRoot(el)
-  root.render(<GenUIPanel session={session} ctx={ctx} memory={memory} />)
-  return {
-    dispose() {
       watch.dispose()
       queueMicrotask(() => {
         root.unmount()

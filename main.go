@@ -6,15 +6,54 @@ import (
 	"log"
 	"time"
 
+	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
+	"github.com/Bayern99/mark-go-go/internal/mcp"
+	"github.com/Bayern99/mark-go-go/internal/review"
+	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo"
 )
 
 var documentAutosave = mygo.AutosaveInPlace
 
+type workspaceAdapter struct {
+	svc *workspace.Service
+}
+
+func (a workspaceAdapter) WindowWorkspace(ctx context.Context, root string) (feynman.WorkspaceRef, error) {
+	ref, err := a.svc.WindowWorkspace(ctx, root)
+	if err != nil {
+		return feynman.WorkspaceRef{}, err
+	}
+	return feynman.WorkspaceRef{Root: ref.Root, Window: ref.Window}, nil
+}
+
+func (a workspaceAdapter) EditableDocument(ctx context.Context, root, documentID string) error {
+	return a.svc.EditableDocument(ctx, root, documentID)
+}
+
+func (a workspaceAdapter) UserDataDir() string {
+	return a.svc.UserDataDir()
+}
+
+func (a workspaceAdapter) CheckpointDocument(ctx context.Context, documentID, path string) (review.CheckpointDoc, error) {
+	doc, err := a.svc.CheckpointDocument(ctx, documentID, path)
+	if err != nil {
+		return review.CheckpointDoc{}, err
+	}
+	return review.CheckpointDoc{
+		WorkspaceRoot: doc.WorkspaceRoot,
+		Path:          doc.Path,
+		Content:       doc.Content,
+		Edited:        doc.Edited,
+		Conflict:      doc.Conflict,
+		Deleted:       doc.Deleted,
+	}, nil
+}
+
 func main() {
-	host := newDocumentHost()
+	host := workspace.NewService()
 	configureReadBench(host)
-	mygo.App.OnBeforeQuit(host.onBeforeQuit)
+	mygo.App.OnBeforeQuit(host.OnBeforeQuit)
 
 	ds := mygo.NewDocuments(mygo.DocumentsOptions[string]{
 		Types: []mygo.DocumentType{
@@ -32,21 +71,33 @@ func main() {
 		Autosave:   documentAutosave,
 		NoUntitled: true,
 		Window: func(doc *mygo.Document[string]) *mygo.Window {
-			return host.openWindow(doc)
+			return host.OpenWindow(doc)
 		},
 		Command: func(role mygo.MenuRole, doc *mygo.Document[string], win *mygo.Window) bool {
-			return host.interceptCommand(role, doc, win)
+			return host.InterceptCommand(role, doc, win)
 		},
-		DocumentFocused: host.documentFocused,
-		PathChange:      host.pathChangeLock,
-		ReservePath:     host.reservePath,
+		DocumentFocused: host.DocumentFocused,
+		PathChange:      host.PathChangeLock,
+		ReservePath:     host.ReservePath,
 		BeforeWindowClose: func(win *mygo.Window) bool {
-			return host.interceptWindowClose(win)
+			return host.InterceptWindowClose(win)
 		},
-		AfterStart: host.restoreAfterStart,
+		AfterStart: host.RestoreAfterStart,
 	})
-	host.setDocuments(ds)
-	mygo.BindAs("WorkspaceHost", host)
+	host.SetDocuments(ds)
+	adapter := workspaceAdapter{svc: host}
+	reviewSvc := review.NewService()
+	mygo.BindAs("WorkspaceHost", workspace.NewHost(host))
+	mygo.BindAs("ReviewHost", reviewSvc.Host())
+	research := feynman.NewResearchManager(adapter)
+	mcpServer := mcp.NewServer(mcp.Dependencies{
+		Workspace: host,
+		Review:    reviewSvc,
+	})
+	research.SetBeforeStart(mcpServer.BeforeResearchStart)
+	research.SetAfterStop(mcpServer.AfterResearchStop)
+	mygo.BindAs("ResearchHost", research.Host())
+	mygo.BindAs("CheckpointHost", review.NewCheckpointHost(adapter))
 
 	mygo.App.WhenReady(func() {
 		mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
@@ -73,11 +124,14 @@ func main() {
 			{Role: mygo.RoleViewMenu},
 			{Role: mygo.RoleWindowMenu},
 		}))
-		applyNativeEditMenu(false, false)
+		workspace.ApplyNativeEditMenu(false, false)
 	})
 	err := mygo.App.Run()
-	host.waitForGenerations(5 * time.Second)
-	host.closeAgentCache()
+	research.Close()
+	_ = mcpServer.Close()
+	host.WaitForGenerations(5 * time.Second)
+	host.WaitForSessionWrites(2 * time.Second)
+	host.CloseAgentCache()
 	if err != nil {
 		log.Fatal(err)
 	}

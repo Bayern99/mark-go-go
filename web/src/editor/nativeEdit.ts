@@ -42,7 +42,10 @@ function composerField(
 export function nativeComposerHasFocus(root?: ParentNode | null): boolean {
   const active = document.activeElement
   if (!isNativeField(active)) return false
-  if (root && !root.contains(active)) return false
+  if (root && !root.contains(active)) {
+    return !active.closest('[data-document-id]') &&
+      (active instanceof HTMLTextAreaElement || active.type === 'text' || active.type === 'search')
+  }
   return composerField(active) !== null
 }
 
@@ -103,7 +106,7 @@ export function applyNativeEdit(id: string, command: NativeEditCommand): boolean
 
 export function nativeEditCapabilities(id: string): NativeEditCapabilities {
   const root = targetRoots.get(id)
-  if (nativeComposerHasFocus(root)) return nativeFieldCapabilities()
+  if (nativeComposerHasFocus(root)) return nativeFieldCapabilities(nativeFieldAt(document.activeElement))
   const target = targets.get(id)
   if (!target || !target.editorVisible()) return { canUndo: false, canRedo: false }
   return target.capabilities()

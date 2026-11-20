@@ -1,7 +1,10 @@
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
-import { describe, expect, it, vi } from 'vitest'
-import { RightPane } from '../src/components/RightPane'
+import { describe, expect, it } from 'vitest'
+import { page } from 'vitest/browser'
+import { App } from '../src/App'
+import { createBrowserHost } from '../src/host/browserHost'
+import { createGitPlugin } from '../src/plugins/git'
 import { SidePane } from '../src/components/SidePane'
 import { ViewRegistry } from '../src/core/ViewRegistry'
 import type { ViewLocation, ViewRegistration, ViewStatusDot } from '../src/core/types'
@@ -79,83 +82,21 @@ describe('SidePane', () => {
   })
 })
 
-function renderRightPane(
-  views: ViewRegistry,
-  props: Partial<React.ComponentProps<typeof RightPane>> = {},
-) {
+it('opens Git checkpoints beside the current document when Feynman is disabled', async () => {
+  const host = createBrowserHost('Draft', 'Untitled.md', { untitled: true })
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
-  flushSync(() => {
-    root.render(<RightPane views={views} {...props} />)
-  })
-  return {
-    container,
-    cleanup() {
-      root.unmount()
-      container.remove()
-    },
+  try {
+    root.render(<App host={host} plugins={[createGitPlugin(host.id)]} />)
+    const git = page.getByRole('button', { name: 'Checkpoints' })
+    await git.click()
+    const dialog = page.getByRole('dialog', { name: 'Checkpoints' })
+    await expect.element(dialog.getByText('Save this document to use Checkpoints.')).toBeVisible()
+    expect(git.element().closest('.docbar')).not.toBeNull()
+    expect(container.querySelector('[data-testid="right-pane"]')).toBeNull()
+  } finally {
+    root.unmount()
+    container.remove()
   }
-}
-
-describe('RightPane', () => {
-  it('mounts the first right view by default and ignores left and center views', async () => {
-    const views = new ViewRegistry()
-    const mounts: string[] = []
-    views.register(makeView('left.view', 'left', mounts))
-    views.register(makeView('center.view', 'center', mounts))
-    views.register(makeView('outline.panel', 'right', mounts, 'Outline'))
-    views.register(makeView('genui.panel', 'right', mounts, 'GenUI'))
-
-    const rendered = renderRightPane(views)
-    try {
-      await vi.waitFor(() => expect(mounts).toEqual(['outline.panel']))
-      const right = rendered.container.querySelector('[data-testid="right-pane"]')
-      expect(right).not.toBeNull()
-      const tabs = right?.querySelectorAll('[role="tab"]')
-      expect(tabs).toHaveLength(2)
-      expect(tabs?.[0]?.getAttribute('aria-selected')).toBe('true')
-      expect(tabs?.[1]?.getAttribute('aria-selected')).toBe('false')
-      expect(right?.querySelector('[data-view-id="outline.panel"]')).not.toBeNull()
-      expect(right?.querySelector('[data-view-id="genui.panel"]')).toBeNull()
-    } finally {
-      rendered.cleanup()
-    }
-  })
-
-  it('switches between right views when clicking segmented tabs and shows status dots', async () => {
-    const views = new ViewRegistry()
-    const mounts: string[] = []
-    views.register(makeView('outline.panel', 'right', mounts, 'Outline'))
-    views.register(
-      makeView('genui.panel', 'right', mounts, 'GenUI', {
-        tone: 'warn',
-        title: 'A source changed',
-      }),
-    )
-
-    const rendered = renderRightPane(views)
-    try {
-      await vi.waitFor(() => expect(mounts).toEqual(['outline.panel']))
-      const right = rendered.container.querySelector('[data-testid="right-pane"]')
-      const dot = right?.querySelector('[data-testid="right-tab-dot-genui.panel"]')
-      expect(dot).not.toBeNull()
-      expect(dot?.getAttribute('data-tone')).toBe('warn')
-
-      const genuiTab = right?.querySelector<HTMLButtonElement>(
-        '[data-testid="right-tab-genui.panel"]',
-      )
-      expect(genuiTab).not.toBeNull()
-      flushSync(() => {
-        genuiTab?.click()
-      })
-
-      expect(mounts).toEqual(['outline.panel', 'genui.panel'])
-      expect(genuiTab?.getAttribute('aria-selected')).toBe('true')
-      expect(right?.querySelector('[data-view-id="genui.panel"]')).not.toBeNull()
-      expect(right?.querySelector('[data-view-id="outline.panel"]')).toBeNull()
-    } finally {
-      rendered.cleanup()
-    }
-  })
 })

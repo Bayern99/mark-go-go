@@ -124,10 +124,10 @@ async function openPaneGenUI(container: HTMLElement, host: BrowserHost): Promise
   if (!genuiMode) throw new Error('GenUI mode missing')
   flushSync(() => genuiMode.click())
   await vi.waitFor(() => {
-    const panelTab = pane.querySelector<HTMLButtonElement>('[data-testid="right-tab-genui.panel"]')
-    if (!panelTab) throw new Error('GenUI panel tab missing')
-    return panelTab
-  }).then((panelTab) => flushSync(() => panelTab.click()))
+    const settingsToggle = pane.querySelector<HTMLButtonElement>('[data-testid="genui-settings-toggle"]')
+    if (!settingsToggle) throw new Error('GenUI settings toggle missing')
+    return settingsToggle
+  }).then((settingsToggle) => flushSync(() => settingsToggle.click()))
   await vi.waitFor(() => {
     const view = pane.querySelector('[data-testid="genui-view"]')
     const panel = pane.querySelector('[data-testid="genui-panel"]')
@@ -364,12 +364,11 @@ describe('one settings store across documents', () => {
     const app = await mountWorkspace(workspace)
     try {
       await openPaneGenUI(app.container, a)
-      await openPaneGenUI(app.container, b)
       const paneA = paneOf(app.container, a)
       const triggerBefore = modelTrigger(paneA)
       expect(triggerBefore.textContent).toContain('gemini-3.8-flash')
 
-      await chooseModel(paneOf(app.container, b), 'claude-opus-5-5')
+      await b.setSettings({ model: 'claude-opus-5-5' })
 
       await vi.waitFor(() => {
         if (!modelTrigger(paneA).textContent?.includes('claude-opus-5-5')) {

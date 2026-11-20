@@ -2,6 +2,7 @@ import '../src/styles.css'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
+import { page } from 'vitest/browser'
 import { App } from '../src/App'
 import { createBrowserHost, createBrowserWorkspace } from '../src/host/browserHost'
 import { fileMeta } from '../src/workspace/nav'
@@ -112,6 +113,36 @@ async function mountNav(workspace: WorkspaceAdapter) {
 
 describe('workspace navigation',
   () => {
+    it('restores the file tree and each document outline to where the reader left them', async () => {
+      const seed = navSeed()
+      const files = Array.from({ length: 90 }, (_, i) => ({
+        ...seed.files[0], name: 'file-' + i + '.md', path: '/work/file-' + i + '.md',
+      }))
+      const long = createBrowserHost(files.map((_, i) => '# Heading ' + i).join('\n\n'), 'long.md')
+      const short = createBrowserHost('# Short document', 'short.md')
+      const workspace = createBrowserWorkspace([long, short], { root: '/work', nav: { files } })
+      const app = await mountNav(workspace)
+      const viewport = (selector: string) => app.container.querySelector<HTMLElement>(selector + ' [data-overlayscrollbars-viewport]')!
+      try {
+        await vi.waitFor(() => expect(viewport('[role="tree"]').scrollHeight).toBeGreaterThan(1000))
+        viewport('[role="tree"]').scrollTop = 360
+        await page.getByRole('tab', { name: 'Outline' }).click()
+        await vi.waitFor(() => expect(app.container.querySelector('.outline-count')?.textContent).toBe('90 headings'))
+        viewport('.outline-scroll').scrollTop = 600
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+        await workspace.activate(short.id)
+        await vi.waitFor(() => expect(app.container.querySelector('.outline-link')?.textContent).toBe('Short document'))
+        await workspace.activate(long.id)
+        await vi.waitFor(() => expect(viewport('.outline-scroll').scrollTop).toBe(600))
+        await page.getByRole('tab', { name: 'Workspace' }).click()
+        await vi.waitFor(() => expect(viewport('[role="tree"]').scrollTop).toBe(360))
+        await page.getByRole('tab', { name: 'Outline' }).click()
+        await vi.waitFor(() => expect(viewport('.outline-scroll').scrollTop).toBe(600))
+      } finally {
+        await app.unmount()
+      }
+    })
+
     it('lists nested Markdown files and folder counts, not empty placeholders',
       async () => {
         const workspace = createBrowserWorkspace([], {
@@ -247,6 +278,41 @@ describe('workspace navigation',
         }
       },
     )
+
+    it('reveals the heading sent by the host before the target editor is ready', async () => {
+      const host = createBrowserHost(AUDIT, 'audit.md')
+      const nested = createBrowserHost(NESTED, 'doc.md')
+      const load = nested.load
+      let finishLoad!: () => void
+      const loading = new Promise<void>((resolve) => { finishLoad = resolve })
+      nested.load = async () => { await loading; return load() }
+      const workspace = createBrowserWorkspace([
+        { host, name: 'audit.md', path: '/work/audit.md' },
+        { host: nested, name: 'doc.md', path: '/work/notes/deep/doc.md' },
+      ], {
+        root: '/work',
+        kind: 'folder',
+        nav: navSeed(),
+      })
+      let reveal: ((detail: { id: string; offset: number }) => void) | undefined
+      Object.assign(workspace, {
+        subscribeReveal(fn: typeof reveal) {
+          reveal = fn
+          return { dispose() { reveal = undefined } }
+        },
+      })
+      const app = await mountNav(workspace)
+      try {
+        const target = await workspace.open('/work/notes/deep/doc.md')
+        reveal?.({ id: target.id, offset: NESTED.indexOf('## Findings') })
+        finishLoad()
+        await vi.waitFor(() => {
+          expect(window.getSelection()?.anchorNode?.parentElement?.closest('h2')?.textContent).toBe('Findings')
+        })
+      } finally {
+        await app.unmount()
+      }
+    })
 
     it('filters headings including unsaved open text and keeps the document on clear',
       async () => {

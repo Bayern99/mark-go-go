@@ -18,5 +18,5 @@ Mark Go Go 是围绕原文阅读和编辑的桌面工作台。原文占据视觉
 ## 界面改动如何验收
 
 1. 从目标交互定位组件、状态和样式。修改后核对真实触发和结果，并检查适用的空态、错误、禁用与焦点恢复。 [页面测试](web/test/)
-2. 用真实 Markdown 试默认和最小窗口，确认文档内容、活动标签和主要操作仍可达。涉及阅读宽度或行距时，运行既有排版基准。 [窗口尺寸](workspace.go) · [排版基准](docs/editor-typeset/README.md)
+2. 用真实 Markdown 试默认和最小窗口，确认文档内容、活动标签和主要操作仍可达。涉及阅读宽度或行距时，运行既有排版基准。 [窗口尺寸](internal/workspace/workspace.go) · [排版基准](docs/editor-typeset/README.md)
 3. 涉及原生菜单、文件面板、输入法或辅助技术时，在 macOS 应用中验证。记录实际操作的版本、结果和待验项。 [原生验证](docs/agents/native-automation.md) · [验收记录](docs/acceptance.md)

@@ -20,6 +20,7 @@ import './helpers/enable-feynman'
 const mocks = vi.hoisted(() => ({
   onResearchEvent: undefined as ((e: ResearchUpdate) => void) | undefined,
   onReviewEvent: undefined as ((e: ReviewUpdateEvent) => void) | undefined,
+  onResearchFilesChanged: undefined as ((root: string) => void) | undefined,
   steer: vi.fn(async () => {}),
   followUp: vi.fn(async () => {}),
   clearQueue: vi.fn(async () => ({ steering: [], followUp: [] })),
@@ -98,6 +99,14 @@ vi.mock('../src/host/generated/mygo', async (original) => {
           mocks.onReviewEvent = fn
           return () => {
             mocks.onReviewEvent = undefined
+          }
+        },
+      },
+      researchFilesChanged: {
+        on(fn: (root: string) => void) {
+          mocks.onResearchFilesChanged = fn
+          return () => {
+            mocks.onResearchFilesChanged = undefined
           }
         },
       },
@@ -501,6 +510,33 @@ describe('Portrait Chat | Review right-pane shell', () => {
       expect(getComputedStyle(palette).backdropFilter).toBe('none')
     } finally {
       await sessionCdp.send('Emulation.setEmulatedMedia', { features: [] })
+      root.unmount()
+      container.remove()
+    }
+  })
+
+  it('shows an MCP-published research file in an already open Review', async () => {
+    const container = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(container)
+    const workspace = '/ws-published-artifacts'
+    try {
+      root.render(
+        <WorkspaceResearch
+          root={workspace}
+          documentID="doc-1"
+          open={async (path) => ({ id: 'doc-1', snapshot: async () => ({ path, text: '', version: 1 }) })}
+          openFolder={() => {}}
+        />,
+      )
+      await userEvent.click(page.getByRole('radio', { name: 'Review' }))
+      await expect.element(page.getByText('Completed research files appear here.')).toBeVisible()
+      await vi.waitFor(() => expect(mocks.artifacts).toHaveBeenCalledWith(workspace))
+      mocks.artifacts.mockResolvedValue([
+        { path: 'outputs/new.md', target: workspace + '/outputs/new.md', proposal: false },
+      ])
+      mocks.onResearchFilesChanged?.(workspace)
+      await expect.element(page.getByRole('button', { name: /^new\.md\b/ })).toBeVisible()
+    } finally {
       root.unmount()
       container.remove()
     }

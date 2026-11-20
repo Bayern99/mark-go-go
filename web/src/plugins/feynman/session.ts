@@ -49,6 +49,8 @@ export class ResearchSession {
   private owners = 0
   private off?: () => void
   private offReview?: () => void
+  private offFiles?: () => void
+  private filesRequest = 0
   private closing?: Promise<void>
   private generation = 0
 
@@ -268,6 +270,11 @@ export class ResearchSession {
     session.off ??= events.researchUpdate?.on((event) => {
       if (event.root === root && session.owners > 0) session.receive(event)
     })
+    session.offFiles ??= events.researchFilesChanged?.on((workspaceRoot) => {
+      if (workspaceRoot === root && session.owners > 0 && session.status === 'ready') {
+        void session.refresh()
+      }
+    })
     if (!session.offReview) {
       try {
         session.offReview = events.reviewUpdated?.on((event: ReviewUpdateEvent) => {
@@ -321,6 +328,9 @@ export class ResearchSession {
       this.off = undefined
       this.offReview?.()
       this.offReview = undefined
+      this.offFiles?.()
+      this.offFiles = undefined
+      this.filesRequest++
       const wasOnline = this.status !== 'offline'
       this.status = 'offline'
       this.closing = (wasOnline ? ResearchHost.disconnect(this.root) : Promise.resolve())
@@ -617,8 +627,11 @@ export class ResearchSession {
   }
 
   async refresh() {
+    const request = ++this.filesRequest
     try {
-      this.files = await ResearchHost.artifacts(this.root)
+      const files = await ResearchHost.artifacts(this.root)
+      if (request !== this.filesRequest) return
+      this.files = files
       if (!this.stats && typeof ResearchHost.sessionStats === 'function') {
         try {
           const stats = await ResearchHost.sessionStats(this.root)
@@ -635,6 +648,7 @@ export class ResearchSession {
         }
       }
     } catch (error) {
+      if (request !== this.filesRequest) return
       this.error = String(error)
     }
     this.changed()

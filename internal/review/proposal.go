@@ -143,6 +143,13 @@ func resolveProposedText(base string, input ProposeInput) (string, error) {
 	return input.ProposedText, nil
 }
 
+func sameProposalTarget(p ChangeProposal, input ProposeInput) bool {
+	if p.Path != "" && input.Path != "" {
+		return p.Path == input.Path
+	}
+	return p.DocumentID != "" && p.DocumentID == input.DocumentID
+}
+
 func (s *Service) SubmitProposal(input ProposeInput) (ChangeProposal, error) {
 	if strings.TrimSpace(input.Path) == "" && strings.TrimSpace(input.DocumentID) == "" {
 		return ChangeProposal{}, errors.New("A target document path or ID is required.")
@@ -153,9 +160,7 @@ func (s *Service) SubmitProposal(input ProposeInput) (ChangeProposal, error) {
 	s.mu.Lock()
 	var existingMatch *storedProposal
 	for _, existing := range s.byRoot[rootKey] {
-		if (input.ID != "" && existing.proposal.ID == input.ID) ||
-			(input.Path != "" && existing.proposal.Path == input.Path) ||
-			(input.DocumentID != "" && existing.proposal.DocumentID == input.DocumentID && input.Path == "") {
+		if sameProposalTarget(existing.proposal, input) {
 			existingMatch = existing
 			break
 		}
@@ -182,9 +187,9 @@ func (s *Service) SubmitProposal(input ProposeInput) (ChangeProposal, error) {
 	}
 
 	s.mu.Lock()
-	s.seq++
 	id := input.ID
-	if id == "" {
+	for id == "" || s.findLocked(rootKey, id) != nil {
+		s.seq++
 		id = fmt.Sprintf("proposal-%d", s.seq)
 	}
 
@@ -216,7 +221,7 @@ func (s *Service) SubmitProposal(input ProposeInput) (ChangeProposal, error) {
 	queue := s.byRoot[rootKey]
 	replaced := false
 	for i, existing := range queue {
-		if existing.proposal.ID == id || (input.Path != "" && existing.proposal.Path == input.Path) || (input.DocumentID != "" && existing.proposal.DocumentID == input.DocumentID && input.Path == "") {
+		if sameProposalTarget(existing.proposal, input) {
 			sp.proposal.ID = existing.proposal.ID
 			queue[i] = sp
 			replaced = true
@@ -440,10 +445,10 @@ func clustersConflict(prop changeCluster, user changeCluster) (bool, bool) {
 		return prop.oldStart == user.oldStart, false
 	}
 	if pEmpty {
-		return user.oldStart <= prop.oldStart && prop.oldStart <= user.oldEnd, false
+		return user.oldStart < prop.oldStart && prop.oldStart < user.oldEnd, false
 	}
 	if uEmpty {
-		return prop.oldStart <= user.oldStart && user.oldStart <= prop.oldEnd, false
+		return prop.oldStart < user.oldStart && user.oldStart < prop.oldEnd, false
 	}
 	start := max(prop.oldStart, user.oldStart)
 	end := min(prop.oldEnd, user.oldEnd)

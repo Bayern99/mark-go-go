@@ -313,8 +313,8 @@ function clustersConflict(prop: ChangeCluster, user: ChangeCluster): { collides:
   const pEmpty = prop.oldStart === prop.oldEnd
   const uEmpty = user.oldStart === user.oldEnd
   if (pEmpty && uEmpty) return { collides: prop.oldStart === user.oldStart, identical: false }
-  if (pEmpty) return { collides: user.oldStart <= prop.oldStart && prop.oldStart <= user.oldEnd, identical: false }
-  if (uEmpty) return { collides: prop.oldStart <= user.oldStart && user.oldStart <= prop.oldEnd, identical: false }
+  if (pEmpty) return { collides: user.oldStart < prop.oldStart && prop.oldStart < user.oldEnd, identical: false }
+  if (uEmpty) return { collides: prop.oldStart < user.oldStart && user.oldStart < prop.oldEnd, identical: false }
   return {
     collides: Math.max(prop.oldStart, user.oldStart) < Math.min(prop.oldEnd, user.oldEnd),
     identical: false,

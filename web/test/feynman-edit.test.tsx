@@ -7,6 +7,7 @@ import { App } from '../src/App'
 import type { ResearchArtifact } from '../src/host/generated/mygo'
 import { createBrowserHost, createBrowserWorkspace } from '../src/host/browserHost'
 import { computeMyersHunks, reconcileProposal } from '../src/plugins/DocumentDiff'
+import { ResearchSession } from '../src/plugins/feynman/session'
 import './helpers/enable-feynman'
 
 const prompt = vi.hoisted(() => vi.fn<() => Promise<string>>())
@@ -26,6 +27,35 @@ vi.mock('../src/host/generated/mygo', async importOriginal => {
       artifacts, readArtifact, prompt,
     },
   }
+})
+
+it('keeps an MCP proposal distinct from the first local proposal', () => {
+  const session = ResearchSession.acquire('/queue-identity')
+  try {
+    session.upsertProposal({
+      id: 'proposal-1', documentID: 'paper',
+      base: { path: '/queue-identity/paper.md', text: 'old', version: 1 },
+      text: 'new', source: 'mcp',
+    })
+    session.upsertProposal({
+      documentID: 'draft',
+      base: { path: '/queue-identity/draft.md', text: 'old', version: 1 },
+      text: 'new', source: 'feynman',
+    })
+    expect(new Set(session.proposals.map(p => p.id)).size).toBe(2)
+  } finally {
+    session.release()
+  }
+})
+
+it('preserves insertions at both boundaries of a proposed replacement', () => {
+  const review = reconcileProposal(
+    'above\nold\nbelow\n',
+    'above\nnew\nbelow\n',
+    'above\nbefore\nold\nafter\nbelow\n',
+  )
+  expect(review.hasConflict).toBe(false)
+  expect(review.mergedText).toBe('above\nbefore\nnew\nafter\nbelow\n')
 })
 
 it('computes minimal Myers hunks with 1-based line numbers and 3 lines of context', () => {

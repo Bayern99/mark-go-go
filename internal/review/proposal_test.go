@@ -4,6 +4,38 @@ import (
 	"testing"
 )
 
+func TestQueueKeepsDifferentTargetsWhenIDsCoincide(t *testing.T) {
+	s := NewService()
+	root := t.TempDir()
+	first, err := s.SubmitProposal(ProposeInput{WorkspaceRoot: root, Path: "first.md", BaseText: "old", ProposedText: "new"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.SubmitProposal(ProposeInput{ID: first.ID, WorkspaceRoot: root, Path: "second.md", BaseText: "old", ProposedText: "new"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list := s.ListProposals(root); len(list) != 2 || first.ID == second.ID {
+		t.Fatalf("wanted two independently addressable targets, got %d, ids %q and %q", len(list), first.ID, second.ID)
+	}
+}
+
+func TestProposalMergesLiveInsertionsAtBothReplacementBoundaries(t *testing.T) {
+	s := NewService()
+	root := t.TempDir()
+	prop, err := s.SubmitProposal(ProposeInput{WorkspaceRoot: root, Path: "doc.md", BaseText: "above\nold\nbelow\n", ProposedText: "above\nnew\nbelow\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.SyncProposal(root, prop.ID, "above\nbefore\nold\nafter\nbelow\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.HasConflict || got.MergedText != "above\nbefore\nnew\nafter\nbelow\n" {
+		t.Fatalf("boundary insertions: conflict=%t, merged=%q", got.HasConflict, got.MergedText)
+	}
+}
+
 func TestMyersDiffComputesMinimalHunksWithLineNumbersAndContext(t *testing.T) {
 	if hunks := ComputeDiff("# Same\n\nBody.\n", "# Same\n\nBody.\n"); len(hunks) != 0 {
 		t.Fatalf("expected 0 hunks for identical text, got %d", len(hunks))

@@ -431,6 +431,49 @@ describe('Feynman Settings & alphaXiv Portrait UI', () => {
     }
   })
 
+  it('clears a saved search key separately from resetting the search route', async () => {
+    const placeholders = new Set<string>()
+    let requestRoute = 'auto'
+    const status = mocks.cliSearchStatus.getMockImplementation()!
+    const action = mocks.cliSearchAction.getMockImplementation()!
+    mocks.cliSearchStatus.mockImplementation(async () => {
+      const savedApiKeys = [...placeholders].join(', ') || 'none'
+      return {
+        ...await status(), requestRoute, savedApiKeys,
+        entries: [{ key: 'Saved API keys', value: savedApiKeys }],
+      }
+    })
+    mocks.cliSearchAction.mockImplementation(async (root, kind, provider) => {
+      if (kind === 'set') { placeholders.add(provider); requestRoute = provider }
+      if (kind === 'clear') requestRoute = 'auto'
+      if (kind === 'clear-key') placeholders.delete(provider)
+      return action(root, kind, provider)
+    })
+    const container = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(container)
+    try {
+      root.render(<WorkspaceResearch root="/ws-search-key" documentID="doc-1" open={vi.fn()} openFolder={() => {}} />)
+      await userEvent.click(page.getByTestId('feynman-settings-toggle'))
+      const search = page.getByRole('region', { name: 'Web Search' })
+      await userEvent.fill(search.getByLabelText('Web search provider'), 'exa')
+      await userEvent.fill(search.getByLabelText('Web search API key'), 'fake-exa-key')
+      await userEvent.click(search.getByRole('button', { name: 'Save Web Search' }))
+      await expect.element(search.getByText('exa', { exact: true }).first()).toBeVisible()
+      await userEvent.click(search.getByRole('button', { name: 'Reset to Auto' }))
+      await expect.element(search.getByLabelText('Web search provider')).toHaveValue('auto')
+      await expect.element(search.getByText('exa', { exact: true }).first()).toBeVisible()
+      await userEvent.click(search.getByRole('button', { name: 'Clear exa API key' }))
+      expect(mocks.cliSearchAction).toHaveBeenCalledWith('/ws-search-key', 'clear-key', 'exa', '')
+      await expect.element(search.getByText('none', { exact: true })).toBeVisible()
+      await expect.element(search.getByRole('button', { name: 'Clear exa API key' })).not.toBeInTheDocument()
+    } finally {
+      mocks.cliSearchStatus.mockImplementation(status)
+      mocks.cliSearchAction.mockImplementation(action)
+      root.unmount()
+      container.remove()
+    }
+  })
+
   it('degrades gracefully to raw CLI output when parsed is false', async () => {
     mocks.cliStatus.mockResolvedValueOnce({
       command: 'feynman status',

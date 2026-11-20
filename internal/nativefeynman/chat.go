@@ -69,6 +69,10 @@ func (p *panel) configControls(c *ui.Context) {
 	if len(s.models) == 0 && len(s.thinking) == 0 && len(s.configs) == 0 && !s.hasStats {
 		return
 	}
+	if compactResearchLayout(c) {
+		p.compactConfigControls(c, model)
+		return
+	}
 	ui.Column(c.Key("research-configs")).Gap(4).Padding(4, 5).Radius(8).Background(trackColor).Children(func() {
 		if model != nil {
 			label := model.Name
@@ -77,47 +81,85 @@ func (p *panel) configControls(c *ui.Context) {
 			}
 			ui.Text(c, "Model · "+label).FontSize(11).Bold().Tooltip(model.Provider + "/" + model.ID)
 		}
-		if len(s.models) > 0 {
-			ui.Row(c).Wrap().Gap(3).Children(func() {
-				for _, option := range s.models {
-					value := option.Name
-					if value == "" {
-						value = option.ID
-					}
-					if controlButton(c, value, "Use "+option.Provider+" model "+option.ID).Clicked() && s.status == statusReady {
-						p.runUpdate(func() (func(), error) {
-							got, err := p.host.SetModel(p.window.Context(), s.root, option.Provider, option.ID)
-							return func() { s.session.Model = &got }, err
-						})
-					}
-				}
-			})
-		}
-		if len(s.thinking) > 0 {
-			ui.Row(c).Wrap().Gap(3).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "Thinking").FontSize(10).TextColor(mutedColor)
-				for _, level := range s.thinking {
-					button := controlButton(c, level, "Set thinking level to "+level)
-					if level == s.thinkingLevel {
-						button.Background(ui.Hex("#e8f0ed")).TextColor(accentColor)
-					}
-					if button.Clicked() && s.status == statusReady {
-						p.runUpdate(func() (func(), error) {
-							err := p.host.SetThinkingLevel(p.window.Context(), s.root, level)
-							return func() { s.thinkingLevel = level }, err
-						})
-					}
-				}
-			})
-		}
-		if s.hasStats {
-			label := fmt.Sprintf("%d tokens · $%.4f", s.stats.Tokens.Total, s.stats.Cost)
-			if s.stats.ContextUsage != nil && s.stats.ContextUsage.ContextWindow > 0 {
-				label = fmt.Sprintf("%d / %d tokens · $%.4f", s.stats.ContextUsage.Tokens, s.stats.ContextUsage.ContextWindow, s.stats.Cost)
-			}
-			mutedText(c, label)
-		}
+		p.configChoices(c)
 	})
+}
+
+func (p *panel) compactConfigControls(c *ui.Context, model *feynman.ResearchModel) {
+	modelName := "Choose model"
+	if model != nil {
+		modelName = model.Name
+		if modelName == "" {
+			modelName = model.ID
+		}
+		modelName = "Model · " + modelName
+	}
+	thinking := p.state.thinkingLevel
+	if thinking == "" {
+		thinking = "default"
+	}
+	open := p.collapsibleState("compact-research-config")
+	width, height := c.Size()
+	ui.Row(c.Key("research-compact-config-row")).Gap(5).Padding(3, 5).Radius(8).Background(trackColor).AlignItems(ui.Center).Children(func() {
+		button := ui.Button(c.Key("research-compact-config"), modelName).Label("Research model and thinking settings").Tooltip("Choose a research model and thinking level").Grow(1).MinWidth(0).MaxLines(1).Ellipsis("…").MinHeight(27).Padding(4, 7).Radius(6)
+		if button.Clicked() {
+			*open = !*open
+		}
+		mutedText(c, "Thinking · "+thinking)
+		ui.Popover(c, button, open, func() {
+			popoverWidth := min(float32(352), max(float32(280), width-112))
+			maxHeight := max(float32(128), height-180)
+			ui.Column(c).Width(popoverWidth).Children(func() {
+				ui.Scroll(c.Key("research-config-popover-scroll")).MaxHeight(maxHeight).FillWidth().Label("Research model and thinking settings").Children(func() {
+					ui.Column(c).Gap(4).Padding(7).Children(func() { p.configChoices(c) })
+				})
+			})
+		})
+	})
+}
+
+func (p *panel) configChoices(c *ui.Context) {
+	s := p.state
+	if len(s.models) > 0 {
+		ui.Row(c).Wrap().Gap(3).Children(func() {
+			for _, option := range s.models {
+				value := option.Name
+				if value == "" {
+					value = option.ID
+				}
+				if controlButton(c, value, "Use "+option.Provider+" model "+option.ID).Clicked() && s.status == statusReady {
+					p.runUpdate(func() (func(), error) {
+						got, err := p.host.SetModel(p.window.Context(), s.root, option.Provider, option.ID)
+						return func() { s.session.Model = &got }, err
+					})
+				}
+			}
+		})
+	}
+	if len(s.thinking) > 0 {
+		ui.Row(c).Wrap().Gap(3).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "Thinking").FontSize(10).TextColor(mutedColor)
+			for _, level := range s.thinking {
+				button := controlButton(c, level, "Set thinking level to "+level)
+				if level == s.thinkingLevel {
+					button.Background(ui.Hex("#e8f0ed")).TextColor(accentColor)
+				}
+				if button.Clicked() && s.status == statusReady {
+					p.runUpdate(func() (func(), error) {
+						err := p.host.SetThinkingLevel(p.window.Context(), s.root, level)
+						return func() { s.thinkingLevel = level }, err
+					})
+				}
+			}
+		})
+	}
+	if s.hasStats {
+		label := fmt.Sprintf("%d tokens · $%.4f", s.stats.Tokens.Total, s.stats.Cost)
+		if s.stats.ContextUsage != nil && s.stats.ContextUsage.ContextWindow > 0 {
+			label = fmt.Sprintf("%d / %d tokens · $%.4f", s.stats.ContextUsage.Tokens, s.stats.ContextUsage.ContextWindow, s.stats.Cost)
+		}
+		mutedText(c, label)
+	}
 }
 
 func (p *panel) message(c *ui.Context, index int, item message, streaming bool) {
@@ -562,20 +604,23 @@ func (p *panel) question(c *ui.Context, question feynman.ResearchUpdate) {
 func (p *panel) sessions(c *ui.Context) {
 	s := p.state
 	ui.Column(c.Key("feynman-session-history")).FillWidth().Padding(5, 7).Gap(4).Radius(8).Background(trackColor).Children(func() {
-		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-			if p.sessionView != "" {
-				if smallButton(c, "Back", "Return to conversation history").Clicked() {
-					p.sessionView = ""
-				}
+		title := "Conversations"
+		if p.sessionView == "fork" {
+			title = "Fork from a message"
+		} else if p.sessionView == "tree" {
+			title = "Conversation tree"
+		}
+		back := func() {
+			if p.sessionView != "" && smallButton(c, "Back", "Return to conversation history").Clicked() {
+				p.sessionView = ""
 			}
-			title := "Conversations"
-			if p.sessionView == "fork" {
-				title = "Fork from a message"
-			} else if p.sessionView == "tree" {
-				title = "Conversation tree"
+		}
+		close := func() {
+			if smallButton(c, "Close", "Close conversation history").Clicked() {
+				s.sessionsOpen = false
 			}
-			sectionTitle(c, title)
-			ui.Row(c).Grow(1)
+		}
+		actions := func() {
 			if smallButton(c, "New", "Start a new conversation").Disabled(s.status != statusReady).Clicked() {
 				p.newSession()
 			}
@@ -591,10 +636,23 @@ func (p *panel) sessions(c *ui.Context) {
 			if smallButton(c, "Tree", "Show conversation tree").Clicked() {
 				p.loadConversationTree()
 			}
-			if smallButton(c, "Close", "Close conversation history").Clicked() {
-				s.sessionsOpen = false
-			}
-		})
+		}
+		if compactResearchLayout(c) {
+			ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+				back()
+				ui.Text(c, title).Grow(1).MinWidth(0).MaxLines(1).Ellipsis("…").Font("Barlow Semi Condensed").FontSize(17).Bold().TextColor(inkColor)
+				close()
+			})
+			ui.Row(c).Wrap().Gap(4).Children(actions)
+		} else {
+			ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+				back()
+				sectionTitle(c, title)
+				ui.Row(c).Grow(1)
+				actions()
+				close()
+			})
+		}
 		if p.sessionView == "" {
 			ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
 				input(c, "feynman-session-name", "Conversation name", &s.renameDraft, "Rename conversation")

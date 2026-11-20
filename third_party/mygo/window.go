@@ -2303,6 +2303,11 @@ func (h *windowHandler) MenuItemClicked(id int) {
 	}
 }
 
+func (h *windowHandler) HandlesDocumentHistory() bool {
+	b := documentFor(h.w)
+	return b != nil && b.kind != nil && b.kind.command != nil
+}
+
 func (h *windowHandler) Resized()           { h.w.stateChanged(); h.w.placeFlyouts(); fire(&h.w.onResize) }
 func (h *windowHandler) Moved()             { h.w.stateChanged(); h.w.placeFlyouts(); fire(&h.w.onMove) }
 func (h *windowHandler) Minimized()         { h.w.stateChanged(); fire(&h.w.onMinimize) }

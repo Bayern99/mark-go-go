@@ -6,6 +6,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
+	"github.com/egoist/mygo/ui/markdown/parser"
 )
 
 var referenceStart = regexp.MustCompile(`^ {0,3}\[(?:\\.|[^\]\\])+\]:\s*\S`)
@@ -49,24 +50,44 @@ func frontmatterRows(c *ui.Context, src string) {
 	}
 }
 func (p *previewLayout) referenceDefinitions(snap editor.Snapshot, frontEnd int) {
-	scan := func(a, z int) {
+	p.scanReferenceDefinitions(snap, frontEnd, func(a, end int) bool {
+		folded := false
+		for _, h := range p.hiddenRanges {
+			if h[0] <= a && a < h[1] {
+				folded = true
+				break
+			}
+		}
+		if !folded {
+			p.specialBlock(snap, a, end, "reference definition", "Reference definition", snap.Slice(a, end))
+		}
+		return false
+	})
+}
+
+func (p *previewLayout) referenceDestination(snap editor.Snapshot, target string) (start, end int, ok bool) {
+	p.scanReferenceDefinitions(snap, p.frontEnd, func(a, z int) bool {
+		label, destStart, destEnd, found := referenceDefinitionRange(snap.Slice(a, z))
+		if !found || parser.NormalizeLabel(label) != target {
+			return false
+		}
+		start, end, ok = a+destStart, a+destEnd, true
+		return true
+	})
+	return start, end, ok
+}
+
+func (p *previewLayout) scanReferenceDefinitions(snap editor.Snapshot, frontEnd int, visit func(start, end int) bool) bool {
+	scan := func(a, z int) bool {
 		for a < z {
 			line := snap.LineOf(a)
-			end := min(z, snap.LineEnd(line))
-			if end > a && referenceStart.MatchString(snap.Slice(a, end)) {
-				folded := false
-				for _, h := range p.hiddenRanges {
-					if h[0] <= a && a < h[1] {
-						folded = true
-						break
-					}
-				}
-				if !folded {
-					p.specialBlock(snap, a, end, "reference definition", "Reference definition", snap.Slice(a, end))
-				}
+			start, end := snap.LineStart(line), min(z, snap.LineEnd(line))
+			if end > start && referenceStart.MatchString(snap.Slice(start, end)) && visit(start, end) {
+				return true
 			}
 			a = end + 1
 		}
+		return false
 	}
 	last := frontEnd
 	for i := range p.document.Children(0) {
@@ -75,10 +96,74 @@ func (p *previewLayout) referenceDefinitions(snap editor.Snapshot, frontEnd int)
 			continue
 		}
 		start := snap.LineStart(snap.LineOf(b.Start))
-		if start > last {
-			scan(last, start)
+		if start > last && scan(last, start) {
+			return true
 		}
 		last = min(snap.Len(), snap.LineEnd(snap.LineOf(b.End))+1)
 	}
-	scan(last, snap.Len())
+	return scan(last, snap.Len())
+}
+
+func referenceDefinitionRange(line string) (label string, destinationStart, destinationEnd int, ok bool) {
+	start := 0
+	for start < len(line) && line[start] == ' ' {
+		start++
+	}
+	if start > 3 || start >= len(line) || line[start] != '[' {
+		return "", 0, 0, false
+	}
+	close := closingLinkLabel(line[start:])
+	if close < 0 {
+		return "", 0, 0, false
+	}
+	label = line[start+1 : start+close]
+	i := start + close + 1
+	if i >= len(line) || line[i] != ':' {
+		return "", 0, 0, false
+	}
+	i++
+	for i < len(line) && (line[i] == ' ' || line[i] == '\t') {
+		i++
+	}
+	if i >= len(line) {
+		return "", 0, 0, false
+	}
+	if line[i] == '<' {
+		i++
+		destinationStart = i
+		for i < len(line) {
+			if line[i] == '\\' && i+1 < len(line) {
+				i += 2
+				continue
+			}
+			if line[i] == '>' {
+				return label, destinationStart, i, true
+			}
+			i++
+		}
+		return "", 0, 0, false
+	}
+	destinationStart = i
+	depth := 0
+	for i < len(line) {
+		if line[i] == '\\' && i+1 < len(line) {
+			i += 2
+			continue
+		}
+		switch line[i] {
+		case '(':
+			depth++
+		case ')':
+			if depth == 0 {
+				return label, destinationStart, i, true
+			}
+			depth--
+		case ' ', '\t':
+			if depth == 0 {
+				return label, destinationStart, i, true
+			}
+		}
+		i++
+	}
+	return label, destinationStart, i, true
 }

@@ -21,6 +21,7 @@ type previewLayout struct {
 	sections      []foldSection
 	headings      map[string]int
 	refs          map[string][]int
+	frontEnd      int
 	version       uint64
 	applied       bool
 	replacements  []editor.Replacement
@@ -61,7 +62,8 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	p.replacements = p.replacements[:0]
 	p.styles = p.styles[:0]
 	p.blocks = append(p.blocks[:0], pageMargin(0, true, 44), pageMargin(snap.LineCount()-1, false, 120))
-	frontEnd := p.frontmatter(snap)
+	p.frontEnd = p.frontmatter(snap)
+	frontEnd := p.frontEnd
 	for i := 1; i < p.document.Len(); i++ {
 		b := p.document.Block(i)
 		if b.Start < frontEnd || b.Start < p.foldUntil {
@@ -111,10 +113,44 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 				}
 				if task+3 <= b.End && src[task] == '[' && src[task+2] == ']' {
 					mark := "☐"
-					if b.Task == parser.Checked {
+					checked := b.Task == parser.Checked
+					if checked {
 						mark = "☑"
 					}
-					p.replace(b.Start, task+3, mark)
+					p.replace(b.Start, task, "")
+					p.readable[task] = mark
+					line := snap.LineOf(task + 3)
+					lineText := snap.Line(line)
+					textAt := task + 3 - snap.LineStart(line)
+					description := strings.TrimSpace(lineText[min(textAt, len(lineText)):])
+					if description != "" {
+						description = "Task: " + description
+					} else {
+						description = "Task"
+					}
+					p.replacements = append(p.replacements, editor.Replacement{
+						Start:       task,
+						End:         task + 3,
+						Width:       20,
+						Interactive: true,
+						Content: func(c *ui.Context, e ui.Element, _ editor.Replacement) {
+							e.Children(func() {
+								value := checked
+								control := ui.Checkbox(c, &value, "").Label(description).Disabled(p.owner.state.ReadOnly)
+								if control.Changed() && !p.owner.state.ReadOnly {
+									idx := p.owner.sourceIndex()
+									a, z := idx.rawAtEditor(task), idx.rawAtEditor(task+3)
+									next := "[ ]"
+									if value {
+										next = "[x]"
+									}
+									if p.owner.Apply(snap.Version(), a, z, src[task:task+3], next) == nil {
+										c.Invalidate()
+									}
+								}
+							})
+						},
+					})
 				}
 			} else if !parent.Ordered {
 				p.replace(b.Start, markerEnd, "•")

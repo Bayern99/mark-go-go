@@ -29,6 +29,8 @@ scripts/native-automation-smoke.sh
 
 运行 `go test ./internal/nativeeditor` 可复核对齐、单元格编辑与撤销、矩形复制、相邻列拖动、宽表独立横滚、脚注往返、键盘折叠、批注冲突及混合换行保真。兼容用例载入旧版折叠和列宽签名。[原生编辑用例](../../internal/nativeeditor/complex_test.go)
 
+在原生 Preview 切换任务复选框，保存后只有该任务的 Markdown 标记变化。通过链接浮层编辑目的地址，保存后完整文件只有 URL 变化，原有标题、标签格式和混合换行均保留。两项操作分别切到 Markdown 撤销及保存，原文件逐字节恢复。 [Preview 用例](../../internal/nativeeditor/preview_test.go)
+
 ## GenUI 阅读和生成
 
 2026 年 11 月 20 日，在独立应用标识的 macOS 调试包中打开带两处同名标题、CRLF 和 emoji 的文稿。通过原生控件打开已有旁车，核对缺失与已改来源，点击清单进入第二个标题的原文。Preview 的可访问选区为 36–50，对应引用的完整文字。返回 GenUI、切换内页并对金额排序后，原地添加含评论结束符和 emoji 的批注。保存后比对整份原文，只有转义后的批注和分隔换行增加。

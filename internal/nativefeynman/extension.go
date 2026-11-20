@@ -188,6 +188,9 @@ func (p *panel) researchUpdated(update feynman.ResearchUpdate) {
 	if p.state == nil || update.Root == "" || fsutil.CanonicalPath(update.Root) != p.state.root {
 		return
 	}
+	if update.Kind == "reset" {
+		p.decodedImages = nil
+	}
 	p.state.receive(update)
 	if update.Kind == "agentSettled" {
 		p.refreshFiles(p.state.root)

@@ -48,7 +48,6 @@ func TestLoopbackHTTPAuthAndIsolatedMCPJSON(t *testing.T) {
 	t.Setenv("FEYNMAN_HOME", home)
 
 	repoRoot := t.TempDir()
-	// Initialize a git repository to prove zero workspace-repo pollution.
 	for _, args := range [][]string{
 		{"init"},
 		{"config", "user.email", "test@example.com"},
@@ -98,7 +97,6 @@ func TestLoopbackHTTPAuthAndIsolatedMCPJSON(t *testing.T) {
 		t.Fatalf("server bound to %q, want 127.0.0.1:<ephemeral>", u.Host)
 	}
 
-	// Verify <work>/.pi/mcp.json exists with mode 0600 and expected structure.
 	mcpPath := filepath.Join(workDir, ".pi", "mcp.json")
 	info, err := os.Stat(mcpPath)
 	if err != nil {
@@ -139,7 +137,6 @@ func TestLoopbackHTTPAuthAndIsolatedMCPJSON(t *testing.T) {
 		t.Fatalf("token is not hex: %v", err)
 	}
 
-	// Verify zero repo pollution and untouched global ~/.feynman/agent/mcp.json.
 	statusCmd := exec.Command("git", "status", "--porcelain")
 	statusCmd.Dir = repoRoot
 	statusOut, err := statusCmd.CombinedOutput()
@@ -153,7 +150,6 @@ func TestLoopbackHTTPAuthAndIsolatedMCPJSON(t *testing.T) {
 		t.Fatalf("global ~/.feynman/agent/mcp.json must remain untouched, stat err=%v", err)
 	}
 
-	// Unauthenticated and wrong-token requests must return 401.
 	for _, badToken := range []string{"", "wrong-token", strings.Repeat("0", 64)} {
 		resp := postMCP(t, srv.URL(), badToken, "", map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize"})
 		resp.Body.Close()
@@ -162,7 +158,6 @@ func TestLoopbackHTTPAuthAndIsolatedMCPJSON(t *testing.T) {
 		}
 	}
 
-	// Non-loopback Origin must be rejected with 403.
 	rawInit, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize"})
 	badOriginReq, _ := http.NewRequest(http.MethodPost, srv.URL(), bytes.NewReader(rawInit))
 	badOriginReq.Header.Set("Authorization", "Bearer "+token)
@@ -177,7 +172,6 @@ func TestLoopbackHTTPAuthAndIsolatedMCPJSON(t *testing.T) {
 		t.Fatalf("non-loopback Origin status = %d, want 403", badOriginResp.StatusCode)
 	}
 
-	// Valid initialize handshake + Mcp-Session-Id + notifications/initialized + GET 405 + DELETE 204.
 	initResp := postMCP(t, srv.URL(), token, "", map[string]any{
 		"jsonrpc": "2.0",
 		"id":      1,
@@ -236,7 +230,6 @@ func TestLoopbackHTTPAuthAndIsolatedMCPJSON(t *testing.T) {
 		t.Fatalf("request with deleted Mcp-Session-Id status = %d, want 404", afterDelResp.StatusCode)
 	}
 
-	// AfterResearchStop revokes the Bearer token immediately.
 	srv.AfterResearchStop(repoRoot, workDir)
 	revokedResp := postMCP(t, srv.URL(), token, "", map[string]any{"jsonrpc": "2.0", "id": 3, "method": "ping"})
 	revokedResp.Body.Close()

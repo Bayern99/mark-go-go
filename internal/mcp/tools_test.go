@@ -127,7 +127,6 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 	defer func() { _ = srv.Close() }()
 	token, sid := initTestSession(t, srv, root, work)
 
-	// 0. tools/list lists all 5 required tools.
 	toolsResp := callMCPJSON(t, srv.URL(), token, sid, "tools/list", nil)
 	if toolsResp.Error != nil {
 		t.Fatalf("tools/list error: %+v", toolsResp.Error)
@@ -147,7 +146,6 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 		}
 	}
 
-	// 1. propose_edit queues a Change proposal without mutating open buffer or disk file.
 	proposeRes := callTool(t, srv.URL(), token, sid, "propose_edit", map[string]any{
 		"documentId": "doc-paper",
 		"oldText":    "Old numbers.",
@@ -184,6 +182,16 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 		})
 		if !result.IsError || len(revSvc.ListProposals(root)) != 1 {
 			t.Errorf("stale line range accepted: %+v", result)
+		}
+	})
+	t.Run("line range requires a document version", func(t *testing.T) {
+		before := len(revSvc.ListProposals(root))
+		result := callTool(t, srv.URL(), token, sid, "propose_edit", map[string]any{
+			"documentId": "doc-paper", "startLine": 7, "endLine": 7, "newText": "Unversioned replacement.",
+		})
+		if !result.IsError || !strings.Contains(result.Content[0].Text, "baseVersion") ||
+			len(revSvc.ListProposals(root)) != before {
+			t.Errorf("unversioned line range was not rejected: %+v", result)
 		}
 	})
 	t.Run("unopened document rejects a stale disk version", func(t *testing.T) {
@@ -238,7 +246,6 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 		}
 	})
 
-	// 2. create_document uses O_EXCL and refuses to overwrite existing files (even under concurrency).
 	createRes := callTool(t, srv.URL(), token, sid, "create_document", map[string]any{
 		"path":    "outputs/summary.md",
 		"content": "# Summary\n\nGenerated findings.\n",
@@ -290,7 +297,6 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 		t.Fatal("expected path traversal create_document to fail")
 	}
 
-	// Concurrent O_EXCL race test: 8 callers race to create the same new path; exactly 1 succeeds.
 	var wins atomic.Int32
 	var wg sync.WaitGroup
 	for i := range 8 {
@@ -311,7 +317,6 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 		t.Fatalf("concurrent create_document wins = %d, want 1", wins.Load())
 	}
 
-	// 3. open_document focuses document and optional heading.
 	openRes := callTool(t, srv.URL(), token, sid, "open_document", map[string]any{
 		"path":    "outputs/summary.md",
 		"heading": "Summary",
@@ -330,7 +335,6 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 		t.Fatal("expected open_document with nonexistent heading to fail")
 	}
 
-	// 4. write_genui_view validates via pure-Go headless validator and atomically writes .genui.json.
 	invalidView := callTool(t, srv.URL(), token, sid, "write_genui_view", map[string]any{
 		"path": "outputs/summary.md",
 		"a2ui": []map[string]any{
@@ -408,7 +412,6 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 		t.Fatalf("stamped source hash = %q, want %q", writtenView.Sources["summary"].Hash, summarySecs[0].Hash)
 	}
 
-	// Second write_genui_view creates .prev.json for one-step undo.
 	secondView := callTool(t, srv.URL(), token, sid, "write_genui_view", map[string]any{
 		"path":    "outputs/summary.md",
 		"request": "Summarize findings v2",
@@ -436,7 +439,6 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 		t.Fatal("expected CanUndo=true after second write_genui_view")
 	}
 
-	// 5. create_checkpoint records labeled provenance checkpoint (refusing unsaved open doc, succeeding on saved doc).
 	unsavedCP := callTool(t, srv.URL(), token, sid, "create_checkpoint", map[string]any{
 		"documentId": "doc-paper",
 		"label":      "Should refuse unsaved",
@@ -460,7 +462,6 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 		t.Fatalf("unexpected checkpoints: %+v", cps)
 	}
 
-	// Verify ResearchManager hook wiring compiles and registers cleanly.
 	rm := feynman.NewResearchManager(nil)
 	rm.SetBeforeStart(srv.BeforeResearchStart)
 	rm.SetAfterStop(srv.AfterResearchStop)

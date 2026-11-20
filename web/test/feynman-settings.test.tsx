@@ -363,7 +363,6 @@ describe('Feynman Settings & alphaXiv Portrait UI', () => {
       await expect.element(page.getByRole('radio', { name: /Chat/ })).toBeVisible()
       await expect.element(page.getByTestId('feynman-settings-toggle')).toBeVisible()
 
-      // Open Feynman Settings in-pane
       await userEvent.click(page.getByTestId('feynman-settings-toggle'))
 
       await expect.element(page.getByRole('heading', { name: 'Feynman Settings', level: 3 })).toBeVisible()
@@ -385,16 +384,13 @@ describe('Feynman Settings & alphaXiv Portrait UI', () => {
         await expect.element(page.getByRole('heading', { name: heading, level: 4 })).toBeVisible()
       }
 
-      // Zero native <select> or <meter> anywhere in Feynman panel
       expect(container.querySelectorAll('select, meter').length).toBe(0)
 
-      // Configure Web Search with API key natively
       await userEvent.fill(page.getByLabelText('Web search provider'), 'exa')
       await userEvent.fill(page.getByLabelText('Web search API key'), 'exa-test-key')
       await userEvent.click(page.getByRole('button', { name: 'Save Web Search' }))
       expect(mocks.cliSearchAction).toHaveBeenCalledWith('/ws-settings', 'set', 'exa', 'exa-test-key')
 
-      // Configure MCP server natively
       await userEvent.fill(page.getByLabelText('MCP server name'), 'papers-mcp')
       await userEvent.fill(page.getByLabelText('MCP server URL'), 'http://127.0.0.1:9001/mcp')
       await userEvent.click(page.getByRole('button', { name: 'Add MCP Server' }))
@@ -407,7 +403,6 @@ describe('Feynman Settings & alphaXiv Portrait UI', () => {
         }),
       )
 
-      // Exercise Models & Tier, MCP Remove, Packages, and Doctor
       await userEvent.click(page.getByRole('button', { name: 'Remove zotero (project)' }))
       expect(mocks.climcpRemove).toHaveBeenCalledWith('/ws-settings', 'zotero', true)
       await userEvent.click(page.getByRole('button', { name: 'Set default' }))
@@ -426,10 +421,8 @@ describe('Feynman Settings & alphaXiv Portrait UI', () => {
       await userEvent.click(page.getByRole('button', { name: 'Verify Preview' }))
       expect(mocks.cliSetupPreview).toHaveBeenCalledWith('/ws-settings')
 
-      // Chat was never disconnected while managing settings
       expect(mocks.disconnect).not.toHaveBeenCalled()
 
-      // Return to Chat and verify session is still Connected
       await userEvent.click(page.getByRole('button', { name: 'Back to Chat' }))
       await expect.element(page.getByLabelText('Connected')).toBeVisible()
     } finally {
@@ -493,7 +486,6 @@ describe('Feynman Settings & alphaXiv Portrait UI', () => {
       const statusCallsBefore = mocks.cliStatus.mock.calls.length
       const modelCallsBefore = mocks.cliModelList.mock.calls.length
 
-      // Simulate native window focus regain (both MyGo event and browser focus event)
       mocks.onFocusEvent?.({ root: '/ws-focus' })
       await expect.poll(() => mocks.cliStatus.mock.calls.length).toBeGreaterThan(statusCallsBefore)
       await expect.poll(() => mocks.cliModelList.mock.calls.length).toBeGreaterThan(modelCallsBefore)
@@ -522,7 +514,6 @@ describe('Feynman Settings & alphaXiv Portrait UI', () => {
       )
       await expect.element(page.getByTestId('fy-alphaxiv-trigger')).toBeVisible()
 
-      // Open alphaXiv directly from Chat actions
       await userEvent.click(page.getByTestId('fy-alphaxiv-trigger'))
       await userEvent.click(page.getByRole('button', { name: 'Back to Chat' }))
       await expect.element(page.getByRole('radio', { name: /Chat/ })).toHaveFocus()
@@ -566,12 +557,10 @@ describe('Feynman Settings & alphaXiv Portrait UI', () => {
       await userEvent.click(page.getByRole('button', { name: 'Save note' }))
       expect(mocks.cliAlphaAnnotate).toHaveBeenCalledWith('/ws-alpha', 'set', '2501.01234', 'Verify theorem 2')
 
-      // Insert finding into Chat composer
       await userEvent.click(page.getByRole('button', { name: 'Insert to Chat' }).first())
       const textarea = container.querySelector<HTMLTextAreaElement>('[aria-label="Research prompt"]')!
       expect(textarea.value).toContain('2501.01234')
 
-      // Verify non-blocking CLI Settings execution while Chat prompt is actively streaming
       let resolvePrompt!: (v: string) => void
       mocks.prompt.mockImplementationOnce(
         () =>
@@ -583,13 +572,11 @@ describe('Feynman Settings & alphaXiv Portrait UI', () => {
       await userEvent.click(page.getByRole('button', { name: 'Send' }))
       await expect.element(page.getByLabelText('Working')).toBeVisible()
 
-      // Open Feynman Settings and run Doctor while Chat is mid-turn
       await userEvent.click(page.getByTestId('feynman-settings-toggle'))
       await userEvent.click(page.getByRole('button', { name: 'Run Doctor' }))
       expect(mocks.cliDoctor).toHaveBeenCalledWith('/ws-alpha')
       expect(mocks.disconnect).not.toHaveBeenCalled()
 
-      // Return to Chat, verify turn is still working, then settle it cleanly
       await userEvent.click(page.getByRole('button', { name: 'Back to Chat' }))
       await expect.element(page.getByLabelText('Working')).toBeVisible()
       const refreshCalls = mocks.refreshModels.mock.calls.length

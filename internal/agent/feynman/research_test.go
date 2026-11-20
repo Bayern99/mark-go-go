@@ -113,7 +113,6 @@ func TestDirectFeynmanCommandAndFraming(t *testing.T) {
 		t.Fatal("expected overlap between workspace root and work dir to fail")
 	}
 
-	// Verify 32 MiB scanner buffer, CRLF stripping, and non-JSON stdout banner ignoring.
 	h := NewResearchManager(fakeWorkspaceLookup{dataDir: data})
 	defer h.Close()
 	h.command = fixtureCommand(home)
@@ -127,7 +126,6 @@ func TestDirectFeynmanCommandAndFraming(t *testing.T) {
 		t.Fatal("expected dynamic commands after banner + CRLF framing")
 	}
 
-	// Send a prompt that returns a >1.5 MiB payload with CRLF endings to prove 32 MiB buffer works.
 	ctx := context.Background()
 	done := make(chan error, 1)
 	go func() {
@@ -178,7 +176,6 @@ func TestResearchNativeRPCStreamingAndMidTurnControls(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 1. Dynamic get_commands preserving source and sourceInfo
 	cmdUpdate := waitUpdate(t, events, "commands")
 	if len(cmdUpdate.Commands) != 3 {
 		t.Fatalf("expected 3 commands (filtering new/quit/exit), got %+v", cmdUpdate.Commands)
@@ -204,13 +201,11 @@ func TestResearchNativeRPCStreamingAndMidTurnControls(t *testing.T) {
 		t.Fatalf("extension command lost source or sourceInfo: %+v", ext)
 	}
 
-	// Also verify direct Commands() call on ResearchHost
 	directCmds, err := h.Host().Commands(ctx, root)
 	if err != nil || len(directCmds) != 3 || directCmds[0].SourceInfo == nil {
 		t.Fatalf("Host().Commands failed: %+v %v", directCmds, err)
 	}
 
-	// 2. set_model, set_thinking_level, get_session_stats, compact
 	if _, err := h.Host().SetModel(ctx, root, "unknown", "missing"); err == nil {
 		t.Fatal("expected unknown model to fail")
 	}
@@ -234,8 +229,6 @@ func TestResearchNativeRPCStreamingAndMidTurnControls(t *testing.T) {
 		t.Fatalf("Compact mismatch: %+v %v", compacted, err)
 	}
 
-	// 3. Full streaming lifecycle: agent_start, turn_start, message_update (thinking_delta, text_delta),
-	// tool_execution_start/update/end, auto_retry_*, auto_compaction_*, turn_end, agent_end.
 	drainEvents(events)
 	done := make(chan error, 1)
 	go func() {
@@ -334,7 +327,6 @@ drainLoop:
 			sawRetryStart, sawRetryEnd, sawCompactStart, sawCompactEnd, sawTurnEnd, sawAgentEnd)
 	}
 
-	// 4. Mid-turn steer, follow_up, clear_queue
 	drainEvents(events)
 	go func() {
 		_, err := h.Host().Prompt(ctx, root, "wait for steer and follow_up", "", "")
@@ -354,7 +346,6 @@ drainLoop:
 	if err != nil || len(cleared.Steering) != 1 || cleared.Steering[0] != "Focus on acoustic latency" || len(cleared.FollowUp) != 2 {
 		t.Fatalf("ClearQueue returned %+v, err=%v", cleared, err)
 	}
-	// Re-queue steer and follow-up so the fixture completes the turn with them
 	if err := h.Host().Steer(ctx, root, "Focus on acoustic latency", nil); err != nil {
 		t.Fatalf("re-Steer failed: %v", err)
 	}
@@ -378,7 +369,6 @@ drainLoop:
 		t.Fatalf("missing steered/follow-up output in %q", combined)
 	}
 
-	// 5. Abort / Cancel mid-turn
 	drainEvents(events)
 	go func() {
 		_, err := h.Host().Prompt(ctx, root, "cancel this", "", "")
@@ -444,7 +434,6 @@ func TestResearchAllNineExtensionUIRequests(t *testing.T) {
 		done <- err
 	}()
 
-	// 1. select
 	sel := waitUpdate(t, events, "select")
 	if sel.UIMethod != "select" || sel.Title != "Choose environment" || len(sel.Options) != 2 {
 		t.Fatalf("unexpected select request: %+v", sel)
@@ -460,7 +449,6 @@ func TestResearchAllNineExtensionUIRequests(t *testing.T) {
 	}
 	waitUpdate(t, events, "permissionDone")
 
-	// 2. confirm
 	conf := waitUpdate(t, events, "confirm")
 	if conf.UIMethod != "confirm" || conf.Title != "Run benchmark?" || !strings.Contains(conf.Message, "Takes 2 minutes") {
 		t.Fatalf("unexpected confirm request: %+v", conf)
@@ -470,7 +458,6 @@ func TestResearchAllNineExtensionUIRequests(t *testing.T) {
 	}
 	waitUpdate(t, events, "permissionDone")
 
-	// 3. input
 	inp := waitUpdate(t, events, "input")
 	if inp.UIMethod != "input" || inp.Title != "Dataset name" || inp.Placeholder != "e.g. LibriSpeech" {
 		t.Fatalf("unexpected input request: %+v", inp)
@@ -483,7 +470,6 @@ func TestResearchAllNineExtensionUIRequests(t *testing.T) {
 	}
 	waitUpdate(t, events, "permissionDone")
 
-	// 4. editor (testing empty string submission and prefill)
 	ed := waitUpdate(t, events, "editor")
 	if ed.UIMethod != "editor" || ed.Title != "Edit abstract" || ed.Prefill != "Draft abstract" {
 		t.Fatalf("unexpected editor request: %+v", ed)
@@ -493,31 +479,26 @@ func TestResearchAllNineExtensionUIRequests(t *testing.T) {
 	}
 	waitUpdate(t, events, "permissionDone")
 
-	// 5. notify
 	not := waitUpdate(t, events, "notify")
 	if not.UIMethod != "notify" || not.NotifyType != "warning" || not.Text != "Rate limit approaching" {
 		t.Fatalf("unexpected notify request: %+v", not)
 	}
 
-	// 6. setStatus
 	st := waitUpdate(t, events, "setStatus")
 	if st.UIMethod != "setStatus" || st.StatusKey != "indexer" || st.Key != "status:indexer" || st.Text != "Indexing 42 papers" {
 		t.Fatalf("unexpected setStatus request: %+v", st)
 	}
 
-	// 7. setWidget
 	wg := waitUpdate(t, events, "setWidget")
 	if wg.UIMethod != "setWidget" || wg.WidgetKey != "progress" || wg.Key != "widget:progress" || wg.WidgetPlacement != "aboveEditor" || len(wg.WidgetLines) != 2 || wg.Text != "Step 1\nStep 2" {
 		t.Fatalf("unexpected setWidget request: %+v", wg)
 	}
 
-	// 8. setTitle
 	ti := waitUpdate(t, events, "setTitle")
 	if ti.UIMethod != "setTitle" || ti.Title != "Feynman · Acoustic Study" || ti.Text != "Feynman · Acoustic Study" {
 		t.Fatalf("unexpected setTitle request: %+v", ti)
 	}
 
-	// 9. set_editor_text
 	et := waitUpdate(t, events, "editorText")
 	if et.UIMethod != "set_editor_text" || et.Text != "/lit room acoustics" {
 		t.Fatalf("unexpected set_editor_text request: %+v", et)
@@ -599,7 +580,6 @@ func TestResearchConnectConcurrencyAndCrashReconnect(t *testing.T) {
 		t.Fatalf("first workspace connect failed: %v", err)
 	}
 
-	// Verify crash mid-turn cleans up and allows reconnect.
 	events := make(chan ResearchUpdate, 64)
 	_ = h.Disconnect(context.Background(), rootA)
 	h.command = baseCmd
@@ -614,7 +594,6 @@ func TestResearchConnectConcurrencyAndCrashReconnect(t *testing.T) {
 	if !strings.Contains(errEvt.Text, "disconnected") {
 		t.Fatalf("expected disconnect error event, got %+v", errEvt)
 	}
-	// Reconnect after crash should succeed cleanly.
 	if err := h.connect(WorkspaceRef{Root: rootA}, func(e ResearchUpdate) { events <- e }); err != nil {
 		t.Fatalf("reconnect after crash failed: %v", err)
 	}
@@ -832,9 +811,6 @@ func (f fakeWorkspaceLookup) UserDataDir() string {
 	return f.dataDir
 }
 
-// =============================================================================
-// Self-Re-Exec Pi RPC Subprocess Fixture (MGO_FIXTURE_FEYNMAN_RPC=1)
-// =============================================================================
 
 func runFeynmanRPCFixture() {
 	cwd, _ := os.Getwd()
@@ -858,7 +834,6 @@ func runFeynmanRPCFixture() {
 	}
 	_ = os.MkdirAll(sessionDir, 0700)
 
-	// Emit non-JSON banner lines with CRLF to test framing robustness.
 	_, _ = os.Stdout.WriteString("  ██████  Feynman 0.5.71 — The open source AI research agent.\r\n")
 	_, _ = os.Stdout.WriteString("non-json banner line before protocol records\r\n")
 
@@ -869,7 +844,6 @@ func runFeynmanRPCFixture() {
 			return
 		}
 		outMu.Lock()
-		// Use CRLF on half the records to verify CRLF stripping continuously.
 		_, _ = os.Stdout.Write(append(data, '\r', '\n'))
 		outMu.Unlock()
 	}
@@ -1589,7 +1563,6 @@ func runFeynmanRPCFixture() {
 					})
 
 				case strings.Contains(msg, "exercise all 9 extension ui"):
-					// 1. select
 					sendRecord(map[string]any{
 						"type":    "extension_ui_request",
 						"id":      "ui-select-1",
@@ -1601,7 +1574,6 @@ func runFeynmanRPCFixture() {
 					r1 := <-uiResponses
 					val1, _ := r1["value"].(string)
 
-					// 2. confirm
 					sendRecord(map[string]any{
 						"type":    "extension_ui_request",
 						"id":      "ui-confirm-2",
@@ -1613,7 +1585,6 @@ func runFeynmanRPCFixture() {
 					r2 := <-uiResponses
 					conf2, _ := r2["confirmed"].(bool)
 
-					// 3. input
 					sendRecord(map[string]any{
 						"type":        "extension_ui_request",
 						"id":          "ui-input-3",
@@ -1624,7 +1595,6 @@ func runFeynmanRPCFixture() {
 					r3 := <-uiResponses
 					val3, _ := r3["value"].(string)
 
-					// 4. editor
 					sendRecord(map[string]any{
 						"type":    "extension_ui_request",
 						"id":      "ui-editor-4",
@@ -1635,7 +1605,6 @@ func runFeynmanRPCFixture() {
 					r4 := <-uiResponses
 					val4, _ := r4["value"].(string)
 
-					// 5. notify (fire-and-forget)
 					sendRecord(map[string]any{
 						"type":       "extension_ui_request",
 						"id":         "ui-notify-5",
@@ -1644,7 +1613,6 @@ func runFeynmanRPCFixture() {
 						"notifyType": "warning",
 					})
 
-					// 6. setStatus (fire-and-forget)
 					sendRecord(map[string]any{
 						"type":       "extension_ui_request",
 						"id":         "ui-status-6",
@@ -1653,7 +1621,6 @@ func runFeynmanRPCFixture() {
 						"statusText": "Indexing 42 papers",
 					})
 
-					// 7. setWidget (fire-and-forget)
 					sendRecord(map[string]any{
 						"type":            "extension_ui_request",
 						"id":              "ui-widget-7",
@@ -1663,7 +1630,6 @@ func runFeynmanRPCFixture() {
 						"widgetPlacement": "aboveEditor",
 					})
 
-					// 8. setTitle (fire-and-forget)
 					sendRecord(map[string]any{
 						"type":   "extension_ui_request",
 						"id":     "ui-title-8",
@@ -1671,7 +1637,6 @@ func runFeynmanRPCFixture() {
 						"title":  "Feynman · Acoustic Study",
 					})
 
-					// 9. set_editor_text (fire-and-forget)
 					sendRecord(map[string]any{
 						"type":   "extension_ui_request",
 						"id":     "ui-editor-text-9",

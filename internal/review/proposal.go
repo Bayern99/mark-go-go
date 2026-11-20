@@ -445,7 +445,6 @@ func cloneProposal(p ChangeProposal) ChangeProposal {
 }
 
 func clustersConflict(prop changeCluster, user changeCluster) (bool, bool) {
-	// Check if user edit is identical to proposed cluster.
 	if prop.oldStart == user.oldStart && prop.oldEnd == user.oldEnd && len(prop.inserts) == len(user.inserts) {
 		same := true
 		for i := range prop.inserts {
@@ -480,8 +479,6 @@ func recomputeProposalLocked(sp *storedProposal, liveText string) {
 	liveLines := splitTextLines(liveText)
 	_, _, _, userClusters := extractClusters(baseText, liveText)
 
-	// Map each base line index [0..len(baseLines)] to its corresponding start index in liveLines
-	// when no overlapping user edit touches it.
 	baseToLive := func(baseIdx int) int {
 		delta := 0
 		for _, u := range userClusters {
@@ -554,7 +551,6 @@ func recomputeProposalLocked(sp *storedProposal, liveText string) {
 		}
 
 		preStart := max(0, liveStart-DefaultContextLines)
-		// Cap pre-context at previous cluster's liveEnd so context lines are strictly unchanged lines.
 		if idx > 0 && preStart < resolved[idx-1].liveEnd {
 			preStart = resolved[idx-1].liveEnd
 		}
@@ -658,10 +654,6 @@ func recomputeProposalLocked(sp *storedProposal, liveText string) {
 	sp.proposal.Hunks = hunks
 	sp.proposal.HasConflict = hasConflict
 
-	// Determine which hunks apply to MergedText:
-	// 1. If any hunk has Decision == HunkAccepted, apply only HunkAccepted (non-conflicting) hunks.
-	// 2. Else if any hunk has Decision == HunkRejected, apply all non-rejected, non-conflicting hunks.
-	// 3. Else (all pending), apply all non-conflicting hunks.
 	anyAccepted := false
 	anyRejected := false
 	for _, rc := range resolved {

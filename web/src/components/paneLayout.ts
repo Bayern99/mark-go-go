@@ -48,10 +48,6 @@ export interface PaneWidthResult {
   maxRight: number
 }
 
-/**
- * Resolves docked SidePane and RightPane widths against a shared window budget
- * so dragging or resizing never squeezes the center Document below CENTER_MIN.
- */
 export function resolvePaneWidths({
   winWidth,
   targetLeft,

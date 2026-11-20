@@ -4,8 +4,8 @@ Mark Go Go 是围绕原文阅读和编辑的桌面工作台。原文占据视觉
 
 ## 窗口与阅读
 
-- 左栏在 Workspace 文件树和活动原文的 Outline 之间切换，中央显示活动原文的 Preview、Markdown 或 GenUI。GenUI 设置入口在阅读视图右上角，就地展开模型、生成要求、进度与管理操作。启用 Feynman 后，整个右栏用于工作区研究。研究栏可调宽，对话独立滚动，输入框固定在底部。Actions 可搜索当前会话提供的工作流、Skills、扩展和会话操作，Files 打开研究产物。Git 检查点从文档工具栏展开。内容动作贴着对应原文或卡片。 [三栏决策](docs/adr/0004-three-column-layout-and-genui-panel.md) · [窗口界面](web/src/App.tsx)
-- 窗口顶部共用一组文档标签。标签、左栏和正文跟随活动原文。宽度不足时，活动标签保留入口，其余进入可搜索的溢出菜单。窄窗把右栏收为可关闭的玻璃浮层，极窄窗也将左栏收为可开关的玻璃浮层，正文保持可用。未保存、冲突与删除状态留在相应文档的标签和导航内。 [工作区决策](docs/adr/0005-workspace-document-window-model.md) · [标签测试](web/test/workspace-tabs.test.tsx)
+- 左栏在 Workspace 文件树和活动原文的 Outline 之间切换，中央显示活动原文的 Preview、Markdown 或 GenUI。GenUI 设置入口在阅读视图右上角，就地展开模型、生成要求、进度与管理操作。启用 Feynman 后，整个右栏用于工作区研究。研究栏可调宽，对话独立滚动，输入框固定在底部。Actions 可搜索当前会话提供的工作流、Skills、扩展和会话操作，Files 打开研究产物。Git 检查点从文档工具栏展开。内容动作贴着对应原文或卡片。 [三栏决策](docs/adr/0004-three-column-layout-and-genui-panel.md) · [窗口外壳](web/src/components/WorkspaceShell.tsx) · [原文面板](web/src/components/DocumentPane.tsx)
+- 窗口顶部共用一组文档标签。标签、左栏和正文跟随活动原文。宽度不足时，活动标签保留入口，其余进入可搜索的溢出菜单。窄窗把右栏收为可关闭的玻璃浮层，极窄窗也将左栏收为可开关的玻璃浮层，正文保持可用。未保存、冲突与删除状态留在相应文档的标签和导航内。 [工作区决策](docs/adr/0005-workspace-document-window-model.md) · [文档标签](web/src/components/DocumentTabs.tsx) · [标签测试](web/test/workspace-tabs.test.tsx)
 - 正文沿纸面的阅读边线排版，标题、段落、常规块与普通表格共享阅读宽度。仅内容或手动列宽超出阅读宽度的宽表对称扩展到可用空间，超出时在块内横滚；列宽拖拽推挤相邻列且不带动无关列。导航、正文和大纲各有自己的滚动区域，切换文档保留各自的阅读位置。 [预览排版](web/src/editor/crepe-theme.css) · [表格列宽](web/src/editor/tableColumnWidths.ts) · [ScrollArea](web/src/components/ScrollArea.tsx)
 
 ## 样式与交互

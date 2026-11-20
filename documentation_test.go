@@ -10,7 +10,11 @@ import (
 
 func TestAcceptanceDocumentationLinks(t *testing.T) {
 	link := regexp.MustCompile(`\[[^\]\n]+\]\(([^\s)]+)\)`)
-	for _, doc := range []string{"DESIGN.md", "docs/adr/0005-workspace-document-window-model.md", "docs/acceptance.md"} {
+	adrs, err := filepath.Glob("docs/adr/*.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, doc := range append([]string{"ARCHITECTURE.md", "DESIGN.md", "docs/acceptance.md"}, adrs...) {
 		t.Run(doc, func(t *testing.T) {
 			content, err := os.ReadFile(doc)
 			if err != nil {

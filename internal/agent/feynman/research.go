@@ -772,7 +772,7 @@ func (h *ResearchManager) PromptWithSources(ctx context.Context, root, text, doc
 	promptMessage := text
 	if documentID != "" {
 		promptMessage += fmt.Sprintf(
-			"\n\nTo edit the active Markdown document (documentId: %q), call the MCP tool `propose_edit` with `documentId: %q` (supplying targeted `oldText`/`newText`, `startLine`/`endLine`, or `proposedText`) so changes enter the review queue without overwriting the editor buffer directly.",
+			"\n\nTo edit the active Markdown document (documentId: %q), call the MCP tool `propose_edit` with `documentId: %q` and either targeted `oldText`/`newText`, a `startLine`/`endLine` range with `newText` and the `baseVersion` read from the document resource, or a complete `proposedText`. Changes enter the review queue without overwriting the editor buffer directly.",
 			documentID, documentID,
 		)
 	}

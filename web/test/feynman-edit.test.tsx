@@ -217,8 +217,6 @@ it('manages a multi-file queue of Change proposals without blocking other files'
     await userEvent.click(button('Send'))
     await vi.waitFor(() => expect(comparison()?.textContent).toContain('Revised draft'))
 
-    // Multi-file queue: reviewing paper.md is NOT blocked while draft.md proposal is pending,
-    // and Edit document in Chat remains enabled so additional edits can be queued.
     await userEvent.click(container.querySelector<HTMLButtonElement>('.fy-tabs button:nth-of-type(1)')!)
     const editToggle = container.querySelector<HTMLInputElement>('[aria-label="Edit this document"]')!
     expect(editToggle.disabled).toBe(false)
@@ -232,7 +230,6 @@ it('manages a multi-file queue of Change proposals without blocking other files'
     await vi.waitFor(() => expect(comparison()?.textContent).toContain('Revised paper'))
     expect((await workspace.snapshot()).activeId).toBe(paper.id)
 
-    // Both draft.md and paper.md are queued; switch back to draft.md via the multi-file queue switcher and dismiss it.
     const draftQueueItem = Array.from(container.querySelectorAll<HTMLButtonElement>('[data-proposal-file]')).find(
       b => b.dataset.proposalFile?.endsWith('draft.md'),
     )!
@@ -242,7 +239,6 @@ it('manages a multi-file queue of Change proposals without blocking other files'
     await vi.waitFor(() => expect(comparison()?.textContent).toContain('Revised draft'))
     await userEvent.click(button('Dismiss'))
 
-    // paper.md's proposal remains in the queue; switch to it and apply in Markdown Preview.
     await vi.waitFor(() => expect(comparison()?.textContent).toContain('Revised paper'))
     if ((await workspace.snapshot()).activeId !== paper.id) {
       await userEvent.click(button('Open document paper.md'))
@@ -251,7 +247,6 @@ it('manages a multi-file queue of Change proposals without blocking other files'
     await userEvent.click(button('Apply in Markdown'))
     await vi.waitFor(async () => expect((await paper.load()).text).toBe('# Revised paper\n'))
     expect((await draft.load()).text).toBe('# Draft\n')
-    // Stays in Markdown Preview mode (not forced into CodeMirror source mode).
     expect(container.querySelector('.mgo-source-root')?.hasAttribute('hidden')).toBe(true)
   } finally {
     artifacts.mockResolvedValue([])
@@ -280,13 +275,11 @@ it('supports selective per-hunk Accept/Reject, concurrent non-overlapping merge 
 
     await vi.waitFor(() => expect(container.querySelectorAll('.diff-hunk')).toHaveLength(2))
 
-    // User edits unrelated Paragraph 2 while proposal is pending (non-overlapping concurrent edit).
     const p2Node = Array.from(container.querySelectorAll('.ProseMirror p')).find(p => p.textContent === 'Paragraph 2 original.')!
     await userEvent.click(p2Node)
     await userEvent.keyboard(' Edited live.')
     await vi.waitFor(async () => expect((await host.load()).text).toContain('Paragraph 2 original. Edited live.'))
 
-    // Both hunks remain conflict-free because Paragraph 2 does not overlap Paragraph 1 or Paragraph 3.
     const hunksAfterUnrelated = container.querySelectorAll<HTMLElement>('.diff-hunk')
     expect(hunksAfterUnrelated[0].dataset.conflict).toBe('false')
     expect(hunksAfterUnrelated[1].dataset.conflict).toBe('false')
@@ -294,7 +287,6 @@ it('supports selective per-hunk Accept/Reject, concurrent non-overlapping merge 
       await expect.element(page.getByRole('img', { name: label }).first()).toBeVisible()
     }
 
-    // Selectively Accept hunk-1 and Reject hunk-2.
     await userEvent.click(container.querySelector<HTMLButtonElement>('button[aria-label="Accept hunk-1"]')!)
     await userEvent.click(container.querySelector<HTMLButtonElement>('button[aria-label="Reject hunk-2"]')!)
     await userEvent.click(button('Apply in Markdown')!)
@@ -302,15 +294,12 @@ it('supports selective per-hunk Accept/Reject, concurrent non-overlapping merge 
     const expectedMerged = '# Study\n\nParagraph 1 by agent.\n\nParagraph 2 original. Edited live.\n\nParagraph 3 original.\n'
     await vi.waitFor(async () => expect((await host.load()).text).toBe(expectedMerged))
     expect(comparison()).toBeNull()
-    // Verified still in Markdown Preview mode.
     expect(container.querySelector('.mgo-source-root')?.hasAttribute('hidden')).toBe(true)
 
-    // Single-step Undo in Markdown Preview reverts the applied proposal cleanly back to the user's live edit.
     expect(applyNativeEdit(host.id, 'undo')).toBe(true)
     const expectedAfterUndo = '# Study\n\nParagraph 1 original.\n\nParagraph 2 original. Edited live.\n\nParagraph 3 original.\n'
     await vi.waitFor(async () => expect((await host.load()).text).toBe(expectedAfterUndo))
 
-    // Verify overlapping concurrent edit flags Conflict on the colliding hunk only.
     const reconciled = reconcileProposal(
       initialText,
       proposedText,

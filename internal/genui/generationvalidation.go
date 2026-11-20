@@ -10,7 +10,6 @@ import (
 	"unicode"
 )
 
-// Catalog and A2UI protocol constants enforced for generated GenUI views.
 const (
 	CatalogID         = "markgogo.dev:genui/v1"
 	TargetA2UIVersion = "1.0"
@@ -60,12 +59,10 @@ var nativeActionKeys = []string{
 	"updateDataModel",
 }
 
-// CatalogComponents returns the ordered list of component types in the markgogo.dev:genui/v1 catalog.
 func CatalogComponents() []string {
 	return append([]string(nil), catalogComponentNames...)
 }
 
-// ValidationError describes a structured A2UI 1.0 or catalog schema rejection.
 type ValidationError struct {
 	Code        string `json:"code"`
 	Message     string `json:"message"`
@@ -74,7 +71,6 @@ type ValidationError struct {
 	Hint        string `json:"hint,omitempty"`
 }
 
-// Error implements the error interface using the diagnostic message.
 func (e *ValidationError) Error() string {
 	return e.Message
 }
@@ -89,7 +85,6 @@ func newValidationError(code, message, path, componentID string) *ValidationErro
 	}
 }
 
-// ValidateCandidate validates a candidate view file headlessly and wraps rejections as FailInvalidOutput.
 func ValidateCandidate(ctx context.Context, candidate []byte) error {
 	if ctx != nil && ctx.Err() != nil {
 		return ErrCancelled
@@ -100,13 +95,11 @@ func ValidateCandidate(ctx context.Context, candidate []byte) error {
 	return nil
 }
 
-// ValidationUnavailable constructs a FailInvalidOutput error when view validation cannot run.
 func ValidationUnavailable(detail string) error {
 	detail = strings.TrimSuffix(strings.TrimSpace(detail), ".")
 	return NewFailure(FailInvalidOutput, "The generated view could not be checked, so it was not saved: "+detail+".", HintInvalidOutput)
 }
 
-// ValidateGeneratedView parses and strictly validates a version-2 GenUI view file against A2UI 1.0 and markgogo.dev:genui/v1.
 func ValidateGeneratedView(raw []byte) error {
 	var top any
 	if err := json.Unmarshal(raw, &top); err != nil {

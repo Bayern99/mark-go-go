@@ -30,7 +30,6 @@ const (
 	serverVersion       = "1.0.0"
 )
 
-// WorkspaceBridge provides workspace, live-buffer, and navigation operations for MCP handlers.
 type WorkspaceBridge interface {
 	MCPWorkspaceState(root string) (workspace.WorkspaceMCPState, error)
 	MCPDocument(root, idOrPath string) (workspace.DocumentMCPState, error)
@@ -38,12 +37,10 @@ type WorkspaceBridge interface {
 	UserDataDir() string
 }
 
-// ReviewBridge queues agent-agnostic Change proposals for review.
 type ReviewBridge interface {
 	SubmitProposal(input review.ProposeInput) (review.ChangeProposal, error)
 }
 
-// Dependencies wires the domain services exposed over the loopback MCP server.
 type Dependencies struct {
 	Workspace WorkspaceBridge
 	Review    ReviewBridge
@@ -68,7 +65,6 @@ type Server struct {
 	mcpSessions     map[string]string
 }
 
-// NewServer constructs an in-process loopback Streamable HTTP MCP server.
 func NewServer(deps Dependencies) *Server {
 	return &Server{
 		deps:            deps,
@@ -78,7 +74,6 @@ func NewServer(deps Dependencies) *Server {
 	}
 }
 
-// Start binds strictly to 127.0.0.1 on an ephemeral port and serves Streamable HTTP MCP requests.
 func (s *Server) Start() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -108,7 +103,6 @@ func (s *Server) Start() error {
 	return nil
 }
 
-// URL returns the loopback /mcp endpoint URL, or empty if the server has not started.
 func (s *Server) URL() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -118,7 +112,6 @@ func (s *Server) URL() string {
 	return "http://" + s.addr + "/mcp"
 }
 
-// Close revokes all active session tokens and gracefully stops the HTTP server.
 func (s *Server) Close() error {
 	s.mu.Lock()
 	if s.closed {
@@ -155,7 +148,6 @@ func randomHexToken(numBytes int) (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// RegisterSession mints a fresh per-session Bearer token scoped to root/work and ensures the server is listening.
 func (s *Server) RegisterSession(root, work string) (token string, endpointURL string, err error) {
 	if err := s.Start(); err != nil {
 		return "", "", err
@@ -182,7 +174,6 @@ func (s *Server) RegisterSession(root, work string) (token string, endpointURL s
 	return tok, "http://" + s.addr + "/mcp", nil
 }
 
-// RevokeSession invalidates the Bearer token and MCP session IDs associated with root.
 func (s *Server) RevokeSession(root string) {
 	canonRoot := fsutil.CanonicalPath(root)
 	s.mu.Lock()
@@ -204,7 +195,6 @@ func (s *Server) revokeRootLocked(canonRoot string) {
 	}
 }
 
-// BeforeResearchStart starts the server if needed, mints a session token, and writes <work>/.pi/mcp.json with 0600 permissions.
 func (s *Server) BeforeResearchStart(root, work string) error {
 	tok, endpointURL, err := s.RegisterSession(root, work)
 	if err != nil {
@@ -217,7 +207,6 @@ func (s *Server) BeforeResearchStart(root, work string) error {
 	return nil
 }
 
-// AfterResearchStop revokes the session token when a workspace Research session stops.
 func (s *Server) AfterResearchStop(root, _ string) {
 	s.RevokeSession(root)
 }

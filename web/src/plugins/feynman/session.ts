@@ -273,7 +273,6 @@ export class ResearchSession {
           }
         })
       } catch {
-        // Standalone Vitest runs without MyGo runtime or mocked reviewUpdated event.
       }
     }
     if (isMyGo() && session.owners === 1) {
@@ -630,7 +629,6 @@ export class ResearchSession {
             }
           }
         } catch {
-          // Optional stats query in unit test mocks.
         }
       }
     } catch (error) {

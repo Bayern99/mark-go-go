@@ -279,6 +279,41 @@ describe('workspace navigation',
       },
     )
 
+    it('reveals the heading sent by the host before the target editor is ready', async () => {
+      const host = createBrowserHost(AUDIT, 'audit.md')
+      const nested = createBrowserHost(NESTED, 'doc.md')
+      const load = nested.load
+      let finishLoad!: () => void
+      const loading = new Promise<void>((resolve) => { finishLoad = resolve })
+      nested.load = async () => { await loading; return load() }
+      const workspace = createBrowserWorkspace([
+        { host, name: 'audit.md', path: '/work/audit.md' },
+        { host: nested, name: 'doc.md', path: '/work/notes/deep/doc.md' },
+      ], {
+        root: '/work',
+        kind: 'folder',
+        nav: navSeed(),
+      })
+      let reveal: ((detail: { id: string; offset: number }) => void) | undefined
+      Object.assign(workspace, {
+        subscribeReveal(fn: typeof reveal) {
+          reveal = fn
+          return { dispose() { reveal = undefined } }
+        },
+      })
+      const app = await mountNav(workspace)
+      try {
+        const target = await workspace.open('/work/notes/deep/doc.md')
+        reveal?.({ id: target.id, offset: NESTED.indexOf('## Findings') })
+        finishLoad()
+        await vi.waitFor(() => {
+          expect(window.getSelection()?.anchorNode?.parentElement?.closest('h2')?.textContent).toBe('Findings')
+        })
+      } finally {
+        await app.unmount()
+      }
+    })
+
     it('filters headings including unsaved open text and keeps the document on clear',
       async () => {
         const host = createBrowserHost('# Live Heading\n\nUnsaved body.\n', 'audit.md')

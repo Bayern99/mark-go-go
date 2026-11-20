@@ -63,6 +63,8 @@ type docSession struct {
 	ws   *workspace
 
 	version      int
+	mcpVersion   int
+	mcpText      string
 	offReload    func()
 	offState     func()
 	offClosed    func()

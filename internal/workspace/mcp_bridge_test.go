@@ -53,13 +53,14 @@ func TestWorkspaceMCPStateAndDocumentLookup(t *testing.T) {
 	}
 	svc.byWorkspace[ws.id] = ws
 	svc.workspaceOrder = []string{ws.id}
+	liveText := "# Alpha\n\nUnsaved buffer.\n"
 	svc.byID["doc-a"] = &docSession{
 		host:    svc,
 		id:      "doc-a",
 		ws:      ws,
 		version: 7,
 		pathFn:  func() string { return docA },
-		textFn:  func() string { return "# Alpha\n\nUnsaved buffer.\n" },
+		textFn:  func() string { return liveText },
 		edited:  true,
 	}
 
@@ -86,6 +87,14 @@ func TestWorkspaceMCPStateAndDocumentLookup(t *testing.T) {
 	}
 	if !openDoc.Open || !openDoc.Edited || openDoc.Version != 7 || openDoc.Text != "# Alpha\n\nUnsaved buffer.\n" {
 		t.Fatalf("expected live unsaved buffer, got %+v", openDoc)
+	}
+	liveText = "Inserted line\n" + liveText
+	updated, err := svc.MCPDocument(root, "alpha.md")
+	if err != nil || updated.Text != liveText || updated.Version <= openDoc.Version {
+		t.Errorf("typed text did not advance the MCP version: %+v (%v)", updated, err)
+	}
+	if again, err := svc.MCPDocument(root, "doc-a"); err != nil || again.Version != updated.Version {
+		t.Errorf("unchanged buffer returned a different revision: %+v (%v)", again, err)
 	}
 
 	diskDoc, err := svc.MCPDocument(root, "notes/beta.md")

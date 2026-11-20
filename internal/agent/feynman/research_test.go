@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -503,6 +504,24 @@ func TestResearchAllNineExtensionUIRequests(t *testing.T) {
 	}
 	if err := <-done; err != nil {
 		t.Fatalf("prompt failed: %v", err)
+	}
+}
+
+func TestResearchRefusesWorkspaceContainingAppDataBeforeScaffolding(t *testing.T) {
+	root := t.TempDir()
+	data := filepath.Join(root, "app-data")
+	h := NewResearchManager(fakeWorkspaceLookup{dataDir: data})
+	defer h.Close()
+	h.command = func(_, _ string) (*exec.Cmd, error) {
+		t.Error("command creation started for a workspace containing application data")
+		return nil, errors.New("unexpected command creation")
+	}
+	err := h.connect(WorkspaceRef{Root: root}, func(ResearchUpdate) {})
+	if err == nil || !strings.Contains(err.Error(), "application data folder") {
+		t.Errorf("connect error = %v, want workspace isolation error", err)
+	}
+	if _, err := os.Stat(data); !os.IsNotExist(err) {
+		t.Errorf("application data scaffold was created: %v", err)
 	}
 }
 

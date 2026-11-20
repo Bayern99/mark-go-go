@@ -176,6 +176,15 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 	if eventCount == 0 {
 		t.Fatal("expected ReviewUpdateEvent to be emitted")
 	}
+	t.Run("stale line range", func(t *testing.T) {
+		result := callTool(t, srv.URL(), token, sid, "propose_edit", map[string]any{
+			"documentId": "doc-paper", "baseVersion": 2,
+			"startLine": 7, "endLine": 7, "newText": "Replacement from older line numbers.",
+		})
+		if !result.IsError || len(revSvc.ListProposals(root)) != 1 {
+			t.Errorf("stale line range accepted: %+v", result)
+		}
+	})
 
 	// 2. create_document uses O_EXCL and refuses to overwrite existing files (even under concurrency).
 	createRes := callTool(t, srv.URL(), token, sid, "create_document", map[string]any{
@@ -200,6 +209,27 @@ func TestMCPToolsEndToEnd(t *testing.T) {
 	if string(stillBytes) != "# Summary\n\nGenerated findings.\n" {
 		t.Fatalf("existing file was overwritten: %q", stillBytes)
 	}
+	t.Run("MCP document recovery", func(t *testing.T) {
+		files, err := review.CollectArtifacts(work, root)
+		if err != nil || len(files) != 1 || files[0].Path != "outputs/summary.md" || files[0].Missing {
+			t.Errorf("Review artifacts did not include the created document: %+v (%v)", files, err)
+		}
+		if err := os.Remove(filepath.Join(root, "outputs", "summary.md")); err != nil {
+			t.Fatal(err)
+		}
+		files, err = review.CollectArtifacts(work, root)
+		if err != nil || len(files) != 1 || !files[0].Missing {
+			t.Errorf("Review artifacts did not retain the missing document: %+v (%v)", files, err)
+		}
+		recovered, err := review.RecoverArtifact(work, root, "outputs/summary.md")
+		if err != nil {
+			t.Fatal(err)
+		}
+		content, err := os.ReadFile(recovered)
+		if err != nil || string(content) != string(createdBytes) {
+			t.Errorf("recovered document = %q, %v", content, err)
+		}
+	})
 	badCreate := callTool(t, srv.URL(), token, sid, "create_document", map[string]any{
 		"path":    "../escape.md",
 		"content": "# Bad\n",

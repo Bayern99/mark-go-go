@@ -51,6 +51,7 @@ export function WorkspaceShell({
   const panes = useRef(new Map<string, DocumentServices>())
   const [recents, setRecents] = useState<RecentWorkspace[]>([])
   const reveals = useRef(new Map<string, (offset: number) => boolean>())
+  const pendingReveal = useRef<{ id: string; offset: number } | null>(null)
   const emptyViews = useMemo(() => new ViewRegistry(), [])
   const workspaceListeners = useRef(new Set<() => void>())
 
@@ -60,6 +61,24 @@ export function WorkspaceShell({
   const activeIdRef = useRef(activeId)
   snapRef.current = snap
   activeIdRef.current = activeId
+  const flushReveal = useCallback(() => {
+    const next = pendingReveal.current
+    if (next?.id === activeIdRef.current && reveals.current.get(next.id)?.(next.offset)) {
+      pendingReveal.current = null
+    }
+  }, [])
+  const queueReveal = useCallback((next: { id: string; offset: number }) => {
+    pendingReveal.current = next
+    flushReveal()
+  }, [flushReveal])
+  useLayoutEffect(flushReveal, [activeId, flushReveal])
+  useEffect(() => {
+    const sub = workspace.subscribeReveal?.(queueReveal)
+    return () => {
+      sub?.dispose()
+      pendingReveal.current = null
+    }
+  }, [workspace, queueReveal])
 
   const openDocument = useCallback(
     async (path: string, existingID?: string) => {
@@ -318,11 +337,7 @@ export function WorkspaceShell({
       const info = documentId ? { id: documentId } : await workspace.open(path)
       const id = documentId ?? info.id
       await workspace.activate(id)
-      const tryReveal = () => reveals.current.get(id)?.(offset)
-      if (tryReveal()) return
-      window.setTimeout(() => {
-        tryReveal()
-      }, 80)
+      queueReveal({ id, offset })
     })()
   }
 
@@ -411,6 +426,7 @@ export function WorkspaceShell({
               onOpenPath={openPath}
               onReadyReveal={(id, reveal) => {
                 reveals.current.set(id, reveal)
+                flushReveal()
                 return () => {
                   if (reveals.current.get(id) === reveal) reveals.current.delete(id)
                 }

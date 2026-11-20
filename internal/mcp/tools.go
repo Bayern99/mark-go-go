@@ -2,12 +2,10 @@ package mcp
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -46,7 +44,7 @@ func (s *Server) handleToolsList() any {
 			{
 				Name:        "create_document",
 				Title:       "Create Markdown Document",
-				Description: "Atomically create a new Markdown document inside the workspace using O_EXCL semantics, refusing to overwrite existing files.",
+				Description: "Create a new Markdown document inside the workspace and record it in Review, refusing to overwrite existing files.",
 				InputSchema: map[string]any{
 					"type":     "object",
 					"required": []string{"path", "content"},
@@ -190,7 +188,7 @@ func (s *Server) toolProposeEdit(binding *sessionBinding, rawArgs json.RawMessag
 		NewText      string `json:"newText"`
 		StartLine    int    `json:"startLine"`
 		EndLine      int    `json:"endLine"`
-		BaseVersion  int    `json:"baseVersion"`
+		BaseVersion  *int   `json:"baseVersion"`
 	}
 	if err := json.Unmarshal(rawArgs, &args); err != nil {
 		return toolError("invalid arguments: " + err.Error()), nil
@@ -210,9 +208,10 @@ func (s *Server) toolProposeEdit(binding *sessionBinding, rawArgs json.RawMessag
 	if source == "" {
 		source = "mcp"
 	}
-	baseVersion := args.BaseVersion
-	if baseVersion == 0 {
-		baseVersion = doc.Version
+	if args.BaseVersion != nil {
+		if args.ProposedText == "" && args.StartLine > 0 && *args.BaseVersion != doc.Version {
+			return toolError("document version changed; read it again before proposing a line-range edit"), nil
+		}
 	}
 
 	proposal, err := s.deps.Review.SubmitProposal(review.ProposeInput{
@@ -221,7 +220,7 @@ func (s *Server) toolProposeEdit(binding *sessionBinding, rawArgs json.RawMessag
 		Path:          doc.Path,
 		Source:        source,
 		Summary:       strings.TrimSpace(args.Summary),
-		BaseVersion:   baseVersion,
+		BaseVersion:   doc.EditorVersion,
 		BaseText:      doc.Text,
 		ProposedText:  args.ProposedText,
 		OldText:       args.OldText,
@@ -270,72 +269,6 @@ func validateCreateRelPath(root, rawPath string) (string, string, error) {
 	return rel, filepath.Join(fsutil.CanonicalPath(root), filepath.FromSlash(rel)), nil
 }
 
-func openWorkspaceParent(root *os.Root, rel string) (*os.Root, error) {
-	parent, err := root.OpenRoot(".")
-	if err != nil {
-		return nil, err
-	}
-	dir := path.Dir(rel)
-	if dir == "." {
-		return parent, nil
-	}
-	for _, name := range strings.Split(dir, "/") {
-		if name == "." || name == "" {
-			continue
-		}
-		if err := parent.Mkdir(name, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
-			parent.Close()
-			return nil, err
-		}
-		stat, err := parent.Lstat(name)
-		if err != nil || !stat.IsDir() {
-			parent.Close()
-			if err != nil {
-				return nil, err
-			}
-			return nil, fmt.Errorf("path %q crosses a symbolic link or non-directory", rel)
-		}
-		next, err := parent.OpenRoot(name)
-		parent.Close()
-		if err != nil {
-			return nil, err
-		}
-		opened, err := next.Stat(".")
-		if err != nil || !os.SameFile(stat, opened) {
-			next.Close()
-			return nil, fmt.Errorf("directory changed while opening %q", rel)
-		}
-		parent = next
-	}
-	return parent, nil
-}
-
-func createFileExclusive(parent *os.Root, name string, data []byte) error {
-	if _, err := parent.Lstat(name); err == nil {
-		return fs.ErrExist
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	tmp := ".markgogo-" + rand.Text()
-	f, err := parent.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
-	if err != nil {
-		return err
-	}
-	defer parent.Remove(tmp)
-	if _, err := f.Write(data); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	return parent.Link(tmp, name)
-}
-
 func (s *Server) toolCreateDocument(ctx context.Context, binding *sessionBinding, rawArgs json.RawMessage) (any, *rpcError) {
 	var args struct {
 		Path    string `json:"path"`
@@ -356,19 +289,7 @@ func (s *Server) toolCreateDocument(ctx context.Context, binding *sessionBinding
 		return toolError("document content must be valid UTF-8"), nil
 	}
 
-	rootHandle, err := os.OpenRoot(binding.root)
-	if err != nil {
-		return toolError(err.Error()), nil
-	}
-	defer rootHandle.Close()
-
-	parent, err := openWorkspaceParent(rootHandle, rel)
-	if err != nil {
-		return toolError(err.Error()), nil
-	}
-	defer parent.Close()
-
-	if err := createFileExclusive(parent, path.Base(rel), []byte(args.Content)); err != nil {
+	if err := review.CreateDocumentArtifact(binding.work, binding.root, rel, []byte(args.Content)); err != nil {
 		if errors.Is(err, fs.ErrExist) {
 			return toolError(fmt.Sprintf("file %q already exists; use propose_edit to modify existing documents", rel)), nil
 		}

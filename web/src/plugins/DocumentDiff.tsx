@@ -391,15 +391,43 @@ function clustersConflict(prop: ChangeCluster, user: ChangeCluster): { collides:
   }
 }
 
+function joinLines(lines: string[], ending: string): string {
+  return lines.map((raw, i) => i + 1 < lines.length && !/[\r\n]$/.test(raw) ? raw + ending : raw).join('')
+}
+
+function applyClusters(baseText: string, clusters: ChangeCluster[], ending: string): string {
+  const base = splitTextLines(baseText)
+  const lines: string[] = []
+  let cursor = 0
+  for (const change of clusters) {
+    while (cursor < change.oldStart) lines.push(base[cursor++].raw)
+    for (const ins of change.inserts) lines.push(ins.raw)
+    cursor = change.oldEnd
+  }
+  while (cursor < base.length) lines.push(base[cursor++].raw)
+  return joinLines(lines, ending)
+}
+
+export function compareProposalText(baseText: string, proposedText: string, liveText: string): string {
+  const { clusters: proposed } = extractClusters(baseText, proposedText)
+  const { clusters: live } = extractClusters(baseText, liveText)
+  const retained = live.filter(change => !proposed.some(hunk => {
+    const { collides, identical } = clustersConflict(hunk, change)
+    return collides || identical
+  }))
+  const changes = [...proposed, ...retained].sort((a, b) => a.oldStart - b.oldStart || a.oldEnd - b.oldEnd)
+  return applyClusters(baseText, changes, defaultLineEnding(liveText))
+}
+
 export function reconcileProposal(
   baseText: string,
   proposedText: string,
   liveText: string,
   decisions: Record<string, HunkDecision> = {},
-): { hunks: DiffHunk[]; mergedText: string; remainingText: string; hasConflict: boolean } {
+): { hunks: DiffHunk[]; mergedText: string; remainingBaseText: string; remainingText: string; hasConflict: boolean } {
   const { clusters: baseClusters } = extractClusters(baseText, proposedText)
   if (baseClusters.length === 0) {
-    return { hunks: [], mergedText: liveText, remainingText: baseText, hasConflict: false }
+    return { hunks: [], mergedText: liveText, remainingBaseText: baseText, remainingText: baseText, hasConflict: false }
   }
 
   const liveLines = splitTextLines(liveText)
@@ -551,26 +579,16 @@ export function reconcileProposal(
     cursor += 1
   }
 
-  const joinLines = (lines: string[], ending: string) => lines
-    .map((raw, i) => i + 1 < lines.length && !/[\r\n]$/.test(raw) ? raw + ending : raw)
-    .join('')
-
-  const baseLines = splitTextLines(baseText)
-  const remainingRaw: string[] = []
-  let baseCursor = 0
-  for (const [i, r] of resolved.entries()) {
-    if (shouldApply(r) || r.alreadyApplied || r.hunk.decision === 'rejected') continue
-    const cluster = baseClusters[i]
-    while (baseCursor < cluster.oldStart) remainingRaw.push(baseLines[baseCursor++].raw)
-    for (const ins of cluster.inserts) remainingRaw.push(ins.raw)
-    baseCursor = cluster.oldEnd
-  }
-  while (baseCursor < baseLines.length) remainingRaw.push(baseLines[baseCursor++].raw)
+  const removed = (i: number) => shouldApply(resolved[i]) || resolved[i].alreadyApplied
+  const baseEnding = defaultLineEnding(baseText)
 
   return {
     hunks: resolved.map((r) => r.hunk),
     mergedText: joinLines(outRaw, nl),
-    remainingText: joinLines(remainingRaw, defaultLineEnding(baseText)),
+    remainingBaseText: applyClusters(baseText, baseClusters.filter((_, i) => removed(i)), baseEnding),
+    remainingText: applyClusters(baseText, baseClusters.filter((_, i) =>
+      removed(i) || resolved[i].hunk.decision !== 'rejected',
+    ), baseEnding),
     hasConflict,
   }
 }

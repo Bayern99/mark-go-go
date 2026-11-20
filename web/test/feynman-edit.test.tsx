@@ -352,6 +352,47 @@ it('keeps unresolved hunks available after applying a selected clean hunk', asyn
   }
 })
 
+it('does not propose undoing an applied hunk when comparing the remaining conflict', async () => {
+  const base = 'First old line.\n\nLast old line.\n'
+  const proposed = 'First revised line.\n\nLast revised line.\n'
+  const host = createBrowserHost(base, 'paper.md')
+  const workspace = createBrowserWorkspace([host], { root: '/compare-partial-review' })
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  prompt.mockResolvedValue(proposed)
+  try {
+    root.render(<App workspace={workspace} />)
+    const composer = page.getByRole('textbox', { name: 'Research prompt' })
+    await expect.element(composer).toBeVisible()
+    await userEvent.click(container.querySelector<HTMLInputElement>('[aria-label="Edit this document"]')!)
+    await userEvent.fill(composer, 'Revise the first and last lines')
+    await userEvent.click(page.getByRole('button', { name: 'Send', exact: true }))
+    await vi.waitFor(() => expect(container.querySelectorAll('.diff-hunk')).toHaveLength(2))
+
+    await userEvent.click(container.querySelector<HTMLElement>('.ProseMirror p')!)
+    await userEvent.keyboard('{End} Reader edit.')
+    await vi.waitFor(() => expect(container.querySelectorAll('.diff-hunk[data-conflict="true"]')).toHaveLength(1))
+    await userEvent.click(page.getByRole('button', { name: 'Accept hunk-2' }))
+    await userEvent.click(page.getByRole('button', { name: 'Apply in Markdown' }))
+    const live = 'First old line. Reader edit.\n\nLast revised line.\n'
+    await vi.waitFor(async () => expect((await host.load()).text).toBe(live))
+    expect(container.querySelectorAll('.diff-hunk')).toHaveLength(1)
+    expect(container.querySelectorAll('.diff-hunk[data-conflict="true"]')).toHaveLength(1)
+
+    await userEvent.click(page.getByRole('button', { name: 'Compare current text' }))
+    await vi.waitFor(() => expect(container.querySelectorAll('.diff-hunk')).toHaveLength(1))
+    await expect.element(page.getByRole('button', { name: 'Apply in Markdown' })).toBeEnabled()
+    expect(container.querySelector('.diff-line-delete .diff-text')?.textContent).toBe('First old line. Reader edit.')
+    expect(container.querySelector('.diff-line-insert .diff-text')?.textContent).toBe('First revised line.')
+    expect((await host.load()).text).toBe(live)
+    await userEvent.click(page.getByRole('button', { name: 'Apply in Markdown' }))
+    await vi.waitFor(async () => expect((await host.load()).text).toBe(proposed))
+  } finally {
+    root.unmount()
+    container.remove()
+  }
+})
+
 it('reviews a proposal against the same document after it is renamed during research', async () => {
   const host = createBrowserHost('# Original\n', 'draft.md')
   const container = document.createElement('div')

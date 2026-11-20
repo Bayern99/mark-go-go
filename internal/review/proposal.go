@@ -1,9 +1,11 @@
 package review
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -194,6 +196,10 @@ func (s *Service) submitProposal(input ProposeInput, expectedText *string, liveT
 	if err != nil {
 		s.mu.Unlock()
 		return ChangeProposal{}, err
+	}
+	if expectedText != nil && proposed == *expectedText && input.BaseText == liveText &&
+		input.BaseText != existingMatch.proposal.BaseText {
+		proposed = compareProposalText(existingMatch, liveText)
 	}
 	if proposed == input.BaseText {
 		s.mu.Unlock()
@@ -473,6 +479,40 @@ func clustersConflict(prop changeCluster, user changeCluster) (bool, bool) {
 	return start < end, false
 }
 
+func compareProposalText(sp *storedProposal, liveText string) string {
+	base, _, _, live := extractClusters(sp.proposal.BaseText, liveText)
+	changes := slices.Clone(sp.baseClusters)
+	for _, change := range live {
+		if !slices.ContainsFunc(sp.baseClusters, func(proposed changeCluster) bool {
+			overlaps, identical := clustersConflict(proposed, change)
+			return overlaps || identical
+		}) {
+			changes = append(changes, change)
+		}
+	}
+	slices.SortFunc(changes, func(a, b changeCluster) int {
+		if byStart := cmp.Compare(a.oldStart, b.oldStart); byStart != 0 {
+			return byStart
+		}
+		return cmp.Compare(a.oldEnd, b.oldEnd)
+	})
+	var out []string
+	cursor := 0
+	for _, change := range changes {
+		for ; cursor < change.oldStart; cursor++ {
+			out = append(out, base[cursor].raw)
+		}
+		for _, ins := range change.inserts {
+			out = append(out, ins.raw)
+		}
+		cursor = change.oldEnd
+	}
+	for _, line := range base[cursor:] {
+		out = append(out, line.raw)
+	}
+	return joinRawLines(out, defaultLineEnding(liveText))
+}
+
 func recomputeProposalLocked(sp *storedProposal, liveText string) {
 	sp.proposal.LiveText = liveText
 	baseText := sp.proposal.BaseText
@@ -702,14 +742,18 @@ func recomputeProposalLocked(sp *storedProposal, liveText string) {
 		cursor++
 	}
 
+	sp.proposal.MergedText = joinRawLines(outRaw, nl)
+}
+
+func joinRawLines(lines []string, ending string) string {
 	var b strings.Builder
-	for i, raw := range outRaw {
-		if i+1 < len(outRaw) && !endsLine(raw) {
+	for i, raw := range lines {
+		if i+1 < len(lines) && !endsLine(raw) {
 			b.WriteString(raw)
-			b.WriteString(nl)
+			b.WriteString(ending)
 		} else {
 			b.WriteString(raw)
 		}
 	}
-	sp.proposal.MergedText = b.String()
+	return b.String()
 }

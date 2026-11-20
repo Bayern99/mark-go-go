@@ -160,7 +160,7 @@ export default function ResearchPanel({
     if (nextText !== doc.text) {
       await ctx.commands.execute('editor.applyMarkdown', doc, nextText)
     }
-    await session.applyProposal(proposal, reconciled.remainingText, nextText)
+    await session.applyProposal(proposal, reconciled.remainingBaseText, reconciled.remainingText, nextText)
     await session.refresh()
   }
 

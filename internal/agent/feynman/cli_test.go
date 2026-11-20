@@ -37,6 +37,33 @@ func cliFixtureCommand(home, mode string) func(ctx context.Context, work string,
 	}
 }
 
+func TestFeynmanClearsOnlyTheSelectedWebSearchCredential(t *testing.T) {
+	ctx := context.Background()
+	home, root := t.TempDir(), t.TempDir()
+	h := NewResearchManager(fakeWorkspaceLookup{dataDir: t.TempDir()})
+	defer h.Close()
+	h.cliCommand = cliFixtureCommand(home, "search-key")
+	for _, provider := range []string{"exa", "brave"} {
+		if res, err := h.CLISearchAction(ctx, root, "set", provider, "fake-"+provider); err != nil || res.ExitCode != 0 {
+			t.Fatalf("save %s: exit %d (%v)", provider, res.ExitCode, err)
+		}
+	}
+	if res, err := h.CLISearchAction(ctx, root, "clear", "", ""); err != nil || res.ExitCode != 0 {
+		t.Fatalf("reset route: exit %d (%v)", res.ExitCode, err)
+	}
+	before, err := h.CLISearchStatus(ctx, root)
+	if err != nil || before.RequestRoute != "auto" || !strings.Contains(before.SavedAPIKeys, "exa") {
+		t.Fatalf("reset route should keep the saved credential: %+v (%v)", before, err)
+	}
+	if res, err := h.CLISearchAction(ctx, root, "clear-key", "exa", ""); err != nil || res.ExitCode != 0 {
+		t.Fatalf("clear Exa: exit %d (%v)", res.ExitCode, err)
+	}
+	after, err := h.CLISearchStatus(ctx, root)
+	if err != nil || after.RequestRoute != "auto" || after.SavedAPIKeys != "brave" {
+		t.Fatalf("expected Auto and only Brave saved: %+v (%v)", after, err)
+	}
+}
+
 func TestFeynmanInstalledCLIOutputFormats(t *testing.T) {
 	t.Run("Pi MCP state", func(t *testing.T) {
 		result := parseMCPListOutput(`{"servers":[{"name":"papers","scope":"project","state":"disabled"}]}`, 0)
@@ -490,6 +517,10 @@ func runFeynmanCLIFixture() {
 	if len(args) == 0 {
 		os.Exit(2)
 	}
+	if mode == "search-key" && args[0] == "search" {
+		runSearchKeyFixture(args[1:])
+		return
+	}
 	if mode == "malformed" {
 		switch args[0] {
 		case "status":
@@ -675,4 +706,44 @@ pi runtime: ok
 			}
 		}
 	}
+}
+
+func runSearchKeyFixture(args []string) {
+	type searchConfig struct {
+		Route string
+		Keys  map[string]string
+	}
+	path := filepath.Join(os.Getenv("HOME"), "search-fixture.json")
+	config := searchConfig{Route: "auto", Keys: map[string]string{}}
+	if data, err := os.ReadFile(path); err == nil {
+		if err := json.Unmarshal(data, &config); err != nil {
+			panic(err)
+		}
+	}
+	switch args[0] {
+	case "status":
+		var saved []string
+		for _, provider := range []string{"exa", "brave"} {
+			if config.Keys[provider] != "" {
+				saved = append(saved, provider)
+			}
+		}
+		fmt.Printf("Search route: %s\nRequest route: %s\nSaved API keys: %s\n", config.Route, config.Route, strings.Join(saved, ", "))
+		return
+	case "clear":
+		config.Route = "auto"
+	case "set":
+		config.Route = args[1]
+		if len(args) == 3 {
+			config.Keys[args[1]] = args[2]
+		}
+	}
+	data, err := json.Marshal(config)
+	if err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		panic(err)
+	}
+	fmt.Println("Updated Web Search")
 }

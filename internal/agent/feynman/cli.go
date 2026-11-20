@@ -104,6 +104,8 @@ func (h *ResearchManager) CLISearchAction(ctx context.Context, root, action, pro
 		}
 	case "clear":
 		args = []string{"search", "clear"}
+	case "clear-key":
+		return h.clearSearchKey(ctx, root, provider)
 	default:
 		return CLICommandResult{}, fmt.Errorf("Unsupported search action %q.", action)
 	}
@@ -116,6 +118,46 @@ func (h *ResearchManager) CLISearchAction(ctx context.Context, root, action, pro
 		displayArgs[len(displayArgs)-1] = "•••"
 	}
 	return commandResult(formatCLICommand(displayArgs...), raw, exitCode), nil
+}
+
+func (h *ResearchManager) clearSearchKey(ctx context.Context, root, provider string) (CLICommandResult, error) {
+	status, err := h.CLISearchStatus(ctx, root)
+	if err != nil {
+		return CLICommandResult{}, err
+	}
+	if !status.Parsed || status.RequestRoute == "" {
+		return CLICommandResult{}, errors.New("Could not determine the current Web Search route.")
+	}
+	keys := strings.Split(status.SavedAPIKeys, ",")
+	if provider == "" || provider == "none" || !slices.ContainsFunc(keys, func(key string) bool {
+		return strings.TrimSpace(key) == provider
+	}) {
+		return CLICommandResult{}, errors.New("No saved API key for that Web Search provider.")
+	}
+	args := []string{"search", "set", provider, ""}
+	raw, exitCode, err := h.runCLI(ctx, root, defaultCLITimeout, args...)
+	if err != nil {
+		return CLICommandResult{}, err
+	}
+	res := commandResult(formatCLICommand("search", "set", provider, `""`), raw, exitCode)
+	if exitCode != 0 {
+		return res, nil
+	}
+	if status.RequestRoute != provider {
+		restore := []string{"search", "set", status.RequestRoute}
+		if status.RequestRoute == "auto" {
+			restore = []string{"search", "clear"}
+		}
+		result, err := h.runCLICommand(ctx, root, defaultCLITimeout, restore...)
+		if err != nil {
+			return CLICommandResult{}, fmt.Errorf("Cleared the saved API key, but could not restore the Web Search route: %w", err)
+		}
+		if result.ExitCode != 0 {
+			return result, fmt.Errorf("Cleared the saved API key, but could not restore the Web Search route: %s", result.Error)
+		}
+	}
+	res.Summary = fmt.Sprintf("Cleared the saved %s API key.", provider)
+	return res, nil
 }
 
 func (h *ResearchManager) CLIMCPList(ctx context.Context, root string) (CLIMCPListResult, error) {

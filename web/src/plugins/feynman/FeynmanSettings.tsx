@@ -86,6 +86,8 @@ export function FeynmanSettings({ root, session, cliStatus: statusRes, refreshCL
   const [modelsRes, setModelsRes] = useState<CLIModelListResult | null>(null)
   const [alphaStatus, setAlphaStatus] = useState<CLIAlphaStatusResult | null>(null)
   const [searchStatus, setSearchStatus] = useState<CLISearchStatusResult | null>(null)
+  const savedSearchKeys = searchStatus?.savedApiKeys?.split(',').map(key => key.trim())
+    .filter(key => key && key !== 'none') ?? []
   const [mcpList, setMCPList] = useState<CLIMCPListResult | null>(null)
   const [packagesRes, setPackagesRes] = useState<CLIPackageListResult | null>(null)
 
@@ -224,6 +226,20 @@ export function FeynmanSettings({ root, session, cliStatus: statusRes, refreshCL
       const next = await ResearchHost.cliSearchStatus(root)
       setSearchStatus(next)
       if (next.requestRoute) setSearchProvider(next.requestRoute)
+    })
+  }
+
+  async function handleClearSearchKey(provider: string) {
+    await runOp('search-clear-key', async () => {
+      try {
+        const res = await ResearchHost.cliSearchAction(root, 'clear-key', provider, '')
+        if (res.exitCode !== 0) throw new Error(res.error || res.rawOutput)
+        setNotice(res.summary || res.rawOutput)
+      } finally {
+        const next = await ResearchHost.cliSearchStatus(root)
+        setSearchStatus(next)
+        if (next.requestRoute) setSearchProvider(next.requestRoute)
+      }
     })
   }
 
@@ -616,6 +632,22 @@ export function FeynmanSettings({ root, session, cliStatus: statusRes, refreshCL
                 error={searchStatus.error}
               />
             )
+          )}
+
+          {searchStatus?.parsed && savedSearchKeys.length > 0 && (
+            <div className="fy-cli-row">
+              {savedSearchKeys.map(provider => (
+                <button
+                  key={provider}
+                  type="button"
+                  className="pill xs quiet"
+                  disabled={busyOp !== ''}
+                  onClick={() => void handleClearSearchKey(provider)}
+                >
+                  Clear {provider} API key
+                </button>
+              ))}
+            </div>
           )}
 
           <form className="fy-cli-form" onSubmit={(e) => void handleSaveSearch(e)}>

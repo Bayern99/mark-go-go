@@ -13,9 +13,17 @@ import (
 
 type previewLayout struct {
 	document     *parser.Document
+	owner        *Document
+	dirty        bool
+	foldUntil    int
+	hiddenRanges [][2]int
+	sections     []foldSection
+	headings     map[string]int
+	refs         map[string][]int
 	version      uint64
 	applied      bool
 	replacements []editor.Replacement
+	readable     map[int]string
 	styles       []editor.LineStyle
 	blocks       []editor.Block
 	display      string
@@ -37,21 +45,41 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 		p.document = parser.New(parser.Default | parser.ExtDollarMath)
 	}
 	p.version = buffer.Version()
+	p.dirty = false
+	p.foldUntil = 0
+	p.hiddenRanges = p.hiddenRanges[:0]
+	p.sections = p.sections[:0]
+	p.headings = map[string]int{}
+	p.refs = map[string][]int{}
 	snap := buffer.Snapshot()
 	src := snap.String()
 	p.document.Set(src)
+	p.readable = make(map[int]string)
 	p.replacements = p.replacements[:0]
 	p.styles = p.styles[:0]
 	p.blocks = append(p.blocks[:0], pageMargin(0, true, 44), pageMargin(snap.LineCount()-1, false, 120))
+	frontEnd := p.frontmatter(snap)
 	for i := 1; i < p.document.Len(); i++ {
 		b := p.document.Block(i)
+		if b.Start < frontEnd || b.Start < p.foldUntil {
+			continue
+		}
+		if p.special(snap, i) {
+			i = b.Next - 1
+			continue
+		}
+		if b.Kind == parser.Table {
+			p.table(snap, i)
+			i = b.Next - 1
+			continue
+		}
 		switch b.Kind {
 		case parser.Heading:
 			line := snap.LineOf(b.Start)
 			p.styles = append(p.styles, headingStyle(line, b.Level))
 			if p.document.LineCount(i) > 0 {
 				_, start := p.document.Line(i, 0)
-				p.replace(b.Start, start, "")
+				p.heading(snap, i, start)
 			}
 			last := snap.LineOf(b.End)
 			p.replace(b.End, snap.LineEnd(last), "")
@@ -119,10 +147,22 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 					p.replace(in.Start, a, "")
 					p.replace(z, in.End, "")
 				}
+			case parser.FootnoteRef:
+				p.footnote(in)
+			case parser.Math:
+				p.inlineMath(in)
 			case parser.Text:
 				p.literal(src, in)
 			}
 		}
+	}
+	p.referenceDefinitions(snap, frontEnd)
+	if draft := p.owner.draft; draft != nil && draft.kind == "new note" {
+		p.blocks = append(p.blocks, editor.Block{Line: snap.LineOf(min(snap.Len(), draft.anchor)), Height: 140, Interactive: true, Label: "Note composer", Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
+			if p.owner.draft == draft {
+				e.Children(func() { p.owner.drawDraft(c, draft) })
+			}
+		}})
 	}
 	slices.SortStableFunc(p.replacements, func(a, b editor.Replacement) int { return a.Start - b.Start })
 	p.indexDisplay(src)
@@ -190,7 +230,11 @@ func (p *previewLayout) indexDisplay(src string) {
 		}
 		out.WriteString(src[off:r.Start])
 		begin := out.Len()
-		out.WriteString(r.Text)
+		if visible, ok := p.readable[r.Start]; ok {
+			out.WriteString(visible)
+		} else {
+			out.WriteString(r.Text)
+		}
 		p.segments = append(p.segments, displaySegment{r.Start, r.End, begin, out.Len()})
 		off = r.End
 	}
@@ -229,8 +273,11 @@ func (p *previewLayout) sourceOffset(runes int) int {
 
 func (d *Document) prepareView() {
 	st, p := &d.state, &d.preview
+	p.owner = d
 	st.NoActiveLine = d.mode == Preview
 	if d.mode == Markdown {
+		st.ContextMenu = nil
+		st.OnInput = nil
 		st.Label = "Markdown source"
 		st.Font = ui.Font{Family: "IBM Plex Mono", Size: 14}
 		st.ReadingColumn = editor.ReadingColumn{}
@@ -245,15 +292,21 @@ func (d *Document) prepareView() {
 		}
 		return
 	}
+	st.ContextMenu = func(m *ui.Menu) {
+		if !d.state.ReadOnly && m.Item("Add note").Chosen() {
+			d.beginNote()
+		}
+	}
+	st.OnInput = d.previewInput
 	st.Label = "Markdown Preview"
 	st.Font = ui.Font{Family: "IBM Plex Sans", Size: 16}
 	st.LineHeight = 28.0 / 16.0
 	st.LineNumbers = editor.LineNumbersOff
 	st.ReadingColumn = editor.ReadingColumn{Width: 624, Left: 56, Right: 40}
-	if p.applied && p.version == d.Version() {
+	if p.applied && !p.dirty && p.version == d.Version() {
 		return
 	}
-	if p.document == nil || p.version != d.Version() {
+	if p.dirty || p.document == nil || p.version != d.Version() {
 		p.build(st.Buffer)
 	}
 	st.SetBlocks(p.blocks)

@@ -27,6 +27,12 @@ type Document struct {
 	preview previewLayout
 	mode    Mode
 	index   *sourceIndex
+	tables  map[int]*readingTable
+	draft   *blockDraft
+	artwork map[string]blockImage
+	refocus bool
+	folded  map[string]bool
+	returns map[string]int
 }
 
 func New(source string) *Document {
@@ -92,6 +98,13 @@ func (d *Document) SelectUTF16(anchor, head int) error {
 	if err != nil {
 		return err
 	}
+	if d.mode == Preview {
+		for _, section := range d.preview.sections {
+			if d.folded[section.key] && ((idx.editorAtRaw(a) >= section.body && idx.editorAtRaw(a) < section.end) || (idx.editorAtRaw(z) >= section.body && idx.editorAtRaw(z) < section.end)) {
+				d.preview.toggleFold(section.key)
+			}
+		}
+	}
 	d.state.Select(idx.editorAtRaw(a), idx.editorAtRaw(z))
 	return nil
 }
@@ -107,6 +120,7 @@ func (d *Document) SetMode(mode Mode) bool {
 	if (mode != Preview && mode != Markdown) || mode == d.mode {
 		return false
 	}
+	d.draft = nil
 	d.state.Buffer.EndTyping()
 	d.mode = mode
 	return true
@@ -128,7 +142,12 @@ func (d *Document) View(c *ui.Context, readOnly bool) ui.Element {
 	d.state.ReadOnly = readOnly
 	d.prepareView()
 	d.state.Theme = documentTheme(c.Theme(), d.mode)
-	return editor.View(c, &d.state)
+	field := editor.View(c, &d.state)
+	if d.refocus {
+		field.Focus()
+		d.refocus = false
+	}
+	return field
 }
 
 func (d *Document) RectUTF16(pos int) (ui.Rect, bool) {

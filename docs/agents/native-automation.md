@@ -39,7 +39,9 @@ scripts/native-automation-smoke.sh
 
 生成验收使用实际工作区服务、文件观察器和独立 ACP 测试进程。完整生成保存了所选模型、生成要求与对应章节的哈希。局部更新保留另一页的表格，恢复操作逐字节还原前一份旁车。无效输出、已接收 prompt 后取消、重试及外部创建、损坏、删除和重建旁车均通过。两个文档同时生成时，挂起文档的要求、取消操作和结果均归属该文档。切换模型后再次生成，新旁车记录了新模型。本次使用测试进程提供可复现的 ACP 回复。
 
-在原生窗口打开版本 2 旁车，确认基于文档数据的标题在 GenUI 中显示为 `Read Native sidecar`，模板按数组渲染 `Alpha row` 和 `Beta row`。另以旧格式 `path` 和 `call` 读取标题和模板数据。切回 Preview 后确认本地图像按阅读宽度呈现，普通 Go 代码块有语言、语法配色与 Copy code，链接有可访问的打开控件。视图往返前后原文逐字节一致。原生旁车已覆盖 JSON Pointer、数据模板、字符串插值、逻辑和部分校验函数。旧渲染器的本地化数字、货币、日期和复数格式，以及插值中的嵌套函数仍有兼容差异。 [GenUI 读者用例](../../internal/nativegenui/surface_test.go) · [原生编辑用例](../../internal/nativeeditor/preview_test.go)
+在原生窗口打开版本 2 旁车，确认基于文档数据的标题在 GenUI 中显示为 `Read Native sidecar`，模板按数组渲染 `Alpha row` 和 `Beta row`。另以旧格式 `path` 和 `call` 读取标题和模板数据。切回 Preview 后确认本地图像按阅读宽度呈现，普通 Go 代码块有语言、语法配色与 Copy code，链接有可访问的打开控件。视图往返前后原文逐字节一致。[原生编辑用例](../../internal/nativeeditor/preview_test.go)
+
+原生旁车支持 JSON Pointer、数据模板、字符串插值、逻辑与部分校验函数。`formatNumber`、`formatCurrency`、`formatDate` 和 `pluralize` 使用旧版的 `en-US` 默认格式。以 1234.5 为输入，原生引擎对 307 种货币的输出均与这台 Mac 的 JavaScriptCore `Intl` 一致。日期覆盖四位年份的 ISO 日期和时间。字符串插值里的嵌套函数仍有兼容差异。 [GenUI 读者用例](../../internal/nativegenui/surface_test.go)
 
 ## Agent 提案和检查点
 
@@ -70,3 +72,9 @@ VoiceOver 系统字幕读出了 Preview 编辑区的名称、类型、插入位�
 在 480 × 360 窗口中以 ⌥⌘0 打开研究抽屉。第一次实测发现发送与附加控件被裁掉，后续验收也发现对话滚动区高为零。经过修正，最终窄窗实测滚动区高 73.3 点，输入框高 44 点，附加与发送均在抽屉内。发送测试请求后滚动到本轮回复，系统辅助功能树确认回复可见。
 
 使用原生文件面板选择 `Attachment.md`，抽屉出现可移除的附件。在历史记录中创建对话，同根切换文稿保留本轮消息。切到另一根后读取另一工作区的对话，返回第一根时测试进程重放已选会话。按 Esc 关闭抽屉并还原入口焦点。 [可复跑的 Feynman 验收](../../scripts/native-feynman-qa.sh)
+
+## 正式候选包
+
+从提交 `9a22b9c` 导出干净源码，在 PATH 中无 Node 或 npm 的情况下构建 0.4.0。正式标签为 `mygo_nodownload,mygo_noinspector`，包内二进制为 Mach-O arm64。应用包通过严格验签，DMG 通过映像校验。只读挂载确认二进制、Info.plist 和 Applications 快捷方式，挂载的应用通过相同验签。包内资源检查覆盖 HTML、CSS、JavaScript 和 WebAssembly。此本地候选包经 ad hoc 签名，使用 `-skip-notarize`。
+
+DMG 大小为 23,952,384 字节，SHA-256 为 `6409de8fc9239440269d1f1df9e6c571f57490268b1109df19ea08a975c7a7a2`。同一提交通过 `scripts/verify.sh`，包括 Go 与 MyGo vet、Go 竞态测试和 Windows amd64 构建。Linux amd64 构建也通过。构建和校验记录保存在采样 Mac 的 `~/Library/Application Support/Mark Go Go Benchmarks/ab-5k.c7XbVH/release-9a22b9c/`。

@@ -177,7 +177,6 @@ func TestMCPResourcesEndToEnd(t *testing.T) {
 	defer func() { _ = srv.Close() }()
 	token, sid := initTestSession(t, srv, root, work)
 
-	// 1. resources/list & resources/templates/list
 	listResp := callMCPJSON(t, srv.URL(), token, sid, "resources/list", nil)
 	if listResp.Error != nil {
 		t.Fatalf("resources/list error: %+v", listResp.Error)
@@ -202,7 +201,6 @@ func TestMCPResourcesEndToEnd(t *testing.T) {
 		}
 	}
 
-	// 2. markgogo://workspace
 	wsRead := callMCPJSON(t, srv.URL(), token, sid, "resources/read", map[string]any{"uri": "markgogo://workspace"})
 	if wsRead.Error != nil {
 		t.Fatalf("read workspace error: %+v", wsRead.Error)
@@ -220,7 +218,6 @@ func TestMCPResourcesEndToEnd(t *testing.T) {
 		t.Fatalf("unexpected workspace payload: %+v", wsPayload)
 	}
 
-	// 3. markgogo://document/{id} returns live unsaved buffer for open doc and falls back to disk
 	docRead := callMCPJSON(t, srv.URL(), token, sid, "resources/read", map[string]any{"uri": "markgogo://document/doc-1"})
 	rawDoc, _ := json.Marshal(docRead.Result)
 	var docContents struct {
@@ -244,7 +241,6 @@ func TestMCPResourcesEndToEnd(t *testing.T) {
 		t.Fatalf("expected disk fallback payload, got %+v", docPayload)
 	}
 
-	// 4. markgogo://document/{id}/sections
 	secRead := callMCPJSON(t, srv.URL(), token, sid, "resources/read", map[string]any{"uri": "markgogo://document/doc-1/sections"})
 	if secRead.Error != nil {
 		t.Fatalf("read sections error: %+v", secRead.Error)
@@ -262,7 +258,6 @@ func TestMCPResourcesEndToEnd(t *testing.T) {
 		t.Fatalf("expected fnv1a32 section ID/hash, got %+v", secPayload.Sections[1])
 	}
 
-	// 5. markgogo://document/{id}/notes
 	notesRead := callMCPJSON(t, srv.URL(), token, sid, "resources/read", map[string]any{"uri": "markgogo://document/doc-1/notes"})
 	if notesRead.Error != nil {
 		t.Fatalf("read notes error: %+v", notesRead.Error)
@@ -277,7 +272,6 @@ func TestMCPResourcesEndToEnd(t *testing.T) {
 		t.Fatalf("unexpected notes: %+v", notesPayload.Notes)
 	}
 
-	// Path traversal outside workspace must fail.
 	badRead := callMCPJSON(t, srv.URL(), token, sid, "resources/read", map[string]any{"uri": "markgogo://document/../etc/passwd"})
 	if badRead.Error == nil {
 		t.Fatal("expected error for escaping document URI")

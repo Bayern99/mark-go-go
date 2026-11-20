@@ -454,13 +454,11 @@ it('updates only affected blocks in place in Markdown Preview and preserves sing
     expect(editor.getMode()).toBe('preview')
     expect(editor.getMarkdown()).toBe(proposed)
 
-    // Unchanged blocks keep their exact ProseMirror node instances in place.
     expect(view.state.doc.child(0)).toBe(headingBefore)
     expect(view.state.doc.child(1)).toBe(firstParaBefore)
     expect(view.state.doc.child(3)).toBe(thirdParaBefore)
     expect(view.state.doc.child(2).textContent).toBe('Second paragraph updated.')
 
-    // Switch Preview -> Source -> Undo in Source -> switch back to Preview -> Redo in Preview.
     editor.setMode('source')
     expect(editor.getMode()).toBe('source')
     expect(editor.canUndo()).toBe(true)
@@ -474,14 +472,12 @@ it('updates only affected blocks in place in Markdown Preview and preserves sing
     expect(editor.redo()).toBe(true)
     expect(editor.getMarkdown()).toBe(proposed)
 
-    // Switch Preview -> Source -> Preview -> Undo in Preview.
     editor.setMode('source')
     editor.setMode('preview')
     expect(editor.canUndo()).toBe(true)
     expect(editor.undo()).toBe(true)
     expect(editor.getMarkdown()).toBe(original)
 
-    // Apply while in Source mode -> switch to Preview -> Undo in Preview.
     editor.setMode('source')
     expect(editor.applyMarkdown(original, proposed)).toBe(true)
     expect(editor.getMode()).toBe('source')

@@ -1,23 +1,19 @@
 package feynman
 
-// ResearchFocusEvent notifies the frontend when a workspace window regains focus.
 type ResearchFocusEvent struct {
 	Root string `json:"root"`
 }
 
-// CLIKeyValue represents a parsed label-value line from Feynman CLI output.
 type CLIKeyValue struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
 }
 
-// CLISection groups key-value entries under a Feynman CLI section heading.
 type CLISection struct {
 	Title   string        `json:"title"`
 	Entries []CLIKeyValue `json:"entries"`
 }
 
-// CLICommandResult captures the outcome of a generic Feynman CLI command with graceful raw fallback.
 type CLICommandResult struct {
 	Command   string `json:"command"`
 	Parsed    bool   `json:"parsed"`
@@ -27,7 +23,6 @@ type CLICommandResult struct {
 	Summary   string `json:"summary,omitempty"`
 }
 
-// CLIStatusResult holds parsed `feynman status` output and raw fallback text.
 type CLIStatusResult struct {
 	Command       string       `json:"command"`
 	Parsed        bool         `json:"parsed"`
@@ -45,7 +40,6 @@ type CLIStatusResult struct {
 	PiRuntime     string       `json:"piRuntime,omitempty"`
 }
 
-// CLIDoctorResult holds parsed `feynman doctor` diagnostics and raw fallback text.
 type CLIDoctorResult struct {
 	Command   string        `json:"command"`
 	Parsed    bool          `json:"parsed"`
@@ -57,7 +51,6 @@ type CLIDoctorResult struct {
 	Healthy   bool          `json:"healthy"`
 }
 
-// CLIModelEntry describes an authenticated model listed by `feynman model list`.
 type CLIModelEntry struct {
 	ID          string `json:"id"`
 	Provider    string `json:"provider"`
@@ -66,7 +59,6 @@ type CLIModelEntry struct {
 	Recommended bool   `json:"recommended"`
 }
 
-// CLIModelListResult holds parsed `feynman model list` and `feynman model tier` output.
 type CLIModelListResult struct {
 	Command          string          `json:"command"`
 	Parsed           bool            `json:"parsed"`
@@ -79,7 +71,6 @@ type CLIModelListResult struct {
 	Tier             string          `json:"tier,omitempty"`
 }
 
-// CLISearchStatusResult holds parsed `feynman search status` output.
 type CLISearchStatusResult struct {
 	Command        string        `json:"command"`
 	Parsed         bool          `json:"parsed"`
@@ -96,7 +87,6 @@ type CLISearchStatusResult struct {
 	Entries        []CLIKeyValue `json:"entries"`
 }
 
-// CLIMCPServer describes an MCP server returned by `feynman mcp list --json`.
 type CLIMCPServer struct {
 	Name      string   `json:"name"`
 	Scope     string   `json:"scope,omitempty"`
@@ -109,7 +99,6 @@ type CLIMCPServer struct {
 	Tools     []string `json:"tools,omitempty"`
 }
 
-// CLIMCPListResult holds parsed `feynman mcp list --json` output with raw fallback.
 type CLIMCPListResult struct {
 	Command   string         `json:"command"`
 	Parsed    bool           `json:"parsed"`
@@ -120,10 +109,9 @@ type CLIMCPListResult struct {
 	Errors    []string       `json:"errors"`
 }
 
-// CLIMCPAddInput specifies parameters for `feynman mcp add`.
 type CLIMCPAddInput struct {
 	Name              string   `json:"name"`
-	Transport         string   `json:"transport"` // "http" or "stdio"
+	Transport         string   `json:"transport"`
 	URL               string   `json:"url,omitempty"`
 	Command           string   `json:"command,omitempty"`
 	Args              []string `json:"args,omitempty"`
@@ -136,15 +124,13 @@ type CLIMCPAddInput struct {
 	Local             bool     `json:"local,omitempty"`
 }
 
-// CLIPackageEntry describes a core or optional Feynman Pi package preset.
 type CLIPackageEntry struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
-	Kind        string `json:"kind"` // "core" or "optional"
+	Kind        string `json:"kind"`
 	Installed   bool   `json:"installed"`
 }
 
-// CLIPackageListResult holds parsed `feynman packages list` output.
 type CLIPackageListResult struct {
 	Command   string            `json:"command"`
 	Parsed    bool              `json:"parsed"`
@@ -154,7 +140,6 @@ type CLIPackageListResult struct {
 	Packages  []CLIPackageEntry `json:"packages"`
 }
 
-// CLIAlphaStatusResult holds parsed `feynman alpha status` output.
 type CLIAlphaStatusResult struct {
 	Command    string `json:"command"`
 	Parsed     bool   `json:"parsed"`
@@ -166,7 +151,6 @@ type CLIAlphaStatusResult struct {
 	StatusText string `json:"statusText,omitempty"`
 }
 
-// CLIAlphaPaper represents a paper result from `feynman alpha search`.
 type CLIAlphaPaper struct {
 	ID        string `json:"id"`
 	Title     string `json:"title"`
@@ -177,7 +161,6 @@ type CLIAlphaPaper struct {
 	Snippet   string `json:"snippet,omitempty"`
 }
 
-// CLIAlphaSearchResult holds parsed `feynman alpha search` output.
 type CLIAlphaSearchResult struct {
 	Command   string                `json:"command"`
 	Parsed    bool                  `json:"parsed"`
@@ -195,7 +178,6 @@ type CLIAlphaSearchGroup struct {
 	Papers []CLIAlphaPaper `json:"papers"`
 }
 
-// CLIAlphaPaperResult holds parsed `feynman alpha get` output.
 type CLIAlphaPaperResult struct {
 	Command    string `json:"command"`
 	Parsed     bool   `json:"parsed"`
@@ -209,14 +191,12 @@ type CLIAlphaPaperResult struct {
 	FullText   bool   `json:"fullText"`
 }
 
-// CLIAlphaAnnotation represents a local alphaXiv paper annotation.
 type CLIAlphaAnnotation struct {
 	PaperID   string `json:"paperId"`
 	Note      string `json:"note"`
 	UpdatedAt string `json:"updatedAt,omitempty"`
 }
 
-// CLIAlphaAnnotateResult holds parsed `feynman alpha annotate` output.
 type CLIAlphaAnnotateResult struct {
 	Command     string               `json:"command"`
 	Parsed      bool                 `json:"parsed"`
@@ -228,7 +208,6 @@ type CLIAlphaAnnotateResult struct {
 	Annotations []CLIAlphaAnnotation `json:"annotations"`
 }
 
-// CLITerminalLaunchResult confirms an interactive wizard handoff to the system Terminal.
 type CLITerminalLaunchResult struct {
 	Wizard   string `json:"wizard"`
 	Command  string `json:"command"`

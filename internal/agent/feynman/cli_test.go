@@ -319,13 +319,11 @@ func TestFeynmanCLIDoesNotBlockOrDisconnectLiveChatRPC(t *testing.T) {
 	ctx := context.Background()
 	promptDone := make(chan error, 1)
 	go func() {
-		// Trigger a mid-turn interactive request that blocks the Chat turn until answered.
 		_, err := h.Prompt(ctx, root, "exercise all 9 extension ui", "", "")
 		promptDone <- err
 	}()
 	selReq := waitUpdate(t, events, "select")
 
-	// While Chat turn is actively blocked mid-turn, CLI commands must run immediately without blocking or disconnecting Chat.
 	cliDone := make(chan error, 1)
 	go func() {
 		st, err := h.CLIStatus(ctx, root)
@@ -350,7 +348,6 @@ func TestFeynmanCLIDoesNotBlockOrDisconnectLiveChatRPC(t *testing.T) {
 		t.Fatal("CLI command blocked on active Chat RPC turn")
 	}
 
-	// Now finish the blocked Chat turn cleanly and verify it wasn't disconnected.
 	if err := h.Answer(ctx, root, selReq.RequestID, "Docker"); err != nil {
 		t.Fatalf("Answer(select) failed after CLI calls: %v", err)
 	}
@@ -467,7 +464,6 @@ func TestFeynmanTerminalHandoffAndRefreshModels(t *testing.T) {
 		t.Fatalf("expected 4 terminal launches, got %d (%v)", gotCount, launched)
 	}
 
-	// Verify RefreshModels updates connected RPC session models cleanly.
 	events := make(chan ResearchUpdate, 64)
 	if err := h.connect(WorkspaceRef{Root: root}, func(e ResearchUpdate) { events <- e }); err != nil {
 		t.Fatal(err)
@@ -488,9 +484,6 @@ func TestFeynmanTerminalHandoffAndRefreshModels(t *testing.T) {
 	}
 }
 
-// =============================================================================
-// Self-Re-Exec Feynman CLI Subprocess Fixture (MGO_FIXTURE_FEYNMAN_CLI=1)
-// =============================================================================
 
 func runFeynmanCLIFixture() {
 	mode := os.Getenv("MGO_FIXTURE_CLI_MODE")

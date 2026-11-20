@@ -6,7 +6,7 @@
 |---|---|
 | 启动与 Go 绑定 | [main.go](main.go) · [Web 宿主契约](web/src/host/types.ts) · [IPC 适配](web/src/host/mygoHost.ts) |
 | 文档标签、导航与恢复 | [workspace.go](internal/workspace/workspace.go) · [documenthost.go](internal/workspace/documenthost.go) · [index.go](internal/workspace/index.go) · [session.go](internal/workspace/session.go) · [restore_host.go](internal/workspace/restore_host.go) |
-| 外壳、三栏与命令 | [App.tsx](web/src/App.tsx) · [core](web/src/core/) · [界面设计](DESIGN.md) |
+| 外壳、三栏与命令 | [WorkspaceShell.tsx](web/src/components/WorkspaceShell.tsx) · [DocumentPane.tsx](web/src/components/DocumentPane.tsx) · [DocumentTabs.tsx](web/src/components/DocumentTabs.tsx) · [core](web/src/core/) · [界面设计](DESIGN.md) |
 | 原文编辑与逐块保真 | [编辑器](web/src/editor/createEditor.ts) · [块组合](web/src/editor/blocks/compose.ts) · [Markdown 编辑器](web/src/editor/source/sourceEditor.ts) |
 | GenUI 视图与格式 | [viewfile.go](internal/genui/viewfile.go) · [组件目录](web/src/plugins/genui/a2ui.tsx) · [格式和示例](web/src/plugins/genui/view-format.md) |
 | ACP 生成、局部更新和缓存 | [generate.go](internal/acp/generate.go) · [update.go](internal/genui/update.go) · [process_cache.go](internal/acp/process_cache.go) |

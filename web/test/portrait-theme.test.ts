@@ -260,13 +260,11 @@ describe('Portrait contrast, narrow sheet header, and filter focus rings', () =>
         expect(container.querySelector('.fy-actions-trigger')).not.toBeNull()
       })
 
-      // 1. Workspace sidebar filter
       const sideFilter = container.querySelector<HTMLElement>('.filter')!
       const sideInput = sideFilter.querySelector<HTMLInputElement>('input')!
       sideInput.focus()
       expect(getComputedStyle(sideFilter).boxShadow).not.toBe('none')
 
-      // 2. Research Actions filter (.fy-filter)
       await userEvent.click(container.querySelector<HTMLButtonElement>('.fy-actions-trigger')!)
       const fyFilter = await vi.waitFor(() => {
         const el = container.querySelector<HTMLElement>('.fy-filter')
@@ -277,7 +275,6 @@ describe('Portrait contrast, narrow sheet header, and filter focus rings', () =>
       fyInput.focus()
       expect(getComputedStyle(fyFilter).boxShadow).not.toBe('none')
 
-      // 3. Narrow mobile drawer filter (.library-open > .side-pane .filter)
       await page.viewport(480, 640)
       await userEvent.click(container.querySelector<HTMLButtonElement>('.library-toggle')!)
       await vi.waitFor(() => expect(container.querySelector('.workspace-body.library-open')).not.toBeNull())

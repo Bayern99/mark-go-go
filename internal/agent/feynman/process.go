@@ -101,8 +101,8 @@ func (h *ResearchManager) researchCommand(root, work string) (*exec.Cmd, error) 
 		}
 	}
 	pathEnv := "PATH=" + strings.Join(paths, string(os.PathListSeparator))
-	feynmanBin := findExecutable([]string{pathEnv}, "feynman")
-	if feynmanBin == "" {
+	feynmanBin, ok := fsutil.ResolveExecutable("feynman", []string{pathEnv}, nil)
+	if !ok {
 		return nil, errors.New("Install Feynman CLI, then open Feynman settings to set up the app profile.")
 	}
 	canonWork := fsutil.CanonicalPath(work)

@@ -4,7 +4,6 @@ import { bind, event, type Channel } from "mygo-runtime";
 
 // ---- Types ----
 
-/** CLIAlphaAnnotateResult holds parsed `feynman alpha annotate` output. */
 export interface CLIAlphaAnnotateResult {
   command: string;
   parsed: boolean;
@@ -16,14 +15,12 @@ export interface CLIAlphaAnnotateResult {
   annotations: CLIAlphaAnnotation[];
 }
 
-/** CLIAlphaAnnotation represents a local alphaXiv paper annotation. */
 export interface CLIAlphaAnnotation {
   paperId: string;
   note: string;
   updatedAt?: string;
 }
 
-/** CLIAlphaPaper represents a paper result from `feynman alpha search`. */
 export interface CLIAlphaPaper {
   id: string;
   title: string;
@@ -34,7 +31,6 @@ export interface CLIAlphaPaper {
   snippet?: string;
 }
 
-/** CLIAlphaPaperResult holds parsed `feynman alpha get` output. */
 export interface CLIAlphaPaperResult {
   command: string;
   parsed: boolean;
@@ -53,7 +49,6 @@ export interface CLIAlphaSearchGroup {
   papers: CLIAlphaPaper[];
 }
 
-/** CLIAlphaSearchResult holds parsed `feynman alpha search` output. */
 export interface CLIAlphaSearchResult {
   command: string;
   parsed: boolean;
@@ -66,7 +61,6 @@ export interface CLIAlphaSearchResult {
   groups?: CLIAlphaSearchGroup[];
 }
 
-/** CLIAlphaStatusResult holds parsed `feynman alpha status` output. */
 export interface CLIAlphaStatusResult {
   command: string;
   parsed: boolean;
@@ -78,7 +72,6 @@ export interface CLIAlphaStatusResult {
   statusText?: string;
 }
 
-/** CLICommandResult captures the outcome of a generic Feynman CLI command with graceful raw fallback. */
 export interface CLICommandResult {
   command: string;
   parsed: boolean;
@@ -88,7 +81,6 @@ export interface CLICommandResult {
   summary?: string;
 }
 
-/** CLIDoctorResult holds parsed `feynman doctor` diagnostics and raw fallback text. */
 export interface CLIDoctorResult {
   command: string;
   parsed: boolean;
@@ -100,16 +92,13 @@ export interface CLIDoctorResult {
   healthy: boolean;
 }
 
-/** CLIKeyValue represents a parsed label-value line from Feynman CLI output. */
 export interface CLIKeyValue {
   key: string;
   value: string;
 }
 
-/** CLIMCPAddInput specifies parameters for `feynman mcp add`. */
 export interface CLIMCPAddInput {
   name: string;
-  /** "http" or "stdio" */
   transport: string;
   url?: string;
   command?: string;
@@ -123,7 +112,6 @@ export interface CLIMCPAddInput {
   local?: boolean;
 }
 
-/** CLIMCPListResult holds parsed `feynman mcp list --json` output with raw fallback. */
 export interface CLIMCPListResult {
   command: string;
   parsed: boolean;
@@ -134,7 +122,6 @@ export interface CLIMCPListResult {
   errors: string[];
 }
 
-/** CLIMCPServer describes an MCP server returned by `feynman mcp list --json`. */
 export interface CLIMCPServer {
   name: string;
   scope?: string;
@@ -147,7 +134,6 @@ export interface CLIMCPServer {
   tools?: string[];
 }
 
-/** CLIModelEntry describes an authenticated model listed by `feynman model list`. */
 export interface CLIModelEntry {
   id: string;
   provider: string;
@@ -156,7 +142,6 @@ export interface CLIModelEntry {
   recommended: boolean;
 }
 
-/** CLIModelListResult holds parsed `feynman model list` and `feynman model tier` output. */
 export interface CLIModelListResult {
   command: string;
   parsed: boolean;
@@ -169,16 +154,13 @@ export interface CLIModelListResult {
   tier?: string;
 }
 
-/** CLIPackageEntry describes a core or optional Feynman Pi package preset. */
 export interface CLIPackageEntry {
   name: string;
   description?: string;
-  /** "core" or "optional" */
   kind: string;
   installed: boolean;
 }
 
-/** CLIPackageListResult holds parsed `feynman packages list` output. */
 export interface CLIPackageListResult {
   command: string;
   parsed: boolean;
@@ -188,7 +170,6 @@ export interface CLIPackageListResult {
   packages: CLIPackageEntry[];
 }
 
-/** CLISearchStatusResult holds parsed `feynman search status` output. */
 export interface CLISearchStatusResult {
   command: string;
   parsed: boolean;
@@ -205,13 +186,11 @@ export interface CLISearchStatusResult {
   entries: CLIKeyValue[];
 }
 
-/** CLISection groups key-value entries under a Feynman CLI section heading. */
 export interface CLISection {
   title: string;
   entries: CLIKeyValue[];
 }
 
-/** CLIStatusResult holds parsed `feynman status` output and raw fallback text. */
 export interface CLIStatusResult {
   command: string;
   parsed: boolean;
@@ -229,7 +208,6 @@ export interface CLIStatusResult {
   piRuntime?: string;
 }
 
-/** CLITerminalLaunchResult confirms an interactive wizard handoff to the system Terminal. */
 export interface CLITerminalLaunchResult {
   wizard: string;
   command: string;
@@ -496,7 +474,6 @@ export interface ResearchConversation {
   current: boolean;
 }
 
-/** ResearchFocusEvent notifies the frontend when a workspace window regains focus. */
 export interface ResearchFocusEvent {
   root: string;
 }

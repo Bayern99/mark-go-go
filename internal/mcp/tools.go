@@ -37,7 +37,7 @@ func (s *Server) handleToolsList() any {
 						"newText":      map[string]any{"type": "string", "description": "Replacement text for oldText or startLine..endLine"},
 						"startLine":    map[string]any{"type": "integer", "description": "1-based start line for targeted replacement"},
 						"endLine":      map[string]any{"type": "integer", "description": "1-based inclusive end line for targeted replacement"},
-						"baseVersion":  map[string]any{"type": "integer", "description": "Optional base version observed when reading the document"},
+						"baseVersion":  map[string]any{"type": "integer", "description": "Document resource version required for line-range edits"},
 					},
 				},
 			},
@@ -208,8 +208,11 @@ func (s *Server) toolProposeEdit(binding *sessionBinding, rawArgs json.RawMessag
 	if source == "" {
 		source = "mcp"
 	}
-	if args.BaseVersion != nil {
-		if args.ProposedText == "" && args.StartLine > 0 && *args.BaseVersion != doc.Version {
+	if args.StartLine != 0 || args.EndLine != 0 {
+		if args.BaseVersion == nil {
+			return toolError("baseVersion is required for a line-range edit; read the document resource first"), nil
+		}
+		if *args.BaseVersion != doc.Version {
 			return toolError("document version changed; read it again before proposing a line-range edit"), nil
 		}
 	}

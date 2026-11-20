@@ -269,7 +269,6 @@ func TestSelectiveHunkAcceptRejectAndAcceptAll(t *testing.T) {
 		t.Fatalf("expected 2 hunks, got %d", len(prop.Hunks))
 	}
 
-	// Accept hunk-1, reject hunk-2 -> only Paragraph 1 changes in MergedText.
 	prop, err = svc.DecideHunk(root, prop.ID, "hunk-1", HunkAccepted, "")
 	if err != nil {
 		t.Fatalf("DecideHunk hunk-1 failed: %v", err)
@@ -283,7 +282,6 @@ func TestSelectiveHunkAcceptRejectAndAcceptAll(t *testing.T) {
 		t.Fatalf("selective MergedText = %q, want %q", prop.MergedText, wantPartial)
 	}
 
-	// Now flip: reject hunk-1, accept hunk-2 -> only Paragraph 3 changes in MergedText.
 	prop, err = svc.DecideHunk(root, prop.ID, "hunk-1", HunkRejected, "")
 	if err != nil {
 		t.Fatalf("DecideHunk hunk-1 reject failed: %v", err)
@@ -297,7 +295,6 @@ func TestSelectiveHunkAcceptRejectAndAcceptAll(t *testing.T) {
 		t.Fatalf("selective second-only MergedText = %q, want %q", prop.MergedText, wantSecondOnly)
 	}
 
-	// AcceptAllHunks -> both Paragraph 1 and Paragraph 3 change.
 	prop, err = svc.AcceptAllHunks(root, prop.ID, "")
 	if err != nil {
 		t.Fatalf("AcceptAllHunks failed: %v", err)
@@ -351,7 +348,6 @@ func TestConcurrentEditMergesNonOverlappingHunksAndFlagsOverlappingConflicts(t *
 		t.Fatalf("SubmitProposal failed: %v", err)
 	}
 
-	// Case 1: User edits unrelated Paragraph 2 (and adds a subtitle line at top) while proposal is pending.
 	liveUnrelated := "# Paper\nSubtitle by user.\n\nParagraph 1 original.\n\nParagraph 2 edited by user.\n\nParagraph 3 original.\n"
 	synced, err := svc.SyncProposal(root, prop.ID, liveUnrelated)
 	if err != nil {
@@ -363,7 +359,6 @@ func TestConcurrentEditMergesNonOverlappingHunksAndFlagsOverlappingConflicts(t *
 	if synced.Hunks[0].Conflict || synced.Hunks[1].Conflict {
 		t.Fatalf("expected neither hunk to conflict, got: %+v", synced.Hunks)
 	}
-	// Because 1 extra line was inserted at the top, Paragraph 1 moved from line 3 to line 4, and Paragraph 3 moved from line 7 to line 8.
 	if synced.Hunks[0].ChangeOldLine != 4 || synced.Hunks[1].ChangeOldLine != 8 {
 		t.Fatalf("expected shifted ChangeOldLine 4 and 8, got %d and %d", synced.Hunks[0].ChangeOldLine, synced.Hunks[1].ChangeOldLine)
 	}
@@ -372,7 +367,6 @@ func TestConcurrentEditMergesNonOverlappingHunksAndFlagsOverlappingConflicts(t *
 		t.Fatalf("non-overlapping MergedText = %q, want %q", synced.MergedText, wantCleanMerge)
 	}
 
-	// Case 2: User also edits Paragraph 1 in the live buffer (colliding with hunk-1), while leaving Paragraph 3 untouched.
 	liveColliding := "# Paper\nSubtitle by user.\n\nParagraph 1 edited by user.\n\nParagraph 2 edited by user.\n\nParagraph 3 original.\n"
 	collided, err := svc.SyncProposal(root, prop.ID, liveColliding)
 	if err != nil {
@@ -387,11 +381,9 @@ func TestConcurrentEditMergesNonOverlappingHunksAndFlagsOverlappingConflicts(t *
 	if collided.Hunks[1].Conflict {
 		t.Fatalf("expected hunk-2 (Paragraph 3) to remain conflict=false, got: %+v", collided.Hunks[1])
 	}
-	// Attempting to accept the conflicting hunk-1 must return an error.
 	if _, err := svc.DecideHunk(root, prop.ID, "hunk-1", HunkAccepted, liveColliding); err == nil {
 		t.Fatalf("expected error when attempting to accept conflicting hunk-1")
 	}
-	// Accepting non-conflicting hunk-2 (or AcceptAllHunks) merges hunk-2 while preserving user's Paragraph 1 and Paragraph 2 edits.
 	accepted, err := svc.AcceptAllHunks(root, prop.ID, liveColliding)
 	if err != nil {
 		t.Fatalf("AcceptAllHunks on partially conflicting proposal failed: %v", err)

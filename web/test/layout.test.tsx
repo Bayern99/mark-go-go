@@ -195,7 +195,6 @@ describe('layout at the default window size', () => {
         p.textContent?.startsWith('Intro paragraph'),
       )!
 
-    // Drag RightPane aggressively wider (attempting 56vw = 660px) while SidePane is docked
     rightSplitter.focus()
     for (let i = 0; i < 16; i += 1) {
       await userEvent.keyboard('{ArrowLeft}')
@@ -203,7 +202,6 @@ describe('layout at the default window size', () => {
     expect(workspaceMain.getBoundingClientRect().width).toBeGreaterThanOrEqual(412)
     expect(paragraph().getBoundingClientRect().width).toBeGreaterThanOrEqual(280)
 
-    // Drag SidePane aggressively wider while RightPane is wide
     leftSplitter.focus()
     for (let i = 0; i < 16; i += 1) {
       await userEvent.keyboard('{ArrowRight}')
@@ -211,7 +209,6 @@ describe('layout at the default window size', () => {
     expect(workspaceMain.getBoundingClientRect().width).toBeGreaterThanOrEqual(412)
     expect(paragraph().getBoundingClientRect().width).toBeGreaterThanOrEqual(280)
 
-    // Grow to 1440px, widen both panes, then shrink back to 1180px and grow back to 1440px
     await page.viewport(1440, 820)
     await vi.waitFor(() => expect(leftSplitter.getAttribute('aria-valuemax')).toBe('420'))
     leftSplitter.focus()
@@ -232,14 +229,12 @@ describe('layout at the default window size', () => {
       expect(paragraph().getBoundingClientRect().width).toBeGreaterThanOrEqual(280)
     })
 
-    // Restores saved target widths when window grows back to 1440px
     await page.viewport(1440, 820)
     await vi.waitFor(() => {
       expect(Math.round(leftPane.getBoundingClientRect().width)).toBe(wideLeft)
       expect(Math.round(rightPane.getBoundingClientRect().width)).toBe(wideRight)
     })
 
-    // Narrowest docked-SidePane width (641px) still keeps center Document readable
     await page.viewport(641, 720)
     await vi.waitFor(() => {
       expect(workspaceMain.getBoundingClientRect().width).toBeGreaterThanOrEqual(412)
@@ -264,7 +259,6 @@ describe('layout at the default window size', () => {
     expect(scrimStyle.backgroundColor).toBe('rgba(29, 29, 31, 0.08)')
     expect(Number(scrimStyle.zIndex)).toBeLessThan(Number(rightStyle.zIndex))
 
-    // Clicking outside over the tab bar region hits the scrim and dismisses the drawer
     await page.getByTestId('right-scrim').click({ position: { x: 240, y: 12 } })
     expect(rightPane.hidden).toBe(true)
     expect(mounted.container.querySelector('[data-testid="right-scrim"]')).toBeNull()

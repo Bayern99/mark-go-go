@@ -294,8 +294,8 @@ func (h *Service) MCPDocument(root, idOrPath string) (DocumentMCPState, error) {
 		return DocumentMCPState{}, err
 	}
 	digest := sha256.Sum256([]byte(text))
-	// Reserve bit 52 for disk versions without exceeding JavaScript's safe integer range.
-	diskVersion := int64(1<<52 | binary.BigEndian.Uint64(digest[:8])>>12)
+	const diskVersionHashBits = 52
+	diskVersion := int64(1<<diskVersionHashBits | binary.BigEndian.Uint64(digest[:8])>>(64-diskVersionHashBits))
 	return DocumentMCPState{
 		Name:    filepath.Base(absPath),
 		Path:    absPath,

@@ -5,7 +5,6 @@ import (
 	"sync"
 )
 
-// LimitBuffer is a thread-safe bounded byte buffer that retains the trailing max bytes written.
 type LimitBuffer struct {
 	mu  sync.Mutex
 	max int

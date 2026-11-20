@@ -266,19 +266,16 @@ describe('Portrait Chat | Review right-pane shell', () => {
       await expect.element(page.getByRole('radio', { name: /Chat/ })).toBeVisible()
       await expect.element(page.getByRole('radio', { name: /Review/ })).toBeVisible()
 
-      // Two-segment .seg + MovingCapsule, no terminal tab
       const seg = container.querySelector('.fy-tabs.seg')
       expect(seg).not.toBeNull()
       expect(seg?.querySelector('.moving-capsule')).not.toBeNull()
       expect(seg?.querySelectorAll('[role="radio"]')).toHaveLength(2)
       expect(container.textContent).not.toContain('CLI')
 
-      // No native <select> or <meter> inside the panel
       const panel = container.querySelector('.fy-panel')!
       expect(panel.querySelectorAll('select')).toHaveLength(0)
       expect(panel.querySelectorAll('meter')).toHaveLength(0)
 
-      // Glass overlay styling on Actions command palette
       await userEvent.click(page.getByRole('button', { name: 'Research actions' }))
       const palette = container.querySelector<HTMLElement>('.fy-command-palette')!
       expect(palette).not.toBeNull()
@@ -288,14 +285,12 @@ describe('Portrait Chat | Review right-pane shell', () => {
       expect(getComputedStyle(palette).backdropFilter).not.toBe('none')
       await userEvent.click(page.getByRole('button', { name: 'Close actions' }))
 
-      // Visible tabular-nums token/cost stats
       const statsEl = container.querySelector('[data-testid="fy-session-stats"]')
       expect(statsEl).not.toBeNull()
       expect(getComputedStyle(statsEl!).fontVariantNumeric).toContain('tabular-nums')
       expect(statsEl?.textContent).toContain('1,350')
       expect(statsEl?.textContent).toContain('$0.04')
 
-      // Portrait model & thinking pickers
       await userEvent.click(page.getByRole('button', { name: /Model/ }))
       await expect.element(page.getByRole('button', { name: /GPT-5/ })).toBeVisible()
       await userEvent.click(page.getByRole('button', { name: /GPT-5/ }))
@@ -331,7 +326,6 @@ describe('Portrait Chat | Review right-pane shell', () => {
       await userEvent.fill(composer, 'Initial prompt')
       await userEvent.click(page.getByRole('button', { name: 'Send' }))
 
-      // Animated working spinner visible
       const spinner = await vi.waitFor(() => {
         const el = container.querySelector('.fy-working .ph-spinner-gap')
         expect(el).not.toBeNull()
@@ -339,7 +333,6 @@ describe('Portrait Chat | Review right-pane shell', () => {
       })
       expect(getComputedStyle(spinner).animationName).not.toBe('none')
 
-      // Steer & Follow up mid-turn
       await userEvent.fill(composer, 'Focus on table 2')
       await userEvent.click(page.getByTestId('fy-steer'))
       expect(mocks.steer).toHaveBeenCalledWith('/ws', 'Focus on table 2', [])
@@ -349,7 +342,6 @@ describe('Portrait Chat | Review right-pane shell', () => {
       expect(mocks.followUp).toHaveBeenCalledWith('/ws', 'Then summarize findings', [])
       await expect.poll(() => container.querySelector('[data-testid="fy-queue-bar"] .fy-queue-summary')?.textContent).toBe('1 follow-up')
 
-      // Queue update from Go backend + Clear queue
       mocks.onResearchEvent?.({
         root: '/ws',
         kind: 'queue',
@@ -360,7 +352,6 @@ describe('Portrait Chat | Review right-pane shell', () => {
       expect(mocks.clearQueue).toHaveBeenCalledWith('/ws')
       await vi.waitFor(() => expect(container.querySelector('[data-testid="fy-queue-bar"]')).toBeNull())
 
-      // Abort turn
       await userEvent.click(page.getByRole('button', { name: 'Abort research' }))
       expect(mocks.abort).toHaveBeenCalledWith('/ws')
       finishPrompt('')
@@ -406,7 +397,6 @@ describe('Portrait Chat | Review right-pane shell', () => {
       await expect.element(page.getByRole('button', { name: 'Conversation history' })).toBeEnabled()
       await userEvent.click(page.getByRole('button', { name: 'Conversation history' }))
 
-      // Rename
       await userEvent.click(page.getByRole('button', { name: 'Rename conversation' }))
       const nameInput = page.getByLabelText('Conversation name')
       await userEvent.fill(nameInput, 'Renamed study')
@@ -414,20 +404,17 @@ describe('Portrait Chat | Review right-pane shell', () => {
       expect(mocks.setSessionName).toHaveBeenCalledWith('/ws', 'Renamed study')
       await expect.poll(() => container.querySelector('.fy-heading-title small')?.textContent).toContain('Renamed study')
 
-      // Tree viewer
       await userEvent.click(page.getByRole('button', { name: 'Conversation tree' }))
       await expect.poll(() => document.querySelector('[aria-label="Conversation tree"]')?.textContent).toContain('Current leaf answer')
       await expect.poll(() => document.querySelector('[aria-label="Conversation tree"]')?.textContent).toContain('Current')
       await userEvent.click(page.getByRole('button', { name: 'Tree' }))
 
-      // Fork
       await userEvent.click(page.getByRole('button', { name: 'Fork conversation' }))
       await expect.element(page.getByRole('button', { name: 'First prompt about attention' })).toBeVisible()
       await userEvent.click(page.getByRole('button', { name: 'First prompt about attention' }))
       expect(mocks.fork).toHaveBeenCalledWith('/ws', 'entry-1')
       await expect.poll(() => container.querySelector<HTMLTextAreaElement>('[aria-label="Research prompt"]')?.value).toBe('forked draft')
 
-      // Clear draft so switching is allowed, then switch & delete
       await userEvent.fill(page.getByLabelText('Research prompt'), '')
       await userEvent.click(page.getByRole('button', { name: 'Conversation history' }))
       await userEvent.click(page.getByRole('button', { name: 'Delete Previous survey' }))
@@ -451,34 +438,27 @@ describe('Portrait Chat | Review right-pane shell', () => {
       root.render(<App workspace={workspace} />)
       await expect.element(page.getByRole('radio', { name: /Chat/ })).toBeVisible()
 
-      // 1. setTitle
       emit({ kind: 'setTitle', uiMethod: 'setTitle', title: 'Custom Title', text: 'Custom Title' })
       await expect.poll(() => container.querySelector('.fy-heading-title small')?.textContent).toContain('Custom Title')
 
-      // 2. notify
       emit({ kind: 'notify', uiMethod: 'notify', message: 'Index synced', notifyType: 'warning' })
       await expect.poll(() => container.querySelector('.fy-notice[data-tone="warning"]')?.textContent).toContain('Index synced')
 
-      // 3. setStatus
       emit({ kind: 'setStatus', uiMethod: 'setStatus', statusKey: 'sync', text: 'Syncing 2/2' })
       await expect.element(page.getByTestId('fy-ext-statuses')).toHaveTextContent('Syncing 2/2')
 
-      // 4. setWidget
       emit({ kind: 'setWidget', uiMethod: 'setWidget', widgetKey: 'w1', widgetLines: ['Widget summary'], widgetPlacement: 'aboveEditor' })
       await expect.poll(() => container.querySelector('[data-widget-key="w1"]')?.textContent).toBe('Widget summary')
 
-      // 5. set_editor_text
       emit({ kind: 'set_editor_text', uiMethod: 'set_editor_text', text: 'Pre-filled draft' })
       await expect.poll(() => container.querySelector<HTMLTextAreaElement>('[aria-label="Research prompt"]')?.value).toBe('Pre-filled draft')
 
-      // 6. confirm
       emit({ kind: 'confirm', uiMethod: 'confirm', requestId: 'c1', text: 'Proceed with edit?', options: [{ id: 'yes', name: 'Confirm', kind: 'confirm' }, { id: 'no', name: 'Cancel', kind: 'cancel' }] })
       await expect.element(page.getByText('Action required', { exact: true })).toBeVisible()
       await userEvent.click(page.getByRole('button', { name: 'Confirm' }))
       expect(mocks.answerConfirm).toHaveBeenCalledWith('/ws', 'c1', true, false)
       emit({ kind: 'permissionDone', requestId: 'c1' })
 
-      // 7. select (>4 options uses Portrait listbox, no <select>)
       emit({
         kind: 'select',
         uiMethod: 'select',
@@ -492,7 +472,6 @@ describe('Portrait Chat | Review right-pane shell', () => {
       expect(mocks.answer).toHaveBeenCalledWith('/ws', 's1', 'c')
       emit({ kind: 'permissionDone', requestId: 's1' })
 
-      // 8. input & 9. editor
       emit({ kind: 'input', uiMethod: 'input', requestId: 'i1', text: 'Enter label' })
       await userEvent.fill(page.getByLabelText('Enter label'), 'v1')
       await userEvent.click(page.getByRole('button', { name: 'Submit' }))
@@ -505,7 +484,6 @@ describe('Portrait Chat | Review right-pane shell', () => {
       expect(mocks.answerText).toHaveBeenCalledWith('/ws', 'e1', 'Updated', false)
       emit({ kind: 'permissionDone', requestId: 'e1' })
 
-      // Code block & safe image rendering in chat
       emit({ kind: 'user', text: 'Show code and plot' })
       emit({
         kind: 'assistant',
@@ -515,7 +493,6 @@ describe('Portrait Chat | Review right-pane shell', () => {
       await userEvent.click(page.getByRole('button', { name: 'Copy code' }))
       await expect.poll(() => container.querySelector('.fy-code-block .mgo-copy-morph')).not.toBeNull()
 
-      // Reduced transparency fallback on glass overlay
       await sessionCdp.send('Emulation.setEmulatedMedia', {
         features: [{ name: 'prefers-reduced-transparency', value: 'reduce' }],
       })
@@ -558,7 +535,6 @@ describe('Portrait Chat | Review right-pane shell', () => {
       )
       await expect.element(page.getByRole('radio', { name: /Review/ })).toBeVisible()
 
-      // Pending proposal via reviewUpdated shows tabular-nums badge
       mocks.onReviewEvent?.({
         workspaceRoot: '/ws',
         revision: 1,
@@ -587,7 +563,6 @@ describe('Portrait Chat | Review right-pane shell', () => {
       expect(badge.textContent).toBe('1')
       expect(getComputedStyle(badge).fontVariantNumeric).toContain('tabular-nums')
 
-      // Switch to Review tab and verify proposal + Restore missing file
       ;(container.querySelector('[role="radio"][aria-checked="true"]') as HTMLElement).focus()
       await userEvent.keyboard('{ArrowRight}')
       await expect.element(page.getByRole('radio', { name: /Review/ })).toHaveFocus()
@@ -596,7 +571,6 @@ describe('Portrait Chat | Review right-pane shell', () => {
       expect(mocks.recoverArtifact).toHaveBeenCalledWith('/ws', 'outputs/lost.md')
       expect(openDoc).toHaveBeenCalledWith('/ws/outputs/lost.md')
 
-      // Settings slot hook works in-pane
       await userEvent.click(page.getByTestId('feynman-settings-toggle'))
       await expect.element(page.getByTestId('feynman-settings-stub')).toBeVisible()
       await userEvent.click(page.getByRole('button', { name: 'Back to research' }))

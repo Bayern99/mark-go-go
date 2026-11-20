@@ -178,7 +178,6 @@ func (c *rpcClient) readLoop() {
 	for scanner.Scan() {
 		line := bytes.TrimSpace(scanner.Bytes())
 		if len(line) == 0 || line[0] != '{' {
-			// Ignore blank lines and non-JSON stdout banner lines.
 			continue
 		}
 		c.dispatch(append([]byte(nil), line...))

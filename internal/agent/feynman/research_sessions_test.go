@@ -25,8 +25,6 @@ func TestResearchSessionsJSONLAndTreeForkCloneRenameDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Pre-populate .jsonl session files:
-	// 1. "older" belonging to this workspace (work) with latest session_info name and user message preview
 	writeTestSessionJSONL(t, filepath.Join(sessionsDir, "older.jsonl"), []any{
 		map[string]any{
 			"type":          "session",
@@ -72,7 +70,6 @@ func TestResearchSessionsJSONLAndTreeForkCloneRenameDelete(t *testing.T) {
 		},
 	})
 
-	// 2. "preview-only" belonging to this workspace without session_info (title should come from first user message preview)
 	writeTestSessionJSONL(t, filepath.Join(sessionsDir, "preview-only.jsonl"), []any{
 		map[string]any{
 			"type":      "session",
@@ -93,7 +90,6 @@ func TestResearchSessionsJSONLAndTreeForkCloneRenameDelete(t *testing.T) {
 		},
 	})
 
-	// 3. "foreign" belonging to a different workspace cwd
 	writeTestSessionJSONL(t, filepath.Join(sessionsDir, "foreign.jsonl"), []any{
 		map[string]any{
 			"type":      "session",
@@ -111,7 +107,6 @@ func TestResearchSessionsJSONLAndTreeForkCloneRenameDelete(t *testing.T) {
 		},
 	})
 
-	// 4. "broken" belonging to this workspace (triggers switch_session error in fixture)
 	writeTestSessionJSONL(t, filepath.Join(sessionsDir, "broken.jsonl"), []any{
 		map[string]any{
 			"type":      "session",
@@ -151,7 +146,6 @@ func TestResearchSessionsJSONLAndTreeForkCloneRenameDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sessions failed: %v", err)
 	}
-	// Must include "first", "older", "preview-only", "broken" (all matching work), and MUST NOT include "foreign".
 	byID := map[string]ResearchConversation{}
 	for _, r := range records {
 		if r.ID == "foreign" {
@@ -171,7 +165,6 @@ func TestResearchSessionsJSONLAndTreeForkCloneRenameDelete(t *testing.T) {
 		t.Fatalf("preview-only session title mismatch: %+v", byID["preview-only"])
 	}
 
-	// Reject selecting or deleting foreign session or deleting active session
 	if err := h.Host().SelectSession(ctx, root, "foreign"); err == nil {
 		t.Fatal("opened a session from a different workspace")
 	}
@@ -185,7 +178,6 @@ func TestResearchSessionsJSONLAndTreeForkCloneRenameDelete(t *testing.T) {
 		t.Fatal("deleted active session")
 	}
 
-	// Rename current session via SetSessionName
 	if err := h.Host().SetSessionName(ctx, root, "Acoustic Baseline"); err != nil {
 		t.Fatalf("SetSessionName failed: %v", err)
 	}
@@ -194,7 +186,6 @@ func TestResearchSessionsJSONLAndTreeForkCloneRenameDelete(t *testing.T) {
 		t.Fatalf("expected session rename event 'Acoustic Baseline', got %q", sessionEvt.Text)
 	}
 
-	// Inspect Tree (get_tree) and ForkMessages (get_fork_messages)
 	tree, err := h.Host().Tree(ctx, root)
 	if err != nil || tree.LeafID != "entry-reply" || len(tree.Tree) != 1 || tree.Tree[0].Entry.ID != "entry-init" || len(tree.Tree[0].Children) != 1 {
 		t.Fatalf("Tree mismatch: %+v %v", tree, err)
@@ -204,19 +195,16 @@ func TestResearchSessionsJSONLAndTreeForkCloneRenameDelete(t *testing.T) {
 		t.Fatalf("ForkMessages mismatch: %+v %v", forkMsgs, err)
 	}
 
-	// Fork session from entry-init
 	forkRes, err := h.Host().Fork(ctx, root, "entry-init")
 	if err != nil || forkRes.Cancelled || forkRes.Text != "First research prompt" || !strings.HasPrefix(forkRes.SessionID, "forked-") {
 		t.Fatalf("Fork mismatch: %+v %v", forkRes, err)
 	}
 
-	// Clone session
 	cloned, err := h.Host().Clone(ctx, root)
 	if err != nil || !cloned {
 		t.Fatalf("Clone mismatch: cloned=%v err=%v", cloned, err)
 	}
 
-	// Switch to "older" session
 	drainEvents(events)
 	if err := h.Host().SelectSession(ctx, root, "older"); err != nil {
 		t.Fatalf("SelectSession(older) failed: %v", err)
@@ -240,7 +228,6 @@ func TestResearchSessionsJSONLAndTreeForkCloneRenameDelete(t *testing.T) {
 		t.Fatalf("switch not persisted: %q %v", id, err)
 	}
 
-	// Start a new session via NewSession / SelectSession("")
 	if err := h.Host().NewSession(ctx, root, ""); err != nil {
 		t.Fatalf("NewSession failed: %v", err)
 	}
@@ -250,7 +237,6 @@ func TestResearchSessionsJSONLAndTreeForkCloneRenameDelete(t *testing.T) {
 		t.Fatalf("new session id not persisted: %q", currentAfterNew)
 	}
 
-	// Delete "older" session and verify its .jsonl file is removed
 	if err := h.Host().DeleteSession(ctx, root, "older"); err != nil {
 		t.Fatalf("DeleteSession(older) failed: %v", err)
 	}
@@ -267,7 +253,6 @@ func TestResearchSessionsJSONLAndTreeForkCloneRenameDelete(t *testing.T) {
 		}
 	}
 
-	// Switching to a broken session fails without overwriting the durable selection
 	drainEvents(events)
 	if err := h.Host().SelectSession(ctx, root, "broken"); err == nil {
 		t.Fatal("unavailable session switched successfully")
@@ -277,11 +262,9 @@ func TestResearchSessionsJSONLAndTreeForkCloneRenameDelete(t *testing.T) {
 		t.Fatalf("failed switch replaced durable session selection: got %q, want %q", id, currentAfterNew)
 	}
 
-	// Reconnect after failed switch
 	connect()
 	drainEvents(events)
 
-	// Verify mid-switch disconnect drains cleanly and keeps previous selection
 	if err := os.WriteFile(filepath.Join(work, "pause-load"), nil, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +299,6 @@ func TestResearchSessionsJSONLAndTreeForkCloneRenameDelete(t *testing.T) {
 		t.Fatalf("lost previous selection: %q %v", id, err)
 	}
 
-	// Verify missing saved session recovery on connect
 	if err := os.WriteFile(record, []byte("removed-session-id"), 0600); err != nil {
 		t.Fatal(err)
 	}

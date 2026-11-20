@@ -3,7 +3,6 @@ import { Popover } from 'radix-ui'
 import { ScrollArea } from '../../components/ScrollArea'
 import { radioKeys } from '../../components/radioKeys'
 import {
-  events,
   ResearchHost,
   type CLIAlphaStatusResult,
   type CLICommandResult,
@@ -17,6 +16,7 @@ import {
 import { AlphaXivPanel, CLIRawFallback } from './AlphaXivPanel'
 import { ResearchIcon } from './Conversation'
 import type { FeynmanSettingsSlotProps } from './index'
+import { useResearchFocus } from './useResearchFocus'
 
 const TIER_PRESETS = ['default', 'auto', 'flex', 'priority']
 const SEARCH_PROVIDERS = [
@@ -166,31 +166,13 @@ export function FeynmanSettings({ root, session, cliStatus: statusRes, refreshCL
         await ResearchHost.refreshModels?.(root)?.catch?.(() => {})
       }
     } catch {
-      // Best-effort refresh on focus regain.
+      return
     } finally {
       refreshingFocus.current = false
     }
   }, [loadCore, root, session])
 
-  useEffect(() => {
-    if (!root) return
-    const onWindowFocus = () => {
-      void refreshOnFocus()
-    }
-    window.addEventListener('focus', onWindowFocus)
-    let offFocusEvent: (() => void) | undefined
-    try {
-      offFocusEvent = events.researchFocus?.on((ev) => {
-        if (ev.root === root) void refreshOnFocus()
-      })
-    } catch {
-      // Standalone test mocks may omit researchFocus event.
-    }
-    return () => {
-      window.removeEventListener('focus', onWindowFocus)
-      offFocusEvent?.()
-    }
-  }, [refreshOnFocus, root])
+  useResearchFocus(root, refreshOnFocus)
 
   async function runOp(name: string, fn: () => Promise<void>) {
     setBusyOp(name)

@@ -3,7 +3,7 @@ import { MovingCapsule } from '../../components/MovingCapsule'
 import { ScrollArea } from '../../components/ScrollArea'
 import { radioKeys } from '../../components/radioKeys'
 import type { PluginContext } from '../../core'
-import { events, ResearchHost, type CLIStatusResult, type HunkDecision, type ResearchArtifact } from '../../host/generated/mygo'
+import { ResearchHost, type CLIStatusResult, type HunkDecision, type ResearchArtifact } from '../../host/generated/mygo'
 import { DocumentDiff, reconcileProposal } from '../DocumentDiff'
 import { AlphaXivPanel } from './AlphaXivPanel'
 import { Composer, useCommand } from './Composer'
@@ -12,6 +12,7 @@ import type { FeynmanSettingsSlotProps, OpenResearchDocument } from './index'
 import { ResearchQuestion } from './ResearchQuestion'
 import { SessionMenu } from './SessionMenu'
 import type { Proposal, ResearchSession } from './session'
+import { useResearchFocus } from './useResearchFocus'
 import './research.css'
 
 function sourceLabel(source?: string): string {
@@ -72,28 +73,13 @@ export default function ResearchPanel({
   useEffect(() => {
     if (tab === 'chat') void session.connect()
   }, [session, tab])
-  useEffect(() => {
-    if (!session.root || settingsOpen) return
-    const refreshOnFocus = () => {
-      void refreshCLIStatus().catch(() => {})
-      if (session.status === 'ready' || session.status === 'working') {
-        void ResearchHost.refreshModels?.(session.root)?.catch?.(() => {})
-      }
+  const refreshOnFocus = useCallback(() => {
+    void refreshCLIStatus().catch(() => {})
+    if (session.status === 'ready' || session.status === 'working') {
+      void ResearchHost.refreshModels?.(session.root)?.catch?.(() => {})
     }
-    window.addEventListener('focus', refreshOnFocus)
-    let offFocus: (() => void) | undefined
-    try {
-      offFocus = events.researchFocus?.on((ev) => {
-        if (ev.root === session.root) refreshOnFocus()
-      })
-    } catch {
-      // Standalone test mocks may omit researchFocus event.
-    }
-    return () => {
-      window.removeEventListener('focus', refreshOnFocus)
-      offFocus?.()
-    }
-  }, [refreshCLIStatus, session, session.root, settingsOpen])
+  }, [refreshCLIStatus, session])
+  useResearchFocus(settingsOpen ? undefined : session.root, refreshOnFocus)
   const [, refreshDoc] = useReducer((n: number) => n + 1, 0)
   useLayoutEffect(() => {
     const sub = ctx?.documents.onDidChange(refreshDoc)

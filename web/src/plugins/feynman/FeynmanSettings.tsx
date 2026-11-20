@@ -9,6 +9,7 @@ import {
   type CLICommandResult,
   type CLIDoctorResult,
   type CLIMCPListResult,
+  type CLIMCPServer,
   type CLIModelListResult,
   type CLIPackageListResult,
   type CLISearchStatusResult,
@@ -164,7 +165,7 @@ export function FeynmanSettings({ root, session, onClose, onInsertToChat }: Feyn
     refreshingFocus.current = true
     try {
       await loadCore()
-      if (!session || session.status === 'ready') {
+      if (!session || session.status === 'ready' || session.status === 'working') {
         await ResearchHost.refreshModels?.(root)?.catch?.(() => {})
       }
     } catch {
@@ -284,9 +285,9 @@ export function FeynmanSettings({ root, session, onClose, onInsertToChat }: Feyn
     })
   }
 
-  async function handleRemoveMCP(name: string) {
-    await runOp(`mcp-remove-${name}`, async () => {
-      const res = await ResearchHost.climcpRemove(root, name, false)
+  async function handleRemoveMCP(server: CLIMCPServer) {
+    await runOp(`mcp-remove-${server.name}`, async () => {
+      const res = await ResearchHost.climcpRemove(root, server.name, server.scope === 'project')
       setNotice(res.summary || res.rawOutput)
       setMCPList(await ResearchHost.climcpList(root))
     })
@@ -702,11 +703,11 @@ export function FeynmanSettings({ root, session, onClose, onInsertToChat }: Feyn
               ) : (
                 <div className="fy-cli-list">
                   {mcpList.servers.map((srv) => (
-                    <div key={srv.name} className="fy-cli-item">
+                    <div key={`${srv.scope}:${srv.name}`} className="fy-cli-item">
                       <div className="fy-cli-item-copy">
                         <strong>{srv.name}</strong>
                         <small>
-                          {[srv.transport, srv.url || srv.command, srv.exposure, srv.status]
+                          {[srv.scope, srv.transport, srv.url || srv.command, srv.exposure, srv.status]
                             .filter(Boolean)
                             .join(' · ')}
                         </small>
@@ -716,7 +717,8 @@ export function FeynmanSettings({ root, session, onClose, onInsertToChat }: Feyn
                         type="button"
                         className="pill xs quiet"
                         disabled={busyOp !== ''}
-                        onClick={() => void handleRemoveMCP(srv.name)}
+                        aria-label={`Remove ${srv.name}${srv.scope ? ` (${srv.scope})` : ''}`}
+                        onClick={() => void handleRemoveMCP(srv)}
                       >
                         Remove
                       </button>

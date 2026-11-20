@@ -48,6 +48,11 @@ export interface CLIAlphaPaperResult {
   fullText: boolean;
 }
 
+export interface CLIAlphaSearchGroup {
+  mode: string;
+  papers: CLIAlphaPaper[];
+}
+
 /** CLIAlphaSearchResult holds parsed `feynman alpha search` output. */
 export interface CLIAlphaSearchResult {
   command: string;
@@ -58,6 +63,7 @@ export interface CLIAlphaSearchResult {
   query: string;
   mode: string;
   papers: CLIAlphaPaper[];
+  groups?: CLIAlphaSearchGroup[];
 }
 
 /** CLIAlphaStatusResult holds parsed `feynman alpha status` output. */
@@ -131,6 +137,7 @@ export interface CLIMCPListResult {
 /** CLIMCPServer describes an MCP server returned by `feynman mcp list --json`. */
 export interface CLIMCPServer {
   name: string;
+  scope?: string;
   transport?: string;
   url?: string;
   command?: string;

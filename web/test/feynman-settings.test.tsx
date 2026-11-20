@@ -140,6 +140,7 @@ const mocks = vi.hoisted(() => ({
     servers: [
       {
         name: 'zotero',
+        scope: 'project',
         transport: 'stdio',
         command: 'zotero-mcp',
         exposure: 'direct',
@@ -156,7 +157,7 @@ const mocks = vi.hoisted(() => ({
     exitCode: 0,
     summary: 'Added MCP server',
   })),
-  climcpRemove: vi.fn(async (_root: string, name: string): Promise<CLICommandResult> => ({
+  climcpRemove: vi.fn(async (_root: string, name: string, _local: boolean): Promise<CLICommandResult> => ({
     command: `feynman mcp remove ${name}`,
     parsed: true,
     rawOutput: `Removed ${name}`,
@@ -407,6 +408,8 @@ describe('Feynman Settings & alphaXiv Portrait UI', () => {
       )
 
       // Exercise Models & Tier, MCP Remove, Packages, and Doctor
+      await userEvent.click(page.getByRole('button', { name: 'Remove zotero (project)' }))
+      expect(mocks.climcpRemove).toHaveBeenCalledWith('/ws-settings', 'zotero', true)
       await userEvent.click(page.getByRole('button', { name: 'Set default' }))
       expect(mocks.cliModelAction).toHaveBeenCalledWith('/ws-settings', 'set', 'anthropic/claude-sonnet-4')
 
@@ -532,6 +535,24 @@ describe('Feynman Settings & alphaXiv Portrait UI', () => {
       await userEvent.click(page.getByRole('button', { name: 'Inspect paper' }))
       expect(mocks.cliAlphaGet).toHaveBeenCalledWith('/ws-alpha', '2501.01234', false)
 
+      mocks.cliAlphaSearch.mockResolvedValueOnce({
+        command: 'feynman alpha search --mode both',
+        parsed: true,
+        rawOutput: '{}',
+        exitCode: 0,
+        query: 'sparse attention',
+        mode: 'both',
+        papers: [],
+        groups: [
+          { mode: 'semantic', papers: [{ id: '2501.01234', title: 'Semantic match' }] },
+          { mode: 'keyword', papers: [{ id: '2502.01234', title: 'Keyword match' }] },
+        ],
+      })
+      await userEvent.click(page.getByRole('button', { name: 'both', exact: true }))
+      await userEvent.click(page.getByRole('button', { name: 'Search alphaXiv' }))
+      await expect.element(page.getByText('Semantic match')).toBeVisible()
+      await expect.element(page.getByText('Keyword match')).toBeVisible()
+
       await userEvent.fill(page.getByLabelText('Ask about paper'), 'What is the complexity?')
       await userEvent.click(page.getByRole('button', { name: 'Ask paper' }))
       expect(mocks.cliAlphaAsk).toHaveBeenCalledWith('/ws-alpha', '2501.01234', 'What is the complexity?')
@@ -571,6 +592,9 @@ describe('Feynman Settings & alphaXiv Portrait UI', () => {
       // Return to Chat, verify turn is still working, then settle it cleanly
       await userEvent.click(page.getByRole('button', { name: 'Back to Chat' }))
       await expect.element(page.getByLabelText('Working')).toBeVisible()
+      const refreshCalls = mocks.refreshModels.mock.calls.length
+      mocks.onFocusEvent?.({ root: '/ws-alpha' })
+      await expect.poll(() => mocks.refreshModels.mock.calls.length).toBeGreaterThan(refreshCalls)
       resolvePrompt('Done')
       await expect.element(page.getByLabelText('Connected')).toBeVisible()
     } finally {

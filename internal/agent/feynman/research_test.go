@@ -51,7 +51,7 @@ func TestDirectFeynmanCommandAndFraming(t *testing.T) {
 	}
 
 	fakeFeynman := filepath.Join(bin, "feynman")
-	if err := os.WriteFile(fakeFeynman, []byte("#!/bin/sh\nprintf '%s' \"$FEYNMAN_HOME\"\n"), 0700); err != nil {
+	if err := os.WriteFile(fakeFeynman, []byte("#!/bin/sh\nprintf '%s|%s' \"$FEYNMAN_HOME\" \"$HOME\"\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	profile := filepath.Join(fsutil.CanonicalPath(data), "feynman")
@@ -105,7 +105,7 @@ func TestDirectFeynmanCommandAndFraming(t *testing.T) {
 	if got, err := os.ReadFile(globalTrust); err != nil || string(got) != denied {
 		t.Errorf("global trust changed: %v", err)
 	}
-	if doctor, err := manager.CLIDoctor(context.Background(), root); err != nil || doctor.RawOutput != profile {
+	if doctor, err := manager.CLIDoctor(context.Background(), root); err != nil || doctor.RawOutput != profile+"|"+profile {
 		t.Errorf("Doctor used a different profile: %q (%v)", doctor.RawOutput, err)
 	}
 

@@ -59,6 +59,7 @@ export function AlphaXivPanel({
   const [annotateResult, setAnnotateResult] = useState<CLIAlphaAnnotateResult | null>(null)
   const [busyAction, setBusyAction] = useState('')
   const [error, setError] = useState('')
+  const searchGroups = searchResult?.groups ?? [{ mode: '', papers: searchResult?.papers ?? [] }]
 
   async function runAction(name: string, task: () => Promise<void>) {
     setBusyAction(name)
@@ -78,8 +79,9 @@ export function AlphaXivPanel({
     await runAction('search', async () => {
       const res = await ResearchHost.cliAlphaSearch(root, query.trim(), mode)
       setSearchResult(res)
-      if (res.papers.length > 0 && !paperId) {
-        setPaperId(res.papers[0].id)
+      const firstPaper = res.groups?.find(group => group.papers.length > 0)?.papers[0] ?? res.papers?.[0]
+      if (firstPaper?.id && !paperId) {
+        setPaperId(firstPaper.id)
       }
     })
   }
@@ -180,10 +182,11 @@ export function AlphaXivPanel({
       {searchResult && (
         <div className="fy-alpha-results">
           {searchResult.parsed ? (
-            searchResult.papers.length === 0 ? (
-              <p className="fy-muted">No matching alphaXiv papers.</p>
-            ) : (
-              searchResult.papers.map((paper) => (
+            searchGroups.map((group) => (
+              <div key={group.mode} className="fy-alpha-results">
+                {group.mode && <strong>{group.mode}</strong>}
+                {group.papers.length === 0 && <p className="fy-muted">No matching alphaXiv papers.</p>}
+                {group.papers.map((paper) => (
                 <article key={paper.id || paper.title} className="fy-alpha-card">
                   <div className="fy-alpha-card-head">
                     <strong>{paper.title}</strong>
@@ -217,8 +220,9 @@ export function AlphaXivPanel({
                     )}
                   </div>
                 </article>
-              ))
-            )
+                ))}
+              </div>
+            ))
           ) : (
             <CLIRawFallback
               command={searchResult.command}
@@ -439,7 +443,7 @@ export function AlphaXivPanel({
                   {annotateResult.annotations.map((ann) => (
                     <li key={ann.paperId}>
                       <code>{ann.paperId}</code>
-                      <span>{ann.note}</span>
+                      <span className="fy-alpha-note">{ann.note}</span>
                     </li>
                   ))}
                 </ul>

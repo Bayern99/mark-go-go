@@ -543,6 +543,9 @@
   font-size: 12px;
   color: var(--ink-2);
 }
+.fy-alpha-note {
+  white-space: pre-wrap;
+}
 .fy-alpha-detail {
   display: flex;
   flex-direction: column;

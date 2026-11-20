@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Bayern99/mark-go-go/internal/fsutil"
 )
 
 func cliFixtureCommand(home, mode string) func(ctx context.Context, work string, args ...string) (*exec.Cmd, error) {
@@ -344,7 +346,10 @@ func TestFeynmanTerminalHandoffAndRefreshModels(t *testing.T) {
 	h := NewResearchManager(fakeWorkspaceLookup{dataDir: data})
 	defer h.Close()
 	h.command = fixtureCommand(home)
-	h.openTerminal = func(_ context.Context, command string) error {
+	h.openTerminal = func(_ context.Context, command, profile string) error {
+		if want := filepath.Join(fsutil.CanonicalPath(data), "feynman"); profile != want {
+			t.Errorf("terminal uses profile %q, want %q", profile, want)
+		}
 		mu.Lock()
 		launched = append(launched, command)
 		mu.Unlock()

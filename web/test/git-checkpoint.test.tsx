@@ -6,6 +6,7 @@ import { applyNativeEdit, nativeEditCapabilities } from '../src/editor/nativeEdi
 import { createBrowserHost } from '../src/host/browserHost'
 import type { Checkpoint } from '../src/host/generated/mygo'
 import { createGitPlugin } from '../src/plugins/git'
+import { MOD } from './helpers/platform'
 import { getSourceView, replaceSourceText } from './helpers/source'
 
 const listCheckpoints = vi.hoisted(() => vi.fn<(documentID: string, path: string) => Promise<Checkpoint[]>>())
@@ -185,11 +186,12 @@ describe('Labeled Checkpoints with provenance & non-Git fallback UI', () => {
       await userEvent.keyboard('{End} Y')
       await expectText('# Draft\n\nEarlier checkpoint paragraph. Y\n')
 
-      await userEvent.keyboard('{Control>}z{/Control}')
+      const undoShortcut = `{${MOD}>}z{/${MOD}}`
+      await userEvent.keyboard(undoShortcut)
       await expectText(saved)
-      await userEvent.keyboard('{Control>}z{/Control}')
+      await userEvent.keyboard(undoShortcut)
       await expectText(beforeRestore)
-      await userEvent.keyboard('{Control>}z{/Control}')
+      await userEvent.keyboard(undoShortcut)
       await expectText(original)
     } finally {
       root.unmount()

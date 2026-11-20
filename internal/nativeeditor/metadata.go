@@ -20,7 +20,7 @@ func (p *previewLayout) frontmatter(snap editor.Snapshot) int {
 		mark := strings.TrimSpace(snap.Line(line))
 		if mark == opener || (opener != "+++" && (mark == "---" || mark == "...")) {
 			end := snap.LineEnd(line)
-			p.specialBlock(snap, 0, end, "frontmatter", "Frontmatter", snap.Slice(snap.LineStart(1), snap.LineStart(line)))
+			p.specialBlock(snap, 0, end, "frontmatter", "Frontmatter", "", snap.Slice(snap.LineStart(1), snap.LineStart(line)))
 			return end
 		}
 	}
@@ -59,7 +59,7 @@ func (p *previewLayout) referenceDefinitions(snap editor.Snapshot, frontEnd int)
 			}
 		}
 		if !folded {
-			p.specialBlock(snap, a, end, "reference definition", "Reference definition", snap.Slice(a, end))
+			p.specialBlock(snap, a, end, "reference definition", "Reference definition", "", snap.Slice(a, end))
 		}
 		return false
 	})

@@ -9,6 +9,7 @@ import (
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
 	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"github.com/Bayern99/mark-go-go/internal/mcp"
+	"github.com/Bayern99/mark-go-go/internal/nativefeynman"
 	"github.com/Bayern99/mark-go-go/internal/nativegenui"
 	"github.com/Bayern99/mark-go-go/internal/nativereview"
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
@@ -91,13 +92,14 @@ func main() {
 	host.SetDocuments(ds)
 	adapter := workspaceAdapter{svc: host}
 	reviewSvc := review.NewService()
+	research := feynman.NewResearchManager(adapter)
 	host.CreateWindow = func(opts mygo.WindowOptions) *mygo.Window {
 		return nativeui.NewWindow(host, opts,
 			nativegenui.Install(host),
 			nativereview.Install(host, reviewSvc, review.NewCheckpointHost(adapter)),
+			nativefeynman.NewExtension(research.Host(), reviewSvc),
 		)
 	}
-	research := feynman.NewResearchManager(adapter)
 	mcpServer := mcp.NewServer(mcp.Dependencies{
 		Workspace: host,
 		Review:    reviewSvc,

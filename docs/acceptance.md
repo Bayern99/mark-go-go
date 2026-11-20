@@ -18,6 +18,14 @@ Feynman 0.5.71 与 pi-acp 0.0.33 在隔离的本地模型上公布了 45 个命�
 
 该记录早于 [Direct Feynman RPC](adr/0008-direct-feynman-rpc-and-gui-shell.md)。[旧 ACP 测试](https://github.com/Bayern99/mark-go-go/blob/d7ab3257a14960480629b320549ba0c4d3b1b1ec/research_acp_test.go)与[旧终端测试](https://github.com/Bayern99/mark-go-go/blob/d7ab3257a14960480629b320549ba0c4d3b1b1ec/research_console_test.go)保留在历史提交。现行回归入口：[附件](../internal/agent/feynman/research_sources_test.go) · [会话](../internal/agent/feynman/research_sessions_test.go) · [CLI](../internal/agent/feynman/cli_test.go)。
 
+### Feynman 原生研究栏迁移（#66）
+
+2026-11-20 在 macOS 27.2（26B123）arm64、Go 1.27.3、MyGo 0.10.0、1280 × 820 窗口中运行 [原生 Feynman QA](../scripts/native-feynman-qa.sh)。脚本在 `mktemp` 目录创建 HOME、工作区和原文，并从 `internal/agent/feynman` 的 `TestMain` 构建 RPC 与 CLI 夹具；不读取用户凭据或改动正式配置。工作区通过系统打开文件夹对话框载入，插件在原生应用中启用。Chat、Files、Settings 与 alphaXiv 标签可见，设置页显示 Doctor Healthy 及模型、账号和搜索控件。
+
+连接和研究使用仓库内可复现的 Feynman RPC 供应端。发送 `stream full lifecycle` 后，原生 Markdown 对话显示流式回复，并可展开 `read · notes.md · completed` 工具查看输出和改动前后文本。第二次发送后，服务发布 `late.md`；Files 中打开为原生文档标签。删除该文件后刷新显示 Restore，恢复后文件内容为 `# Late artifact\n`，SHA-256 为 `46aa7a389515e7912bb52bc9ebc2b1acf519dc92e0bafc604c55b100b4a324ff`。扩展问题的 input 和 editor 回答提交成功，供应端收到 `Native Fixture` 与 `Final native fixture abstract`；状态、进度小组件和研究标题也更新到界面。
+
+第一次通过系统文件对话框和界面导航后，夹具的 select 与 confirm 提问分别在 10 秒及 5 秒超时；没有确认这两种问题的实机回答结果。原生控件的选择和确认入口由 [headless UI 用例](../internal/nativefeynman/chat_test.go)验证，回答协议由 [Feynman 服务用例](../internal/agent/feynman/research_test.go)验证。此次没有实测附件选择器、会话切换、alphaXiv 查询、提案送审、重启恢复、480 × 360、IME 或 VoiceOver；这些仍是迁移实机待验项。
+
 ## MyGo v0.10.0 升级证据
 
 - 最新升级合并在 `9559625`。Go、Web 构建、两组 Web 测试和 Windows 交叉编译通过。 [main CI](https://github.com/Bayern99/mark-go-go/actions/runs/44240578323)

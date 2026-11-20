@@ -23,6 +23,7 @@ type openDocument struct {
 	crumbPath, crumbRoot string
 	crumbs               []workspace.Crumb
 	source               *nativeeditor.Document
+	readingPreferenceKey string
 	published            uint64
 	reloadVersion        int
 	outlineVersion       uint64
@@ -125,6 +126,17 @@ func (w *Window) refresh() {
 		}
 		d := nativeeditor.New(snap.Text)
 		w.documents[id] = &openDocument{source: d, published: d.Version(), reloadVersion: snap.Version}
+	}
+	if doc := w.Active(); doc.ID != "" && w.documents[doc.ID] != nil {
+		open := w.documents[doc.ID]
+		key := doc.Path
+		if key == "" {
+			key = doc.ID
+		}
+		if open.readingPreferenceKey != key {
+			open.readingPreferenceKey = key
+			open.source.SetReadingPreferences(w.Preference("mgo.folds:"+key), w.Preference("mgo.table-widths:"+key), func(name, value string) { w.setPreference("mgo."+name+":"+key, value) })
+		}
 	}
 	if doc := w.Active(); doc.ID != "" && w.documents[doc.ID] != nil && doc.ViewMode != "genui" {
 		w.documents[doc.ID].source.SetMode(nativeeditor.Mode(doc.ViewMode))

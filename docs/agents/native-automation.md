@@ -23,6 +23,12 @@ scripts/native-automation-smoke.sh
 
 [#68](https://github.com/Bayern99/mark-go-go/issues/68) 须在最终集成构建复跑 Save As、Duplicate 后续存盘、Rename、Move To、未命名关闭、取消与多窗口退出失败重试，另以真实 Finder 拖入及单根目录关闭核对范围。旧版的实机操作与结果见 [PR #41](https://github.com/Bayern99/mark-go-go/pull/41)、[PR #43](https://github.com/Bayern99/mark-go-go/pull/43) 和[既有验收记录](../acceptance.md)。当前的退出失败与重试服务回归见 [session_test.go](../../internal/workspace/session_test.go)。
 
+## Preview 复杂块
+
+在 macOS arm64 的独立 Content 窗口中，含公式、Mermaid 和中英文表格的原文显示了两个原生图像和四个单元格文本框。通过“Edit math”打开原地编辑，输入新公式并用 ⌘↩ 提交。文件菜单保存后，磁盘出现新公式。菜单 Undo 后再次保存，磁盘恢复原公式。首次打开时的可访问树还暴露出高图形与下一块短暂重叠，编辑器现于测得实际高度后请求下一帧。
+
+运行 `go test ./internal/nativeeditor` 可复核对齐、单元格编辑与撤销、矩形复制、相邻列拖动、宽表独立横滚、脚注往返、键盘折叠、批注冲突及混合换行保真。兼容用例载入旧版折叠和列宽签名。[原生编辑用例](../../internal/nativeeditor/complex_test.go)
+
 ## GenUI 阅读和生成
 
 2026 年 11 月 20 日，在独立应用标识的 macOS 调试包中打开带两处同名标题、CRLF 和 emoji 的文稿。通过原生控件打开已有旁车，核对缺失与已改来源，点击清单进入第二个标题的原文。Preview 的可访问选区为 36–50，对应引用的完整文字。返回 GenUI、切换内页并对金额排序后，原地添加含评论结束符和 emoji 的批注。保存后比对整份原文，只有转义后的批注和分隔换行增加。

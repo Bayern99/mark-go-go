@@ -47,7 +47,7 @@ scripts/native-automation-smoke.sh
 
 在集成提交 `5968525` 上，先在 Preview 修改标题，再切到 Markdown 在正文尾部追加文字，切回 Preview。第一次 Undo 保留标题修改，第二次还原完整原文。两次 Redo 恢复两次修改。每一步保存后与预期文件逐字节比较。
 
-VoiceOver 系统字幕读出了 Preview 编辑区的名称、类型、插入位置和标题。在 VoiceOver 启用时，以系统键盘事件修改标题、使用 ⌘S 保存、使用 ⌘Z 撤销并重新保存，逐字节检查改动和恢复。以方向键移动时，字幕跟随插入位置朗读正文。独立的 VoiceOver 导航器切换标签和研究任务仍待验证。核对系统开关恢复关闭。
+VoiceOver 系统字幕读出了 Preview 编辑区的名称、类型、插入位置和标题。启用 VoiceOver 后，使用投递到 macOS HID 层的系统键盘事件修改标题，以 ⌘S 保存，再用 ⌘Z 撤销并重新保存。逐字节检查改动和恢复。以方向键移动时，字幕跟随插入位置朗读正文。合入 AppKit 按键修复后，在 VoiceOver 启用的 480 × 360 窗口中通过 Ctrl+Tab 切换文稿，以 ⌥⌘0 打开研究抽屉，聚焦输入框并用系统键盘输入和发送。真实 Feynman 测试进程接收了本轮请求。核对系统开关恢复关闭。
 
 在系统设置开启 Reduce Motion 后，用 480 × 360 原生窗口打开导航抽屉，按 Esc 关闭并将焦点还给入口。使用 ⌘/ 往返 Preview 与 Markdown。测试后恢复原来的 Reduce Motion 值。
 

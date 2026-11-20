@@ -124,7 +124,7 @@ func resolveProposedText(base string, input ProposeInput) (string, error) {
 		}
 		if input.NewText != "" {
 			b.WriteString(input.NewText)
-			if !strings.HasSuffix(input.NewText, "\n") && (endIdx < len(lines) || strings.HasSuffix(base, "\n")) {
+			if !endsLine(input.NewText) && (endIdx < len(lines) || endsLine(base)) {
 				b.WriteString(nl)
 			}
 		}
@@ -143,6 +143,13 @@ func resolveProposedText(base string, input ProposeInput) (string, error) {
 	return input.ProposedText, nil
 }
 
+func sameProposalTarget(p ChangeProposal, input ProposeInput) bool {
+	if p.Path != "" && input.Path != "" {
+		return p.Path == input.Path
+	}
+	return p.DocumentID != "" && p.DocumentID == input.DocumentID
+}
+
 func (s *Service) SubmitProposal(input ProposeInput) (ChangeProposal, error) {
 	if strings.TrimSpace(input.Path) == "" && strings.TrimSpace(input.DocumentID) == "" {
 		return ChangeProposal{}, errors.New("A target document path or ID is required.")
@@ -153,38 +160,36 @@ func (s *Service) SubmitProposal(input ProposeInput) (ChangeProposal, error) {
 	s.mu.Lock()
 	var existingMatch *storedProposal
 	for _, existing := range s.byRoot[rootKey] {
-		if (input.ID != "" && existing.proposal.ID == input.ID) ||
-			(input.Path != "" && existing.proposal.Path == input.Path) ||
-			(input.DocumentID != "" && existing.proposal.DocumentID == input.DocumentID && input.Path == "") {
+		if sameProposalTarget(existing.proposal, input) {
 			existingMatch = existing
 			break
 		}
 	}
 
-	baseForResolve := input.BaseText
 	if existingMatch != nil && existingMatch.proposal.BaseText == input.BaseText && input.ProposedText == "" && input.OldText != "" {
 		if combined, err := resolveProposedText(existingMatch.proposal.ProposedText, input); err == nil {
 			input.ProposedText = combined
 		}
 	}
-	s.mu.Unlock()
 
-	proposed, err := resolveProposedText(baseForResolve, input)
+	proposed, err := resolveProposedText(input.BaseText, input)
 	if err != nil {
+		s.mu.Unlock()
 		return ChangeProposal{}, err
 	}
 	if proposed == input.BaseText {
+		s.mu.Unlock()
 		return ChangeProposal{}, errors.New("The proposed edit makes no changes to the document.")
 	}
 	_, _, _, clusters := extractClusters(input.BaseText, proposed)
 	if len(clusters) == 0 {
+		s.mu.Unlock()
 		return ChangeProposal{}, errors.New("The proposed edit makes no changes to the document.")
 	}
 
-	s.mu.Lock()
-	s.seq++
 	id := input.ID
-	if id == "" {
+	for id == "" || s.findLocked(rootKey, id) != nil {
+		s.seq++
 		id = fmt.Sprintf("proposal-%d", s.seq)
 	}
 
@@ -216,7 +221,7 @@ func (s *Service) SubmitProposal(input ProposeInput) (ChangeProposal, error) {
 	queue := s.byRoot[rootKey]
 	replaced := false
 	for i, existing := range queue {
-		if existing.proposal.ID == id || (input.Path != "" && existing.proposal.Path == input.Path) || (input.DocumentID != "" && existing.proposal.DocumentID == input.DocumentID && input.Path == "") {
+		if sameProposalTarget(existing.proposal, input) {
 			sp.proposal.ID = existing.proposal.ID
 			queue[i] = sp
 			replaced = true
@@ -425,7 +430,7 @@ func clustersConflict(prop changeCluster, user changeCluster) (bool, bool) {
 	if prop.oldStart == user.oldStart && prop.oldEnd == user.oldEnd && len(prop.inserts) == len(user.inserts) {
 		same := true
 		for i := range prop.inserts {
-			if prop.inserts[i].text != user.inserts[i].text {
+			if prop.inserts[i].raw != user.inserts[i].raw {
 				same = false
 				break
 			}
@@ -440,10 +445,10 @@ func clustersConflict(prop changeCluster, user changeCluster) (bool, bool) {
 		return prop.oldStart == user.oldStart, false
 	}
 	if pEmpty {
-		return user.oldStart <= prop.oldStart && prop.oldStart <= user.oldEnd, false
+		return user.oldStart < prop.oldStart && prop.oldStart < user.oldEnd, false
 	}
 	if uEmpty {
-		return prop.oldStart <= user.oldStart && user.oldStart <= prop.oldEnd, false
+		return prop.oldStart < user.oldStart && user.oldStart < prop.oldEnd, false
 	}
 	start := max(prop.oldStart, user.oldStart)
 	end := min(prop.oldEnd, user.oldEnd)
@@ -667,8 +672,8 @@ func recomputeProposalLocked(sp *storedProposal, liveText string) {
 	}
 
 	nl := defaultLineEnding(liveText)
-	if nl == "\n" && strings.Contains(sp.proposal.ProposedText, "\r\n") && !strings.Contains(liveText, "\n") {
-		nl = "\r\n"
+	if !strings.ContainsAny(liveText, "\r\n") {
+		nl = defaultLineEnding(sp.proposal.ProposedText)
 	}
 	var outRaw []string
 	cursor := 0
@@ -692,7 +697,7 @@ func recomputeProposalLocked(sp *storedProposal, liveText string) {
 
 	var b strings.Builder
 	for i, raw := range outRaw {
-		if i+1 < len(outRaw) && !strings.HasSuffix(raw, "\n") {
+		if i+1 < len(outRaw) && !endsLine(raw) {
 			b.WriteString(raw)
 			b.WriteString(nl)
 		} else {

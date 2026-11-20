@@ -7,6 +7,7 @@ import { App } from '../src/App'
 import type { ResearchArtifact } from '../src/host/generated/mygo'
 import { createBrowserHost, createBrowserWorkspace } from '../src/host/browserHost'
 import { computeMyersHunks, reconcileProposal } from '../src/plugins/DocumentDiff'
+import { ResearchSession } from '../src/plugins/feynman/session'
 import './helpers/enable-feynman'
 
 const prompt = vi.hoisted(() => vi.fn<() => Promise<string>>())
@@ -26,6 +27,54 @@ vi.mock('../src/host/generated/mygo', async importOriginal => {
       artifacts, readArtifact, prompt,
     },
   }
+})
+
+it('keeps an MCP proposal distinct from the first local proposal', () => {
+  const session = ResearchSession.acquire('/queue-identity')
+  try {
+    session.upsertProposal({
+      id: 'proposal-1', documentID: 'paper',
+      base: { path: '/queue-identity/paper.md', text: 'old', version: 1 },
+      text: 'new', source: 'mcp',
+    })
+    session.upsertProposal({
+      documentID: 'draft',
+      base: { path: '/queue-identity/draft.md', text: 'old', version: 1 },
+      text: 'new', source: 'feynman',
+    })
+    expect(new Set(session.proposals.map(p => p.id)).size).toBe(2)
+  } finally {
+    session.release()
+  }
+})
+
+it('preserves insertions at both boundaries of a proposed replacement', () => {
+  const review = reconcileProposal(
+    'above\nold\nbelow\n',
+    'above\nnew\nbelow\n',
+    'above\nbefore\nold\nafter\nbelow\n',
+  )
+  expect(review.hasConflict).toBe(false)
+  expect(review.mergedText).toBe('above\nbefore\nnew\nafter\nbelow\n')
+})
+
+it.each([
+  ['old\nkeep\nlast', 'new\nkeep\nlast\n', 2],
+  ['old\rkeep\rlast\r', 'new\rkeep\rlast\r', 1],
+])('preserves proposal line endings from %j to %j', (base, proposed, count) => {
+  const review = reconcileProposal(base, proposed, base)
+  expect(review.mergedText).toBe(proposed)
+  expect(review.hunks).toHaveLength(count)
+  expect(review.hunks[0].lines[0].text).toBe('old')
+})
+
+it('represents a 2,500-line rewrite as one replacement', () => {
+  const lines = 2500
+  const before = 'old line\n'.repeat(lines)
+  const after = 'new line\n'.repeat(lines)
+  const hunks = computeMyersHunks(before, after)
+  expect(hunks).toHaveLength(1)
+  expect(hunks[0]).toMatchObject({ changeOldCount: lines, changeNewCount: lines })
 })
 
 it('computes minimal Myers hunks with 1-based line numbers and 3 lines of context', () => {

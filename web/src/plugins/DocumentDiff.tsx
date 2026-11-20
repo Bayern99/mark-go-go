@@ -12,27 +12,22 @@ function splitTextLines(text: string): TextLine[] {
   const out: TextLine[] = []
   let start = 0
   for (let i = 0; i < text.length; i += 1) {
-    if (text[i] === '\n') {
-      const raw = text.slice(start, i + 1)
-      out.push({ raw, content: trimLineEnding(raw) })
-      start = i + 1
-    }
+    if (text[i] !== '\n' && text[i] !== '\r') continue
+    const content = text.slice(start, i)
+    if (text[i] === '\r' && text[i + 1] === '\n') i += 1
+    out.push({ raw: text.slice(start, i + 1), content })
+    start = i + 1
   }
   if (start < text.length) {
     const raw = text.slice(start)
-    out.push({ raw, content: trimLineEnding(raw) })
+    out.push({ raw, content: raw })
   }
   return out
 }
 
-function trimLineEnding(s: string): string {
-  if (s.endsWith('\r\n')) return s.slice(0, -2)
-  if (s.endsWith('\n') || s.endsWith('\r')) return s.slice(0, -1)
-  return s
-}
-
 function defaultLineEnding(text: string): string {
-  return text.includes('\r\n') ? '\r\n' : '\n'
+  if (text.includes('\r\n')) return '\r\n'
+  return !text.includes('\n') && text.includes('\r') ? '\r' : '\n'
 }
 
 type EditOpKind = 'equal' | 'delete' | 'insert'
@@ -54,11 +49,10 @@ interface ChangeCluster {
   inserts: EditOp[]
 }
 
-function myersEditScript(a: TextLine[], b: TextLine[], strictRaw: boolean): EditOp[] {
+function myersEditScript(a: TextLine[], b: TextLine[]): EditOp[] {
   const n = a.length
   const m = b.length
-  const equal = (x: number, y: number) =>
-    strictRaw ? a[x].raw === b[y].raw : a[x].content === b[y].content
+  const equal = (x: number, y: number) => a[x].raw === b[y].raw
 
   let prefix = 0
   while (prefix < n && prefix < m && equal(prefix, prefix)) prefix += 1
@@ -75,7 +69,7 @@ function myersEditScript(a: TextLine[], b: TextLine[], strictRaw: boolean): Edit
   const midA = a.slice(prefix, n - suffix)
   const midB = b.slice(prefix, m - suffix)
   if (midA.length > 0 || midB.length > 0) {
-    ops.push(...myersCore(midA, midB, prefix, prefix, strictRaw))
+    for (const op of myersCore(midA, midB, prefix, prefix)) ops.push(op)
   }
 
   for (let i = 0; i < suffix; i += 1) {
@@ -91,16 +85,25 @@ function myersCore(
   b: TextLine[],
   offsetA: number,
   offsetB: number,
-  strictRaw: boolean,
 ): EditOp[] {
   const n = a.length
   const m = b.length
+  const lines = new Set(a.map(line => line.raw))
+  if (!b.some(line => lines.has(line.raw))) {
+    return [
+      ...a.map((line, i): EditOp => ({
+        kind: 'delete', oldIdx: offsetA + i, newIdx: offsetB, text: line.content, raw: line.raw,
+      })),
+      ...b.map((line, i): EditOp => ({
+        kind: 'insert', oldIdx: offsetA + n, newIdx: offsetB + i, text: line.content, raw: line.raw,
+      })),
+    ]
+  }
   const maxD = n + m
   const size = 2 * maxD + 1
   const v = new Int32Array(size)
   const trace: Int32Array[] = []
-  const equal = (x: number, y: number) =>
-    strictRaw ? a[x].raw === b[y].raw : a[x].content === b[y].content
+  const equal = (x: number, y: number) => a[x].raw === b[y].raw
 
   let foundD = maxD
   for (let d = 0; d <= maxD; d += 1) {
@@ -159,10 +162,7 @@ function extractClusters(before: string, after: string): { ops: EditOp[]; cluste
   if (before === after) return { ops: [], clusters: [] }
   const a = splitTextLines(before)
   const b = splitTextLines(after)
-  let ops = myersEditScript(a, b, false)
-  if (!ops.some((op) => op.kind !== 'equal')) {
-    ops = myersEditScript(a, b, true)
-  }
+  const ops = myersEditScript(a, b)
 
   const clusters: ChangeCluster[] = []
   let i = 0
@@ -306,15 +306,15 @@ function clustersConflict(prop: ChangeCluster, user: ChangeCluster): { collides:
     prop.oldStart === user.oldStart &&
     prop.oldEnd === user.oldEnd &&
     prop.inserts.length === user.inserts.length &&
-    prop.inserts.every((ins, idx) => ins.text === user.inserts[idx]?.text)
+    prop.inserts.every((ins, idx) => ins.raw === user.inserts[idx]?.raw)
   ) {
     return { collides: false, identical: true }
   }
   const pEmpty = prop.oldStart === prop.oldEnd
   const uEmpty = user.oldStart === user.oldEnd
   if (pEmpty && uEmpty) return { collides: prop.oldStart === user.oldStart, identical: false }
-  if (pEmpty) return { collides: user.oldStart <= prop.oldStart && prop.oldStart <= user.oldEnd, identical: false }
-  if (uEmpty) return { collides: prop.oldStart <= user.oldStart && user.oldStart <= prop.oldEnd, identical: false }
+  if (pEmpty) return { collides: user.oldStart < prop.oldStart && prop.oldStart < user.oldEnd, identical: false }
+  if (uEmpty) return { collides: prop.oldStart < user.oldStart && user.oldStart < prop.oldEnd, identical: false }
   return {
     collides: Math.max(prop.oldStart, user.oldStart) < Math.min(prop.oldEnd, user.oldEnd),
     identical: false,
@@ -462,12 +462,7 @@ export function reconcileProposal(
     return true
   }
 
-  const nl =
-    defaultLineEnding(liveText) === '\r\n'
-      ? '\r\n'
-      : !liveText.includes('\n') && proposedText.includes('\r\n')
-        ? '\r\n'
-        : '\n'
+  const nl = defaultLineEnding(/[\r\n]/.test(liveText) ? liveText : proposedText)
 
   const outRaw: string[] = []
   let cursor = 0
@@ -488,7 +483,7 @@ export function reconcileProposal(
   let mergedText = ''
   for (let i = 0; i < outRaw.length; i += 1) {
     const raw = outRaw[i]
-    mergedText += i + 1 < outRaw.length && !raw.endsWith('\n') ? raw + nl : raw
+    mergedText += i + 1 < outRaw.length && !/[\r\n]$/.test(raw) ? raw + nl : raw
   }
 
   return {

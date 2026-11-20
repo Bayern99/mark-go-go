@@ -50,7 +50,6 @@ export class ResearchSession {
   private offReview?: () => void
   private closing?: Promise<void>
   private generation = 0
-  private proposalSeq = 0
 
   status: 'offline' | 'connecting' | 'ready' | 'working' = 'offline'
   messages: ConversationItem[] = []
@@ -103,11 +102,12 @@ export class ResearchSession {
   ): Proposal {
     const existing = this.proposals.find(
       (p) =>
-        (input.id && p.id === input.id) ||
-        (p.base.path && p.base.path === input.base.path) ||
-        (input.documentID && p.documentID === input.documentID),
+        p.base.path && input.base.path
+          ? p.base.path === input.base.path
+          : p.documentID !== '' && p.documentID === input.documentID,
     )
-    const id = input.id || existing?.id || `proposal-${++this.proposalSeq}`
+    const id = existing?.id || (input.id && !this.proposals.some(p => p.id === input.id) ? input.id : '') ||
+      `local-${Array.from(crypto.getRandomValues(new Uint32Array(4)), n => n.toString(16).padStart(8, '0')).join('')}`
     const next: Proposal = {
       id,
       documentID: input.documentID,

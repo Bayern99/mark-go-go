@@ -53,10 +53,11 @@ func (s *Service) WindowWorkspace(ctx context.Context, root string) (WorkspaceRe
 
 func (s *Service) windowWorkspace(win *mygo.Window, root string) (WorkspaceRef, error) {
 	if win != nil && root != "" {
+		root = fsutil.CanonicalPath(root)
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		for _, w := range s.windowWorkspacesLocked(win) {
-			if w.root == root || fsutil.SameRoot(w.root, root) {
+			if w.root == root {
 				return WorkspaceRef{
 					ID:     w.id,
 					Root:   w.root,
@@ -77,11 +78,12 @@ func (s *Service) editableDocument(win *mygo.Window, root, documentID string) er
 	if win == nil || root == "" || documentID == "" {
 		return errors.New("The selected document is no longer editable in this workspace.")
 	}
+	root = fsutil.CanonicalPath(root)
 	s.mu.Lock()
 	sess := s.byID[documentID]
 	var w *workspace
 	for _, cand := range s.windowWorkspacesLocked(win) {
-		if cand.root == root || fsutil.SameRoot(cand.root, root) {
+		if cand.root == root {
 			w = cand
 			break
 		}

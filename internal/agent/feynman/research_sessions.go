@@ -280,6 +280,7 @@ func findWorkspaceConversation(sessionsDir, work, target string) (ResearchConver
 }
 
 func (h *ResearchManager) Sessions(ctx context.Context, root string) ([]ResearchConversation, error) {
+	root = fsutil.CanonicalPath(root)
 	h.mu.Lock()
 	s, err := h.activeLocked(ctx, root)
 	if err != nil {
@@ -288,12 +289,16 @@ func (h *ResearchManager) Sessions(ctx context.Context, root string) ([]Research
 	}
 	id := s.id
 	name := s.sessionName
-	sessionsDir := h.sessionsDirFor(s)
+	sessionsDir := s.sessionsDir
 	h.mu.Unlock()
+	if sessionsDir == "" {
+		_, sessionsDir, _ = resolveFeynmanDirs()
+	}
 	return workspaceConversations(sessionsDir, review.WorkDir(h.dataDir, root), id, name)
 }
 
 func (h *ResearchManager) beginConversationChange(ctx context.Context, root string) (*researchSession, string, func(), error) {
+	root = fsutil.CanonicalPath(root)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	s, err := h.activeLocked(ctx, root)

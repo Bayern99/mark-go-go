@@ -22,6 +22,7 @@ func (h *ResearchManager) PickSources(ctx context.Context, root string) ([]strin
 	if err != nil {
 		return nil, err
 	}
+	root = fsutil.CanonicalPath(root)
 	h.mu.Lock()
 	session, err := h.activeLocked(ctx, root)
 	h.mu.Unlock()

@@ -200,6 +200,7 @@ func (h *ResearchManager) ensureFocusWatch(w WorkspaceRef) {
 
 // RefreshModels re-queries available models from an active Chat RPC session without interrupting turns.
 func (h *ResearchManager) RefreshModels(ctx context.Context, root string) ([]ResearchModel, error) {
+	root = fsutil.CanonicalPath(root)
 	h.mu.Lock()
 	s, err := h.activeLocked(ctx, root)
 	if err != nil {

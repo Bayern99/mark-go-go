@@ -325,8 +325,9 @@ func (p *panel) header(c *ui.Context) {
 		return button
 	}
 	if compact {
-		ui.Column(c.Key("feynman-heading")).Gap(1).Padding(4, 6).Children(func() {
+		ui.Column(c.Key("feynman-heading")).Padding(2, 6).Children(func() {
 			ui.Row(c.Key("feynman-heading-title")).Height(30).Gap(5).AlignItems(ui.Center).Children(func() {
+				history()
 				ui.Text(c, "✣").FontSize(15).TextColor(accentColor).Tooltip("Feynman")
 				ui.Column(c).Grow(1).MinWidth(0).Children(func() {
 					ui.Text(c, "Feynman").Bold().FontSize(14)
@@ -346,7 +347,6 @@ func (p *panel) header(c *ui.Context) {
 				ui.Text(c, status).FontSize(10).TextColor(statusColor(s.status)).Label("Feynman connection status")
 				connect()
 			})
-			ui.Row(c.Key("feynman-heading-history")).Height(27).Children(func() { history() })
 		})
 		return
 	}

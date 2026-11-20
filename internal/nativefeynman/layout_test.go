@@ -25,6 +25,10 @@ func fixtureReadyPanel() *panel {
 	}
 	state.thinking = []string{"off", "minimal", "low", "medium", "high", "xhigh", "max"}
 	state.thinkingLevel = "medium"
+	state.hasStats = true
+	state.stats.Tokens.Total = 1500
+	state.stats.Cost = 0.0125
+	state.stats.ContextUsage = &feynman.ResearchContextUsage{Tokens: 1500, ContextWindow: 200000, Percent: 0.0075}
 	state.messages = []message{{kind: "assistant", messageID: "fixture-reply", text: "Created first"}}
 	return &panel{window: &nativeui.Window{}, state: state, collapsed: make(map[string]*bool)}
 }
@@ -66,8 +70,12 @@ func TestResearchDrawerAt480By360KeepsComposerVisibleAndFocusable(t *testing.T) 
 	if _, ok := app.AccessByRole(ui.RoleButton, "Research model and thinking settings"); !ok {
 		t.Fatal("compact model and thinking controls are unavailable")
 	}
-	if bounds, ok := app.Find("Feynman conversation"); !ok || bounds.H <= 0 {
-		t.Fatalf("conversation scroll bounds = %+v, present=%t; want positive height", bounds, ok)
+	if bounds, ok := app.Find("Feynman conversation"); !ok || bounds.H < 40 {
+		t.Fatalf("conversation scroll bounds = %+v, present=%t; want at least 40 DIP", bounds, ok)
+	}
+	transcript, ok := app.Access("Created first")
+	if !ok || transcript.Offscreen {
+		t.Fatalf("the ready transcript is not visible: %+v, present=%t", transcript, ok)
 	}
 	if err := app.Click("Research prompt"); err != nil {
 		t.Fatalf("focus research prompt: %v", err)
@@ -93,6 +101,9 @@ func TestResearchDrawerAt480By360KeepsComposerVisibleAndFocusable(t *testing.T) 
 			t.Errorf("compact model control %q is outside the window: %+v offscreen=%t", name, info.Bounds, info.Offscreen)
 		}
 	}
+	if !app.HasText("1500 / 200000 tokens") {
+		t.Error("compact model settings hid the fixture usage statistics")
+	}
 	app.Key(0, ui.KeyEscape)
 	app.Frame()
 	if _, ok := app.AccessByRole(ui.RoleButton, "Research model and thinking settings"); !ok {
@@ -100,6 +111,38 @@ func TestResearchDrawerAt480By360KeepsComposerVisibleAndFocusable(t *testing.T) 
 	}
 	if !app.Focused("Research model and thinking settings") {
 		t.Fatal("Escape did not return focus to the compact model settings trigger")
+	}
+}
+
+func TestResearchComposerWithAttachedSourceFitsNarrowDrawer(t *testing.T) {
+	p := fixtureReadyPanel()
+	p.state.sources = []string{"/workspace/Attachment.md"}
+	app := ui.NewTester(func(c *ui.Context) { drawFixturePane(c, p, 376, 272) }, 480, 360)
+	app.Frame()
+
+	for _, target := range []struct {
+		role ui.Role
+		name string
+	}{
+		{ui.RoleTextField, "Research prompt"},
+		{ui.RoleButton, "Remove attached source /workspace/Attachment.md"},
+		{ui.RoleButton, "Attach source files"},
+		{ui.RoleButton, "Send research prompt"},
+	} {
+		info, ok := app.AccessByRole(target.role, target.name)
+		if !ok {
+			t.Fatalf("attached-source composer has no accessible %q", target.name)
+		}
+		if info.Offscreen || info.Bounds.X < 96 || info.Bounds.Y < 48 || info.Bounds.X+info.Bounds.W > 472 || info.Bounds.Y+info.Bounds.H > 320 {
+			t.Errorf("attached-source composer control %q is outside the drawer: %+v", target.name, info.Bounds)
+		}
+	}
+	bounds, present := app.Find("Feynman conversation")
+	if !present || bounds.H <= 0 {
+		t.Fatalf("attached source left no conversation scroll: bounds=%+v, present=%t", bounds, present)
+	}
+	if transcript, ok := app.Access("Created first"); !ok || transcript.Offscreen {
+		t.Fatalf("the attached-source transcript is not visible: %+v, present=%t", transcript, ok)
 	}
 }
 
@@ -117,7 +160,7 @@ func TestResearchHistoryPopoverFitsNarrowWindowWithoutDisplacingComposer(t *test
 	if close.Offscreen || close.Bounds.X < 0 || close.Bounds.Y < 0 || close.Bounds.X+close.Bounds.W > 480 || close.Bounds.Y+close.Bounds.H > 360 {
 		t.Fatalf("history Close bounds %+v offscreen=%t, want inside the window", close.Bounds, close.Offscreen)
 	}
-	if bounds, ok := app.Find("Feynman conversation"); !ok || bounds.H <= 0 {
+	if bounds, ok := app.Find("Feynman conversation"); !ok || bounds.H < 40 {
 		t.Fatalf("history removed the conversation scroll: bounds=%+v, present=%t", bounds, ok)
 	}
 	if info, ok := app.AccessByRole(ui.RoleButton, "Send research prompt"); !ok || info.Offscreen || info.Bounds.Y+info.Bounds.H > 320 {

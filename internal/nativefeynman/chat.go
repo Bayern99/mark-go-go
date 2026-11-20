@@ -308,6 +308,7 @@ func decodeDataImage(source string) (ui.ImageSource, error) {
 
 func (p *panel) composer(c *ui.Context) {
 	s := p.state
+	compact := compactResearchLayout(c)
 	if s.queue.Steering != nil || s.queue.FollowUp != nil {
 		if len(s.queue.Steering)+len(s.queue.FollowUp) > 0 {
 			ui.Column(c.Key("research-queue")).Gap(2).Padding(5, 7).Radius(7).Background(trackColor).Children(func() {
@@ -339,7 +340,11 @@ func (p *panel) composer(c *ui.Context) {
 			}
 		})
 	}
-	ui.Column(c.Key("feynman-composer")).Padding(6, 7).Gap(5).Radius(10).Background(paperColor).Border(0.7, rimColor).Children(func() {
+	paddingY, gap := float32(6), float32(5)
+	if compact {
+		paddingY, gap = 3, 3
+	}
+	ui.Column(c.Key("feynman-composer")).Padding(paddingY, 7).Gap(gap).Radius(10).Background(paperColor).Border(0.7, rimColor).Children(func() {
 		if len(s.sources) > 0 || s.includeDoc {
 			ui.Row(c).Wrap().Gap(4).Children(func() {
 				if s.includeDoc {
@@ -357,7 +362,12 @@ func (p *panel) composer(c *ui.Context) {
 					if i := strings.LastIndex(path, "/"); i >= 0 {
 						path = path[i+1:]
 					}
-					if smallButton(c, "⌁ "+path+" ×", "Remove attached source "+source).Clicked() {
+					label, description := "⌁ "+path+" ×", "Remove attached source "+source
+					button := smallButton(c, label, description)
+					if compact {
+						button = ui.Button(c.Key("research-source-"+source), label).Label(description).Tooltip(description).MinHeight(20).Padding(1, 5).Radius(6).FontSize(10)
+					}
+					if button.Clicked() {
 						s.sources = without(s.sources, source)
 					}
 				}
@@ -366,7 +376,11 @@ func (p *panel) composer(c *ui.Context) {
 		if s.actionsOpen {
 			p.commandList(c)
 		}
-		entry := area(c, "research-draft", "Research prompt", &s.draft, promptPlaceholder(s.status), 76).
+		promptHeight := float32(76)
+		if compact {
+			promptHeight = 44
+		}
+		entry := area(c, "research-draft", "Research prompt", &s.draft, promptPlaceholder(s.status), promptHeight).
 			OnTextKey(func(key ui.TextKey) bool {
 				if key.Key != ui.KeyEnter || key.Mods != 0 {
 					return false

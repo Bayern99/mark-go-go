@@ -28,6 +28,28 @@ func TestNarrowNavigationReturnsKeyboardFocus(t *testing.T) {
 	}
 }
 
+func TestResearchDrawerReturnsKeyboardFocusAfterResize(t *testing.T) {
+	var shell nativeui.Shell
+	app := ui.NewTester(func(c *ui.Context) {
+		shell.Draw(c, nativeui.Model{Feynman: true}, nativeui.Actions{}, nativeui.Slots{})
+	}, 480, 360)
+	app.Key(ui.Cmd|ui.Alt, ui.Key0)
+	if _, ok := app.AccessByRole(ui.RoleDialog, "Research"); !ok {
+		t.Fatal("the research shortcut did not open the drawer")
+	}
+	app.SetSize(900, 600)
+	if _, ok := app.AccessByRole(ui.RoleDialog, "Research"); !ok {
+		t.Fatal("resizing to a docked navigation layout closed the research drawer")
+	}
+	app.Key(0, ui.KeyEscape)
+	if _, ok := app.AccessByRole(ui.RoleDialog, "Research"); ok {
+		t.Fatal("Escape did not close the research drawer")
+	}
+	if !app.Focused("Toggle research") {
+		t.Fatal("closing the drawer should focus the research button in the resized layout")
+	}
+}
+
 func TestPortraitHasOfflineTypefaces(t *testing.T) {
 	if err := nativeui.RegisterFonts(); err != nil {
 		t.Fatal(err)

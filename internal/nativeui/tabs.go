@@ -91,8 +91,8 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 	end := min(len(docs), start+count)
 	ui.Row(c).Height(42).Padding(5, 9).Gap(5).AlignItems(ui.Center).Children(func() {
 		if width < 641 {
-			s.leftToggle = iconButton(c, "\uec24", "Show navigation").Width(33).Expanded(s.leftOpen)
-			if s.leftToggle.Clicked() {
+			toggle := iconButton(c, "\uec24", "Show navigation").Width(33).Expanded(s.leftOpen).Bind(&s.leftToggle)
+			if toggle.Clicked() {
 				s.leftOpen = !s.leftOpen
 				s.rightOpen = false
 			}
@@ -199,8 +199,8 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 		})
 		if m.Feynman {
 			visible := s.rightOpen || width >= 1180 && !s.hideResearch
-			s.rightToggle = iconButton(c, "\uec24", "Toggle research").Expanded(visible).KeyShortcuts(ui.Cmd|ui.Alt, ui.Key0)
-			if s.rightToggle.Clicked() {
+			toggle := iconButton(c, "\uec24", "Toggle research").Expanded(visible).KeyShortcuts(ui.Cmd|ui.Alt, ui.Key0).Bind(&s.rightToggle)
+			if toggle.Clicked() {
 				s.toggleResearch(width)
 			}
 		}

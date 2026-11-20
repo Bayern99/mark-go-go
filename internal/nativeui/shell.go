@@ -43,7 +43,7 @@ type Shell struct {
 	workspaceID, activeID, query, tabQuery, tabFocus string
 	history                                          []string
 	leftWidth, rightWidth                            float32
-	leftToggle, rightToggle                          ui.Element
+	leftToggle, rightToggle                          ui.Handle
 	queries                                          map[string]string
 	scrolls                                          map[string]*ui.ScrollState
 	openCheckpoints                                  map[string]bool
@@ -187,9 +187,9 @@ func (s *Shell) toggleResearch(width float32) {
 }
 
 func (s *Shell) drawer(c *ui.Context, left bool, width, height float32, m Model, a Actions, slots Slots) {
-	open, anchor, name := &s.rightOpen, s.rightToggle, "Research"
+	open, anchor, name := &s.rightOpen, &s.rightToggle, "Research"
 	if left {
-		open, anchor, name = &s.leftOpen, s.leftToggle, "Navigation"
+		open, anchor, name = &s.leftOpen, &s.leftToggle, "Navigation"
 	}
 	panel := ui.DialogBase(c.Key(name+" drawer"), open, func(back, panel ui.Element) {
 		back.Background(ui.RGBA(29, 29, 31, 0.08)).AlignItems(ui.Start).Justify(ui.Start)
@@ -209,7 +209,7 @@ func (s *Shell) drawer(c *ui.Context, left bool, width, height float32, m Model,
 			close.AutoFocus()
 			if close.Clicked() {
 				*open = false
-				anchor.Focus()
+				anchor.Focus(c)
 			}
 		})
 		if left {
@@ -219,7 +219,7 @@ func (s *Shell) drawer(c *ui.Context, left bool, width, height float32, m Model,
 		}
 	})
 	if panel.Dismissed() {
-		anchor.Focus()
+		anchor.Focus(c)
 	}
 }
 

@@ -14,6 +14,7 @@ import { CONTENT_COMPONENTS } from './components'
 import { SafeMarkdown } from './SafeMarkdown'
 import { SourceContext, type SourceActions } from './SourceFrame'
 import { ReadingContext, type ReadingStore } from './reading'
+import { parseSources } from './viewFile'
 
 export const CATALOG_ID = 'markgogo.dev:genui/v1'
 
@@ -83,6 +84,8 @@ export function validateGeneratedView(raw: string): GeneratedViewVerdict {
   if (!isRecord(file)) return rejected('The view is not a JSON object.')
   if (file.version !== 2) return rejected('The view is not a version 2 view file.')
   if (!isRecord(file.sources)) return rejected("The view's sources are not an object.")
+  const sources = parseSources(file.sources)
+  if (typeof sources === 'string') return rejected(sources)
   const messages = file.a2ui
   if (!Array.isArray(messages) || messages.length === 0) {
     return rejected('The view has no A2UI messages.')

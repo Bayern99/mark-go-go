@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { loadSurface, validateGeneratedView } from '../src/plugins/genui/a2ui'
+import { parseViewFile } from '../src/plugins/genui/viewFile'
 
 const CATALOG = 'markgogo.dev:genui/v1'
 
@@ -57,6 +58,16 @@ function mergedMessages(): unknown[] {
 }
 
 describe('generated view validation', () => {
+  it('rejects a null source hash but accepts omission', () => {
+    const messages = [createSurface(validComponents())]
+    const omitted = viewFile(messages, { overview: { heading: 'Overview', occurrence: 1 } })
+    const explicitNull = viewFile(messages, { overview: { ...OVERVIEW.overview, hash: null } })
+    expect(validateGeneratedView(omitted)).toEqual({ ok: true })
+    expect(parseViewFile(omitted).ok).toBe(true)
+    expect(errorOf(explicitNull)).toContain('"hash" must be a string')
+    expect(parseViewFile(explicitNull)).toEqual(validateGeneratedView(explicitNull))
+  })
+
   it('accepts a whole generated view and a merged update', () => {
     expect(validateGeneratedView(viewFile([createSurface(validComponents())], OVERVIEW))).toEqual({ ok: true })
     expect(validateGeneratedView(viewFile(mergedMessages()))).toEqual({ ok: true })

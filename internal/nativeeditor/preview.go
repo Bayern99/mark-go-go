@@ -133,6 +133,10 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 			}
 		}
 		inlines := p.document.Inlines(i)
+		if b.Kind == parser.Paragraph && imageOnlyParagraph(inlines) {
+			p.standaloneImages(snap, i, inlines)
+			continue
+		}
 		for j, in := range inlines {
 			switch in.Kind {
 			case parser.Strong, parser.Emphasis, parser.Strikethrough:
@@ -231,6 +235,89 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	}
 	slices.SortStableFunc(p.replacements, func(a, b editor.Replacement) int { return a.Start - b.Start })
 	p.indexDisplay(src)
+}
+
+type previewImage struct {
+	destination string
+	title       string
+	label       string
+}
+
+func imageOnlyParagraph(inlines []parser.Inline) bool {
+	count := 0
+	for i := 0; i < len(inlines); {
+		in := inlines[i]
+		switch in.Kind {
+		case parser.Image:
+			count++
+		case parser.Text:
+			if strings.TrimSpace(in.Text) != "" {
+				return false
+			}
+		case parser.SoftBreak, parser.LineBreak:
+		default:
+			return false
+		}
+		i = max(i+1, in.Next)
+	}
+	return count > 0
+}
+
+func (p *previewLayout) standaloneImages(snap editor.Snapshot, blockIndex int, inlines []parser.Inline) {
+	images := make([]previewImage, 0, len(inlines))
+	for i := 0; i < len(inlines); {
+		in := inlines[i]
+		switch in.Kind {
+		case parser.Image:
+			label := parser.PlainText(inlines[i+1 : in.Next])
+			if label == "" {
+				label = "Image"
+			}
+			p.readable[in.Start] = label
+			p.replace(in.Start, in.End, "")
+			images = append(images, previewImage{destination: in.Dest, title: in.Title, label: label})
+		case parser.Text:
+			if strings.TrimSpace(in.Text) == "" {
+				p.readable[in.Start] = " "
+				p.replace(in.Start, in.End, "")
+			}
+		case parser.SoftBreak, parser.LineBreak:
+			p.readable[in.Start] = " "
+			p.replace(in.Start, in.End, "")
+		}
+		i = max(i+1, in.Next)
+	}
+	block := p.document.Block(blockIndex)
+	p.blocks = append(p.blocks, editor.Block{
+		Line:   snap.LineOf(block.Start),
+		Above:  true,
+		Height: 180,
+		Width:  624,
+		Label:  "Markdown image",
+		Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
+			maxWidth := e.LayoutBounds().W
+			if maxWidth <= 0 || maxWidth > 624 {
+				maxWidth = 624
+			}
+			e.Children(func() {
+				ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Justify(ui.Center).Gap(8).Children(func() {
+					for _, figure := range images {
+						src := p.owner.loadInlineImage(c, figure.destination)
+						if src == nil {
+							ui.Text(c, figure.label).Role(ui.RoleImage).Label(figure.label).TextColor(c.Theme().TextMuted)
+							continue
+						}
+						w, h := ui.ImageSize(src)
+						scale := min(float32(1), maxWidth/max(1, w), float32(420)/max(1, h))
+						img := ui.Image(c, src).Size(max(1, w*scale), max(1, h*scale)).Label(figure.label).AlignSelf(ui.Center)
+						if figure.title != "" {
+							img.Tooltip(figure.title)
+						}
+					}
+				})
+			})
+		},
+	})
 }
 
 func pageMargin(line int, above bool, height float32) editor.Block {

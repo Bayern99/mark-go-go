@@ -1,10 +1,18 @@
 package nativeeditor_test
 
 import (
+	"bytes"
+	"encoding/base64"
+	"image"
+	"image/color"
+	"image/png"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -117,6 +125,12 @@ func TestOrdinaryCodeFenceKeepsItsSourceCaretInPreview(t *testing.T) {
 	if _, ok := tt.Find("Code block: go"); !ok {
 		t.Fatal("Preview did not show the code language")
 	}
+	if err := tt.Click("Copy code"); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := tt.Clipboard(), "fmt.Println(\"iW\")\nsecond()"; got != want {
+		t.Fatalf("copied code %q; want %q", got, want)
+	}
 	if d.Source() != src || d.Modified() {
 		t.Fatal("presenting code changed its source")
 	}
@@ -141,6 +155,36 @@ func TestOrdinaryCodeFenceKeepsItsSourceCaretInPreview(t *testing.T) {
 	if d.Mode() != nativeeditor.Preview {
 		t.Fatal("editing code switched out of Preview")
 	}
+}
+
+func TestPreviewCodeFenceUsesNativeLanguageTokenColors(t *testing.T) {
+	if err := nativeui.RegisterFonts(); err != nil {
+		t.Fatal(err)
+	}
+	const src = "```go\nfunc main() { return 42 }\n```\n"
+	d := nativeeditor.New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 680, 360)
+	tt.Frame()
+	start := utf8.RuneCountInString(src[:strings.Index(src, "func")])
+	first, ok := d.RectUTF16(start)
+	if !ok {
+		t.Fatal("missing code keyword bounds")
+	}
+	last, ok := d.RectUTF16(start + len("func"))
+	if !ok {
+		t.Fatal("missing code keyword end bounds")
+	}
+	image := tt.Image()
+	accent := ui.LightTheme().Accent
+	for y := int(first.Y); y < int(first.Y+first.H); y++ {
+		for x := int(first.X); x <= int(last.X+2); x++ {
+			px := image.RGBAAt(x, y)
+			if colorNear(px, accent) {
+				return
+			}
+		}
+	}
+	t.Fatal("Preview did not color the language keyword")
 }
 
 func TestOpenCodeFenceKeepsItsLastLineEditable(t *testing.T) {
@@ -243,6 +287,99 @@ func TestInlineImageLoadsFromItsDocumentFolderAndKeepsFollowingTextEditable(t *t
 	}
 }
 
+func TestStandaloneImagesUseReadingWidthAndKeepSourceCopyAndCaret(t *testing.T) {
+	dir := t.TempDir()
+	const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180"><rect width="320" height="180" fill="#e11d48"/></svg>`
+	if err := os.WriteFile(filepath.Join(dir, "figure.svg"), []byte(svg), 0600); err != nil {
+		t.Fatal(err)
+	}
+	const src = "![Chart alt](figure.svg \"figure title\")\r\n\r\nAfter text.\r\n"
+	d := nativeeditor.New(src)
+	d.SetImageDirectory(dir)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill().AutoFocus() }, 820, 560)
+	tt.Frame()
+	figure := waitForImage(t, tt, "Chart alt", func(px color.RGBA) bool {
+		return px.R > 200 && px.G < 80 && px.B < 160
+	})
+	if figure.W < 300 || figure.H < 170 || figure.W > 624 {
+		t.Fatalf("standalone image bounds %v; expected reading-size image within 624 DIPs", figure)
+	}
+	if err := d.SelectUTF16(0, utf8.RuneCountInString(src)); err != nil {
+		t.Fatal(err)
+	}
+	tt.Command("copy")
+	md, err := tt.ClipboardData().Read(transfer.Markdown)
+	if err != nil || string(md) != src {
+		t.Fatalf("copy changed image Markdown %q: %v", md, err)
+	}
+	pos := utf8.RuneCountInString(src[:strings.Index(src, "After text")])
+	r, ok := d.RectUTF16(pos)
+	if !ok {
+		t.Fatal("missing source caret after standalone image")
+	}
+	tt.ClickAt(r.X+.1, r.Y+r.H/2)
+	tt.Type("Next ")
+	tt.Frame()
+	if want := strings.Replace(src, "After text", "Next After text", 1); d.Source() != want {
+		t.Fatalf("typing after the figure changed other source bytes: %q", d.Source())
+	}
+}
+
+func TestRemoteAndDataImagesLoadWithinLimits(t *testing.T) {
+	const remoteSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90" viewBox="0 0 160 90"><rect width="160" height="90" fill="#2563eb"/></svg>`
+	const largeHead = `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90" viewBox="0 0 160 90"><rect width="160" height="90" fill="#e11d48"/><!--`
+	largeSVG := largeHead + strings.Repeat(" ", 5<<20) + "--></svg>"
+	pngImage := image.NewRGBA(image.Rect(0, 0, 120, 80))
+	for y := range 80 {
+		for x := range 120 {
+			pngImage.SetRGBA(x, y, color.RGBA{R: 22, G: 163, B: 74, A: 255})
+		}
+	}
+	var pngData bytes.Buffer
+	if err := png.Encode(&pngData, pngImage); err != nil {
+		t.Fatal(err)
+	}
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "image/svg+xml")
+		if r.URL.Path == "/large.svg" {
+			w.(http.Flusher).Flush()
+			_, _ = w.Write([]byte(largeSVG))
+			return
+		}
+		_, _ = w.Write([]byte(remoteSVG))
+	}))
+	defer server.Close()
+	dataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngData.Bytes())
+	src := "![Remote figure](" + server.URL + "/remote.svg)\n\n![Data figure](<" + dataURL + ">)\n\n![Large fallback](" + server.URL + "/large.svg)\n"
+	d := nativeeditor.New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 820, 700)
+	tt.Frame()
+	blue := waitForImage(t, tt, "Remote figure", func(px color.RGBA) bool {
+		return px.B > 200 && px.R < 100
+	})
+	if blue.W < 150 || blue.W > 624 {
+		t.Fatalf("remote figure bounds %v", blue)
+	}
+	green := waitForImage(t, tt, "Data figure", func(px color.RGBA) bool {
+		return px.G > 150 && px.R < 80
+	})
+	if green.W < 110 || green.W > 624 {
+		t.Fatalf("data image bounds %v", green)
+	}
+	if requests.Load() != 2 {
+		t.Fatalf("remote image requests %d; want only the two local test-server requests", requests.Load())
+	}
+	large, ok := tt.Find("Large fallback")
+	if !ok || large.H > 40 {
+		t.Fatalf("oversized remote image did not fall back to its alt text: %v %v", large, ok)
+	}
+	if d.Source() != src {
+		t.Fatal("loading image URLs changed the Markdown source")
+	}
+}
+
 func TestLinkHoverOffersOnlySafeOpenAndKeepsLabelEditable(t *testing.T) {
 	const src = "Read [Example](https://example.com/docs) and [script](javascript:alert(1))."
 	d := nativeeditor.New(src)
@@ -321,4 +458,33 @@ func TestInlineHTMLRemainsLiteralInPreview(t *testing.T) {
 	if d.Source() != src {
 		t.Fatal("presenting inline HTML changed the source")
 	}
+}
+
+func waitForImage(t *testing.T, tt *ui.Tester, label string, matches func(color.RGBA) bool) ui.Rect {
+	t.Helper()
+	for range 300 {
+		tt.Frame()
+		if r, ok := tt.Find(label); ok && r.W > 0 && r.H > 0 {
+			pixel := tt.Image().RGBAAt(int(r.X+r.W/2), int(r.Y+r.H/2))
+			if matches(pixel) {
+				return r
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	r, ok := tt.Find(label)
+	t.Fatalf("image %q did not render: %v %v", label, r, ok)
+	return ui.Rect{}
+}
+
+func colorNear(px color.RGBA, target ui.Color) bool {
+	distance := absInt(int(px.R)-int(target.R)) + absInt(int(px.G)-int(target.G)) + absInt(int(px.B)-int(target.B))
+	return distance < 100 && px.A > 200
+}
+
+func absInt(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }

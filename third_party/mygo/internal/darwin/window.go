@@ -2341,6 +2341,21 @@ func registerWindowClasses() {
 		}
 	}
 	classDef("MyGoWindow", "NSWindow", nil, []objc.MethodDef{
+		method("sendEvent:", func(self id, cmd objc.SEL, ev id) {
+			const nsEventTypeKeyDown, macTabKeyCode = 10, 0x30
+			if sendInt(ev, "type") == nsEventTypeKeyDown && sendInt(ev, "keyCode") == macTabKeyCode {
+				mods := eventMods(ev)
+				if (mods == platform.ModCtrl || mods == platform.ModCtrl|platform.ModShift) &&
+					sendBool(self, "isKeyWindow") && send(self, "attachedSheet") == 0 {
+					responder := send(self, "firstResponder")
+					if s := theBackend.surfaceOf(responder); s != nil && s.w.win == self && !s.w.sheet {
+						send(responder, "keyDown:", uintptr(ev))
+						return
+					}
+				}
+			}
+			sendSuper(self, "MyGoWindow", cmd, uintptr(ev))
+		}),
 		method("orderWindow:relativeTo:", orderWindowRelativeTo("MyGoWindow")),
 		method("canBecomeKeyWindow", func(self id, _ objc.SEL) bool { return true }),
 		method("canBecomeMainWindow", func(self id, _ objc.SEL) bool { return true }),

@@ -1,5 +1,6 @@
 import './helpers/enable-feynman'
 import '../src/styles.css'
+import { runtime, type ThemePreferences } from 'mygo-runtime'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
@@ -78,6 +79,62 @@ it('renders the floating research sidebar and workspace menu opaque with reduced
     await session.send('Emulation.setEmulatedMedia', { features: [] })
     await page.viewport(1280, 900)
     await app.unmount()
+  }
+})
+
+it('follows the native transparency preference when the browser media query does not match', async () => {
+  let preferences: ThemePreferences = {
+    accent: null, reduceMotion: false, reduceTransparency: true, highContrast: false, textScale: 1,
+  }
+  let notify: ((value: ThemePreferences) => void) | undefined
+  vi.stubGlobal('mygo', {
+    ...runtime(),
+    get preferences() { return preferences },
+    on(name: string, listener: (value: ThemePreferences) => void) {
+      if (name === 'mygo:preferences') notify = listener
+      return () => { if (notify === listener) notify = undefined }
+    },
+  })
+  const setTransparencyPreference = (reduceTransparency: boolean) => {
+    preferences = { ...preferences, reduceTransparency }
+    notify?.(preferences)
+  }
+
+  const session = cdp()
+  await session.send('Emulation.setEmulatedMedia', {
+    features: [
+      { name: 'prefers-reduced-transparency', value: 'no-preference' },
+      { name: 'forced-colors', value: 'none' },
+    ],
+  })
+  let app: Awaited<ReturnType<typeof mountApp>> | undefined
+  try {
+    await page.viewport(800, 640)
+    app = await mountApp(DOCUMENT)
+    expect(matchMedia('(prefers-reduced-transparency: reduce)').matches).toBe(false)
+    await page.getByTestId('right-pane-toggle').click()
+    const rightSurface = page.getByTestId('right-pane')
+    await expect.element(rightSurface).toBeVisible()
+    const rightStyle = getComputedStyle(rightSurface.element())
+    expect(rightStyle.backgroundColor).toBe('rgb(255, 255, 255)')
+    expect(rightStyle.backdropFilter).toBe('none')
+
+    setTransparencyPreference(false)
+    expect(rightStyle.backdropFilter).toContain('blur(')
+    setTransparencyPreference(true)
+    expect(rightStyle.backdropFilter).toBe('none')
+
+    await page.getByTestId('right-pane-close').click()
+    await page.getByTestId('workspace-switcher').click()
+    const menuSurface = page.getByTestId('workspace-menu')
+    await expect.element(menuSurface).toBeVisible()
+    const menuStyle = getComputedStyle(menuSurface.element())
+    expect(menuStyle.backgroundColor).toBe('rgb(255, 255, 255)')
+    expect(menuStyle.backdropFilter).toBe('none')
+  } finally {
+    await app?.unmount()
+    await session.send('Emulation.setEmulatedMedia', { features: [] })
+    await page.viewport(1280, 900)
   }
 })
 

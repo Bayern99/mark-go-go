@@ -214,6 +214,15 @@
     0 20px 44px -10px rgb(0 0 0 / 55%);
 }
 
+:root[data-reduce-transparency],
+:root[data-reduce-transparency] .mgg {
+  --glass-tint: var(--paper);
+  --glass-filter: none;
+  --glass-highlight: none;
+  --glass-overlay-tint: var(--paper);
+  --glass-overlay-filter: none;
+}
+
 * {
   box-sizing: border-box;
 }

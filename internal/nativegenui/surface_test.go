@@ -188,3 +188,65 @@ func TestOpenResolvesPureBasicFunctionCallsAndReadingShowsTheResult(t *testing.T
 		t.Fatal("formatted text was not visible in the native reader")
 	}
 }
+
+func TestOpenResolvesBasicNumberDateAndPluralFunctions(t *testing.T) {
+	const view = `{"version":2,"sources":{},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"v","catalogId":"markgogo.dev:genui/v1","dataModel":{"amount":1234.5678,"currencyAmount":1234.5,"timestamp":"2024-02-29T09:05:06+08:00","count":2,"fraction":1.5},"components":[{"id":"root","component":"Column","children":["number","plainNumber","currency","date","two","other"]},{"id":"number","component":"Text","text":{"@call":"formatNumber","args":{"value":{"@path":"/amount"},"decimals":2}}},{"id":"plainNumber","component":"Text","text":{"@call":"formatNumber","args":{"value":{"@path":"/currencyAmount"},"decimals":2,"grouping":false}}},{"id":"currency","component":"Text","text":{"@call":"formatCurrency","args":{"value":{"@path":"/currencyAmount"},"currency":"eur"}}},{"id":"date","component":"Text","text":{"@call":"formatDate","args":{"value":{"@path":"/timestamp"},"format":"EEEE, MMM d yyyy HH:mm"}}},{"id":"two","component":"Text","text":{"@call":"pluralize","args":{"value":{"@path":"/count"},"one":"one item","two":"two items","other":"many items"}}},{"id":"other","component":"Text","text":{"@call":"pluralize","args":{"value":{"@path":"/fraction"},"zero":"no items","one":"one item","other":"many items"}}}]}}]}`
+	surface, err := Open(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]string{
+		"number":      "1,234.57",
+		"plainNumber": "1234.50",
+		"currency":    "€1,234.50",
+		"date":        "Thursday, Feb 29 2024 09:05",
+		"two":         "two items",
+		"other":       "many items",
+	} {
+		if got := surface.Nodes[id].Text.String(); got != want {
+			t.Errorf("%s text = %q, want %q", id, got, want)
+		}
+	}
+	var reader Reading
+	reader.Load(surface)
+	tt := ui.NewTester(reader.View, 600, 360)
+	if _, ok := tt.Access("1,234.57"); !ok {
+		t.Fatal("formatted number was not visible in the native reader")
+	}
+}
+
+func TestOpenMatchesBasicIntlFormattingEdgeCases(t *testing.T) {
+	const view = `{"version":2,"sources":{},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"v","catalogId":"markgogo.dev:genui/v1","dataModel":{"oldYear":"1901-01-02","negativeCount":-1,"roundedCount":1.0001,"half":1.005,"cadAmount":1234.5,"dateTime":"2026-11-20T08:45:00Z"},"components":[{"id":"root","component":"Column","children":["year","negative","rounded","half","cad","currentDate"]},{"id":"year","component":"Text","text":{"@call":"formatDate","args":{"value":{"@path":"/oldYear"},"format":"yy"}}},{"id":"negative","component":"Text","text":{"@call":"pluralize","args":{"value":{"@path":"/negativeCount"},"one":"one item","other":"many items"}}},{"id":"rounded","component":"Text","text":{"@call":"pluralize","args":{"value":{"@path":"/roundedCount"},"one":"one item","other":"many items"}}},{"id":"half","component":"Text","text":{"@call":"formatNumber","args":{"value":{"@path":"/half"},"decimals":2}}},{"id":"cad","component":"Text","text":{"@call":"formatCurrency","args":{"value":{"@path":"/cadAmount"},"currency":"CAD"}}},{"id":"currentDate","component":"Text","text":{"@call":"formatDate","args":{"value":{"@path":"/dateTime"},"format":"EEEE, MMMM d yyyy hh:mm a"}}}]}}]}`
+	surface, err := Open(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]string{
+		"year":        "01",
+		"negative":    "one item",
+		"rounded":     "one item",
+		"half":        "1.01",
+		"cad":         "CA$1,234.50",
+		"currentDate": "Friday, November 20 2026 08:45 AM",
+	} {
+		if got := surface.Nodes[id].Text.String(); got != want {
+			t.Errorf("%s text = %q, want %q", id, got, want)
+		}
+	}
+}
+
+func TestEnglishCurrencyPrefixMatchesIntlSpacingExceptions(t *testing.T) {
+	for code, want := range map[string]string{
+		"PHP": "₱",
+		"SAR": "\u200e\u20c1\u00a0",
+		"XAF": "FCFA\u00a0",
+		"XCG": "Cg.\u00a0",
+		"XOF": "F\u202fCFA\u00a0",
+		"XPF": "CFPF\u00a0",
+		"XXX": "¤",
+	} {
+		if got := englishCurrencyPrefix(code); got != want {
+			t.Errorf("%s prefix = %q, want %q", code, got, want)
+		}
+	}
+}

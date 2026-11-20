@@ -150,7 +150,8 @@ func resolveDynamicValue(raw json.RawMessage, dataModel any, dataPath string, fu
 			if functionDepth >= genui.MaxFuncCallDepth {
 				return nil, errors.New("GenUI function calls exceed the nesting limit")
 			}
-			if name != "formatString" && name != "and" && name != "or" && name != "not" &&
+			if name != "formatString" && name != "formatNumber" && name != "formatCurrency" &&
+				name != "formatDate" && name != "pluralize" && name != "and" && name != "or" && name != "not" &&
 				name != "required" && name != "length" && name != "email" {
 				return nil, nil
 			}
@@ -209,6 +210,15 @@ func pureFunctionArgumentAllowed(function, argument string) bool {
 	switch function {
 	case "formatString", "required", "email":
 		return argument == "value"
+	case "formatNumber":
+		return argument == "value" || argument == "decimals" || argument == "grouping"
+	case "formatCurrency":
+		return argument == "value" || argument == "currency" || argument == "decimals" || argument == "grouping"
+	case "formatDate":
+		return argument == "value" || argument == "format"
+	case "pluralize":
+		return argument == "value" || argument == "zero" || argument == "one" || argument == "two" ||
+			argument == "few" || argument == "many" || argument == "other"
 	case "length":
 		return argument == "value" || argument == "min" || argument == "max"
 	case "and", "or":
@@ -287,6 +297,14 @@ func evaluatePureFunction(name string, args map[string]any, dataModel any, dataP
 			return nil, err
 		}
 		return interpolateJSONPointers(template, dataModel, dataPath)
+	case "formatNumber":
+		return formatNumber(args)
+	case "formatCurrency":
+		return formatCurrency(args)
+	case "formatDate":
+		return formatDate(args)
+	case "pluralize":
+		return pluralize(args)
 	case "and", "or":
 		values, ok := args["values"].([]any)
 		if !ok || len(values) < 2 || len(values) > maxFunctionArrayItems {

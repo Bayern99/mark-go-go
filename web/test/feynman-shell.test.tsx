@@ -532,6 +532,7 @@ describe('Portrait Chat | Review right-pane shell', () => {
       // Pending proposal via reviewUpdated shows tabular-nums badge
       mocks.onReviewEvent?.({
         workspaceRoot: '/ws',
+        revision: 1,
         proposals: [
           {
             id: 'prop-1',

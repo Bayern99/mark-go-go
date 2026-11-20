@@ -4,7 +4,7 @@ import { expect, it, vi } from 'vitest'
 import { userEvent } from 'vitest/browser'
 import { applyNativeEdit, nativeEditCapabilities } from '../src/editor/nativeEdit'
 import { App } from '../src/App'
-import type { ResearchArtifact } from '../src/host/generated/mygo'
+import type { ProposeInput, ResearchArtifact, ReviewUpdateEvent } from '../src/host/generated/mygo'
 import { createBrowserHost, createBrowserWorkspace } from '../src/host/browserHost'
 import { computeMyersHunks, reconcileProposal } from '../src/plugins/DocumentDiff'
 import { ResearchSession } from '../src/plugins/feynman/session'
@@ -13,6 +13,10 @@ import './helpers/enable-feynman'
 const prompt = vi.hoisted(() => vi.fn<() => Promise<string>>())
 const artifacts = vi.hoisted(() => vi.fn<() => Promise<ResearchArtifact[]>>().mockResolvedValue([]))
 const readArtifact = vi.hoisted(() => vi.fn<(root: string, rel: string) => Promise<string>>())
+const review = vi.hoisted(() => ({
+  receive: undefined as ((event: ReviewUpdateEvent) => void) | undefined,
+  revise: vi.fn(),
+}))
 vi.mock('../src/host/generated/mygo', async importOriginal => {
   const native = await importOriginal<typeof import('../src/host/generated/mygo')>()
   return {
@@ -20,12 +24,63 @@ vi.mock('../src/host/generated/mygo', async importOriginal => {
     events: {
       ...native.events,
       researchUpdate: { on: () => () => {} },
-      reviewUpdated: { on: () => () => {} },
+      reviewUpdated: {
+        on(receive: (event: ReviewUpdateEvent) => void) {
+          review.receive = receive
+          return () => { if (review.receive === receive) review.receive = undefined }
+        },
+      },
     },
     ResearchHost: {
       connect: async () => {}, disconnect: async () => {},
       artifacts, readArtifact, prompt,
     },
+    ReviewHost: { ...native.ReviewHost, snapshot: undefined, revise: review.revise },
+  }
+})
+
+it('does not replace the latest review queue with a delayed snapshot', () => {
+  const workspaceRoot = '/review-order'
+  const session = ResearchSession.acquire(workspaceRoot)
+  try {
+    const stale = { workspaceRoot, revision: 1, proposals: [] }
+    const latest = {
+      workspaceRoot, revision: 2,
+      proposals: [{
+        id: 'proposal-1', workspaceRoot, path: '/review-order/doc.md',
+        baseText: 'old', proposedText: 'new', mergedText: 'new', liveText: 'old',
+        hunks: [], createdAt: 1,
+      }],
+    }
+    review.receive!(latest)
+    review.receive!(stale)
+    expect(session.proposals.map(p => p.id)).toEqual(['proposal-1'])
+  } finally {
+    session.release()
+  }
+})
+
+it('keeps a reviewed base through the next backend queue notification', async () => {
+  const workspaceRoot = '/reviewed-base'
+  const path = workspaceRoot + '/doc.md'
+  const old = {
+    id: 'proposal-1', workspaceRoot, path, documentId: 'doc', baseVersion: 1,
+    baseText: 'old', proposedText: 'proposed', mergedText: 'proposed', liveText: 'old',
+    hunks: [], createdAt: 1,
+  }
+  let stored = old
+  review.revise.mockImplementation(async (input: ProposeInput) => {
+    stored = { ...old, baseText: input.baseText, baseVersion: input.baseVersion! }
+  })
+  const session = ResearchSession.acquire(workspaceRoot)
+  try {
+    review.receive!({ workspaceRoot, revision: 1, proposals: [old] })
+    await session.updateProposalBase(old.id, 'doc', { text: 'live', path, version: 2 })
+    review.receive!({ workspaceRoot, revision: 2, proposals: [stored] })
+    expect(session.proposal?.base).toEqual({ text: 'live', path, version: 2 })
+  } finally {
+    session.release()
+    review.revise.mockReset()
   }
 })
 
@@ -46,6 +101,17 @@ it('keeps an MCP proposal distinct from the first local proposal', () => {
   } finally {
     session.release()
   }
+})
+
+it('does not apply a pending hunk when the selected hunk conflicts', () => {
+  const live = 'first reader\n\nlast old\n'
+  const resolved = reconcileProposal(
+    'first old\n\nlast old\n', 'first proposed\n\nlast proposed\n', live,
+    { 'hunk-1': 'accepted' },
+  )
+  expect(resolved.hunks[0].conflict).toBe(true)
+  expect(resolved.hunks[1].decision).toBe('pending')
+  expect(resolved.mergedText).toBe(live)
 })
 
 it('preserves insertions at both boundaries of a proposed replacement', () => {
@@ -75,6 +141,15 @@ it('represents a 2,500-line rewrite as one replacement', () => {
   const hunks = computeMyersHunks(before, after)
   expect(hunks).toHaveLength(1)
   expect(hunks[0]).toMatchObject({ changeOldCount: lines, changeNewCount: lines })
+})
+
+it('preserves the common section in a large rewrite', () => {
+  const before = 'old line\n'.repeat(1200) + 'shared section\n' + 'earlier line\n'.repeat(1200)
+  const after = 'new line\n'.repeat(1200) + 'shared section\n' + 'later line\n'.repeat(1200)
+  expect(computeMyersHunks(before, after)).toMatchObject([
+    { changeOldCount: 1200, changeNewCount: 1200 },
+    { changeOldCount: 1200, changeNewCount: 1200 },
+  ])
 })
 
 it('computes minimal Myers hunks with 1-based line numbers and 3 lines of context', () => {
@@ -244,6 +319,41 @@ it('supports selective per-hunk Accept/Reject, concurrent non-overlapping merge 
     expect(reconciled.mergedText).toBe(
       '# Study\n\nParagraph 1 user collision.\n\nParagraph 2 original.\n\nParagraph 3 by agent.\n',
     )
+  } finally {
+    root.unmount()
+    container.remove()
+  }
+})
+
+it('keeps unresolved hunks available after applying a selected clean hunk', async () => {
+  const base = '# Study\n\nFirst original.\n\nSecond original.\n\nThird original.\n'
+  const proposed = '# Study\n\nFirst proposed.\n\nSecond proposed.\n\nThird proposed.\n'
+  const host = createBrowserHost(base, 'study.md')
+  const workspace = createBrowserWorkspace([host], { root: '/partial-review' })
+  const container = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(container)
+  const button = (text: string) => [...container.querySelectorAll('button')].find(b => b.textContent?.trim() === text)!
+  prompt.mockResolvedValue(proposed)
+  try {
+    root.render(<App workspace={workspace} />)
+    const input = await vi.waitFor(() => {
+      const composer = container.querySelector<HTMLTextAreaElement>('[aria-label="Research prompt"]')
+      expect(composer).toBeTruthy()
+      return composer!
+    })
+    await userEvent.click(container.querySelector<HTMLInputElement>('[aria-label="Edit this document"]')!)
+    await userEvent.fill(input, 'Revise the three paragraphs')
+    await userEvent.click(button('Send'))
+    await vi.waitFor(() => expect(container.querySelectorAll('.diff-hunk')).toHaveLength(3))
+    const second = [...container.querySelectorAll('.ProseMirror p')].find(p => p.textContent === 'Second original.')!
+    await userEvent.click(second)
+    await userEvent.keyboard(' Reader note.')
+    await vi.waitFor(() => expect(container.querySelectorAll('.diff-hunk[data-conflict="true"]')).toHaveLength(1))
+    await userEvent.click(container.querySelector<HTMLButtonElement>('[aria-label="Accept hunk-1"]')!)
+    await userEvent.click(button('Apply in Markdown'))
+    await vi.waitFor(async () => expect((await host.load()).text).toBe('# Study\n\nFirst proposed.\n\nSecond original. Reader note.\n\nThird original.\n'))
+    expect(container.querySelectorAll('.diff-hunk')).toHaveLength(2)
+    expect(container.querySelectorAll('.diff-hunk[data-conflict="true"]')).toHaveLength(1)
   } finally {
     root.unmount()
     container.remove()

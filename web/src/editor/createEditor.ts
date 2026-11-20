@@ -745,51 +745,61 @@ export async function createMarkdownEditor(
       }
     }
 
-    // If all blocks matched structurally (e.g. only whitespace/prefix/trailing differed),
-    // replace the full document content so ProseMirror history records a real ReplaceStep.
-    if (prefixCount === prevCount && prefixCount === nextCount) {
-      prefixCount = 0
-      suffixCount = 0
-    }
-
-    for (let i = 0; i < prefixCount; i += 1) {
-      const pNode = prevDoc.child(i)
-      const nNode = nextDoc.child(i)
-      const nOrigin = nextBuilt.origins.get(nNode)
-      if (nOrigin) {
-        const bound = { ...nOrigin, node: pNode }
-        nextBuilt.origins.set(pNode, bound)
-        nextBuilt.loaded[nOrigin.segment.index] = bound
-      }
-    }
-    for (let i = 0; i < suffixCount; i += 1) {
-      const pNode = prevDoc.child(prevCount - 1 - i)
-      const nNode = nextDoc.child(nextCount - 1 - i)
-      const nOrigin = nextBuilt.origins.get(nNode)
-      if (nOrigin) {
-        const bound = { ...nOrigin, node: pNode }
-        nextBuilt.origins.set(pNode, bound)
-        nextBuilt.loaded[nOrigin.segment.index] = bound
-      }
-    }
-
-    let fromPos = 0
-    for (let i = 0; i < prefixCount; i += 1) {
-      fromPos += prevDoc.child(i).nodeSize
-    }
-    let toPos = fromPos
-    for (let i = prefixCount; i < prevCount - suffixCount; i += 1) {
-      toPos += prevDoc.child(i).nodeSize
-    }
-
-    const replacements: PMNode[] = []
+    const shared: Array<[number, number]> = []
+    for (let i = 0; i < prefixCount; i += 1) shared.push([i, i])
+    const candidates = new Map<string, { indexes: number[]; cursor: number }>()
     for (let i = prefixCount; i < nextCount - suffixCount; i += 1) {
-      replacements.push(nextDoc.child(i))
+      const origin = nextBuilt.origins.get(nextDoc.child(i))
+      if (!origin) continue
+      const match = candidates.get(origin.source)
+      if (match) match.indexes.push(i)
+      else candidates.set(origin.source, { indexes: [i], cursor: 0 })
+    }
+    let nextIndex = prefixCount
+    for (let i = prefixCount; i < prevCount - suffixCount; i += 1) {
+      const origin = prevBuilt.origins.get(prevDoc.child(i))
+      const match = origin && candidates.get(origin.source)
+      if (!match) continue
+      while (match.cursor < match.indexes.length && match.indexes[match.cursor] < nextIndex) {
+        match.cursor += 1
+      }
+      const index = match.indexes[match.cursor]
+      if (index !== undefined && canShareBlock(i, index)) {
+        shared.push([i, index])
+        nextIndex = index + 1
+      }
+    }
+    for (let i = suffixCount; i > 0; i -= 1) {
+      shared.push([prevCount - i, nextCount - i])
+    }
+    if (shared.length === prevCount && shared.length === nextCount) shared.length = 0
+
+    const positions: number[] = []
+    prevDoc.forEach((_node, pos) => positions.push(pos))
+    positions.push(prevDoc.content.size)
+    const tr = closeHistory(view.state.tr)
+    let oldEnd = prevCount
+    let newEnd = nextCount
+    for (let index = shared.length - 1; index >= -1; index -= 1) {
+      const [oldIndex, newIndex] = shared[index] ?? [-1, -1]
+      if (oldIndex + 1 < oldEnd || newIndex + 1 < newEnd) {
+        const replacements: PMNode[] = []
+        for (let i = newIndex + 1; i < newEnd; i += 1) replacements.push(nextDoc.child(i))
+        tr.replaceWith(positions[oldIndex + 1], positions[oldEnd], replacements)
+      }
+      if (oldIndex < 0) break
+      const pNode = prevDoc.child(oldIndex)
+      const nOrigin = nextBuilt.origins.get(nextDoc.child(newIndex))!
+      const bound = { ...nOrigin, node: pNode }
+      nextBuilt.origins.set(pNode, bound)
+      nextBuilt.loaded[nOrigin.segment.index] = bound
+      oldEnd = oldIndex
+      newEnd = newIndex
     }
 
     built = nextBuilt
     composedCache = undefined
-    view.dispatch(closeHistory(view.state.tr.replaceWith(fromPos, toPos, replacements)))
+    view.dispatch(tr)
     view.dispatch(closeHistory(view.state.tr))
     recordBuiltSnapshot(view.state.doc, nextBuilt)
   }

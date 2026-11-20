@@ -157,6 +157,8 @@ func myersEditScript(a, b []textLine) []editOp {
 	return ops
 }
 
+const maxMyersTraceEntries = 512 * 1024
+
 func myersCore(a, b []textLine, offsetA, offsetB int) []editOp {
 	n := len(a)
 	m := len(b)
@@ -192,6 +194,9 @@ func myersCore(a, b []textLine, offsetA, offsetB int) []editOp {
 
 	foundD := maxD
 	for d := 0; d <= maxD; d++ {
+		if d >= maxMyersTraceEntries/size {
+			return linearSpaceDiff(a, b, offsetA, offsetB)
+		}
 		snapshot := make([]int, size)
 		copy(snapshot, v)
 		trace = append(trace, snapshot)
@@ -285,6 +290,77 @@ func myersCore(a, b []textLine, offsetA, offsetB int) []editOp {
 	for i := range rev {
 		ops[i] = rev[len(rev)-1-i]
 	}
+	return ops
+}
+
+func linearSpaceDiff(a, b []textLine, offsetA, offsetB int) []editOp {
+	forward, backward := make([]int, len(b)+1), make([]int, len(b)+1)
+	ops := make([]editOp, 0, len(a)+len(b))
+	old, next := 0, 0
+	consume := func(oldEnd, nextEnd int) {
+		for old < oldEnd {
+			line := a[old]
+			ops = append(ops, editOp{kind: opDelete, oldIdx: offsetA + old, newIdx: offsetB + next, text: line.content, raw: line.raw})
+			old++
+		}
+		for next < nextEnd {
+			line := b[next]
+			ops = append(ops, editOp{kind: opInsert, oldIdx: offsetA + old, newIdx: offsetB + next, text: line.content, raw: line.raw})
+			next++
+		}
+	}
+
+	var align func(int, int, int, int)
+	align = func(left, right, start, end int) {
+		if left == right || start == end {
+			return
+		}
+		if right-left == 1 {
+			for j := start; j < end; j++ {
+				if a[left].raw == b[j].raw {
+					consume(left, j)
+					line := a[left]
+					ops = append(ops, editOp{kind: opEqual, oldIdx: offsetA + old, newIdx: offsetB + next, text: line.content, raw: line.raw})
+					old++
+					next++
+					break
+				}
+			}
+			return
+		}
+		mid, width := (left+right)/2, end-start
+		clear(forward[:width+1])
+		clear(backward[:width+1])
+		row := func(scores []int, first, last, step, edge int) {
+			for i := first; i != last; i += step {
+				prev := 0
+				for j := 1; j <= width; j++ {
+					above := scores[j]
+					if a[i].raw == b[edge+(j-1)*step].raw {
+						scores[j] = prev + 1
+					} else {
+						scores[j] = max(above, scores[j-1])
+					}
+					prev = above
+				}
+			}
+		}
+		row(forward, left, mid, 1, start)
+		row(backward, right-1, mid-1, -1, end-1)
+		split, best := 0, 0
+		for j := 0; j <= width; j++ {
+			if score := forward[j] + backward[width-j]; score > best {
+				split, best = j, score
+			}
+		}
+		if best == 0 {
+			return
+		}
+		align(left, mid, start, start+split)
+		align(mid, right, start+split, end)
+	}
+	align(0, len(a), 0, len(b))
+	consume(len(a), len(b))
 	return ops
 }
 

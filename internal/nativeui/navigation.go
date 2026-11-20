@@ -23,7 +23,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions) {
 				if selected {
 					current = root.ID
 				}
-				if menu.Item(root.Name).Checked(selected).Chosen() && a.ActivateWorkspace != nil {
+				if menu.Item(root.Name).ID("switch-workspace:"+root.ID).Checked(selected).Chosen() && a.ActivateWorkspace != nil {
 					a.ActivateWorkspace(root.ID)
 				}
 			}
@@ -31,7 +31,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions) {
 			if menu.Item("Open Folder…").Chosen() && a.OpenFolder != nil {
 				a.OpenFolder()
 			}
-			if w.Kind == "folder" && menu.Item("Close Workspace").Chosen() && a.CloseWorkspace != nil {
+			if w.Kind == "folder" && current != "" && menu.Item("Close Workspace").ID("close-workspace:"+current).Chosen() && a.CloseWorkspace != nil {
 				a.CloseWorkspace(current)
 			}
 		})

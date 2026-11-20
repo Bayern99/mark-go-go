@@ -34,7 +34,7 @@ Run `npm --prefix web run dev` for the browser preview. Run `go tool mygo genera
 ```sh
 npx --prefix web playwright install chromium-headless-shell
 npm --prefix web test
-go test -race .
+go test -race ./...
 ```
 
 Use the [native Automation and macOS checks](docs/agents/native-automation.md) for menus, save dialogs, and restart behavior.

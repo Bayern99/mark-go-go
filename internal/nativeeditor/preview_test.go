@@ -53,18 +53,24 @@ func TestRenderedPreviewAcceptsPointerInputAndCrossBlockSelection(t *testing.T) 
 	}
 }
 
-func TestPreviewUsesTheReadingColumn(t *testing.T) {
+func TestPreviewReadingColumnAdaptsWhenTheWindowResizes(t *testing.T) {
+	const source = "# Portrait report\r\n\nThe first line identifies this reading sample.\n"
+	d := nativeeditor.New(source)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 1280, 820)
 	for _, tc := range []struct {
-		width int
-		left  float32
-	}{{1000, 196}, {480, 56}} {
-		d := nativeeditor.New("A line of text")
-		tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, tc.width, 300)
+		width, height int
+		left, top     float32
+	}{{1280, 820, 336, 45}, {480, 360, 56, 13}, {640, 600, 56, 13}, {641, 600, 56, 45}, {1280, 820, 336, 45}} {
+		tt.SetSize(tc.width, tc.height)
 		tt.Frame()
-		r, ok := d.RectUTF16(0)
-		if !ok || r.X < tc.left-2 || r.X > tc.left+2 || r.Y < 43 || r.Y > 45 {
-			t.Errorf("width %d first caret %+v, want (%.0f,44)", tc.width, r, tc.left)
+		title, hasTitle := d.RectUTF16(2)
+		firstLine, hasFirstLine := d.RectUTF16(strings.Index(source, "The first line"))
+		if !hasTitle || !hasFirstLine || title.X != tc.left || title.Y != tc.top || firstLine.X != tc.left || firstLine.Y != tc.top+64 {
+			t.Errorf("%d × %d places title at %v and first paragraph at %v; want x %.0f and y %.0f, %.0f", tc.width, tc.height, title, firstLine, tc.left, tc.top, tc.top+64)
 		}
+	}
+	if d.Source() != source || d.Modified() || d.CanUndo() {
+		t.Fatal("resizing changed document content or history")
 	}
 }
 

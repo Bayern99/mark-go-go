@@ -187,7 +187,13 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 }
 
 func pageMargin(line int, above bool, height float32) editor.Block {
-	return editor.Block{Line: line, Above: above, Height: height, Content: func(_ *ui.Context, e ui.Element, _ editor.Block) { e.Height(height) }}
+	return editor.Block{Line: line, Above: above, Height: height, Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
+		if width, _ := c.Size(); above && width <= 640 {
+			e.Height(12)
+			return
+		}
+		e.Height(height)
+	}}
 }
 
 func headingStyle(line, level int) editor.LineStyle {

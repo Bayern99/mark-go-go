@@ -262,7 +262,7 @@ func TestRememberWorkspacePersists(t *testing.T) {
 func TestBreadcrumbsFromRoot(t *testing.T) {
 	root := filepath.Join("/tmp", "ws")
 	file := filepath.Join(root, "notes", "a.md")
-	crumbs := breadcrumbsFor(root, file)
+	crumbs := Breadcrumbs(root, file)
 	if len(crumbs) < 2 {
 		t.Fatalf("crumbs = %+v", crumbs)
 	}

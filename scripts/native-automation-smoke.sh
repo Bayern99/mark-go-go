@@ -73,7 +73,7 @@ document_window() {
   auto windows | tee "$WORK/windows"
   grep -F '[content]' "$WORK/windows" | grep -F "$2"
   auto snapshot --full >"$WORK/tree"
-  grep -F '[textField]' "$WORK/tree" | grep -F 'Markdown source' | grep -F "$1"
+  grep -F '[textField]' "$WORK/tree" | grep -F "$3" | grep -F "$1"
   if grep -i -q 'webview' "$WORK/tree"; then return 1; fi
 }
 printf '# Welcome\n' >"$WORK/notes/Welcome.md"
@@ -83,10 +83,13 @@ printf '前🙂' >"$WORK/expected"
 cat "$SOURCE" >>"$WORK/expected"
 
 launch "$WORK/notes/Welcome.md"
-document_window 'Welcome' 'Welcome.md'
+document_window 'Welcome' 'Welcome.md' 'Markdown Preview'
 open -a "$APP" "$SOURCE"
-document_window 'Original bytes.' 'Discussion.md'
-auto focus key=source
+document_window 'Original bytes.' 'Discussion.md' 'Markdown Preview'
+auto press key=Markdown --settle
+document_window 'Original bytes.' 'Discussion.md' 'Markdown source'
+field=$(awk '/\[textField\] "Markdown source"/ {print $1; exit}' "$WORK/tree")
+auto focus "$field"
 auto key CmdOrCtrl+Home
 auto type '前🙂' --settle
 auto wait --text '前🙂# Discussion'
@@ -102,7 +105,7 @@ auto menu File Save --settle
 auto screenshot "$REPORT"
 quit
 launch
-document_window '前🙂# Discussion' 'Discussion.md'
+document_window '前🙂# Discussion' 'Discussion.md' 'Markdown source'
 cmp "$WORK/expected" "$SOURCE"
 quit
 echo "PASS  native Content, Finder open, editable source, menu save, undo, redo, and fresh-process restore. Screenshot $REPORT"

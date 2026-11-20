@@ -90,6 +90,7 @@ type NavSearchHit struct {
 }
 
 type NavSearchResult struct {
+	Root       string         `json:"root,omitempty"`
 	Query      string         `json:"query"`
 	Status     IndexStatus    `json:"status"`
 	Matched    int            `json:"matched"`
@@ -1018,6 +1019,7 @@ func (h *Service) searchLockedResult(w *workspace, idx *workspaceIndex, query st
 	incomplete := status == IndexScanning || status == IndexIndexing || indexed < total
 	q := strings.TrimSpace(query)
 	result := NavSearchResult{
+		Root:       w.root,
 		Query:      q,
 		Status:     status,
 		Indexed:    indexed,
@@ -1081,7 +1083,7 @@ func (h *Service) SetFilter(ctx context.Context, query string) (NavSearchResult,
 	}
 	idx := h.indexOf(w)
 	if idx == nil {
-		return NavSearchResult{Query: strings.TrimSpace(query), Status: IndexIdle, Hits: []NavSearchHit{}}, nil
+		return NavSearchResult{Root: w.root, Query: strings.TrimSpace(query), Status: IndexIdle, Hits: []NavSearchHit{}}, nil
 	}
 	idx.mu.Lock()
 	idx.query = strings.TrimSpace(query)
@@ -1241,7 +1243,7 @@ func (h *Service) waitIndexReady(w *workspace, timeout time.Duration) {
 	}
 }
 
-func breadcrumbsFor(root, path string) []Crumb {
+func Breadcrumbs(root, path string) []Crumb {
 	if path == "" {
 		return nil
 	}

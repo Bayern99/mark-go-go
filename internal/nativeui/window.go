@@ -3,7 +3,12 @@ package nativeui
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
+	"strings"
 
 	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"github.com/Bayern99/mark-go-go/internal/nativeeditor"
@@ -13,31 +18,71 @@ import (
 )
 
 type openDocument struct {
-	source        *nativeeditor.Document
-	published     uint64
-	reloadVersion int
+	crumbPath, crumbRoot string
+	crumbs               []workspace.Crumb
+	source               *nativeeditor.Document
+	published            uint64
+	reloadVersion        int
+	outlineVersion       uint64
+	sections             []workspace.Section
 }
 
 type Window struct {
-	host        *workspace.Service
-	win         *mygo.Window
-	ctx         context.Context
-	snapshot    workspace.WorkspaceSnapshot
-	documents   map[string]*openDocument
-	focusSource bool
-	failure     string
+	host          *workspace.Service
+	win           *mygo.Window
+	ctx           context.Context
+	snapshot      workspace.WorkspaceSnapshot
+	documents     map[string]*openDocument
+	focusSource   bool
+	failure       string
+	shell         Shell
+	slots         Slots
+	navigation    workspace.NavSnapshot
+	search        workspace.NavSearchResult
+	recents       []workspace.RecentWorkspace
+	changed       []func()
+	preferences   *preferenceStore
+	pendingReveal *workspace.DocReveal
 }
 
-func NewWindow(host *workspace.Service, opts mygo.WindowOptions) *mygo.Window {
+func NewWindow(host *workspace.Service, opts mygo.WindowOptions, extensions ...func(*Window) Panels) *mygo.Window {
 	w := &Window{host: host, documents: make(map[string]*openDocument)}
 	opts.Content = ui.View(w.View)
 	mygo.RunOnMain(func() {
+		if err := RegisterFonts(); err != nil {
+			w.failure = err.Error()
+		}
+		w.preferences = preferencesFor(host.UserDataDir())
+		if w.preferences.loadError != nil {
+			w.failure = w.preferences.loadError.Error()
+		}
 		w.win = mygo.NewWindow(opts)
 		w.ctx = desktop.WithWindow(context.Background(), w.win)
 		workspace.WorkspaceChanged.Listen(w.win, func(_ workspace.WorkspaceSnapshot) { w.refresh() })
 		workspace.DocumentReloaded.Listen(w.win, w.reload)
 		workspace.CommandRequested.Listen(w.win, w.command)
 		w.win.OnFocus(w.updateMenu)
+		w.win.OnShow(w.refresh)
+		w.win.OnFileDrop(func(e *mygo.FileDropEvent) {
+			paths := slices.Clone(e.Paths)
+			go w.action(func() error { return w.openDropped(paths) })
+		})
+		workspace.NavigationChanged.Listen(w.win, func(n workspace.NavSnapshot) {
+			if n.Root == w.snapshot.Root {
+				w.navigation = n
+			}
+		})
+		workspace.SearchReady.Listen(w.win, func(r workspace.NavSearchResult) {
+			if r.Root == w.snapshot.Root && r.Query == strings.TrimSpace(w.shell.queries[r.Root]) {
+				w.search = r
+			}
+		})
+		workspace.DocumentRevealed.Listen(w.win, func(r workspace.DocReveal) { w.pendingReveal = &r; w.applyReveal() })
+		for _, attach := range extensions {
+			w.install(attach(w))
+		}
+		w.preferences.windows[w] = true
+		w.win.OnClosed(func() { delete(w.preferences.windows, w) })
 	})
 	return w.win
 }
@@ -50,7 +95,22 @@ func (w *Window) refresh() {
 	if w.snapshot.ActiveID != next.ActiveID {
 		w.focusSource = true
 	}
+	rootChanged := w.snapshot.ID == "" || next.Root != w.snapshot.Root
 	w.snapshot = next
+	if rootChanged {
+		w.navigation, _ = w.host.NavSnapshot(w.ctx)
+		w.search, _ = w.host.SetFilter(w.ctx, w.shell.queries[next.Root])
+		w.recents, _ = w.host.RecentWorkspaces(w.ctx)
+	}
+	for i := range w.snapshot.Documents {
+		doc := &w.snapshot.Documents[i]
+		if doc.ViewMode == "" && doc.Path != "" {
+			doc.ViewMode = w.Preference("mgo.viewMode:" + doc.Path)
+		}
+		if doc.ViewMode == "richtext" || doc.ViewMode == "" {
+			doc.ViewMode = "preview"
+		}
+	}
 	for id := range w.documents {
 		if !slices.ContainsFunc(next.Documents, func(info workspace.DocumentInfo) bool { return info.ID == id }) {
 			delete(w.documents, id)
@@ -64,6 +124,13 @@ func (w *Window) refresh() {
 		}
 		d := nativeeditor.New(snap.Text)
 		w.documents[id] = &openDocument{source: d, published: d.Version(), reloadVersion: snap.Version}
+	}
+	if doc := w.Active(); doc.ID != "" && w.documents[doc.ID] != nil && doc.ViewMode != "genui" {
+		w.documents[doc.ID].source.SetMode(nativeeditor.Mode(doc.ViewMode))
+	}
+	w.applyReveal()
+	for _, notify := range w.changed {
+		notify()
 	}
 	w.updateMenu()
 }
@@ -166,54 +233,130 @@ func (w *Window) action(run func() error) {
 	})
 }
 
-func (w *Window) View(c *ui.Context) {
-	ui.Column(c).Fill().Background(c.Theme().Surface).Children(func() {
-		if len(w.snapshot.Documents) > 1 {
-			ui.Row(c).Padding(8).Gap(4).Children(func() {
-				for _, info := range w.snapshot.Documents {
-					if ui.Button(c.Key(info.ID), info.Name).Selected(info.ID == w.snapshot.ActiveID).Clicked() {
-						go w.action(func() error { return w.host.Activate(w.ctx, info.ID) })
-					}
-				}
-			})
-		}
-		if w.failure != "" {
-			ui.Text(c, w.failure).Role(ui.RoleAlert)
-		}
-		if w.snapshot.RestoreError != "" {
-			ui.Text(c, w.snapshot.RestoreError).Role(ui.RoleAlert)
-		}
-		id := w.snapshot.ActiveID
-		d := w.documents[id]
-		if d == nil {
-			if ui.Button(c, "New document").Clicked() {
-				go w.action(func() error { _, err := w.host.New(w.ctx); return err })
+func (w *Window) applyReveal() {
+	r := w.pendingReveal
+	if r != nil && r.ID == w.snapshot.ActiveID && w.Source() != nil {
+		w.pendingReveal = nil
+		w.Reveal(r.Offset)
+	}
+}
+
+func (w *Window) openDropped(paths []string) error {
+	var failures []error
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err == nil {
+			switch {
+			case info.IsDir():
+				err = w.host.OpenWorkspace(w.ctx, path)
+			case strings.EqualFold(filepath.Ext(path), ".md") || strings.EqualFold(filepath.Ext(path), ".markdown"):
+				_, err = w.host.Open(w.ctx, path)
+			default:
+				err = fmt.Errorf("%s is not a Markdown file", filepath.Base(path))
 			}
+		}
+		if err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
+}
+
+func (w *Window) openPath(path string, offset int) {
+	go w.action(func() error {
+		doc, err := w.host.Open(w.ctx, path)
+		if err != nil {
+			return err
+		}
+		if offset >= 0 {
+			w.win.Update(func() { w.pendingReveal = &workspace.DocReveal{ID: doc.ID, Offset: offset}; w.applyReveal() })
+		}
+		return nil
+	})
+}
+
+func (w *Window) View(c *ui.Context) {
+	if w.ctx == nil {
+		return
+	}
+	if w.snapshot.ID == "" {
+		w.refresh()
+	}
+	d := w.documents[w.snapshot.ActiveID]
+	model := Model{Workspace: w.snapshot, Navigation: w.navigation, Recents: w.recents, Search: w.search, Message: w.failure, Feynman: w.PluginEnabled("feynman"), Git: w.PluginEnabled("git")}
+	if d != nil {
+		doc := w.Active()
+		if d.crumbPath != doc.Path || d.crumbRoot != doc.WorkspaceRoot {
+			d.crumbPath, d.crumbRoot = doc.Path, doc.WorkspaceRoot
+			d.crumbs = workspace.Breadcrumbs(doc.WorkspaceRoot, doc.Path)
+		}
+		model.Crumbs = d.crumbs
+		model.Version = d.reloadVersion
+	}
+	if d != nil && w.shell.outline {
+		if d.sections == nil || d.outlineVersion != d.source.Version() {
+			d.sections = workspace.ExtractSections(d.source.Source())
+			d.outlineVersion = d.source.Version()
+		}
+		model.Sections = d.sections
+	}
+	slots := w.slots
+	slots.Document = func(c *ui.Context) {
+		if d == nil {
 			return
 		}
-		var active workspace.DocumentInfo
-		for _, info := range w.snapshot.Documents {
-			if info.ID == id {
-				active = info
-				break
-			}
-		}
-		if active.Conflict {
-			ui.Text(c, "File changed on disk").Role(ui.RoleAlert)
-		}
-		if active.Deleted {
-			ui.Text(c, "File deleted on disk").Role(ui.RoleAlert)
-		}
-		if active.ReadOnly {
-			ui.Text(c, "Read only")
-		}
-		field := d.source.View(c.Key("source"), active.ReadOnly).Grow(1).FillWidth()
+		doc := w.Active()
+		field := d.source.View(c.Key(doc.ID), doc.ReadOnly).Grow(1).MinHeight(0).FillWidth()
 		if w.focusSource {
-			field.Focus()
+			if !w.shell.focusedTab {
+				field.Focus()
+			}
+			w.shell.focusedTab = false
 			w.focusSource = false
 		}
-		if err := w.publish(id, 0); err != nil {
+		if err := w.publish(doc.ID, 0); err != nil {
 			w.failure = err.Error()
 		}
-	})
+	}
+	actions := Actions{
+		RevealPath: func(path string) {
+			if err := w.host.RevealPath(w.ctx, path); err != nil {
+				w.failure = err.Error()
+			}
+			w.shell.outline = false
+		},
+		Activate:          func(id string) { go w.action(func() error { return w.host.Activate(w.ctx, id) }) },
+		ActivateWorkspace: func(id string) { go w.action(func() error { return w.host.ActivateWorkspace(w.ctx, id) }) },
+		CloseDocument:     func(id string) { w.command(workspace.NativeCommand{Command: "close", ID: id}) },
+		CloseWorkspace: func(id string) {
+			for docID := range w.documents {
+				if err := w.publish(docID, 0); err != nil {
+					w.failure = err.Error()
+					return
+				}
+			}
+			go w.action(func() error { _, err := w.host.CloseWorkspaceRoot(w.ctx, id); return err })
+		},
+		OpenPath: w.openPath, Reveal: w.Reveal, SetMode: w.SetMode,
+		OpenFolder:  func() { go w.action(func() error { _, err := w.host.PickFolder(w.ctx); return err }) },
+		NewDocument: func() { go w.action(func() error { _, err := w.host.New(w.ctx); return err }) },
+		OpenRecent:  func(path string) { go w.action(func() error { return w.host.OpenWorkspace(w.ctx, path) }) },
+		ToggleFolder: func(rel string) {
+			if err := w.host.ToggleFolder(w.ctx, rel); err != nil {
+				w.failure = err.Error()
+			}
+		},
+		Filter:     func(query string) { w.search, _ = w.host.SetFilter(w.ctx, query) },
+		SetFeynman: func(value bool) { w.setPlugin("feynman", value) }, SetGit: func(value bool) { w.setPlugin("git", value) },
+	}
+	if !w.shell.ready {
+		if v, err := strconv.ParseFloat(w.Preference("mgo.researchWidth"), 32); err == nil && v >= 310 && v <= 800 {
+			w.shell.rightWidth = float32(v)
+		}
+	}
+	oldWidth := w.shell.rightWidth
+	w.shell.Draw(c, model, actions, slots)
+	if oldWidth != 0 && oldWidth != w.shell.rightWidth {
+		w.setPreference("mgo.researchWidth", strconv.Itoa(int(w.shell.rightWidth)))
+	}
 }

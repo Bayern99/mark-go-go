@@ -21,11 +21,7 @@ func (h *ResearchManager) sessionsDirFor(s *researchSession) string {
 	if s != nil && s.sessionsDir != "" {
 		return s.sessionsDir
 	}
-	_, dir, err := resolveFeynmanDirs()
-	if err != nil {
-		return ""
-	}
-	return dir
+	return h.profileSessionsDir()
 }
 
 func collectSessionJSONLFiles(sessionsDir string) []string {
@@ -292,7 +288,7 @@ func (h *ResearchManager) Sessions(ctx context.Context, root string) ([]Research
 	sessionsDir := s.sessionsDir
 	h.mu.Unlock()
 	if sessionsDir == "" {
-		_, sessionsDir, _ = resolveFeynmanDirs()
+		sessionsDir = h.profileSessionsDir()
 	}
 	return workspaceConversations(sessionsDir, review.WorkDir(h.dataDir, root), id, name)
 }

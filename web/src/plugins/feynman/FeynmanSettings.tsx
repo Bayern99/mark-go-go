@@ -454,6 +454,7 @@ export function FeynmanSettings({ root, session, onClose, onInsertToChat }: Feyn
               Sign in in Terminal (Models)
             </button>
           </div>
+          <p className="meta">Start setup and sign-in here. Mark Go Go uses a separate Feynman profile and does not import your existing CLI login.</p>
 
           <div className="fy-cli-row">
             <input

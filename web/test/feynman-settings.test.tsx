@@ -366,6 +366,7 @@ describe('Feynman Settings & alphaXiv Portrait UI', () => {
       await userEvent.click(page.getByTestId('feynman-settings-toggle'))
 
       await expect.element(page.getByRole('heading', { name: 'Feynman Settings', level: 3 })).toBeVisible()
+      await expect.element(page.getByText(/uses a separate Feynman profile/)).toBeVisible()
       for (const heading of [
         'Status & Doctor',
         'Models & Tier',

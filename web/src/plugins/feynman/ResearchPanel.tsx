@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react'
 import { MovingCapsule } from '../../components/MovingCapsule'
 import { ScrollArea } from '../../components/ScrollArea'
+import { radioKeys } from '../../components/radioKeys'
 import type { PluginContext } from '../../core'
 import { events, ResearchHost, type HunkDecision, type ResearchArtifact } from '../../host/generated/mygo'
 import { DocumentDiff, reconcileProposal } from '../DocumentDiff'
@@ -44,8 +45,15 @@ export default function ResearchPanel({
   const setEdit = (value: boolean) => setEditTarget(value ? documentID : '')
   const input = useRef<HTMLTextAreaElement>(null)
   const tabsRef = useRef<HTMLDivElement>(null)
+  const returnFocus = useRef(false)
   const choose = useCommand(session, input)
   const { tab } = session
+  useLayoutEffect(() => {
+    if (!settingsOpen && !alphaOpen && returnFocus.current) {
+      returnFocus.current = false
+      tabsRef.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus()
+    }
+  }, [settingsOpen, alphaOpen, tab])
   useEffect(() => {
     if (tab === 'chat') void session.connect()
   }, [session, tab])
@@ -169,6 +177,11 @@ export default function ResearchPanel({
     session.changed()
   }
 
+  const returnToChat = () => {
+    returnFocus.current = true
+    pane('chat')
+  }
+
   const insertToChat = (text: string) => {
     const trimmed = text.trim()
     if (!trimmed) return
@@ -252,8 +265,11 @@ export default function ResearchPanel({
               aria-pressed={settingsOpen}
               title="Feynman settings"
               onClick={() => {
-                setAlphaOpen(false)
-                setSettingsOpen((openState) => !openState)
+                if (settingsOpen) returnToChat()
+                else {
+                  setAlphaOpen(false)
+                  setSettingsOpen(true)
+                }
               }}
             >
               <ResearchIcon name="gear-six" />
@@ -263,7 +279,7 @@ export default function ResearchPanel({
       </header>
 
       {!settingsOpen && !alphaOpen && (
-        <div className="fy-tabs seg" role="radiogroup" aria-label="Research views" ref={tabsRef}>
+        <div className="fy-tabs seg" role="radiogroup" aria-label="Research views" ref={tabsRef} onKeyDown={radioKeys}>
           <MovingCapsule
             trackRef={tabsRef}
             selector="[aria-checked='true']"
@@ -273,16 +289,18 @@ export default function ResearchPanel({
             type="button"
             role="radio"
             aria-checked={tab === 'chat'}
+            tabIndex={tab === 'chat' ? 0 : -1}
             onClick={() => pane('chat')}
           >
             <ResearchIcon name="chat-circle" />
             <span>Chat</span>
-            {permission && <span className="fy-attention-dot" aria-label="Action required" />}
+            {permission && <span className="fy-attention-label">Action required</span>}
           </button>
           <button
             type="button"
             role="radio"
             aria-checked={tab === 'review'}
+            tabIndex={tab === 'review' ? 0 : -1}
             onClick={() => pane('review')}
           >
             <ResearchIcon name="git-diff" />
@@ -322,7 +340,7 @@ export default function ResearchPanel({
           {renderSettings({
             root: session.root,
             session,
-            onClose: () => setSettingsOpen(false),
+            onClose: returnToChat,
             onInsertToChat: insertToChat,
           })}
         </div>
@@ -330,7 +348,7 @@ export default function ResearchPanel({
         <div className="fy-settings-host">
           <AlphaXivPanel
             root={session.root}
-            onClose={() => setAlphaOpen(false)}
+            onClose={returnToChat}
             onInsertToChat={insertToChat}
           />
         </div>

@@ -367,6 +367,12 @@ describe('Feynman Settings & alphaXiv Portrait UI', () => {
 
       await expect.element(page.getByRole('heading', { name: 'Feynman Settings', level: 3 })).toBeVisible()
       await expect.element(page.getByText(/uses a separate Feynman profile/)).toBeVisible()
+      const transport = container.querySelector<HTMLElement>('[role="radiogroup"][aria-label="MCP transport"] [aria-checked="true"]')!
+      transport.focus()
+      await userEvent.keyboard('{ArrowRight}')
+      await expect.element(page.getByRole('radio', { name: 'STDIO' })).toHaveFocus()
+      await userEvent.keyboard('{ArrowLeft}')
+      await expect.element(page.getByRole('radio', { name: 'HTTP' })).toHaveFocus()
       for (const heading of [
         'Status & Doctor',
         'Models & Tier',
@@ -514,6 +520,9 @@ describe('Feynman Settings & alphaXiv Portrait UI', () => {
       await expect.element(page.getByTestId('fy-alphaxiv-trigger')).toBeVisible()
 
       // Open alphaXiv directly from Chat actions
+      await userEvent.click(page.getByTestId('fy-alphaxiv-trigger'))
+      await userEvent.click(page.getByRole('button', { name: 'Back to Chat' }))
+      await expect.element(page.getByRole('radio', { name: /Chat/ })).toHaveFocus()
       await userEvent.click(page.getByTestId('fy-alphaxiv-trigger'))
       await userEvent.fill(page.getByLabelText('alphaXiv search query'), 'sparse attention')
       await userEvent.click(page.getByRole('button', { name: 'Search alphaXiv' }))

@@ -53,8 +53,8 @@
   padding: 0 5px; border-radius: 999px; background: var(--accent-soft); color: var(--accent);
   font-size: 11px; line-height: 1; font-weight: 600; font-variant-numeric: tabular-nums;
 }
-.fy-attention-dot {
-  width: 6px; height: 6px; border-radius: 50%; background: var(--warn); flex: none;
+.fy-attention-label {
+  color: var(--warn); font-size: 11px; font-weight: 600;
 }
 .fy-icon, .fy-config, .fy-link, .fy-attachments button, .fy-launchers button,
 .fy-command-list button, .fy-options button, .fy-choice-option, .fy-edit-toggle,
@@ -336,7 +336,7 @@
   ) {
     corner-shape: superellipse(1.25);
   }
-  :is(.fy-connection, .fy-tab-badge, .fy-attention-dot, .fy-count-pill, .fy-ext-status-pill, .fy-cli-pill) {
+  :is(.fy-connection, .fy-tab-badge, .fy-attention-label, .fy-count-pill, .fy-ext-status-pill, .fy-cli-pill) {
     corner-shape: round;
   }
 }

@@ -1,6 +1,6 @@
 import './helpers/enable-feynman'
 import '../src/styles.css'
-import { page, userEvent } from 'vitest/browser'
+import { cdp, page, userEvent } from 'vitest/browser'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mountApp, type MountedApp } from './helpers/app'
 import { MOD } from './helpers/platform'
@@ -138,6 +138,24 @@ describe('layout at the default window size', () => {
     await expect.element(page.getByTestId('right-pane')).not.toBeVisible()
     await expect.element(page.getByTestId('right-pane-toggle')).toHaveFocus()
     expect(editor.textContent).toBe(original)
+  })
+
+  it('uses glass at the minimum window size and solid paper with reduced transparency', async () => {
+    await page.viewport(480, 360)
+    mounted = await mountApp(DOCUMENT)
+    await page.getByTestId('right-pane-toggle').click()
+    const drawer = mounted.container.querySelector<HTMLElement>('[data-testid="right-pane"]')!
+    const session = cdp()
+    try {
+      expect(getComputedStyle(drawer).backdropFilter).toContain('blur(')
+      await session.send('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-reduced-transparency', value: 'reduce' }],
+      })
+      expect(getComputedStyle(drawer).backdropFilter).toBe('none')
+      expect(getComputedStyle(drawer).backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+    } finally {
+      await session.send('Emulation.setEmulatedMedia', { features: [] })
+    }
   })
 
   it('reclaims reading space at the native minimum and resets the file drawer on resize', async () => {

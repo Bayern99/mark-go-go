@@ -92,7 +92,7 @@ func TestGitCheckpointSupportsLabelsProvenanceAndLegacyRawBlobs(t *testing.T) {
 	if err := os.WriteFile(path, []byte(updatedText), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := doc.create(ctx, updatedText, "Before MCP edit", "mcp"); err != nil {
+	if _, err := doc.create(ctx, updatedText, "Before MCP edit", "mcp"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -117,6 +117,19 @@ func TestGitCheckpointSupportsLabelsProvenanceAndLegacyRawBlobs(t *testing.T) {
 	gotLegacy, err := doc.read(ctx, legacyID)
 	if err != nil || gotLegacy != legacyText {
 		t.Fatalf("read legacy = %q, %v; want %q", gotLegacy, err, legacyText)
+	}
+
+	const lookalike = `{"markgogoCheckpoint":"markgogo-checkpoint-v1","content":"Document text, not metadata."}` + "\n"
+	const lookalikeID = "1700000000000001"
+	oid, err := checkpointGit(ctx, root, lookalike, "hash-object", "-w", "--no-filters", "--stdin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := checkpointGit(ctx, root, "", "update-ref", "--no-deref", doc.prefix+lookalikeID, strings.TrimSpace(oid), ""); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ReadCheckpoint(ctx, root, path, lookalikeID, t.TempDir()); err != nil || got != lookalike {
+		t.Fatalf("legacy lookalike was not read verbatim: %q, %v", got, err)
 	}
 }
 
@@ -153,7 +166,7 @@ func TestDocumentCheckpointPreservesContentsBranchAndStaging(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := doc.create(ctx, first, "", "user"); err != nil {
+	if _, err := doc.create(ctx, first, "", "user"); err != nil {
 		t.Fatal(err)
 	}
 	versions, err := doc.list(ctx)
@@ -161,10 +174,10 @@ func TestDocumentCheckpointPreservesContentsBranchAndStaging(t *testing.T) {
 		t.Fatalf("history %v: %v", versions, err)
 	}
 	write("draft.md", "later\n")
-	if err := doc.create(ctx, first, "", "user"); err == nil {
+	if _, err := doc.create(ctx, first, "", "user"); err == nil {
 		t.Fatal("checkpoint accepted a stale document buffer")
 	}
-	if err := doc.create(ctx, "later\n", "Second save", "user"); err != nil {
+	if _, err := doc.create(ctx, "later\n", "Second save", "user"); err != nil {
 		t.Fatal(err)
 	}
 	restored, err := doc.read(ctx, versions[0].ID)
@@ -204,7 +217,7 @@ func TestCheckpointInNewRepositoryGuardsIgnoredAndReplacedDocuments(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := doc.create(ctx, "new\n", "", ""); err != nil {
+	if _, err := doc.create(ctx, "new\n", "", ""); err != nil {
 		t.Fatal("explicit checkpoint of an untracked document:", err)
 	}
 	if _, err := doc.read(ctx, "../../heads/main"); err == nil {
@@ -216,7 +229,7 @@ func TestCheckpointInNewRepositoryGuardsIgnoredAndReplacedDocuments(t *testing.T
 	if err := os.Symlink(ignored, path); err != nil {
 		t.Fatal(err)
 	}
-	if err := doc.create(ctx, "new\n", "", ""); err == nil {
+	if _, err := doc.create(ctx, "new\n", "", ""); err == nil {
 		t.Fatal("recorded a document replaced by a symlink")
 	}
 }
@@ -239,7 +252,7 @@ func TestGitIgnoreRuleCoversExistingDocumentCheckpoints(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := doc.create(ctx, "paper", "", ""); err != nil {
+	if _, err := doc.create(ctx, "paper", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("paper.md\n"), 0600); err != nil {
@@ -247,6 +260,32 @@ func TestGitIgnoreRuleCoversExistingDocumentCheckpoints(t *testing.T) {
 	}
 	if _, err := openCheckpointFile(ctx, root, path, dataDir); err == nil {
 		t.Fatal("plugin exposed checkpoints of a document now covered by ignore rules")
+	}
+}
+
+func TestLocalCheckpointRemainsReadableAfterGitInit(t *testing.T) {
+	root, data := t.TempDir(), t.TempDir()
+	path := filepath.Join(root, "draft.md")
+	const initial = "# Initial\n"
+	if err := os.WriteFile(path, []byte(initial), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	lookup := &fakeDocLookup{dataDir: data, doc: CheckpointDoc{WorkspaceRoot: root, Path: path, Content: initial}}
+	host := NewCheckpointHost(lookup)
+	old, err := host.Create(ctx, "doc", path, initial, "Before init", "user")
+	if err != nil || len(old) != 1 {
+		t.Fatalf("local create: %+v, %v", old, err)
+	}
+	if out, err := exec.Command("git", "init", "--quiet", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %s: %v", out, err)
+	}
+	current, err := host.Create(ctx, "doc", path, initial, "After init", "user")
+	if err != nil || len(current) != 2 || current[0].Backend != "git" || current[1] != old[0] {
+		t.Fatalf("expected Git and earlier local snapshots: %+v, %v", current, err)
+	}
+	if text, err := host.Read(ctx, "doc", path, old[0].ID); err != nil || text != initial {
+		t.Fatalf("read earlier local snapshot: %q, %v", text, err)
 	}
 }
 

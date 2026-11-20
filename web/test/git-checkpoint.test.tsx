@@ -159,6 +159,31 @@ describe('Labeled Checkpoints with provenance & non-Git fallback UI', () => {
     }
   })
 
+  it('restores a checkpoint that differs only in the final newline', async () => {
+    const original = '# Draft\n\nSame paragraph.'
+    const saved = original + '\n'
+    const host = createBrowserHost(original, 'draft.md')
+    listCheckpoints.mockResolvedValue([{ id: 'snapshot', createdAt: 1700000001000, backend: 'local' }])
+    readCheckpoint.mockResolvedValue(saved)
+    const container = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(container)
+    try {
+      root.render(<App host={host} plugins={[createGitPlugin(host.id)]} />)
+      await page.getByRole('button', { name: 'Checkpoints' }).click()
+      const dialog = page.getByRole('dialog', { name: 'Checkpoints' })
+      await dialog.getByRole('button', { name: 'Compare' }).click()
+      await dialog.getByRole('button', { name: 'Restore shown version' }).click()
+      await vi.waitFor(async () => expect((await host.load()).text).toBe(saved))
+      expect(applyNativeEdit(host.id, 'undo')).toBe(true)
+      await vi.waitFor(async () => expect((await host.load()).text).toBe(original))
+      expect(applyNativeEdit(host.id, 'redo')).toBe(true)
+      await vi.waitFor(async () => expect((await host.load()).text).toBe(saved))
+    } finally {
+      root.unmount()
+      container.remove()
+    }
+  })
+
   it('supports app-local snapshot checkpoints in non-Git workspaces without failing', async () => {
     const snapshots = new Map<string, string>([
       ['1700000010000000', '# Scratch\n\nSaved before MCP agent turn.\n'],

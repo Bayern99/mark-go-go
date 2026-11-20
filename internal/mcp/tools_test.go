@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -33,6 +34,52 @@ func callTool(t *testing.T, urlStr, token, sid, name string, args map[string]any
 		t.Fatalf("decode tools/call(%s): %v", name, err)
 	}
 	return out
+}
+
+func TestConcurrentMCPCheckpointCallsReturnTheirOwnSnapshot(t *testing.T) {
+	root := fsutil.CanonicalPath(t.TempDir())
+	if out, err := exec.Command("git", "init", "--quiet", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %s: %v", out, err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "paper.md"), []byte("# Paper\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	srv := NewServer(Dependencies{Workspace: &testWorkspaceHarness{svc: workspace.NewService(), root: root}})
+	t.Cleanup(func() { _ = srv.Close() })
+	token, sid := initTestSession(t, srv, root, review.WorkDir(t.TempDir(), root))
+	start := make(chan struct{})
+	results := make(chan review.Checkpoint, 8)
+	var workers sync.WaitGroup
+	for i := range 8 {
+		workers.Go(func() {
+			<-start
+			label := fmt.Sprintf("Concurrent snapshot %d", i)
+			result := callTool(t, srv.URL(), token, sid, "create_checkpoint", map[string]any{"path": "paper.md", "label": label})
+			if result.IsError || len(result.Content) == 0 {
+				t.Errorf("create %q failed: %+v", label, result)
+				return
+			}
+			var reply struct{ Checkpoint review.Checkpoint }
+			if err := json.Unmarshal([]byte(result.Content[0].Text), &reply); err != nil {
+				t.Error(err)
+				return
+			}
+			if reply.Checkpoint.Label != label {
+				t.Errorf("request %q received %q", label, reply.Checkpoint.Label)
+			}
+			results <- reply.Checkpoint
+		})
+	}
+	close(start)
+	workers.Wait()
+	close(results)
+	ids := map[string]bool{}
+	for cp := range results {
+		ids[cp.ID] = true
+	}
+	if len(ids) != 8 || ids[""] {
+		t.Errorf("expected eight unique Checkpoint IDs, got %v", ids)
+	}
 }
 
 func TestMCPToolsEndToEnd(t *testing.T) {

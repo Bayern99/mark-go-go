@@ -560,10 +560,22 @@ export async function createMarkdownEditor(
     return true
   }
 
+  const notify = (markdown: string) => {
+    if (suppressChange) return
+    for (const fn of listeners) fn(markdown)
+  }
+
   const historyWatch = new Plugin({
     view: () => ({
       update(currentView, prevState) {
-        if (currentView.state.doc.eq(prevState.doc) && currentView.state.selection.eq(prevState.selection)) return
+        const { doc, selection } = currentView.state
+        if (doc.eq(prevState.doc)) {
+          if (!suppressChange && mode === 'preview' && !sameTopLevelChildren(doc, prevState.doc)) {
+            notify(compose(doc))
+          } else if (selection.eq(prevState.selection)) {
+            return
+          }
+        }
         emitHistory()
       },
     }),
@@ -802,11 +814,6 @@ export async function createMarkdownEditor(
     view.dispatch(tr)
     view.dispatch(closeHistory(view.state.tr))
     recordBuiltSnapshot(view.state.doc, nextBuilt)
-  }
-
-  const notify = (markdown: string) => {
-    if (suppressChange) return
-    for (const fn of listeners) fn(markdown)
   }
 
   editor.action((ctx) => {

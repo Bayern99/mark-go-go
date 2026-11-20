@@ -8,11 +8,13 @@ CI 以 [工作流](../.github/workflows/ci.yml) 为准。原生窗口、菜单�
 
 2026-11-19 在隔离的 macOS arm64 应用中，使用 Feynman 0.5.71、pi-acp 0.0.33 和本地固定响应模型验证了工作区对话。空文件夹可以发起研究；同一窗口内两个工作区各自保留对话和产物。生成文件可打开为文档标签，重启后可恢复文档和对话。
 
-480 px 宽窗口中，收到修改建议后继续编辑正文会使旧比较失效。重新比较、应用和原生 Undo 均通过。删除一份已完成报告后，从右栏显式恢复取得相同字节。[改名期间的修改建议](../web/test/feynman-edit.test.tsx) 由浏览器用例覆盖。单文档 Git 检查点在已有暂存内容的仓库中完成创建、比较与恢复。实测 HEAD、当前分支和暂存条目前后一致。[ACP 与权限用例](../research_test.go) · [产物用例](../artifact_test.go) · [Git 用例](../checkpoints_test.go) · [编辑器用例](../web/test/source-mode.test.ts)
+480 px 宽窗口中，收到修改建议后继续编辑正文会使旧比较失效。重新比较、应用和原生 Undo 均通过。删除一份已完成报告后，从右栏显式恢复取得相同字节。[改名期间的修改建议](../web/test/feynman-edit.test.tsx) 由浏览器用例覆盖。单文档 Git 检查点在已有暂存内容的仓库中完成创建、比较与恢复。实测 HEAD、当前分支和暂存条目前后一致。现行回归入口：[Research](../internal/agent/feynman/research_test.go) · [产物](../internal/review/artifact_test.go) · [Git](../internal/review/checkpoints_test.go) · [编辑器](../web/test/source-mode.test.ts)。
 
 ### 研究交互与原生 CLI
 
-Feynman 0.5.71 与 pi-acp 0.0.33 在隔离的本地模型上公布了 45 个命令。供应端实际收到了切换后的模型、推理级别、图片字节与所选文件引用。1280 × 820 和 480 × 360 的 macOS 原生构建验证了命令检索、Enter 发送、Markdown 表格和引用、研究文件、确认改文与撤销、会话切换和终端重连。原生 CLI 的 `status` 和交互模式中的 `/help` 使用真实可执行文件。[ACP 测试](../research_acp_test.go) · [附件测试](../research_sources_test.go) · [会话测试](../research_sessions_test.go) · [终端测试](../research_console_test.go)
+Feynman 0.5.71 与 pi-acp 0.0.33 在隔离的本地模型上公布了 45 个命令。供应端实际收到了切换后的模型、推理级别、图片字节与所选文件引用。1280 × 820 和 480 × 360 的 macOS 原生构建验证了命令检索、Enter 发送、Markdown 表格和引用、研究文件、确认改文与撤销、会话切换和终端重连。原生 CLI 的 `status` 和交互模式中的 `/help` 使用真实可执行文件。
+
+该记录早于 [Direct Feynman RPC](adr/0008-direct-feynman-rpc-and-gui-shell.md)。[旧 ACP 测试](https://github.com/Bayern99/mark-go-go/blob/d7ab3257a14960480629b320549ba0c4d3b1b1ec/research_acp_test.go)与[旧终端测试](https://github.com/Bayern99/mark-go-go/blob/d7ab3257a14960480629b320549ba0c4d3b1b1ec/research_console_test.go)保留在历史提交。现行回归入口：[附件](../internal/agent/feynman/research_sources_test.go) · [会话](../internal/agent/feynman/research_sessions_test.go) · [CLI](../internal/agent/feynman/cli_test.go)。
 
 ## MyGo v0.10.0 升级证据
 

@@ -46,8 +46,6 @@ type inlineImageEntry struct {
 	src ui.ImageSource
 }
 
-// SetImageDirectory sets the folder that relative local Preview images
-// resolve against.
 func (d *Document) SetImageDirectory(dir string) {
 	if dir != "" {
 		dir = filepath.Clean(dir)

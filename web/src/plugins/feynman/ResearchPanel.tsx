@@ -1,9 +1,9 @@
-import { useEffect, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react'
 import { MovingCapsule } from '../../components/MovingCapsule'
 import { ScrollArea } from '../../components/ScrollArea'
 import { radioKeys } from '../../components/radioKeys'
 import type { PluginContext } from '../../core'
-import { events, ResearchHost, type HunkDecision, type ResearchArtifact } from '../../host/generated/mygo'
+import { events, ResearchHost, type CLIStatusResult, type HunkDecision, type ResearchArtifact } from '../../host/generated/mygo'
 import { DocumentDiff, reconcileProposal } from '../DocumentDiff'
 import { AlphaXivPanel } from './AlphaXivPanel'
 import { Composer, useCommand } from './Composer'
@@ -41,6 +41,21 @@ export default function ResearchPanel({
   const [editTarget, setEditTarget] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [alphaOpen, setAlphaOpen] = useState(false)
+  const [cliStatus, setCLIStatus] = useState<{ session: ResearchSession; value: CLIStatusResult }>()
+  const statusRequest = useRef<{ session: ResearchSession; result: Promise<void> } | null>(null)
+  const refreshCLIStatus = useCallback(() => {
+    if (statusRequest.current?.session === session) return statusRequest.current.result
+    const result = Promise.resolve(ResearchHost.cliStatus?.(session.root))
+      .then(value => {
+        if (statusRequest.current === request && value) setCLIStatus({ session, value })
+      })
+      .finally(() => {
+        if (statusRequest.current === request) statusRequest.current = null
+      })
+    const request = { session, result }
+    statusRequest.current = request
+    return result
+  }, [session])
   const edit = !!documentID && editTarget === documentID
   const setEdit = (value: boolean) => setEditTarget(value ? documentID : '')
   const input = useRef<HTMLTextAreaElement>(null)
@@ -59,25 +74,26 @@ export default function ResearchPanel({
   }, [session, tab])
   useEffect(() => {
     if (!session.root || settingsOpen) return
-    const refreshConnectedModels = () => {
+    const refreshOnFocus = () => {
+      void refreshCLIStatus().catch(() => {})
       if (session.status === 'ready' || session.status === 'working') {
         void ResearchHost.refreshModels?.(session.root)?.catch?.(() => {})
       }
     }
-    window.addEventListener('focus', refreshConnectedModels)
+    window.addEventListener('focus', refreshOnFocus)
     let offFocus: (() => void) | undefined
     try {
       offFocus = events.researchFocus?.on((ev) => {
-        if (ev.root === session.root) refreshConnectedModels()
+        if (ev.root === session.root) refreshOnFocus()
       })
     } catch {
       // Standalone test mocks may omit researchFocus event.
     }
     return () => {
-      window.removeEventListener('focus', refreshConnectedModels)
+      window.removeEventListener('focus', refreshOnFocus)
       offFocus?.()
     }
-  }, [session, session.root, settingsOpen])
+  }, [refreshCLIStatus, session, session.root, settingsOpen])
   const [, refreshDoc] = useReducer((n: number) => n + 1, 0)
   useLayoutEffect(() => {
     const sub = ctx?.documents.onDidChange(refreshDoc)
@@ -340,6 +356,8 @@ export default function ResearchPanel({
           {renderSettings({
             root: session.root,
             session,
+            cliStatus: cliStatus?.session === session ? cliStatus.value : null,
+            refreshCLIStatus,
             onClose: returnToChat,
             onInsertToChat: insertToChat,
           })}

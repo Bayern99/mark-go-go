@@ -593,10 +593,22 @@ describe('Feynman Settings & alphaXiv Portrait UI', () => {
       await userEvent.click(page.getByRole('button', { name: 'Back to Chat' }))
       await expect.element(page.getByLabelText('Working')).toBeVisible()
       const refreshCalls = mocks.refreshModels.mock.calls.length
+      const statusCalls = mocks.cliStatus.mock.calls.length
+      mocks.cliStatus.mockResolvedValueOnce({
+        command: 'feynman status',
+        parsed: false,
+        rawOutput: 'REFRESHED STATUS WHILE SETTINGS WAS CLOSED',
+        exitCode: 0,
+        sections: [],
+      })
       mocks.onFocusEvent?.({ root: '/ws-alpha' })
       await expect.poll(() => mocks.refreshModels.mock.calls.length).toBeGreaterThan(refreshCalls)
+      await expect.poll(() => mocks.cliStatus.mock.calls.length).toBeGreaterThan(statusCalls)
       resolvePrompt('Done')
       await expect.element(page.getByLabelText('Connected')).toBeVisible()
+      mocks.cliStatus.mockImplementationOnce(() => new Promise(() => {}))
+      await userEvent.click(page.getByTestId('feynman-settings-toggle'))
+      await expect.element(page.getByText('REFRESHED STATUS WHILE SETTINGS WAS CLOSED')).toBeVisible()
     } finally {
       root.unmount()
       container.remove()

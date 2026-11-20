@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useReducer, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { AppPlugin, DocumentSnapshot, PluginContext, WorkspaceContext } from '../../core'
+import type { CLIStatusResult } from '../../host/generated/mygo'
 import { FeynmanSettings } from './FeynmanSettings'
 import { ResearchSession } from './session'
 
@@ -14,6 +15,8 @@ export type OpenResearchDocument = (path: string, existingID?: string) => Promis
 export interface FeynmanSettingsSlotProps {
   root: string
   session?: ResearchSession
+  cliStatus: CLIStatusResult | null
+  refreshCLIStatus: () => Promise<void>
   onClose: () => void
   onInsertToChat?: (text: string) => void
 }

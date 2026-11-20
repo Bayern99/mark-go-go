@@ -213,11 +213,22 @@ func (v *documentView) matches(n Node) []workspace.Section {
 func (v *documentView) changedIDs() []string {
 	var ids []string
 	if v.reading.surface != nil {
-		for id, n := range v.reading.surface.Nodes {
+		seen := map[string]bool{}
+		for runtimeID, n := range v.reading.surface.Nodes {
 			for _, source := range n.Sources {
 				r, s, ok := v.source(source)
 				if !ok || (r.Hash != "" && r.Hash != s.Hash) {
-					ids = append(ids, id)
+					id := n.ComponentID
+					if id == "" {
+						id = n.ID
+					}
+					if id == "" {
+						id = runtimeID
+					}
+					if id != "" && !seen[id] {
+						ids = append(ids, id)
+						seen[id] = true
+					}
 					break
 				}
 			}

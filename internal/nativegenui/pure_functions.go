@@ -55,8 +55,8 @@ func resolveHidden(value *json.RawMessage, dataModel any, dataPath string) error
 	if err := json.Unmarshal(*value, &object); err != nil || object == nil {
 		return nil
 	}
-	if _, path := object["@path"]; !path {
-		if _, call := object["@call"]; !call {
+	if _, path := dataBindingPath(object); !path {
+		if _, call := functionCallName(object); !call {
 			return nil
 		}
 	}
@@ -67,6 +67,35 @@ func resolveHidden(value *json.RawMessage, dataModel any, dataPath string) error
 	hidden, _ := resolved.(bool)
 	*value, err = json.Marshal(hidden)
 	return err
+}
+
+func dataBindingPath(object map[string]json.RawMessage) (string, bool) {
+	for key := range object {
+		if key != "@path" && key != "path" {
+			return "", false
+		}
+	}
+	for _, key := range []string{"@path", "path"} {
+		if raw, ok := object[key]; ok {
+			var path string
+			if json.Unmarshal(raw, &path) == nil {
+				return path, true
+			}
+		}
+	}
+	return "", false
+}
+
+func functionCallName(object map[string]json.RawMessage) (string, bool) {
+	for _, key := range []string{"@call", "call"} {
+		if raw, ok := object[key]; ok {
+			var name string
+			if json.Unmarshal(raw, &name) == nil && name != "" {
+				return name, true
+			}
+		}
+	}
+	return "", false
 }
 
 const (
@@ -110,24 +139,16 @@ func resolveDynamicValue(raw json.RawMessage, dataModel any, dataPath string, fu
 		if err := json.Unmarshal(raw, &object); err != nil {
 			return nil, err
 		}
-		if rawPath, ok := object["@path"]; ok {
-			var path string
-			if err := json.Unmarshal(rawPath, &path); err != nil {
-				return nil, err
-			}
+		if path, ok := dataBindingPath(object); ok {
 			value, found, err := dataModelAtPath(dataModel, resolveDataPath(path, dataPath))
 			if err != nil || !found {
 				return nil, err
 			}
 			return value, nil
 		}
-		if rawCall, ok := object["@call"]; ok {
+		if name, ok := functionCallName(object); ok {
 			if functionDepth >= genui.MaxFuncCallDepth {
 				return nil, errors.New("GenUI function calls exceed the nesting limit")
-			}
-			var name string
-			if err := json.Unmarshal(rawCall, &name); err != nil {
-				return nil, err
 			}
 			if name != "formatString" && name != "and" && name != "or" && name != "not" &&
 				name != "required" && name != "length" && name != "email" {

@@ -136,7 +136,7 @@ func (p *panel) message(c *ui.Context, index int, item message, streaming bool) 
 				WrapCode: true,
 				LoadImage: func(address string) (ui.ImageSource, error) {
 					if strings.HasPrefix(strings.ToLower(address), "data:image/") {
-						return decodeDataImage(address)
+						return p.loadDataImage(address)
 					}
 					return nil, fmt.Errorf("remote image previews are unavailable")
 				},
@@ -244,12 +244,29 @@ func (p *panel) image(c *ui.Context, source string) {
 	if source == "" {
 		return
 	}
-	image, err := decodeDataImage(source)
+	image, err := p.loadDataImage(source)
 	if err != nil {
 		mutedText(c, "Image preview unavailable")
 		return
 	}
 	ui.Image(c, image).FillWidth().MaxHeight(220).Fit(ui.Contain).Radius(6)
+}
+
+type decodedDataImage struct {
+	source ui.ImageSource
+	err    error
+}
+
+func (p *panel) loadDataImage(source string) (ui.ImageSource, error) {
+	if p.decodedImages == nil {
+		p.decodedImages = map[string]decodedDataImage{}
+	}
+	if cached, ok := p.decodedImages[source]; ok {
+		return cached.source, cached.err
+	}
+	image, err := decodeDataImage(source)
+	p.decodedImages[source] = decodedDataImage{source: image, err: err}
+	return image, err
 }
 
 func decodeDataImage(source string) (ui.ImageSource, error) {

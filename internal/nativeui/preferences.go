@@ -126,7 +126,6 @@ func readLegacyPreferences(root string) (map[string]string, error) {
 	if err != nil {
 		return result, err
 	}
-	// WebKit stores the top and frame origins together, as two encoded SecurityOrigins.
 	origin := []byte("\x04\x00\x00\x00\x01mygo\x09\x00\x00\x00\x01localhost\x00")
 	for _, file := range files {
 		origins, err := os.ReadFile(filepath.Join(filepath.Dir(filepath.Dir(file)), "origin"))

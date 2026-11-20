@@ -90,7 +90,7 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 		}
 		names := make([]string, len(n.Tabs))
 		for i, t := range n.Tabs {
-			names[i] = string(t.Title)
+			names[i] = t.Title.String()
 		}
 		state.tab = min(state.tab, len(names)-1)
 		layout(ui.Column(c).Gap(8), n).Children(func() {
@@ -105,7 +105,7 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 			if n.Variant == "caption" {
 				opts = &captionMarkdown
 			}
-			markdown.View(c, string(n.Text), opts)
+			markdown.View(c, n.Text.String(), opts)
 		})
 	default:
 		busy := slices.Contains(r.Replacing, id)
@@ -212,11 +212,11 @@ func layout(box ui.Element, n Node) ui.Element {
 	align := map[string]ui.Align{"center": ui.Center, "end": ui.End, "start": ui.Start, "stretch": ui.Stretch, "spaceBetween": ui.SpaceBetween, "spaceAround": ui.SpaceAround, "spaceEvenly": ui.SpaceEvenly}
 	box.MinWidth(0)
 	a := n.Accessibility
-	if a.Label != "" {
-		box.Role(ui.RoleGroup).Label(string(a.Label))
+	if a.Label.String() != "" {
+		box.Role(ui.RoleGroup).Label(a.Label.String())
 	}
-	if a.Description != "" {
-		box.Description(string(a.Description))
+	if a.Description.String() != "" {
+		box.Description(a.Description.String())
 	}
 	if string(a.Hidden) == "true" {
 		box.AccessHidden(true)

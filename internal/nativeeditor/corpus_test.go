@@ -34,8 +34,6 @@ func TestMarkdownCorpusSourceAndPreview(t *testing.T) {
 			if d.Source() != source || d.Modified() || d.CanUndo() {
 				t.Fatal("switching modes changed the source")
 			}
-			// Put the caret inside an existing word. The surrounding bytes may
-			// include repeated blocks, escapes, mixed whitespace and CRLF.
 			at := strings.IndexFunc(source, func(r rune) bool { return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r > 127 })
 			if at < 0 {
 				at = 0

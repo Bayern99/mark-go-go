@@ -84,6 +84,7 @@ type panel struct {
 	alphaAnnotation   *feynman.CLIAlphaAnnotateResult
 	alphaAskResult    *feynman.CLICommandResult
 	alphaCodeResult   *feynman.CLICommandResult
+	decodedImages     map[string]decodedDataImage
 }
 
 func (p *panel) collapsibleState(key string) *bool {
@@ -118,6 +119,7 @@ func (p *panel) syncConnection() {
 	p.connected = root
 	p.settingsRoot = ""
 	p.state = newPaneState(root)
+	p.decodedImages = nil
 	p.state.status = statusConnecting
 	p.state.error = ""
 	p.window.Native().Invalidate()
@@ -256,6 +258,7 @@ func dedupeArtifacts(files []review.ResearchArtifact) []review.ResearchArtifact 
 
 func (p *panel) close() {
 	p.closed = true
+	p.decodedImages = nil
 	if root := p.connected; root != "" && p.host != nil {
 		p.connected = ""
 		ctx := p.window.Context()

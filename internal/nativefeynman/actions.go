@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
 	"github.com/Bayern99/mark-go-go/internal/review"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 )
@@ -316,24 +317,32 @@ func (p *panel) selectSession(id string) {
 	p.runUpdate(func() (func(), error) {
 		err := p.host.SelectSession(p.window.Context(), root, id)
 		if err != nil {
-			return func() { p.state.status = statusReady; p.state.error = err.Error() }, nil
+			return func() { p.finishSessionSwitch(feynman.ResearchSessionState{}, nil, err) }, nil
 		}
 		state, stateErr := p.host.State(p.window.Context(), root)
 		rows, rowsErr := p.host.Sessions(p.window.Context(), root)
 		if stateErr != nil {
-			return func() { p.state.status = statusReady; p.state.error = stateErr.Error() }, nil
+			return func() { p.finishSessionSwitch(feynman.ResearchSessionState{}, nil, stateErr) }, nil
 		}
 		if rowsErr != nil {
-			return func() { p.state.status = statusReady; p.state.error = rowsErr.Error() }, nil
+			return func() { p.finishSessionSwitch(feynman.ResearchSessionState{}, nil, rowsErr) }, nil
 		}
-		return func() {
-			p.state.status = statusReady
-			p.state.session = state
-			p.state.title = state.SessionName
-			p.state.sessionRows = rows
-			p.state.sessionsOpen = false
-		}, nil
+		return func() { p.finishSessionSwitch(state, rows, nil) }, nil
 	})
+}
+
+func (p *panel) finishSessionSwitch(state feynman.ResearchSessionState, rows []feynman.ResearchConversation, err error) {
+	if p.state.status == statusConnecting {
+		p.state.status = statusReady
+	}
+	if err != nil {
+		p.state.error = err.Error()
+		return
+	}
+	p.state.session = state
+	p.state.title = state.SessionName
+	p.state.sessionRows = rows
+	p.state.sessionsOpen = false
 }
 
 func (p *panel) newSession() {

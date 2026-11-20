@@ -62,3 +62,23 @@ func containsSource(sources []string, target string) bool {
 	}
 	return false
 }
+
+func TestResetConversationPreservesDraftAndClearsSources(t *testing.T) {
+	state := newPaneState("/workspace")
+	state.messages = []message{{kind: "assistant", messageID: "m1", text: "prior"}}
+	state.sources = []string{"/workspace/attached.md"}
+	state.draft = "unsent prompt across reconnect"
+	state.permission = &feynman.ResearchUpdate{Root: "/workspace", RequestID: "req-1"}
+
+	state.receive(feynman.ResearchUpdate{Root: "/workspace", Kind: "reset"})
+
+	if state.draft != "unsent prompt across reconnect" {
+		t.Fatalf("draft = %q, want unsent draft preserved across reset", state.draft)
+	}
+	if len(state.sources) != 0 {
+		t.Fatalf("sources = %#v, want cleared after reset", state.sources)
+	}
+	if len(state.messages) != 0 || state.permission != nil {
+		t.Fatalf("messages=%#v permission=%#v, want cleared after reset", state.messages, state.permission)
+	}
+}

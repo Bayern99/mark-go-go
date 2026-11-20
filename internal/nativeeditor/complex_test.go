@@ -302,6 +302,132 @@ func TestChevronFoldMovesCaretOutOfHiddenSection(t *testing.T) {
 	}
 }
 
+func TestChevronFoldMovesEOFCaretToLastVisibleHeading(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "trailing newline",
+			src:  "# One\n\nBody.\n\n# Two\n\nLast.\n",
+			want: "# One\n\nBody.\n\nX# Two\n\nLast.\n",
+		},
+		{
+			name: "no trailing newline",
+			src:  "# One\n\nBody.\n\n# Two\n\nLast.",
+			want: "# One\n\nBody.\n\nX# Two\n\nLast.",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := nativeeditor.New(tc.src)
+			tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill().AutoFocus() }, 740, 420)
+			tt.Frame()
+			twoStart := strings.Index(tc.src, "# Two")
+			eof := len(tc.src)
+			if err := d.SelectUTF16(eof, eof); err != nil {
+				t.Fatal(err)
+			}
+			tt.Frame()
+			if err := tt.Click("Fold Two"); err != nil {
+				t.Fatal(err)
+			}
+			tt.Frame()
+			if a, z := d.SelectionUTF16(); a != twoStart || z != twoStart {
+				t.Fatalf("EOF fold left caret at %d..%d, want %d", a, z, twoStart)
+			}
+			tt.Type("X")
+			tt.Frame()
+			if d.Source() != tc.want {
+				t.Fatalf("typing at EOF after folding produced %q, want %q", d.Source(), tc.want)
+			}
+		})
+	}
+
+	// Selection ending at EOF also collapses to the visible heading.
+	const src = "# One\n\nBody.\n\n# Two\n\nLast."
+	d := nativeeditor.New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill().AutoFocus() }, 740, 420)
+	tt.Frame()
+	twoStart := strings.Index(src, "# Two")
+	if err := d.SelectUTF16(twoStart+len("# Two\n\n"), len(src)); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if err := tt.Click("Fold Two"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if a, z := d.SelectionUTF16(); a != twoStart || z != twoStart {
+		t.Fatalf("selection ending at EOF left caret at %d..%d, want %d", a, z, twoStart)
+	}
+
+	// Non-last section boundary: caret at the start of the next heading stays there.
+	d2 := nativeeditor.New(src)
+	tt2 := ui.NewTester(func(c *ui.Context) { d2.View(c, false).Fill().AutoFocus() }, 740, 420)
+	tt2.Frame()
+	if err := d2.SelectUTF16(twoStart, twoStart); err != nil {
+		t.Fatal(err)
+	}
+	tt2.Frame()
+	if err := tt2.Click("Fold One"); err != nil {
+		t.Fatal(err)
+	}
+	tt2.Frame()
+	if a, z := d2.SelectionUTF16(); a != twoStart || z != twoStart {
+		t.Fatalf("non-last boundary fold moved caret to %d..%d, want %d", a, z, twoStart)
+	}
+
+	// Keyboard fold at EOF after an empty final heading must not fold an earlier section.
+	const emptyLast = "# One\n\nBody.\n\n# Empty"
+	d3 := nativeeditor.New(emptyLast)
+	tt3 := ui.NewTester(func(c *ui.Context) { d3.View(c, false).Fill().AutoFocus() }, 740, 420)
+	tt3.Frame()
+	if err := d3.SelectUTF16(len(emptyLast), len(emptyLast)); err != nil {
+		t.Fatal(err)
+	}
+	tt3.Frame()
+	tt3.Key(ui.Cmd|ui.Alt, ui.KeyLeft)
+	tt3.Frame()
+	if _, ok := tt3.Find("Expand One"); ok {
+		t.Fatal("keyboard fold at EOF after empty final heading folded earlier section")
+	}
+}
+
+func TestNestedHeadingsDoNotCreateFoldsOrShiftHeadingKeys(t *testing.T) {
+	const src = "# Top\n\n> # Quoted\n>\n> > # Same\n\n- # Listed\n\n# Same\n\nReal body.\n\n# Next\n\nDone.\n"
+	d := nativeeditor.New(src)
+	written := map[string]string{}
+	d.SetReadingPreferences("", "", func(key, value string) { written[key] = value })
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 740, 720)
+	tt.Frame()
+	for _, label := range []string{"Fold Quoted", "Fold Listed"} {
+		if _, ok := tt.Find(label); ok {
+			t.Fatalf("nested heading created fold button %q", label)
+		}
+	}
+	if err := tt.Click("Fold Same"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if _, ok := d.RectUTF16(strings.Index(src, "Real body.")); ok {
+		t.Fatal("folding top-level Same kept its body visible")
+	}
+	if _, ok := d.RectUTF16(strings.Index(src, "Done.")); !ok {
+		t.Fatal("folding top-level Same hid the next section")
+	}
+	if written["folds"] == "" {
+		t.Fatal("folding top-level Same did not save fold preferences")
+	}
+	restored := nativeeditor.New(src)
+	restored.SetReadingPreferences(written["folds"], written["widths"], nil)
+	tt2 := ui.NewTester(func(c *ui.Context) { restored.View(c, false).Fill() }, 740, 720)
+	tt2.Frame()
+	if _, ok := tt2.Find("Expand Same"); !ok {
+		t.Fatalf("fold preference for top-level Same did not restore (saved %s)", written["folds"])
+	}
+}
+
 func TestFoldStopsAtTopLevelHeadingPastQuotedHeading(t *testing.T) {
 	const src = "# Top\n\nIntro.\n\n> # Quoted\n\nInside quote.\n\n## Child\n\nStill top.\n\n# Next\n\nDone.\n"
 	d := nativeeditor.New(src)

@@ -113,12 +113,7 @@ func (p *panel) connectRoot(force bool) {
 	}
 	root := p.window.Workspace().Root
 	if !p.window.PluginEnabled("feynman") || root == "" {
-		if p.connected != "" {
-			previous := p.connected
-			p.connected = ""
-			p.state.status = statusOffline
-			go func() { _ = p.host.Disconnect(p.window.Context(), previous) }()
-		}
+		p.disconnect(root == "")
 		return
 	}
 	root = p.stateRoot(root)
@@ -156,7 +151,9 @@ func (p *panel) connectRoot(force bool) {
 		files, filesErr := p.host.Artifacts(ctx, root)
 		commands, commandsErr := p.host.Commands(ctx, root)
 		p.update(root, func() {
-			p.state.status = statusReady
+			if p.state.status == statusConnecting {
+				p.state.status = statusReady
+			}
 			if stateErr == nil {
 				p.state.session = state
 				p.state.title = state.SessionName
@@ -183,15 +180,44 @@ func (p *panel) stateRoot(root string) string {
 	return fsutil.CanonicalPath(root)
 }
 
+func (p *panel) disconnect(clearRoot bool) {
+	if p.connected != "" {
+		previous := p.connected
+		p.connected = ""
+		if p.state != nil {
+			p.state.status = statusOffline
+		}
+		if p.host != nil && p.window != nil {
+			go func() { _ = p.host.Disconnect(p.window.Context(), previous) }()
+		}
+	}
+	if clearRoot && p.state != nil && p.state.root != "" {
+		p.switchRoot("")
+	}
+}
+
+func (p *panel) resetQuestionState() {
+	p.questionText = ""
+	p.questionPick = ""
+	p.questionFind = ""
+	p.permissionID = ""
+	p.questionPending = false
+}
+
+func (p *panel) resetSessionViews() {
+	p.decodedImages = nil
+	p.sessionView = ""
+	p.forkMessages = nil
+	p.researchTree = nil
+	p.resetQuestionState()
+}
+
 // switchRoot drops every view that describes the previous workspace so
 // stale conversations, forks, and trees cannot leak into the new root.
 func (p *panel) switchRoot(root string) {
 	p.settingsRoot = ""
 	p.state = newPaneState(root)
-	p.decodedImages = nil
-	p.sessionView = ""
-	p.forkMessages = nil
-	p.researchTree = nil
+	p.resetSessionViews()
 }
 
 func (p *panel) update(root string, change func()) {
@@ -213,13 +239,17 @@ func (p *panel) researchUpdated(update feynman.ResearchUpdate) {
 		return
 	}
 	if update.Kind == "reset" {
-		p.decodedImages = nil
+		p.resetSessionViews()
 	}
 	p.state.receive(update)
 	if update.Kind == "agentSettled" {
 		p.refreshFiles(p.state.root)
 	}
-	p.window.Native().Invalidate()
+	if p.window != nil {
+		if win := p.window.Native(); win != nil {
+			win.Invalidate()
+		}
+	}
 }
 
 func (p *panel) filePublished(event review.ResearchFilePublishedEvent) {

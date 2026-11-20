@@ -14,8 +14,16 @@ type foldSection struct {
 	key              string
 }
 
+func (s foldSection) contains(off, end int) bool {
+	return off >= s.start && (off < s.end || (off == s.end && off == end))
+}
+
 func (p *previewLayout) heading(snap editor.Snapshot, i, firstText int) {
 	b := p.document.Block(i)
+	if b.Parent != 0 {
+		p.replace(b.Start, firstText, "")
+		return
+	}
 	title := strings.TrimSpace(p.document.Lines(i))
 	key := headingKey(b.Level, title, p.headings[title])
 	p.headings[title]++
@@ -65,12 +73,12 @@ func (p *previewLayout) toggleFold(key string) {
 	p.owner.folded[key] = folded
 	if folded {
 		sel := p.owner.state.Selection()
+		end := p.owner.state.Buffer.Len()
 		for _, section := range p.sections {
 			if section.key != key {
 				continue
 			}
-			inside := func(off int) bool { return off >= section.start && off < section.end }
-			if inside(sel.Anchor) || inside(sel.Head) || (min(sel.Anchor, sel.Head) < section.start && max(sel.Anchor, sel.Head) >= section.end) {
+			if section.contains(sel.Anchor, end) || section.contains(sel.Head, end) || (min(sel.Anchor, sel.Head) < section.start && max(sel.Anchor, sel.Head) >= section.end) {
 				p.owner.state.Select(section.start, section.start)
 			}
 			break
@@ -93,7 +101,7 @@ func (d *Document) previewInput(ev ui.InputEvent) bool {
 			d.preview.toggleFold(section.key)
 			return true
 		}
-		if ev.Mods == ui.Cmd|ui.Alt && off >= section.start && (off < section.end || off == d.state.Buffer.Len()) {
+		if ev.Mods == ui.Cmd|ui.Alt && section.contains(off, d.state.Buffer.Len()) {
 			if ev.Key == ui.KeyLeft || (ev.Key == ui.KeyRight && folded) {
 				d.preview.toggleFold(section.key)
 				if !folded {

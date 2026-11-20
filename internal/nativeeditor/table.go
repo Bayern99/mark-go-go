@@ -231,7 +231,7 @@ func escapeCell(s string) string {
 			slashes = 0
 			continue
 		}
-		out.WriteRune(r)
+		out.WriteString(s[i-size : i])
 		if r == '\\' {
 			slashes++
 		} else {

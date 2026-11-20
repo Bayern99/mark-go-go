@@ -126,7 +126,6 @@ func (s *paneState) resetConversation() {
 	s.widgets = make(map[string]feynman.ResearchUpdate)
 	s.progress = ""
 	s.sources = nil
-	s.draft = ""
 }
 
 func (s *paneState) receive(update feynman.ResearchUpdate) {

@@ -1,10 +1,44 @@
 package review
 
 import (
+	"context"
 	"runtime"
 	"strings"
 	"testing"
 )
+
+func TestCompareCurrentTextAfterPartialApply(t *testing.T) {
+	ctx := context.Background()
+	host := NewService().Host()
+	const base = "First old line.\n\nLast old line.\n"
+	const proposed = "First revised line.\n\nLast revised line.\n"
+	const edited = "First old line. Reader edit.\n\nLast old line.\n"
+	const applied = "First old line. Reader edit.\n\nLast revised line.\n"
+	const remainder = "First revised line.\n\nLast old line.\n"
+	input := ProposeInput{WorkspaceRoot: t.TempDir(), Path: "paper.md", BaseText: base, BaseVersion: 1, ProposedText: proposed}
+	p, err := host.Submit(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err = host.DecideHunk(ctx, input.WorkspaceRoot, p.ID, "hunk-2", HunkAccepted, edited)
+	if err != nil || p.MergedText != applied {
+		t.Fatalf("apply clean hunk: merged %q (%v)", p.MergedText, err)
+	}
+	input.ID, input.ProposedText = p.ID, remainder
+	p, err = host.Revise(ctx, input, proposed, applied)
+	if err != nil || len(p.Hunks) != 1 || !p.Hunks[0].Conflict {
+		t.Fatalf("wanted only the unresolved conflict, got %+v (%v)", p.Hunks, err)
+	}
+
+	input.BaseText, input.BaseVersion = applied, 2
+	p, err = host.Revise(ctx, input, remainder, applied)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "First revised line.\n\nLast revised line.\n"; p.ProposedText != want || len(p.Hunks) != 1 {
+		t.Fatalf("compare regenerated applied hunk: target %q, want %q; hunks=%d", p.ProposedText, want, len(p.Hunks))
+	}
+}
 
 func TestQueueKeepsDifferentTargetsWhenIDsCoincide(t *testing.T) {
 	s := NewService()

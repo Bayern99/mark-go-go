@@ -1,5 +1,6 @@
 import { isMyGo } from 'mygo-runtime'
 import type { DocumentSnapshot } from '../../core'
+import { compareProposalText } from '../DocumentDiff'
 import {
   events,
   ReviewHost,
@@ -150,22 +151,24 @@ export class ResearchSession {
   async updateProposalBase(id: string, documentID: string, base: DocumentSnapshot) {
     const proposal = this.proposals.find(p => p.id === id)
     if (!proposal) return
-    if (base.text === proposal.text) {
+    const text = compareProposalText(proposal.base.text, proposal.text, base.text)
+    if (base.text === text) {
       this.completeProposal(id)
       return
     }
-    await this.reviseProposal(proposal, { ...proposal, documentID, base, decisions: {} }, base.text)
+    await this.reviseProposal(proposal, { ...proposal, documentID, base, text, decisions: {} }, base.text, proposal.text)
   }
 
-  async applyProposal(proposal: Proposal, remainingText: string, liveText: string) {
-    if (remainingText === proposal.base.text) {
+  async applyProposal(proposal: Proposal, remainingBaseText: string, remainingText: string, liveText: string) {
+    if (remainingText === remainingBaseText) {
       this.completeProposal(proposal.id)
       return
     }
-    await this.reviseProposal(proposal, { ...proposal, text: remainingText, decisions: {} }, liveText)
+    const base = { ...proposal.base, text: remainingBaseText }
+    await this.reviseProposal(proposal, { ...proposal, base, text: remainingText, decisions: {} }, liveText)
   }
 
-  private async reviseProposal(previous: Proposal, next: Proposal, liveText: string) {
+  private async reviseProposal(previous: Proposal, next: Proposal, liveText: string, proposedText = next.text) {
     if (isMyGo()) {
       await ReviewHost.revise({
         id: next.id,
@@ -176,7 +179,7 @@ export class ResearchSession {
         summary: next.summary,
         baseVersion: next.base.version,
         baseText: next.base.text,
-        proposedText: next.text,
+        proposedText,
       }, previous.text, liveText)
     }
     this.proposals = this.proposals.map(p => p.id === previous.id && p.text === previous.text ? next : p)

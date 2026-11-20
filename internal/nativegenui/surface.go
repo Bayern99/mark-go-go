@@ -26,6 +26,7 @@ type Surface struct {
 
 type Node struct {
 	ID, Component, Title, Child, Variant, Align, Justify string
+	ComponentID                                          string `json:"-"`
 	Text                                                 literal
 	Accessibility                                        struct {
 		Label       literal
@@ -73,18 +74,30 @@ func (t *literal) UnmarshalJSON(raw []byte) error {
 
 func (t literal) String() string { return t.value }
 
-type children []string
+type children struct {
+	IDs      []string
+	Template *childTemplate
+}
+
+type childTemplate struct {
+	ComponentID string
+	Path        string
+}
 
 func (ids *children) UnmarshalJSON(raw []byte) error {
 	if len(raw) > 0 && raw[0] == '{' {
-		*ids = nil
+		var template childTemplate
+		if err := json.Unmarshal(raw, &template); err != nil {
+			return err
+		}
+		*ids = children{Template: &template}
 		return nil
 	}
 	var values []string
 	if err := json.Unmarshal(raw, &values); err != nil {
 		return err
 	}
-	*ids = values
+	*ids = children{IDs: values}
 	return nil
 }
 
@@ -139,17 +152,21 @@ func Open(data string) (*Surface, error) {
 			}
 		}
 	}
+	baseNodes := make(map[string]Node, len(components))
 	for id, raw := range components {
-		n := Node{ID: id, Component: componentTypes[id]}
+		n := Node{ID: id, Component: componentTypes[id], ComponentID: id}
 		if slices.Contains(known, n.Component) {
 			if err := json.Unmarshal(raw, &n); err != nil {
 				return nil, err
 			}
-			if err := resolveNode(&n, dataModel); err != nil {
-				return nil, err
-			}
+			n.ComponentID = id
 		}
-		s.Nodes[id] = n
+		baseNodes[id] = n
+	}
+	var err error
+	s.Nodes, err = expandNodes(baseNodes, dataModel)
+	if err != nil {
+		return nil, err
 	}
 	return s, nil
 }
@@ -175,24 +192,150 @@ func applyComponents(known []string, componentTypes map[string]string, component
 	return nil
 }
 
-func resolveNode(n *Node, dataModel any) error {
+const (
+	maxTemplateItems     = 10_000
+	maxTemplateInstances = 100_000
+	maxTemplateDepth     = 64
+)
+
+type componentInstanceKey struct {
+	componentID string
+	dataPath    string
+}
+
+func expandNodes(components map[string]Node, dataModel any) (map[string]Node, error) {
+	instances := map[string]Node{}
+	occurrences := map[componentInstanceKey]int{}
+	count := 0
+	var renderNode func(string, string, map[componentInstanceKey]bool, int) (string, error)
+	renderNode = func(componentID, dataPath string, ancestors map[componentInstanceKey]bool, depth int) (string, error) {
+		key := componentInstanceKey{componentID: componentID, dataPath: dataPath}
+		if ancestors[key] {
+			return "", fmt.Errorf("cyclic component reference: %s", componentID)
+		}
+		if depth > maxTemplateDepth {
+			return "", errors.New("GenUI component nesting exceeds the display limit")
+		}
+		component, ok := components[componentID]
+		if !ok {
+			return "", fmt.Errorf("invalid component reference: %s", componentID)
+		}
+		count++
+		if count > maxTemplateInstances {
+			return "", errors.New("GenUI view expands to too many components")
+		}
+		occurrences[key]++
+		id := componentInstanceID(componentID, dataPath, occurrences[key])
+		n := component
+		n.ID = id
+		n.ComponentID = componentID
+		if err := resolveNode(&n, dataModel, dataPath); err != nil {
+			return "", err
+		}
+		ancestors[key] = true
+		defer delete(ancestors, key)
+
+		if n.Child != "" {
+			child, err := renderNode(n.Child, dataPath, ancestors, depth+1)
+			if err != nil {
+				return "", err
+			}
+			n.Child = child
+		}
+		for i := range n.Tabs {
+			child, err := renderNode(n.Tabs[i].Child, dataPath, ancestors, depth+1)
+			if err != nil {
+				return "", err
+			}
+			n.Tabs[i].Child = child
+		}
+
+		expandedChildren := make([]string, 0, len(n.Children.IDs))
+		if template := n.Children.Template; template != nil {
+			listPath := resolveDataPath(template.Path, dataPath)
+			value, found, err := dataModelAtPath(dataModel, listPath)
+			if err != nil {
+				return "", err
+			}
+			rows, ok := value.([]any)
+			if found && ok {
+				for i := 0; i < min(len(rows), maxTemplateItems); i++ {
+					child, err := renderNode(template.ComponentID, nestedDataPath(listPath, strconv.Itoa(i)), ancestors, depth+1)
+					if err != nil {
+						return "", err
+					}
+					expandedChildren = append(expandedChildren, child)
+				}
+			}
+		} else {
+			for _, childID := range n.Children.IDs {
+				child, err := renderNode(childID, dataPath, ancestors, depth+1)
+				if err != nil {
+					return "", err
+				}
+				expandedChildren = append(expandedChildren, child)
+			}
+		}
+		n.Children = children{IDs: expandedChildren}
+		instances[id] = n
+		return id, nil
+	}
+	if _, err := renderNode("root", "/", map[componentInstanceKey]bool{}, 1); err != nil {
+		return nil, err
+	}
+	return instances, nil
+}
+
+func componentInstanceID(componentID, dataPath string, occurrence int) string {
+	id := escapeInstancePart(componentID)
+	if dataPath != "" && dataPath != "/" {
+		id += "-[" + escapeInstancePart(strings.TrimRight(dataPath, "/")) + "]"
+	}
+	if occurrence > 1 {
+		id += fmt.Sprintf("#%d", occurrence)
+	}
+	return id
+}
+
+var instanceIDReplacer = strings.NewReplacer("~", "~0", "#", "~1", "[", "~2", "]", "~3", ">", "~4", "@", "~5")
+
+func escapeInstancePart(value string) string { return instanceIDReplacer.Replace(value) }
+
+func resolveDataPath(path, context string) string {
+	if strings.HasPrefix(path, "/") {
+		return path
+	}
+	if context == "" {
+		context = "/"
+	}
+	if !strings.HasSuffix(context, "/") {
+		context += "/"
+	}
+	return context + path
+}
+
+func nestedDataPath(path, segment string) string {
+	return strings.TrimRight(path, "/") + "/" + segment
+}
+
+func resolveNode(n *Node, dataModel any, dataPath string) error {
 	fields := []*literal{&n.Text, &n.Accessibility.Label, &n.Accessibility.Description}
 	for i := range n.Tabs {
 		fields = append(fields, &n.Tabs[i].Title)
 	}
 	for _, field := range fields {
-		if err := resolveLiteral(field, dataModel); err != nil {
+		if err := resolveLiteral(field, dataModel, dataPath); err != nil {
 			return err
 		}
 	}
-	return resolveHidden(&n.Accessibility.Hidden, dataModel)
+	return resolveHidden(&n.Accessibility.Hidden, dataModel, dataPath)
 }
 
-func resolveLiteral(value *literal, dataModel any) error {
+func resolveLiteral(value *literal, dataModel any, dataPath string) error {
 	if !value.bound {
 		return nil
 	}
-	resolved, found, err := dataModelAtPath(dataModel, value.path)
+	resolved, found, err := dataModelAtPath(dataModel, resolveDataPath(value.path, dataPath))
 	if err != nil {
 		return err
 	}
@@ -230,7 +373,7 @@ func compactJSON(value any) (string, error) {
 	return strings.TrimSuffix(data.String(), "\n"), nil
 }
 
-func resolveHidden(value *json.RawMessage, dataModel any) error {
+func resolveHidden(value *json.RawMessage, dataModel any, dataPath string) error {
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(*value, &object); err != nil || object == nil {
 		return nil
@@ -243,7 +386,7 @@ func resolveHidden(value *json.RawMessage, dataModel any) error {
 	if err := json.Unmarshal(rawPath, &path); err != nil {
 		return err
 	}
-	resolved, found, err := dataModelAtPath(dataModel, path)
+	resolved, found, err := dataModelAtPath(dataModel, resolveDataPath(path, dataPath))
 	if err != nil {
 		return err
 	}

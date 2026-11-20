@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -34,6 +35,48 @@ func cliFixtureCommand(home, mode string) func(ctx context.Context, work string,
 		}
 		return cmd, nil
 	}
+}
+
+func TestFeynmanInstalledCLIOutputFormats(t *testing.T) {
+	t.Run("Pi MCP state", func(t *testing.T) {
+		result := parseMCPListOutput(`{"servers":[{"name":"papers","scope":"project","state":"disabled"}]}`, 0)
+		if !result.Parsed || len(result.Servers) != 1 || result.Servers[0].Status != "disabled" || result.Servers[0].Scope != "project" {
+			t.Fatalf("Pi state was lost: %+v", result)
+		}
+	})
+	t.Run("grouped alpha search", func(t *testing.T) {
+		for mode, raw := range map[string]string{
+			"both": `{"semantic":[{"title":"Semantic paper","paperId":"2501.01234","link":"https://www.alphaxiv.org/abs/2501.01234"}],"keyword":{"papers":[]}}`,
+			"all":  `{"semantic":[],"keyword":[],"agentic":{"results":[{"id":"2502.01234","title":"Agentic paper"}]}}`,
+		} {
+			result := parseAlphaSearchOutput(raw, 0, "attention", mode)
+			if !result.Parsed || len(result.Groups) < 2 {
+				t.Errorf("%s output not parsed: %+v", mode, result)
+				continue
+			}
+			if mode == "both" {
+				semantic, keyword := result.Groups[0], result.Groups[1]
+				if semantic.Mode != "semantic" || len(semantic.Papers) != 1 || semantic.Papers[0].ID != "2501.01234" ||
+					semantic.Papers[0].URL != "https://www.alphaxiv.org/abs/2501.01234" || keyword.Mode != "keyword" || len(keyword.Papers) != 0 {
+					t.Errorf("Both groups: %+v", result.Groups)
+				}
+			} else if len(result.Groups) != 3 || result.Groups[2].Mode != "agentic" || len(result.Groups[2].Papers) != 1 {
+				t.Errorf("All groups: %+v", result.Groups)
+			}
+		}
+	})
+	t.Run("multiline annotations", func(t *testing.T) {
+		home := t.TempDir()
+		h := NewResearchManager(fakeWorkspaceLookup{dataDir: t.TempDir()})
+		defer h.Close()
+		h.cliCommand = cliFixtureCommand(home, "multiline")
+		result, err := h.CLIAlphaAnnotate(context.Background(), t.TempDir(), "list", "", "")
+		if err != nil || !result.Parsed || len(result.Annotations) != 2 ||
+			result.Annotations[0].PaperID != "2501.01234" || result.Annotations[0].Note != "First line\nSecond line\n\nThird line: detail" ||
+			result.Annotations[1].Note != "Another annotation" {
+			t.Fatalf("multiline annotations were lost: %+v, %v", result, err)
+		}
+	})
 }
 
 func TestFeynmanCLIStructuredCommandsAndMutations(t *testing.T) {
@@ -333,6 +376,43 @@ func TestFeynmanCLIDoesNotBlockOrDisconnectLiveChatRPC(t *testing.T) {
 	}
 }
 
+func TestTerminalWizardOutlivesLaunchContext(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("uses the Linux TERMINAL handoff")
+	}
+	bin := t.TempDir()
+	h := NewResearchManager(fakeWorkspaceLookup{dataDir: t.TempDir()})
+	defer h.Close()
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("TERMINAL", filepath.Join(bin, "terminal"))
+	output := filepath.Join(bin, "launched")
+	t.Setenv("WIZARD_TEST_OUTPUT", output)
+	if err := os.WriteFile(filepath.Join(bin, "terminal"), []byte("#!/bin/sh\nsleep 0.05\nshift\nexec \"$@\"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "feynman"), []byte("#!/bin/sh\nprintf '%s|%s|%s\\n' \"$*\" \"$FEYNMAN_HOME\" \"$HOME\" >> \"$WIZARD_TEST_OUTPUT\"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	for _, wizard := range []string{"model_login", "alpha_login", "setup"} {
+		if _, err := h.LaunchTerminalWizard(context.Background(), root, wizard, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		data, _ := os.ReadFile(output)
+		got := string(data)
+		profiles := "|" + h.profileHome() + "|" + h.profileHome() + "\n"
+		if strings.Contains(got, "model login"+profiles) &&
+			strings.Contains(got, "alpha login"+profiles) &&
+			strings.Contains(got, "setup"+profiles) {
+			return
+		}
+	}
+	data, _ := os.ReadFile(output)
+	t.Fatalf("wizard commands did not survive handoff: %q", data)
+}
+
 func TestFeynmanTerminalHandoffAndRefreshModels(t *testing.T) {
 	home := t.TempDir()
 	root := t.TempDir()
@@ -591,6 +671,10 @@ pi runtime: ok
 			fmt.Println("def sparse_attention(q, k, v):\n    return q @ k.T")
 		case "annotate":
 			if len(args) >= 3 && args[2] == "--list" {
+				if mode == "multiline" {
+					fmt.Print("2501.01234 (2025-01-07T12:00:00Z)\n  First line\nSecond line\n\nThird line: detail\n2502.05678 (2025-02-08T13:00:00Z)\n  Another annotation\n")
+					return
+				}
 				fmt.Println("2501.01234: Verify theorem 2")
 			} else if len(args) >= 4 && args[2] == "--clear" {
 				fmt.Printf("Cleared annotation for %s\n", args[3])

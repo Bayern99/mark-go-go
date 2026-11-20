@@ -1,6 +1,7 @@
 package feynman
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,6 +26,7 @@ var (
 	ansiEscapePattern          = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)`)
 	alphaSearchNumberedPattern = regexp.MustCompile(`^\d+\.\s+(.+)$`)
 	alphaSearchArxivIDPattern  = regexp.MustCompile(`\b(\d{4}\.\d{4,5}(?:v\d+)?)\b`)
+	alphaAnnotationHeader      = regexp.MustCompile(`^(\S+) \(([^()]+)\)$`)
 )
 
 const (
@@ -221,7 +223,24 @@ func (h *ResearchManager) RefreshModels(ctx context.Context, root string) ([]Res
 		h.mu.Unlock()
 		return nil, errors.New("Feynman is connecting.")
 	}
-	if s.busy || s.configuring || s.switching {
+	for s.busy {
+		turn := s.turn
+		h.mu.Unlock()
+		select {
+		case <-turn:
+		case <-s.stopped:
+			return nil, errors.New("Feynman disconnected before the model refresh.")
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		h.mu.Lock()
+		active, err := h.activeLocked(ctx, root)
+		if err != nil || active != s {
+			h.mu.Unlock()
+			return nil, errors.New("Feynman session changed before the model refresh.")
+		}
+	}
+	if s.configuring || s.switching {
 		modelsCopy := slices.Clone(s.models)
 		h.mu.Unlock()
 		return modelsCopy, nil
@@ -358,8 +377,11 @@ func appleScriptString(s string) string {
 }
 
 func openSystemTerminal(ctx context.Context, command, profile string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	sessions := filepath.Join(profile, ".feynman", "sessions")
-	launchCmd := "FEYNMAN_HOME=" + shellQuoteArg(profile) +
+	launchCmd := "HOME=" + shellQuoteArg(profile) + " FEYNMAN_HOME=" + shellQuoteArg(profile) +
 		" PI_CODING_AGENT_SESSION_DIR=" + shellQuoteArg(sessions) + " " + command
 	if bin := findExecutable(nil, "feynman"); bin != "" {
 		binDir := filepath.Dir(bin)
@@ -382,12 +404,12 @@ func openSystemTerminal(ctx context.Context, command, profile string) error {
 		}
 		return nil
 	case "windows":
-		cmd := exec.CommandContext(ctx, "cmd.exe", "/c", "start", "", "cmd.exe", "/k", command)
-		cmd.Env = append(cmd.Environ(), "FEYNMAN_HOME="+profile, "PI_CODING_AGENT_SESSION_DIR="+sessions)
-		return cmd.Start()
+		cmd := exec.Command("cmd.exe", "/c", "start", "", "cmd.exe", "/k", command)
+		cmd.Env = feynmanProfileEnv(cmd.Environ(), profile)
+		return startTerminal(cmd)
 	default:
 		if term := strings.TrimSpace(os.Getenv("TERMINAL")); term != "" {
-			if err := exec.CommandContext(ctx, term, "-e", "sh", "-lc", launchCmd).Start(); err == nil {
+			if err := startTerminal(exec.Command(term, "-e", "sh", "-lc", launchCmd)); err == nil {
 				return nil
 			}
 		}
@@ -401,11 +423,19 @@ func openSystemTerminal(ctx context.Context, command, profile string) error {
 			{"xterm", []string{"-e", "sh", "-lc", launchCmd}},
 		} {
 			if path := findExecutable(nil, candidate.bin); path != "" {
-				return exec.CommandContext(ctx, path, candidate.args...).Start()
+				return startTerminal(exec.Command(path, candidate.args...))
 			}
 		}
 		return errors.New("No supported terminal emulator found. Run the command in your terminal: " + launchCmd)
 	}
+}
+
+func startTerminal(cmd *exec.Cmd) error {
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() { _ = cmd.Wait() }()
+	return nil
 }
 
 func firstNonZeroError(exitCode int, raw string) string {
@@ -778,6 +808,7 @@ func parseMCPListOutput(raw string, exitCode int) CLIMCPListResult {
 	var payload struct {
 		Servers []struct {
 			Name      string   `json:"name"`
+			Scope     string   `json:"scope"`
 			Transport string   `json:"transport"`
 			Type      string   `json:"type"`
 			URL       string   `json:"url"`
@@ -785,6 +816,7 @@ func parseMCPListOutput(raw string, exitCode int) CLIMCPListResult {
 			Args      []string `json:"args"`
 			Exposure  string   `json:"exposure"`
 			Status    string   `json:"status"`
+			State     string   `json:"state"`
 			Error     string   `json:"error"`
 			Tools     []any    `json:"tools"`
 		} `json:"servers"`
@@ -824,11 +856,12 @@ func parseMCPListOutput(raw string, exitCode int) CLIMCPListResult {
 		}
 		res.Servers = append(res.Servers, CLIMCPServer{
 			Name:      srv.Name,
+			Scope:     srv.Scope,
 			Transport: transport,
 			URL:       srv.URL,
 			Command:   cmd,
 			Exposure:  srv.Exposure,
-			Status:    srv.Status,
+			Status:    cmp.Or(srv.State, srv.Status),
 			Error:     srv.Error,
 			Tools:     tools,
 		})
@@ -1079,13 +1112,13 @@ func (h *ResearchManager) CLIAlphaSearch(ctx context.Context, root, query, mode 
 	default:
 		return CLIAlphaSearchResult{}, fmt.Errorf("Unsupported alphaXiv search mode %q.", mode)
 	}
-	args := []string{"alpha", "search", "--mode", mode, "--", query}
+	args := []string{"alpha", "search", "--json", "--mode", mode, "--", query}
 	raw, exitCode, err := h.runCLI(ctx, root, longCLITimeout, args...)
 	if err != nil {
 		return CLIAlphaSearchResult{}, err
 	}
 	res := parseAlphaSearchOutput(raw, exitCode, query, mode)
-	res.Command = formatCLICommand("alpha", "search", "--mode", mode, query)
+	res.Command = formatCLICommand(args...)
 	return res, nil
 }
 
@@ -1100,23 +1133,29 @@ func parseAlphaSearchOutput(raw string, exitCode int, query, mode string) CLIAlp
 	if exitCode != 0 {
 		return res
 	}
-	var obj struct {
-		Papers  []CLIAlphaPaper `json:"papers"`
-		Results []CLIAlphaPaper `json:"results"`
-	}
-	if json.Unmarshal([]byte(raw), &obj) == nil && (obj.Papers != nil || obj.Results != nil) {
-		res.Parsed = true
-		if obj.Papers != nil {
-			res.Papers = obj.Papers
-		} else {
-			res.Papers = obj.Results
+	if mode == "both" || mode == "all" {
+		var groups map[string]json.RawMessage
+		if json.Unmarshal([]byte(raw), &groups) == nil {
+			for _, name := range []string{"semantic", "keyword", "agentic"} {
+				data, ok := groups[name]
+				if !ok {
+					continue
+				}
+				papers := parseAlphaSearchPapers(data)
+				if papers == nil {
+					return res
+				}
+				res.Groups = append(res.Groups, CLIAlphaSearchGroup{Mode: name, Papers: papers})
+			}
+			if len(res.Groups) > 0 {
+				res.Parsed = true
+				return res
+			}
 		}
-		return res
 	}
-	var list []CLIAlphaPaper
-	if json.Unmarshal([]byte(raw), &list) == nil && list != nil {
+	if papers := parseAlphaSearchPapers([]byte(raw)); papers != nil {
 		res.Parsed = true
-		res.Papers = list
+		res.Papers = papers
 		return res
 	}
 	low := strings.ToLower(raw)
@@ -1149,6 +1188,43 @@ func parseAlphaSearchOutput(raw string, exitCode int, query, mode string) CLIAlp
 	}
 	res.Parsed = len(res.Papers) > 0
 	return res
+}
+
+func parseAlphaSearchPapers(raw []byte) []CLIAlphaPaper {
+	type paper struct {
+		CLIAlphaPaper
+		PaperID string `json:"paperId"`
+		Link    string `json:"link"`
+	}
+	var rows []paper
+	if json.Unmarshal(raw, &rows) != nil {
+		var obj struct {
+			Papers  []paper `json:"papers"`
+			Results []paper `json:"results"`
+		}
+		if json.Unmarshal(raw, &obj) != nil {
+			return nil
+		}
+		rows = obj.Papers
+		if rows == nil {
+			rows = obj.Results
+		}
+	}
+	if rows == nil {
+		return nil
+	}
+	papers := make([]CLIAlphaPaper, 0, len(rows))
+	for _, row := range rows {
+		p := row.CLIAlphaPaper
+		p.ID = cmp.Or(p.ID, row.PaperID)
+		p.URL = cmp.Or(p.URL, row.Link)
+		p.Summary = cmp.Or(p.Summary, p.Snippet)
+		if p.Title == "" {
+			return nil
+		}
+		papers = append(papers, p)
+	}
+	return papers
 }
 
 // CLIAlphaGet executes `feynman alpha get`.
@@ -1305,11 +1381,7 @@ func (h *ResearchManager) CLIAlphaAnnotate(ctx context.Context, root, action, pa
 			res.Parsed = true
 			return res, nil
 		}
-		for _, line := range strings.Split(raw, "\n") {
-			if k, v, ok := splitKeyValue(strings.TrimSpace(line)); ok {
-				res.Annotations = append(res.Annotations, CLIAlphaAnnotation{PaperID: k, Note: v})
-			}
-		}
+		res.Annotations = parseAlphaAnnotationList(raw)
 		res.Parsed = len(res.Annotations) > 0
 	case "get":
 		res.Parsed = true
@@ -1322,4 +1394,38 @@ func (h *ResearchManager) CLIAlphaAnnotate(ctx context.Context, root, action, pa
 		res.Parsed = true
 	}
 	return res, nil
+}
+
+func parseAlphaAnnotationList(raw string) []CLIAlphaAnnotation {
+	var annotations []CLIAlphaAnnotation
+	var note []string
+	for _, line := range strings.Split(raw, "\n") {
+		match := alphaAnnotationHeader.FindStringSubmatch(line)
+		if match != nil {
+			if _, err := time.Parse(time.RFC3339Nano, match[2]); err == nil {
+				if len(annotations) > 0 {
+					annotations[len(annotations)-1].Note = strings.TrimRight(strings.Join(note, "\n"), "\n")
+				}
+				annotations = append(annotations, CLIAlphaAnnotation{PaperID: match[1], UpdatedAt: match[2]})
+				note = nil
+				continue
+			}
+		}
+		if len(annotations) > 0 {
+			if len(note) == 0 {
+				line = strings.TrimPrefix(line, "  ")
+			}
+			note = append(note, line)
+		}
+	}
+	if len(annotations) > 0 {
+		annotations[len(annotations)-1].Note = strings.TrimRight(strings.Join(note, "\n"), "\n")
+		return annotations
+	}
+	for _, line := range strings.Split(raw, "\n") {
+		if k, v, ok := splitKeyValue(strings.TrimSpace(line)); ok && alphaSearchArxivIDPattern.MatchString(k) {
+			annotations = append(annotations, CLIAlphaAnnotation{PaperID: k, Note: v})
+		}
+	}
+	return annotations
 }

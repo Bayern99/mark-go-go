@@ -99,6 +99,7 @@ type CLISearchStatusResult struct {
 // CLIMCPServer describes an MCP server returned by `feynman mcp list --json`.
 type CLIMCPServer struct {
 	Name      string   `json:"name"`
+	Scope     string   `json:"scope,omitempty"`
 	Transport string   `json:"transport,omitempty"`
 	URL       string   `json:"url,omitempty"`
 	Command   string   `json:"command,omitempty"`
@@ -178,14 +179,20 @@ type CLIAlphaPaper struct {
 
 // CLIAlphaSearchResult holds parsed `feynman alpha search` output.
 type CLIAlphaSearchResult struct {
-	Command   string          `json:"command"`
-	Parsed    bool            `json:"parsed"`
-	RawOutput string          `json:"rawOutput"`
-	ExitCode  int             `json:"exitCode"`
-	Error     string          `json:"error,omitempty"`
-	Query     string          `json:"query"`
-	Mode      string          `json:"mode"`
-	Papers    []CLIAlphaPaper `json:"papers"`
+	Command   string                `json:"command"`
+	Parsed    bool                  `json:"parsed"`
+	RawOutput string                `json:"rawOutput"`
+	ExitCode  int                   `json:"exitCode"`
+	Error     string                `json:"error,omitempty"`
+	Query     string                `json:"query"`
+	Mode      string                `json:"mode"`
+	Papers    []CLIAlphaPaper       `json:"papers"`
+	Groups    []CLIAlphaSearchGroup `json:"groups,omitempty"`
+}
+
+type CLIAlphaSearchGroup struct {
+	Mode   string          `json:"mode"`
+	Papers []CLIAlphaPaper `json:"papers"`
 }
 
 // CLIAlphaPaperResult holds parsed `feynman alpha get` output.

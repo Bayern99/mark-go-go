@@ -59,22 +59,22 @@ export default function ResearchPanel({
   }, [session, tab])
   useEffect(() => {
     if (!session.root || settingsOpen) return
-    const refreshReadyModels = () => {
-      if (session.status === 'ready') {
+    const refreshConnectedModels = () => {
+      if (session.status === 'ready' || session.status === 'working') {
         void ResearchHost.refreshModels?.(session.root)?.catch?.(() => {})
       }
     }
-    window.addEventListener('focus', refreshReadyModels)
+    window.addEventListener('focus', refreshConnectedModels)
     let offFocus: (() => void) | undefined
     try {
       offFocus = events.researchFocus?.on((ev) => {
-        if (ev.root === session.root) refreshReadyModels()
+        if (ev.root === session.root) refreshConnectedModels()
       })
     } catch {
       // Standalone test mocks may omit researchFocus event.
     }
     return () => {
-      window.removeEventListener('focus', refreshReadyModels)
+      window.removeEventListener('focus', refreshConnectedModels)
       offFocus?.()
     }
   }, [session, session.root, settingsOpen])

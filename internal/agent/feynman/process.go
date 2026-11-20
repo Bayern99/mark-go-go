@@ -76,7 +76,12 @@ func (h *ResearchManager) trustManagedProject(work string) error {
 }
 
 func (h *ResearchManager) feynmanEnv(cmd *exec.Cmd) []string {
-	return append(cmd.Environ(), "FEYNMAN_HOME="+h.profileHome(), "PI_CODING_AGENT_SESSION_DIR="+h.profileSessionsDir())
+	return feynmanProfileEnv(cmd.Environ(), h.profileHome())
+}
+
+func feynmanProfileEnv(env []string, profile string) []string {
+	return append(env, "HOME="+profile, "USERPROFILE="+profile, "FEYNMAN_HOME="+profile,
+		"PI_CODING_AGENT_SESSION_DIR="+filepath.Join(profile, ".feynman", "sessions"))
 }
 
 func (h *ResearchManager) researchCommand(root, work string) (*exec.Cmd, error) {

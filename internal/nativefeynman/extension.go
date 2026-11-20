@@ -299,6 +299,60 @@ func (p *panel) draw(c *ui.Context) {
 
 func (p *panel) header(c *ui.Context) {
 	s := p.state
+	compact := compactResearchLayout(c)
+	width, height := c.Size()
+	connect := func() {
+		if p.connected == "" && s.root != "" && controlButton(c, "Connect", "Connect Feynman to this workspace").Clicked() {
+			p.syncConnection()
+		}
+	}
+	history := func() ui.Element {
+		button := controlButton(c, "History", "Workspace conversation history").Expanded(s.sessionsOpen)
+		if button.Clicked() {
+			s.sessionsOpen = !s.sessionsOpen
+			if s.sessionsOpen {
+				p.loadSessions(s.root)
+			}
+		}
+		if compact {
+			ui.Popover(c, button, &s.sessionsOpen, func() {
+				popoverWidth := min(float32(352), max(float32(280), width-128))
+				maxHeight := max(float32(120), height-170)
+				ui.Column(c).Width(popoverWidth).Children(func() {
+					ui.Scroll(c.Key("feynman-history-popover-scroll")).MaxHeight(maxHeight).FillWidth().Label("Workspace conversation history").Children(func() {
+						p.sessions(c)
+					})
+				})
+			})
+		}
+		return button
+	}
+	if compact {
+		ui.Column(c.Key("feynman-heading")).Padding(2, 6).Children(func() {
+			ui.Row(c.Key("feynman-heading-title")).Height(30).Gap(5).AlignItems(ui.Center).Children(func() {
+				history()
+				ui.Text(c, "✣").FontSize(15).TextColor(accentColor).Tooltip("Feynman")
+				ui.Column(c).Grow(1).MinWidth(0).Children(func() {
+					ui.Text(c, "Feynman").Bold().FontSize(14)
+					name := s.root
+					if i := strings.LastIndex(name, "/"); i >= 0 && i+1 < len(name) {
+						name = name[i+1:]
+					}
+					if s.title != "" {
+						name += " · " + s.title
+					}
+					ui.Text(c, name).MaxLines(1).Ellipsis("…").FontSize(10).TextColor(mutedColor).Tooltip(s.root)
+				})
+				status := string(s.status)
+				if status == "" {
+					status = string(statusOffline)
+				}
+				ui.Text(c, status).FontSize(10).TextColor(statusColor(s.status)).Label("Feynman connection status")
+				connect()
+			})
+		})
+		return
+	}
 	ui.Row(c.Key("feynman-heading")).Height(34).Gap(5).AlignItems(ui.Center).Padding(4, 6).Children(func() {
 		ui.Text(c, "✣").FontSize(15).TextColor(accentColor).Tooltip("Feynman")
 		ui.Column(c).Grow(1).MinWidth(0).Children(func() {
@@ -317,17 +371,8 @@ func (p *panel) header(c *ui.Context) {
 			status = string(statusOffline)
 		}
 		ui.Text(c, status).FontSize(10).TextColor(statusColor(s.status)).Label("Feynman connection status")
-		if p.connected == "" && s.root != "" {
-			if controlButton(c, "Connect", "Connect Feynman to this workspace").Clicked() {
-				p.syncConnection()
-			}
-		}
-		if controlButton(c, "History", "Workspace conversation history").Clicked() {
-			s.sessionsOpen = !s.sessionsOpen
-			if s.sessionsOpen {
-				p.loadSessions(s.root)
-			}
-		}
+		connect()
+		history()
 	})
 	if s.sessionsOpen {
 		p.sessions(c)

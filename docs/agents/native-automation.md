@@ -17,11 +17,11 @@ scripts/native-automation-smoke.sh
 
 2026 年 11 月 20 日在 macOS arm64 实机使用独立 app、数据目录和合成文档。原生窗口通过 Finder 打开第二份原文，在 Preview 和 Markdown 间切换，并通过文件菜单保存。混合换行、中文和 emoji 的磁盘字节比较通过。Undo、Redo 和重启后恢复活动标签及 Markdown 模式均通过。运行 `scripts/native-automation-smoke.sh` 可复跑这一组操作。
 
-使用与 [#60](https://github.com/Bayern99/mark-go-go/issues/60) 相同的 256 节长文，实机截图与可访问树覆盖 1280 × 820、1180 × 820、1179 × 820、641 × 500、640 × 500 和 480 × 360。实测 640 以下导航浮层、641 起左栏停靠、1179 与 1280 的研究栏切换，以及浮层 Esc 返回入口焦点。通过截图发现选中胶囊曾覆盖文字，修正后复拍六档。最小窗的 Preview 标题和首段距顶仍大于旧版，对照截图已交编辑器验收。 [原生控件与像素回归](../../internal/nativeui/shell_test.go)
+使用与 [#60](https://github.com/Bayern99/mark-go-go/issues/60) 相同的 256 节长文，实机截图与可访问树覆盖 1280 × 820、1180 × 820、1179 × 820、641 × 500、640 × 500 和 480 × 360。实测 640 点及以下使用导航浮层、641 点起左栏停靠、1179 与 1280 点间切换研究栏，以及浮层按 Esc 返回入口焦点。通过截图发现选中胶囊曾覆盖文字，修正后复拍六档。最小窗 Preview 的标题顶距已按旧版位置调整。 [原生控件与像素回归](../../internal/nativeui/shell_test.go) · [同机截图流程](portrait-performance.md)
 
 另一组迁移验收将旧版 WebKit LocalStorage 中的插件开关、研究栏宽度、视图模式、折叠与列宽数据导入原生偏好文件。它验证了 Markdown 恢复、研究开关与旧键值迁移。折叠与列宽的视觉恢复由对应编辑功能验证。大纲跳转、文件和标题搜索、打开结果及 Ctrl+Tab 返回原文通过。对合成文件制造外部冲突和删除后，告警及未保存草稿均保留。
 
-[#68](https://github.com/Bayern99/mark-go-go/issues/68) 须在最终集成构建复跑 Save As、Duplicate 后续存盘、Rename、Move To、未命名关闭、取消与多窗口退出失败重试，另以真实 Finder 拖入及单根目录关闭核对范围。旧版的实机操作与结果见 [PR #41](https://github.com/Bayern99/mark-go-go/pull/41)、[PR #43](https://github.com/Bayern99/mark-go-go/pull/43) 和[既有验收记录](../acceptance.md)。当前的退出失败与重试服务回归见 [session_test.go](../../internal/workspace/session_test.go)。
+原生文件菜单和恢复流程见[系统输入、文件菜单和会话](#系统输入文件菜单和会话)。旧版实机结果见 [PR #41](https://github.com/Bayern99/mark-go-go/pull/41)、[PR #43](https://github.com/Bayern99/mark-go-go/pull/43) 和[既有验收记录](../acceptance.md)。多窗口退出和重试的服务回归见 [session_test.go](../../internal/workspace/session_test.go)。
 
 ## Preview 复杂块
 
@@ -40,3 +40,19 @@ scripts/native-automation-smoke.sh
 2026 年 11 月 20 日，在隔离的 macOS arm64 调试应用中，用真实 loopback MCP 会话读出 Markdown 编辑器里尚未保存的字节、章节和批注。通过 MCP 创建研究产物并提交两份文稿的提案。在原生比较面板打开第一份后继续输入，原比较随即失效。重新比较，接受第一块，第二块仍待审阅。切到 Preview 用 Edit → Undo，整份实时缓冲与应用提案前的字节一致。拒绝余下的块后，第二份文稿的提案仍在队列。
 
 在有既存暂存内容的 Git 工作区，创建带标签的检查点、比较和恢复，再切换视图撤销恢复。前后比对 HEAD 与完整暂存差异，结果相同。在普通目录以同一界面创建 Local snapshot，比较、恢复、保存并比对完整文件，随后跨视图一步撤销恢复。提案与检查点实测复用正常文档和编辑服务，测试启动时注入的是隔离 MCP 会话注册。
+
+## 系统输入、文件菜单和会话
+
+2026 年 11 月 20 日，在 macOS 27.2 arm64 上运行独立测试包。提交 `c6504af` 通过系统简体拼音输入法，在 Preview 以物理按键序列 n i h a o 和空格完成「你好」组字。文件菜单保存后，完整文件仅多这两个字的 UTF-8 字节。切换到 Markdown，执行一次 Edit → Undo 并保存，恢复到原始文件。
+
+在集成提交 `5968525` 上，先在 Preview 修改标题，再切到 Markdown 在正文尾部追加文字，切回 Preview。第一次 Undo 保留标题修改，第二次还原完整原文。两次 Redo 恢复两次修改。每一步保存后与预期文件逐字节比较。
+
+VoiceOver 系统字幕读出了 Preview 编辑区的名称、类型、插入位置和标题。在 VoiceOver 启用时，以系统键盘事件修改标题、使用 ⌘S 保存、使用 ⌘Z 撤销并重新保存，逐字节检查改动和恢复。以方向键移动时，字幕跟随插入位置朗读正文。独立的 VoiceOver 导航器切换标签和研究任务仍待验证。核对系统开关恢复关闭。
+
+在系统设置开启 Reduce Motion 后，用 480 × 360 原生窗口打开导航抽屉，按 Esc 关闭并将焦点还给入口。使用 ⌘/ 往返 Preview 与 Markdown。测试后恢复原来的 Reduce Motion 值。
+
+另存、改名及移动分别通过原生系统面板完成。复制创建了独立带修改状态的标签，保存后逐字节对照。关闭未保存的草稿时，Cancel 保留草稿，Don't Save 只关闭该标签。已保存文件的字节保持一致。
+
+通过真实 Finder 拖放，将一份合成 Markdown 文件投放到 Preview 的编辑区，原生窗口打开文稿。切到另一篇文稿的 Markdown 源码界面，再投同一文件，应用定位到原来的标签。哈希一致。AppKit 诊断包也观察到 `public.file-url`，协商 Copy，解析出一个文件并完成打开。首次尝试的落点被系统权限弹窗遮挡，复测在无遮挡区域执行。
+
+通过文件系统打开同一窗口的两个根目录。关闭第二个根后，原窗口保留第一个根的两篇文稿，第二个根的文件仍与基线字节一致。重新打开第二个根，在测试数据目录暂时用空目录占据 `session.json` 路径。真实应用菜单 Quit 显示保存会话失败的系统面板，并保留进程和文稿。关闭提示后切换活动文稿到 Markdown，移除测试目录，再执行 Quit。应用重新写出会话文件并退出。无参数启动新进程后，两根的三个标签、活动文稿和 Markdown 模式均恢复。

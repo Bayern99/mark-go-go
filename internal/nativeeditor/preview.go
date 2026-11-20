@@ -77,6 +77,8 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 			continue
 		}
 		switch b.Kind {
+		case parser.CodeBlock:
+			p.codeBlock(snap, i)
 		case parser.Heading:
 			line := snap.LineOf(b.Start)
 			p.styles = append(p.styles, headingStyle(line, b.Level))
@@ -133,11 +135,56 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 		inlines := p.document.Inlines(i)
 		for j, in := range inlines {
 			switch in.Kind {
-			case parser.Strong, parser.Emphasis, parser.Strikethrough, parser.Link:
+			case parser.Strong, parser.Emphasis, parser.Strikethrough:
 				if in.Next > j+1 {
 					p.replace(in.Start, inlines[j+1].Start, "")
 					p.replace(inlines[in.Next-1].End, in.End, "")
 				}
+			case parser.Link:
+				if in.Next > j+1 {
+					prefixEnd := inlines[j+1].Start
+					if ui.SafeToOpen(in.Dest) {
+						p.replacements = append(p.replacements, editor.Replacement{
+							Start:       in.Start,
+							End:         prefixEnd,
+							Width:       16,
+							Interactive: true,
+							Label:       "Open " + in.Dest,
+							Content:     linkMarker(in.Dest),
+						})
+					} else {
+						p.replace(in.Start, prefixEnd, "")
+					}
+					p.replace(inlines[in.Next-1].End, in.End, "")
+				}
+			case parser.Image:
+				alt := parser.PlainText(inlines[j+1 : in.Next])
+				label := alt
+				if label == "" {
+					label = "Image"
+				}
+				p.readable[in.Start] = label
+				p.replacements = append(p.replacements, editor.Replacement{
+					Start: in.Start,
+					End:   in.End,
+					Width: min(240, max(72, float32(utf8.RuneCountInString(label))*7)),
+					Label: label,
+					Content: func(c *ui.Context, e ui.Element, _ editor.Replacement) {
+						e.Children(func() {
+							img := p.owner.loadInlineImage(c, in.Dest)
+							if img == nil {
+								ui.Text(c, label).FontSize(12).TextColor(c.Theme().TextMuted).SingleLine().Ellipsis("…")
+								return
+							}
+							w, h := ui.ImageSize(img)
+							scale := min(float32(1), 68/max(1, w), 24/max(1, h))
+							view := ui.Image(c, img).Size(max(1, w*scale), max(1, h*scale)).Label(label)
+							if in.Title != "" {
+								view.Tooltip(in.Title)
+							}
+						})
+					},
+				})
 			case parser.Code:
 				raw := src[in.Start:in.End]
 				n := len(raw) - len(strings.TrimLeft(raw, "`"))
@@ -302,6 +349,7 @@ func (d *Document) prepareView() {
 	if d.mode == Markdown {
 		st.ContextMenu = nil
 		st.OnInput = nil
+		st.OnHover = nil
 		st.Label = "Markdown source"
 		st.Font = ui.Font{Family: "IBM Plex Mono", Size: 14}
 		st.ReadingColumn = editor.ReadingColumn{}
@@ -322,6 +370,7 @@ func (d *Document) prepareView() {
 		}
 	}
 	st.OnInput = d.previewInput
+	st.OnHover = d.previewHover
 	st.Label = "Markdown Preview"
 	st.Font = ui.Font{Family: "IBM Plex Sans", Size: 16}
 	st.LineHeight = 28.0 / 16.0

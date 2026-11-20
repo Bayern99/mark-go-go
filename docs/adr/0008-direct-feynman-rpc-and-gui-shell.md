@@ -10,8 +10,8 @@ Mark Go Go 直接通过 Go 子进程对接 Feynman 官方内置且有上游 CI �
 - 保留 macOS 专用 `/usr/bin/sandbox-exec` 硬编码写白名单：阻断跨平台支持，且 Feynman 上游新增缓存/配置目录时立即触发 `EPERM`。
 
 **Consequences**
-- 命令、工作流、Skills 与扩展列表 100% 由 `get_commands` 动态驱动，Feynman 上游发版无痛跟随；配置写操作走 Feynman 自身 CLI 子命令，避免直接耦合内部文件格式。
+- 命令、工作流、Skills 与扩展列表由 `get_commands` 动态驱动。配置通常通过 Feynman 自身的 CLI 子命令写入。Feynman 0.5.71 的搜索命令会同时重置路由和偏好，因此逐项清除 API key 时，应用用 `search status` 验证自身 profile 的 `web-search.json`，然后原子移除所选供应商的字段。
 - 仅 3 个依赖 `@clack/prompts` 交互式 TTY 的登录向导（`feynman model login`、`feynman alpha login`、`feynman setup`）在 Portrait 面板内一键唤起系统外部 Terminal，并在窗口重获焦点时自动刷新状态，保持零 `xterm`/零 `creack/pty`/零 `auth.json` 格式耦合；其余全部命令与 API-Key 表单均在侧边栏原生完成。
-- Feynman 进程继续以 Mark Go Go 为工作区准备的专属目录 `<UserData>/research/<hash>/work` 作为 `--cwd`（承载 `.pi/mcp.json` 与 Feynman 脚手架目录），用户原仓库保持零污染；会话 `.jsonl` 存放在 Feynman 默认目录 `~/.feynman/sessions` 并按 `cwd` 过滤，兼容 `session-search` 技能。
+- Feynman 进程使用应用准备的 `<UserData>/research/<hash>/work` 作为 `--cwd`，把 `.pi/mcp.json` 与脚手架留在该目录。会话 `.jsonl` 使用应用 Feynman profile 的 `.feynman/sessions`。该目录尚未创建时，应用会链接已有全局会话目录。会话按 `cwd` 过滤，兼容 `session-search` 技能。
 - 移除 `sandbox-exec` 后，文档写安全由产品级的 Change proposal 审阅流、单文档检查点与外部修改冲突检测保障，同步解锁跨平台运行。
 - 会话历史列表与删除通过读取标准 Pi `.jsonl` 会话文件头实现，恢复/切换/分支使用原生 RPC 命令。

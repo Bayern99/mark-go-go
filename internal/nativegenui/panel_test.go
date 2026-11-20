@@ -82,6 +82,56 @@ func TestReaderNoteShortcutsFollowNoteFocus(t *testing.T) {
 	}
 }
 
+func TestReaderNoteShortcutsIgnoreActiveIMEComposition(t *testing.T) {
+	v := &documentView{reading: Reading{surface: &Surface{
+		Sources: map[string]Reference{"overview": {Heading: "Overview"}},
+		Nodes:   map[string]Node{"card": {ID: "card", Sources: []string{"overview"}}},
+	}}}
+	v.index("# Overview\n\nAn overview.\n")
+	card := v.reading.surface.Nodes["card"]
+	p := &panel{win: &nativeui.Window{}}
+	app := ui.NewTester(func(c *ui.Context) {
+		p.drawSources(c, v, workspace.DocumentInfo{Path: "doc.md"}, card, false)
+	}, 620, 420)
+	app.Frame()
+
+	if err := app.Click("Add note"); err != nil {
+		t.Fatal(err)
+	}
+	app.Frame()
+	if err := app.Click("Reader note"); err != nil {
+		t.Fatal(err)
+	}
+	app.Frame()
+	app.Type("keep ")
+	app.Frame()
+
+	// Start IME composition with active marked text.
+	app.Compose("ceshi", 5)
+	app.Frame()
+
+	app.Key(0, ui.KeyEscape)
+	app.Frame()
+	if v.noteTarget != card.ID || v.note != "keep " || v.message != "" {
+		t.Fatalf("Escape during active IME composition changed note: target=%q note=%q message=%q", v.noteTarget, v.note, v.message)
+	}
+
+	app.Key(ui.Cmd, ui.KeyEnter)
+	app.Frame()
+	if v.noteTarget != card.ID || v.note != "keep " || v.message != "" {
+		t.Fatalf("Cmd+Enter during active IME composition prematurely submitted note: target=%q note=%q message=%q", v.noteTarget, v.note, v.message)
+	}
+
+	// End composition and press Cmd+Enter; now it submits cleanly.
+	app.Compose("", 0)
+	app.Frame()
+	app.Key(ui.Cmd, ui.KeyEnter)
+	app.Frame()
+	if v.message != "Document closed" || v.note != "keep " {
+		t.Fatalf("Cmd+Enter after IME composition ended did not reach save: note=%q message=%q", v.note, v.message)
+	}
+}
+
 func TestChangedIDsUsesStoredIDsForRepeatedInstances(t *testing.T) {
 	view := &documentView{
 		reading: Reading{surface: &Surface{

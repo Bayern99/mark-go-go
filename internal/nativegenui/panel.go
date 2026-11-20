@@ -326,8 +326,9 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 		return
 	}
 	note := ui.TextArea(c, &v.note).Label("Reader note").Height(52).AutoFocus()
-	saveShortcut := note.Shortcut(ui.Cmd, ui.KeyEnter)
-	cancelShortcut := note.Shortcut(0, ui.KeyEscape)
+	composing := note.Composing()
+	saveShortcut := note.Shortcut(ui.Cmd, ui.KeyEnter) && !composing
+	cancelShortcut := note.Shortcut(0, ui.KeyEscape) && !composing
 	enabled := len(ss) > 0 && !d.ReadOnly && strings.TrimSpace(v.note) != ""
 	if (ui.Button(c, "Save note").Disabled(!enabled).Clicked() || saveShortcut) && enabled {
 		v.message = message(p.addNote(ss[0], v.note))

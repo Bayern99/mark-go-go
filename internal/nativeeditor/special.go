@@ -319,7 +319,8 @@ func (d *Document) drawDraft(c *ui.Context, draft *blockDraft) {
 		entry.Focus()
 		draft.focus = false
 	}
-	save, cancel := entry.Shortcut(ui.Cmd, ui.KeyEnter), entry.Shortcut(0, ui.KeyEscape)
+	composing := entry.Composing()
+	save, cancel := entry.Shortcut(ui.Cmd, ui.KeyEnter) && !composing, entry.Shortcut(0, ui.KeyEscape) && !composing
 	ui.Row(c).Gap(6).Children(func() {
 		emptyLink := draft.kind == "link" && strings.TrimSpace(draft.text) == ""
 		emptyNote := (draft.kind == "note" || draft.kind == "new note") && strings.TrimSpace(draft.text) == ""

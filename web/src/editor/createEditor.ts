@@ -789,10 +789,8 @@ export async function createMarkdownEditor(
 
     built = nextBuilt
     composedCache = undefined
-    let tr = closeHistory(view.state.tr)
-    tr = tr.replaceWith(fromPos, toPos, replacements)
-    tr = closeHistory(tr)
-    view.dispatch(tr)
+    view.dispatch(closeHistory(view.state.tr.replaceWith(fromPos, toPos, replacements)))
+    view.dispatch(closeHistory(view.state.tr))
     recordBuiltSnapshot(view.state.doc, nextBuilt)
   }
 
@@ -931,11 +929,12 @@ export async function createMarkdownEditor(
       mode === 'source' ? (sourceEditor?.getText() ?? '') : compose(view.state.doc),
     applyMarkdown(expected, text) {
       const current = mode === 'source' ? sourceEditor?.getText() : compose(view.state.doc)
-      if (readonly || current !== expected) return false
+      if (readonly || current === undefined || current !== expected) return false
       if (current === text) return true
       if (mode === 'source') {
         suppressChange = true
         try {
+          if (current !== compose(view.state.doc)) applyPreviewMarkdownInPlace(current)
           applyPreviewMarkdownInPlace(text)
         } finally {
           suppressChange = false

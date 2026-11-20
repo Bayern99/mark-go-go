@@ -300,7 +300,9 @@ func preserveLines(raw, next string) string {
 
 func (d *Document) drawDraft(c *ui.Context, draft *blockDraft) {
 	name := "Markdown block editor"
-	if draft.kind == "note" || draft.kind == "new note" {
+	if draft.kind == "link" {
+		name = "Link destination"
+	} else if draft.kind == "note" || draft.kind == "new note" {
 		name = "Note"
 	}
 	entry := ui.TextArea(c, &draft.text).Label(name).Height(100).FillWidth()
@@ -310,7 +312,9 @@ func (d *Document) drawDraft(c *ui.Context, draft *blockDraft) {
 	}
 	save, cancel := entry.Shortcut(ui.Cmd, ui.KeyEnter), entry.Shortcut(0, ui.KeyEscape)
 	ui.Row(c).Gap(6).Children(func() {
-		if ui.Button(c, "Save").Disabled(d.state.ReadOnly || ((draft.kind == "note" || draft.kind == "new note") && strings.TrimSpace(draft.text) == "")).Clicked() {
+		emptyLink := draft.kind == "link" && strings.TrimSpace(draft.text) == ""
+		emptyNote := (draft.kind == "note" || draft.kind == "new note") && strings.TrimSpace(draft.text) == ""
+		if ui.Button(c, "Save").Disabled(d.state.ReadOnly || emptyLink || emptyNote).Clicked() {
 			save = true
 		}
 		if ui.Button(c, "Cancel").Clicked() {

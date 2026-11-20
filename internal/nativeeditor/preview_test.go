@@ -111,6 +111,28 @@ func TestPreviewEditsAtHiddenDelimiters(t *testing.T) {
 	}
 }
 
+func TestPreviewTaskCheckboxEditsSourceAndSharesUndo(t *testing.T) {
+	const src = "- [ ] Finish task\r\n"
+	d := nativeeditor.New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 560, 300)
+	tt.Frame()
+	if err := tt.Click("Task: Finish task"); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := d.Source(), "- [x] Finish task\r\n"; got != want {
+		t.Fatalf("checking task wrote %q; want %q", got, want)
+	}
+	if node, ok := tt.Access("Task: Finish task"); !ok || !node.Checked {
+		t.Fatalf("checked task is not exposed as a checked control: %+v", node)
+	}
+	if !d.CanUndo() || !d.Undo() || d.Source() != src {
+		t.Fatalf("Undo did not restore task source bytes: %q", d.Source())
+	}
+	if !d.Redo() || d.Source() != "- [x] Finish task\r\n" {
+		t.Fatal("Redo did not restore the task toggle")
+	}
+}
+
 func TestOrdinaryCodeFenceKeepsItsSourceCaretInPreview(t *testing.T) {
 	const src = "Before\r\n\r\n```go\r\nfmt.Println(\"iW\")\r\nsecond()\r\n```  \r\nAfter\r\n"
 	if err := nativeui.RegisterFonts(); err != nil {
@@ -443,6 +465,118 @@ func TestLinkHoverOffersOnlySafeOpenAndKeepsLabelEditable(t *testing.T) {
 	tt.Frame()
 	if _, ok := tt.Find("Open link"); ok {
 		t.Fatal("Preview offered to open a script URL")
+	}
+}
+
+func TestLinkDestinationCanBeEditedWithExactBytesAndSharedUndo(t *testing.T) {
+	const src = "Before [label](https://old.example/a \"title\") after.\r\n"
+	d := nativeeditor.New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill().AutoFocus() }, 700, 360)
+	tt.Frame()
+	position := utf8.RuneCountInString(src[:strings.Index(src, "label")])
+	r, ok := d.RectUTF16(position)
+	if !ok {
+		t.Fatal("missing link label")
+	}
+	tt.Move(r.X+.1, r.Y+r.H/2)
+	tt.Advance(time.Second)
+	tt.Frame()
+	if err := tt.Click("Edit link"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if err := tt.Click("Link destination"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Command("selectAll")
+	tt.Type("javascript:alert(1)")
+	tt.Frame()
+	if err := tt.Click("Save"); err != nil {
+		t.Fatal(err)
+	}
+	want := "Before [label](javascript:alert(1) \"title\") after.\r\n"
+	if d.Source() != want {
+		t.Fatalf("destination edit changed surrounding Markdown: %q", d.Source())
+	}
+	unsafePosition := utf8.RuneCountInString(want[:strings.Index(want, "label")])
+	unsafeRect, ok := d.RectUTF16(unsafePosition)
+	if !ok {
+		t.Fatal("missing edited unsafe link label")
+	}
+	tt.Move(unsafeRect.X+.1, unsafeRect.Y+unsafeRect.H/2)
+	tt.Advance(time.Second)
+	tt.Frame()
+	if _, ok := tt.Find("Open link"); ok {
+		t.Fatal("editing a link to an unsafe URL made it openable")
+	}
+	if _, ok := tt.Find("Edit link"); !ok {
+		t.Fatal("unsafe URL lost its link edit action")
+	}
+	if !d.Undo() || d.Source() != src {
+		t.Fatalf("Undo did not restore link destination bytes: %q", d.Source())
+	}
+	if !d.Redo() || d.Source() != want {
+		t.Fatalf("Redo did not restore the unsafe URL edit: %q", d.Source())
+	}
+}
+
+func TestLinkCanBeRemovedWithoutChangingItsLabelOrSurroundingBytes(t *testing.T) {
+	const src = "Before [**bold**](https://example.com/path \"title\") after.\r\n"
+	d := nativeeditor.New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill().AutoFocus() }, 700, 360)
+	tt.Frame()
+	position := utf8.RuneCountInString(src[:strings.Index(src, "bold")])
+	r, ok := d.RectUTF16(position)
+	if !ok {
+		t.Fatal("missing link label")
+	}
+	tt.Move(r.X+.1, r.Y+r.H/2)
+	tt.Advance(time.Second)
+	tt.Frame()
+	if err := tt.Click("Remove link"); err != nil {
+		t.Fatal(err)
+	}
+	want := "Before **bold** after.\r\n"
+	if d.Source() != want {
+		t.Fatalf("removing link changed label or surrounding Markdown: %q", d.Source())
+	}
+	if !d.Undo() || d.Source() != src {
+		t.Fatalf("Undo did not restore link markup: %q", d.Source())
+	}
+}
+
+func TestReferenceLinkDestinationCanBeEditedAtItsDefinition(t *testing.T) {
+	const src = "Read [guide][docs].\r\n\r\n[docs]: <https://old.example/a> \"title\"\r\n"
+	d := nativeeditor.New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill().AutoFocus() }, 700, 360)
+	tt.Frame()
+	position := utf8.RuneCountInString(src[:strings.Index(src, "guide")])
+	r, ok := d.RectUTF16(position)
+	if !ok {
+		t.Fatal("missing reference link label")
+	}
+	tt.Move(r.X+.1, r.Y+r.H/2)
+	tt.Advance(time.Second)
+	tt.Frame()
+	if err := tt.Click("Edit link"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if err := tt.Click("Link destination"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Command("selectAll")
+	tt.Type("https://new.example/b")
+	tt.Frame()
+	if err := tt.Click("Save"); err != nil {
+		t.Fatal(err)
+	}
+	want := "Read [guide][docs].\r\n\r\n[docs]: <https://new.example/b> \"title\"\r\n"
+	if d.Source() != want {
+		t.Fatalf("reference link edit changed bytes outside its definition destination: %q", d.Source())
+	}
+	if !d.Undo() || d.Source() != src {
+		t.Fatalf("Undo did not restore reference definition: %q", d.Source())
 	}
 }
 

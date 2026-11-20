@@ -3,14 +3,13 @@ package workspace
 import (
 	"encoding/json"
 	"errors"
+	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
-
-	"github.com/egoist/mygo"
 )
 
 type Settings struct {
@@ -24,7 +23,7 @@ type SettingsPatch struct {
 	AgentCommand *string `json:"agentCommand,omitempty"`
 }
 
-var settingsChanged = mygo.NewEvent[Settings]("settingsChanged")
+var SettingsChanged = desktop.Event[Settings]{}
 
 var defaultModels = []string{"gemini-3.8-flash", "gemini-4-argon", "claude-opus-5-5"}
 

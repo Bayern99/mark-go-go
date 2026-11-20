@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"os"
 	"path/filepath"
@@ -68,7 +69,7 @@ const quitAckTimeout = 20 * time.Second
 var errStaleQuitAttempt = errors.New("stale quit attempt")
 
 func (h *Service) FlushQuit(ctx context.Context, documentID, text string, attempt int) error {
-	win := mygo.CallerWindow(ctx)
+	win := desktop.Window(ctx)
 	h.mu.Lock()
 	if win == nil || attempt != h.quitAttempt || !h.quitPending[win] {
 		h.mu.Unlock()
@@ -86,7 +87,7 @@ func (h *Service) FlushQuit(ctx context.Context, documentID, text string, attemp
 }
 
 func (h *Service) PrepareQuit(ctx context.Context, attempt int, failure string) error {
-	win := mygo.CallerWindow(ctx)
+	win := desktop.Window(ctx)
 	if failure != "" {
 		if win != nil {
 			h.failQuitAttempt(attempt, win, errors.New(failure), false, true)
@@ -271,7 +272,7 @@ func (h *Service) OnBeforeQuit(e *mygo.QuitEvent) {
 		return
 	}
 	for _, win := range wins {
-		if err := nativeCommand.Emit(win, NativeCommand{Attempt: attempt, Command: "flushQuit"}); err != nil {
+		if err := CommandRequested.Emit(win, NativeCommand{Attempt: attempt, Command: "flushQuit"}); err != nil {
 			h.failQuitAttempt(attempt, win, fmt.Errorf("could not ask a window to flush: %w", err), false, true)
 			return
 		}

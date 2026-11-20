@@ -3,10 +3,9 @@ package genui
 import (
 	"errors"
 	"fmt"
+	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/egoist/mygo"
 )
 
 const MaxViewBytes = 1 << 20
@@ -59,7 +58,7 @@ type ViewEvent struct {
 	CanUndo bool   `json:"canUndo"`
 }
 
-var ViewChanged = mygo.NewEvent[ViewEvent]("viewChanged")
+var ViewChanged = desktop.Event[ViewEvent]{}
 
 func CutRunes(s string, max int) string {
 	if utf8.RuneCountInString(s) <= max {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"io"
 	"io/fs"
 	"os"
@@ -18,7 +19,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
-	"github.com/egoist/mygo"
 )
 
 type ResearchArtifact struct {
@@ -40,7 +40,7 @@ const (
 )
 
 var artifactsMu sync.Mutex
-var ResearchFilePublished = mygo.NewEvent[ResearchFilePublishedEvent]("researchFilePublished")
+var ResearchFilePublished = desktop.Event[ResearchFilePublishedEvent]{}
 
 func WorkDir(dataDir, root string) string {
 	return filepath.Join(dataDir, "research", fmt.Sprintf("%x", sha256.Sum256([]byte(fsutil.CanonicalPath(root)))), "work")

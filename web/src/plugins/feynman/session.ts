@@ -270,9 +270,15 @@ export class ResearchSession {
     session.off ??= events.researchUpdate?.on((event) => {
       if (event.root === root && session.owners > 0) session.receive(event)
     })
-    session.offFiles ??= events.researchFilesChanged?.on((workspaceRoot) => {
-      if (workspaceRoot === root && session.owners > 0 && session.status === 'ready') {
+    session.offFiles ??= events.researchFilePublished?.on(({ workspaceRoot, file }) => {
+      if (workspaceRoot !== root || session.owners <= 0) return
+      if (session.status === 'ready') {
         void session.refresh()
+      } else if (session.status === 'working') {
+        session.filesRequest++
+        session.files = [...session.files.filter((existing) => existing.path !== file.path), file]
+          .sort((a, b) => a.path.localeCompare(b.path))
+        session.changed()
       }
     })
     if (!session.offReview) {

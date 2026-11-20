@@ -29,13 +29,18 @@ type ResearchArtifact struct {
 	Error    string `json:"error,omitempty"`
 }
 
+type ResearchFilePublishedEvent struct {
+	WorkspaceRoot string           `json:"workspaceRoot"`
+	File          ResearchArtifact `json:"file"`
+}
+
 const (
 	ResearchDocumentCopy     = "current-document.md"
 	MaxResearchArtifactBytes = 8 << 20
 )
 
 var artifactsMu sync.Mutex
-var ResearchFilesChanged = mygo.NewEvent[string]("researchFilesChanged")
+var ResearchFilePublished = mygo.NewEvent[ResearchFilePublishedEvent]("researchFilePublished")
 
 func WorkDir(dataDir, root string) string {
 	return filepath.Join(dataDir, "research", fmt.Sprintf("%x", sha256.Sum256([]byte(fsutil.CanonicalPath(root)))), "work")
@@ -276,7 +281,10 @@ func CreateDocumentArtifact(work, workspace, rel string, data []byte) error {
 	err := createDocumentArtifactLocked(work, workspace, rel, data)
 	artifactsMu.Unlock()
 	if err == nil {
-		_ = ResearchFilesChanged.Broadcast(workspace)
+		_ = ResearchFilePublished.Broadcast(ResearchFilePublishedEvent{
+			WorkspaceRoot: workspace,
+			File:          ResearchArtifact{Path: rel, Target: filepath.Join(workspace, filepath.FromSlash(rel))},
+		})
 	}
 	return err
 }

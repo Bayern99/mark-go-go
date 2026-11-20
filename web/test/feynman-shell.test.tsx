@@ -9,6 +9,7 @@ import type {
   ResearchCommand,
   ResearchConversation,
   ResearchForkMessage,
+  ResearchFilePublishedEvent,
   ResearchTree,
   ResearchUpdate,
   ReviewUpdateEvent,
@@ -20,7 +21,7 @@ import './helpers/enable-feynman'
 const mocks = vi.hoisted(() => ({
   onResearchEvent: undefined as ((e: ResearchUpdate) => void) | undefined,
   onReviewEvent: undefined as ((e: ReviewUpdateEvent) => void) | undefined,
-  onResearchFilesChanged: undefined as ((root: string) => void) | undefined,
+  onResearchFilePublished: undefined as ((event: ResearchFilePublishedEvent) => void) | undefined,
   steer: vi.fn(async () => {}),
   followUp: vi.fn(async () => {}),
   clearQueue: vi.fn(async () => ({ steering: [], followUp: [] })),
@@ -102,11 +103,11 @@ vi.mock('../src/host/generated/mygo', async (original) => {
           }
         },
       },
-      researchFilesChanged: {
-        on(fn: (root: string) => void) {
-          mocks.onResearchFilesChanged = fn
+      researchFilePublished: {
+        on(fn: (event: ResearchFilePublishedEvent) => void) {
+          mocks.onResearchFilePublished = fn
           return () => {
-            mocks.onResearchFilesChanged = undefined
+            mocks.onResearchFilePublished = undefined
           }
         },
       },
@@ -515,10 +516,11 @@ describe('Portrait Chat | Review right-pane shell', () => {
     }
   })
 
-  it('shows an MCP-published research file in an already open Review', async () => {
+  it.each(['idle', 'working'])('shows an MCP-published research file in open Review while %s', async (status) => {
     const container = document.body.appendChild(document.createElement('div'))
     const root = createRoot(container)
     const workspace = '/ws-published-artifacts'
+    let finishPrompt = (_response: string) => {}
     try {
       root.render(
         <WorkspaceResearch
@@ -528,15 +530,23 @@ describe('Portrait Chat | Review right-pane shell', () => {
           openFolder={() => {}}
         />,
       )
+      await vi.waitFor(() => expect(mocks.artifacts).toHaveBeenCalledWith(workspace))
+      if (status === 'working') {
+        mocks.prompt.mockReturnValueOnce(new Promise<string>((resolve) => { finishPrompt = resolve }))
+        await userEvent.fill(page.getByLabelText('Research prompt'), 'Create a document')
+        await userEvent.click(page.getByRole('button', { name: 'Send' }))
+        await expect.element(page.getByLabelText('Working')).toBeVisible()
+      }
       await userEvent.click(page.getByRole('radio', { name: 'Review' }))
       await expect.element(page.getByText('Completed research files appear here.')).toBeVisible()
-      await vi.waitFor(() => expect(mocks.artifacts).toHaveBeenCalledWith(workspace))
-      mocks.artifacts.mockResolvedValue([
-        { path: 'outputs/new.md', target: workspace + '/outputs/new.md', proposal: false },
-      ])
-      mocks.onResearchFilesChanged?.(workspace)
+      const file = { path: 'outputs/new.md', target: workspace + '/outputs/new.md', proposal: false }
+      const listRequests = mocks.artifacts.mock.calls.length
+      mocks.artifacts.mockResolvedValue([file])
+      mocks.onResearchFilePublished?.({ workspaceRoot: workspace, file })
       await expect.element(page.getByRole('button', { name: /^new\.md\b/ })).toBeVisible()
+      if (status === 'working') expect(mocks.artifacts).toHaveBeenCalledTimes(listRequests)
     } finally {
+      finishPrompt('')
       root.unmount()
       container.remove()
     }

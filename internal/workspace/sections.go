@@ -5,6 +5,8 @@ import (
 	"hash/fnv"
 	"regexp"
 	"strings"
+
+	"github.com/Bayern99/mark-go-go/internal/genui"
 )
 
 type Section struct {
@@ -460,4 +462,20 @@ func ExtractNotes(markdown string) []Note {
 		out[i] = n
 	}
 	return out
+}
+
+func GenerationSections(text string) []genui.SectionRef {
+	sections := ExtractSections(text)
+	notes := ExtractNotes(text)
+	refs := make([]genui.SectionRef, 0, len(sections))
+	for _, s := range sections {
+		ref := genui.SectionRef{Heading: s.Heading, Occurrence: s.Occurrence, Start: s.Start, End: s.End}
+		for _, n := range notes {
+			if n.Start >= s.Start && n.End <= s.End {
+				ref.Exclude = append(ref.Exclude, genui.TextRange{Start: n.cutStart, End: n.End})
+			}
+		}
+		refs = append(refs, ref)
+	}
+	return refs
 }

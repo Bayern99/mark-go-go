@@ -101,6 +101,14 @@ func ValidationUnavailable(detail string) error {
 }
 
 func ValidateGeneratedView(raw []byte) error {
+	return validateView(raw, false)
+}
+
+func ValidateStoredView(raw []byte) error {
+	return validateView(raw, true)
+}
+
+func validateView(raw []byte, stored bool) error {
 	var top any
 	if err := json.Unmarshal(raw, &top); err != nil {
 		return newValidationError("INVALID_JSON", "The view is not valid JSON.", "/", "")
@@ -113,8 +121,9 @@ func ValidateGeneratedView(raw []byte) error {
 	if !ok || ver != ViewVersion {
 		return newValidationError("INVALID_VERSION", "The view is not a version 2 view file.", "/version", "")
 	}
-	rawSources, ok := file["sources"].(map[string]any)
-	if !ok {
+	sourceValue, present := file["sources"]
+	rawSources, ok := sourceValue.(map[string]any)
+	if !ok && (present || !stored) {
 		return newValidationError("INVALID_SOURCES", "The view's sources are not an object.", "/sources", "")
 	}
 	if err := validateSourcesObject(rawSources); err != nil {
@@ -124,7 +133,7 @@ func ValidateGeneratedView(raw []byte) error {
 	if !ok || len(rawMessages) == 0 {
 		return newValidationError("EMPTY_MESSAGES", "The view has no A2UI messages.", "/a2ui", "")
 	}
-	return validateA2UIMessages(rawMessages, rawSources)
+	return validateA2UIMessages(rawMessages, rawSources, stored)
 }
 
 func validateSourcesObject(sources map[string]any) error {
@@ -154,16 +163,16 @@ func validateSourcesObject(sources map[string]any) error {
 	return nil
 }
 
-func validateA2UIMessages(messages []any, sources map[string]any) error {
-	if err := checkUnknownComponents(messages); err != nil {
+func validateA2UIMessages(messages []any, sources map[string]any, stored bool) error {
+	if err := checkUnknownComponents(messages, stored); err != nil {
 		return err
 	}
 
-	merged := false
+	allowOrphans := stored
 	for _, m := range messages {
 		if obj, ok := m.(map[string]any); ok {
 			if _, ok := obj["updateComponents"].(map[string]any); ok {
-				merged = true
+				allowOrphans = true
 				break
 			}
 		}
@@ -242,7 +251,7 @@ func validateA2UIMessages(messages []any, sources map[string]any) error {
 			surfaces[op.surfaceID] = s
 			surfaceOrder = append(surfaceOrder, op.surfaceID)
 			if len(op.components) > 0 {
-				if err := applyUpdateComponents(s, op.components, merged, msgPath+"/createSurface"); err != nil {
+				if err := applyUpdateComponents(s, op.components, allowOrphans, msgPath+"/createSurface"); err != nil {
 					return err
 				}
 			}
@@ -256,7 +265,7 @@ func validateA2UIMessages(messages []any, sources map[string]any) error {
 					"",
 				)
 			}
-			if err := applyUpdateComponents(s, op.components, merged, msgPath+"/updateComponents"); err != nil {
+			if err := applyUpdateComponents(s, op.components, allowOrphans, msgPath+"/updateComponents"); err != nil {
 				return err
 			}
 		}
@@ -281,13 +290,13 @@ func validateA2UIMessages(messages []any, sources map[string]any) error {
 		)
 	}
 
-	if err := checkMissingSources(messages, sources); err != nil {
-		return err
+	if stored {
+		return nil
 	}
-	return nil
+	return checkMissingSources(messages, sources)
 }
 
-func checkUnknownComponents(messages []any) error {
+func checkUnknownComponents(messages []any, stored bool) error {
 	for i, rawMsg := range messages {
 		msg, ok := rawMsg.(map[string]any)
 		if !ok {
@@ -312,6 +321,10 @@ func checkUnknownComponents(messages []any) error {
 					continue
 				}
 				if knownCatalogComponents[compType] {
+					continue
+				}
+				if stored {
+					comps[j] = map[string]any{"id": comp["id"], "component": "Text", "text": ""}
 					continue
 				}
 				id := "(no id)"

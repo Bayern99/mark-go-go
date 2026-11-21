@@ -67,6 +67,7 @@ func ReadStatementView(raw []byte) (*StatementView, error) {
 	if !ok || len(messages) == 0 {
 		return nil, newValidationError("EMPTY_MESSAGES", "The view has no A2UI messages.", "/a2ui", "")
 	}
+	surface := ""
 	for i, value := range messages {
 		path := fmt.Sprintf("/a2ui/%d", i)
 		message, ok := value.(map[string]any)
@@ -87,6 +88,13 @@ func ReadStatementView(raw []byte) (*StatementView, error) {
 			if catalog, _ := create["catalogId"].(string); catalog != StatementCatalogID {
 				return nil, newValidationError("INVALID_CATALOG", fmt.Sprintf("The view's catalog is not %q.", StatementCatalogID), path+"/createSurface/catalogId", "")
 			}
+		}
+		id, _ := operation["surfaceId"].(string)
+		if creates {
+			surface = id
+		}
+		if id == "" || id != surface {
+			return nil, newValidationError("INVALID_SURFACE", "Every message of the view names the surface that the first message creates.", path+"/"+name+"/surfaceId", "")
 		}
 		components, ok := operation["components"].([]any)
 		if !ok {

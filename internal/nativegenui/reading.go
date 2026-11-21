@@ -350,8 +350,8 @@ func cardSkeleton(c *ui.Context) {
 	})
 }
 
-var readOnlyMarkdown = markdown.Options{OnLink: func(string) {}}
-var captionMarkdown = markdown.Options{OnLink: func(string) {}, Theme: &markdown.Theme{FontSize: portrait.Type.Meta.Size}}
+var readOnlyMarkdown = markdown.Options{OnLink: func(string) {}, Theme: &markdown.Theme{CodeFont: portrait.FontMono, CodeSize: 12 / portrait.Type.UI.Size}}
+var captionMarkdown = markdown.Options{OnLink: func(string) {}, Theme: &markdown.Theme{FontSize: portrait.Type.Meta.Size, CodeFont: portrait.FontMono, CodeSize: 12 / portrait.Type.Meta.Size}}
 
 func layout(box ui.Element, n Node) ui.Element {
 	align := map[string]ui.Align{"center": ui.Center, "end": ui.End, "start": ui.Start, "stretch": ui.Stretch, "spaceBetween": ui.SpaceBetween, "spaceAround": ui.SpaceAround, "spaceEvenly": ui.SpaceEvenly}

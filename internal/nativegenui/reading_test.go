@@ -202,3 +202,146 @@ func changedPixels(a, b *image.RGBA) int {
 	}
 	return n
 }
+
+func codeBitmap(img *image.RGBA, r ui.Rect) (cells map[[2]int]bool, w, h int) {
+	cells = map[[2]int]bool{}
+	x0, y0 := int(r.X+r.W), int(r.Y+r.H)
+	x1, y1 := int(r.X), int(r.Y)
+	for y := int(r.Y); y < int(r.Y+r.H); y++ {
+		for x := int(r.X); x < int(r.X+r.W); x++ {
+			c := img.RGBAAt(x, y)
+			if int(c.R)+int(c.G)+int(c.B) < 560 {
+				x0, y0 = min(x0, x), min(y0, y)
+				x1, y1 = max(x1, x), max(y1, y)
+			}
+		}
+	}
+	for y := y0; y <= y1; y++ {
+		for x := x0; x <= x1; x++ {
+			c := img.RGBAAt(x, y)
+			if int(c.R)+int(c.G)+int(c.B) < 560 {
+				cells[[2]int{x - x0, y - y0}] = true
+			}
+		}
+	}
+	return cells, x1 - x0 + 1, y1 - y0 + 1
+}
+
+func codeSpan(t *testing.T, tt *ui.Tester, text string) (map[[2]int]bool, int) {
+	t.Helper()
+	img := tt.Image()
+	tinted := func(x, y int) bool {
+		c := img.RGBAAt(x, y)
+		r, g, b := int(c.R), int(c.G), int(c.B)
+		return r > 225 && r < 250 && abs(r-g) < 3 && abs(g-b) < 3
+	}
+	bestY, bestN := 0, 0
+	for y := 0; y < img.Bounds().Dy(); y++ {
+		n := 0
+		for x := 0; x < img.Bounds().Dx(); x++ {
+			if tinted(x, y) {
+				n++
+			}
+		}
+		if n > bestN {
+			bestY, bestN = y, n
+		}
+	}
+	x0, x1, run := -1, -1, -1
+	for x := 0; x < img.Bounds().Dx(); x++ {
+		if tinted(x, bestY) {
+			if run < 0 {
+				run = x
+			}
+			continue
+		}
+		if run >= 0 && x-run > x1-x0 {
+			x0, x1 = run, x-1
+		}
+		if run >= 0 {
+			run = -1
+		}
+	}
+	if run >= 0 && img.Bounds().Dx()-run > x1-x0 {
+		x0, x1 = run, img.Bounds().Dx()-1
+	}
+	if x0 < 0 {
+		t.Fatalf("no tinted code background behind %q", text)
+	}
+	spanRow := func(y int) bool {
+		n := 0
+		for x := x0; x <= x1; x++ {
+			if tinted(x, y) {
+				n++
+			}
+		}
+		return n >= 4
+	}
+	y0, y1 := bestY, bestY
+	for y0 > 0 && spanRow(y0-1) {
+		y0--
+	}
+	for y1+1 < img.Bounds().Dy() && spanRow(y1+1) {
+		y1++
+	}
+	cells, _, _ := codeBitmap(img, ui.Rect{X: float32(x0), Y: float32(y0), W: float32(x1 - x0 + 1), H: float32(y1 - y0 + 1)})
+	return cells, x1 - x0 + 1
+}
+
+func abs(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+func referenceCode(t *testing.T) map[[2]int]bool {
+	t.Helper()
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Background(portrait.Colors.Paper).Children(func() {
+			ui.RichText(c, ui.Span{Text: "printf", Font: portrait.FontMono, Size: 12})
+		})
+	}, 200, 60)
+	tt.Frame()
+	cells, _, _ := codeBitmap(tt.Image(), ui.Rect{W: 200, H: 60})
+	return cells
+}
+
+func TestTextInlineCodeUsesPortraitMonoAtTwelvePoints(t *testing.T) {
+	want := referenceCode(t)
+	for _, variant := range []string{"", "caption"} {
+		t.Run("variant="+variant, func(t *testing.T) {
+			attr := ""
+			if variant != "" {
+				attr = `,"variant":"` + variant + `"`
+			}
+			view, err := nativegenui.Open(`{"version":2,"sources":{},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"v","catalogId":"markgogo.dev:genui/v1","components":[{"id":"root","component":"Text","text":"Use ` + "`printf`" + ` here"` + attr + `}]}}]}`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var reader nativegenui.Reading
+			reader.Load(view)
+			tt := ui.NewTester(reader.View, 520, 200)
+			tt.Frame()
+			cells, span := codeSpan(t, tt, "printf")
+			if span < 40 {
+				t.Fatalf("code span is %d wide; six glyphs of Plex Mono at 12pt take about 43", span)
+			}
+			best := 0
+			for dy := -3; dy <= 3; dy++ {
+				for dx := -3; dx <= 3; dx++ {
+					n := 0
+					for cell := range cells {
+						if want[[2]int{cell[0] + dx, cell[1] + dy}] {
+							n++
+						}
+					}
+					best = max(best, n)
+				}
+			}
+			if best*10 < len(cells)*7 {
+				t.Fatalf("only %d of %d code glyph pixels match IBM Plex Mono at 12pt", best, len(cells))
+			}
+		})
+	}
+}

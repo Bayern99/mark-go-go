@@ -27,15 +27,12 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
-      - name: Check formatting
+      - name: DEBUG-b7c1 loop
         run: |
-          unformatted="$(find . -name '*.go' -not -path './third_party/*' -not -path './.git/*' -print0 | xargs -0 gofmt -l)"
-          if [ -n "$unformatted" ]; then
-            printf 'Go files need gofmt:\n%s\n' "$unformatted" >&2
-            exit 1
-          fi
-      - run: go vet ./...
-      - run: go tool mygo vet
-      - run: go test -race ./...
-      - name: Cross-compile Windows host
-        run: GOOS=windows GOARCH=amd64 go build ./...
+          mkdir -p /tmp/dbg
+          DEBUG_A4F2_DIR=/tmp/dbg go test -race -count=1 -v -run 'TestDEBUGb7c1Code|TestTextInlineCodeUsesPortraitMonoAtTwelvePoints' ./internal/nativegenui/ 2>&1 | tee /tmp/dbg/log.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: debug-b7c1
+          path: /tmp/dbg

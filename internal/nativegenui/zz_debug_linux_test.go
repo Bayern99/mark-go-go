@@ -1,0 +1,56 @@
+package nativegenui_test
+
+import (
+	"fmt"
+	"image/png"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/Bayern99/mark-go-go/internal/nativegenui"
+	"github.com/egoist/mygo/ui"
+)
+
+func TestDEBUGb7c1Code(t *testing.T) {
+	dir := os.Getenv("DEBUG_A4F2_DIR")
+	if dir == "" {
+		t.Skip()
+	}
+	for _, variant := range []string{"", "caption"} {
+		attr := ""
+		if variant != "" {
+			attr = `,"variant":"` + variant + `"`
+		}
+		view, err := nativegenui.Open(`{"version":2,"sources":{},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"v","catalogId":"markgogo.dev:genui/v1","components":[{"id":"root","component":"Text","text":"Use ` + "`printf`" + ` here"` + attr + `}]}}]}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var reader nativegenui.Reading
+		reader.Load(view)
+		tt := ui.NewTester(reader.View, 520, 200)
+		tt.Frame()
+		img := tt.Image()
+		f, _ := os.Create(filepath.Join(dir, "genui-"+variant+".png"))
+		png.Encode(f, img)
+		f.Close()
+		cells, span := codeSpan(t, tt, "printf")
+		fmt.Printf("[DEBUG-b7c1] variant=%q span=%d cells=%d\n", variant, span, len(cells))
+		for y := 0; y < img.Bounds().Dy(); y++ {
+			n, first, last := 0, -1, -1
+			for x := 0; x < img.Bounds().Dx(); x++ {
+				c := img.RGBAAt(x, y)
+				r, g, b := int(c.R), int(c.G), int(c.B)
+				if r > 225 && r < 250 && abs(r-g) < 3 && abs(g-b) < 3 {
+					n++
+					if first < 0 {
+						first = x
+					}
+					last = x
+				}
+			}
+			if n > 0 {
+				fmt.Printf("[DEBUG-b7c1] variant=%q y=%d tinted=%d x=%d..%d\n", variant, y, n, first, last)
+			}
+		}
+	}
+}

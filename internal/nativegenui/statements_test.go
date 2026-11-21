@@ -129,3 +129,20 @@ func TestStatementViewKeepsStatementsALaterUpdateUsesAgain(t *testing.T) {
 		t.Fatalf("shown:\n%s", text)
 	}
 }
+
+func TestStatementTextKeepsParenthesesInLinkAddresses(t *testing.T) {
+	view := statementView(t, `root = Col([Text("See [Go](https://en.wikipedia.org/wiki/Go_(programming_language)) for more."), ListItem("Alone", "Detail", "March")])`)
+	tt, text := shown(t, view, 520, nil)
+	if !strings.Contains(text, "March") {
+		t.Errorf("a list entry outside a list lost its marker:\n%s", text)
+	}
+	if strings.Contains(text, ") for more") {
+		t.Errorf("the link address was cut at its first parenthesis:\n%s", text)
+	}
+	for _, el := range tt.AccessAll() {
+		if el.Name == "Go" && el.Role == ui.RoleLink {
+			return
+		}
+	}
+	t.Fatalf("no link named Go in\n%s", text)
+}

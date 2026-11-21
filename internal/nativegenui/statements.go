@@ -139,6 +139,17 @@ func opens(value any) bool {
 	return false
 }
 
+func rigid(children any) bool {
+	for _, child := range flatten(children, nil) {
+		switch kind(child) {
+		case "Badge", "Link", "Label":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func badgeRow(value any) bool {
 	if kind(value) != "Row" {
 		return false
@@ -363,6 +374,9 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 		if p.text("align") == "" {
 			row.AlignItems(ui.Center)
 		}
+		if _, set := p.value("wrap").(bool); !set && rigid(p.value("children")) {
+			row.Wrap()
+		}
 		row.Children(func() { r.stack(c, p.value("children"), path, depth, inner, 0, false) })
 	case "Box":
 		inner := at
@@ -538,9 +552,9 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 			r.prose(c, p.text("text"), textStyle{size: at.bodySize(), line: 1.55, color: theme.Text})
 		}
 	case "List":
-		r.list(c, p, path, depth, at)
+		r.list(c, p, flatten(p.value("items"), nil), path, depth)
 	case "ListItem":
-		r.listItem(c, e, path, depth, at)
+		r.list(c, props{}, []any{e}, path, depth)
 	case "Markdown":
 		ui.Column(c).MinWidth(0).Children(func() { markdown.View(c, p.text("text"), &readOnlyMarkdown) })
 	case "Quote":
@@ -628,7 +642,7 @@ type textStyle struct {
 	features       string
 }
 
-var inlineMark = regexp.MustCompile("\\*\\*([^*\n]+)\\*\\*|__([^_\n]+)__|\\*([^*\n]+)\\*|`([^`\n]+)`|~~([^~\n]+)~~|\\[([^\\]\n]+)\\]\\(([^)\\s]+)\\)")
+var inlineMark = regexp.MustCompile("\\*\\*([^*\n]+)\\*\\*|__([^_\n]+)__|\\*([^*\n]+)\\*|`([^`\n]+)`|~~([^~\n]+)~~|\\[([^\\]\n]+)\\]\\(((?:[^()\\s]|\\([^()\\s]*\\))+)\\)")
 
 func (s textStyle) apply(text ui.Element, content string) ui.Element {
 	text.Font(typeface(content)).FontSize(s.size).TextColor(s.color)
@@ -700,9 +714,8 @@ func (r *Reading) prose(c *ui.Context, content string, style textStyle) {
 	})
 }
 
-func (r *Reading) list(c *ui.Context, p props, path string, depth int, at place) {
+func (r *Reading) list(c *ui.Context, p props, items []any, path string, depth int) {
 	theme := c.Theme()
-	items := flatten(p.value("items"), nil)
 	timeline, numbered, bare := p.on("timeline"), p.text("marker") == "number", p.text("marker") == "none"
 	labelled := false
 	for _, item := range items {

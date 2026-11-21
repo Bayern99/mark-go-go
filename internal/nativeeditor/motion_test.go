@@ -208,3 +208,104 @@ func TestEditorDrawsNoUnicodeIcons(t *testing.T) {
 		}
 	}
 }
+
+func accentPixels(img *image.RGBA, r ui.Rect) int {
+	n := 0
+	for y := int(r.Y); y < int(r.Y+r.H); y++ {
+		for x := int(r.X); x < int(r.X+r.W); x++ {
+			c := img.RGBAAt(x, y)
+			if int(c.G) > int(c.R)+8 && int(c.G) > int(c.B)+5 {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+const composerSource = "$$\nE=mc^2\n$$\n"
+
+func composerDark(t *testing.T, tt *ui.Tester) int {
+	t.Helper()
+	r, ok := tt.Access("Markdown block editor")
+	if !ok {
+		t.Fatal("composer is not open")
+	}
+	img := tt.Image()
+	n := 0
+	for y := int(r.Bounds.Y); y < int(r.Bounds.Y+r.Bounds.H); y++ {
+		for x := int(r.Bounds.X); x < int(r.Bounds.X+r.Bounds.W); x++ {
+			c := img.RGBAAt(x, y)
+			if int(c.R)+int(c.G)+int(c.B) < 660 {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+func TestBlockComposerSlidesInWithExpandMotion(t *testing.T) {
+	d := nativeeditor.New(composerSource)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 800, 720)
+	tt.Frame()
+	if err := tt.Click("Edit math"); err != nil {
+		t.Fatal(err)
+	}
+	start := composerDark(t, tt)
+	tt.Advance(time.Second)
+	end := composerDark(t, tt)
+	if !(start*2 < end) {
+		t.Fatalf("composer drew %d then %d dark pixels; want it to enter over the expand duration", start, end)
+	}
+}
+
+func TestBlockComposerLandsAtOnceWithReducedMotion(t *testing.T) {
+	d := nativeeditor.New(composerSource)
+	tt := reduced(func(c *ui.Context) { d.View(c, false).Fill() }, 800, 720)
+	tt.Frame()
+	if err := tt.Click("Edit math"); err != nil {
+		t.Fatal(err)
+	}
+	start := composerDark(t, tt)
+	tt.Advance(time.Second)
+	if end := composerDark(t, tt); start < end*9/10 || end == 0 {
+		t.Fatalf("reduced motion composer drew %d then %d dark pixels, want it in place at once", start, end)
+	}
+}
+
+func TestCopiedCheckMorphsIn(t *testing.T) {
+	const src = "```go\nalpha()\n```\n"
+	d := nativeeditor.New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 800, 400)
+	tt.Frame()
+	b, ok := tt.Access("Copy code")
+	if !ok {
+		t.Fatal("no copy button")
+	}
+	if err := tt.Click("Copy code"); err != nil {
+		t.Fatal(err)
+	}
+	first := accentPixels(tt.Image(), b.Bounds)
+	tt.Advance(time.Second)
+	if settled := accentPixels(tt.Image(), b.Bounds); first >= settled/2 {
+		t.Fatalf("the copied check drew %d then %d accent pixels; want it to morph in", first, settled)
+	}
+}
+
+func TestCopiedCheckLandsAtOnceWithReducedMotion(t *testing.T) {
+	const src = "```go\nalpha()\n```\n"
+	d := nativeeditor.New(src)
+	tt := reduced(func(c *ui.Context) { d.View(c, false).Fill() }, 800, 400)
+	tt.Frame()
+	b, ok := tt.Access("Copy code")
+	if !ok {
+		t.Fatal("no copy button")
+	}
+	if err := tt.Click("Copy code"); err != nil {
+		t.Fatal(err)
+	}
+	first := accentPixels(tt.Image(), b.Bounds)
+	tt.Advance(time.Second)
+	if settled := accentPixels(tt.Image(), b.Bounds); first < settled*9/10 {
+		t.Fatalf("the copied check drew %d then %d accent pixels under reduced motion", first, settled)
+	}
+}

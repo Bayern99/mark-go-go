@@ -11,8 +11,8 @@ type CubicBezier struct{ X1, Y1, X2, Y2 float32 }
 func (b CubicBezier) Easing() ui.Easing { return ui.CubicBezier(b.X1, b.Y1, b.X2, b.Y2) }
 
 type MotionTokens struct {
-	Press, Switch, Expand, Enter, Menu, Jump time.Duration
-	EaseOut, EaseInOut                       CubicBezier
+	Press, Switch, Expand, Enter, Menu, Jump, Morph time.Duration
+	EaseOut, EaseInOut                            CubicBezier
 }
 
 var Motion = MotionTokens{
@@ -22,6 +22,7 @@ var Motion = MotionTokens{
 	Enter:     200 * time.Millisecond,
 	Menu:      150 * time.Millisecond,
 	Jump:      420 * time.Millisecond,
+	Morph:     180 * time.Millisecond,
 	EaseOut:   CubicBezier{0.23, 1, 0.32, 1},
 	EaseInOut: CubicBezier{0.32, 0.72, 0, 1},
 }

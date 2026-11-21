@@ -228,11 +228,21 @@ func copyButton(c *ui.Context, body string) {
 		*copied = c.Now()
 	}
 	icon := portrait.IconCopy
+	morphing := false
 	if !copied.IsZero() && c.Now().Sub(*copied) < copiedFor {
-		icon, ink = portrait.IconCheck, portrait.Colors.Accent
+		icon, ink, morphing = portrait.IconCheck, portrait.Colors.Accent, true
 		c.After(copiedFor - c.Now().Sub(*copied))
 	}
-	b.Children(func() { portrait.Glyph(c, icon, 14, ink) })
+	b.Children(func() {
+		if !morphing {
+			portrait.Glyph(c, icon, 14, ink)
+			return
+		}
+		from := ui.Motion{Opacity: 0.25, Scale: 0.76, Blur: 1.5}
+		ui.Box(c.Key("check")).Transition(portrait.Transition(c, false, ui.ElementTransition{Duration: portrait.Motion.Morph, Ease: portrait.Motion.EaseOut.Easing(), Enter: &from})).Children(func() {
+			portrait.Glyph(c, icon, 14, ink)
+		})
+	})
 }
 
 const copiedFor = 1200 * time.Millisecond
@@ -271,7 +281,7 @@ func lookOf(kind string) blockLook {
 		return blockLook{fill: portrait.Colors.Fill, ink: portrait.Colors.Ink2, kickerInk: portrait.Colors.Accent, icon: portrait.IconNote, padY: 8, padX: 10, text: portrait.Type.Small}
 	case "footnote":
 		return blockLook{fill: portrait.Colors.Fill, ink: portrait.Colors.Ink2, kickerInk: portrait.Colors.Accent, padY: 8, padX: 10, text: portrait.Type.Small}
-	case "HTML", "frontmatter", "reference definition":
+	case "html", "frontmatter", "reference definition":
 		paper.fill, paper.stripes, paper.ink = ui.Transparent, true, portrait.Colors.Ink2
 		if kind == "frontmatter" {
 			paper.stripes, paper.text = false, portrait.Type.Control
@@ -448,6 +458,13 @@ func preserveLines(raw, next string) string {
 }
 
 func (d *Document) drawDraft(c *ui.Context, draft *blockDraft) {
+	in := ui.Motion{Y: -3, Scale: 0.99, Blur: 1.5}
+	ui.Column(c.Key("composer")).FillWidth().TransformOrigin(0.5, 0).Transition(portrait.Transition(c, false, ui.ElementTransition{Duration: portrait.Motion.Expand, Ease: portrait.Motion.EaseOut.Easing(), Enter: &in})).Children(func() {
+		d.composer(c, draft)
+	})
+}
+
+func (d *Document) composer(c *ui.Context, draft *blockDraft) {
 	name := "Markdown block editor"
 	if draft.kind == "link" {
 		name = "Link destination"

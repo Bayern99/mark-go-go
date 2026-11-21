@@ -54,3 +54,30 @@ func TestFencedCodeSitsOnTheCodeSurface(t *testing.T) {
 		t.Errorf("beside prose %v, want paper", got)
 	}
 }
+
+func TestHTMLBlockUsesTheStripeLook(t *testing.T) {
+	const src = "Before.\n\n<div>Example</div>\n\nAfter.\n"
+	d := nativeeditor.New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 800, 400)
+	tt.Frame()
+	info, ok := tt.Access("HTML block")
+	if !ok {
+		t.Fatal("missing HTML block")
+	}
+	img := tt.Image()
+	stripes, bright := 0, 0
+	for y := int(info.Bounds.Y) + 3; y < int(info.Bounds.Y)+7; y++ {
+		for x := int(info.Bounds.X) + 16; x < int(info.Bounds.X+info.Bounds.W)-16; x++ {
+			c := img.RGBAAt(x, y)
+			if c.R < 245 && c.R == c.G && c.G == c.B {
+				stripes++
+			}
+			if c.R == 255 && c.G == 255 && c.B == 255 {
+				bright++
+			}
+		}
+	}
+	if stripes == 0 || bright == 0 {
+		t.Fatalf("HTML block padding has %d stripe pixels and %d paper pixels; want the stripe look, not the code surface", stripes, bright)
+	}
+}

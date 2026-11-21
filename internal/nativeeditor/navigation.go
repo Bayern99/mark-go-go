@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 	"github.com/egoist/mygo/ui/markdown/parser"
@@ -45,25 +46,43 @@ func (p *previewLayout) heading(snap editor.Snapshot, i, firstText int) {
 	}
 	p.sections = append(p.sections, foldSection{b.Start, from, end, key})
 	folded := p.owner.folded[key]
-	action, icon := "Fold ", "▾"
+	action, icon := "Fold ", portrait.IconCaretDown
 	if folded {
-		action, icon = "Expand ", "▸"
+		action, icon = "Expand ", portrait.IconCaretRight
 		p.foldUntil = end
 		p.replace(from, end, "")
 		p.hiddenRanges = append(p.hiddenRanges, [2]int{from, end})
 	}
 	p.replace(b.Start, firstText, "")
+	section := p.sections[len(p.sections)-1]
+	leading := headingStyle(0, b.Level).LineHeight * headingStyle(0, b.Level).Font.Size
 	p.blocks = append(p.blocks, editor.Block{Line: snap.LineOf(b.Start), Above: true, Height: 1, Interactive: true, Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
 		e.Height(1).Children(func() {
-			btn := ui.ButtonBase(c).Absolute().Left(-24).Top(3).Label(action + title).Width(19).Height(22).KeepFocus()
-			btn.Children(func() { ui.Text(c, icon).FontSize(12) })
+			btn := ui.ButtonBase(c).Absolute().Left(-26).Top(1+(leading-foldToggleSize)/2).Label(action+title).Size(foldToggleSize, foldToggleSize).Radius(5).KeepFocus().AlignItems(ui.Center).Justify(ui.Center)
+			portrait.Tooltip(c, btn, action+title)
+			ink := portrait.Press(btn, portrait.Quiet)
+			if !btn.Hovered() && !btn.Pressed() {
+				ink = portrait.Colors.Ink3
+			}
+			btn.Children(func() { portrait.Glyph(c, icon, 14, ink) })
 			if btn.Clicked() {
 				p.toggleFold(key)
+				if portrait.Animates(c, btn.FocusVisible()) {
+					p.startFold(section)
+				}
 				c.Invalidate()
 			}
 		})
 	}})
+	if folded {
+		if ghost, ok := p.foldGhost(snap.LineOf(b.End), key); ok {
+			p.blocks = append(p.blocks, ghost)
+		}
+	}
 }
+
+// foldToggleSize is the side of a heading's fold toggle (.mgo-fold-toggle).
+const foldToggleSize = 18
 
 func (p *previewLayout) toggleFold(key string) {
 	if p.owner.folded == nil {
@@ -125,9 +144,13 @@ func (p *previewLayout) footnote(in parser.Inline) {
 	shown := "[" + in.Text + "]"
 	p.readable[in.Start] = shown
 	target := p.document.Block(at).Start
-	p.replacements = append(p.replacements, editor.Replacement{Start: in.Start, End: in.End, Width: max(28, float32(len(shown))*8), Interactive: true, Label: label, Content: func(c *ui.Context, e ui.Element, _ editor.Replacement) {
+	p.replacements = append(p.replacements, editor.Replacement{Start: in.Start, End: in.End, Width: max(18, float32(len(shown))*7), Interactive: true, Label: label, Content: func(c *ui.Context, e ui.Element, _ editor.Replacement) {
 		e.Children(func() {
-			if ui.Button(c, shown).Label(label).KeepFocus().Clicked() {
+			ref := ui.ButtonBase(c).Label(label).KeepFocus().Padding(0, 2).AlignItems(ui.Center)
+			ref.Children(func() {
+				portrait.Type.Meta.In(portrait.FontDisplay).Apply(ui.Text(c, shown)).FontFeatures("tnum").TextColor(portrait.Colors.Accent)
+			})
+			if ref.Clicked() {
 				d := p.owner
 				if d.returns == nil {
 					d.returns = map[string]int{}

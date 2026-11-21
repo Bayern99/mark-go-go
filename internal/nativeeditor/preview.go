@@ -20,6 +20,7 @@ type previewLayout struct {
 	foldUntil     int
 	hiddenRanges  [][2]int
 	sections      []foldSection
+	code          []codePanel
 	headings      map[string]int
 	refs          map[string][]int
 	frontEnd      int
@@ -53,6 +54,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	p.foldUntil = 0
 	p.hiddenRanges = p.hiddenRanges[:0]
 	p.sections = p.sections[:0]
+	p.code = p.code[:0]
 	p.headings = map[string]int{}
 	p.refs = map[string][]int{}
 	snap := buffer.Snapshot()
@@ -166,7 +168,8 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 			lineStart := snap.LineStart(snap.LineOf(start))
 			for n := lineStart; n < start; n++ {
 				if src[n] == '>' {
-					p.replace(n, n+1, "│")
+					p.readable[n] = ""
+					p.replacements = append(p.replacements, editor.Replacement{Start: n, End: n + 1, Width: quoteBarWidth, Content: quoteBar})
 				}
 			}
 		}
@@ -273,6 +276,17 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	}
 	slices.SortStableFunc(p.replacements, func(a, b editor.Replacement) int { return a.Start - b.Start })
 	p.indexDisplay(src)
+}
+
+// quoteBarWidth is how far a quote's text sits from its bar
+// (blockquote's padding-left).
+const quoteBarWidth = 16
+
+// quoteBar draws the 2px bar of a quote's line in place of its marker.
+func quoteBar(c *ui.Context, e ui.Element, _ editor.Replacement) {
+	e.Children(func() {
+		ui.Box(c).Absolute().Left(0).Top(0).Bottom(0).Width(2).Background(portrait.Colors.LineStrong)
+	})
 }
 
 func previewImageURLs(doc *parser.Document) map[string]struct{} {

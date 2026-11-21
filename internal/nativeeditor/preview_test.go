@@ -242,7 +242,7 @@ func TestCodeFenceWithMetadataKeepsItsEditLayer(t *testing.T) {
 	if _, ok := tt.Find("Edit code"); !ok {
 		t.Fatal("code fence metadata lost its in-place Markdown editor")
 	}
-	if _, ok := tt.Find("python"); !ok {
+	if _, ok := tt.Find("PYTHON"); !ok {
 		t.Fatal("code fence language was not shown separately")
 	}
 	if _, ok := tt.Find(`title="demo.py"`); !ok {

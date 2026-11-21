@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -10,11 +11,20 @@ import (
 
 func TestAcceptanceDocumentationLinks(t *testing.T) {
 	link := regexp.MustCompile(`\[[^\]\n]+\]\(([^\s)]+)\)`)
-	adrs, err := filepath.Glob("docs/adr/*.md")
+	docs := []string{"ARCHITECTURE.md", "DESIGN.md"}
+	err := filepath.WalkDir("docs", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() && filepath.Ext(path) == ".md" {
+			docs = append(docs, path)
+		}
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, doc := range append([]string{"ARCHITECTURE.md", "DESIGN.md", "docs/acceptance.md"}, adrs...) {
+	for _, doc := range docs {
 		t.Run(doc, func(t *testing.T) {
 			content, err := os.ReadFile(doc)
 			if err != nil {

@@ -218,7 +218,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 						e.Children(func() {
 							img := p.owner.loadInlineImage(c, in.Dest)
 							if img == nil {
-								ui.Text(c, label).FontSize(12).TextColor(c.Theme().TextMuted).SingleLine().Ellipsis("…")
+								portrait.Type.Meta.Apply(ui.Text(c, label)).TextColor(c.Theme().TextMuted).SingleLine().Ellipsis("…")
 								return
 							}
 							w, h := ui.ImageSize(img)

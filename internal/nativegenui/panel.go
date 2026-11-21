@@ -375,9 +375,9 @@ func sourceHeading(c *ui.Context, label string, disabled bool) ui.Element {
 
 // sourceStatus is the pill saying a card's source changed or went missing.
 func sourceStatus(c *ui.Context, text string, missing bool) {
-	fill, ink, icon := portrait.Colors.WarnSoft, portrait.Colors.Warn, iconWarning
+	fill, ink, icon := portrait.Colors.WarnSoft, portrait.Colors.Warn, portrait.IconWarning
 	if missing {
-		fill, ink, icon = portrait.Colors.DangerSoft, portrait.Colors.Danger, iconWarningCircle
+		fill, ink, icon = portrait.Colors.DangerSoft, portrait.Colors.Danger, portrait.IconWarningCircle
 	}
 	ui.Row(c.Key("status")).Gap(4).AlignItems(ui.Center).Radius(999).Padding(1, 8).Background(fill).Role(ui.RoleStatus).Label(text).Children(func() {
 		portrait.Glyph(c, icon, 12, ink)

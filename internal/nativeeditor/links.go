@@ -258,7 +258,7 @@ func (d *Document) removeLink(revision uint64, link parser.Inline, labelStart, l
 func linkMarker(destination string) func(*ui.Context, ui.Element, editor.Replacement) {
 	return func(c *ui.Context, e ui.Element, _ editor.Replacement) {
 		e.AlignItems(ui.Center).Justify(ui.Center).Children(func() {
-			portrait.Tooltip(c, ui.Link(c, portrait.IconArrowUpRight.Glyph, destination).Font(portrait.FontIcons).FontSize(13).FixedLineHeight(13).Label("Open "+destination), destination)
+			portrait.Tooltip(c, portrait.IconArrowUpRight.Apply(ui.Link(c, portrait.IconArrowUpRight.Glyph, destination), 13).Label("Open "+destination), destination)
 		})
 	}
 }

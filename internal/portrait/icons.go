@@ -36,11 +36,17 @@ var (
 // Glyph draws the icon at size in color. It is decoration: the control
 // holding it carries the accessible name.
 func Glyph(c *ui.Context, icon Icon, size float32, color ui.Color) ui.Element {
-	g := ui.Text(c, icon.Glyph).Font(FontIcons).FontSize(size).FixedLineHeight(size).TextColor(color).AccessHidden(true)
-	if icon.Mirror {
-		g.TransformOrigin(0.5, 0.5).Scale(-1, 1)
+	return icon.Apply(ui.Text(c, icon.Glyph), size).TextColor(color).AccessHidden(true)
+}
+
+// Apply sets e, an element showing the icon's glyph, in the icon font at
+// size, mirrored when the icon is.
+func (i Icon) Apply(e ui.Element, size float32) ui.Element {
+	e.Font(FontIcons).FontSize(size).FixedLineHeight(size)
+	if i.Mirror {
+		e.TransformOrigin(0.5, 0.5).Scale(-1, 1)
 	}
-	return g
+	return e
 }
 
 // Phosphor glyphs of the editor's blocks and links.

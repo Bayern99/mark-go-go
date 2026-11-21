@@ -247,7 +247,7 @@ const copiedFor = 1200 * time.Millisecond
 // kicker draws a block's small uppercase label (.mgo-code-lang,
 // .mgo-math-k): the display face at meta size, tracked out.
 func kicker(c *ui.Context, label string, ink ui.Color) ui.Element {
-	return portrait.Type.Meta.In(portrait.FontDisplay).Apply(ui.Text(c, strings.ToUpper(label))).FontWeight(500).LetterSpacing(0.04 * 12).TextColor(ink).MaxLines(1).Ellipsis("…")
+	return portrait.Type.Meta.In(portrait.FontDisplay).Apply(ui.Text(c, strings.ToUpper(label))).FontWeight(500).LetterSpacing(0.04 * portrait.Type.Meta.Size).TextColor(ink).MaxLines(1).Ellipsis("…")
 }
 
 // blockLook is how a kind of special block is drawn, after its WebUI
@@ -335,7 +335,7 @@ func (p *previewLayout) specialBlock(snap editor.Snapshot, start, end int, kind,
 						name := strings.TrimSuffix(label, " alert")
 						k := kicker(c, name, look.kickerInk)
 						if look.icon.Glyph != "" {
-							k.FontWeight(600).LetterSpacing(0.07 * 12)
+							k.FontWeight(600).LetterSpacing(0.07 * portrait.Type.Meta.Size)
 						}
 						if detail != "" {
 							portrait.Type.Meta.In(portrait.FontMono).Apply(ui.Text(c, detail)).TextColor(portrait.Colors.Ink3)

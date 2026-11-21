@@ -43,12 +43,10 @@ func drawHunk(c *ui.Context, h review.DiffHunk, decisions map[string]review.Hunk
 				hunkButtons(c, h, decisions)
 			}
 		})
-		ui.Scroll(c).MaxHeight(portrait.Diff.MaxLinesHeight).Label("Hunk " + h.Header).Children(func() {
-			ui.Column(c).Children(func() {
-				for i, line := range h.Lines {
-					diffLine(c.Key(i), line)
-				}
-			})
+		ui.Column(c).Role(ui.RoleGroup).Label("Hunk " + h.Header).Children(func() {
+			for i, line := range h.Lines {
+				diffLine(c.Key(i), line)
+			}
 		})
 	})
 }
@@ -81,37 +79,27 @@ func diffLine(c *ui.Context, line review.DiffLine) {
 
 func hunkButtons(c *ui.Context, h review.DiffHunk, decisions map[string]review.HunkDecision) {
 	ui.Row(c).Gap(6).Wrap().Children(func() {
-		if quietButton(c, "Accept", "Accept hunk", decisions[h.ID] == review.HunkAccepted, h.Conflict) {
+		if decide(c, "Accept", "Accept hunk", decisions[h.ID] == review.HunkAccepted, h.Conflict) {
 			decisions[h.ID] = review.HunkAccepted
 		}
-		if quietButton(c, "Reject", "Reject hunk", decisions[h.ID] == review.HunkRejected, false) {
+		if decide(c, "Reject", "Reject hunk", decisions[h.ID] == review.HunkRejected, false) {
 			decisions[h.ID] = review.HunkRejected
 		}
-		if decisions[h.ID] != "" && quietButton(c, "Clear", "Clear choice", false, false) {
+		if decisions[h.ID] != "" && decide(c, "Clear", "Clear choice", false, false) {
 			delete(decisions, h.ID)
 		}
 	})
 }
 
-// quietButton is the WebUI's .pill.quiet: no fill at rest, the row surface on
-// hover and the pressed surface while held. A chosen decision keeps the row
-// surface so it stays visible.
-func quietButton(c *ui.Context, title, label string, selected, disabled bool) bool {
-	b := ui.ButtonBase(c.Key(label)).Label(label).Selected(selected).Disabled(disabled).
-		Height(28).Padding(0, 11).Radius(8).AlignItems(ui.Center)
-	ink := portrait.Colors.Ink2
+// decide draws a hunk decision as the WebUI's .pill.quiet. A chosen
+// decision keeps the hovered row surface so it stays visible.
+func decide(c *ui.Context, title, label string, selected, disabled bool) bool {
+	b := portrait.QuietButton(c, title, label).Selected(selected).Disabled(disabled)
 	switch {
 	case disabled:
 		b.Opacity(0.5)
-	case b.Pressed():
-		portrait.Materials.RaisedPress.Apply(b)
-		ink = portrait.Colors.Ink
-	case b.Hovered() || selected:
+	case selected && !b.Pressed():
 		portrait.Materials.Row.Apply(b)
-		ink = portrait.Colors.Ink
 	}
-	b.Children(func() {
-		portrait.Type.UI.Apply(ui.Text(c, title)).FontWeight(500).TextColor(ink).AccessHidden(true)
-	})
 	return b.Clicked()
 }

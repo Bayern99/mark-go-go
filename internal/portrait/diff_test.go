@@ -34,10 +34,6 @@ func TestDiffTokensMatchTheWebUIBaseline(t *testing.T) {
 	if !sameColor(d.Insert, ui.RGBA(47, 111, 98, 0.12)) {
 		t.Errorf("insert %+v", d.Insert)
 	}
-	// .diff-lines { max-height: 16em } at 12px.
-	if d.MaxLinesHeight != 192 {
-		t.Errorf("max lines height %v, want 192", d.MaxLinesHeight)
-	}
 	// grid-template-columns: 3ch 3ch 1.5ch; IBM Plex Mono advances 600/1000 em.
 	if !near(d.NumberWidth, 21.6) || !near(d.SigilWidth, 10.8) {
 		t.Errorf("columns %v %v, want 21.6 10.8", d.NumberWidth, d.SigilWidth)

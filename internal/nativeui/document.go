@@ -12,12 +12,12 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 	ui.Column(c).Fill().MinWidth(0).Role(ui.RoleMain).Label("Document").Children(func() {
 		if doc.ID == "" {
 			if m.Workspace.Kind == "folder" {
-				ui.Text(c, "Open a Markdown file from this folder.").Padding(24).TextColor(muted)
+				ui.Text(c, "Open a Markdown file from this folder.").Padding(24).TextColor(portrait.Colors.Ink3)
 				return
 			}
 			ui.Scroll(c).Fill().Padding(32).Children(func() {
-				ui.Text(c, "Welcome").Font("Barlow Semi Condensed").FontSize(30).Bold()
-				ui.Text(c, "Open a folder to browse Markdown files, or start an untitled document.").TextColor(muted)
+				portrait.Type.Title.In(portrait.FontDisplay).Apply(ui.Text(c, "Welcome")).Bold().TextColor(portrait.Colors.Ink)
+				ui.Text(c, "Open a folder to browse Markdown files, or start an untitled document.").TextColor(portrait.Colors.Ink3)
 				ui.Row(c).Padding(10, 0).Gap(6).Children(func() {
 					if portrait.AccentButton(c, "Open Folder", "Open Folder").Clicked() && a.OpenFolder != nil {
 						a.OpenFolder()
@@ -26,9 +26,9 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 						a.NewDocument()
 					}
 				})
-				ui.Text(c, "Recent Workspaces").Font("Barlow Semi Condensed").FontSize(18).Bold()
+				portrait.Type.Meta.Apply(ui.Text(c, "RECENT WORKSPACES")).Label("Recent Workspaces").Role(ui.RoleHeading).Bold().LetterSpacing(0.08 * portrait.Type.Meta.Size).TextColor(portrait.Colors.Ink3)
 				if len(m.Recents) == 0 {
-					ui.Text(c, "No recent workspaces yet.").TextColor(muted)
+					ui.Text(c, "No recent workspaces yet.").TextColor(portrait.Colors.Ink3)
 				}
 				for _, r := range m.Recents {
 					ui.Row(c.Key(r.Root)).Children(func() {
@@ -52,15 +52,15 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 						continue
 					}
 					b := portrait.Tooltip(c, ui.ButtonBase(c.Key(crumb.Path)).Label("Reveal "+crumb.Name), crumb.Path).Padding(2)
-					b.Children(func() { ui.Text(c, crumb.Name).TextColor(muted).MaxLines(1) })
+					b.Children(func() { ui.Text(c, crumb.Name).TextColor(portrait.Colors.Ink3).MaxLines(1) })
 					if b.Clicked() && a.RevealPath != nil {
 						a.RevealPath(crumb.Path)
 					}
-					ui.Text(c, "/").TextColor(muted)
+					ui.Text(c, "/").TextColor(portrait.Colors.Ink3)
 				}
 			})
 			if m.Version > 0 {
-				ui.Text(c, fmt.Sprintf("v%d", m.Version)).FontSize(11).TextColor(muted).Padding(1, 5).Radius(8).Border(0.5, rim)
+				portrait.Type.Meta.Apply(ui.Text(c, fmt.Sprintf("v%d", m.Version))).TextColor(portrait.Colors.Ink3).Padding(1, 5).Radius(8).Border(0.5, portrait.Colors.LineStrong)
 			}
 			portrait.Track(c, "view modes", func(t *portrait.Segments) {
 				for i, title := range []string{"Preview", "Markdown", "GenUI"} {
@@ -95,7 +95,7 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 			banner(c, "The file was deleted on disk. Edits are still available in this window.")
 		}
 		if doc.ReadOnly {
-			ui.Text(c, "Read only").TextColor(muted)
+			ui.Text(c, "Read only").TextColor(portrait.Colors.Ink3)
 		}
 
 		if m.ReturnToGenUI && slots.GenUI != nil {
@@ -114,7 +114,7 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 			}
 		})
 		ui.Row(c).Height(22).Padding(2, 12).Gap(6).AlignItems(ui.Center).Children(func() {
-			portrait.Tooltip(c, ui.Text(c, doc.Path).Grow(1).MinWidth(0).MaxLines(1).Ellipsis("…").FontSize(11).TextColor(muted), doc.Path)
+			portrait.Tooltip(c, portrait.Type.Meta.Apply(ui.Text(c, doc.Path)).Grow(1).MinWidth(0).MaxLines(1).Ellipsis("…").TextColor(portrait.Colors.Ink3), doc.Path)
 			state := "Saved"
 			if doc.Edited {
 				state = "Edited"
@@ -125,7 +125,7 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 			if doc.Generating {
 				state += " · generating"
 			}
-			ui.Text(c, state).FontSize(11).TextColor(muted)
+			portrait.Type.Meta.Apply(ui.Text(c, state)).TextColor(portrait.Colors.Ink3)
 		})
 	})
 }

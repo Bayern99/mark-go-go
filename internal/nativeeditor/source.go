@@ -136,23 +136,13 @@ func (d *Document) SetMode(mode Mode) bool {
 		return false
 	}
 	d.draft = nil
-	transferred := false
-	if d.mode == Preview && mode == Markdown {
-		for _, table := range d.tables {
-			for child, cell := range table.composing {
-				source := child.Source()
-				if child.state.TransferComposition(&d.state, func(off int) int {
-					return cell.start + cellRawOffset(source, off)
-				}) {
-					transferred = true
-					delete(table.composing, child)
-				}
-			}
+	for _, table := range d.tables {
+		for child := range table.composing {
+			d.state.Buffer.EndComposition(&child.state)
 		}
+		clear(table.composing)
 	}
-	if !transferred {
-		d.state.Buffer.EndTyping()
-	}
+	d.state.Buffer.EndTyping()
 	d.mode = mode
 	return true
 }

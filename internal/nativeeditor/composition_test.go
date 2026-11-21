@@ -38,8 +38,26 @@ func TestTableCompositionSourceAndViewSwitch(t *testing.T) {
 				d.SetMode(nativeeditor.Markdown)
 				focus = true
 				tt.Frame()
-				tt.Compose("nin", 3)
+				want := strings.Replace(src, "cat", "ni", 1)
+				if d.Source() != want {
+					t.Fatalf("source after switching view = %q, want %q", d.Source(), want)
+				}
+				tt.Type("x")
 				tt.Frame()
+				if next := strings.Replace(src, "cat", "nix", 1); d.Source() != next {
+					t.Fatalf("typing after switching view = %q, want %q", d.Source(), next)
+				}
+				tt.Command("undo")
+				tt.Frame()
+				if d.Source() != want {
+					t.Fatalf("undo typing = %q, want %q", d.Source(), want)
+				}
+				tt.Command("undo")
+				tt.Frame()
+				if d.Source() != src || d.CanUndo() {
+					t.Fatalf("undo preedit = %q, remaining undo=%v", d.Source(), d.CanUndo())
+				}
+				return
 			}
 			tt.Type("你")
 			tt.Frame()

@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf16"
 )
 
@@ -59,7 +60,10 @@ func (s *Session) Field(form, name string) any {
 		value, _ := s.store.Get(name)
 		return fieldValue(value)
 	}
-	fields, _ := s.store.Values[form].(*Object)
+	fields, ok := s.store.Values[form].(*Object)
+	if !ok {
+		return nil
+	}
 	value, _ := fields.Get(name)
 	return fieldValue(value)
 }
@@ -163,8 +167,20 @@ var (
 	floatPrefix = regexp.MustCompile(`^[+-]?(Infinity|\d+\.?\d*([eE][+-]?\d+)?|\.\d+([eE][+-]?\d+)?)`)
 )
 
+func scriptWhitespace(r rune) bool {
+	return r == '\ufeff' || r != '\u0085' && unicode.IsSpace(r)
+}
+
+func specialScheme(scheme string) bool {
+	switch strings.ToLower(scheme) {
+	case "http", "https", "ws", "wss", "ftp":
+		return true
+	}
+	return false
+}
+
 func parseFloatPrefix(text string) float64 {
-	match := floatPrefix.FindString(strings.TrimLeft(text, " \t\r\n\v\f"))
+	match := floatPrefix.FindString(strings.TrimLeftFunc(text, scriptWhitespace))
 	if match == "" {
 		return math.NaN()
 	}
@@ -235,7 +251,7 @@ func checkRule(rule string, value, arg any) string {
 		}
 	case "url":
 		parsed, err := url.Parse(text)
-		if !isText || err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		if !isText || err != nil || parsed.Scheme == "" || specialScheme(parsed.Scheme) && parsed.Hostname() == "" {
 			return "Please enter a valid URL"
 		}
 	case "numeric":
@@ -243,7 +259,7 @@ func checkRule(rule string, value, arg any) string {
 		if isNumber && !math.IsNaN(number) {
 			return ""
 		}
-		if !isText || strings.TrimSpace(text) == "" || math.IsNaN(parseFloatPrefix(text)) {
+		if !isText || strings.TrimFunc(text, scriptWhitespace) == "" || math.IsNaN(parseFloatPrefix(text)) {
 			return "Must be a number"
 		}
 	case "min":

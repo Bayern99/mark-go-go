@@ -187,3 +187,33 @@ func TestReloadKeepsWhatTheReaderChanged(t *testing.T) {
 		t.Errorf("render shows %v", text)
 	}
 }
+
+func TestFieldRulesFollowScriptParsing(t *testing.T) {
+	on := NewObject()
+	on.Set("url", true)
+	for address, valid := range map[string]bool{
+		"https://example.com/a": true,
+		"mailto:a@example.com":  true,
+		"https://:443/path":     false,
+		"example.com":           false,
+	} {
+		if got := ValidateField(address, on) == ""; got != valid {
+			t.Errorf("url %q valid = %v, want %v", address, got, valid)
+		}
+	}
+	bounds := NewObject()
+	bounds.Set("numeric", true)
+	bounds.Set("min", 10.0)
+	if message := ValidateField("\u00a012", bounds); message != "" {
+		t.Errorf("padded number rejected: %s", message)
+	}
+	if message := ValidateField("\u00a05", bounds); message != "Must be at least 10" {
+		t.Errorf("padded number below bound: %q", message)
+	}
+}
+
+func TestFieldOfUntouchedFormIsEmpty(t *testing.T) {
+	if value := NewSession().Field("contact", "email"); value != nil {
+		t.Errorf("got %v", value)
+	}
+}

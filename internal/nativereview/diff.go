@@ -69,11 +69,18 @@ func diffLine(c *ui.Context, line review.DiffLine) {
 		}
 		text(label).Width(portrait.Diff.NumberWidth).TextAlign(ui.End).FontFeatures("tnum").TextColor(portrait.Colors.Ink3).AccessHidden(true)
 	}
+	desc := "Unchanged, lines " + strconv.Itoa(line.OldLine) + "→" + strconv.Itoa(line.NewLine)
+	switch line.Kind {
+	case review.DiffLineInsert:
+		desc = "Added, line " + strconv.Itoa(line.NewLine)
+	case review.DiffLineDelete:
+		desc = "Removed, line " + strconv.Itoa(line.OldLine)
+	}
 	ui.Row(c).Gap(4).Padding(1, 6).Background(tint).Children(func() {
 		number(line.OldLine)
 		number(line.NewLine)
 		text(sigil).Width(portrait.Diff.SigilWidth).TextAlign(ui.Center).TextColor(sigilInk).AccessHidden(true)
-		text(line.Text).Wrap().Grow(1).Shrink(1).Selectable().TextColor(portrait.Colors.Ink)
+		text(line.Text).Wrap().Grow(1).Shrink(1).Selectable().TextColor(portrait.Colors.Ink).Description(desc)
 	})
 }
 

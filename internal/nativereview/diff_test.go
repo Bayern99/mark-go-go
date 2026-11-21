@@ -115,6 +115,25 @@ func TestDiffShowsLineNumbersAndSigilsInTheirColumns(t *testing.T) {
 	}
 }
 
+func TestDiffLinesDescribeTheirChangeAndLineNumbers(t *testing.T) {
+	tt := diffTester(t, 1, nil)
+	for _, tc := range []struct{ text, desc string }{
+		{"context line", "Unchanged, lines 4→4"},
+		{"removed line", "Removed, line 5"},
+		{"inserted line", "Added, line 5"},
+		{"写作 trailing", "Unchanged, lines 6→6"},
+		{"stale", "Removed, line 20"},
+	} {
+		info, ok := tt.Access(tc.text)
+		if !ok {
+			t.Fatalf("%q is not in the access tree", tc.text)
+		}
+		if info.Description != tc.desc {
+			t.Errorf("%q has description %q, want %q", tc.text, info.Description, tc.desc)
+		}
+	}
+}
+
 func TestDiffHunkBorderMarksConflicts(t *testing.T) {
 	tt := diffTester(t, 1, nil)
 	img := tt.Image()

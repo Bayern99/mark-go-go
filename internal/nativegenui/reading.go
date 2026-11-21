@@ -48,6 +48,10 @@ func (r *Reading) View(c *ui.Context) {
 	r.remaining = max(4096, len(r.surface.Nodes)*2)
 	ui.Scroll(c).TrackScroll(&r.scroll).Grow(1).MinHeight(0).Children(func() {
 		ui.Column(c).Padding(24).Gap(14).Children(func() {
+			if r.surface.Session != nil {
+				r.statements(c)
+				return
+			}
 			r.node(c, "root", map[string]bool{})
 		})
 	})

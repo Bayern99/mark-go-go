@@ -12,10 +12,10 @@ Mark Go Go 的正式界面由 MyGo Native UI 绘制。原文居中显示，导�
 [internal/portrait](internal/portrait/) 是设计变量的唯一来源，原生各包只从这里取字体、字号、颜色、材质和动效。 [守护测试](internal/portrait/contract_test.go) 在原生包中发现字号数字、颜色字面量或字体名时失败。
 
 - 字体栈：正文 IBM Plex Sans 与 IBM Plex Sans SC，展示 Barlow Semi Condensed（字号乘以 1.05，对应 WebUI 的 `size-adjust: 105%`），代码 IBM Plex Mono，图标 Phosphor。MyGo 按字形回退，汉字自动落到 IBM Plex Sans SC。字体和许可证随应用打包。 [字号与颜色](internal/portrait/portrait.go) · [字体资源](internal/portrait/fonts/)
-- 字号阶梯是封闭的：display 28/36、title 20/28、reading 16/28（字间距 0.01em）、small 14/22、ui 13/18、control 13/20、meta 12/16、code 13/22；没有小于 12 的字。
+- 字号阶梯是封闭的：display 28/36、title 20/28、reading 16/28（字间距 0.01em）、small 14/22、ui 13/18、control 13/20、meta 12/16、code 13/22；没有小于 12 的字。例外：`ui/markdown` 的代码块语言名与复制按钮、有序列表序号和图片占位按正文固定比例绘制，13 点正文下小于 12 点，框架没有单独设字号的字段，见 issue #95。
 - 颜色沿用 WebUI 的表面、墨色、线条、强调与状态色；MyGo 基础组件的主题按 WebUI 的 `--mgo-*` 桥接变量取值。 [主题](internal/portrait/theme.go)
 - 材质：凸起、按下、行、凹面、轨道、页面与浮层的渐变和多层阴影，以及左右栏和浮层的半透明玻璃。 [材质](internal/portrait/material.go)
-- 动效：按下、切换、展开、进入、菜单和跳转的时长与曲线；键盘操作或减少动态效果偏好下，过渡直接落位。 [动效](internal/portrait/motion.go)
+- 动效：按下、切换、展开、进入、菜单和跳转的时长与曲线；键盘操作或减少动态效果偏好下，过渡直接落位。已知例外：分段控件的选中胶囊靠各段的键盘焦点推断触发方式，新选中项排在焦点项之前且上一帧无键盘焦点时仍按指针播放，框架没有公开的输入方式状态，见 issue #94。 [动效](internal/portrait/motion.go)
 - 共用控件：凸起、强调和安静按钮，图标按钮，分段控件，输入框，浮层，工具提示，加载指示与 Phosphor 图标。 [控件](internal/portrait/controls.go) · [图标](internal/portrait/icons.go)
 
 ## 玻璃材质
@@ -26,9 +26,9 @@ Mark Go Go 的正式界面由 MyGo Native UI 绘制。原文居中显示，导�
 
 - 中央区域显示当前文档的 Preview、Markdown 或 GenUI 视图。顶部标签切换文档；标签过多时，溢出菜单提供搜索和键盘导航。左栏在工作区文件与当前文档大纲间切换。 [标签](internal/nativeui/tabs.go) · [导航](internal/nativeui/navigation.go) · [文档视图](internal/nativeui/document.go)
 - 641 点及以上宽度时左栏停靠，较窄时通过抽屉打开。启用 Feynman 后，研究面板在 1180 点及以上宽度时停靠，较窄时通过抽屉打开；分隔线可调整宽度。抽屉关闭或按 Esc 后，焦点返回其入口。 [窗口外壳](internal/nativeui/shell.go) · [键盘与窄窗用例](internal/nativeui/shell_test.go)
-- Preview、Markdown 和就地块编辑共用原文缓冲及 Undo/Redo。段落、表格、公式、Mermaid、脚注和批注在原生视图中呈现；表格列宽和横向滚动留在表格区域。测试检查编辑前后原文的字节保真。 [原文状态](internal/nativeeditor/source.go) · [特殊块](internal/nativeeditor/special.go) · [表格](internal/nativeeditor/table.go) · [编辑测试](internal/nativeeditor/)
+- Preview、Markdown 和就地块编辑共用原文缓冲及 Undo/Redo。段落、表格、公式、Mermaid、脚注和批注在原生视图中呈现；表格列宽可在任意行的列边界拖拽调整，横向滚动留在表格区域。测试检查编辑前后原文的字节保真。 [原文状态](internal/nativeeditor/source.go) · [特殊块](internal/nativeeditor/special.go) · [表格](internal/nativeeditor/table.go) · [编辑测试](internal/nativeeditor/)
 - GenUI 是只读的衍生视图。来源动作定位回原文，未知组件保持隔离并给出可读反馈。视图格式和完整示例见 [GenUI 格式](docs/genui/view-format.md)。 [原生阅读器](internal/nativegenui/) · [格式校验](internal/genui/)
-- Review 差异视图按段显示行号、增删符号和增删底色，每段可接受、拒绝或清除选择。 [差异视图](internal/nativereview/diff.go)
+- Review 差异视图按段显示行号、增删符号和增删底色，行号与符号对辅助技术隐藏，每行的内容节点自述其变更与行号（Added / Removed / Unchanged）；每段可接受、拒绝或清除选择。 [差异视图](internal/nativereview/diff.go)
 
 ## 状态与可访问性
 

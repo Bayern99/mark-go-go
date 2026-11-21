@@ -4,7 +4,6 @@ import (
 	"image"
 	"testing"
 
-	"github.com/Bayern99/mark-go-go/internal/nativeui"
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/review"
 	"github.com/egoist/mygo/ui"
@@ -27,9 +26,6 @@ func fixtureHunks() []review.DiffHunk {
 
 func diffTester(t *testing.T, scale float32, decisions map[string]review.HunkDecision) *ui.Tester {
 	t.Helper()
-	if err := nativeui.RegisterFonts(); err != nil {
-		t.Fatal(err)
-	}
 	hunks := fixtureHunks()
 	tt := ui.NewTester(func(c *ui.Context) {
 		ui.Column(c).Fill().Background(portrait.Colors.Paper).Padding(8).Children(func() {

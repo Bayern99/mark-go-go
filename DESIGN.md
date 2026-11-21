@@ -11,7 +11,7 @@ Mark Go Go 的正式界面由 MyGo Native UI 绘制。原文居中显示，导�
 
 [internal/portrait](internal/portrait/) 是设计变量的唯一来源，原生各包只从这里取字体、字号、颜色、材质和动效。 [守护测试](internal/portrait/contract_test.go) 在原生包中发现字号数字、颜色字面量或字体名时失败。
 
-- 字体栈：正文 IBM Plex Sans 与 IBM Plex Sans SC，展示 Barlow Semi Condensed（字号乘以 1.05，对应 WebUI 的 `size-adjust: 105%`），代码 IBM Plex Mono，图标 Phosphor。MyGo 按字形回退，汉字自动落到 IBM Plex Sans SC。字体和许可证随应用打包。 [字号与颜色](internal/portrait/portrait.go) · [字体资源](internal/nativeui/fonts/)
+- 字体栈：正文 IBM Plex Sans 与 IBM Plex Sans SC，展示 Barlow Semi Condensed（字号乘以 1.05，对应 WebUI 的 `size-adjust: 105%`），代码 IBM Plex Mono，图标 Phosphor。MyGo 按字形回退，汉字自动落到 IBM Plex Sans SC。字体和许可证随应用打包。 [字号与颜色](internal/portrait/portrait.go) · [字体资源](internal/portrait/fonts/)
 - 字号阶梯是封闭的：display 28/36、title 20/28、reading 16/28（字间距 0.01em）、small 14/22、ui 13/18、control 13/20、meta 12/16、code 13/22；没有小于 12 的字。
 - 颜色沿用 WebUI 的表面、墨色、线条、强调与状态色；MyGo 基础组件的主题按 WebUI 的 `--mgo-*` 桥接变量取值。 [主题](internal/portrait/theme.go)
 - 材质：凸起、按下、行、凹面、轨道、页面与浮层的渐变和多层阴影，以及左右栏和浮层的半透明玻璃。 [材质](internal/portrait/material.go)

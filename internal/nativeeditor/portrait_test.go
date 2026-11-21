@@ -7,7 +7,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/Bayern99/mark-go-go/internal/nativeeditor"
-	"github.com/Bayern99/mark-go-go/internal/nativeui"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -21,9 +20,6 @@ func utf16At(t *testing.T, src, before string) int {
 }
 
 func TestMarkdownSourceIsSetInCodeLeading(t *testing.T) {
-	if err := nativeui.RegisterFonts(); err != nil {
-		t.Fatal(err)
-	}
 	const src = "first line\nsecond line\nthird line\n"
 	d := nativeeditor.New(src)
 	d.SetMode(nativeeditor.Markdown)
@@ -37,9 +33,6 @@ func TestMarkdownSourceIsSetInCodeLeading(t *testing.T) {
 }
 
 func TestPreviewCodeBlockIsSetInCodeLeading(t *testing.T) {
-	if err := nativeui.RegisterFonts(); err != nil {
-		t.Fatal(err)
-	}
 	const src = "Before\n\n```go\nalpha()\nbeta()\n```\n"
 	d := nativeeditor.New(src)
 	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 800, 400)
@@ -84,9 +77,6 @@ func referenceGlyph(t *testing.T, family, glyph string, size float32) (image.Rec
 }
 
 func TestPreviewSetsHanInIBMPlexSansSCBesideLatin(t *testing.T) {
-	if err := nativeui.RegisterFonts(); err != nil {
-		t.Fatal(err)
-	}
 	const src = "Portrait 写作 sample.\n"
 	d := nativeeditor.New(src)
 	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 800, 300)
@@ -107,9 +97,6 @@ func TestPreviewSetsHanInIBMPlexSansSCBesideLatin(t *testing.T) {
 }
 
 func TestPreviewDisplayHeadingsAreSizeAdjusted(t *testing.T) {
-	if err := nativeui.RegisterFonts(); err != nil {
-		t.Fatal(err)
-	}
 	for _, tc := range []struct {
 		src  string
 		size float32

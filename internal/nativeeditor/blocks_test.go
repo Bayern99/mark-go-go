@@ -4,14 +4,10 @@ import (
 	"testing"
 
 	"github.com/Bayern99/mark-go-go/internal/nativeeditor"
-	"github.com/Bayern99/mark-go-go/internal/nativeui"
 	"github.com/egoist/mygo/ui"
 )
 
 func TestSpecialBlocksCarryTheirPortraitSurfaces(t *testing.T) {
-	if err := nativeui.RegisterFonts(); err != nil {
-		t.Fatal(err)
-	}
 	const src = "> [!NOTE]\n> Remember this.\n\n> [!CAUTION]\n> Careful here.\n\n$$\nx^2\n$$\n\nText[^a].\n\n[^a]: A footnote.\n"
 	d := nativeeditor.New(src)
 	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 800, 900)

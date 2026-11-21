@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/nativeeditor"
-	"github.com/Bayern99/mark-go-go/internal/nativeui"
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 )
@@ -34,9 +33,6 @@ func ink(img *image.RGBA, r ui.Rect) int {
 const jumpSource = "Intro paragraph.\n\n# Target heading\n\nBody under the target.\n"
 
 func TestOutlineJumpHighlightsTheHeadingAndFadesWithinJumpDuration(t *testing.T) {
-	if err := nativeui.RegisterFonts(); err != nil {
-		t.Fatal(err)
-	}
 	d := nativeeditor.New(jumpSource)
 	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 800, 400)
 	tt.Frame()

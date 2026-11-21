@@ -7,7 +7,6 @@ import (
 	"unicode"
 
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
-	"github.com/Bayern99/mark-go-go/internal/nativeui"
 	"github.com/Bayern99/mark-go-go/internal/review"
 	"github.com/egoist/mygo/ui"
 )
@@ -57,9 +56,6 @@ func drawWidePane(c *ui.Context, p *panel) {
 var researchTabs = []string{"chat", "files", "settings", "alpha"}
 
 func forEachTab(t *testing.T, prefs ui.Preferences, check func(t *testing.T, app *ui.Tester)) {
-	if err := nativeui.RegisterFonts(); err != nil {
-		t.Fatal(err)
-	}
 	for _, tab := range researchTabs {
 		t.Run(tab, func(t *testing.T) {
 			p := fixtureBusyPanel()

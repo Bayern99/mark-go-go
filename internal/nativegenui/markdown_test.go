@@ -25,10 +25,10 @@ func TestMarkdownCodeUsesPortraitMonoAtTwelvePoints(t *testing.T) {
 		}
 		size := th.FontSize
 		if size == 0 {
-			size = portrait.Type.UI.Size
+			size = 14
 		}
-		if got := th.CodeSize * size; got < 12 {
-			t.Errorf("%s inline code renders at %gpt, want at least 12", o.name, got)
+		if got := th.CodeSize * size; got < portrait.Type.Meta.Size {
+			t.Errorf("%s inline code renders at %gpt, want at least %g", o.name, got, portrait.Type.Meta.Size)
 		}
 	}
 }

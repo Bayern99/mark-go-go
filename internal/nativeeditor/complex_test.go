@@ -123,7 +123,6 @@ func TestTableColumnResizeFromBodyCellBoundary(t *testing.T) {
 	body := bounds("Table row 2 column 1")
 	y := body.Y + body.H/2
 
-	// Hovering the boundary in a body row draws the accent guide.
 	tt.Move(x, y)
 	img := tt.Image()
 	r, g, b, _ := img.At(int(x), int(y)).RGBA()
@@ -136,6 +135,53 @@ func TestTableColumnResizeFromBodyCellBoundary(t *testing.T) {
 	tt.Release(x+32, y)
 	if a, b, c := bounds("Table row 1 column 1"), bounds("Table row 1 column 2"), bounds("Table row 1 column 3"); a.W != first.W+32 || b.W != second.W-32 || c != third {
 		t.Fatalf("column sizes after body drag: %v %v %v", a, b, c)
+	}
+	if d.Source() != src {
+		t.Fatalf("resize changed the source %q", d.Source())
+	}
+}
+
+func TestTableColumnResizeCoversWrappedRows(t *testing.T) {
+	const src = "| A | B |\n|---|---|\n| a body cell whose text wraps inside the column instead of fitting on one line | z |\n| p | q |\n\nafter"
+	d := nativeeditor.New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 780, 300)
+	tt.Frame()
+	bounds := func(label string) ui.Rect {
+		r, ok := tt.Find(label)
+		if !ok {
+			t.Fatal(label)
+		}
+		return r
+	}
+	first, second := bounds("Table row 1 column 1"), bounds("Table row 1 column 2")
+	handle := bounds("Resize table column 1")
+	x := handle.X + handle.W/2
+	top, bottom := bounds("Table row 1 column 1"), bounds("Table row 3 column 1")
+	if handle.Y > top.Y || handle.Y+handle.H < bottom.Y+bottom.H {
+		t.Fatalf("resize zone %v does not span the measured table %v..%v", handle, top, bottom)
+	}
+	wrapped := bounds("Table row 2 column 1")
+	y := wrapped.Y + wrapped.H - 2
+	tt.Move(x, y)
+	img := tt.Image()
+	accent := func(x, y float32) bool {
+		r, g, b, _ := img.At(int(x), int(y)).RGBA()
+		dr, dg, db := int(r>>8)-47, int(g>>8)-111, int(b>>8)-98
+		return dr*dr+dg*dg+db*db <= 3*8*8
+	}
+	if !accent(x, y) {
+		t.Fatal("no accent guide at the wrapped row boundary")
+	}
+	for _, gy := range []float32{top.Y + 1, bottom.Y + bottom.H - 1} {
+		if !accent(x, gy) {
+			t.Fatalf("guide stops short of the measured table extent at y %v", gy)
+		}
+	}
+	tt.Press(x, y)
+	tt.Move(x+32, y)
+	tt.Release(x+32, y)
+	if a, b := bounds("Table row 1 column 1"), bounds("Table row 1 column 2"); a.W != first.W+32 || b.W != second.W-32 {
+		t.Fatalf("column sizes after wrapped-row drag: %v %v", a, b)
 	}
 	if d.Source() != src {
 		t.Fatalf("resize changed the source %q", d.Source())

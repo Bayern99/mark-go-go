@@ -18,7 +18,7 @@ type readingTable struct {
 	widths                       []float32
 	minimum                      []float32
 	manual                       bool
-	bounds                       map[cellPosition]ui.Rect
+	bounds, tiles                map[cellPosition]ui.Rect
 	anchor, head                 cellPosition
 	dragging, selected           bool
 	dragX, leftWidth, rightWidth float32
@@ -91,7 +91,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 		}
 	}
 	if model == nil || len(model.widths) != ncols {
-		model = &readingTable{bounds: map[cellPosition]ui.Rect{}, widths: make([]float32, ncols), minimum: make([]float32, ncols), dragCol: -1, hoverCol: -1}
+		model = &readingTable{bounds: map[cellPosition]ui.Rect{}, tiles: map[cellPosition]ui.Rect{}, widths: make([]float32, ncols), minimum: make([]float32, ncols), dragCol: -1, hoverCol: -1}
 		for i := range model.widths {
 			model.minimum[i] = 112
 			for _, cells := range rows {
@@ -147,7 +147,9 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 									break
 								}
 								child := model.cells[r][k]
+								pos := cellPosition{r, k}
 								box := ui.Column(c.Key(k)).Width(model.widths[k]).Shrink(0).Padding(2, 4).Justify(ui.Center)
+								model.tiles[pos] = box.Bounds()
 								if r == 0 {
 									box.InsetShadow(0, -0.5, 0, 0, portrait.Colors.LineStrong).Role(ui.RoleColumnHeader)
 								} else {
@@ -169,7 +171,6 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 									}
 									child.state.LineHeight = portrait.Type.Small.LineHeight()
 									child.state.Theme.Background = unpainted
-									pos := cellPosition{r, k}
 									child.state.OnInput = model.cellInput(pos, doc, c.Services())
 									field := editor.View(c, &child.state).Width(model.widths[k] - 10).Height(31)
 									model.bounds[pos] = field.Bounds()
@@ -206,7 +207,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 						})
 					}
 					model.hoverCol = -1
-					height := float32(len(rows)) * 36
+					height := model.measuredHeight(len(rows))
 					boundary := float32(0)
 					for k := 0; k+1 < len(model.widths); k++ {
 						boundary += model.widths[k]
@@ -347,8 +348,6 @@ func (m *readingTable) cellInput(pos cellPosition, doc *Document, services ui.Se
 	}
 }
 
-// guide reports where the column-resize guide shows: the live edge of the
-// dragged column, or the hovered boundary.
 func (m *readingTable) guide() (float32, bool) {
 	col := m.dragCol
 	if col < 0 {
@@ -362,6 +361,27 @@ func (m *readingTable) guide() (float32, bool) {
 		at += m.widths[k]
 	}
 	return at, true
+}
+
+func (m *readingTable) measuredHeight(rows int) float32 {
+	top, bottom := float32(0), float32(0)
+	found := false
+	for _, b := range m.tiles {
+		if b.W <= 0 || b.H <= 0 {
+			continue
+		}
+		if !found || b.Y < top {
+			top = b.Y
+		}
+		if !found || b.Y+b.H > bottom {
+			bottom = b.Y + b.H
+		}
+		found = true
+	}
+	if !found {
+		return float32(rows) * 36
+	}
+	return bottom - top
 }
 
 func (m *readingTable) resizeHandle(c *ui.Context, col int, boundary, height float32, doc *Document) {

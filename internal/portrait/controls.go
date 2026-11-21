@@ -159,9 +159,21 @@ func Field(c *ui.Context) ui.Element {
 }
 
 func Popover(c *ui.Context, anchor ui.Element, open *bool, build func()) ui.Element {
+	keys := ui.Local(anchor, "popover keys", func() KeyTrigger { return KeyTrigger{} })
+	keyboard := keys != nil && keys.Live(c) || anchor.FocusVisible()
 	return ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
+		panel.ObserveInput(func(ev ui.InputEvent) {
+			if keys != nil {
+				keys.Observe(ev)
+			}
+		})
+		anchor.ObserveInput(func(ev ui.InputEvent) {
+			if keys != nil && ev.Kind == ui.InputKeyDown && ev.Key == ui.KeyEscape {
+				keys.dismiss = true
+			}
+		})
 		panel.MinWidth(anchor.Bounds().W).Margin(6, 0, 0, 0).Padding(5).Radius(12).Gap(2)
-		Materials.GlassOverlay.Apply(panel).AttachedOrigin().Transition(Overlays.Popup.Transition(c, false))
+		Materials.GlassOverlay.Apply(panel).AttachedOrigin().Transition(Overlays.Popup.Transition(c, keyboard))
 		build()
 	})
 }

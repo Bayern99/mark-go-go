@@ -67,3 +67,34 @@ func (o OverlayMotion) Transition(c *ui.Context, keyboard bool) ui.ElementTransi
 	}
 	return Transition(c, keyboard, t)
 }
+
+type KeyTrigger struct {
+	flip, dismiss bool
+	at            time.Time
+}
+
+func (k *KeyTrigger) Flip() { k.flip = true }
+
+func (k *KeyTrigger) Observe(ev ui.InputEvent) {
+	if ev.Kind != ui.InputKeyDown {
+		return
+	}
+	if ev.Key == ui.KeyEscape || ev.Key == ui.KeyEnter || ev.Key == ui.KeySpace {
+		k.dismiss = true
+	}
+}
+
+func (k *KeyTrigger) Live(c *ui.Context) bool {
+	if !k.flip && !k.dismiss {
+		return false
+	}
+	now := c.Now()
+	if k.at.IsZero() {
+		k.at = now
+	} else if !k.at.Equal(now) {
+		*k = KeyTrigger{}
+		return false
+	}
+	c.DisableAnimations()
+	return true
+}

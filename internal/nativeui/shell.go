@@ -45,6 +45,7 @@ type Shell struct {
 	history                                          []string
 	leftWidth, rightWidth                            float32
 	leftToggle, rightToggle                          ui.Handle
+	leftKeys, rightKeys                              portrait.KeyTrigger
 	queries                                          map[string]string
 	scrolls                                          map[string]*ui.ScrollState
 	openCheckpoints                                  map[string]bool
@@ -100,6 +101,8 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 	}
 	if c.Shortcut(ui.Cmd|ui.Alt, ui.Key0) && m.Feynman {
 		s.toggleResearch(width)
+		s.leftKeys.Flip()
+		s.rightKeys.Flip()
 	}
 	t := portrait.Theme()
 	root := ui.Themed(c, &t).Fill()
@@ -188,10 +191,11 @@ func (s *Shell) toggleResearch(width float32) {
 }
 
 func (s *Shell) drawer(c *ui.Context, left bool, width, height float32, m Model, a Actions, slots Slots) {
-	open, anchor, name := &s.rightOpen, &s.rightToggle, "Research"
+	open, anchor, name, keys := &s.rightOpen, &s.rightToggle, "Research", &s.rightKeys
 	if left {
-		open, anchor, name = &s.leftOpen, &s.leftToggle, "Navigation"
+		open, anchor, name, keys = &s.leftOpen, &s.leftToggle, "Navigation", &s.leftKeys
 	}
+	keyboard := keys.Live(c)
 	slide, origin := portrait.Overlays.DrawerRight, float32(1)
 	if left {
 		slide, origin = portrait.Overlays.DrawerLeft, 0
@@ -199,11 +203,12 @@ func (s *Shell) drawer(c *ui.Context, left bool, width, height float32, m Model,
 	if *open {
 		ui.Overlay(c, func() {
 			ui.Box(c.Key(name + " scrim")).Absolute().Left(0).Top(0).Right(0).Bottom(0).IgnoreInput(true).
-				Background(portrait.Colors.Scrim).Transition(portrait.Overlays.Scrim.Transition(c, false))
+				Background(portrait.Colors.Scrim).Transition(portrait.Overlays.Scrim.Transition(c, keyboard))
 		})
 	}
 	panel := ui.DialogBase(c.Key(name+" drawer"), open, func(back, panel ui.Element) {
-		back.AlignItems(ui.Start).Justify(ui.Start).TransformOrigin(origin, 0.5).Transition(slide.Transition(c, false))
+		panel.ObserveInput(keys.Observe)
+		back.AlignItems(ui.Start).Justify(ui.Start).TransformOrigin(origin, 0.5).Transition(slide.Transition(c, keyboard))
 		w := min(width-24, s.rightWidth)
 		if left {
 			w = min(width-24, s.leftWidth)

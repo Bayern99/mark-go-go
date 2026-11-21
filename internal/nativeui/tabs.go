@@ -93,6 +93,12 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 	ui.Row(c).Height(42).Padding(8, 8, 2, 8).Gap(6).AlignItems(ui.Center).Children(func() {
 		if width < 641 {
 			toggle := portrait.IconButton(c, portrait.IconSidebar, "Show navigation").Expanded(s.leftOpen).Bind(&s.leftToggle)
+			toggle.ObserveInput(func(ev ui.InputEvent) {
+				if ev.Kind == ui.InputKeyDown && (ev.Key == ui.KeyEnter || ev.Key == ui.KeySpace) {
+					s.leftKeys.Flip()
+					s.rightKeys.Flip()
+				}
+			})
 			if toggle.Clicked() {
 				s.leftOpen = !s.leftOpen
 				s.rightOpen = false
@@ -228,6 +234,12 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 		if m.Feynman {
 			visible := s.rightOpen || width >= 1180 && !s.hideResearch
 			toggle := portrait.IconButton(c, portrait.IconSidebar.Mirrored(), "Toggle research").Expanded(visible).KeyShortcuts(ui.Cmd|ui.Alt, ui.Key0).Bind(&s.rightToggle)
+			toggle.ObserveInput(func(ev ui.InputEvent) {
+				if ev.Kind == ui.InputKeyDown && (ev.Key == ui.KeyEnter || ev.Key == ui.KeySpace) {
+					s.leftKeys.Flip()
+					s.rightKeys.Flip()
+				}
+			})
 			if toggle.Clicked() {
 				s.toggleResearch(width)
 			}

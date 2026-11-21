@@ -68,14 +68,69 @@ func TestDrawersSlideInFromTheirSide(t *testing.T) {
 	}
 }
 
-func TestClosingDrawerLeavesThroughAnExit(t *testing.T) {
+func focus(t *testing.T, app *ui.Tester, name string) {
+	t.Helper()
+	for range 20 {
+		if app.Focused(name) {
+			return
+		}
+		app.Key(0, ui.KeyTab)
+	}
+	t.Fatalf("Tab never reached %s", name)
+}
+
+func TestDrawersLandAtOnceForKeyboard(t *testing.T) {
+	t.Run("toggle", func(t *testing.T) {
+		app := narrowShell(ui.Preferences{}, nativeui.Model{Workspace: workspace.WorkspaceSnapshot{Kind: "folder", Name: "Library", Root: "/library"}})
+		focus(t, app, "Show navigation")
+		app.Key(0, ui.KeyEnter)
+		if b := dialogBounds(t, app, "Navigation"); b.X != 8 {
+			t.Fatalf("keyboard-opened drawer X at frame 0 = %v, want 8", b.X)
+		}
+		app.Advance(time.Second)
+		if b := dialogBounds(t, app, "Navigation"); b.X != 8 {
+			t.Fatalf("drawer X after settling = %v, want 8", b.X)
+		}
+	})
+	t.Run("shortcut", func(t *testing.T) {
+		app := narrowShell(ui.Preferences{}, nativeui.Model{Feynman: true})
+		app.Key(ui.Cmd|ui.Alt, ui.Key0)
+		if b := dialogBounds(t, app, "Research"); b.X+b.W != 480-8 {
+			t.Fatalf("shortcut-opened drawer right edge at frame 0 = %v, want %v", b.X+b.W, 480-8)
+		}
+		app.Advance(time.Second)
+		if b := dialogBounds(t, app, "Research"); b.X+b.W != 480-8 {
+			t.Fatalf("drawer right edge after settling = %v, want %v", b.X+b.W, 480-8)
+		}
+	})
+}
+
+func TestDrawerKeyboardCloseLandsAtOnce(t *testing.T) {
+	app := narrowShell(ui.Preferences{}, nativeui.Model{Workspace: workspace.WorkspaceSnapshot{Kind: "folder", Name: "Library", Root: "/library"}})
+	if err := app.Click("Show navigation"); err != nil {
+		t.Fatal(err)
+	}
+	app.Advance(time.Second)
+	app.Key(0, ui.KeyEscape)
+	if !app.Focused("Show navigation") {
+		t.Fatal("closing the drawer should return focus to its opener")
+	}
+	app.Advance(50 * time.Millisecond)
+	closed := app.Image()
+	app.Advance(400 * time.Millisecond)
+	if changedPixels(closed, app.Image()) != 0 {
+		t.Fatal("Esc-close played an exit; keyboard close should land at once")
+	}
+}
+
+func TestDrawerPointerCloseLeavesThroughAnExit(t *testing.T) {
 	app := narrowShell(ui.Preferences{}, nativeui.Model{Workspace: workspace.WorkspaceSnapshot{Kind: "folder", Name: "Library", Root: "/library"}})
 	if err := app.Click("Show navigation"); err != nil {
 		t.Fatal(err)
 	}
 	app.Advance(time.Second)
 	open := app.Image()
-	app.Key(0, ui.KeyEscape)
+	app.ClickAt(470, 350)
 	if !app.Focused("Show navigation") {
 		t.Fatal("closing the drawer should return focus to its opener")
 	}
@@ -138,11 +193,40 @@ func TestPopoverScalesInFromItsAnchor(t *testing.T) {
 	if !(start.W < mid.W && mid.W < end.W) {
 		t.Fatalf("popover field width: start %v mid %v end %v, want growing", start.W, mid.W, end.W)
 	}
-	app.Key(0, ui.KeyEscape)
+	app.ClickAt(240, 200)
 	closing := app.Image()
 	app.Advance(400 * time.Millisecond)
 	if changedPixels(closing, app.Image()) == 0 {
 		t.Fatal("popover vanished at once; want an exit")
+	}
+}
+
+func TestPopoverLandsAtOnceForKeyboard(t *testing.T) {
+	app := overflowShell(ui.Preferences{})
+	focus(t, app, "More documents")
+	app.Key(0, ui.KeyEnter)
+	f, ok := app.Access("Filter open tabs")
+	if !ok {
+		t.Fatal("overflow popover is not open")
+	}
+	start := f.Bounds
+	app.Advance(time.Second)
+	g, ok := app.Access("Filter open tabs")
+	if !ok {
+		t.Fatal("overflow popover closed")
+	}
+	if start != g.Bounds {
+		t.Fatalf("keyboard-opened popover animated in: %v then %v", start, g.Bounds)
+	}
+	app.Key(0, ui.KeyEscape)
+	if !app.Focused("More documents") {
+		t.Fatal("closing the popover should return focus to its opener")
+	}
+	app.Advance(50 * time.Millisecond)
+	closed := app.Image()
+	app.Advance(400 * time.Millisecond)
+	if changedPixels(closed, app.Image()) != 0 {
+		t.Fatal("Esc-close played an exit; keyboard close should land at once")
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/ebitengine/purego/objc"
 
@@ -497,6 +498,7 @@ func (w *window) PlaceFlyout(f platform.Flyout, size platform.Size) {
 }
 
 func (w *window) createWebView(content NSRect) {
+	registerWebClasses()
 	o := w.opts
 	var cfg id
 	if o.Native != 0 {
@@ -2339,6 +2341,21 @@ func registerWindowClasses() {
 		}
 	}
 	classDef("MyGoWindow", "NSWindow", nil, []objc.MethodDef{
+		method("sendEvent:", func(self id, cmd objc.SEL, ev id) {
+			const nsEventTypeKeyDown, macTabKeyCode = 10, 0x30
+			if sendInt(ev, "type") == nsEventTypeKeyDown && sendInt(ev, "keyCode") == macTabKeyCode {
+				mods := eventMods(ev)
+				if (mods == platform.ModCtrl || mods == platform.ModCtrl|platform.ModShift) &&
+					sendBool(self, "isKeyWindow") && send(self, "attachedSheet") == 0 {
+					responder := send(self, "firstResponder")
+					if s := theBackend.surfaceOf(responder); s != nil && s.w.win == self && !s.w.sheet {
+						send(responder, "keyDown:", uintptr(ev))
+						return
+					}
+				}
+			}
+			sendSuper(self, "MyGoWindow", cmd, uintptr(ev))
+		}),
 		method("orderWindow:relativeTo:", orderWindowRelativeTo("MyGoWindow")),
 		method("canBecomeKeyWindow", func(self id, _ objc.SEL) bool { return true }),
 		method("canBecomeMainWindow", func(self id, _ objc.SEL) bool { return true }),
@@ -2373,6 +2390,18 @@ func registerWindowClasses() {
 	})
 
 	registerClipViewClass()
+	registerWindowDelegate()
+}
+
+var registerWebClasses = sync.OnceFunc(func() {
+	loadWebKit()
+	registerSchemeHandler()
+	delegate := objc.GetClass("MyGoWindowDelegate")
+	for _, name := range []string{"WKNavigationDelegate", "WKUIDelegate", "WKScriptMessageHandler", "WKDownloadDelegate"} {
+		if protocol := objc.GetProtocol(name); protocol != nil {
+			delegate.AddProtocol(protocol)
+		}
+	}
 	classDef("MyGoWebView", "WKWebView", nil, append(append(webViewMethods(), contextMenuMethods()...), []objc.MethodDef{
 		method("undo:", func(self id, _ objc.SEL, sender id) {
 			if handleWebViewEditCommand(self, sender, "undo") {
@@ -2421,10 +2450,12 @@ func registerWindowClasses() {
 			return byte(sendSuper(self, "MyGoWebView", cmd, uintptr(info))) != 0
 		}),
 	}...))
+})
 
+func registerWindowDelegate() {
 	b := func() *Backend { return theBackend }
 	classDef("MyGoWindowDelegate", "NSObject",
-		[]string{"NSWindowDelegate", "WKNavigationDelegate", "WKUIDelegate", "WKScriptMessageHandler", "WKDownloadDelegate", "NSPopoverDelegate"},
+		[]string{"NSWindowDelegate", "NSPopoverDelegate"},
 		append(popoverDelegateMethods(), []objc.MethodDef{
 			// NSWindowDelegate
 			method("windowShouldClose:", func(self id, _ objc.SEL, sender id) bool {

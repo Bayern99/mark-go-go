@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"io"
 	"io/fs"
@@ -89,6 +90,7 @@ type NavSearchHit struct {
 }
 
 type NavSearchResult struct {
+	Root       string         `json:"root,omitempty"`
 	Query      string         `json:"query"`
 	Status     IndexStatus    `json:"status"`
 	Matched    int            `json:"matched"`
@@ -111,8 +113,8 @@ type Crumb struct {
 }
 
 var (
-	navChanged     = mygo.NewEvent[NavSnapshot]("navChanged")
-	navSearchReady = mygo.NewEvent[NavSearchResult]("navSearchReady")
+	NavigationChanged = desktop.Event[NavSnapshot]{}
+	SearchReady       = desktop.Event[NavSearchResult]{}
 )
 
 type indexedFile struct {
@@ -695,7 +697,7 @@ func (h *Service) emitNav(w *workspace) {
 	if !selected {
 		return
 	}
-	_ = navChanged.Emit(w.win, h.navSnapshot(w))
+	_ = NavigationChanged.Emit(w.win, h.navSnapshot(w))
 }
 
 func (h *Service) emitSearch(w *workspace, idx *workspaceIndex) {
@@ -711,7 +713,7 @@ func (h *Service) emitSearch(w *workspace, idx *workspaceIndex) {
 	idx.mu.Lock()
 	query := idx.query
 	idx.mu.Unlock()
-	_ = navSearchReady.Emit(w.win, h.searchLockedResult(w, idx, query))
+	_ = SearchReady.Emit(w.win, h.searchLockedResult(w, idx, query))
 }
 
 func (h *Service) navSnapshot(w *workspace) NavSnapshot {
@@ -1017,6 +1019,7 @@ func (h *Service) searchLockedResult(w *workspace, idx *workspaceIndex, query st
 	incomplete := status == IndexScanning || status == IndexIndexing || indexed < total
 	q := strings.TrimSpace(query)
 	result := NavSearchResult{
+		Root:       w.root,
 		Query:      q,
 		Status:     status,
 		Indexed:    indexed,
@@ -1080,13 +1083,13 @@ func (h *Service) SetFilter(ctx context.Context, query string) (NavSearchResult,
 	}
 	idx := h.indexOf(w)
 	if idx == nil {
-		return NavSearchResult{Query: strings.TrimSpace(query), Status: IndexIdle, Hits: []NavSearchHit{}}, nil
+		return NavSearchResult{Root: w.root, Query: strings.TrimSpace(query), Status: IndexIdle, Hits: []NavSearchHit{}}, nil
 	}
 	idx.mu.Lock()
 	idx.query = strings.TrimSpace(query)
 	idx.mu.Unlock()
 	result := h.searchLockedResult(w, idx, query)
-	_ = navSearchReady.Emit(w.win, result)
+	_ = SearchReady.Emit(w.win, result)
 	return result, nil
 }
 
@@ -1240,7 +1243,7 @@ func (h *Service) waitIndexReady(w *workspace, timeout time.Duration) {
 	}
 }
 
-func breadcrumbsFor(root, path string) []Crumb {
+func Breadcrumbs(root, path string) []Crumb {
 	if path == "" {
 		return nil
 	}

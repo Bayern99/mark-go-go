@@ -1,7 +1,0 @@
-.crepe-root .milkdown .ProseMirror h1 { margin: 36px 0 16px; }
-.crepe-root .milkdown .ProseMirror h2 { margin: 30px 0 10px; }
-.crepe-root .milkdown .ProseMirror h3 { margin: 20px 0 6px; }
-.crepe-root .milkdown .ProseMirror h4,
-.crepe-root .milkdown .ProseMirror h5,
-.crepe-root .milkdown .ProseMirror h6 { margin: 16px 0 4px; }
-.crepe-root .milkdown .ProseMirror .mgo-frontmatter-block + h1 { margin-top: 0; }

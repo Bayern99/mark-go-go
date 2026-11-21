@@ -27,6 +27,7 @@ var inMemoryOnce sync.Once
 // memory until the app quits on older systems, an ephemeral one
 // +nonPersistentDataStore.
 func (a appController) NewDataStore(opts platform.DataStoreOptions) (platform.DataStore, error) {
+	loadWebKit()
 	s := &dataStore{}
 	withPool(func() {
 		cls := class("WKWebsiteDataStore")
@@ -57,6 +58,7 @@ func (s *dataStore) Close() {
 // websiteDataStore returns the WKWebsiteDataStore of store, the default
 // one for nil.
 func websiteDataStore(store platform.DataStore) id {
+	loadWebKit()
 	if s, ok := store.(*dataStore); ok {
 		return s.store
 	}

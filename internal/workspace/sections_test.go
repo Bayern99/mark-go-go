@@ -45,7 +45,7 @@ type sectionVectorFixture struct {
 
 func loadSectionVectors(t *testing.T) sectionVectorFixture {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "..", "web", "test", "fixtures", "section-vectors.json"))
+	raw, err := os.ReadFile(filepath.Join("..", "testdata", "markdown", "section-vectors.json"))
 	if err != nil {
 		t.Fatalf("read section-vectors.json: %v", err)
 	}

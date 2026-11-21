@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/Bayern99/mark-go-go/internal/acp"
+	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"github.com/Bayern99/mark-go-go/internal/genui"
 	"path/filepath"
@@ -18,14 +19,16 @@ type Snapshot struct {
 	ID      string       `json:"id"`
 	Text    string       `json:"text"`
 	Version int          `json:"version"`
+	ScrollY float32      `json:"scrollY,omitempty"`
 	State   DocumentInfo `json:"state"`
 }
 
-var docReloaded = mygo.NewEvent[Snapshot]("docReloaded")
+var DocumentReloaded = desktop.Event[Snapshot]{}
 
-var docState = mygo.NewEvent[DocumentInfo]("docState")
+var DocumentStateChanged = desktop.Event[DocumentInfo]{}
 
 type Service struct {
+	CreateWindow   func(mygo.WindowOptions) *mygo.Window
 	mu             sync.Mutex
 	sessionWriteMu sync.Mutex
 
@@ -62,21 +65,24 @@ type docSession struct {
 	win  *mygo.Window
 	ws   *workspace
 
-	version      int
-	mcpVersion   int
-	mcpText      string
-	offReload    func()
-	offState     func()
-	offClosed    func()
-	generating   bool
-	genSlot      *generationSlot
-	closed       bool
-	pathFn       func() string
-	textFn       func() string
-	edited       bool
-	viewMode     string
-	restoreError string
-	actionError  string
+	version         int
+	mcpVersion      int
+	mcpText         string
+	offReload       func()
+	offState        func()
+	offClosed       func()
+	generating      bool
+	genSlot         *generationSlot
+	closed          bool
+	pathFn          func() string
+	textFn          func() string
+	edited          bool
+	viewMode        string
+	scrollY         float32
+	restoredScrollY float32
+	scrollRestore   uint64
+	restoreError    string
+	actionError     string
 
 	view *genui.ViewFollower
 }
@@ -91,7 +97,7 @@ func NewService() *Service {
 	dir, _ := mygo.App.Path(mygo.PathUserData)
 	settings := &settingsStore{dir: dir}
 	settings.onChange = func(s Settings) {
-		_ = settingsChanged.Broadcast(s)
+		_ = SettingsChanged.Broadcast(s)
 	}
 	return &Service{
 		byWindow:    make(map[*mygo.Window]*workspace),
@@ -162,29 +168,32 @@ func (s *docSession) makeInfo(st mygo.DocumentState, generating bool) DocumentIn
 		root = s.ws.root
 	}
 	return DocumentInfo{
-		WorkspaceRoot: root,
-		ID:            s.id,
-		Name:          st.Name,
-		Path:          st.Path,
-		Edited:        st.Edited,
-		Conflict:      st.Conflict,
-		Deleted:       st.Deleted,
-		ReadOnly:      st.ReadOnly,
-		Generating:    generating,
-		ViewMode:      s.viewMode,
-		ActionError:   s.actionError,
-		RestoreError:  s.restoreError,
+		WorkspaceRoot:   root,
+		ID:              s.id,
+		Name:            st.Name,
+		Path:            st.Path,
+		Edited:          st.Edited,
+		Conflict:        st.Conflict,
+		Deleted:         st.Deleted,
+		ReadOnly:        st.ReadOnly,
+		Generating:      generating,
+		ViewMode:        s.viewMode,
+		RestoredScrollY: s.restoredScrollY,
+		ScrollRestore:   s.scrollRestore,
+		ActionError:     s.actionError,
+		RestoreError:    s.restoreError,
 	}
 }
 
 func (s *docSession) snapshot() Snapshot {
 	s.host.mu.Lock()
-	version := s.version
+	version, scrollY := s.version, s.scrollY
 	s.host.mu.Unlock()
 	return Snapshot{
 		ID:      s.id,
 		Text:    s.doc.Content(),
 		Version: version,
+		ScrollY: scrollY,
 		State:   s.info(),
 	}
 }
@@ -337,7 +346,7 @@ func (h *Service) adopt(doc *mygo.Document[string], win *mygo.Window) {
 		currentWin := s.win
 		h.mu.Unlock()
 		if currentWin != nil {
-			_ = docReloaded.Emit(currentWin, s.snapshot())
+			_ = DocumentReloaded.Emit(currentWin, s.snapshot())
 		}
 	})
 	offState := doc.OnStateChange(func(state mygo.DocumentState) {
@@ -345,7 +354,7 @@ func (h *Service) adopt(doc *mygo.Document[string], win *mygo.Window) {
 		currentWin := s.win
 		h.mu.Unlock()
 		if currentWin != nil {
-			_ = docState.Emit(currentWin, s.info())
+			_ = DocumentStateChanged.Emit(currentWin, s.info())
 		}
 		s.viewMoved(state.Path)
 		h.migrateIfNeeded(s)
@@ -682,7 +691,7 @@ func (h *Service) noteAction(s *docSession, err error) {
 		return
 	}
 	if win != nil && !win.IsDestroyed() {
-		_ = docState.Emit(win, s.info())
+		_ = DocumentStateChanged.Emit(win, s.info())
 	}
 	h.emitWorkspace(w)
 }
@@ -703,6 +712,23 @@ func (h *Service) Load(ctx context.Context, documentID string) (Snapshot, error)
 		return Snapshot{}, err
 	}
 	return s.snapshot(), nil
+}
+
+// SetDocumentScrollY records a document's scroll position for the session.
+// It does not save the session: callers that want the value on disk reach
+// the usual tab, view or quit persistence paths.
+func (h *Service) SetDocumentScrollY(documentID string, scrollY float32) {
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.restoring {
+		return
+	}
+	if s := h.byID[documentID]; s != nil {
+		s.scrollY = scrollY
+	}
 }
 
 func (h *Service) Update(ctx context.Context, documentID, text string) error {

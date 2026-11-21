@@ -101,6 +101,10 @@ var (
 	loadOnce                                                              sync.Once
 )
 
+var loadWebKit = sync.OnceFunc(func() {
+	libWebKit = mustDlopen("/System/Library/Frameworks/WebKit.framework/WebKit")
+})
+
 // load opens the frameworks and prepares the typed message functions.
 func load() {
 	loadOnce.Do(func() {
@@ -109,7 +113,6 @@ func load() {
 		libCF = mustDlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
 		libCG = mustDlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
 		libAppKit = mustDlopen("/System/Library/Frameworks/AppKit.framework/AppKit")
-		libWebKit = mustDlopen("/System/Library/Frameworks/WebKit.framework/WebKit")
 		libCarbon = mustDlopen("/System/Library/Frameworks/Carbon.framework/Carbon")
 		libCoreServices = mustDlopen("/System/Library/Frameworks/CoreServices.framework/CoreServices")
 		// Optional frameworks, loaded so their classes are registered.

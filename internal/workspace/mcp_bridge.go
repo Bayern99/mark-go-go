@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"io"
 	"io/fs"
 	"os"
@@ -14,7 +15,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
-	"github.com/egoist/mygo"
 )
 
 const maxMCPDocumentBytes = 8 << 20
@@ -59,7 +59,7 @@ type DocReveal struct {
 	Offset int    `json:"offset"`
 }
 
-var docReveal = mygo.NewEvent[DocReveal]("docReveal")
+var DocumentRevealed = desktop.Event[DocReveal]{}
 
 func (h *Service) workspaceByRoot(root string) *workspace {
 	canon := fsutil.CanonicalPath(root)
@@ -306,6 +306,18 @@ func (h *Service) MCPDocument(root, idOrPath string) (DocumentMCPState, error) {
 	}, nil
 }
 
+func (h *Service) RevealDocument(id string, offset int) error {
+	s, err := h.docSession(id)
+	if err != nil {
+		return err
+	}
+	win := h.sessionWindow(s)
+	if win == nil || win.IsDestroyed() {
+		return errNoWorkspace
+	}
+	return DocumentRevealed.Emit(win, DocReveal{ID: id, Path: s.currentPath(), Offset: offset})
+}
+
 func (h *Service) MCPOpenDocument(ctx context.Context, root, idOrPath string, revealOffset int, hasReveal bool) (DocumentInfo, error) {
 	canonRoot := fsutil.CanonicalPath(root)
 	if canonRoot == "" {
@@ -345,11 +357,7 @@ func (h *Service) MCPOpenDocument(ctx context.Context, root, idOrPath string, re
 				return DocumentInfo{}, err
 			}
 			if hasReveal {
-				if s, sErr := h.docSession(info.ID); sErr == nil {
-					if win := h.sessionWindow(s); win != nil && !win.IsDestroyed() {
-						_ = docReveal.Emit(win, DocReveal{ID: info.ID, Path: info.Path, Offset: revealOffset})
-					}
-				}
+				_ = h.RevealDocument(info.ID, revealOffset)
 			}
 			return info, nil
 		}
@@ -360,7 +368,7 @@ func (h *Service) MCPOpenDocument(ctx context.Context, root, idOrPath string, re
 		win.Show()
 		win.Focus()
 		if hasReveal {
-			_ = docReveal.Emit(win, DocReveal{ID: targetSession.id, Path: targetSession.currentPath(), Offset: revealOffset})
+			_ = DocumentRevealed.Emit(win, DocReveal{ID: targetSession.id, Path: targetSession.currentPath(), Offset: revealOffset})
 		}
 	}
 	return targetSession.info(), nil

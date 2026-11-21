@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"errors"
+	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/acp"
@@ -48,7 +49,7 @@ func (s *Service) UserDataDir() string {
 }
 
 func (s *Service) WindowWorkspace(ctx context.Context, root string) (WorkspaceRef, error) {
-	return s.windowWorkspace(mygo.CallerWindow(ctx), root)
+	return s.windowWorkspace(desktop.Window(ctx), root)
 }
 
 func (s *Service) windowWorkspace(win *mygo.Window, root string) (WorkspaceRef, error) {
@@ -71,7 +72,7 @@ func (s *Service) windowWorkspace(win *mygo.Window, root string) (WorkspaceRef, 
 }
 
 func (s *Service) EditableDocument(ctx context.Context, root, documentID string) error {
-	return s.editableDocument(mygo.CallerWindow(ctx), root, documentID)
+	return s.editableDocument(desktop.Window(ctx), root, documentID)
 }
 
 func (s *Service) editableDocument(win *mygo.Window, root, documentID string) error {
@@ -102,7 +103,7 @@ func (s *Service) editableDocument(win *mygo.Window, root, documentID string) er
 }
 
 func (s *Service) CheckpointDocument(ctx context.Context, documentID, path string) (CheckpointDoc, error) {
-	return s.checkpointDocument(mygo.CallerWindow(ctx), documentID, path)
+	return s.checkpointDocument(desktop.Window(ctx), documentID, path)
 }
 
 func (s *Service) checkpointDocument(win *mygo.Window, documentID, path string) (CheckpointDoc, error) {
@@ -214,22 +215,23 @@ func (h *Service) Generate(ctx context.Context, documentID string, req genui.Gen
 		}
 		return progress.Send(p)
 	}
-	if err := h.generate(ctx, documentID, req, send); err != nil {
+	if err := <-h.StartGeneration(ctx, documentID, req, send); err != nil {
 		return genui.ReportFailure(err, send)
 	}
 	return nil
 }
 
-func (h *Service) generate(ctx context.Context, documentID string, req genui.GenerateRequest, send func(genui.GenerateProgress) error) error {
-	h.runs.Add(1)
-	defer h.runs.Done()
+func (h *Service) StartGeneration(ctx context.Context, documentID string, req genui.GenerateRequest, send func(genui.GenerateProgress) error) <-chan error {
+	result := make(chan error, 1)
+	refuse := func(err error) <-chan error { result <- err; close(result); return result }
+
 	s, err := h.docSession(documentID)
 	if err != nil {
-		return err
+		return refuse(err)
 	}
 	docPath := s.currentPath()
 	if docPath == "" {
-		return genui.NewFailure(genui.FailUnsaved, "Save the document first: the view is stored next to it.", "")
+		return refuse(genui.NewFailure(genui.FailUnsaved, "Save the document first: the view is stored next to it.", ""))
 	}
 	var settings Settings
 	if h.settings != nil {
@@ -238,26 +240,26 @@ func (h *Service) generate(ctx context.Context, documentID string, req genui.Gen
 	h.mu.Lock()
 	if s.closed {
 		h.mu.Unlock()
-		return errNoDocument
+		return refuse(errNoDocument)
 	}
 	if s.generating {
 		h.mu.Unlock()
-		return genui.NewFailure(genui.FailBusy, "A view is already being generated.", genui.HintBusy)
+		return refuse(genui.NewFailure(genui.FailBusy, "A view is already being generated.", genui.HintBusy))
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	slot := &generationSlot{cancel: cancel, path: docPath}
 	s.generating = true
 	s.genSlot = slot
+	h.runs.Add(1)
 	w := s.ws
 	win := s.win
 	prepareJob := h.prepareJob
 	h.mu.Unlock()
 	h.emitWorkspace(w)
 	if win != nil {
-		_ = docState.Emit(win, s.info())
+		_ = DocumentStateChanged.Emit(win, s.info())
 	}
 	h.refreshPathMenus()
-	defer h.releaseGeneration(s, slot)
 
 	var models acp.ModelUpdater
 	if h.settings != nil {
@@ -279,7 +281,15 @@ func (h *Service) generate(ctx context.Context, documentID string, req genui.Gen
 	if prepareJob != nil {
 		prepareJob(&job)
 	}
-	return acp.RunGeneration(runCtx, job, send)
+	go func() {
+		defer h.runs.Done()
+		defer close(result)
+		err := acp.RunGeneration(runCtx, job, send)
+		cancel()
+		h.releaseGeneration(s, slot)
+		result <- err
+	}()
+	return result
 }
 
 func (h *Service) commitGenerationWrite(s *docSession, slot *generationSlot) error {
@@ -322,7 +332,7 @@ func (h *Service) releaseGeneration(s *docSession, slot *generationSlot) {
 	}
 	h.emitWorkspace(w)
 	if win != nil {
-		_ = docState.Emit(win, s.info())
+		_ = DocumentStateChanged.Emit(win, s.info())
 	}
 	h.refreshPathMenus()
 }

@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
@@ -22,8 +23,8 @@ func TestSessionStoreRoundTripOrderAndViewMode(t *testing.T) {
 		ID:   "ws-1",
 		Root: root,
 		Tabs: []sessionTab{
-			{ID: "doc-a", Path: a, ViewMode: "markdown"},
-			{ID: "doc-b", Path: b, ViewMode: "genui"},
+			{ID: "doc-a", Path: a, ViewMode: "markdown", ScrollY: 42.5},
+			{ID: "doc-b", Path: b, ViewMode: "genui", ScrollY: 128},
 		},
 		ActiveID: "doc-b",
 	}}}
@@ -44,6 +45,9 @@ func TestSessionStoreRoundTripOrderAndViewMode(t *testing.T) {
 	if w.Tabs[0].ViewMode != "markdown" || w.Tabs[1].ViewMode != "genui" {
 		t.Fatalf("view modes = %+v", w.Tabs)
 	}
+	if w.Tabs[0].ScrollY != 42.5 || w.Tabs[1].ScrollY != 128 {
+		t.Fatalf("scroll positions = %+v", w.Tabs)
+	}
 	raw, err := os.ReadFile(st.sessionPath())
 	if err != nil {
 		t.Fatal(err)
@@ -54,6 +58,32 @@ func TestSessionStoreRoundTripOrderAndViewMode(t *testing.T) {
 	}
 	if len(check.Workspaces) != 1 || check.Workspaces[0].ActiveID != "doc-b" {
 		t.Fatalf("disk = %s", raw)
+	}
+}
+
+func TestSessionStoreAcceptsLegacyTabsWithoutScrollY(t *testing.T) {
+	dir := t.TempDir()
+	root := t.TempDir()
+	path := filepath.Join(root, "a.md")
+	st := &settingsStore{dir: dir}
+	legacy := `{"workspaces":[{"id":"ws","root":"` + root + `","tabs":[{"id":"doc","path":"` + path + `","viewMode":"markdown"}],"activeId":"doc"}]}`
+	if err := os.WriteFile(st.sessionPath(), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loaded := st.loadSession()
+	if len(loaded.Workspaces) != 1 || len(loaded.Workspaces[0].Tabs) != 1 {
+		t.Fatalf("legacy session did not load: %+v", loaded)
+	}
+	tab := loaded.Workspaces[0].Tabs[0]
+	if tab.ID != "doc" || tab.Path != path || tab.ViewMode != "markdown" || tab.ScrollY != 0 {
+		t.Fatalf("legacy tab = %+v", tab)
+	}
+	plan := planSessionRestore(loaded, restoreLive{
+		RootOK: func(string) bool { return true },
+		FileOK: func(string) bool { return true },
+	})
+	if len(plan.Workspaces) != 1 || len(plan.Workspaces[0].Tabs) != 1 || plan.Workspaces[0].Tabs[0].ScrollY != 0 {
+		t.Fatalf("legacy plan = %+v", plan.Workspaces)
 	}
 }
 
@@ -135,6 +165,63 @@ func TestRestoreReusesWindowOpenedBeforeSessionLayout(t *testing.T) {
 	}
 }
 
+func TestRestoreKeepsSavedScrollForInactiveTab(t *testing.T) {
+	root := t.TempDir()
+	activePath := filepath.Join(root, "active.md")
+	otherPath := filepath.Join(root, "other.md")
+	for _, p := range []string{activePath, otherPath} {
+		if err := os.WriteFile(p, []byte("# "+filepath.Base(p)+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	win := &mygo.Window{}
+	ws := &workspace{id: "root", root: root, win: win, tabs: []string{"active", "other"}, active: "active"}
+	h := &Service{
+		byWindow:       map[*mygo.Window]*workspace{win: ws},
+		byWorkspace:    map[string]*workspace{ws.id: ws},
+		byID:           map[string]*docSession{},
+		workspaceOrder: []string{ws.id},
+		settings:       &settingsStore{dir: t.TempDir()},
+		disableWatch:   true,
+		restoring:      true,
+	}
+	active := &docSession{id: "active", host: h, ws: ws, win: win, pathFn: func() string { return activePath }}
+	other := &docSession{id: "other", host: h, ws: ws, win: win, pathFn: func() string { return otherPath }}
+	h.byID[active.id], h.byID[other.id] = active, other
+	file := sessionFileData{Workspaces: []sessionWorkspace{{
+		ID:       ws.id,
+		Root:     root,
+		Tabs:     []sessionTab{{ID: active.id, Path: activePath, ScrollY: 480.5}, {ID: other.id, Path: otherPath, ScrollY: 96}},
+		ActiveID: active.id,
+		Active:   true,
+	}}}
+	h.applyRestorePlan(planSessionRestore(file, h.liveRestoreState(nil)))
+
+	if active.scrollY != 480.5 || active.restoredScrollY != 480.5 || active.scrollRestore != 1 {
+		t.Fatalf("active scroll = %v restored=%v token=%d, want 480.5 / 480.5 / 1", active.scrollY, active.restoredScrollY, active.scrollRestore)
+	}
+	if other.scrollY != 96 || other.restoredScrollY != 96 || other.scrollRestore != 1 {
+		t.Fatalf("inactive restored tab lost its scroll: %v restored=%v token=%d, want 96 / 96 / 1", other.scrollY, other.restoredScrollY, other.scrollRestore)
+	}
+	if info := active.info(); info.RestoredScrollY != 480.5 || info.ScrollRestore != 1 {
+		t.Fatalf("active DocumentInfo restore fields = %+v", info)
+	}
+	if info := other.info(); info.RestoredScrollY != 96 || info.ScrollRestore != 1 {
+		t.Fatalf("other DocumentInfo restore fields = %+v", info)
+	}
+	h.SetDocumentScrollY("active", 0)
+	if active.scrollY != 480.5 {
+		t.Fatalf("SetDocumentScrollY during restore overwrote active.scrollY to %v", active.scrollY)
+	}
+	h.mu.Lock()
+	captured := h.captureSessionLocked()
+	h.mu.Unlock()
+	tabs := captured.Workspaces[0].Tabs
+	if len(tabs) != 2 || tabs[0].ScrollY != 480.5 || tabs[1].ScrollY != 96 {
+		t.Fatalf("captured scroll positions = %+v", tabs)
+	}
+}
+
 func TestSessionStoreEmptyMeansNoWorkspaces(t *testing.T) {
 	st := &settingsStore{dir: t.TempDir()}
 	if err := st.saveSession(sessionFileData{}); err != nil {
@@ -163,7 +250,7 @@ func TestSessionFileLayoutKeys(t *testing.T) {
 	file := sessionFileData{Workspaces: []sessionWorkspace{{
 		ID:       "ws",
 		Root:     root,
-		Tabs:     []sessionTab{{ID: "doc", Path: filepath.Join(root, "a.md"), ViewMode: "genui"}},
+		Tabs:     []sessionTab{{ID: "doc", Path: filepath.Join(root, "a.md"), ViewMode: "genui", ScrollY: 64}},
 		ActiveID: "doc",
 	}}}
 	if err := st.saveSession(file); err != nil {
@@ -204,6 +291,9 @@ func TestSessionFileLayoutKeys(t *testing.T) {
 	}
 	if tab["id"] != "doc" || tab["viewMode"] != "genui" {
 		t.Fatalf("tab = %v", tab)
+	}
+	if tab["scrollY"] != float64(64) {
+		t.Fatalf("tab scrollY = %v, want 64", tab["scrollY"])
 	}
 	if tab["path"] != filepath.Join(root, "a.md") {
 		t.Fatalf("tab path = %v", tab["path"])
@@ -261,8 +351,8 @@ func TestPlanRestoresTabOrderActiveAndEmptyFolder(t *testing.T) {
 			ID:   "ws-notes",
 			Root: root,
 			Tabs: []sessionTab{
-				{ID: "id-a", Path: a, ViewMode: "markdown"},
-				{ID: "id-b", Path: b, ViewMode: "genui"},
+				{ID: "id-a", Path: a, ViewMode: "markdown", ScrollY: 10},
+				{ID: "id-b", Path: b, ViewMode: "genui", ScrollY: 250.75},
 			},
 			ActiveID: "id-a",
 		},
@@ -281,6 +371,9 @@ func TestPlanRestoresTabOrderActiveAndEmptyFolder(t *testing.T) {
 	}
 	if notes.Tabs[0].ViewMode != "markdown" || notes.ActiveID != "id-a" {
 		t.Fatalf("active/mode = %+v", notes)
+	}
+	if notes.Tabs[0].ScrollY != 10 || notes.Tabs[1].ScrollY != 250.75 {
+		t.Fatalf("planned scroll positions = %+v", notes.Tabs)
 	}
 	if plan.Workspaces[1].Root != empty || len(plan.Workspaces[1].Tabs) != 0 {
 		t.Fatalf("empty folder = %+v", plan.Workspaces[1])
@@ -513,8 +606,8 @@ func TestCaptureSessionSkipsWelcomeAndKeepsTabOrder(t *testing.T) {
 	}
 	welcome := &workspace{id: "welcome", root: ""}
 	folder := &workspace{id: "ws", root: root, tabs: []string{"a", "b"}, active: "b"}
-	h.byID["a"] = &docSession{id: "a", pathFn: func() string { return filepath.Join(root, "a.md") }, viewMode: "markdown"}
-	h.byID["b"] = &docSession{id: "b", pathFn: func() string { return filepath.Join(root, "b.md") }, viewMode: "genui"}
+	h.byID["a"] = &docSession{id: "a", pathFn: func() string { return filepath.Join(root, "a.md") }, viewMode: "markdown", scrollY: 12}
+	h.byID["b"] = &docSession{id: "b", pathFn: func() string { return filepath.Join(root, "b.md") }, viewMode: "genui", scrollY: 345.5}
 	h.workspaceOrder = []string{"welcome", "ws"}
 	welcomeWin := &mygo.Window{}
 	folderWin := &mygo.Window{}
@@ -528,6 +621,9 @@ func TestCaptureSessionSkipsWelcomeAndKeepsTabOrder(t *testing.T) {
 	}
 	if file.Workspaces[0].ActiveID != "b" || file.Workspaces[0].Tabs[0].ViewMode != "markdown" || file.Workspaces[0].Tabs[1].ViewMode != "genui" {
 		t.Fatalf("tabs %+v", file.Workspaces[0])
+	}
+	if file.Workspaces[0].Tabs[0].ScrollY != 12 || file.Workspaces[0].Tabs[1].ScrollY != 345.5 {
+		t.Fatalf("scroll positions %+v", file.Workspaces[0].Tabs)
 	}
 }
 
@@ -754,5 +850,39 @@ func TestQuitAttemptSaveFailureLeavesAppOpenAndRetryable(t *testing.T) {
 		t.Fatalf("retry = attempt %d, windows %d, started %v", attempt, len(wins), started)
 	} else if h.quitTimer != nil {
 		h.quitTimer.Stop()
+	}
+}
+
+func TestSetDocumentScrollYUpdatesSnapshotWithoutWritingSession(t *testing.T) {
+	dir := t.TempDir()
+	h := &Service{
+		byID:     map[string]*docSession{},
+		settings: &settingsStore{dir: dir},
+	}
+	s := &docSession{host: h, id: "doc", doc: &mygo.Document[string]{}}
+	h.byID[s.id] = s
+
+	h.restoring = true
+	h.SetDocumentScrollY("doc", 12)
+	if s.scrollY != 0 {
+		t.Fatalf("SetDocumentScrollY wrote %v while restoring", s.scrollY)
+	}
+	h.restoring = false
+
+	h.SetDocumentScrollY("doc", 77.5)
+	snap, err := h.Load(context.Background(), "doc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.ScrollY != 77.5 {
+		t.Fatalf("snapshot scroll = %v, want 77.5", snap.ScrollY)
+	}
+	if _, err := os.Stat(filepath.Join(dir, sessionFile)); !os.IsNotExist(err) {
+		t.Fatalf("recording a scroll position must not write the session, err = %v", err)
+	}
+
+	h.SetDocumentScrollY("missing", 1)
+	if snap.ScrollY != 77.5 {
+		t.Fatalf("unknown document changed the snapshot: %v", snap.ScrollY)
 	}
 }

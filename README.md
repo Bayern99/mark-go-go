@@ -20,23 +20,21 @@ Mark Go Go 将 `~/.feynman` 中已有的登录凭据、模型、记忆、MCP 配
 
 ## 开发
 
-Go 和 Node 版本见 [CI 配置](.github/workflows/ci.yml)。
+原生应用使用 [go.mod](go.mod) 指定的 Go 版本。
 
 ```sh
-npm --prefix web ci
 go tool mygo dev
+go tool mygo build
 ```
 
-浏览器预览运行 `npm --prefix web run dev`。绑定变更后运行 `go tool mygo generate`。正式构建运行 `go tool mygo build`。
+预览、Markdown、GenUI 和工作区界面由 MyGo Native UI 绘制。26 份 Markdown 语料和共享章节向量由 Go 回归测试直接载入；格式与协议示例见 [GenUI 格式](docs/genui/view-format.md)。
 
 ## 验证
 
 ```sh
-npx --prefix web playwright install chromium-headless-shell
-npm --prefix web test
-go test -race ./...
+scripts/verify.sh
 ```
 
-菜单、保存对话框和重启使用 [原生 Automation 与 macOS 验证流程](docs/agents/native-automation.md)。
+脚本运行 Go 格式、vet、MyGo vet、竞态测试及 Windows amd64 交叉编译。macOS 原生窗口、菜单和重启使用 [原生 Automation 与 macOS 验证流程](docs/agents/native-automation.md)。历史 WebKit 基线及同机对照方法见 [Portrait 性能记录](docs/agents/portrait-performance.md)。
 
 [架构与代码入口](ARCHITECTURE.md) · [界面设计](DESIGN.md) · [更新日志](CHANGELOG.md) · [验收记录](docs/acceptance.md) · [MIT 许可证](LICENSE)

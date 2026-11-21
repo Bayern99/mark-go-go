@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"os"
 	"path/filepath"
@@ -33,18 +34,20 @@ type WorkspaceSnapshot struct {
 }
 
 type DocumentInfo struct {
-	WorkspaceRoot string `json:"workspaceRoot,omitempty"`
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Path          string `json:"path"`
-	Edited        bool   `json:"edited"`
-	Conflict      bool   `json:"conflict"`
-	Deleted       bool   `json:"deleted"`
-	ReadOnly      bool   `json:"readOnly"`
-	Generating    bool   `json:"generating"`
-	ViewMode      string `json:"viewMode,omitempty"`
-	ActionError   string `json:"actionError,omitempty"`
-	RestoreError  string `json:"restoreError,omitempty"`
+	WorkspaceRoot   string  `json:"workspaceRoot,omitempty"`
+	ID              string  `json:"id"`
+	Name            string  `json:"name"`
+	Path            string  `json:"path"`
+	Edited          bool    `json:"edited"`
+	Conflict        bool    `json:"conflict"`
+	Deleted         bool    `json:"deleted"`
+	ReadOnly        bool    `json:"readOnly"`
+	Generating      bool    `json:"generating"`
+	ViewMode        string  `json:"viewMode,omitempty"`
+	RestoredScrollY float32 `json:"restoredScrollY,omitempty"`
+	ScrollRestore   uint64  `json:"scrollRestore,omitempty"`
+	ActionError     string  `json:"actionError,omitempty"`
+	RestoreError    string  `json:"restoreError,omitempty"`
 }
 
 type CloseResult struct {
@@ -59,8 +62,8 @@ type NativeCommand struct {
 }
 
 var (
-	workspaceChanged = mygo.NewEvent[WorkspaceSnapshot]("workspaceChanged")
-	nativeCommand    = mygo.NewEvent[NativeCommand]("nativeCommand")
+	WorkspaceChanged = desktop.Event[WorkspaceSnapshot]{}
+	CommandRequested = desktop.Event[NativeCommand]{}
 )
 
 const (
@@ -119,7 +122,7 @@ func (h *Service) SetDocuments(ds *mygo.Documents[string]) {
 }
 
 func (h *Service) workspaceOf(ctx context.Context) (*workspace, error) {
-	return h.workspaceOfWindow(mygo.CallerWindow(ctx))
+	return h.workspaceOfWindow(desktop.Window(ctx))
 }
 
 func (h *Service) workspaceOfWindow(win *mygo.Window) (*workspace, error) {
@@ -264,12 +267,12 @@ func (h *Service) emitWorkspace(w *workspace) {
 	snap, err := h.snapshotWorkspaceLocked(win)
 	h.mu.Unlock()
 	if err == nil {
-		_ = workspaceChanged.Emit(win, snap)
+		_ = WorkspaceChanged.Emit(win, snap)
 	}
 }
 
 func (h *Service) Snapshot(ctx context.Context) (WorkspaceSnapshot, error) {
-	win := mygo.CallerWindow(ctx)
+	win := desktop.Window(ctx)
 	if win == nil {
 		return WorkspaceSnapshot{}, errNoWorkspace
 	}
@@ -607,7 +610,7 @@ func (h *Service) InterceptCommand(role mygo.MenuRole, doc *mygo.Document[string
 	if !matchesVisibleDocument {
 		return true
 	}
-	_ = nativeCommand.Emit(win, NativeCommand{ID: doc.ID(), Command: cmd})
+	_ = CommandRequested.Emit(win, NativeCommand{ID: doc.ID(), Command: cmd})
 	return true
 }
 
@@ -615,7 +618,7 @@ func (h *Service) SetNativeEditState(ctx context.Context, documentID string, can
 	if _, err := h.docSession(documentID); err != nil {
 		return err
 	}
-	win := mygo.CallerWindow(ctx)
+	win := desktop.Window(ctx)
 	if win == nil {
 		win = mygo.FocusedWindow()
 	}
@@ -673,7 +676,7 @@ func (h *Service) InterceptWindowClose(win *mygo.Window) bool {
 	if skip {
 		return false
 	}
-	_ = nativeCommand.Emit(win, NativeCommand{Command: "closeWorkspace"})
+	_ = CommandRequested.Emit(win, NativeCommand{Command: "closeWorkspace"})
 	return true
 }
 
@@ -698,9 +701,8 @@ func (h *Service) openWorkspaceWindow(id, root, title string) *mygo.Window {
 	if id == "" {
 		id = newWorkspaceID()
 	}
-	win := mygo.NewWindow(mygo.WindowOptions{
+	win := h.CreateWindow(mygo.WindowOptions{
 		Title:     title,
-		URL:       "/",
 		Width:     defaultWindowWidth,
 		Height:    defaultWindowHeight,
 		MinWidth:  minWindowWidth,

@@ -20,23 +20,21 @@ Mark Go Go links existing files and directories in `~/.feynman`, including login
 
 ## Development
 
-See the [CI configuration](.github/workflows/ci.yml) for Go and Node versions.
+The native app uses the Go version in [go.mod](go.mod).
 
 ```sh
-npm --prefix web ci
 go tool mygo dev
+go tool mygo build
 ```
 
-Run `npm --prefix web run dev` for the browser preview. Run `go tool mygo generate` after changing bindings. Build the release with `go tool mygo build`.
+MyGo Native UI draws Preview, Markdown, GenUI and the workspace. Go regression tests load the 26 Markdown fixtures and shared section vectors directly. The format and protocol example live in the [GenUI format guide](docs/genui/view-format.md).
 
 ## Verification
 
 ```sh
-npx --prefix web playwright install chromium-headless-shell
-npm --prefix web test
-go test -race ./...
+scripts/verify.sh
 ```
 
-Use the [native Automation and macOS checks](docs/agents/native-automation.md) for menus, save dialogs, and restart behavior.
+The script checks Go formatting, vet, MyGo vet, race tests and a Windows amd64 cross-build. Use the [native Automation and macOS checks](docs/agents/native-automation.md) for native windows, menus and session recovery. The [Portrait performance record](docs/agents/portrait-performance.md) preserves the WebKit baseline and the same-machine comparison method.
 
 [Architecture and code entry points](ARCHITECTURE.md) · [Interface design](DESIGN.md) · [Changelog](CHANGELOG.md) · [Acceptance evidence](docs/acceptance.md) · [MIT license](LICENSE)

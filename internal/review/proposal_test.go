@@ -520,3 +520,51 @@ func TestReviewHostAndComposingMultipleTargetedEditsOnSameFile(t *testing.T) {
 		t.Fatalf("host.Complete = %+v, %v", afterComplete, err)
 	}
 }
+
+func TestReviewAppliesOnlyShownHunksAndKeepsUnresolvedConflict(t *testing.T) {
+	service := NewService()
+	root := t.TempDir()
+	before := "first\nkeep\nsecond\nkeep too\nthird\n"
+	proposed := "agent first\nkeep\nagent second\nkeep too\nagent third\n"
+	live := "first\nkeep\nreader second\nkeep too\nthird\n"
+	p, err := service.SubmitProposal(ProposeInput{WorkspaceRoot: root, DocumentID: "doc", BaseText: before, ProposedText: proposed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	shown, err := service.SyncProposal(root, p.ID, live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shown.Hunks) != 3 || !shown.Hunks[1].Conflict {
+		t.Fatalf("hunks %#v", shown.Hunks)
+	}
+	apply := func(next string) error { live = next; return nil }
+	err = service.ApplyReviewed(root, p.ID, shown.Revision, live, map[string]HunkDecision{
+		shown.Hunks[0].ID: HunkAccepted, shown.Hunks[2].ID: HunkRejected,
+	}, apply)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if live != "agent first\nkeep\nreader second\nkeep too\nthird\n" {
+		t.Fatalf("live %q", live)
+	}
+	rest, err := service.GetProposal(root, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rest.Hunks) != 1 || !rest.Hunks[0].Conflict {
+		t.Fatalf("remaining %#v", rest.Hunks)
+	}
+	if err = service.ApplyReviewed(root, p.ID, shown.Revision, live, map[string]HunkDecision{rest.Hunks[0].ID: HunkRejected}, apply); err == nil {
+		t.Fatal("accepted a stale comparison")
+	}
+	if err = service.ApplyReviewed(root, p.ID, rest.Revision, live+"typing\n", map[string]HunkDecision{rest.Hunks[0].ID: HunkRejected}, apply); err == nil {
+		t.Fatal("accepted a stale live buffer")
+	}
+	if err = service.ApplyReviewed(root, p.ID, rest.Revision, live, map[string]HunkDecision{rest.Hunks[0].ID: HunkRejected}, apply); err != nil {
+		t.Fatal(err)
+	}
+	if queue := service.ListProposals(root); len(queue) != 0 {
+		t.Fatalf("queue %#v", queue)
+	}
+}

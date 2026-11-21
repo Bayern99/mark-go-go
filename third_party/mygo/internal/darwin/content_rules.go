@@ -44,7 +44,8 @@ func (w *window) SetContentRules(lists []any) {
 // The handle is the list, retained for good: a page may apply it at any
 // time.
 func compileContentRules(b *Backend, contentID, identifier, rules string, done func(any, error)) {
-	if class("WKContentRuleListStore") == 0 {
+	loadWebKit()
+	if !hasClass("WKContentRuleListStore") {
 		done(nil, fmt.Errorf("content rules need macOS 10.13 or newer: %w", platform.ErrUnsupported))
 		return
 	}

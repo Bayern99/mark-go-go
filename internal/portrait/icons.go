@@ -24,6 +24,13 @@ var (
 	IconFolderOpen      = Icon{Glyph: "\ue256"}
 	IconMagnifyingGlass = Icon{Glyph: "\ue30c"}
 	IconDotsThree       = Icon{Glyph: "\ue1fe"}
+	IconAtom            = Icon{Glyph: "\ue5e4"}
+	IconSpinnerGap      = Icon{Glyph: "\ue66c"}
+	IconPaperclip       = Icon{Glyph: "\ue39a"}
+	IconCheck           = Icon{Glyph: "\ue182"}
+	IconCheckCircle     = Icon{Glyph: "\ue184"}
+	IconCircle          = Icon{Glyph: "\ue18a"}
+	IconWarningCircle   = Icon{Glyph: "\ue4e2"}
 )
 
 // Glyph draws the icon at size in color. It is decoration: the control

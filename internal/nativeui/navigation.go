@@ -54,7 +54,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 		portrait.Track(c, "navigation", func(t *portrait.Segments) {
 			for _, title := range []string{"Workspace", "Outline"} {
 				outline := title == "Outline"
-				button := t.Segment(title, title, s.outline == outline).Grow(1).Role(ui.RoleTab).AccessSelected(s.outline == outline)
+				button := t.Segment(c, title, title, s.outline == outline).Grow(1).Role(ui.RoleTab).AccessSelected(s.outline == outline)
 				if button.Clicked() {
 					s.outline = outline
 				}

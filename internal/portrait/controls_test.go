@@ -161,7 +161,7 @@ func (s *segments) view(c *ui.Context) {
 	ui.Column(c).Fill().Background(ui.Hex("#000000")).Padding(40).AlignItems(ui.Start).Children(func() {
 		portrait.Track(c, "views", func(t *portrait.Segments) {
 			for i, title := range []string{"Preview", "Markdown", "GenUI"} {
-				b := t.Segment(title, title, s.selected == i).Width(90)
+				b := t.Segment(c, title, title, s.selected == i).Width(90)
 				if b.Clicked() {
 					s.selected = i
 				}
@@ -249,8 +249,8 @@ func TestTrackIsSunken(t *testing.T) {
 	tt := ui.NewTester(func(c *ui.Context) {
 		ui.Column(c).Fill().Background(portrait.Colors.Paper).Padding(40).AlignItems(ui.Start).Children(func() {
 			portrait.Track(c, "", func(t *portrait.Segments) {
-				t.Segment("One", "One", true).Width(60)
-				t.Segment("Two", "Two", false).Width(60)
+				t.Segment(c, "One", "One", true).Width(60)
+				t.Segment(c, "Two", "Two", false).Width(60)
 			}).Label("Views")
 		})
 	}, 240, 160)

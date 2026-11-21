@@ -116,7 +116,6 @@ func iconButton(c *ui.Context, icon Icon, label string, look Look) ui.Element {
 
 // Segments builds the segments of a Track.
 type Segments struct {
-	c             *ui.Context
 	group         string
 	keyboard, saw bool
 }
@@ -129,7 +128,7 @@ func Track(c *ui.Context, group string, build func(s *Segments)) ui.Element {
 	t := ui.Row(c.Key("track:" + group)).Role(ui.RoleTabList).Padding(2).Gap(2).Radius(9).AlignItems(ui.Center)
 	Surface{Materials.GlassSelected, Materials.GlassSelected, Materials.Track.Shadows}.Apply(t)
 	keyboard := ui.Local(t, "keyboard", func() bool { return false })
-	s := &Segments{c: c, group: group, keyboard: keyboard != nil && *keyboard}
+	s := &Segments{group: group, keyboard: keyboard != nil && *keyboard}
 	t.Children(func() { build(s) })
 	if keyboard != nil {
 		*keyboard = s.saw
@@ -138,15 +137,14 @@ func Track(c *ui.Context, group string, build func(s *Segments)) ui.Element {
 }
 
 // Segment draws a segment button. label names it.
-func (s *Segments) Segment(title, label string, selected bool) ui.Element {
-	c := s.c
+func (s *Segments) Segment(c *ui.Context, title, label string, selected bool) ui.Element {
 	b := ui.ButtonBase(c.Key(label)).Label(label).Height(24).Padding(0, 10).Radius(7).AlignItems(ui.Center).Justify(ui.Center).MinWidth(0)
 	ink := Colors.Ink3
 	if selected || b.Hovered() {
 		ink = Colors.Ink
 	}
 	b.Children(func() {
-		s.Capsule(b, selected)
+		s.Capsule(c, b, selected)
 		Type.UI.Apply(ui.Text(c, title)).FontWeight(500).TextColor(ink).ZIndex(1).MaxLines(1).Ellipsis("…")
 	})
 	return b
@@ -155,17 +153,17 @@ func (s *Segments) Segment(title, label string, selected bool) ui.Element {
 // Capsule draws the selected capsule filling the current parent when
 // selected, for segments built by hand; owner is the segment's focusable
 // button. Content drawn over the capsule needs ZIndex(1).
-func (s *Segments) Capsule(owner ui.Element, selected bool) {
+func (s *Segments) Capsule(c *ui.Context, owner ui.Element, selected bool) {
 	if owner.FocusVisible() {
 		s.saw = true
 	}
 	if !selected {
 		return
 	}
-	capsule := ui.Row(s.c.Key("capsule")).Absolute().Top(0).Left(0).Right(0).Bottom(0).Radius(7).AccessHidden(true).IgnoreInput(true)
+	capsule := ui.Row(c.Key("capsule")).Absolute().Top(0).Left(0).Right(0).Bottom(0).Radius(7).AccessHidden(true).IgnoreInput(true)
 	Materials.Raised.Apply(capsule)
 	if s.group != "" {
-		capsule.Transition(Transition(s.c, s.keyboard || s.saw, ui.ElementTransition{Match: "capsule:" + s.group, Duration: Motion.Switch, Ease: Motion.EaseInOut.Easing()}))
+		capsule.Transition(Transition(c, s.keyboard || s.saw, ui.ElementTransition{Match: "capsule:" + s.group, Duration: Motion.Switch, Ease: Motion.EaseInOut.Easing()}))
 	}
 }
 

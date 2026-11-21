@@ -66,6 +66,7 @@ func (p *previewLayout) heading(snap editor.Snapshot, i, firstText int) {
 }
 
 func (p *previewLayout) toggleFold(key string) {
+	p.owner.CommitInput()
 	if p.owner.folded == nil {
 		p.owner.folded = map[string]bool{}
 	}

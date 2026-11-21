@@ -29,6 +29,7 @@ type Document struct {
 	mode             Mode
 	index            *sourceIndex
 	tables           map[int]*readingTable
+	pendingCells     map[*Document]pendingCellEdit
 	draft            *blockDraft
 	artwork          map[string]blockImage
 	imageDir         string
@@ -50,6 +51,7 @@ func New(source string) *Document {
 }
 
 func (d *Document) sourceIndex() *sourceIndex {
+	d.flushCellInput(false)
 	snap := d.state.Buffer.Snapshot()
 	if d.index == nil || d.index.version != snap.Version() {
 		var out strings.Builder
@@ -60,6 +62,8 @@ func (d *Document) sourceIndex() *sourceIndex {
 }
 
 func (d *Document) Source() string { return d.sourceIndex().raw }
+
+func (d *Document) CommitInput() { d.flushCellInput(true) }
 
 func (d *Document) Apply(revision uint64, start, end int, expected, replacement string) error {
 	if d.state.ReadOnly {
@@ -125,6 +129,7 @@ func (d *Document) SetMode(mode Mode) bool {
 	if (mode != Preview && mode != Markdown) || mode == d.mode {
 		return false
 	}
+	d.CommitInput()
 	d.draft = nil
 	d.state.Buffer.EndTyping()
 	d.mode = mode
@@ -132,17 +137,21 @@ func (d *Document) SetMode(mode Mode) bool {
 }
 
 func (d *Document) Reload(source string) {
+	d.pendingCells = nil
 	d.state.Buffer.Reset(source)
 	d.retryFailedInlineImages()
 }
-func (d *Document) Version() uint64 { return d.state.Buffer.Version() }
-func (d *Document) CanUndo() bool   { return !d.state.ReadOnly && d.state.Buffer.CanUndo() }
-func (d *Document) CanRedo() bool   { return !d.state.ReadOnly && d.state.Buffer.CanRedo() }
-func (d *Document) Undo() bool      { return d.CanUndo() && d.state.Run(editor.Undo) }
-func (d *Document) Redo() bool      { return d.CanRedo() && d.state.Run(editor.Redo) }
-func (d *Document) Modified() bool  { return d.state.Buffer.Modified() }
-func (d *Document) MarkSaved()      { d.state.Buffer.MarkSaved() }
-func (d *Document) Focused() bool   { return d.state.Focused() }
+func (d *Document) Version() uint64 {
+	d.flushCellInput(false)
+	return d.state.Buffer.Version()
+}
+func (d *Document) CanUndo() bool  { return !d.state.ReadOnly && d.state.Buffer.CanUndo() }
+func (d *Document) CanRedo() bool  { return !d.state.ReadOnly && d.state.Buffer.CanRedo() }
+func (d *Document) Undo() bool     { return d.CanUndo() && d.state.Run(editor.Undo) }
+func (d *Document) Redo() bool     { return d.CanRedo() && d.state.Run(editor.Redo) }
+func (d *Document) Modified() bool { return d.state.Buffer.Modified() }
+func (d *Document) MarkSaved()     { d.state.Buffer.MarkSaved() }
+func (d *Document) Focused() bool  { return d.state.Focused() }
 func (d *Document) ScrollY() float32 {
 	if d.hasPendingScroll {
 		return d.pendingScrollY

@@ -100,6 +100,12 @@ func (w *Window) refresh() {
 		return
 	}
 	if w.snapshot.ActiveID != next.ActiveID {
+		if d := w.documents[w.snapshot.ActiveID]; d != nil {
+			d.source.CommitInput()
+			if err := w.publish(w.snapshot.ActiveID, 0); err != nil {
+				w.failure = err.Error()
+			}
+		}
 		w.focusSource = true
 	}
 	rootChanged := w.snapshot.ID == "" || next.Root != w.snapshot.Root
@@ -208,6 +214,11 @@ func (w *Window) publish(id string, attempt int) error {
 }
 
 func (w *Window) command(cmd workspace.NativeCommand) {
+	for id, d := range w.documents {
+		if id == cmd.ID || cmd.Command == "flushQuit" || cmd.Command == "closeWorkspace" {
+			d.source.CommitInput()
+		}
+	}
 	if cmd.Command == "flushQuit" {
 		failure := ""
 		for id := range w.documents {
@@ -367,6 +378,9 @@ func (w *Window) View(c *ui.Context) {
 			for _, doc := range w.snapshot.Documents {
 				if doc.WorkspaceRoot != w.snapshot.Root {
 					continue
+				}
+				if d := w.documents[doc.ID]; d != nil {
+					d.source.CommitInput()
 				}
 				if err := w.publish(doc.ID, 0); err != nil {
 					w.failure = err.Error()

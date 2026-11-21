@@ -24,7 +24,12 @@ func (w *Window) Source() *nativeeditor.Document {
 	}
 	return nil
 }
-func (w *Window) Publish() error { return w.publish(w.snapshot.ActiveID, 0) }
+func (w *Window) Publish() error {
+	if d := w.Source(); d != nil {
+		d.CommitInput()
+	}
+	return w.publish(w.snapshot.ActiveID, 0)
+}
 func (w *Window) Reveal(offset int) {
 	d := w.Source()
 	if d == nil {
@@ -52,6 +57,7 @@ func (w *Window) SetMode(mode string) {
 	if mode != "genui" && mode != "preview" && mode != "markdown" {
 		return
 	}
+	w.Source().CommitInput()
 	if err := w.host.SetViewMode(w.ctx, id, mode); err != nil {
 		w.failure = err.Error()
 		return

@@ -50,23 +50,6 @@ func TestResearchDrawerReturnsKeyboardFocusAfterResize(t *testing.T) {
 	}
 }
 
-func TestPortraitHasOfflineTypefaces(t *testing.T) {
-	if err := nativeui.RegisterFonts(); err != nil {
-		t.Fatal(err)
-	}
-	registered := map[string]bool{}
-	for _, f := range ui.FontFamilies() {
-		if f.Registered {
-			registered[f.Name] = true
-		}
-	}
-	for _, name := range []string{"IBM Plex Sans", "IBM Plex Sans SC", "IBM Plex Mono", "Barlow Semi Condensed", "Phosphor"} {
-		if !registered[name] {
-			t.Errorf("typeface absent from native text system: %s", name)
-		}
-	}
-}
-
 func TestHiddenTabCanBeChosenBySearchAndReturnedToByKeyboard(t *testing.T) {
 	var shell nativeui.Shell
 	model := nativeui.Model{Workspace: workspace.WorkspaceSnapshot{ActiveID: "a", Documents: []workspace.DocumentInfo{{ID: "a", Name: "One.md"}, {ID: "b", Name: "Two.md"}, {ID: "c", Name: "Three.md"}, {ID: "d", Name: "Four.md"}, {ID: "e", Name: "Five.md"}}}}

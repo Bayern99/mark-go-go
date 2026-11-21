@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 	"github.com/egoist/mygo/ui/markdown/parser"
@@ -19,6 +20,7 @@ type previewLayout struct {
 	foldUntil     int
 	hiddenRanges  [][2]int
 	sections      []foldSection
+	code          []codePanel
 	headings      map[string]int
 	refs          map[string][]int
 	frontEnd      int
@@ -52,6 +54,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	p.foldUntil = 0
 	p.hiddenRanges = p.hiddenRanges[:0]
 	p.sections = p.sections[:0]
+	p.code = p.code[:0]
 	p.headings = map[string]int{}
 	p.refs = map[string][]int{}
 	snap := buffer.Snapshot()
@@ -165,7 +168,8 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 			lineStart := snap.LineStart(snap.LineOf(start))
 			for n := lineStart; n < start; n++ {
 				if src[n] == '>' {
-					p.replace(n, n+1, "│")
+					p.readable[n] = ""
+					p.replacements = append(p.replacements, editor.Replacement{Start: n, End: n + 1, Width: quoteBarWidth, Content: quoteBar})
 				}
 			}
 		}
@@ -214,7 +218,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 						e.Children(func() {
 							img := p.owner.loadInlineImage(c, in.Dest)
 							if img == nil {
-								ui.Text(c, label).FontSize(12).TextColor(c.Theme().TextMuted).SingleLine().Ellipsis("…")
+								portrait.Type.Meta.Apply(ui.Text(c, label)).TextColor(c.Theme().TextMuted).SingleLine().Ellipsis("…")
 								return
 							}
 							w, h := ui.ImageSize(img)
@@ -272,6 +276,14 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	}
 	slices.SortStableFunc(p.replacements, func(a, b editor.Replacement) int { return a.Start - b.Start })
 	p.indexDisplay(src)
+}
+
+const quoteBarWidth = 16
+
+func quoteBar(c *ui.Context, e ui.Element, _ editor.Replacement) {
+	e.Children(func() {
+		ui.Box(c).Absolute().Left(0).Top(0).Bottom(0).Width(2).Background(portrait.Colors.LineStrong)
+	})
 }
 
 func previewImageURLs(doc *parser.Document) map[string]struct{} {
@@ -380,17 +392,16 @@ func pageMargin(line int, above bool, height float32) editor.Block {
 }
 
 func headingStyle(line, level int) editor.LineStyle {
-	sizes := [6]float32{28, 20, 16, 15, 14, 13}
-	size := sizes[level-1]
-	family := "IBM Plex Sans"
-	leading := float32(28)
-	if level <= 2 {
-		family = "Barlow Semi Condensed"
-	}
-	if level == 1 {
-		leading = 36
-	}
-	return editor.LineStyle{Line: line, Font: ui.Font{Family: family, Size: size, Weight: 600}, LineHeight: leading / size}
+	style := [6]portrait.TypeStyle{
+		portrait.Type.Display.In(portrait.FontDisplay),
+		portrait.Type.Title.In(portrait.FontDisplay),
+		portrait.Type.Reading,
+		portrait.Type.H4,
+		portrait.Type.H5,
+		portrait.Type.H6,
+	}[level-1]
+	style.Leading = max(style.Leading, portrait.Type.Reading.Leading)
+	return editor.LineStyle{Line: line, Font: style.Font(600), LineHeight: style.LineHeight()}
 }
 
 func (p *previewLayout) literal(src string, in parser.Inline) {
@@ -487,10 +498,10 @@ func (d *Document) prepareView() {
 		st.OnInput = nil
 		st.OnHover = nil
 		st.Label = "Markdown source"
-		st.Font = ui.Font{Family: "IBM Plex Mono", Size: 14}
+		st.Font = portrait.Type.Code.Font(400)
 		st.ReadingColumn = editor.ReadingColumn{}
 		st.LineNumbers = editor.LineNumbersOn
-		st.LineHeight = 1.5
+		st.LineHeight = portrait.Type.Code.LineHeight()
 		if st.Projection != nil {
 			st.SetReplacements(nil)
 			st.SetBlocks(nil)
@@ -508,8 +519,8 @@ func (d *Document) prepareView() {
 	st.OnInput = d.previewInput
 	st.OnHover = d.previewHover
 	st.Label = "Markdown Preview"
-	st.Font = ui.Font{Family: "IBM Plex Sans", Size: 16}
-	st.LineHeight = 28.0 / 16.0
+	st.Font = portrait.Type.Reading.Font(400)
+	st.LineHeight = portrait.Type.Reading.LineHeight()
 	st.LineNumbers = editor.LineNumbersOff
 	st.ReadingColumn = editor.ReadingColumn{Width: 624, Left: 56, Right: 40}
 	if p.applied && !p.dirty && p.version == d.Version() {

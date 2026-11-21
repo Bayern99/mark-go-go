@@ -1,6 +1,7 @@
 package nativeeditor
 
 import (
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 	"github.com/egoist/mygo/ui/markdown/parser"
@@ -256,8 +257,8 @@ func (d *Document) removeLink(revision uint64, link parser.Inline, labelStart, l
 
 func linkMarker(destination string) func(*ui.Context, ui.Element, editor.Replacement) {
 	return func(c *ui.Context, e ui.Element, _ editor.Replacement) {
-		e.Children(func() {
-			ui.Link(c, "↗", destination).Label("Open " + destination).Description(destination)
+		e.AlignItems(ui.Center).Justify(ui.Center).Children(func() {
+			portrait.Tooltip(c, portrait.IconArrowUpRight.Apply(ui.Link(c, portrait.IconArrowUpRight.Glyph, destination), 13).Label("Open "+destination), destination)
 		})
 	}
 }

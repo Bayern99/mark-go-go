@@ -1,4 +1,4 @@
-package nativeui
+package portrait
 
 import (
 	"embed"

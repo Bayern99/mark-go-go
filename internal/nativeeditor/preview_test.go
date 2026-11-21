@@ -18,7 +18,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/Bayern99/mark-go-go/internal/nativeeditor"
-	"github.com/Bayern99/mark-go-go/internal/nativeui"
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 )
@@ -135,9 +134,6 @@ func TestPreviewTaskCheckboxEditsSourceAndSharesUndo(t *testing.T) {
 
 func TestOrdinaryCodeFenceKeepsItsSourceCaretInPreview(t *testing.T) {
 	const src = "Before\r\n\r\n```go\r\nfmt.Println(\"iW\")\r\nsecond()\r\n```  \r\nAfter\r\n"
-	if err := nativeui.RegisterFonts(); err != nil {
-		t.Fatal(err)
-	}
 	d := nativeeditor.New(src)
 	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill().AutoFocus() }, 760, 420)
 	tt.Frame()
@@ -180,9 +176,6 @@ func TestOrdinaryCodeFenceKeepsItsSourceCaretInPreview(t *testing.T) {
 }
 
 func TestPreviewCodeFenceUsesNativeLanguageTokenColors(t *testing.T) {
-	if err := nativeui.RegisterFonts(); err != nil {
-		t.Fatal(err)
-	}
 	const src = "```go\nfunc main() { return 42 }\n```\n"
 	d := nativeeditor.New(src)
 	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 680, 360)
@@ -233,16 +226,13 @@ func TestOpenCodeFenceKeepsItsLastLineEditable(t *testing.T) {
 
 func TestCodeFenceWithMetadataKeepsItsEditLayer(t *testing.T) {
 	const src = "~~~python title=\"demo.py\"\ndef f():\n    return \"~~~ inside\"\n~~~\n"
-	if err := nativeui.RegisterFonts(); err != nil {
-		t.Fatal(err)
-	}
 	d := nativeeditor.New(src)
 	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 720, 360)
 	tt.Frame()
 	if _, ok := tt.Find("Edit code"); !ok {
 		t.Fatal("code fence metadata lost its in-place Markdown editor")
 	}
-	if _, ok := tt.Find("python"); !ok {
+	if _, ok := tt.Find("PYTHON"); !ok {
 		t.Fatal("code fence language was not shown separately")
 	}
 	if _, ok := tt.Find(`title="demo.py"`); !ok {

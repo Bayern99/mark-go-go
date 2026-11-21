@@ -76,6 +76,7 @@ Version 3 keeps the A2UI envelope and writes each entry of `components` as one [
 
 - Set `version` to `3`, `language` to `openui-lang/1.0` and the surface's `catalogId` to `markgogo.dev:genui/v3`. The first message is `createSurface`; later `updateComponents` messages name the same `surfaceId` and replace statements by name. Statements they leave out stay.
 - A statement is `name = Component(arguments)` with arguments by position, and the tree starts at `root`. [The catalog](../../internal/nativegenui/catalog_v3.json) lists each component's properties in order. `gap` and `padding` count 4-point steps; a `Col` or `Card` without `gap` spaces its children like an article. New properties are only added at the end.
+- `Table`, `Chart`, `Icon`, `Image`, `Carousel` and `Popover` show data and media. `Icon` takes a [Phosphor](https://phosphoricons.com) name or a common lucide name. `Image` shows only an image file that the original document itself shows; other addresses show the description instead.
 - Wrap content in `Source(["sourceId"], [children])` to attribute it to entries of `sources`.
 
 ```json

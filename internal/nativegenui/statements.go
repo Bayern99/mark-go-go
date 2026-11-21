@@ -72,6 +72,7 @@ const (
 	innerGap          = 8
 	tightGap          = 4
 	readingWidth      = 760
+	rowShare          = 220
 )
 
 type place struct {
@@ -133,6 +134,25 @@ func opens(value any) bool {
 	}
 	for _, child := range flatten((props{value.(*openuilang.Element).Props}).value("children"), nil) {
 		if size := titleSize(child); size == "sm" || size == "md" {
+			return true
+		}
+	}
+	return false
+}
+
+func wide(children any) bool {
+	for _, child := range flatten(children, nil) {
+		switch kind(child) {
+		case "Chart", "Table", "Grid", "Card", "Carousel", "Image":
+			return true
+		}
+	}
+	return false
+}
+
+func holds(children any, parent string, test func(any) bool) bool {
+	for _, child := range flatten(children, nil) {
+		if kind(child) == parent && test((props{child.(*openuilang.Element).Props}).value("children")) {
 			return true
 		}
 	}
@@ -364,7 +384,11 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 		if at.nested || at.compact {
 			tier = groupGap
 		}
-		flex(ui.Column(c), p).Children(func() {
+		col := flex(ui.Column(c), p)
+		if at.row && wide(p.value("children")) {
+			col.Grow(1).Basis(rowShare)
+		}
+		col.Children(func() {
 			r.stack(c, p.value("children"), path, depth, inner, p.space("gap", tier), !gapped)
 		})
 	case "Row":
@@ -374,7 +398,7 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 		if p.text("align") == "" {
 			row.AlignItems(ui.Center)
 		}
-		if _, set := p.value("wrap").(bool); !set && rigid(p.value("children")) {
+		if _, set := p.value("wrap").(bool); !set && (rigid(p.value("children")) || wide(p.value("children")) || holds(p.value("children"), "Col", wide)) {
 			row.Wrap()
 		}
 		row.Children(func() { r.stack(c, p.value("children"), path, depth, inner, 0, false) })
@@ -408,6 +432,10 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 		if grow, ok := p.number("flex"); ok && grow > 0 {
 			box.Grow(grow).Basis(0)
 		}
+		if items := flatten(p.value("children"), nil); at.row && len(items) == 1 && kind(items[0]) == "Image" {
+			box.WidthPercent(33).MinWidth(120).MaxWidth(200).Shrink(0)
+			inner.row = false
+		}
 		gap := p.space("gap", 0)
 		if inner.row {
 			box.Gap(gap)
@@ -432,7 +460,11 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 		}
 		inner := at
 		inner.row, inner.compact, inner.nested = false, true, true
-		ui.Grid(c).Bind(&state.frame).MinWidth(0).ColumnTracks(tracks...).Gap(gap).Children(func() {
+		grid := ui.Grid(c).Bind(&state.frame).MinWidth(0).ColumnTracks(tracks...).Gap(gap)
+		if at.row {
+			grid.Grow(1).Basis(rowShare)
+		}
+		grid.Children(func() {
 			r.stack(c, p.value("children"), path, depth, inner, 0, false)
 		})
 	case "Card":
@@ -442,6 +474,9 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 		}
 		inner := place{compact: true, nested: true, card: true}
 		card := flex(ui.Column(c), p).Padding(p.space("padding", padding)).Radius(radius)
+		if at.row {
+			card.Grow(1).Basis(rowShare)
+		}
 		if p.text("variant") == "soft" {
 			card.Background(theme.Text.Alpha(0.04))
 		} else {
@@ -798,10 +833,4 @@ func (r *Reading) listItem(c *ui.Context, e *openuilang.Element, path string, de
 			})
 		}
 	})
-}
-
-func (r *Reading) glyph(c *ui.Context, name string, size float32, color ui.Color) {}
-
-func (r *Reading) media(c *ui.Context, e *openuilang.Element, p props, path string, depth int, at place) bool {
-	return false
 }

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/egoist/mygo/ui"
@@ -25,18 +26,21 @@ type Reading struct {
 	Sources    func(*ui.Context, Node)
 	SelectItem func(Node, string)
 	CanSelect  func(Node) bool
+	LoadImage  func(src string) (ui.ImageSource, error)
+	images     sync.Map
 }
 
 type componentState struct {
 	frame              ui.Handle
 	height             float32
 	tab, column, order int
-	expanded           bool
+	expanded, open     bool
 	scroll             ui.ScrollState
 }
 
 func (r *Reading) Load(s *Surface) {
 	r.surface = s
+	r.images.Clear()
 	if r.states == nil {
 		r.states = map[string]*componentState{}
 	}

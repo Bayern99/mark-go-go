@@ -7,6 +7,8 @@ Status: accepted
 - 语言固定为 1.0。上游一致性用例拷入仓库作为测试，来源见 [SOURCE.md](../../internal/openuilang/testdata/SOURCE.md)。升级语言版本时替换用例并修到通过。
 - [组件目录](../../internal/nativegenui/catalog_v3.json) 以 Open Intelligent UI 的组件签名为起点，之后由本仓库维护。属性只在末尾追加，已保存的视图因此保持可读。
 - 来源归属用 `Source(sources, children)` 包裹组件表达。来源匹配和哈希规则不变。
+- 图标取自应用已打包的 Phosphor 字体（MIT，[许可证](../../internal/nativeui/fonts/LICENSE-Phosphor.txt)），[名称表](../../internal/nativegenui/icons.tsv) 由字体的连字表导出，并补了常见 lucide 名称的对应。
+- `Image` 只显示原文引用的本地图片文件，生成和阅读都不联网取图。
 - 文件记录 `language`，`catalogId` 带目录版本。
 
 **Considered Options**

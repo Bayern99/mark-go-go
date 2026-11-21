@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -25,7 +26,7 @@ type documentView struct {
 	snapshot                                       genui.ViewEvent
 	loaded, settings, requestEdited, commandEdited bool
 	request, command, message, note, noteTarget    string
-	sourceText                                     string
+	sourceText, imagesFor                          string
 	sections                                       map[headingKey]workspace.Section
 	notes                                          []workspace.Note
 	failure                                        *genui.GenerateFailure
@@ -159,6 +160,14 @@ func (p *panel) draw(c *ui.Context) {
 			}
 		default:
 			v.reading.CanSelect = func(n Node) bool { return len(v.matches(n)) > 0 }
+			if v.imagesFor != d.Path || v.reading.LoadImage == nil {
+				directory := ""
+				if d.Path != "" {
+					directory = filepath.Dir(d.Path)
+				}
+				v.imagesFor, v.reading.LoadImage = d.Path, DocumentImages(raw, directory)
+				v.reading.images.Clear()
+			}
 			v.reading.SelectItem = func(n Node, text string) {
 				ss := v.matches(n)
 				if len(ss) == 0 {
@@ -194,6 +203,7 @@ func (v *documentView) index(raw string) {
 		v.sections[headingKey{workspace.NormalizeHeadingText(s.Heading), s.Occurrence}] = s
 	}
 	v.notes = workspace.ExtractNotes(raw)
+	v.imagesFor = ""
 }
 
 func (v *documentView) source(id string) (Reference, workspace.Section, bool) {

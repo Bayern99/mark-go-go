@@ -143,7 +143,7 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 					s.tabQuery = ""
 					s.focusFilter = s.overflow
 				}
-				pop := ui.Popover(c, button, &s.overflow, func() {
+				pop := glassPopover(c, button, &s.overflow, func() {
 					ui.Column(c).Width(min(340, width-40)).Gap(5).Padding(6).Children(func() {
 						filter := ui.TextInput(c, &s.tabQuery).Label("Filter open tabs").Placeholder("Filter open tabs")
 						if s.focusFilter {

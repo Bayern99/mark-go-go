@@ -9,9 +9,9 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-func (s *Shell) navigation(c *ui.Context, m Model, a Actions) {
+func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 	w := m.Workspace
-	panel(c).Role(ui.RoleNavigation).Label("Workspace navigation").Children(func() {
+	panel(c, docked).Role(ui.RoleNavigation).Label("Workspace navigation").Children(func() {
 		name := w.Name
 		if name == "" {
 			name = "Untitled"

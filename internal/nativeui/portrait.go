@@ -1,6 +1,7 @@
 package nativeui
 
 import (
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 	"strings"
 	"time"
@@ -27,26 +28,23 @@ func portraitTheme() ui.Theme {
 	return t
 }
 
-type portraitGlass struct{ overlay, opaque bool }
+// panel is the pane of navigation or research. Docked it is glass; inside a
+// drawer it lies on the drawer's overlay glass and has none of its own.
+func panel(c *ui.Context, docked bool) ui.Element {
+	e := ui.Column(c).Fill().Padding(8).Gap(6).Radius(13).Clip()
+	if docked {
+		portrait.Materials.Glass.Apply(e)
+	}
+	return e
+}
 
-func (g portraitGlass) PaintMaterial(p *ui.Painter, r ui.Rect, radii [4]float32) {
-	tint := ui.RGBA(255, 255, 255, 0.82)
-	if g.overlay {
-		tint = ui.RGBA(255, 255, 255, 0.96)
-	}
-	if g.opaque {
-		tint = paper
-	}
-	p.FillRadii(r, radii, tint)
-}
-func (g portraitGlass) NativeGlass() (ui.NativeGlassSpec, bool) {
-	return ui.NativeGlassSpec{Tint: ui.RGBA(255, 255, 255, 0.82)}, !g.opaque
-}
-func glass(c *ui.Context, overlay bool) portraitGlass {
-	return portraitGlass{overlay: overlay, opaque: c.Preferences().ReduceTransparency || c.Preferences().HighContrast}
-}
-func panel(c *ui.Context) ui.Element {
-	return ui.Column(c).Fill().Padding(8).Gap(6).Material(glass(c, false)).Radius(13).Border(0.7, rim).InsetShadow(0, 1, 0, 0, paper).Shadow(0, 2, 6, 0, ui.RGBA(0, 0, 0, 0.05)).Clip()
+// glassPopover is ui.Popover on Portrait's overlay glass.
+func glassPopover(c *ui.Context, anchor ui.Element, open *bool, fn func()) ui.Element {
+	return ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
+		panel.MinWidth(anchor.Bounds().W).Margin(4, 0, 0, 0).Padding(4).Radius(12)
+		portrait.Materials.GlassOverlay.Apply(panel)
+		fn()
+	})
 }
 func bodyFont(text string) string {
 	if strings.ContainsFunc(text, func(r rune) bool { return unicode.In(r, unicode.Han) }) {

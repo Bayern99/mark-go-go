@@ -144,7 +144,7 @@ func TestImagesComeOnlyFromFilesTheDocumentShows(t *testing.T) {
 	file.Close()
 	os.WriteFile(filepath.Join(dir, "secret.png"), nil, 0o600)
 	os.WriteFile(filepath.Join(dir, "site.png"), []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, 0o600)
-	load := nativegenui.DocumentImages("# Report\n\n![Plan](plan.png)\n\n![Site][site]\n\n![Remote](https://example.com/a.png)\n\n[site]: site.png\n", dir)
+	load := nativegenui.DocumentImages("# Report\n\n![Plan](plan.png)\n\n![Site][site]\n\n![Remote](https://example.com/a.png)\n\n[site]: site.png\n[hidden]: secret.png\n", dir)
 	if source, err := load("plan.png"); err != nil || source == nil {
 		t.Errorf("the document's own image did not load: %v", err)
 	}

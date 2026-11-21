@@ -98,15 +98,31 @@ func (r *Reading) media(c *ui.Context, e *openuilang.Element, p props, path stri
 
 var documentImage = regexp.MustCompile("!\\[[^\\]]*\\]\\(\\s*<?([^)\\s>]+)|(?i)<img\\b[^>]*?\\bsrc\\s*=\\s*[\"']([^\"']+)")
 
-var imageDefinition = regexp.MustCompile(`(?m)^ {0,3}\[[^\]\n]+\]:\s*<?([^\s>]+)`)
+var (
+	imageDefinition = regexp.MustCompile(`(?m)^ {0,3}\[([^\]\n]+)\]:\s*<?([^\s>]+)`)
+	imageReference  = regexp.MustCompile(`!\[([^\]\n]*)\](?:\[([^\]\n]*)\])?`)
+)
 
 func DocumentImages(source, directory string) func(src string) (ui.ImageSource, error) {
 	known := map[string]bool{}
 	for _, match := range documentImage.FindAllStringSubmatch(source, -1) {
 		known[match[1]+match[2]] = true
 	}
+	defined := map[string]string{}
+	label := func(text string) string { return strings.ToLower(strings.Join(strings.Fields(text), " ")) }
 	for _, match := range imageDefinition.FindAllStringSubmatch(source, -1) {
-		known[match[1]] = true
+		if _, again := defined[label(match[1])]; !again {
+			defined[label(match[1])] = match[2]
+		}
+	}
+	for _, match := range imageReference.FindAllStringSubmatch(source, -1) {
+		name := match[2]
+		if name == "" {
+			name = match[1]
+		}
+		if target, ok := defined[label(name)]; ok {
+			known[target] = true
+		}
 	}
 	load := markdown.FileImages(directory)
 	return func(src string) (ui.ImageSource, error) {

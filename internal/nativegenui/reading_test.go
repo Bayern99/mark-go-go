@@ -235,35 +235,29 @@ func codeSpan(t *testing.T, tt *ui.Tester, text string) (map[[2]int]bool, int) {
 		r, g, b := int(c.R), int(c.G), int(c.B)
 		return r > 225 && r < 250 && abs(r-g) < 3 && abs(g-b) < 3
 	}
-	bestY, bestN := 0, 0
+	x0, x1, bestY := -1, -1, 0
 	for y := 0; y < img.Bounds().Dy(); y++ {
-		n := 0
+		start, end, run := -1, -1, -1
 		for x := 0; x < img.Bounds().Dx(); x++ {
 			if tinted(x, y) {
-				n++
+				if run < 0 {
+					run = x
+				}
+				continue
+			}
+			if run >= 0 && x-run > end-start {
+				start, end = run, x-1
+			}
+			if run >= 0 {
+				run = -1
 			}
 		}
-		if n > bestN {
-			bestY, bestN = y, n
+		if run >= 0 && img.Bounds().Dx()-run > end-start {
+			start, end = run, img.Bounds().Dx()-1
 		}
-	}
-	x0, x1, run := -1, -1, -1
-	for x := 0; x < img.Bounds().Dx(); x++ {
-		if tinted(x, bestY) {
-			if run < 0 {
-				run = x
-			}
-			continue
+		if end-start > x1-x0 {
+			x0, x1, bestY = start, end, y
 		}
-		if run >= 0 && x-run > x1-x0 {
-			x0, x1 = run, x-1
-		}
-		if run >= 0 {
-			run = -1
-		}
-	}
-	if run >= 0 && img.Bounds().Dx()-run > x1-x0 {
-		x0, x1 = run, img.Bounds().Dx()-1
 	}
 	if x0 < 0 {
 		t.Fatalf("no tinted code background behind %q", text)

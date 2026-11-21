@@ -100,6 +100,44 @@ func TestTabBarButtonSinksWhilePressed(t *testing.T) {
 	}
 }
 
+func TestHoverLandsAtOnceUnderReducedMotion(t *testing.T) {
+	var shell nativeui.Shell
+	app := ui.NewTesterWith(func(c *ui.Context) {
+		shell.Draw(c, nativeui.Model{}, nativeui.Actions{}, nativeui.Slots{})
+	}, 480, 360, ui.TesterOptions{Preferences: ui.Preferences{ReduceMotion: true}})
+	app.Frame()
+	info, ok := app.AccessByRole(ui.RoleButton, "Open Folder")
+	if !ok {
+		t.Fatal("missing Open Folder")
+	}
+	b := ui.Rect{X: info.Bounds.X - 8, Y: info.Bounds.Y - 8, W: info.Bounds.W + 16, H: info.Bounds.H + 16}
+	app.Move(info.Bounds.X+info.Bounds.W/2, info.Bounds.Y+info.Bounds.H/2)
+	first := pixels(app.Image(), b)
+	app.Advance(300 * time.Millisecond)
+	if n := changed(first, pixels(app.Image(), b)); n != 0 {
+		t.Fatalf("hover still animating under ReduceMotion: %d pixels changed", n)
+	}
+}
+
+func TestHoverStillTransitionsWithPointerMotion(t *testing.T) {
+	var shell nativeui.Shell
+	app := ui.NewTester(func(c *ui.Context) {
+		shell.Draw(c, nativeui.Model{}, nativeui.Actions{}, nativeui.Slots{})
+	}, 480, 360)
+	app.Frame()
+	info, ok := app.AccessByRole(ui.RoleButton, "Open Folder")
+	if !ok {
+		t.Fatal("missing Open Folder")
+	}
+	b := ui.Rect{X: info.Bounds.X - 8, Y: info.Bounds.Y - 8, W: info.Bounds.W + 16, H: info.Bounds.H + 16}
+	app.Move(info.Bounds.X+info.Bounds.W/2, info.Bounds.Y+info.Bounds.H/2)
+	first := pixels(app.Image(), b)
+	app.Advance(300 * time.Millisecond)
+	if changed(first, pixels(app.Image(), b)) == 0 {
+		t.Fatal("hover landed on the first frame without ReduceMotion")
+	}
+}
+
 func viewTrack(t *testing.T, app *ui.Tester) ui.Rect {
 	t.Helper()
 	track, ok := app.AccessByRole(ui.RoleTabList, "Document views")

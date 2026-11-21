@@ -40,7 +40,7 @@ func Press(b ui.Element, look Look) ui.Color {
 	f := looks[look]
 	ease := Motion.EaseOut.Easing()
 	hovered, pressed := b.Hovered(), b.Pressed()
-	h := b.AnimateTo(hoverKey{}, flag(hovered && !pressed), ui.Animation{Duration: hoverShadow, Ease: ease, NonMotion: true})
+	h := b.AnimateTo(hoverKey{}, flag(hovered && !pressed), ui.Animation{Duration: hoverShadow, Ease: ease})
 	p := b.AnimateTo(pressKey{}, flag(pressed), ui.Animation{Duration: Motion.Press, Ease: ease})
 	f.rest.Mix(f.hover, h).Mix(f.press, p).Apply(b)
 	scale := 1 - (1-f.sink)*p

@@ -19,7 +19,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 		}
 		switcher := ui.ButtonBase(c.Key("Switch workspace")).Label("Switch workspace").Value(name).FillWidth().MinHeight(26).Padding(2, 8).Gap(7).Radius(6).AlignItems(ui.Center)
 		switcher.Children(func() {
-			ui.Text(c, name).Font(portrait.FontSans).FontSize(14).FixedLineHeight(18).FontWeight(600).LetterSpacing(-0.07).TextColor(portrait.Colors.Ink).MaxLines(1).Ellipsis("…").MinWidth(0).Shrink(1)
+			portrait.Shell.WorkspaceName.Apply(ui.Text(c, name)).FontWeight(600).TextColor(portrait.Colors.Ink).MaxLines(1).Ellipsis("…").MinWidth(0).Shrink(1)
 			ui.Row(c).Grow(1)
 			portrait.Glyph(c, portrait.IconCaretDown, 11, portrait.Colors.Ink3)
 		})
@@ -78,7 +78,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 					}
 				}
 				if len(m.Sections) == 0 {
-					ui.Text(c, "No headings").TextColor(muted)
+					ui.Text(c, "No headings").TextColor(portrait.Colors.Ink3)
 				}
 			})
 			return
@@ -120,7 +120,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 					}
 				}
 				if len(m.Search.Hits) == 0 {
-					ui.Text(c, "No matching files or headings").TextColor(muted)
+					ui.Text(c, "No matching files or headings").TextColor(portrait.Colors.Ink3)
 				}
 				return
 			}
@@ -175,9 +175,9 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 			if m.Navigation.Error != "" {
 				banner(c, m.Navigation.Error)
 			} else if m.Navigation.Status == workspace.IndexScanning || m.Navigation.Status == workspace.IndexIndexing {
-				ui.Text(c, fmt.Sprintf("Indexing %d of %d files", m.Navigation.Indexed, m.Navigation.Total)).Role(ui.RoleStatus).TextColor(muted)
+				ui.Text(c, fmt.Sprintf("Indexing %d of %d files", m.Navigation.Indexed, m.Navigation.Total)).Role(ui.RoleStatus).TextColor(portrait.Colors.Ink3)
 			} else if len(m.Navigation.Entries) == 0 {
-				ui.Text(c, "No Markdown files").TextColor(muted)
+				ui.Text(c, "No Markdown files").TextColor(portrait.Colors.Ink3)
 			}
 		})
 	})

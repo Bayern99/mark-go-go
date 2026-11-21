@@ -101,13 +101,13 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 	if c.Shortcut(ui.Cmd|ui.Alt, ui.Key0) && m.Feynman {
 		s.toggleResearch(width)
 	}
-	t := portraitTheme()
+	t := portrait.Theme()
 	root := ui.Themed(c, &t).Fill()
 	if paths := root.DroppedFiles(); len(paths) > 0 && a.Drop != nil {
 		a.Drop(slices.Clone(paths))
 	}
 	root.Children(func() {
-		ui.Column(c).Fill().Background(paper).TextColor(ink).Font("IBM Plex Sans").Children(func() {
+		ui.Column(c).Fill().Background(portrait.Colors.Paper).TextColor(portrait.Colors.Ink).Font(portrait.FontSans).Children(func() {
 
 			if m.Message != "" {
 				banner(c, m.Message)

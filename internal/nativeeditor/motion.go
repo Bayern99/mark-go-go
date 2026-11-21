@@ -48,7 +48,7 @@ func (m *foldMotion) progress(c *ui.Context) float32 {
 
 // unpainted is the editor background that leaves the paper to the page
 // beneath: clear, where the zero Color would take the editor's default.
-var unpainted = ui.RGBA(255, 255, 255, 0)
+var unpainted = portrait.Clear
 
 // pageFill is a rounded fill on the page under the text, from X to the
 // reading column's right edge (when W is 0), widened by left and right.

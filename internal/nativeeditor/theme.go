@@ -1,6 +1,7 @@
 package nativeeditor
 
 import (
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 )
@@ -26,7 +27,7 @@ func documentTheme(t *ui.Theme, mode Mode) *editor.Theme {
 	}
 	if mode == Markdown {
 		for _, kind := range []editor.TokenKind{editor.TokenMeta, editor.TokenPunctuation, editor.TokenOperator} {
-			th.Tokens[kind].Color = ui.Hex("#a1a1a6")
+			th.Tokens[kind].Color = portrait.Colors.Ink4
 		}
 		for _, kind := range []editor.TokenKind{editor.TokenCode, editor.TokenKeyword, editor.TokenString, editor.TokenTag} {
 			th.Tokens[kind].Color = t.Accent

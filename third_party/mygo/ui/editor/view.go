@@ -101,7 +101,7 @@ type view struct {
 
 	// faceWidths measure the bold and italic faces, by face, as widths
 	// does the regular one (faceWidths[0] is unused).
-	faceWidths [4]charWidths
+	faceWidths map[uint8]*charWidths
 	// lineStyles are the app's styles of lines, sorted by line
 	// (State.SetLineStyles), laid out by the views of styleViews, one per
 	// font and line height, which styleGen marks in use; stylesDirty asks
@@ -349,7 +349,14 @@ func (v *view) widthsOf(face uint8) *charWidths {
 	if face == 0 {
 		return &v.widths
 	}
-	w := &v.faceWidths[face&3]
+	if v.faceWidths == nil {
+		v.faceWidths = make(map[uint8]*charWidths)
+	}
+	w := v.faceWidths[face]
+	if w == nil {
+		w = &charWidths{}
+		v.faceWidths[face] = w
+	}
 	w.reset(v.faceStyle(face), v.sys)
 	return w
 }
@@ -357,6 +364,9 @@ func (v *view) widthsOf(face uint8) *charWidths {
 // faceStyle returns the style of the editor's font in a face.
 func (v *view) faceStyle(face uint8) text.Style {
 	s := v.style
+	if family := face >> 2; family > 0 {
+		s.Family = v.theme.Tokens[family-1].Family
+	}
 	if face&faceBold != 0 {
 		s.Weight = v.boldWeight()
 	}
@@ -436,7 +446,7 @@ func (v *view) setStyle(f ui.Font, lineHeight, scale float32, tabSize int) {
 	if v.textGen != gen {
 		v.textGen = gen
 		v.widths.other = nil
-		v.faceWidths = [4]charWidths{}
+		v.faceWidths = nil
 		v.shaped.prev, v.shaped.cur = nil, nil
 	}
 	v.font, v.style, v.lineHeight, v.tabSize, v.scale = f, style, lh, tabSize, scale
@@ -460,10 +470,19 @@ func (v *view) setStyle(f ui.Font, lineHeight, scale float32, tabSize int) {
 // setTheme sets the theme, laying out lines anew when the faces of
 // tokens change.
 func (v *view) setTheme(ct *Theme) {
+	familiesChanged := false
+	if v.theme != nil {
+		for k, ts := range ct.Tokens {
+			familiesChanged = familiesChanged || ts.Family != v.theme.Tokens[k].Family
+		}
+	}
 	v.theme = ct
 	var faces [tokenKinds]uint8
 	styled := false
 	for k, ts := range ct.Tokens {
+		if ts.Family != "" {
+			faces[k] = uint8(k+1) << 2
+		}
 		if ts.Bold {
 			faces[k] |= faceBold
 		}
@@ -472,7 +491,7 @@ func (v *view) setTheme(ct *Theme) {
 		}
 		styled = styled || faces[k] != 0
 	}
-	if faces != v.faces {
+	if faces != v.faces || familiesChanged {
 		v.faces, v.styled = faces, styled
 		v.lines.m = nil
 		v.measured.reset()
@@ -873,6 +892,9 @@ func (v *view) spansIn(s string, faces []faceRun, a, b int) string {
 		}
 		runes += utf8.RuneCountInString(s[from:to])
 		sp := text.Span{End: runes, Italic: r.face&faceItalic != 0}
+		if family := r.face >> 2; family > 0 {
+			sp.Family = v.theme.Tokens[family-1].Family
+		}
 		if r.face&faceBold != 0 {
 			sp.Weight = v.boldWeight()
 		}

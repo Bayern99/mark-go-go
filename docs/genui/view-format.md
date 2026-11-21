@@ -69,3 +69,44 @@ For a document with the headings `Overview`, `Metrics`, `Options`, `History` and
   ]
 }
 ```
+
+## Version 3
+
+Version 3 keeps the A2UI envelope and writes each entry of `components` as one [OpenUI Lang 1.0](../../internal/openuilang/) statement. The reader still opens version 2 files.
+
+- Set `version` to `3`, `language` to `openui-lang/1.0` and the surface's `catalogId` to `markgogo.dev:genui/v3`. The first message is `createSurface`; later `updateComponents` messages name the same `surfaceId` and replace statements by name. Statements they leave out stay.
+- A statement is `name = Component(arguments)` with arguments by position, and the tree starts at `root`. [The catalog](../../internal/nativegenui/catalog_v3.json) lists each component's properties in order. New properties are only added at the end.
+- Wrap content in `Source(["sourceId"], [children])` to attribute it to entries of `sources`.
+
+```json
+{
+  "version": 3,
+  "language": "openui-lang/1.0",
+  "generatedAt": "2026-11-21T09:30:00Z",
+  "sources": {
+    "overview": { "heading": "Overview" },
+    "metrics": { "heading": "Metrics" },
+    "history": { "heading": "History" }
+  },
+  "a2ui": [
+    {
+      "version": "1.0",
+      "createSurface": {
+        "surfaceId": "view",
+        "catalogId": "markgogo.dev:genui/v3",
+        "components": [
+          "root = Col([header, lead, Divider(), points, figures, history, notes], 16)",
+          "header = Row([Title(\"Block-preserving edits\", \"xl\"), Spacer(), Badge(\"Stable\", \"success\")], 8, \"center\")",
+          "lead = Source([\"overview\"], [Text(\"Edits keep untouched blocks byte for byte.\", \"lg\")])",
+          "points = Grid([inShort, proof], 2)",
+          "inShort = Card([Label(\"In short\"), List([\"Untouched blocks keep their original Markdown bytes.\", \"Only the edited block is written again.\"])])",
+          "proof = Card([Label(\"Check\"), Code(\"ok := bytes.Equal(before, after)\", \"go\"), Text([\"See \", Link(\"CommonMark\", \"https://commonmark.org\")], \"sm\")], \"soft\")",
+          "figures = Source([\"metrics\"], [Box([Text(\"12 documents, 100% round trips\", \"md\", \"\", \"semibold\"), Caption(\"Figures are from the March run.\")], \"col\", 4, 12, \"surface\", \"md\")])",
+          "history = Source([\"history\"], [List([ListItem(\"First prototype\", \"Editing in Markdown Preview only.\", \"March\"), ListItem(\"GenUI view mode\", \"\", \"November\")], \"none\", true)])",
+          "notes = Col([Markdown(\"### Design notes\\n\\nBlocks are compared **before** writing.\"), Quote(\"What the reader sees is what is saved.\", \"Design review\")])"
+        ]
+      }
+    }
+  ]
+}
+```

@@ -314,7 +314,7 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 			v.noteTarget = n.ID
 			v.note = ""
 		}
-		if ui.Button(c, "Update card").Disabled(busy || d.Path == "").Clicked() {
+		if ui.Button(c, "Update card").Disabled(busy || d.Path == "" || v.reading.surface.Session != nil).Clicked() {
 			componentID := n.ComponentID
 			if componentID == "" {
 				componentID = n.ID

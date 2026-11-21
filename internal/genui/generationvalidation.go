@@ -105,6 +105,10 @@ func ValidateGeneratedView(raw []byte) error {
 }
 
 func ValidateStoredView(raw []byte) error {
+	if IsStatementView(raw) {
+		_, err := ReadStatementView(raw)
+		return err
+	}
 	return validateView(raw, true)
 }
 

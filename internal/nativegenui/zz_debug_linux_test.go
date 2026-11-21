@@ -54,3 +54,19 @@ func TestDEBUGb7c1Code(t *testing.T) {
 		}
 	}
 }
+
+func TestDEBUGb7c1Shape(t *testing.T) {
+	if os.Getenv("DEBUG_A4F2_DIR") == "" {
+		t.Skip()
+	}
+	for _, f := range ui.FontFamilies() {
+		if f.Registered {
+			fmt.Printf("[DEBUG-b7c1] registered %q\n", f.Name)
+		}
+	}
+	for _, fam := range []string{"IBM Plex Mono", "IBM Plex Mono, IBM Plex Sans SC", "IBM Plex Sans", "IBM Plex Sans, IBM Plex Sans SC", "monospace", "nonexistent"} {
+		l := ui.ShapeText("printf", ui.Font{Family: fam, Size: 12}, 0)
+		w, h := l.Size()
+		fmt.Printf("[DEBUG-b7c1] shape %q w=%.2f h=%.2f\n", fam, w, h)
+	}
+}

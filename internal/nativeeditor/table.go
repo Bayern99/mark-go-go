@@ -27,36 +27,6 @@ type tableCell struct {
 	raw        string
 }
 
-type pendingCellEdit struct {
-	version uint64
-	cell    tableCell
-}
-
-func (d *Document) flushCellInput(commit bool) {
-	for child, pending := range d.pendingCells {
-		if commit {
-			child.state.CommitComposition()
-		}
-		if !child.state.Composing() {
-			delete(d.pendingCells, child)
-			d.publishCell(child, pending.version, pending.cell)
-		}
-	}
-}
-
-func (d *Document) publishCell(child *Document, version uint64, cell tableCell) {
-	if next := child.Source(); !child.state.Composing() && next != cell.raw && version == d.Version() {
-		replacement := escapeCell(next)
-		if replacement != cell.raw {
-			idx := d.sourceIndex()
-			a, z := idx.rawAtEditor(cell.start), idx.rawAtEditor(cell.end)
-			if err := d.Apply(version, a, z, idx.raw[a:z], replacement); err != nil {
-				child.Reload(cell.raw)
-			}
-		}
-	}
-}
-
 func (p *previewLayout) standIn(snap editor.Snapshot, start, end int, visible string, block editor.Block) {
 	line := snap.LineOf(start)
 	first := snap.LineStart(line)
@@ -208,13 +178,15 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 									if r == 0 && k+1 < len(model.widths) {
 										model.resizeHandle(c, k, doc)
 									}
-									if child.state.Composing() {
-										if doc.pendingCells == nil {
-											doc.pendingCells = make(map[*Document]pendingCellEdit)
+									if next := child.Source(); !child.state.Composing() && next != cell.raw && version == doc.Version() {
+										replacement := escapeCell(next)
+										if replacement != cell.raw {
+											idx := doc.sourceIndex()
+											a, z := idx.rawAtEditor(cell.start), idx.rawAtEditor(cell.end)
+											if err := doc.Apply(version, a, z, idx.raw[a:z], replacement); err != nil {
+												child.Reload(cell.raw)
+											}
 										}
-										doc.pendingCells[child] = pendingCellEdit{version, cell}
-									} else {
-										doc.publishCell(child, version, cell)
 									}
 									if field.Focused() && (!model.selected) {
 										sel := child.state.Selection()

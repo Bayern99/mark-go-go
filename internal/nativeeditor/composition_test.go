@@ -1,75 +1,12 @@
 package nativeeditor_test
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/Bayern99/mark-go-go/internal/nativeeditor"
 	"github.com/egoist/mygo/ui"
 )
-
-func TestTableCellCompositionBeforeLeavingPreview(t *testing.T) {
-	for _, action := range []string{"markdown", "save", "remove", "cancel-save"} {
-		t.Run(action, func(t *testing.T) {
-			const src = "| Name | Tag |\r\n| --- | --- |\n| cat | x |"
-			d := nativeeditor.New(src)
-			visible := true
-			tt := ui.NewTester(func(c *ui.Context) {
-				if visible {
-					d.View(c, false).Fill()
-				}
-			}, 760, 420)
-			tt.Frame()
-			if err := tt.Click("Table row 2 column 1"); err != nil {
-				t.Fatal(err)
-			}
-			tt.Key(0, ui.KeyEnd)
-			tt.Compose("n", 1)
-			tt.Frame()
-			tt.Compose("你", 1)
-			tt.Frame()
-			want := strings.Replace(src, "cat", "cat你", 1)
-			switch action {
-			case "markdown":
-				d.SetMode(nativeeditor.Markdown)
-			case "remove":
-				visible = false
-			case "cancel-save":
-				tt.Compose("", 0)
-				want = src
-				fallthrough
-			case "save":
-				d.CommitInput()
-				path := filepath.Join(t.TempDir(), "saved.md")
-				if err := os.WriteFile(path, []byte(d.Source()), 0600); err != nil {
-					t.Fatal(err)
-				}
-				got, err := os.ReadFile(path)
-				if err != nil || string(got) != want {
-					t.Fatalf("saved = %q, err=%v, want %q", got, err, want)
-				}
-			}
-			tt.Frame()
-			if d.Source() != want {
-				t.Fatalf("source after %s = %q, want %q", action, d.Source(), want)
-			}
-			if action == "cancel-save" {
-				if d.CanUndo() {
-					t.Fatal("cancellation added history")
-				}
-				return
-			}
-			if !d.Undo() || d.Source() != src || d.CanUndo() {
-				t.Fatalf("undo = %q, remaining undo=%v", d.Source(), d.CanUndo())
-			}
-			if !d.Redo() || d.Source() != want {
-				t.Fatalf("redo = %q, want %q", d.Source(), want)
-			}
-		})
-	}
-}
 
 func TestTableCellCompositionUndo(t *testing.T) {
 	for _, keyboard := range []bool{false, true} {

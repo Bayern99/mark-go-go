@@ -141,6 +141,51 @@ func TestTableColumnResizeFromBodyCellBoundary(t *testing.T) {
 	}
 }
 
+func TestTableBoundaryClicksAndCanceledDragKeepAutomaticWidths(t *testing.T) {
+	d := nativeeditor.New("| A | B |\n|---|---|\n| x | y |\n\nafter")
+	var saved string
+	d.SetReadingPreferences("", "", func(key, value string) {
+		if key == "table-widths" {
+			saved = value
+		}
+	})
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 490, 300)
+	tt.Frame()
+	const cell = "Table row 2 column 2"
+	before, ok := tt.Find(cell)
+	if !ok {
+		t.Fatal("missing body cell")
+	}
+	handle, ok := tt.Find("Resize table column 1")
+	if !ok {
+		t.Fatal("missing column boundary")
+	}
+	x, y := handle.X+handle.W/2, before.Y+before.H/2
+	tt.Press(x, y)
+	tt.Release(x, y)
+
+	tt.RightClickAt(before.X+1, y)
+	if len(tt.Menu()) == 0 || !tt.Focused(cell) {
+		t.Fatalf("right click near the column boundary missed the cell: %v", tt.Menu())
+	}
+	tt.CloseMenu()
+
+	tt.Press(x, y)
+	tt.Move(x+32, y)
+	if during, _ := tt.Find(cell); during.W != before.W-32 {
+		t.Fatalf("column did not resize during drag: %v", during)
+	}
+	tt.CancelPress()
+	if after, _ := tt.Find(cell); after.W != before.W || saved != "" {
+		t.Fatalf("clicks or canceled drag committed widths: %v, saved %q", after, saved)
+	}
+
+	tt.SetSize(750, 300)
+	if wider, _ := tt.Find(cell); wider.W <= before.W {
+		t.Fatalf("column did not grow with the viewport: %v, before %v", wider, before)
+	}
+}
+
 func TestTableColumnResizeCoversWrappedRows(t *testing.T) {
 	const src = "| A | B |\n|---|---|\n| a body cell whose text wraps inside the column instead of fitting on one line | z |\n| p | q |\n\nafter"
 	d := nativeeditor.New(src)

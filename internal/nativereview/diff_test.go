@@ -134,6 +134,23 @@ func TestDiffLinesDescribeTheirChangeAndLineNumbers(t *testing.T) {
 	}
 }
 
+func TestBlankDiffChangesHaveAccessibleNames(t *testing.T) {
+	for _, tc := range []struct{ name, before, after, want string }{
+		{"insert", "A\nB\n", "A\n\nB\n", "Added, line 2"},
+		{"delete", "A\n\nB\n", "A\nB\n", "Removed, line 2"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hunks := review.ComputeDiff(tc.before, tc.after)
+			tt := ui.NewTester(func(c *ui.Context) { drawDiff(c, hunks, nil) }, 640, 600)
+			tt.Frame()
+			info, ok := tt.Access(tc.want)
+			if !ok || info.Offscreen || info.Bounds.H <= 0 {
+				t.Fatalf("blank change %q is missing from the visible access tree: %+v", tc.want, info)
+			}
+		})
+	}
+}
+
 func TestDiffHunkBorderMarksConflicts(t *testing.T) {
 	tt := diffTester(t, 1, nil)
 	img := tt.Image()

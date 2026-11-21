@@ -80,7 +80,12 @@ func diffLine(c *ui.Context, line review.DiffLine) {
 		number(line.OldLine)
 		number(line.NewLine)
 		text(sigil).Width(portrait.Diff.SigilWidth).TextAlign(ui.Center).TextColor(sigilInk).AccessHidden(true)
-		text(line.Text).Wrap().Grow(1).Shrink(1).Selectable().TextColor(portrait.Colors.Ink).Description(desc)
+		content := text(line.Text).Wrap().Grow(1).Shrink(1).TextColor(portrait.Colors.Ink)
+		if line.Text == "" {
+			content.Role(ui.RoleText).Label(desc)
+		} else {
+			content.Selectable().Description(desc)
+		}
 	})
 }
 

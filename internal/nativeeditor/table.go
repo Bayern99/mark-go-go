@@ -2,10 +2,10 @@ package nativeeditor
 
 import (
 	"fmt"
-	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 )
@@ -18,7 +18,7 @@ type readingTable struct {
 	widths                       []float32
 	minimum                      []float32
 	manual                       bool
-	bounds, tiles                map[cellPosition]ui.Rect
+	bounds                       map[cellPosition]ui.Rect
 	anchor, head                 cellPosition
 	dragging, selected           bool
 	dragX, leftWidth, rightWidth float32
@@ -91,7 +91,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 		}
 	}
 	if model == nil || len(model.widths) != ncols {
-		model = &readingTable{bounds: map[cellPosition]ui.Rect{}, tiles: map[cellPosition]ui.Rect{}, widths: make([]float32, ncols), minimum: make([]float32, ncols), dragCol: -1, hoverCol: -1}
+		model = &readingTable{bounds: map[cellPosition]ui.Rect{}, widths: make([]float32, ncols), minimum: make([]float32, ncols), dragCol: -1, hoverCol: -1}
 		for i := range model.widths {
 			model.minimum[i] = 112
 			for _, cells := range rows {
@@ -130,7 +130,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 	}
 	version := p.version
 	p.standIn(snap, b.Start, snap.LineEnd(snap.LineOf(b.End)), strings.Join(visible, "\n"), editor.Block{Label: "Markdown table", Width: width, Height: float32(len(rows)) * 36, Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
-		if !model.manual && e.LayoutBounds().W > 0 {
+		if !model.manual && model.dragCol < 0 && e.LayoutBounds().W > 0 {
 			model.fit(e.LayoutBounds().W)
 		}
 		gridWidth := float32(0)
@@ -149,7 +149,6 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 								child := model.cells[r][k]
 								pos := cellPosition{r, k}
 								box := ui.Column(c.Key(k)).Width(model.widths[k]).Shrink(0).Padding(2, 4).Justify(ui.Center)
-								model.tiles[pos] = box.Bounds()
 								if r == 0 {
 									box.InsetShadow(0, -0.5, 0, 0, portrait.Colors.LineStrong).Role(ui.RoleColumnHeader)
 								} else {
@@ -207,14 +206,13 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 						})
 					}
 					model.hoverCol = -1
-					height := model.measuredHeight(len(rows))
 					boundary := float32(0)
 					for k := 0; k+1 < len(model.widths); k++ {
 						boundary += model.widths[k]
-						model.resizeHandle(c, k, boundary, height, doc)
+						model.resizeHandle(c, k, boundary, doc)
 					}
 					if at, ok := model.guide(); ok {
-						ui.Box(c.Key("resize guide")).Absolute().Left(at-1).Top(0).Width(2).Height(height).
+						ui.Box(c.Key("resize guide")).Absolute().Left(at-1).Top(0).Bottom(0).Width(2).
 							Background(portrait.Colors.Accent).Shadow(0, 0, 0, 1, portrait.Colors.AccentSoft).
 							IgnoreInput(true).AccessHidden(true)
 					}
@@ -363,58 +361,39 @@ func (m *readingTable) guide() (float32, bool) {
 	return at, true
 }
 
-func (m *readingTable) measuredHeight(rows int) float32 {
-	top, bottom := float32(0), float32(0)
-	found := false
-	for _, b := range m.tiles {
-		if b.W <= 0 || b.H <= 0 {
-			continue
-		}
-		if !found || b.Y < top {
-			top = b.Y
-		}
-		if !found || b.Y+b.H > bottom {
-			bottom = b.Y + b.H
-		}
-		found = true
-	}
-	if !found {
-		return float32(rows) * 36
-	}
-	return bottom - top
-}
-
-func (m *readingTable) resizeHandle(c *ui.Context, col int, boundary, height float32, doc *Document) {
-	h := ui.Box(c.Key("resize " + fmt.Sprint(col))).Absolute().Left(boundary - 6).Top(0).Width(12).Height(height).Cursor(ui.CursorResizeColumn).Label(fmt.Sprintf("Resize table column %d", col+1))
+func (m *readingTable) resizeHandle(c *ui.Context, col int, boundary float32, doc *Document) {
+	h := ui.Box(c.Key("resize " + fmt.Sprint(col))).Absolute().Left(boundary - 4).Top(0).Bottom(0).Width(8).
+		Cursor(ui.CursorResizeColumn).KeepFocus().Label(fmt.Sprintf("Resize table column %d", col+1))
 	if h.Hovered() && !m.dragging && m.dragCol < 0 {
 		m.hoverCol = col
 	}
-	left := h.Bounds().X
+	handle := ui.Local(h, "resize handle", func() ui.Handle { return ui.Handle{} })
+	h.Bind(handle)
 	h.HandleInput(func(ev ui.InputEvent) bool {
-
+		if ev.Button != 0 {
+			return false
+		}
 		switch ev.Kind {
 		case ui.InputPointerDown:
-			m.manual = true
 			m.dragCol = col
-			m.dragX = left + ev.X
+			m.dragX = handle.Bounds(c).X + ev.X
 			m.leftWidth, m.rightWidth = m.widths[col], m.widths[col+1]
-		case ui.InputPointerUp:
-			m.dragCol = -1
-			if ev.Canceled {
-				m.widths[col], m.widths[col+1] = m.leftWidth, m.rightWidth
-			} else {
-				doc.saveTables()
-			}
-			return true
-		case ui.InputPointerMove:
-			if ev.Button != 0 {
+		case ui.InputPointerMove, ui.InputPointerUp:
+			if m.dragCol != col {
 				return false
 			}
-			dx := max(72-m.leftWidth, min(m.rightWidth-72, left+ev.X-m.dragX))
+			dx := max(72-m.leftWidth, min(m.rightWidth-72, handle.Bounds(c).X+ev.X-m.dragX))
 			if ev.Canceled {
 				dx = 0
 			}
 			m.widths[col], m.widths[col+1] = m.leftWidth+dx, m.rightWidth-dx
+			if ev.Kind == ui.InputPointerUp {
+				m.dragCol = -1
+				if dx != 0 {
+					m.manual = true
+					doc.saveTables()
+				}
+			}
 		default:
 			return false
 		}

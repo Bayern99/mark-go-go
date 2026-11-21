@@ -278,11 +278,8 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	p.indexDisplay(src)
 }
 
-// quoteBarWidth is how far a quote's text sits from its bar
-// (blockquote's padding-left).
 const quoteBarWidth = 16
 
-// quoteBar draws the 2px bar of a quote's line in place of its marker.
 func quoteBar(c *ui.Context, e ui.Element, _ editor.Replacement) {
 	e.Children(func() {
 		ui.Box(c).Absolute().Left(0).Top(0).Bottom(0).Width(2).Background(portrait.Colors.LineStrong)
@@ -399,12 +396,11 @@ func headingStyle(line, level int) editor.LineStyle {
 		portrait.Type.Display.In(portrait.FontDisplay),
 		portrait.Type.Title.In(portrait.FontDisplay),
 		portrait.Type.Reading,
-		portrait.Type.Reading,
-		portrait.Type.Reading,
-		portrait.Type.Reading,
+		portrait.Type.H4,
+		portrait.Type.H5,
+		portrait.Type.H6,
 	}[level-1]
-	style.Size = [6]float32{28, 20, 16, 15, 14, 13}[level-1]
-	style.Leading = max(style.Leading, 28)
+	style.Leading = max(style.Leading, portrait.Type.Reading.Leading)
 	return editor.LineStyle{Line: line, Font: style.Font(600), LineHeight: style.LineHeight()}
 }
 

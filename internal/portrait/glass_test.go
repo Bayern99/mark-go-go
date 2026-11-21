@@ -8,7 +8,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// stripes paints 4 DIP red and black bars behind a glass pane.
 func glassOverStripes(g portrait.Glass, prefs ui.Preferences) *ui.Tester {
 	tt := ui.NewTesterWith(func(c *ui.Context) {
 		ui.Box(c).Fill().Children(func() {

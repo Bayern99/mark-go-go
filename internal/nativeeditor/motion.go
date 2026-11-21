@@ -9,7 +9,6 @@ import (
 	"github.com/egoist/mygo/ui/editor"
 )
 
-// jumpHighlight is the tint on the heading an outline link landed on.
 type jumpHighlight struct {
 	active  bool
 	at      int
@@ -17,10 +16,6 @@ type jumpHighlight struct {
 	start   time.Time
 }
 
-// foldMotion is a fold or an expansion of a section easing over
-// Motion.Expand. A fold hides the text at once and leaves a ghost of it
-// that shrinks and fades; an expansion shows the text at once under a veil
-// of paper that lifts.
 type foldMotion struct {
 	key            string
 	folding        bool
@@ -32,8 +27,6 @@ type foldMotion struct {
 	headingLeading float32
 }
 
-// progress is how far the motion has eased, from 0 to 1, asking for
-// frames until it ends.
 func (m *foldMotion) progress(c *ui.Context) float32 {
 	if m.start.IsZero() {
 		m.start = c.Now()
@@ -46,12 +39,8 @@ func (m *foldMotion) progress(c *ui.Context) float32 {
 	return portrait.Motion.EaseOut.Easing()(max(t, 0))
 }
 
-// unpainted is the editor background that leaves the paper to the page
-// beneath: clear, where the zero Color would take the editor's default.
 var unpainted = portrait.Clear
 
-// pageFill is a rounded fill on the page under the text, from X to the
-// reading column's right edge (when W is 0), widened by left and right.
 type pageFill struct {
 	rect        ui.Rect
 	left, right float32
@@ -59,8 +48,6 @@ type pageFill struct {
 	color, rim  ui.Color
 }
 
-// page paints the document's background and the fills under its text:
-// code blocks and the jump highlight.
 type page struct {
 	paper  ui.Color
 	column float32
@@ -91,9 +78,6 @@ func (pg page) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
 	}
 }
 
-// Reveal selects UTF-16 offset as an outline link does, expanding a fold
-// that hides it, and highlights the line it lands on: the tint fades over
-// Motion.Jump, or shows not at all with reduced motion.
 func (d *Document) Reveal(offset int) error {
 	if err := d.SelectUTF16(offset, offset); err != nil {
 		return err
@@ -102,8 +86,6 @@ func (d *Document) Reveal(offset int) error {
 	return nil
 }
 
-// decorate paints what goes with the text field: the page under it and
-// a section's veil over it while it expands.
 func (d *Document) decorate(c *ui.Context, field ui.Element) {
 	d.page = d.page[:0]
 	column := float32(0)
@@ -116,8 +98,6 @@ func (d *Document) decorate(c *ui.Context, field ui.Element) {
 	field.Material(page{paper: c.Theme().Background, column: column, fills: append([]pageFill(nil), d.page...)})
 }
 
-// codePanels fills fenced code blocks with the code surface, behind their
-// header and lines.
 func (d *Document) codePanels() {
 	for _, cp := range d.preview.code {
 		top, ok := d.state.Rect(cp.first)
@@ -166,8 +146,6 @@ func (d *Document) jumpFill(c *ui.Context) {
 	d.page = append(d.page, pageFill{rect: r, left: 8, right: 8, radius: h.Radius, color: h.At(elapsed)})
 }
 
-// expandVeil lays paper over a section that has just expanded, lifting
-// from its top as it fades.
 func (d *Document) expandVeil(c *ui.Context, field ui.Element) {
 	m := d.fold
 	if m == nil || m.folding {
@@ -208,8 +186,6 @@ func (d *Document) expandVeil(c *ui.Context, field ui.Element) {
 	})
 }
 
-// startFold eases the fold or expansion of section that toggleFold has
-// just made, measured as the last frame laid it out.
 func (p *previewLayout) startFold(section foldSection) {
 	d := p.owner
 	m := &foldMotion{key: section.key, folding: d.folded[section.key], body: section.body, end: section.end, version: d.Version()}
@@ -228,9 +204,6 @@ func (p *previewLayout) startFold(section foldSection) {
 	d.fold = m
 }
 
-// foldGhost is the block standing in, while it collapses, for the section
-// a fold has just hidden: as high as the section was, shrinking to
-// nothing as its text fades.
 func (p *previewLayout) foldGhost(line int, key string) (editor.Block, bool) {
 	d := p.owner
 	m := d.fold

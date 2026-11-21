@@ -8,9 +8,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// Baseline: retired WebUI at c6504af, web/src/styles.css :root (light) and
-// assets/fonts.css. Every literal below is copied from that source.
-
 func TestFontStacksMatchTheWebUIBaseline(t *testing.T) {
 	for _, tc := range []struct{ name, got, want string }{
 		{"sans", portrait.FontSans, "IBM Plex Sans, IBM Plex Sans SC"},
@@ -39,6 +36,9 @@ func TestTypeScaleMatchesTheWebUIBaseline(t *testing.T) {
 		{"control", portrait.Type.Control, 13, 20, 0, portrait.FontSans},
 		{"meta", portrait.Type.Meta, 12, 16, 0, portrait.FontSans},
 		{"code", portrait.Type.Code, 13, 22, 0, portrait.FontMono},
+		{"h4", portrait.Type.H4, 15, 28, 0, portrait.FontSans},
+		{"h5", portrait.Type.H5, 14, 28, 0, portrait.FontSans},
+		{"h6", portrait.Type.H6, 13, 28, 0, portrait.FontSans},
 	} {
 		s := tc.got
 		if s.Size != tc.size || s.Leading != tc.leading || !near(s.Tracking, tc.tracking) || s.Family != tc.family {
@@ -48,7 +48,7 @@ func TestTypeScaleMatchesTheWebUIBaseline(t *testing.T) {
 }
 
 func TestNoTextStyleIsSmallerThanTwelve(t *testing.T) {
-	for _, s := range []portrait.TypeStyle{portrait.Type.Display, portrait.Type.Title, portrait.Type.Reading, portrait.Type.Small, portrait.Type.UI, portrait.Type.Control, portrait.Type.Meta, portrait.Type.Code} {
+	for _, s := range []portrait.TypeStyle{portrait.Type.Display, portrait.Type.Title, portrait.Type.Reading, portrait.Type.Small, portrait.Type.UI, portrait.Type.Control, portrait.Type.Meta, portrait.Type.Code, portrait.Type.H4, portrait.Type.H5, portrait.Type.H6} {
 		if s.Size < 12 {
 			t.Errorf("%+v is smaller than 12px", s)
 		}
@@ -56,8 +56,6 @@ func TestNoTextStyleIsSmallerThanTwelve(t *testing.T) {
 }
 
 func TestDisplayFamilyIsSizeAdjustedLikeMGGCondensed(t *testing.T) {
-	// fonts.css: MGG Condensed = Barlow Semi Condensed with size-adjust: 105%;
-	// line-height stays nominal.
 	h1 := portrait.Type.Display.In(portrait.FontDisplay).Font(600)
 	if h1.Family != portrait.FontDisplay || !near(h1.Size, 29.4) || h1.Weight != 600 {
 		t.Fatalf("display h1 font %+v, want 29.4px Barlow stack", h1)
@@ -210,7 +208,6 @@ func TestGlassMatchesTheWebUIBaseline(t *testing.T) {
 				t.Errorf("%s rim layer %d = %+v, want %+v", tc.name, i+1, g.Rim[i], s)
 			}
 		}
-		// radial-gradient(circle at 12% 0%, rgb(255 255 255 / 42%), transparent 56%)
 		h := g.Highlight
 		if h.Center != (ui.Point{X: 0.12, Y: 0}) || len(h.Stops) != 2 || !sameColor(h.Stops[0].Color, white(0.42)) || h.Stops[0].At != 0 || !sameColor(h.Stops[1].Color, ui.Transparent) || !near(h.Stops[1].At, 0.56) {
 			t.Errorf("%s highlight %+v", tc.name, h)
@@ -251,7 +248,6 @@ func TestMotionMatchesTheWebUIBaseline(t *testing.T) {
 }
 
 func TestCurvesEaseLikeTheirCSSCounterparts(t *testing.T) {
-	// cubic-bezier(0.23, 1, 0.32, 1) at x=0.5 ≈ 0.9660 (bisection in Python).
 	ease := portrait.Motion.EaseOut.Easing()
 	if ease(0) != 0 || ease(1) != 1 {
 		t.Fatalf("endpoints %v %v", ease(0), ease(1))

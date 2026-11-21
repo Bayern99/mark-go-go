@@ -330,15 +330,15 @@ func (p *panel) draw(c *ui.Context) {
 	ui.Column(c.Key("feynman-pane")).Fill().MinWidth(0).Children(func() {
 		p.header(c)
 		if s.root == "" {
-			text(c, portrait.Type.UI, "Open a workspace folder to start research.").TextColor(colors.Ink3).Padding(8, 10)
+			text(c, portrait.Type.UI, "Open a workspace folder to start research.").TextColor(portrait.Colors.Ink3).Padding(8, 10)
 			return
 		}
 		p.tabs(c)
 		if s.error != "" {
-			ui.Row(c).Role(ui.RoleAlert).Margin(0, 0, 6, 0).Padding(6, 9).Gap(6).Radius(8).Background(colors.DangerSoft).AlignItems(ui.Center).Children(func() {
-				portrait.Glyph(c, portrait.IconWarningCircle, 15, colors.Danger)
-				text(c, portrait.Type.Meta, s.error).Grow(1).MinWidth(0).Wrap().TextColor(colors.Danger)
-				if iconButton(c, portrait.IconX, "Dismiss research error").Clicked() {
+			ui.Row(c).Role(ui.RoleAlert).Margin(0, 0, 6, 0).Padding(6, 9).Gap(6).Radius(8).Background(portrait.Colors.DangerSoft).AlignItems(ui.Center).Children(func() {
+				portrait.Glyph(c, portrait.IconWarningCircle, 15, portrait.Colors.Danger)
+				text(c, portrait.Type.Meta, s.error).Grow(1).MinWidth(0).Wrap().TextColor(portrait.Colors.Danger)
+				if portrait.QuietIconButton(c, portrait.IconX, "Dismiss research error").Clicked() {
 					s.error = ""
 				}
 			})
@@ -358,9 +358,9 @@ func (p *panel) draw(c *ui.Context) {
 
 func (p *panel) heading(c *ui.Context) {
 	s := p.state
-	portrait.Glyph(c, portrait.IconAtom, 20, colors.Accent)
+	portrait.Glyph(c, portrait.IconAtom, 20, portrait.Colors.Accent)
 	ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-		text(c, portrait.Type.Small, "Feynman").FontWeight(600).TextColor(colors.Ink)
+		text(c, portrait.Type.Small, "Feynman").FontWeight(600).TextColor(portrait.Colors.Ink)
 		name := s.root
 		if i := strings.LastIndex(name, "/"); i >= 0 && i+1 < len(name) {
 			name = name[i+1:]
@@ -368,7 +368,7 @@ func (p *panel) heading(c *ui.Context) {
 		if s.title != "" {
 			name += " · " + s.title
 		}
-		portrait.Tooltip(c, text(c, portrait.Type.Meta, name).MaxLines(1).Ellipsis("…").TextColor(colors.Ink3), s.root)
+		portrait.Tooltip(c, text(c, portrait.Type.Meta, name).MaxLines(1).Ellipsis("…").TextColor(portrait.Colors.Ink3), s.root)
 	})
 	if s.status == statusWorking {
 		portrait.Spinner(c, "Feynman is working")

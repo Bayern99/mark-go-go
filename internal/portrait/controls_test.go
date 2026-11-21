@@ -152,9 +152,6 @@ func TestQuietIconButtonIsFlatUntilHovered(t *testing.T) {
 	}
 }
 
-// segments draws a three-way segmented control on black, where the raised
-// capsule is brighter than the track, and moves the selection with the
-// arrow keys as the shell's tracks do.
 type segments struct{ selected int }
 
 func (s *segments) view(c *ui.Context) {

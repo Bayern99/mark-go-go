@@ -81,8 +81,6 @@ func TestClosingDrawerLeavesThroughAnExit(t *testing.T) {
 	}
 	app.Advance(60 * time.Millisecond)
 	mid := app.Image()
-	// Settle within the opener's tooltip delay (600ms), whose tip would
-	// change the pixels too.
 	app.Advance(400 * time.Millisecond)
 	closed := app.Image()
 	if changedPixels(mid, closed) == 0 {
@@ -101,8 +99,6 @@ func TestReducedMotionDrawersLandAtOnce(t *testing.T) {
 	if b := dialogBounds(t, app, "Navigation"); b.X != 8 {
 		t.Fatalf("drawer X at frame 0 = %v, want 8", b.X)
 	}
-	// Park the pointer away from the opener, whose hover shadow fades in
-	// (a color change reduced motion keeps) once the drawer stops covering it.
 	app.Move(470, 350)
 	app.Advance(time.Second)
 	open := app.Image()

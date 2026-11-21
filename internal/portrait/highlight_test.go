@@ -8,9 +8,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// Baseline: styles.css mgo-jump-fade (1828-1845): accent at 16% with
-// opacity .65, at 12% by 35%, transparent at the end, over --duration-jump
-// along --ease-out.
 func TestJumpFadeMatchesTheWebUIKeyframes(t *testing.T) {
 	accent := func(a float32) ui.Color { return ui.RGBA(47, 111, 98, a) }
 	want := []portrait.TintFrame{{At: 0, Color: accent(0.16), Opacity: 0.65}, {At: 0.35, Color: accent(0.12), Opacity: 1}, {At: 1, Color: ui.Transparent, Opacity: 1}}
@@ -36,7 +33,6 @@ func TestJumpFadeFadesOutAndEndsTransparent(t *testing.T) {
 	}
 }
 
-// Baseline: @phosphor-icons/web regular codepoints the editor uses.
 func TestEditorIconsArePhosphorCodepoints(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -46,6 +42,7 @@ func TestEditorIconsArePhosphorCodepoints(t *testing.T) {
 		{"caret-down", portrait.IconCaretDown, "\ue136"},
 		{"caret-right", portrait.IconCaretRight, "\ue13a"},
 		{"arrow-up-right", portrait.IconArrowUpRight, "\ue092"},
+		{"arrow-left", portrait.IconArrowLeft, "\ue058"},
 		{"note", portrait.IconNote, "\ue348"},
 		{"lightbulb", portrait.IconLightbulb, "\ue2dc"},
 		{"info", portrait.IconInfo, "\ue2ce"},

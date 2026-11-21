@@ -2,11 +2,13 @@ package nativeui_test
 
 import (
 	"image"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
 )
@@ -32,14 +34,22 @@ func changed(a, b []uint32) int {
 	return n
 }
 
-var placeholderIcons = []string{"×", "▾", "▸", "✕", "☰", "⋯", "…"}
+var placeholderIcons = []string{"×", "▾", "▸", "✕", "☰", "⋯", "…", "←", "→", "↑", "↓", "↗", "↖", "↘", "↙", "↩", "↪", "⟵", "⟶"}
 
 func TestShellIconsArePhosphorGlyphsWithNamesAndTooltips(t *testing.T) {
 	var shell nativeui.Shell
-	model := nativeui.Model{Feynman: true, Workspace: workspace.WorkspaceSnapshot{Kind: "folder", Name: "Library", Root: "/library", ActiveID: "a",
+	model := nativeui.Model{Feynman: true, ReturnToGenUI: true, Workspace: workspace.WorkspaceSnapshot{Kind: "folder", Name: "Library", Root: "/library", ActiveID: "a",
 		Documents: []workspace.DocumentInfo{{ID: "a", Name: "Paper.md"}}}}
-	app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, model, nativeui.Actions{}, nativeui.Slots{}) }, 480, 360)
+	app := ui.NewTester(func(c *ui.Context) {
+		shell.Draw(c, model, nativeui.Actions{}, nativeui.Slots{GenUI: func(*ui.Context) {}})
+	}, 480, 360)
 	app.Frame()
+	if _, ok := app.Access("Back to GenUI"); !ok {
+		t.Fatal("missing Back to GenUI button")
+	}
+	if !slices.Contains(app.Texts(), portrait.IconArrowLeft.Glyph) {
+		t.Error("Back to GenUI lacks the Phosphor arrow-left glyph")
+	}
 	check := func(names ...string) {
 		t.Helper()
 		for _, name := range names {
@@ -64,7 +74,7 @@ func TestShellIconsArePhosphorGlyphsWithNamesAndTooltips(t *testing.T) {
 	check("Close Navigation", "Clear filter")
 	for _, text := range app.Texts() {
 		for _, glyph := range placeholderIcons {
-			if strings.TrimSpace(text) == glyph {
+			if slices.Contains(strings.Fields(text), glyph) {
 				t.Errorf("Unicode placeholder icon %q in the window shell", glyph)
 			}
 		}

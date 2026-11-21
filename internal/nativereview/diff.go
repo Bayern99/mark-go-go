@@ -91,8 +91,6 @@ func hunkButtons(c *ui.Context, h review.DiffHunk, decisions map[string]review.H
 	})
 }
 
-// decide draws a hunk decision as the WebUI's .pill.quiet. A chosen
-// decision keeps the hovered row surface so it stays visible.
 func decide(c *ui.Context, title, label string, selected, disabled bool) bool {
 	b := portrait.QuietButton(c, title, label).Selected(selected).Disabled(disabled)
 	switch {

@@ -2,17 +2,13 @@ package portrait
 
 import "github.com/egoist/mygo/ui"
 
-// Icon is a Phosphor glyph, drawn mirrored left to right when Mirror is set
-// (the WebUI's transform: scaleX(-1)).
 type Icon struct {
 	Glyph  string
 	Mirror bool
 }
 
-// Mirrored returns the icon flipped left to right.
 func (i Icon) Mirrored() Icon { i.Mirror = !i.Mirror; return i }
 
-// Phosphor glyphs used by the WebUI baseline (@phosphor-icons/web, regular).
 var (
 	IconX               = Icon{Glyph: "\ue4f6"}
 	IconSidebar         = Icon{Glyph: "\uec24"}
@@ -33,14 +29,10 @@ var (
 	IconWarningCircle   = Icon{Glyph: "\ue4e2"}
 )
 
-// Glyph draws the icon at size in color. It is decoration: the control
-// holding it carries the accessible name.
 func Glyph(c *ui.Context, icon Icon, size float32, color ui.Color) ui.Element {
 	return icon.Apply(ui.Text(c, icon.Glyph), size).TextColor(color).AccessHidden(true)
 }
 
-// Apply sets e, an element showing the icon's glyph, in the icon font at
-// size, mirrored when the icon is.
 func (i Icon) Apply(e ui.Element, size float32) ui.Element {
 	e.Font(FontIcons).FontSize(size).FixedLineHeight(size)
 	if i.Mirror {
@@ -49,9 +41,9 @@ func (i Icon) Apply(e ui.Element, size float32) ui.Element {
 	return e
 }
 
-// Phosphor glyphs of the editor's blocks and links.
 var (
 	IconArrowUpRight   = Icon{Glyph: "\ue092"}
+	IconArrowLeft      = Icon{Glyph: "\ue058"}
 	IconNote           = Icon{Glyph: "\ue348"}
 	IconLightbulb      = Icon{Glyph: "\ue2dc"}
 	IconInfo           = Icon{Glyph: "\ue2ce"}

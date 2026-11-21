@@ -6,15 +6,11 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// Look is how a control rests and answers the pointer.
 type Look int
 
 const (
-	// Raised rests slightly above the surface (the WebUI's .pill).
 	Raised Look = iota
-	// Accent is Raised in the accent color (.pill.primary).
 	Accent
-	// Quiet is flat until hovered (.pill.quiet).
 	Quiet
 )
 
@@ -30,21 +26,16 @@ var looks = [...]feedback{
 	Quiet:  {Surface{ui.Transparent, ui.Transparent, nil}, Materials.Row, Materials.RaisedPress, Colors.Ink2, Colors.Ink, 0.97},
 }
 
-// Rings are focus and editing rings drawn around a field.
 var Rings = struct{ Field, Editing Shadows }{
 	Field:   Shadows{out(0, 0, 0, 0.5, Colors.LineStrong), out(0, 0, 0, 3, Colors.Focus)},
 	Editing: Shadows{out(0, 0, 0, 1, Colors.Accent), out(0, 0, 0, 3, Colors.Focus)},
 }
 
-// hoverShadow is the WebUI's box-shadow transition on raised controls.
 const hoverShadow = 140 * time.Millisecond
 
 type hoverKey struct{}
 type pressKey struct{}
 
-// Press paints b, a button, in look and gives it pointer feedback: the
-// shadow deepens on hover and the button sinks while pressed, easing over
-// Motion.Press. It returns the text color for b's content.
 func Press(b ui.Element, look Look) ui.Color {
 	f := looks[look]
 	ease := Motion.EaseOut.Easing()
@@ -67,42 +58,41 @@ func flag(b bool) float32 {
 	return 0
 }
 
-// Button is a raised text button. label names it for assistive technology
-// and becomes its tooltip when it differs from title.
 func Button(c *ui.Context, title, label string) ui.Element {
-	return textButton(c, title, label, Raised)
+	return textButton(c, Icon{}, title, label, Raised)
 }
 
-// AccentButton is the raised button for a view's main action.
+func ButtonLeadingIcon(c *ui.Context, icon Icon, title, label string) ui.Element {
+	return textButton(c, icon, title, label, Raised)
+}
+
 func AccentButton(c *ui.Context, title, label string) ui.Element {
-	return textButton(c, title, label, Accent)
+	return textButton(c, Icon{}, title, label, Accent)
 }
 
-// QuietButton is a text button without a surface until hovered.
 func QuietButton(c *ui.Context, title, label string) ui.Element {
-	return textButton(c, title, label, Quiet)
+	return textButton(c, Icon{}, title, label, Quiet)
 }
 
-func textButton(c *ui.Context, title, label string, look Look) ui.Element {
+func textButton(c *ui.Context, icon Icon, title, label string, look Look) ui.Element {
 	b := ui.ButtonBase(c.Key(label)).Label(label).Height(28).Padding(0, 11).Radius(8).Gap(6).AlignItems(ui.Center).Justify(ui.Center)
 	if label != title {
 		Tooltip(c, b, label)
 	}
 	ink := Press(b, look)
 	b.Children(func() {
+		if icon.Glyph != "" {
+			Glyph(c, icon, Type.UI.Size, ink).Shrink(0)
+		}
 		Type.UI.Apply(ui.Text(c, title)).FontWeight(500).TextColor(ink).MaxLines(1).Ellipsis("…")
 	})
 	return b
 }
 
-// IconButton is a raised 28×28 button showing icon; label is its
-// accessible name and tooltip.
 func IconButton(c *ui.Context, icon Icon, label string) ui.Element {
 	return iconButton(c, icon, label, Raised)
 }
 
-// QuietIconButton is an icon button without a surface until hovered, as
-// the close buttons of tabs and drawers.
 func QuietIconButton(c *ui.Context, icon Icon, label string) ui.Element {
 	return iconButton(c, icon, label, Quiet)
 }
@@ -114,16 +104,11 @@ func iconButton(c *ui.Context, icon Icon, label string, look Look) ui.Element {
 	return b
 }
 
-// Segments builds the segments of a Track.
 type Segments struct {
 	group         string
 	keyboard, saw bool
 }
 
-// Track draws a segmented control: a shallow sunken track whose selected
-// segment sits on a raised capsule. The capsule slides between segments
-// sharing group over Motion.Switch, and lands at once when the keyboard
-// moved the selection or the system asks for reduced motion.
 func Track(c *ui.Context, group string, build func(s *Segments)) ui.Element {
 	t := ui.Row(c.Key("track:" + group)).Role(ui.RoleTabList).Padding(2).Gap(2).Radius(9).AlignItems(ui.Center)
 	Surface{Materials.GlassSelected, Materials.GlassSelected, Materials.Track.Shadows}.Apply(t)
@@ -136,7 +121,6 @@ func Track(c *ui.Context, group string, build func(s *Segments)) ui.Element {
 	return t
 }
 
-// Segment draws a segment button. label names it.
 func (s *Segments) Segment(c *ui.Context, title, label string, selected bool) ui.Element {
 	b := ui.ButtonBase(c.Key(label)).Label(label).Height(24).Padding(0, 10).Radius(7).AlignItems(ui.Center).Justify(ui.Center).MinWidth(0)
 	ink := Colors.Ink3
@@ -150,9 +134,6 @@ func (s *Segments) Segment(c *ui.Context, title, label string, selected bool) ui
 	return b
 }
 
-// Capsule draws the selected capsule filling the current parent when
-// selected, for segments built by hand; owner is the segment's focusable
-// button. Content drawn over the capsule needs ZIndex(1).
 func (s *Segments) Capsule(c *ui.Context, owner ui.Element, selected bool) {
 	if owner.FocusVisible() {
 		s.saw = true
@@ -167,8 +148,6 @@ func (s *Segments) Capsule(c *ui.Context, owner ui.Element, selected bool) {
 	}
 }
 
-// Field is a sunken 30-high row for a text field and its buttons; it rises
-// to paper with a focus ring while the field has focus.
 func Field(c *ui.Context) ui.Element {
 	f := ui.Row(c).Height(30).Padding(0, 4, 0, 8).Gap(6).Radius(8).AlignItems(ui.Center)
 	if f.FocusWithin() {
@@ -179,9 +158,6 @@ func Field(c *ui.Context) ui.Element {
 	return f
 }
 
-// Popover shows build in a floating panel of overlay glass attached below
-// anchor while *open; Escape or a press outside closes it. It returns the
-// panel, nil while closed.
 func Popover(c *ui.Context, anchor ui.Element, open *bool, build func()) ui.Element {
 	return ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
 		panel.MinWidth(anchor.Bounds().W).Margin(6, 0, 0, 0).Padding(5).Radius(12).Gap(2)

@@ -200,12 +200,8 @@ func (p *previewLayout) hideFenceLine(snap editor.Snapshot, line int) {
 	p.replace(start, end, "")
 }
 
-// codeHeaderHeight is the height of a fenced code block's header, its
-// chrome above the first line (.mgo-code-chrome).
 const codeHeaderHeight = 30
 
-// codePanel is a fenced code block whose lines the page fills: its first
-// shown line and the start of its last.
 type codePanel struct{ first, last int }
 
 func codeHeader(label, body string) func(*ui.Context, ui.Element, editor.Block) {
@@ -222,8 +218,6 @@ func codeHeader(label, body string) func(*ui.Context, ui.Element, editor.Block) 
 
 type copiedKey struct{}
 
-// copyButton copies body, its icon turning to a check for a moment
-// (.mgo-copy-morph).
 func copyButton(c *ui.Context, body string) {
 	b := ui.ButtonBase(c.Key("copy")).Label("Copy code").KeepFocus().Size(24, 24).Radius(6).AlignItems(ui.Center).Justify(ui.Center)
 	portrait.Tooltip(c, b, "Copy code")
@@ -241,19 +235,12 @@ func copyButton(c *ui.Context, body string) {
 	b.Children(func() { portrait.Glyph(c, icon, 14, ink) })
 }
 
-// copiedFor is how long a copy button shows its check.
 const copiedFor = 1200 * time.Millisecond
 
-// kicker draws a block's small uppercase label (.mgo-code-lang,
-// .mgo-math-k): the display face at meta size, tracked out.
 func kicker(c *ui.Context, label string, ink ui.Color) ui.Element {
 	return portrait.Type.Meta.In(portrait.FontDisplay).Apply(ui.Text(c, strings.ToUpper(label))).FontWeight(500).LetterSpacing(0.04 * portrait.Type.Meta.Size).TextColor(ink).MaxLines(1).Ellipsis("…")
 }
 
-// blockLook is how a kind of special block is drawn, after its WebUI
-// counterpart: a semantic soft fill for alerts, the neutral fill for notes
-// and footnotes, the code surface with a hairline for math, diagrams and
-// code, stripes for locked source.
 type blockLook struct {
 	fill, ink, kickerInk ui.Color
 	icon                 portrait.Icon
@@ -294,7 +281,6 @@ func lookOf(kind string) blockLook {
 	return paper
 }
 
-// paint gives e, a special block's frame, its fill, hairline and corners.
 func (l blockLook) paint(e ui.Element) ui.Element {
 	e.Radius(8).Padding(l.padY, l.padX).Gap(4).Clip()
 	if l.fill.A > 0 {
@@ -385,8 +371,6 @@ func (p *previewLayout) specialBlock(snap editor.Snapshot, start, end int, kind,
 	}})
 }
 
-// blockActions are a special block's buttons: back to a footnote's
-// reference, deleting a note, and editing the block's Markdown.
 func (d *Document) blockActions(c *ui.Context, block ui.Element, snap editor.Snapshot, start, end int, kind, label string) {
 	row := ui.Row(c).Gap(4).AlignItems(ui.Center)
 	shown := block.Hovered() || block.FocusWithin() || !c.Preferences().Hover()
@@ -415,8 +399,6 @@ func flag(b bool) float32 {
 	return 0
 }
 
-// smallButton is a block action (.mgo-note-actions button): a raised
-// button 22 high in meta type.
 func smallButton(c *ui.Context, title, label string, look portrait.Look) ui.Element {
 	b := ui.ButtonBase(c.Key(label)).Label(label).Height(22).Padding(0, 8).Radius(6).AlignItems(ui.Center).Justify(ui.Center)
 	ink := portrait.Press(b, look)

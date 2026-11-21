@@ -81,7 +81,6 @@ func (p *previewLayout) heading(snap editor.Snapshot, i, firstText int) {
 	}
 }
 
-// foldToggleSize is the side of a heading's fold toggle (.mgo-fold-toggle).
 const foldToggleSize = 18
 
 func (p *previewLayout) toggleFold(key string) {

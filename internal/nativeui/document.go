@@ -99,7 +99,7 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 		}
 
 		if m.ReturnToGenUI && slots.GenUI != nil {
-			if portrait.Button(c, "← Back to GenUI", "Back to GenUI").Clicked() && a.SetMode != nil {
+			if portrait.ButtonLeadingIcon(c, portrait.IconArrowLeft, "Back to GenUI", "Back to GenUI").Clicked() && a.SetMode != nil {
 				a.SetMode("genui")
 			}
 		}

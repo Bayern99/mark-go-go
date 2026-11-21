@@ -196,9 +196,6 @@ func (s *Shell) drawer(c *ui.Context, left bool, width, height float32, m Model,
 	if left {
 		slide, origin = portrait.Overlays.DrawerLeft, 0
 	}
-	// The scrim fades on its own layer beneath the dialog, whose transparent
-	// backdrop slides and scales the panel: MyGo plays Enter and Exit only
-	// on direct children of the overlay layer, not on the dialog's panel.
 	if *open {
 		ui.Overlay(c, func() {
 			ui.Box(c.Key(name + " scrim")).Absolute().Left(0).Top(0).Right(0).Bottom(0).IgnoreInput(true).

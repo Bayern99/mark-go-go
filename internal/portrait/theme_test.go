@@ -7,9 +7,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// The MyGo widget theme follows the WebUI's --mgo-* bridge variables
-// (styles.css :root): bg=chrome, panel=paper, panel-soft=code,
-// border=line-strong, text=ink, muted=ink-3, accent, danger.
 func TestThemeBridgesTheWebUIMyGoVariables(t *testing.T) {
 	th := portrait.Theme()
 	for _, tc := range []struct {
@@ -40,7 +37,6 @@ func TestThemeBridgesTheWebUIMyGoVariables(t *testing.T) {
 	}
 }
 
-// .ws-name { font-size: 14px; line-height: 18px; letter-spacing: -0.005em }.
 func TestWorkspaceNameStyleMatchesTheWebUI(t *testing.T) {
 	s := portrait.Shell.WorkspaceName
 	if s.Size != 14 || s.Leading != 18 || !near(s.Tracking, -0.07) || s.Family != portrait.FontSans {
@@ -48,7 +44,6 @@ func TestWorkspaceNameStyleMatchesTheWebUI(t *testing.T) {
 	}
 }
 
-// The zero Color means "default" to some MyGo APIs; Clear paints nothing.
 func TestClearIsTransparentButNotTheZeroColor(t *testing.T) {
 	if portrait.Clear == (ui.Color{}) || portrait.Clear.A != 0 {
 		t.Errorf("clear %+v", portrait.Clear)

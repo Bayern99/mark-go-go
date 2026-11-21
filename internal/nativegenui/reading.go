@@ -19,19 +19,16 @@ import (
 )
 
 type Reading struct {
-	remaining  int
-	surface    *Surface
-	scroll     ui.ScrollState
-	Replacing  []string
-	states     map[string]*componentState
-	Sources    func(*ui.Context, Node)
-	SelectItem func(Node, string)
-	CanSelect  func(Node) bool
-	// loads counts the views loaded, so that each one's cards come in anew;
-	// cards counts this frame's cards in reading order, for their stagger.
-	loads, cards uint64
-	inCard       bool
-	// halo counts the halos asked for; haloAt is when the last one began.
+	remaining       int
+	surface         *Surface
+	scroll          ui.ScrollState
+	Replacing       []string
+	states          map[string]*componentState
+	Sources         func(*ui.Context, Node)
+	SelectItem      func(Node, string)
+	CanSelect       func(Node) bool
+	loads, cards    uint64
+	inCard          bool
 	halo, haloShown uint64
 	haloAt          time.Time
 }
@@ -76,9 +73,6 @@ func (r *Reading) View(c *ui.Context) {
 	})
 }
 
-// Halo plays the halo and the rim sweep over the view once, as a sign that
-// a generation is done. With reduced motion it shows nothing; the panel
-// says so in words.
 func (r *Reading) Halo() { r.halo++ }
 
 func (r *Reading) drawHalo(c *ui.Context) {
@@ -108,8 +102,6 @@ func (r *Reading) drawHalo(c *ui.Context) {
 	edge.BorderConicGradient(ui.ConicGradient{Stops: rim.Stops, Angle: angle}).Opacity(edge.Keyframes(rimFade{run}, rim.Opacity()))
 }
 
-// card frames a GenUI block: paper with a hairline ring, coming in after
-// the cards before it. Blocks inside a Card are not framed again.
 func (r *Reading) card(c *ui.Context, e ui.Element, framed bool) ui.Element {
 	g := portrait.GenUI
 	if framed {
@@ -330,8 +322,6 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 	}
 }
 
-// shimmering fills e as a skeleton bar: the glint sweeps across, or the
-// bar rests on the plain fill with reduced motion.
 func shimmering(c *ui.Context, e ui.Element) ui.Element {
 	s := portrait.GenUI.Shimmer
 	e.Radius(portrait.GenUI.SkeletonRadius).AccessHidden(true)
@@ -341,8 +331,6 @@ func shimmering(c *ui.Context, e ui.Element) ui.Element {
 	return e.LinearGradient(s.Gradient(e.Loop(shimmer{}, s.Period, ui.Linear)))
 }
 
-// viewSkeleton stands in for a whole view while it loads: a line, two
-// blocks side by side and a wide one.
 func viewSkeleton(c *ui.Context) {
 	ui.Column(c.Key("skeleton")).Gap(12).AccessHidden(true).Children(func() {
 		shimmering(c, ui.Box(c).WidthPercent(60).Height(14))
@@ -355,7 +343,6 @@ func viewSkeleton(c *ui.Context) {
 	})
 }
 
-// cardSkeleton stands in for a card being regenerated.
 func cardSkeleton(c *ui.Context) {
 	ui.Column(c.Key("skeleton")).Gap(8).Grow(1).AccessHidden(true).Children(func() {
 		shimmering(c, ui.Box(c).WidthPercent(60).Height(14))
@@ -364,7 +351,7 @@ func cardSkeleton(c *ui.Context) {
 }
 
 var readOnlyMarkdown = markdown.Options{OnLink: func(string) {}}
-var captionMarkdown = markdown.Options{OnLink: func(string) {}, Theme: &markdown.Theme{FontSize: 12}}
+var captionMarkdown = markdown.Options{OnLink: func(string) {}, Theme: &markdown.Theme{FontSize: portrait.Type.Meta.Size}}
 
 func layout(box ui.Element, n Node) ui.Element {
 	align := map[string]ui.Align{"center": ui.Center, "end": ui.End, "start": ui.Start, "stretch": ui.Stretch, "spaceBetween": ui.SpaceBetween, "spaceAround": ui.SpaceAround, "spaceEvenly": ui.SpaceEvenly}

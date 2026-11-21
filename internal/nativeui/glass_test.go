@@ -10,7 +10,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// stripes is a document of 4 DIP red and black bars.
 func stripes(c *ui.Context) {
 	ui.Row(c).Fill().Children(func() {
 		for i := range 120 {
@@ -32,7 +31,6 @@ func pixelRow(app *ui.Tester, x, y int) [][3]uint8 {
 	return row
 }
 
-// assertBlurredStripes checks that the red bars tint the glass evenly.
 func assertBlurredStripes(t *testing.T, row [][3]uint8) {
 	t.Helper()
 	lo, hi := 255, 0
@@ -47,8 +45,6 @@ func assertBlurredStripes(t *testing.T, row [][3]uint8) {
 	}
 }
 
-// openDrawerOverStripes opens the narrow research drawer over a document of
-// red and black bars and returns a row of pixels inside the drawer.
 func openDrawerOverStripes(t *testing.T, prefs ui.Preferences) [][3]uint8 {
 	t.Helper()
 	var shell nativeui.Shell
@@ -80,8 +76,6 @@ func TestResearchDrawerIsOpaqueWhenTransparencyIsReducedOrContrastIncreased(t *t
 	}
 }
 
-// openTabMenuOverStripes opens the hidden-tabs popover over a document of
-// red and black bars and returns pixels along its bottom padding.
 func openTabMenuOverStripes(t *testing.T, prefs ui.Preferences) [][3]uint8 {
 	t.Helper()
 	var shell nativeui.Shell

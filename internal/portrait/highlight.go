@@ -6,16 +6,12 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// TintFrame is one keyframe of a highlight: a background color shown at
-// Opacity, At a fraction of the way through.
 type TintFrame struct {
 	At      float32
 	Color   ui.Color
 	Opacity float32
 }
 
-// Highlight is a tint that plays once over a landing place, as a CSS
-// animation whose timing function eases each segment between frames.
 type Highlight struct {
 	Duration time.Duration
 	Ease     CubicBezier
@@ -23,13 +19,10 @@ type Highlight struct {
 	Frames   []TintFrame
 }
 
-// HighlightSet lists the Portrait highlights.
 type HighlightSet struct {
-	// Jump marks the heading an outline link landed on (mgo-jump-fade).
 	Jump Highlight
 }
 
-// Highlights holds the Portrait highlights.
 var Highlights = HighlightSet{
 	Jump: Highlight{Duration: Motion.Jump, Ease: Motion.EaseOut, Radius: 6, Frames: []TintFrame{
 		{At: 0, Color: ui.RGBA(47, 111, 98, 0.16), Opacity: 0.65},
@@ -38,8 +31,6 @@ var Highlights = HighlightSet{
 	}},
 }
 
-// At returns the tint elapsed into the highlight, its opacity folded into
-// the color; transparent once it has played.
 func (h Highlight) At(elapsed time.Duration) ui.Color {
 	if len(h.Frames) == 0 || h.Duration <= 0 || elapsed >= h.Duration {
 		if len(h.Frames) == 0 {

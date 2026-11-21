@@ -22,7 +22,7 @@ func (p *panel) alphaXiv(c *ui.Context) {
 		}
 	})
 	ui.Scroll(c.Key("alpha-scroll")).Grow(1).MinHeight(0).FillWidth().TrackScroll(&p.alphaScroll).Label("alphaXiv search and paper tools").Children(func() {
-		ui.Column(c.Key("alpha-controls")).Gap(5).Padding(7).Radius(9).Background(colors.Fill).Children(func() {
+		ui.Column(c.Key("alpha-controls")).Gap(5).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
 			ui.Row(c).Wrap().Gap(4).Children(func() {
 				for _, mode := range alphaModes {
 					if choiceButton(c, "alpha-mode-"+mode, mode, "Search alphaXiv using "+mode+" mode", p.alphaMode == mode, true).Clicked() {
@@ -40,7 +40,7 @@ func (p *panel) alphaXiv(c *ui.Context) {
 		if s.searchResult != nil {
 			p.alphaResults(c, *s.searchResult)
 		}
-		ui.Column(c.Key("alpha-paper-tools")).Gap(5).Padding(7).Radius(9).Background(colors.Fill).Children(func() {
+		ui.Column(c.Key("alpha-paper-tools")).Gap(5).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
 			sectionTitle(c, "Paper tools")
 			ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
 				input(c, "alpha-paper-id", "Paper ID", &p.alphaPaperID, "arXiv ID or alphaXiv ID")
@@ -72,7 +72,7 @@ func (p *panel) alphaXiv(c *ui.Context) {
 				resultText(c, p.alphaCodeResult.Command, p.alphaCodeResult.RawOutput, p.alphaCodeResult.Error)
 			}
 		})
-		ui.Column(c.Key("alpha-annotations")).Gap(5).Padding(7).Radius(9).Background(colors.Fill).Children(func() {
+		ui.Column(c.Key("alpha-annotations")).Gap(5).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
 			sectionTitle(c, "Annotations")
 			input(c, "alpha-note", "Paper note", &p.alphaNoteInput, "Private paper annotation")
 			ui.Row(c).Wrap().Gap(4).Children(func() {
@@ -85,10 +85,10 @@ func (p *panel) alphaXiv(c *ui.Context) {
 			if p.alphaAnnotation != nil {
 				if p.alphaAnnotation.Parsed {
 					for _, annotation := range p.alphaAnnotation.Annotations {
-						text(c, portrait.Type.Meta, annotation.PaperID+" · "+annotation.Note).TextColor(colors.Ink).FillWidth().Wrap()
+						text(c, portrait.Type.Meta, annotation.PaperID+" · "+annotation.Note).TextColor(portrait.Colors.Ink).FillWidth().Wrap()
 					}
 					if p.alphaAnnotation.Note != "" {
-						text(c, portrait.Type.Meta, p.alphaAnnotation.Note).TextColor(colors.Ink).FillWidth().Wrap()
+						text(c, portrait.Type.Meta, p.alphaAnnotation.Note).TextColor(portrait.Colors.Ink).FillWidth().Wrap()
 					}
 				} else {
 					resultText(c, p.alphaAnnotation.Command, p.alphaAnnotation.RawOutput, p.alphaAnnotation.Error)
@@ -141,14 +141,14 @@ func (p *panel) alphaResults(c *ui.Context, result feynman.CLIAlphaSearchResult)
 	for i, group := range groups {
 		ui.Column(c.Key(fmt.Sprintf("alpha-group-%d", i))).Gap(4).Padding(6, 7).Children(func() {
 			if group.Mode != "" {
-				text(c, portrait.Type.Meta, group.Mode).FontWeight(600).TextColor(colors.Accent)
+				text(c, portrait.Type.Meta, group.Mode).FontWeight(600).TextColor(portrait.Colors.Accent)
 			}
 			if len(group.Papers) == 0 {
 				mutedText(c, "No matching alphaXiv papers.")
 			}
 			for _, paper := range group.Papers {
-				ui.Column(c.Key("alpha-paper-"+paper.ID)).Gap(3).Padding(6).Radius(9).Background(colors.Paper).Border(0.5, colors.Line).Children(func() {
-					text(c, portrait.Type.UI, paper.Title).FontWeight(600).TextColor(colors.Ink).FillWidth().Wrap()
+				ui.Column(c.Key("alpha-paper-"+paper.ID)).Gap(3).Padding(6).Radius(9).Background(portrait.Colors.Paper).Border(0.5, portrait.Colors.Line).Children(func() {
+					text(c, portrait.Type.UI, paper.Title).FontWeight(600).TextColor(portrait.Colors.Ink).FillWidth().Wrap()
 					meta := strings.Join([]string{paper.Authors, paper.Published, paper.ID}, " · ")
 					mutedText(c, meta)
 					if paper.Summary != "" {
@@ -188,8 +188,8 @@ func (p *panel) alphaPaper(c *ui.Context, result feynman.CLIAlphaPaperResult) {
 		resultText(c, result.Command, result.RawOutput, result.Error)
 		return
 	}
-	ui.Column(c.Key("alpha-paper-result")).Gap(4).Padding(6, 7).Radius(9).Background(colors.Paper).Border(0.5, colors.Line).Children(func() {
-		text(c, portrait.Type.UI, result.Title).FontWeight(600).TextColor(colors.Ink).FillWidth().Wrap()
+	ui.Column(c.Key("alpha-paper-result")).Gap(4).Padding(6, 7).Radius(9).Background(portrait.Colors.Paper).Border(0.5, portrait.Colors.Line).Children(func() {
+		text(c, portrait.Type.UI, result.Title).FontWeight(600).TextColor(portrait.Colors.Ink).FillWidth().Wrap()
 		mutedText(c, result.PaperID+map[bool]string{true: " · full text", false: " · abstract"}[result.FullText])
 		if result.Content != "" {
 			markdown.View(c.Key("alpha-paper-content"), result.Content, markdownOptions(&markdown.Options{WrapCode: true})).FillWidth()

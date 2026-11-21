@@ -8,13 +8,14 @@ import (
 	"testing"
 )
 
-// Native surfaces take fonts, sizes and colors from Portrait only.
 var outsideTokens = []*regexp.Regexp{
 	regexp.MustCompile(`FontSize\(\s*[0-9.]`),
 	regexp.MustCompile(`ui\.(Hex|RGBA?)\(`),
 	regexp.MustCompile(`\.Font\(\s*"`),
 	regexp.MustCompile(`color\.N?RGBA(64)?\{`),
 	regexp.MustCompile(`unicode\.Han`),
+	regexp.MustCompile(`\b(Font)?Size:\s*[0-9.]`),
+	regexp.MustCompile(`\bSize\s*=\s*(\[\d*\]float(32|64)\{)?[0-9.]`),
 }
 
 func TestNativeSurfacesTakeDesignValuesFromPortrait(t *testing.T) {

@@ -53,8 +53,6 @@ func TestPreviewCodeBlockIsSetInCodeLeading(t *testing.T) {
 
 const glyphScale = 4
 
-// inkBox returns the bounding box of dark pixels inside r.
-// Coordinates are DIPs; images are rendered at glyphScale.
 func inkBox(img *image.RGBA, r ui.Rect) (image.Rectangle, int) {
 	box, ink := image.Rectangle{}, 0
 	for y := int(r.Y * glyphScale); y < int((r.Y+r.H)*glyphScale); y++ {

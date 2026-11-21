@@ -2,15 +2,10 @@ package portrait
 
 import "github.com/egoist/mygo/ui"
 
-// Mix returns the surface t of the way from s to o, as CSS interpolates a
-// gradient's stops and a box-shadow list layer by layer.
 func (s Surface) Mix(o Surface, t float32) Surface {
 	return Surface{From: mix(s.From, o.From, t), To: mix(s.To, o.To, t), Shadows: s.Shadows.Mix(o.Shadows, t)}
 }
 
-// Mix returns the list t of the way from s to o. A layer missing from one
-// list is a transparent one at no offset; layers of different kinds
-// (inset and outer) switch halfway, as in CSS.
 func (s Shadows) Mix(o Shadows, t float32) Shadows {
 	out := make(Shadows, max(len(s), len(o)))
 	for i := range out {
@@ -38,8 +33,6 @@ func (s Shadows) Mix(o Shadows, t float32) Shadows {
 	return out
 }
 
-// mix blends two colors; a transparent end takes the other's hue, so a
-// fade to nothing does not pass through black.
 func mix(a, b ui.Color, t float32) ui.Color {
 	if a.A == 0 {
 		a.R, a.G, a.B = b.R, b.G, b.B

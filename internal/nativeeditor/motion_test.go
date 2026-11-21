@@ -16,13 +16,11 @@ func reduced(view func(*ui.Context), w, h int) *ui.Tester {
 	return ui.NewTesterWith(view, w, h, ui.TesterOptions{Preferences: ui.Preferences{ReduceMotion: true}})
 }
 
-// tint is how far the pixel at (x, y) is from white.
 func tint(img *image.RGBA, x, y float32) int {
 	c := img.RGBAAt(int(x), int(y))
 	return 255*3 - int(c.R) - int(c.G) - int(c.B)
 }
 
-// ink sums how dark the pixels of r are.
 func ink(img *image.RGBA, r ui.Rect) int {
 	n := 0
 	for y := int(r.Y); y < int(r.Y+r.H); y++ {

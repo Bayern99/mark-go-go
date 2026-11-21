@@ -10,9 +10,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// Baseline: retired WebUI at c6504af, plugins/DocumentDiff.tsx and
-// plugins/desktop-plugins.css (.diff-hunk, .diff-line, .diff-ln, .diff-sigil).
-
 func fixtureHunks() []review.DiffHunk {
 	return []review.DiffHunk{{
 		ID: "hunk-1", Header: "@@ -4,3 +4,3 @@",
@@ -83,7 +80,6 @@ func TestDiffLinesAreTintedWithPortraitInsertAndDeleteColors(t *testing.T) {
 		{"inserted line", portrait.Diff.Insert},
 	} {
 		r := find(t, tt, tc.text)
-		// The text cell fills the row; its right end is past the glyphs.
 		if got, want := pixel(img, 1, r.X+r.W-4, r.Y+r.H/2), over(tc.want); !close3(got, want) {
 			t.Errorf("%q row is painted %v, want %v", tc.text, got, want)
 		}
@@ -98,7 +94,6 @@ func TestDiffLinesAreSetInMonoMetaLeading(t *testing.T) {
 	tt := diffTester(t, 1, nil)
 	a := find(t, tt, "removed line")
 	b := find(t, tt, "inserted line")
-	// .diff-lines 12px/1.45 mono, .diff-line padding 1px 6px.
 	want := portrait.Diff.Lines.Leading + 2
 	if got := b.Y - a.Y; got < want-0.5 || got > want+0.5 {
 		t.Fatalf("diff lines are %v apart, want %v", got, want)
@@ -130,7 +125,6 @@ func TestDiffHunkBorderMarksConflicts(t *testing.T) {
 	clean := find(t, tt, "@@ -4,3 +4,3 @@")
 	conflict := find(t, tt, "@@ -20 +20 @@")
 	edge := func(r ui.Rect) [3]int {
-		// The hunk's left border: header padding is 8px, border 1px.
 		for x := r.X - 1; x > r.X-12; x-- {
 			if p := pixel(img, 1, x, r.Y+r.H/2); p != [3]int{255, 255, 255} {
 				return p
@@ -200,7 +194,6 @@ func referenceGlyph(t *testing.T, family, glyph string) (image.Rectangle, int) {
 func TestDiffSetsHanInIBMPlexSansSC(t *testing.T) {
 	tt := diffTester(t, glyphScale, nil)
 	line := find(t, tt, "写作 trailing")
-	// The first glyph cell: Han is 1em wide.
 	size := portrait.Diff.Lines.Size
 	got, gotInk := inkBox(tt.Image(), ui.Rect{X: line.X - 1, Y: line.Y, W: size + 1, H: line.H})
 	want, wantInk := referenceGlyph(t, "IBM Plex Sans SC", "写")

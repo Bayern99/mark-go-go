@@ -357,7 +357,6 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 	}
 }
 
-// sourceHeading is a link-like button naming a source section.
 func sourceHeading(c *ui.Context, label string, disabled bool) ui.Element {
 	b := ui.ButtonBase(c).Label(label).Disabled(disabled).DimDisabled(false).Radius(3)
 	ink, line := portrait.Colors.Accent, portrait.Colors.LineStrong
@@ -373,7 +372,6 @@ func sourceHeading(c *ui.Context, label string, disabled bool) ui.Element {
 	return b
 }
 
-// sourceStatus is the pill saying a card's source changed or went missing.
 func sourceStatus(c *ui.Context, text string, missing bool) {
 	fill, ink, icon := portrait.Colors.WarnSoft, portrait.Colors.Warn, portrait.IconWarning
 	if missing {
@@ -388,8 +386,6 @@ func sourceStatus(c *ui.Context, text string, missing bool) {
 type sourceHover struct{}
 type sourcePress struct{}
 
-// sourceButton is a card's small source action: paper with a hairline
-// ring, raised while hovered and pressed in while held, over Motion.Press.
 func sourceButton(c *ui.Context, label string, disabled bool) ui.Element {
 	g := portrait.GenUI
 	b := ui.ButtonBase(c.Key(label)).Label(label).Disabled(disabled).DimDisabled(false).Padding(2, 8).Radius(6).AlignItems(ui.Center)
@@ -415,8 +411,6 @@ func flag(b bool) float32 {
 	return 0
 }
 
-// loading stands in for a view that is not there yet: a status heading and
-// line in words, over a shimmering skeleton.
 func loading(c *ui.Context, title, detail string) {
 	ui.Column(c.Key("loading")).Gap(12).Padding(72, 0, 24, 0).FillWidth().MaxWidth(520).AlignSelf(ui.Center).Busy(true).Role(ui.RoleStatus).Label(title).Children(func() {
 		ui.Column(c).Gap(4).Children(func() {

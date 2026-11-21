@@ -7,38 +7,29 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// CardMotion is how GenUI cards come in: up from Rise DIPs below, out of a
-// Blur, fading in over Duration, each card Stagger after the one before.
 type CardMotion struct {
 	Duration, Stagger time.Duration
-	// MaxStagger is the last card index whose delay still grows.
-	MaxStagger int
-	Rise, Blur float32
-	Ease       CubicBezier
+	MaxStagger        int
+	Rise, Blur        float32
+	Ease              CubicBezier
 }
 
-// Delay is when card i (0-based, in reading order) starts to come in.
 func (m CardMotion) Delay(i int) time.Duration {
 	return time.Duration(min(max(i, 0), m.MaxStagger)) * m.Stagger
 }
 
-// Shimmer is the skeleton's sweep: a Glint band crossing a Base fill once
-// a Period.
 type Shimmer struct {
 	Period      time.Duration
 	Base, Glint ui.Color
 }
 
-// The WebUI paints linear-gradient(90deg, fill 0%, glint 46%, fill 92%) on
-// a tile 240% as wide as the box and moves it from background-position
-// 100% to -140%.
 const (
-	shimmerTile = 2.4
-	shimmerPeak = 0.46 * shimmerTile
+	shimmerTile          = 2.4
+	shimmerPeak          = 0.46 * shimmerTile
+	shimmerStartPosition = 1.0
+	shimmerEndPosition   = -1.4
 )
 
-// premultipliedMix mixes a and b t of the way as CSS does, with
-// premultiplied alpha.
 func premultipliedMix(a, b ui.Color, t float32) ui.Color {
 	aa, ba := float32(a.A)/255, float32(b.A)/255
 	alpha := aa*(1-t) + ba*t
@@ -51,9 +42,8 @@ func premultipliedMix(a, b ui.Color, t float32) ui.Color {
 	return ui.Color{R: ch(a.R, b.R), G: ch(a.G, b.G), B: ch(a.B, b.B), A: uint8(alpha*255 + 0.5)}
 }
 
-// Gradient is the skeleton's fill progress (0 to 1) through a period.
 func (s Shimmer) Gradient(progress float32) ui.LinearGradient {
-	pos := 1 - 2.4*progress
+	pos := shimmerStartPosition + (shimmerEndPosition-shimmerStartPosition)*progress
 	left := -(shimmerTile - 1) * pos
 	var centers []float32
 	for k := -1; k <= 1; k++ {
@@ -82,26 +72,20 @@ func (s Shimmer) Gradient(progress float32) ui.LinearGradient {
 	return ui.LinearGradient{Angle: 90, Stops: stops}
 }
 
-// Halo is the glow that spreads over the view when a generation is done:
-// a radial ring around Center scaling From to To while it flares and fades.
 type Halo struct {
 	Duration time.Duration
 	Ease     CubicBezier
 	From, To float32
 	Center   ui.Point
-	// Inset is how far the halo reaches past the view on every side.
-	Inset float32
-	Fill  ui.RadialGradient
+	Inset    float32
+	Fill     ui.RadialGradient
 }
 
-// Opacity is the halo's fade: in until 18% of the way, out by the end.
 func (h Halo) Opacity() []ui.Keyframe {
 	e := h.Ease.Easing()
 	return []ui.Keyframe{{At: 0, Value: 0}, {At: h.Duration * 18 / 100, Value: 1, Ease: e}, {At: h.Duration, Value: 0, Ease: e}}
 }
 
-// Rim is the light that sweeps once around the view's edge with the halo:
-// a conic band turning From to To degrees along a Width DIP ring.
 type Rim struct {
 	Duration time.Duration
 	Ease     CubicBezier
@@ -110,32 +94,25 @@ type Rim struct {
 	Stops    []ui.GradientStop
 }
 
-// Opacity is the rim's fade: up by 15%, dimming by 75%, gone at the end.
 func (r Rim) Opacity() []ui.Keyframe {
 	e := r.Ease.Easing()
 	return []ui.Keyframe{{At: 0, Value: 0}, {At: r.Duration * 15 / 100, Value: 0.95, Ease: e}, {At: r.Duration * 75 / 100, Value: 0.72, Ease: e}, {At: r.Duration, Value: 0, Ease: e}}
 }
 
-// GenUITokens lists the GenUI reader's look and motion.
 type GenUITokens struct {
-	// Card is a block's surface; Replacing fills a block being regenerated.
-	Card                    Surface
-	CardRadius, CardPadding float32
-	CardGap, SkeletonRadius float32
-	Replacing               ui.Color
-	Enter                   CardMotion
-	Shimmer                 Shimmer
-	Halo                    Halo
-	Rim                     Rim
-	// Source, SourceHover and SourcePress are the looks of a card's
-	// source buttons (Edit in source, Note): paper with a hairline ring,
-	// raised as a row while hovered, pressed in while held.
+	Card                             Surface
+	CardRadius, CardPadding          float32
+	CardGap, SkeletonRadius          float32
+	Replacing                        ui.Color
+	Enter                            CardMotion
+	Shimmer                          Shimmer
+	Halo                             Halo
+	Rim                              Rim
 	Source, SourceHover, SourcePress Surface
 }
 
 func turn(deg float32) float32 { return deg / 360 }
 
-// GenUI holds the GenUI reader's tokens.
 var GenUI = GenUITokens{
 	Card:           Surface{Colors.Paper, Colors.Paper, Shadows{out(0, 0, 0, 0.5, Colors.LineStrong)}},
 	CardRadius:     10,
@@ -144,9 +121,7 @@ var GenUI = GenUITokens{
 	SkeletonRadius: 8,
 	Replacing:      Colors.Code,
 	Enter:          CardMotion{Duration: 220 * time.Millisecond, Stagger: 36 * time.Millisecond, MaxStagger: 6, Rise: 5, Blur: 2, Ease: Motion.EaseOut},
-	// color-mix(in srgb, paper 82%, fill) mixes premultiplied: alpha
-	// 0.82 + 0.18 × 0.045.
-	Shimmer: Shimmer{Period: 1300 * time.Millisecond, Base: Colors.Fill, Glint: ui.RGBA(253, 253, 253, 0.828)},
+	Shimmer:        Shimmer{Period: 1300 * time.Millisecond, Base: Colors.Fill, Glint: ui.RGBA(253, 253, 253, 0.828)},
 	Halo: Halo{Duration: 950 * time.Millisecond, Ease: CubicBezier{0.16, 1, 0.3, 1}, From: 0.32, To: 2.15, Center: ui.Point{X: 0.86, Y: 0.24}, Inset: 24,
 		Fill: ui.RadialGradient{Center: ui.Point{X: 0.86, Y: 0.24}, Stops: []ui.GradientStop{
 			{Color: ui.Transparent, At: 0}, {Color: ui.Transparent, At: 0.24},

@@ -53,8 +53,6 @@ func TestTransitionSettlesInstantlyWhenItShouldNotAnimate(t *testing.T) {
 	}
 }
 
-// Baseline: styles.css mgo-overlay-in, mgo-drawer-left-in/right-in and
-// mgo-scrim-in (lines 1679-1758), components/ui.css mgo-tooltip-in (30-41).
 func TestOverlayMotionsMatchTheWebUIKeyframes(t *testing.T) {
 	m := portrait.Motion
 	for _, tc := range []struct {

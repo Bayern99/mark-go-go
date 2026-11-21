@@ -22,7 +22,7 @@ func (p *panel) chat(c *ui.Context) {
 	if len(s.statuses) > 0 {
 		ui.Row(c).Wrap().Gap(4).Children(func() {
 			for key, value := range s.statuses {
-				text(c, portrait.Type.Meta, key+": "+value).TextColor(colors.Ink3).Padding(3, 7).Radius(999).Background(colors.Fill)
+				text(c, portrait.Type.Meta, key+": "+value).TextColor(portrait.Colors.Ink3).Padding(3, 7).Radius(999).Background(portrait.Colors.Fill)
 			}
 		})
 	}
@@ -31,21 +31,21 @@ func (p *panel) chat(c *ui.Context) {
 			if s.status == statusWorking {
 				portrait.Spinner(c, "Research in progress")
 			}
-			text(c, portrait.Type.Meta, s.progress).TextColor(colors.Ink3).Grow(1).MinWidth(0)
+			text(c, portrait.Type.Meta, s.progress).TextColor(portrait.Colors.Ink3).Grow(1).MinWidth(0)
 		})
 	}
 	if len(s.widgets) > 0 {
 		card(ui.Column(c)).Gap(3).Padding(7, 9).Children(func() {
 			for key, widget := range s.widgets {
 				for _, line := range widget.WidgetLines {
-					text(c, portrait.Type.Meta, line).TextColor(colors.Ink2).Label(key)
+					text(c, portrait.Type.Meta, line).TextColor(portrait.Colors.Ink2).Label(key)
 				}
 			}
 		})
 	}
 	ui.Scroll(c.Key("feynman-chat-scroll")).Grow(1).FillWidth().MinHeight(0).Label("Feynman conversation").TrackScroll(&p.chatScroll).Children(func() {
 		if len(s.messages) == 0 && s.status == statusReady {
-			text(c, portrait.Type.UI, "Ask Feynman to research this workspace.").TextColor(colors.Ink3).Padding(12, 8)
+			text(c, portrait.Type.UI, "Ask Feynman to research this workspace.").TextColor(portrait.Colors.Ink3).Padding(12, 8)
 		}
 		for i, item := range s.messages {
 			p.message(c, i, item, i == len(s.messages)-1 && s.status == statusWorking)
@@ -85,7 +85,7 @@ func (p *panel) configControls(c *ui.Context) {
 			if label == "" {
 				label = model.ID
 			}
-			portrait.Tooltip(c, text(c, portrait.Type.Meta, "Model · "+label).FontWeight(600).TextColor(colors.Ink2), model.Provider+"/"+model.ID)
+			portrait.Tooltip(c, text(c, portrait.Type.Meta, "Model · "+label).FontWeight(600).TextColor(portrait.Colors.Ink2), model.Provider+"/"+model.ID)
 		}
 		p.configChoices(c)
 	})
@@ -107,7 +107,7 @@ func (p *panel) compactConfigControls(c *ui.Context, model *feynman.ResearchMode
 	open := p.collapsibleState("compact-research-config")
 	width, height := c.Size()
 	card(ui.Row(c.Key("research-compact-config-row"))).Gap(5).Padding(3, 5).AlignItems(ui.Center).Children(func() {
-		button := pill(c, "research-compact-config", modelName, "Research model and thinking settings", portrait.Quiet, false).Description("Choose a research model and thinking level").Grow(1).Justify(ui.Start)
+		button := option(c, "research-compact-config", modelName, "Research model and thinking settings", portrait.Quiet, false, false).Description("Choose a research model and thinking level").Grow(1).Justify(ui.Start)
 		if button.Clicked() {
 			*open = !*open
 		}
@@ -170,15 +170,15 @@ func (p *panel) message(c *ui.Context, index int, item message, streaming bool) 
 	switch item.kind {
 	case "user":
 		ui.Column(c.Key(key)).AlignItems(ui.End).Padding(3, 8).Children(func() {
-			text(c, portrait.Type.Meta, "You").FontWeight(600).TextColor(colors.Ink3)
-			text(c, portrait.Type.UI, item.text).FillWidth().TextColor(colors.Ink).Padding(9, 11).Radius(12).Background(colors.AccentSoft)
+			text(c, portrait.Type.Meta, "You").FontWeight(600).TextColor(portrait.Colors.Ink3)
+			text(c, portrait.Type.UI, item.text).FillWidth().TextColor(portrait.Colors.Ink).Padding(9, 11).Radius(12).Background(portrait.Colors.AccentSoft)
 			p.image(c, item.image)
 		})
 	case "assistant":
 		ui.Column(c.Key(key)).Gap(3).Padding(4, 8).Children(func() {
 			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-				portrait.Glyph(c, portrait.IconAtom, 15, colors.Accent)
-				text(c, portrait.Type.Meta, "Feynman").FontWeight(600).TextColor(colors.Ink3)
+				portrait.Glyph(c, portrait.IconAtom, 15, portrait.Colors.Accent)
+				text(c, portrait.Type.Meta, "Feynman").FontWeight(600).TextColor(portrait.Colors.Ink3)
 			})
 			options := markdownOptions(&markdown.Options{
 				WrapCode: true,
@@ -206,24 +206,24 @@ func (p *panel) message(c *ui.Context, index int, item message, streaming bool) 
 			markdown.View(c.Key(key+"-body"), item.text, markdownOptions(&markdown.Options{WrapCode: true})).FillWidth()
 		}).FillWidth()
 	case "notice":
-		ink, fill := colors.Ink2, colors.Fill
+		ink, fill := portrait.Colors.Ink2, portrait.Colors.Fill
 		if item.notify == "error" {
-			ink, fill = colors.Danger, colors.DangerSoft
+			ink, fill = portrait.Colors.Danger, portrait.Colors.DangerSoft
 		} else if item.notify == "warning" {
-			ink, fill = colors.Warn, colors.WarnSoft
+			ink, fill = portrait.Colors.Warn, portrait.Colors.WarnSoft
 		}
 		portrait.Type.Meta.Apply(ui.Text(c.Key(key), item.text)).Role(ui.RoleStatus).FillWidth().Wrap().TextColor(ink).Padding(6, 9).Radius(8).Background(fill)
 	case "plan":
 		card(ui.Column(c.Key(key))).Gap(4).Padding(7, 9).Children(func() {
-			text(c, portrait.Type.Meta, "Research plan").FontWeight(600).TextColor(colors.Ink2)
+			text(c, portrait.Type.Meta, "Research plan").FontWeight(600).TextColor(portrait.Colors.Ink2)
 			for _, step := range item.steps {
-				icon, ink := portrait.IconCircle, colors.Ink3
+				icon, ink := portrait.IconCircle, portrait.Colors.Ink3
 				if step.Status == "completed" {
-					icon, ink = portrait.IconCheckCircle, colors.Accent
+					icon, ink = portrait.IconCheckCircle, portrait.Colors.Accent
 				}
 				ui.Row(c).Gap(6).AlignItems(ui.Start).Children(func() {
 					portrait.Glyph(c, icon, 13, ink).Margin(1, 0, 0, 0)
-					text(c, portrait.Type.Meta, step.Content+" · "+step.Status).TextColor(colors.Ink3).Grow(1).MinWidth(0).Wrap()
+					text(c, portrait.Type.Meta, step.Content+" · "+step.Status).TextColor(portrait.Colors.Ink3).Grow(1).MinWidth(0).Wrap()
 				})
 			}
 		})
@@ -272,14 +272,14 @@ func (p *panel) toolBody(c *ui.Context, tool feynman.ResearchTool) {
 					p.openArtifact(*matched)
 				}
 			} else {
-				text(c, portrait.Type.Meta.In(portrait.FontMono), path+lineSuffix(location.Line)).TextColor(colors.Ink3).FillWidth()
+				text(c, portrait.Type.Meta.In(portrait.FontMono), path+lineSuffix(location.Line)).TextColor(portrait.Colors.Ink3).FillWidth()
 			}
 		}
 		for _, diff := range tool.Diffs {
 			sectionTitle(c, diff.Path)
-			text(c, portrait.Type.Meta, "Before").FontWeight(600).TextColor(colors.Ink2)
+			text(c, portrait.Type.Meta, "Before").FontWeight(600).TextColor(portrait.Colors.Ink2)
 			text(c, portrait.Type.Meta.In(portrait.FontMono), diff.OldText).FillWidth().Wrap()
-			text(c, portrait.Type.Meta, "After").FontWeight(600).TextColor(colors.Ink2)
+			text(c, portrait.Type.Meta, "After").FontWeight(600).TextColor(portrait.Colors.Ink2)
 			text(c, portrait.Type.Meta.In(portrait.FontMono), diff.NewText).FillWidth().Wrap()
 		}
 		for _, image := range tool.Images {
@@ -344,10 +344,10 @@ func (p *panel) composer(c *ui.Context) {
 			card(ui.Column(c.Key("research-queue"))).Gap(2).Padding(4, 8).Children(func() {
 				mutedText(c, fmt.Sprintf("Queue · %d steering · %d follow-up", len(s.queue.Steering), len(s.queue.FollowUp)))
 				for _, item := range s.queue.Steering {
-					text(c, portrait.Type.Meta, "Steer · "+item).MaxLines(2).Ellipsis("…").TextColor(colors.Ink2).FillWidth()
+					text(c, portrait.Type.Meta, "Steer · "+item).MaxLines(2).Ellipsis("…").TextColor(portrait.Colors.Ink2).FillWidth()
 				}
 				for _, item := range s.queue.FollowUp {
-					text(c, portrait.Type.Meta, "Follow-up · "+item).MaxLines(2).Ellipsis("…").TextColor(colors.Ink2).FillWidth()
+					text(c, portrait.Type.Meta, "Follow-up · "+item).MaxLines(2).Ellipsis("…").TextColor(portrait.Colors.Ink2).FillWidth()
 				}
 				if smallButton(c, "Clear queue", "Clear queued research messages").Clicked() {
 					p.runUpdate(func() (func(), error) {
@@ -360,12 +360,12 @@ func (p *panel) composer(c *ui.Context) {
 	}
 	if s.suggested != "" {
 		ui.Row(c.Key("research-suggestion")).Gap(4).AlignItems(ui.Center).Children(func() {
-			text(c, portrait.Type.Meta, s.suggested).MaxLines(2).Ellipsis("…").Grow(1).MinWidth(0).TextColor(colors.Ink2)
+			text(c, portrait.Type.Meta, s.suggested).MaxLines(2).Ellipsis("…").Grow(1).MinWidth(0).TextColor(portrait.Colors.Ink2)
 			if smallButton(c, "Insert", "Insert suggested prompt").Clicked() {
 				s.draft = strings.TrimSpace(strings.TrimSpace(s.draft) + "\n" + s.suggested)
 				s.suggested = ""
 			}
-			if iconButton(c, portrait.IconX, "Dismiss suggested prompt").Clicked() {
+			if portrait.QuietIconButton(c, portrait.IconX, "Dismiss suggested prompt").Clicked() {
 				s.suggested = ""
 			}
 		})
@@ -374,7 +374,7 @@ func (p *panel) composer(c *ui.Context) {
 	if compact {
 		paddingY, gap = 3, 3
 	}
-	composer := ui.Column(c.Key("feynman-composer")).Padding(paddingY, 7).Gap(gap).Radius(12).Background(colors.Paper).Border(1, colors.LineStrong)
+	composer := ui.Column(c.Key("feynman-composer")).Padding(paddingY, 7).Gap(gap).Radius(12).Background(portrait.Colors.Paper).Border(1, portrait.Colors.LineStrong)
 	if composer.FocusWithin() {
 		portrait.Rings.Editing.Apply(composer)
 	}
@@ -462,7 +462,7 @@ func (p *panel) composer(c *ui.Context) {
 						p.run(func() error { return p.host.Abort(p.window.Context(), s.root) })
 					}
 				} else {
-					if pill(c, "research-control-Send", "Send", "Send research prompt", portrait.Accent, false).Disabled(s.status != statusReady || strings.TrimSpace(s.draft) == "").Clicked() {
+					if option(c, "research-control-Send", "Send", "Send research prompt", portrait.Accent, false, false).Disabled(s.status != statusReady || strings.TrimSpace(s.draft) == "").Clicked() {
 						p.send()
 					}
 				}
@@ -510,7 +510,7 @@ func (p *panel) commandList(c *ui.Context) {
 			if command.Description != "" {
 				label += " · " + command.Description
 			}
-			if discreteButton(c, label, "Choose research action "+command.Name).Clicked() {
+			if discreteButton(c, label, "Choose research action "+command.Name, portrait.Icon{}).Clicked() {
 				s.draft = "/" + command.Name + " "
 				s.actionsOpen = false
 				p.commandQuery = ""
@@ -581,10 +581,10 @@ func (p *panel) question(c *ui.Context, question feynman.ResearchUpdate) {
 	for _, option := range question.Options {
 		toolList = toolList && strings.Contains(option.Name, " — ")
 	}
-	ui.Column(c.Key("research-question")).Role(ui.RoleGroup).Label("Feynman confirmation").Padding(8, 10).Gap(5).Radius(9).Background(colors.WarnSoft).Border(0.5, colors.Line).Children(func() {
-		text(c, portrait.Type.UI, title).FontWeight(600).TextColor(colors.Ink).FillWidth().Wrap()
+	ui.Column(c.Key("research-question")).Role(ui.RoleGroup).Label("Feynman confirmation").Padding(8, 10).Gap(5).Radius(9).Background(portrait.Colors.WarnSoft).Border(0.5, portrait.Colors.Line).Children(func() {
+		text(c, portrait.Type.UI, title).FontWeight(600).TextColor(portrait.Colors.Ink).FillWidth().Wrap()
 		if question.Message != "" && question.Message != title {
-			text(c, portrait.Type.Meta, question.Message).TextColor(colors.Ink2).FillWidth().Wrap()
+			text(c, portrait.Type.Meta, question.Message).TextColor(portrait.Colors.Ink2).FillWidth().Wrap()
 		}
 		if textEntry {
 			if question.Kind == "editor" {
@@ -625,13 +625,13 @@ func (p *panel) question(c *ui.Context, question feynman.ResearchUpdate) {
 				if filterable && !strings.Contains(strings.ToLower(option.Name), strings.ToLower(strings.TrimSpace(p.questionFind))) {
 					continue
 				}
-				var icons []portrait.Icon
+				var mark portrait.Icon
 				if p.questionPick == option.ID {
-					icons = append(icons, portrait.IconCheck)
+					mark = portrait.IconCheck
 				}
-				button := discreteButton(c, option.Name, "Choose "+option.Name, icons...).Checked(p.questionPick == option.ID)
+				button := discreteButton(c, option.Name, "Choose "+option.Name, mark).Checked(p.questionPick == option.ID)
 				if p.questionPick == option.ID {
-					button.Background(colors.AccentSoft).NoShadow()
+					button.Background(portrait.Colors.AccentSoft).NoShadow()
 				}
 				if button.Clicked() {
 					p.questionPick = option.ID
@@ -721,11 +721,11 @@ func (p *panel) sessions(c *ui.Context) {
 					if !strings.Contains(strings.ToLower(title), strings.ToLower(s.sessionFilter)) {
 						continue
 					}
-					var icons []portrait.Icon
+					var mark portrait.Icon
 					if row.Current {
-						icons = append(icons, portrait.IconCheck)
+						mark = portrait.IconCheck
 					}
-					if discreteButton(c, title, row.Preview, icons...).Disabled(row.Current || s.status != statusReady || s.draft != "" || len(s.sources) > 0).Clicked() {
+					if discreteButton(c, title, row.Preview, mark).Disabled(row.Current || s.status != statusReady || s.draft != "" || len(s.sources) > 0).Clicked() {
 						p.selectSession(row.ID)
 					}
 					if !row.Current && smallButton(c, "Delete", "Delete conversation "+title).Clicked() {
@@ -743,7 +743,7 @@ func (p *panel) sessions(c *ui.Context) {
 					if len(label) > 180 {
 						label = label[:180] + "…"
 					}
-					if discreteButton(c, label, "Fork conversation from this message").Disabled(s.status != statusReady || s.draft != "").Clicked() {
+					if discreteButton(c, label, "Fork conversation from this message", portrait.Icon{}).Disabled(s.status != statusReady || s.draft != "").Clicked() {
 						p.forkFrom(item.EntryID)
 					}
 				}
@@ -811,13 +811,13 @@ func (p *panel) treeNode(c *ui.Context, node feynman.ResearchTreeNode, depth int
 	current := node.Entry.ID == p.researchTree.LeafID
 	row := ui.Row(c).Gap(6).Padding(4, 6).Margin(0, 0, 0, float32(depth)*12).Radius(7).AlignItems(ui.Center).FillWidth()
 	if current {
-		row.Background(colors.AccentSoft)
+		row.Background(portrait.Colors.AccentSoft)
 	}
 	row.Children(func() {
 		if current {
-			portrait.Glyph(c, portrait.IconCheck, 12, colors.Accent)
+			portrait.Glyph(c, portrait.IconCheck, 12, portrait.Colors.Accent)
 		}
-		text(c, portrait.Type.Meta, label).TextColor(colors.Ink).Grow(1).MinWidth(0).Wrap()
+		text(c, portrait.Type.Meta, label).TextColor(portrait.Colors.Ink).Grow(1).MinWidth(0).Wrap()
 	})
 	for _, child := range node.Children {
 		p.treeNode(c, child, depth+1)

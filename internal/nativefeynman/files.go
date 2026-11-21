@@ -22,7 +22,7 @@ func (p *panel) files(c *ui.Context) {
 		}
 	})
 	if s.filesError != "" {
-		text(c, portrait.Type.Meta, s.filesError).Role(ui.RoleAlert).TextColor(colors.Danger).FillWidth().Wrap()
+		text(c, portrait.Type.Meta, s.filesError).Role(ui.RoleAlert).TextColor(portrait.Colors.Danger).FillWidth().Wrap()
 	}
 	ui.Scroll(c.Key("research-artifacts")).Grow(1).MinHeight(0).FillWidth().TrackScroll(&p.filesScroll).Label("Research files and recovery").Children(func() {
 		if s.filesLoading && len(s.artifacts) == 0 {
@@ -44,9 +44,9 @@ func (p *panel) fileRow(c *ui.Context, file review.ResearchArtifact) {
 	} else if file.Proposal {
 		label = "Review · " + label
 	}
-	ui.Column(c.Key("research-file-"+file.Path)).FillWidth().Gap(3).Padding(6, 7).Radius(9).Background(colors.Fill).Children(func() {
+	ui.Column(c.Key("research-file-"+file.Path)).FillWidth().Gap(3).Padding(6, 7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
 		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-			portrait.Tooltip(c, text(c, portrait.Type.UI, label).Grow(1).MinWidth(0).FontWeight(600).TextColor(colors.Ink).MaxLines(2).Ellipsis("…"), file.Path)
+			portrait.Tooltip(c, text(c, portrait.Type.UI, label).Grow(1).MinWidth(0).FontWeight(600).TextColor(portrait.Colors.Ink).MaxLines(2).Ellipsis("…"), file.Path)
 			if file.Missing && file.Error == "" {
 				if controlButton(c, "Restore", "Restore the deleted research artifact").Disabled(p.state.status == statusWorking).Clicked() {
 					p.openArtifact(file)
@@ -65,7 +65,7 @@ func (p *panel) fileRow(c *ui.Context, file review.ResearchArtifact) {
 			mutedText(c, file.Path[:strings.LastIndex(file.Path, "/")])
 		}
 		if file.Error != "" {
-			text(c, portrait.Type.Meta, fmt.Sprintf("%s · %s", file.Path, file.Error)).Role(ui.RoleAlert).TextColor(colors.Danger).FillWidth().Wrap()
+			text(c, portrait.Type.Meta, fmt.Sprintf("%s · %s", file.Path, file.Error)).Role(ui.RoleAlert).TextColor(portrait.Colors.Danger).FillWidth().Wrap()
 		}
 		if file.Missing {
 			mutedText(c, "The published workspace file was removed. Restore copies the saved artifact back into its original path.")

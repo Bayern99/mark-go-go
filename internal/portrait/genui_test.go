@@ -8,10 +8,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// Baseline: web/src/plugins/genui/genui.css (.genui-block, .genui-skeleton-*,
-// .genui-halo, .genui-progress::after and their keyframes) and a2ui.tsx's
-// --genui-stagger at c6504af.
-
 func TestGenUICardMaterialMatchesTheWebUIBlock(t *testing.T) {
 	g := portrait.GenUI
 	if g.Card.From != portrait.Colors.Paper || g.Card.To != portrait.Colors.Paper {
@@ -73,7 +69,6 @@ func TestShimmerGlintSweepsAcrossOnceAPeriod(t *testing.T) {
 	if s.Period != 1300*time.Millisecond || s.Base != portrait.Colors.Fill {
 		t.Fatalf("shimmer %+v, want 1.3s over fill", s)
 	}
-	// The glint is color-mix(paper 82%, fill): nearly opaque white.
 	if s.Glint.A < 209 || s.Glint.A > 214 || s.Glint.R < 250 {
 		t.Fatalf("glint %+v", s.Glint)
 	}
@@ -90,8 +85,6 @@ func TestShimmerGlintSweepsAcrossOnceAPeriod(t *testing.T) {
 		}
 		return at
 	}
-	// background-position 100% → -140% of a 240% tile: the glint enters
-	// from the left and leaves at the right.
 	early, mid := brightest(0.2), brightest(0.4)
 	if early < 0 || mid < 0 || !(early < mid) {
 		t.Fatalf("glint at 20%% = %v, 40%% = %v; want moving right", early, mid)

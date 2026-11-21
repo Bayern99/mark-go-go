@@ -5,18 +5,14 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// Shadow is one CSS box-shadow layer.
 type Shadow struct {
 	Inset              bool
 	X, Y, Blur, Spread float32
 	Color              ui.Color
 }
 
-// Shadows lists layers in CSS order: the first paints on top.
 type Shadows []Shadow
 
-// Apply adds the layers to e. MyGo paints the first added layer at the
-// bottom, so layers are added in reverse.
 func (s Shadows) Apply(e ui.Element) ui.Element {
 	for i := len(s) - 1; i >= 0; i-- {
 		l := s[i]
@@ -29,13 +25,11 @@ func (s Shadows) Apply(e ui.Element) ui.Element {
 	return e
 }
 
-// Surface is a top-to-bottom fill with its shadow layers.
 type Surface struct {
 	From, To ui.Color
 	Shadows  Shadows
 }
 
-// Apply paints the surface on e, replacing its fill and shadows.
 func (s Surface) Apply(e ui.Element) ui.Element {
 	if s.From == s.To {
 		e.Background(s.From)
@@ -46,8 +40,6 @@ func (s Surface) Apply(e ui.Element) ui.Element {
 	return s.Shadows.Apply(e)
 }
 
-// Glass is a translucent material: tint over the blurred backdrop
-// (backdrop-filter: blur saturate brightness), a radial highlight and a rim.
 type Glass struct {
 	Tint                       ui.Color
 	Blur, Saturate, Brightness float32
@@ -55,18 +47,11 @@ type Glass struct {
 	Rim                        Shadows
 }
 
-// Apply fills e with the glass and adds its rim, replacing its fill and
-// shadows. Shape e with Radius.
 func (g Glass) Apply(e ui.Element) ui.Element {
 	e.Material(g).NoShadow()
 	return g.Rim.Apply(e)
 }
 
-// PaintMaterial paints the glass: the backdrop blurred by the official glass
-// plugin, the tint and the highlight. It paints opaque paper without the
-// highlight when the desktop asks for reduced transparency or increased
-// contrast, as the WebUI did for prefers-reduced-transparency and
-// forced-colors. Saturate and Brightness have no MyGo counterpart yet.
 func (g Glass) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
 	if prefs := p.Preferences(); prefs.ReduceTransparency || prefs.HighContrast {
 		p.FillRadii(box, radii, Colors.Paper)
@@ -79,7 +64,6 @@ func (g Glass) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
 	}
 }
 
-// MaterialSet lists the Portrait materials.
 type MaterialSet struct {
 	Raised, RaisedHover, RaisedPress                   Surface
 	AccentRaised, AccentRaisedHover, AccentRaisedPress Surface
@@ -102,7 +86,6 @@ var (
 	glassShine = ui.RadialGradient{Center: ui.Point{X: 0.12, Y: 0}, Stops: []ui.GradientStop{{Color: white(0.42), At: 0}, {Color: ui.Transparent, At: 0.56}}}
 )
 
-// Materials holds the Portrait materials.
 var Materials = MaterialSet{
 	Raised: Surface{raised[0], raised[1], Shadows{
 		in(0, 1, 0, 0, white(0.94)), in(0, -0.5, 0, 0, black(0.05)), out(0, 0, 0, 0.5, black(0.13)), out(0, 1, 2, 0, black(0.055)), out(0, 3, 8, -3, black(0.075))}},
@@ -134,8 +117,6 @@ var Materials = MaterialSet{
 	GlassHover:    white(0.84),
 }
 
-// Opaque reports whether translucent materials must be replaced by opaque
-// paper: the system asks for reduced transparency or increased contrast.
 func Opaque(c *ui.Context) bool {
 	p := c.Preferences()
 	return p.ReduceTransparency || p.HighContrast

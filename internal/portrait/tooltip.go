@@ -2,10 +2,6 @@ package portrait
 
 import "github.com/egoist/mygo/ui"
 
-// Tooltip shows text by anchor when the pointer rests on it or the keyboard
-// focus comes to it, as Element.Tooltip does and in its look, but fading
-// in (Overlays.Tooltip) unless the keyboard brought it. It describes anchor
-// with text; set Description afterwards to describe it otherwise.
 func Tooltip(c *ui.Context, anchor ui.Element, text string) ui.Element {
 	if text == "" {
 		return anchor

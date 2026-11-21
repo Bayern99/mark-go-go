@@ -229,7 +229,7 @@ func (l *Library) Parse(input string) (program *Program) {
 	if parseStatements(text, statements) == 0 {
 		return l.emptyProgram(incomplete)
 	}
-	return l.build(statements, incomplete)
+	return l.build(statements, incomplete, nil)
 }
 
 func (l *Library) emptyProgram(incomplete bool) *Program {
@@ -240,7 +240,12 @@ func (l *Library) isComponentCall(n *node) bool {
 	return n != nil && n.k == kComp && !n.fn && !isBuiltin(n.name) && !isReservedCall(n.name)
 }
 
-func (l *Library) build(statements *statementSet, incomplete bool) *Program {
+type partialRef struct {
+	name    string
+	pending map[*statement]bool
+}
+
+func (l *Library) build(statements *statementSet, incomplete bool, partial *partialRef) *Program {
 	entry, fallback := "", false
 	if _, ok := statements.byID["root"]; ok {
 		entry = "root"
@@ -280,7 +285,7 @@ func (l *Library) build(statements *statementSet, incomplete bool) *Program {
 			}
 		}
 	}
-	m.extract(statements, program)
+	m.extract(statements, program, partial)
 	m.statement = entry
 	switch {
 	case entry == "":
@@ -333,7 +338,7 @@ func stateRefs(n *node, visit func(string)) {
 	})
 }
 
-func (m *materializer) extract(statements *statementSet, program *Program) {
+func (m *materializer) extract(statements *statementSet, program *Program, partial *partialRef) {
 	for _, id := range statements.order {
 		stmt := statements.byID[id]
 		switch stmt.kind {
@@ -372,6 +377,9 @@ func (m *materializer) extract(statements *statementSet, program *Program) {
 		}
 		for _, n := range nodes {
 			stateRefs(n, func(name string) {
+				if partial != nil && name == partial.name && partial.pending[stmt] {
+					return
+				}
 				if _, ok := program.State.Get(name); !ok {
 					program.State.Set(name, nil)
 				}

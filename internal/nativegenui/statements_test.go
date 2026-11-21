@@ -107,10 +107,25 @@ func TestStatementViewRejectsWhatItCannotRead(t *testing.T) {
 		"object components": `{"version":3,"language":"openui-lang/1.0","a2ui":[{"version":"1.0","createSurface":{"surfaceId":"v","catalogId":"markgogo.dev:genui/v3","components":[{"id":"root","component":"Text","text":"x"}]}}]}`,
 		"other language":    `{"version":3,"language":"openui-lang/2.0","a2ui":[{"version":"1.0","createSurface":{"surfaceId":"v","catalogId":"markgogo.dev:genui/v3","components":["root = Text(\"x\")"]}}]}`,
 		"other catalog":     `{"version":3,"language":"openui-lang/1.0","a2ui":[{"version":"1.0","createSurface":{"surfaceId":"v","catalogId":"markgogo.dev:genui/v1","components":["root = Text(\"x\")"]}}]}`,
+		"other surface":     `{"version":3,"language":"openui-lang/1.0","a2ui":[{"version":"1.0","createSurface":{"surfaceId":"v","catalogId":"markgogo.dev:genui/v3","components":["root = Text(\"x\")"]}},{"version":"1.0","updateComponents":{"surfaceId":"w","components":["root = Text(\"y\")"]}}]}`,
 		"no root":           `{"version":3,"language":"openui-lang/1.0","a2ui":[{"version":"1.0","createSurface":{"surfaceId":"v","catalogId":"markgogo.dev:genui/v3","components":["$count = 1"]}}]}`,
 	} {
 		if _, err := nativegenui.Open(file); err == nil {
 			t.Errorf("%s: opened", name)
 		}
+	}
+}
+
+func TestStatementViewKeepsStatementsALaterUpdateUsesAgain(t *testing.T) {
+	view, err := nativegenui.Open(`{"version":3,"language":"openui-lang/1.0","a2ui":[
+		{"version":"1.0","createSurface":{"surfaceId":"view","catalogId":"markgogo.dev:genui/v3","components":["root = Col([lead, tail])","lead = Text(\"Lead\")","tail = Text(\"Kept\")"]}},
+		{"version":"1.0","updateComponents":{"surfaceId":"view","components":["root = Col([lead])"]}},
+		{"version":"1.0","updateComponents":{"surfaceId":"view","components":["root = Col([lead, tail])"]}}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, text := shown(t, view, 520, nil)
+	if !strings.Contains(text, "Kept") || strings.Contains(text, "never defined") {
+		t.Fatalf("shown:\n%s", text)
 	}
 }

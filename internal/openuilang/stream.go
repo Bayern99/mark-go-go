@@ -150,7 +150,11 @@ func sourceStatements(input string) []sourceStatement {
 	return out
 }
 
-func Merge(existing, patch string) string {
+func Merge(existing, patch string) string { return merge(existing, patch, true) }
+
+func Overlay(existing, patch string) string { return merge(existing, patch, false) }
+
+func merge(existing, patch string, prune bool) string {
 	current, changes := sourceStatements(existing), sourceStatements(stripFences(patch))
 	if len(current) == 0 {
 		lines := make([]string, len(changes))
@@ -189,7 +193,7 @@ func Merge(existing, patch string) string {
 			set(stmt)
 		}
 	}
-	if root, ok := merged["root"]; ok {
+	if root, ok := merged["root"]; ok && prune {
 		reachable := map[string]bool{"root": true}
 		queue := []*node{root.expr}
 		for len(queue) > 0 {

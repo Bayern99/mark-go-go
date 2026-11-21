@@ -74,7 +74,7 @@ For a document with the headings `Overview`, `Metrics`, `Options`, `History` and
 
 Version 3 keeps the A2UI envelope and writes each entry of `components` as one [OpenUI Lang 1.0](../../internal/openuilang/) statement. The reader still opens version 2 files.
 
-- Set `version` to `3`, `language` to `openui-lang/1.0` and the surface's `catalogId` to `markgogo.dev:genui/v3`. The first message is `createSurface`; later `updateComponents` messages replace statements by name.
+- Set `version` to `3`, `language` to `openui-lang/1.0` and the surface's `catalogId` to `markgogo.dev:genui/v3`. The first message is `createSurface`; later `updateComponents` messages name the same `surfaceId` and replace statements by name. Statements they leave out stay.
 - A statement is `name = Component(arguments)` with arguments by position, and the tree starts at `root`. [The catalog](../../internal/nativegenui/catalog_v3.json) lists each component's properties in order. New properties are only added at the end.
 - Wrap content in `Source(["sourceId"], [children])` to attribute it to entries of `sources`.
 

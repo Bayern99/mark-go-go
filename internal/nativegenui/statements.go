@@ -33,7 +33,7 @@ func openStatements(data string) (*Surface, error) {
 	}
 	text := ""
 	for _, batch := range view.Statements {
-		text = openuilang.Merge(text, strings.Join(batch, "\n"))
+		text = openuilang.Overlay(text, strings.Join(batch, "\n"))
 	}
 	program := library.Parse(text)
 	s := &Surface{Nodes: map[string]Node{}, Sources: map[string]Reference{}, Request: view.Request, Session: openuilang.NewSession()}

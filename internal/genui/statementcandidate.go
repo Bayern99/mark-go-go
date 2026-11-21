@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/Bayern99/mark-go-go/internal/genuikit"
@@ -15,8 +14,6 @@ const (
 	statementFaultFloor = 2
 	statementFaultShare = 10
 )
-
-var statementName = regexp.MustCompile(`^\s*(\$?[A-Za-z_][A-Za-z0-9_]*)\s*=`)
 
 type statementMessage struct {
 	CreateSurface    *statementBatch `json:"createSurface"`
@@ -34,20 +31,21 @@ func WritesStatements(a2ui json.RawMessage) bool {
 	return json.Unmarshal(a2ui, &messages) == nil && len(messages) > 0 && messages[0].CreateSurface != nil && messages[0].CreateSurface.CatalogID == StatementCatalogID
 }
 
-func eachSourceID(value any, visit func(string)) {
+func eachSourceID(value any, seen map[*openuilang.Element]bool, visit func(string)) {
 	switch v := value.(type) {
 	case []any:
 		for _, item := range v {
-			eachSourceID(item, visit)
+			eachSourceID(item, seen, visit)
 		}
 	case *openuilang.Object:
 		for _, key := range v.Keys {
-			eachSourceID(v.Values[key], visit)
+			eachSourceID(v.Values[key], seen, visit)
 		}
 	case *openuilang.Element:
-		if v == nil {
+		if v == nil || seen[v] {
 			return
 		}
+		seen[v] = true
 		if v.Type == "Source" {
 			ids, _ := v.Props.Values["sources"].([]any)
 			for _, id := range ids {
@@ -56,7 +54,7 @@ func eachSourceID(value any, visit func(string)) {
 				}
 			}
 		}
-		eachSourceID(v.Props, visit)
+		eachSourceID(v.Props, seen, visit)
 	}
 }
 
@@ -69,11 +67,11 @@ func validateStatementCandidate(raw []byte) error {
 	if err != nil {
 		return err
 	}
-	text, count := "", 0
+	text := ""
 	for _, batch := range view.Statements {
 		text = openuilang.Overlay(text, strings.Join(batch, "\n"))
-		count += len(batch)
 	}
+	count := len(openuilang.Names(text))
 	program := library.Parse(text)
 	session := openuilang.NewSession()
 	session.Load(program)
@@ -84,12 +82,12 @@ func validateStatementCandidate(raw []byte) error {
 	seen := map[string]bool{}
 	var faults []string
 	for _, problem := range append(program.Errors, problems...) {
-		fault := problem.Message
-		if problem.StatementID != "" {
-			fault = problem.StatementID + ": " + fault
+		key, fault := problem.StatementID, problem.StatementID+": "+problem.Message
+		if key == "" {
+			key, fault = problem.Message, problem.Message
 		}
-		if !seen[fault] {
-			seen[fault] = true
+		if !seen[key] {
+			seen[key] = true
 			faults = append(faults, fault)
 		}
 	}
@@ -100,7 +98,7 @@ func validateStatementCandidate(raw []byte) error {
 		return newValidationError("TOO_MANY_FAULTS", fmt.Sprintf("The view has %d faulty statements, more than the %d it may have. The first are: %s.", len(faults), allowed, strings.Join(faults[:min(3, len(faults))], "; ")), "/a2ui", "")
 	}
 	var missing error
-	eachSourceID(root, func(id string) {
+	eachSourceID(root, map[*openuilang.Element]bool{}, func(id string) {
 		if _, ok := view.Sources[id]; !ok && missing == nil {
 			missing = newValidationError("MISSING_SOURCE", fmt.Sprintf("A Source names %q, which is not in the view's sources.", id), "/sources", "")
 		}
@@ -131,8 +129,8 @@ func readStatementBase(text string, ids []string) (*BaseView, error) {
 			base.surfaceID = batch.SurfaceID
 		}
 		for _, statement := range batch.Components {
-			if match := statementName.FindStringSubmatch(statement); match != nil {
-				base.existing[match[1]] = true
+			for _, name := range openuilang.Names(statement) {
+				base.existing[name] = true
 			}
 		}
 	}
@@ -159,16 +157,18 @@ func (b *BaseView) checkStatements(update json.RawMessage) error {
 	seen := map[string]bool{}
 	for _, component := range batch.Components {
 		statement, ok := component.(string)
-		match := statementName.FindStringSubmatch(statement)
-		switch {
-		case !ok || match == nil:
-			return errors.New("The agent's update has a component that is not a statement, such as name = Text(\"...\").")
-		case seen[match[1]]:
-			return fmt.Errorf("The agent's update names the statement %q twice.", match[1])
-		case b.existing[match[1]] && !b.replace[match[1]]:
-			return fmt.Errorf("The agent's update changes the statement %q, which it was not asked to replace.", match[1])
+		names := openuilang.Names(statement)
+		if !ok || len(names) != 1 {
+			return errors.New("The agent's update has a component that is not one statement, such as name = Text(\"...\").")
 		}
-		seen[match[1]] = true
+		name := names[0]
+		switch {
+		case seen[name]:
+			return fmt.Errorf("The agent's update names the statement %q twice.", name)
+		case b.existing[name] && !b.replace[name]:
+			return fmt.Errorf("The agent's update changes the statement %q, which it was not asked to replace.", name)
+		}
+		seen[name] = true
 	}
 	return nil
 }

@@ -150,6 +150,14 @@ func sourceStatements(input string) []sourceStatement {
 	return out
 }
 
+func Names(text string) []string {
+	var names []string
+	for _, stmt := range sourceStatements(stripFences(text)) {
+		names = append(names, stmt.id)
+	}
+	return names
+}
+
 func Merge(existing, patch string) string { return merge(existing, patch, true) }
 
 func Overlay(existing, patch string) string { return merge(existing, patch, false) }

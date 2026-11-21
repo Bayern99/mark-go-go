@@ -144,12 +144,15 @@ func TestImagesComeOnlyFromFilesTheDocumentShows(t *testing.T) {
 	file.Close()
 	os.WriteFile(filepath.Join(dir, "secret.png"), nil, 0o600)
 	os.WriteFile(filepath.Join(dir, "site.png"), []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, 0o600)
-	load := nativegenui.DocumentImages("# Report\n\n![Plan](plan.png)\n\n![Site][site]\n\n![Remote](https://example.com/a.png)\n\n[site]: site.png\n[hidden]: secret.png\n", dir)
+	load := nativegenui.DocumentImages("# Report\n\n![Plan](plan.png)\n\n![Site [north\nside]][site]\n\n| Cell |\n| --- |\n| ![In a table](table.png) |\n\n![Remote](https://example.com/a.png)\n\n[site]: site.png\n[hidden]: secret.png\n", dir)
 	if source, err := load("plan.png"); err != nil || source == nil {
 		t.Errorf("the document's own image did not load: %v", err)
 	}
 	if _, err := load("site.png"); err == nil || strings.Contains(err.Error(), "does not contain") {
 		t.Errorf("an image the document shows by reference was refused before it was read: %v", err)
+	}
+	if _, err := load("table.png"); err == nil || strings.Contains(err.Error(), "does not contain") {
+		t.Errorf("an image in a table cell was refused before it was read: %v", err)
 	}
 	for _, src := range []string{"secret.png", "https://example.com/a.png", "https://example.com/other.png", "../plan.png", "file:///etc/hosts"} {
 		if source, err := load(src); err == nil || source != nil {

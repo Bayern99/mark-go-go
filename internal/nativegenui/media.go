@@ -98,10 +98,15 @@ func (r *Reading) media(c *ui.Context, e *openuilang.Element, p props, path stri
 
 var documentImage = regexp.MustCompile("!\\[[^\\]]*\\]\\(\\s*<?([^)\\s>]+)|(?i)<img\\b[^>]*?\\bsrc\\s*=\\s*[\"']([^\"']+)")
 
+var imageDefinition = regexp.MustCompile(`(?m)^ {0,3}\[[^\]\n]+\]:\s*<?([^\s>]+)`)
+
 func DocumentImages(source, directory string) func(src string) (ui.ImageSource, error) {
 	known := map[string]bool{}
 	for _, match := range documentImage.FindAllStringSubmatch(source, -1) {
 		known[match[1]+match[2]] = true
+	}
+	for _, match := range imageDefinition.FindAllStringSubmatch(source, -1) {
+		known[match[1]] = true
 	}
 	load := markdown.FileImages(directory)
 	return func(src string) (ui.ImageSource, error) {
@@ -141,7 +146,10 @@ func (r *Reading) image(c *ui.Context, p props, at place) {
 		if !loading {
 			load, services := r.LoadImage, c.Services()
 			go func() {
-				loaded, _ := load(src)
+				loaded, err := load(src)
+				if err != nil {
+					loaded = nil
+				}
 				entry.mu.Lock()
 				entry.source, entry.done = loaded, true
 				entry.mu.Unlock()
@@ -392,6 +400,11 @@ func (r *Reading) chart(c *ui.Context, p props, path string, at place) {
 		labels[i] = (props{}).show(row.Values[category])
 	}
 	kind := p.text("type")
+	switch kind {
+	case "bar", "line", "area", "pie", "donut", "scatter":
+	default:
+		kind = "bar"
+	}
 	all := make([]series, len(names))
 	colors := palette(len(names))
 	for s, name := range names {

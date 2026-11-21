@@ -143,9 +143,13 @@ func TestImagesComeOnlyFromFilesTheDocumentShows(t *testing.T) {
 	png.Encode(file, image.NewRGBA(image.Rect(0, 0, 4, 3)))
 	file.Close()
 	os.WriteFile(filepath.Join(dir, "secret.png"), nil, 0o600)
-	load := nativegenui.DocumentImages("# Report\n\n![Plan](plan.png)\n\n![Remote](https://example.com/a.png)\n", dir)
+	os.WriteFile(filepath.Join(dir, "site.png"), []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, 0o600)
+	load := nativegenui.DocumentImages("# Report\n\n![Plan](plan.png)\n\n![Site][site]\n\n![Remote](https://example.com/a.png)\n\n[site]: site.png\n", dir)
 	if source, err := load("plan.png"); err != nil || source == nil {
 		t.Errorf("the document's own image did not load: %v", err)
+	}
+	if _, err := load("site.png"); err == nil || strings.Contains(err.Error(), "does not contain") {
+		t.Errorf("an image the document shows by reference was refused before it was read: %v", err)
 	}
 	for _, src := range []string{"secret.png", "https://example.com/a.png", "https://example.com/other.png", "../plan.png", "file:///etc/hosts"} {
 		if source, err := load(src); err == nil || source != nil {
@@ -203,5 +207,30 @@ func TestTripExampleShowsEveryDataPrimitiveWithoutNotices(t *testing.T) {
 				t.Errorf("width %d: %q is not shown", width, want)
 			}
 		}
+	}
+}
+
+func TestChartWithoutAKnownTypeDrawsBars(t *testing.T) {
+	tt, _ := shown(t, statementView(t, `$kind = ""`, `root = Col([Chart($kind, [{k: "A", One: 60}], "k")])`), 400, nil)
+	if painted(tt.Image(), firstSeries) < 40 {
+		t.Fatal("no bars are drawn")
+	}
+}
+
+func TestImageThatCannotBeReadKeepsItsDescription(t *testing.T) {
+	view := statementView(t, `root = Col([Image("broken.png", "Site plan")])`)
+	loaded := make(chan struct{})
+	tt, _ := shown(t, view, 400, func(r *nativegenui.Reading) {
+		r.LoadImage = func(string) (ui.ImageSource, error) {
+			defer close(loaded)
+			var none *ui.SVG
+			return none, os.ErrInvalid
+		}
+	})
+	<-loaded
+	tt.Frame()
+	tt.Frame()
+	if !tt.HasText("Site plan") {
+		t.Fatalf("shown: %v", tt.Texts())
 	}
 }

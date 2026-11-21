@@ -3,6 +3,7 @@ package nativeui
 import (
 	"slices"
 
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
 )
@@ -205,7 +206,7 @@ func (s *Shell) drawer(c *ui.Context, left bool, width, height float32, m Model,
 		}
 		ui.Row(c).Padding(6, 10).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, name).Bold().Grow(1)
-			close := control(c, "×", "Close "+name).Width(28)
+			close := portrait.QuietIconButton(c, portrait.IconX, "Close "+name)
 			close.AutoFocus()
 			if close.Clicked() {
 				*open = false

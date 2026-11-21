@@ -3,7 +3,6 @@ package nativeui
 import (
 	"github.com/egoist/mygo/ui"
 	"strings"
-	"time"
 	"unicode"
 )
 
@@ -54,52 +53,6 @@ func bodyFont(text string) string {
 	}
 	return "IBM Plex Sans"
 }
-func capsule(c *ui.Context, group string, keyboard bool) {
-	bg := ui.Row(c.Key("selected")).Absolute().Top(0).Left(0).Right(0).Bottom(0).Radius(7).Background(paper).Border(0.5, rim).Shadow(0, 1, 2, 0, ui.RGBA(0, 0, 0, 0.06)).AccessHidden(true)
-	if group != "" && !keyboard && !c.Preferences().ReduceMotion {
-		bg.Transition(ui.ElementTransition{Match: group, Duration: 160 * time.Millisecond})
-	}
-}
-
-func control(c *ui.Context, title, label string) ui.Element {
-	b := ui.Button(c.Key(label), title).Label(label).Tooltip(label).Height(28).Padding(3, 8).Radius(8).FontSize(13).TextColor(ink).Font(bodyFont(title)).Background(paper).Border(0.6, rim)
-	if b.PressedInside() {
-		b.Background(track)
-	} else if b.Hovered() {
-		b.Background(paper)
-	}
-	return b
-}
-
 func banner(c *ui.Context, text string) {
 	ui.Text(c, text).Role(ui.RoleAlert).FontSize(13).TextColor(danger).Padding(5, 12).Background(ui.Hex("#fff4f3"))
-}
-
-func discrete(c *ui.Context, title, label string, selected bool, group ...string) ui.Element {
-	b := ui.ButtonBase(c.Key(label)).Label(label).Padding(4, 8).MinHeight(27).Radius(7).Clip()
-	if !selected && b.Hovered() {
-		b.Background(track)
-	}
-	b.Children(func() {
-		if selected {
-			key := ""
-			if len(group) > 0 {
-				key = group[0]
-			}
-			capsule(c, key, b.FocusVisible())
-		}
-		ui.Text(c, title).ZIndex(1).Font(bodyFont(title)).FontSize(13).MaxLines(1).Ellipsis("…").TextColor(ink)
-	})
-	return b
-}
-
-func iconButton(c *ui.Context, glyph, label string) ui.Element {
-	b := ui.ButtonBase(c.Key(label)).Label(label).Tooltip(label).Size(30, 28).Radius(7).AlignItems(ui.Center).Justify(ui.Center)
-	if b.PressedInside() {
-		b.Background(track)
-	} else if b.Hovered() {
-		b.Background(paper).Border(0.5, rim)
-	}
-	b.Children(func() { ui.Text(c, glyph).Font("Phosphor").FontSize(16).TextColor(ink).AccessHidden(true) })
-	return b
 }

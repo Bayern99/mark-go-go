@@ -69,7 +69,7 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 						continue
 					}
 					selected := doc.ViewMode == mode || (mode == "preview" && doc.ViewMode != "genui" && doc.ViewMode != "markdown")
-					if t.Segment(title, title, selected).Role(ui.RoleTab).AccessSelected(selected).Clicked() && a.SetMode != nil {
+					if t.Segment(c, title, title, selected).Role(ui.RoleTab).AccessSelected(selected).Clicked() && a.SetMode != nil {
 						a.SetMode(mode)
 					}
 				}

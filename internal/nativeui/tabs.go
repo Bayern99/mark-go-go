@@ -156,7 +156,7 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 					if closeTab.Clicked() && a.CloseDocument != nil {
 						a.CloseDocument(d.ID)
 					}
-					t.Capsule(tab, selected)
+					t.Capsule(c, tab, selected)
 				})
 			}
 			if count < len(docs) {

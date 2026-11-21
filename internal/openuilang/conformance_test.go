@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -218,9 +219,32 @@ func diffs(id string, expected map[string]any, lib *Library, program *Program) [
 	return out
 }
 
+var statementName = regexp.MustCompile(`^(\$?\w+)\s*=([^=]|$)`)
+
+func readCase(t *testing.T, dir string) (map[string]string, map[string]any) {
+	t.Helper()
+	files := map[string]string{}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[entry.Name()] = string(data)
+	}
+	var expected map[string]any
+	if err := json.Unmarshal([]byte(files["expected.json"]), &expected); err != nil {
+		t.Fatal(err)
+	}
+	return files, expected
+}
+
 func TestConformanceProgramCases(t *testing.T) {
 	lib := fixtureLibrary(t)
-	for _, area := range []string{"grammar", "entry", "evaluation", "errors"} {
+	for _, area := range []string{"grammar", "entry", "evaluation", "errors", "streaming", "editing"} {
 		cases, err := os.ReadDir(filepath.Join(fixtureRoot, area))
 		if err != nil {
 			t.Fatal(err)
@@ -231,20 +255,38 @@ func TestConformanceProgramCases(t *testing.T) {
 			}
 			id := area + "/" + entry.Name()
 			t.Run(id, func(t *testing.T) {
-				dir := filepath.Join(fixtureRoot, id)
-				input, err := os.ReadFile(filepath.Join(dir, "input.oui"))
-				if err != nil {
-					t.Fatal(err)
+				files, expected := readCase(t, filepath.Join(fixtureRoot, id))
+				if chunks, ok := files["chunks.json"]; ok {
+					var parts []string
+					if err := json.Unmarshal([]byte(chunks), &parts); err != nil {
+						t.Fatal(err)
+					}
+					stream := lib.NewStream()
+					for _, part := range parts {
+						stream.Push(part)
+					}
+					for _, diff := range diffs(id, expected, lib, stream.Finish()) {
+						t.Error("streamed " + diff)
+					}
+					for _, diff := range diffs(id, expected, lib, lib.Parse(strings.Join(parts, ""))) {
+						t.Error("batch " + diff)
+					}
+					return
 				}
-				raw, err := os.ReadFile(filepath.Join(dir, "expected.json"))
-				if err != nil {
-					t.Fatal(err)
+				input := files["input.oui"]
+				if patch, ok := files["patch.oui"]; ok {
+					input = Merge(input, patch)
+					got := []any{}
+					for _, line := range strings.Split(input, "\n") {
+						if match := statementName.FindStringSubmatch(line); match != nil {
+							got = append(got, match[1])
+						}
+					}
+					if want, listed := expected["statements"]; listed && !same(want, got) {
+						t.Errorf("statements: expected %v, got %v", want, got)
+					}
 				}
-				var expected map[string]any
-				if err := json.Unmarshal(raw, &expected); err != nil {
-					t.Fatal(err)
-				}
-				for _, diff := range diffs(id, expected, lib, lib.Parse(string(input))) {
+				for _, diff := range diffs(id, expected, lib, lib.Parse(input)) {
 					t.Error(diff)
 				}
 			})

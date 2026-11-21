@@ -20,10 +20,10 @@ func (l *Library) NewStream() *Stream {
 
 func (s *Stream) Push(chunk string) *Program {
 	s.buf += chunk
-	return s.result(false)
+	return s.result()
 }
 
-func (s *Stream) Finish() *Program { return s.result(true) }
+func (s *Stream) Finish() *Program { return s.lib.Parse(s.buf) }
 
 func (s *Stream) refresh() {
 	next := preprocess(s.buf)
@@ -80,7 +80,7 @@ func (s *Stream) scanCompleted() int {
 
 var trailingState = regexp.MustCompile(`\$\w+$`)
 
-func (s *Stream) result(complete bool) (program *Program) {
+func (s *Stream) result() (program *Program) {
 	defer func() {
 		if recover() != nil {
 			program = s.lib.emptyProgram(false)
@@ -110,7 +110,7 @@ func (s *Stream) result(complete bool) (program *Program) {
 		all.set(stmt)
 		partial.pending[stmt] = true
 	}
-	if tail := trailingState.FindString(s.buf); !complete && tail != "" && strings.HasSuffix(pending, tail) {
+	if tail := trailingState.FindString(s.buf); tail != "" && strings.HasSuffix(pending, tail) {
 		before := pending[:len(pending)-len(tail)]
 		earlier := false
 		for at := strings.Index(before, tail); at >= 0; {

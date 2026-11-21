@@ -77,3 +77,30 @@ func TestMergeKeepsUntouchedStatementsAndState(t *testing.T) {
 		t.Errorf("got %q", merged)
 	}
 }
+
+func TestStreamEndEqualsBatchParseForProvisionalBoundaries(t *testing.T) {
+	lib := fixtureLibrary(t)
+	cases := [][]string{
+		{"root = $on\n/", "/ note\n? Stack([Text(\"A\")]) : Stack([])\n$on = true"},
+		{"root = Stack([a])\na = Text(\"first\")\n", "a = Text(\"second"},
+	}
+	for _, chunks := range cases {
+		stream := lib.NewStream()
+		text := ""
+		for _, chunk := range chunks {
+			stream.Push(chunk)
+			text += chunk
+		}
+		got, _ := json.Marshal(normalize(evaluateCase(stream.Finish()).fields))
+		want, _ := json.Marshal(normalize(evaluateCase(lib.Parse(text)).fields))
+		if string(got) != string(want) {
+			t.Errorf("%q:\n got %s\nwant %s", chunks, got, want)
+		}
+	}
+	program := lib.Parse("root = Stack([a])\na = Text(\"first\")\na = Text(\"second")
+	tree, _ := program.Evaluate(nil)
+	children, _ := tree.Props.Get("children")
+	if text, _ := children.([]any)[0].(*Element).Props.Get("text"); text != "second" {
+		t.Errorf("final redefinition should win, got %v", text)
+	}
+}

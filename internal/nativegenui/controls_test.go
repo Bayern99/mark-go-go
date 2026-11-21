@@ -135,3 +135,49 @@ func TestATimerCountsItsSecondsDownAndACelebrationStaysStillUnderReducedMotion(t
 		t.Errorf("the card did not flip:\n%s", got)
 	}
 }
+
+func TestPressingTheTextInsideAPressableOrAFlashcardCounts(t *testing.T) {
+	view := statementView(t, `$n = 0`,
+		`root = Col([Pressable([Text("Tap this tile")], @Set($n, $n + 1)), Text("Taps " + $n), Flashcard([Text("Front words")], [Text("Back words")])])`)
+	tt, _ := shown(t, view, 600, nil)
+	for _, name := range []string{"Tap this tile", "Front words"} {
+		box, ok := tt.Find(name)
+		if !ok {
+			t.Fatalf("%q is not shown", name)
+		}
+		tt.Press(box.X+box.W/2, box.Y+box.H/2)
+		tt.Release(box.X+box.W/2, box.Y+box.H/2)
+		tt.Frame()
+	}
+	if got := texts(tt); !strings.Contains(got, "Taps 1") || !strings.Contains(got, "back side") {
+		t.Errorf("pressing the text did nothing:\n%s", got)
+	}
+}
+
+func TestANumberFieldWithoutAVariableStaysEmptyOnceCleared(t *testing.T) {
+	view := statementView(t, `root = Col([Form([Input(5, "Seats", "number", null, {required: true}), Button("Book", @ToAssistant("book"))])])`)
+	tt, _ := shown(t, view, 600, nil)
+	tt.Click("Seats, required")
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Key(0, ui.KeyBackspace)
+	tt.Click("Book")
+	if got := texts(tt); !strings.Contains(got, "This field is required") {
+		t.Errorf("the cleared field passed its required rule:\n%s", got)
+	}
+}
+
+func TestLoadingAViewAgainStopsItsRunningTimer(t *testing.T) {
+	lines := []string{`$left = 30`, `root = Col([Timer($left, "Rest")])`}
+	var reader nativegenui.Reading
+	reader.Load(statementView(t, lines...))
+	tt := ui.NewTester(reader.View, 600, 400)
+	tt.Frame()
+	tt.Click("Start")
+	tt.Advance(2 * time.Second)
+	tt.Frame()
+	reader.Load(statementView(t, lines...))
+	tt.Advance(5 * time.Second)
+	if got := texts(tt); !strings.Contains(got, "00:30") || !strings.Contains(got, "Start") {
+		t.Errorf("the reloaded timer kept running:\n%s", got)
+	}
+}

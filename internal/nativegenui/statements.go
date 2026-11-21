@@ -505,7 +505,7 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 		if named, ok := ink(c, p.text("color")); ok {
 			color = named
 		}
-		ui.Text(c, p.text("text")).Font(typeface(p.text("text"))).FontSize(face.size).FontWeight(weight).LineHeight(face.line).LetterSpacing(face.tracking).TextColor(color).Role(ui.RoleHeading).MinWidth(0).Wrap().Selectable()
+		r.selectable(ui.Text(c, p.text("text")).Font(typeface(p.text("text"))).FontSize(face.size).FontWeight(weight).LineHeight(face.line).LetterSpacing(face.tracking).TextColor(color).Role(ui.RoleHeading).MinWidth(0).Wrap())
 	case "Text":
 		style := textStyle{size: at.bodySize(), line: 1.6, color: theme.Text, weight: 400}
 		if face, ok := textType[p.text("size")]; ok {
@@ -699,7 +699,7 @@ func (s textStyle) apply(text ui.Element, content string) ui.Element {
 func (r *Reading) prose(c *ui.Context, content string, style textStyle) {
 	marks := inlineMark.FindAllStringSubmatchIndex(content, -1)
 	block := func(text ui.Element) {
-		text.LineHeight(style.line).MinWidth(0).Wrap().Selectable()
+		r.selectable(text.LineHeight(style.line).MinWidth(0).Wrap())
 		if style.lines > 0 {
 			text.MaxLines(style.lines)
 		}

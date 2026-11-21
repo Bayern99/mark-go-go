@@ -34,6 +34,8 @@ type Reading struct {
 	problems   map[string]string
 	presses    []press
 	changed    bool
+	pressable  int
+	touched    map[string]bool
 }
 
 type componentState struct {
@@ -46,12 +48,18 @@ type componentState struct {
 	number             float64
 	date               time.Time
 	editing, started   bool
+	running, flipped   bool
 }
 
 func (r *Reading) Load(s *Surface) {
 	r.surface = s
 	r.images.Clear()
 	r.problems, r.presses, r.changed, r.form = map[string]string{}, nil, false, ""
+	r.touched = map[string]bool{}
+	for _, state := range r.states {
+		state.text, state.shown, state.note, state.number, state.date = "", "", "", 0, time.Time{}
+		state.editing, state.started, state.running, state.flipped = false, false, false, false
+	}
 	if r.states == nil {
 		r.states = map[string]*componentState{}
 	}

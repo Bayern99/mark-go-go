@@ -59,8 +59,8 @@ func (b bound) get() any {
 		value, _ := session.Get(b.binding.Target)
 		return value
 	}
-	if value := session.Field(b.form, b.name); value != nil {
-		return value
+	if b.r.touched[b.form+"\x00"+b.name] {
+		return session.Field(b.form, b.name)
 	}
 	return b.literal
 }
@@ -71,6 +71,7 @@ func (b bound) set(value any) {
 		session.Assign(b.binding, value)
 	} else {
 		session.SetField(b.form, b.kind, b.name, value)
+		b.r.touched[b.form+"\x00"+b.name] = true
 	}
 	delete(b.r.problems, b.form+"\x00"+b.name)
 	b.r.changed = true
@@ -96,6 +97,13 @@ func (b bound) left(rules, value any) {
 	} else {
 		delete(b.r.problems, key)
 	}
+}
+
+func (r *Reading) selectable(text ui.Element) ui.Element {
+	if r.pressable > 0 {
+		return text
+	}
+	return text.Selectable()
 }
 
 func (r *Reading) press(label string, action any) {
@@ -345,7 +353,13 @@ func (r *Reading) control(c *ui.Context, e *openuilang.Element, p props, path st
 		}
 		inner := at
 		inner.row = false
+		if acts {
+			r.pressable++
+		}
 		tile.Children(func() { r.stack(c, p.value("children"), path, depth, inner, groupGap, true) })
+		if acts {
+			r.pressable--
+		}
 		if acts && tile.Clicked() {
 			r.press("", p.value("action"))
 		}
@@ -498,13 +512,14 @@ func (r *Reading) control(c *ui.Context, e *openuilang.Element, p props, path st
 		r.timer(c, r.bind(e, p, "seconds", path), p, state)
 	case "Flashcard":
 		side, other := "front", "back"
-		if state.open {
+		if state.flipped {
 			side, other = other, side
 		}
 		card := ui.Column(c).MinWidth(0).MinHeight(160).Padding(20).Gap(8).Radius(14).Border(1, theme.Text.Alpha(0.08)).Background(theme.Surface).AlignItems(ui.Center).Justify(ui.Center).Focusable().Role(ui.RoleButton).Cursor(ui.CursorPointer).Label(strings.TrimSpace(p.text(side) + " Flashcard, " + side + " side. Press to show the " + other + "."))
 		if at.row {
 			card.Grow(1).Basis(rowShare)
 		}
+		r.pressable++
 		card.Children(func() {
 			if text, ok := p.value(side).(string); ok {
 				ui.Text(c.Key(side), text).Font(typeface(text)).FontSize(21).FontWeight(600).TextColor(theme.Text).TextAlign(ui.Center).MinWidth(0).Wrap()
@@ -513,12 +528,13 @@ func (r *Reading) control(c *ui.Context, e *openuilang.Element, p props, path st
 					r.stack(c, p.value(side), path+"/"+side, depth, place{compact: true, nested: true}, groupGap, true)
 				})
 			}
-			if hint := p.text("hint"); hint != "" && !state.open {
+			if hint := p.text("hint"); hint != "" && !state.flipped {
 				ui.Text(c.Key("hint"), hint).FontSize(13).TextColor(theme.TextMuted).TextAlign(ui.Center).MinWidth(0).Wrap()
 			}
 		})
+		r.pressable--
 		if card.Clicked() {
-			state.open = !state.open
+			state.flipped = !state.flipped
 			c.Services().Invalidate()
 		}
 	case "Celebration":
@@ -661,26 +677,27 @@ func (r *Reading) date(c *ui.Context, field bound, p props, state *componentStat
 	if state.note != "" {
 		problem = state.note
 	}
+	picked := false
 	r.labelled(c, p.text("label"), required, problem, func() {
-		named(ui.DateInput(c, &state.date), p.text("label"), "Date", required).Height(controlHeight).Radius(controlRadius).MinWidth(0).Invalid(problem != "")
+		picked = named(ui.DateInput(c, &state.date), p.text("label"), "Date", required).Height(controlHeight).Radius(controlRadius).MinWidth(0).Invalid(problem != "").Changed()
 	})
-	if state.date.Equal(shown) {
+	if !picked {
 		return
 	}
-	picked := state.date.Format(dateLayout)
+	day := state.date.Format(dateLayout)
 	low, high := p.text("min"), p.text("max")
 	_, lowErr := time.Parse(dateLayout, low)
 	_, highErr := time.Parse(dateLayout, high)
 	switch {
-	case lowErr == nil && picked < low:
+	case lowErr == nil && day < low:
 		state.note = "Choose " + spoken(low) + " or later"
 		r.changed = true
-	case highErr == nil && picked > high:
+	case highErr == nil && day > high:
 		state.note = "Choose " + spoken(high) + " or earlier"
 		r.changed = true
 	default:
 		state.note = ""
-		field.set(picked)
+		field.set(day)
 	}
 }
 
@@ -693,7 +710,7 @@ func (r *Reading) timer(c *ui.Context, field bound, p props, state *componentSta
 	if left > state.number {
 		state.number = left
 	}
-	if state.open && left > 0 {
+	if state.running && left > 0 {
 		if passed := math.Floor(c.Now().Sub(state.date).Seconds()); passed >= 1 {
 			left = math.Max(0, left-passed)
 			state.date = state.date.Add(time.Duration(passed) * time.Second)
@@ -702,7 +719,7 @@ func (r *Reading) timer(c *ui.Context, field bound, p props, state *componentSta
 		c.After(time.Second - c.Now().Sub(state.date))
 	}
 	if left == 0 {
-		state.open = false
+		state.running = false
 	}
 	label := p.text("label")
 	clock := fmt.Sprintf("%02d:%02d", int(left)/60, int(left)%60)
@@ -713,16 +730,16 @@ func (r *Reading) timer(c *ui.Context, field bound, p props, state *componentSta
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Wrap().MinWidth(0).Children(func() {
 			ui.Text(c, clock).Font("IBM Plex Mono").FontSize(32).FontWeight(600).TextColor(theme.Text).Shrink(0)
 			toggle := "Start"
-			if state.open {
+			if state.running {
 				toggle = "Pause"
 			}
 			if ui.Button(c.Key("toggle"), toggle).Disabled(left == 0).Clicked() && left > 0 {
-				state.open = !state.open
+				state.running = !state.running
 				state.date = c.Now()
 				c.Services().Invalidate()
 			}
-			if ui.Button(c.Key("reset"), "Reset").Disabled(left == state.number && !state.open).Clicked() {
-				state.open = false
+			if ui.Button(c.Key("reset"), "Reset").Disabled(left == state.number && !state.running).Clicked() {
+				state.running = false
 				field.set(state.number)
 			}
 		})
@@ -732,21 +749,21 @@ func (r *Reading) timer(c *ui.Context, field bound, p props, state *componentSta
 var confetti = []string{"#0285ff", "#00a67d", "#8b5cf6", "#f4a340", "#e46d91", "#4b9ca6"}
 
 func (r *Reading) celebration(c *ui.Context, when bool, state *componentState) {
-	turned := when && !state.expanded && state.started
-	state.expanded, state.started = when, true
+	turned := when && !state.flipped && state.started
+	state.flipped, state.started = when, true
 	if c.Preferences().ReduceMotion {
-		state.open = false
+		state.running = false
 		return
 	}
 	if turned {
-		state.open, state.date = true, c.Now()
+		state.running, state.date = true, c.Now()
 	}
-	if !state.open {
+	if !state.running {
 		return
 	}
 	passed := c.Now().Sub(state.date)
 	if passed >= burstLength || !when {
-		state.open = false
+		state.running = false
 		return
 	}
 	c.After(16 * time.Millisecond)

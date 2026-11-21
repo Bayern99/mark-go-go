@@ -618,6 +618,31 @@ func (st *State) Focused() bool { return st.ed.focused }
 
 func (st *State) Composing() bool { return st.ed.markedActive }
 
+func (st *State) TransferComposition(target *State, offset func(int) int) bool {
+	st.ensure()
+	if !st.ed.markedActive {
+		return false
+	}
+	target.ensure()
+	target.ed.marked = make([]ui.TextInputRange, len(st.ed.marked))
+	for i, r := range st.ed.marked {
+		target.ed.marked[i] = ui.TextInputRange{Start: offset(r.Start), End: offset(r.End)}
+	}
+	target.ed.markedActive = true
+	sels := make([]sel, len(st.ed.sels))
+	for i, s := range st.ed.sels {
+		sels[i] = target.ed.newSel(offset(s.anchor), offset(s.head))
+	}
+	target.ed.setSels(sels, revealFit)
+	b := target.Buffer
+	b.mu.Lock()
+	if n := len(b.undo); n > 0 && b.undo[n-1].kind == editCompose && b.undo[n-1].owner == st {
+		b.undo[n-1].owner = &target.ed
+	}
+	b.mu.Unlock()
+	return true
+}
+
 // VisibleLines returns the first and the last line, from 0, that the
 // last frame showed, those hidden by folds among them.
 func (st *State) VisibleLines() (first, last int) { return st.ed.shown[0], st.ed.shown[1] }

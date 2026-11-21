@@ -6,7 +6,122 @@ import (
 
 	"github.com/Bayern99/mark-go-go/internal/nativeeditor"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/editor"
 )
+
+func TestTableCompositionSourceAndViewSwitch(t *testing.T) {
+	for _, switchView := range []bool{false, true} {
+		t.Run(map[bool]string{false: "save", true: "markdown"}[switchView], func(t *testing.T) {
+			const src = "| Name | Tag |\r\n| --- | --- |\n| cat | x |"
+			d := nativeeditor.New(src)
+			focus := false
+			tt := ui.NewTester(func(c *ui.Context) {
+				field := d.View(c, false).Fill()
+				if focus {
+					field.Focus()
+					focus = false
+				}
+			}, 760, 420)
+			tt.Frame()
+			if err := tt.Click("Table row 2 column 1"); err != nil {
+				t.Fatal(err)
+			}
+			tt.Command("selectAll")
+			tt.Compose("n", 1)
+			tt.Frame()
+			tt.Compose("ni", 2)
+			tt.Frame()
+			if want := strings.Replace(src, "cat", "ni", 1); d.Source() != want {
+				t.Fatalf("source while saving preedit = %q, want %q", d.Source(), want)
+			}
+			if switchView {
+				d.SetMode(nativeeditor.Markdown)
+				focus = true
+				tt.Frame()
+				tt.Compose("nin", 3)
+				tt.Frame()
+			}
+			tt.Type("你")
+			tt.Frame()
+			want := strings.Replace(src, "cat", "你", 1)
+			if d.Source() != want {
+				t.Fatalf("later commit = %q, want %q", d.Source(), want)
+			}
+			tt.Command("undo")
+			tt.Frame()
+			if d.Source() != src || d.CanUndo() {
+				t.Fatalf("undo = %q, remaining undo=%v", d.Source(), d.CanUndo())
+			}
+		})
+	}
+}
+
+func TestTableCompositionFoldRestores(t *testing.T) {
+	const src = "# Top\n\n| Name | Tag |\n| --- | --- |\n| cat | x |\n\n# Next\n\nEnd."
+	d := nativeeditor.New(src)
+	written := map[string]string{}
+	d.SetReadingPreferences("", "", func(key, value string) { written[key] = value })
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 760, 420)
+	tt.Frame()
+	if err := tt.Click("Table row 2 column 1"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Command("selectAll")
+	tt.Compose("ni", 2)
+	tt.Frame()
+	if err := tt.Click("Fold Top"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if want := strings.Replace(src, "cat", "ni", 1); d.Source() != want {
+		t.Fatalf("folded source = %q, want %q", d.Source(), want)
+	}
+	restored := nativeeditor.New(d.Source())
+	restored.SetReadingPreferences(written["folds"], written["widths"], nil)
+	app := ui.NewTester(func(c *ui.Context) { restored.View(c, false).Fill() }, 760, 420)
+	app.Frame()
+	if _, ok := app.Find("Expand Top"); !ok {
+		t.Fatalf("composition fold did not restore: %s", written["folds"])
+	}
+}
+
+func TestCompositionBufferHistory(t *testing.T) {
+	for _, original := range []string{"", "猫\r\n狗\r\n"} {
+		t.Run(original, func(t *testing.T) {
+			b := editor.NewSourceBuffer(original)
+			owner := new(int)
+			if b.ReplaceCompositionAtVersion(1, 0, 0, "n", owner) || b.CanUndo() {
+				t.Fatal("stale revision changed history")
+			}
+			if b.ReplaceCompositionAtVersion(0, -1, 0, "n", owner) || b.ReplaceCompositionAtVersion(0, 0, len(b.String())+1, "n", owner) {
+				t.Fatal("invalid range accepted")
+			}
+			if !b.ReplaceCompositionAtVersion(b.Version(), 0, 0, "n", owner) || !b.ReplaceCompositionAtVersion(b.Version(), 0, 1, "你", owner) {
+				t.Fatal("composition rejected")
+			}
+			b.EndComposition(owner)
+			if !b.ReplaceCompositionAtVersion(b.Version(), 0, 0, "好", owner) {
+				t.Fatal("next composition rejected")
+			}
+			b.EndTyping()
+			if !b.Undo() || b.String() != "你"+strings.ReplaceAll(original, "\r\n", "\n") {
+				t.Fatalf("EndComposition did not close the group: %q", b.String())
+			}
+			if !b.Undo() || b.Modified() || b.CanUndo() {
+				t.Fatal("first composition did not undo separately")
+			}
+			for range 2 {
+				if !b.ReplaceCompositionAtVersion(b.Version(), 0, 0, "n", owner) {
+					t.Fatal("composition rejected after EndTyping")
+				}
+				b.EndTyping()
+			}
+			if !b.Undo() || !strings.HasPrefix(b.String(), "n") || !b.Undo() || b.Modified() {
+				t.Fatal("EndTyping did not separate editCompose groups")
+			}
+		})
+	}
+}
 
 func TestTableCellCompositionUndo(t *testing.T) {
 	for _, keyboard := range []bool{false, true} {
@@ -67,8 +182,8 @@ func TestTableCellCompositionLifecycle(t *testing.T) {
 				tt.Frame()
 				tt.Compose("ni", 2)
 				tt.Frame()
-				if d.Source() != src || d.CanUndo() {
-					t.Fatalf("preedit published: %q, undo=%v", d.Source(), d.CanUndo())
+				if want := strings.Replace(src, "|"+initial+"| x |", "|"+initial+"ni| x |", 1); d.Source() != want {
+					t.Fatalf("preedit = %q, want %q", d.Source(), want)
 				}
 				text := "你"
 				switch end {

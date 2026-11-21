@@ -75,7 +75,7 @@ For a document with the headings `Overview`, `Metrics`, `Options`, `History` and
 Version 3 keeps the A2UI envelope and writes each entry of `components` as one [OpenUI Lang 1.0](../../internal/openuilang/) statement. The reader still opens version 2 files.
 
 - Set `version` to `3`, `language` to `openui-lang/1.0` and the surface's `catalogId` to `markgogo.dev:genui/v3`. The first message is `createSurface`; later `updateComponents` messages name the same `surfaceId` and replace statements by name. Statements they leave out stay.
-- A statement is `name = Component(arguments)` with arguments by position, and the tree starts at `root`. [The catalog](../../internal/nativegenui/catalog_v3.json) lists each component's properties in order. New properties are only added at the end.
+- A statement is `name = Component(arguments)` with arguments by position, and the tree starts at `root`. [The catalog](../../internal/nativegenui/catalog_v3.json) lists each component's properties in order. `gap` and `padding` count 4-point steps; a `Col` or `Card` without `gap` spaces its children like an article. New properties are only added at the end.
 - Wrap content in `Source(["sourceId"], [children])` to attribute it to entries of `sources`.
 
 ```json
@@ -95,14 +95,14 @@ Version 3 keeps the A2UI envelope and writes each entry of `components` as one [
         "surfaceId": "view",
         "catalogId": "markgogo.dev:genui/v3",
         "components": [
-          "root = Col([header, lead, Divider(), points, figures, history, notes], 16)",
-          "header = Row([Title(\"Block-preserving edits\", \"xl\"), Spacer(), Badge(\"Stable\", \"success\")], 8, \"center\")",
-          "lead = Source([\"overview\"], [Text(\"Edits keep untouched blocks byte for byte.\", \"lg\")])",
-          "points = Grid([inShort, proof], 2)",
-          "inShort = Card([Label(\"In short\"), List([\"Untouched blocks keep their original Markdown bytes.\", \"Only the edited block is written again.\"])])",
-          "proof = Card([Label(\"Check\"), Code(\"ok := bytes.Equal(before, after)\", \"go\"), Text([\"See \", Link(\"CommonMark\", \"https://commonmark.org\")], \"sm\")], \"soft\")",
-          "figures = Source([\"metrics\"], [Box([Text(\"12 documents, 100% round trips\", \"md\", \"\", \"semibold\"), Caption(\"Figures are from the March run.\")], \"col\", 4, 12, \"surface\", \"md\")])",
-          "history = Source([\"history\"], [List([ListItem(\"First prototype\", \"Editing in Markdown Preview only.\", \"March\"), ListItem(\"GenUI view mode\", \"\", \"November\")], \"none\", true)])",
+          "root = Col([header, lead, Divider(), points, figures, history, notes])",
+          "header = Row([Title(\"Block-preserving edits\", \"xl\"), Spacer(), Badge(\"Stable\", \"success\")])",
+          "lead = Source([\"overview\"], [Text(\"Edits keep **untouched blocks** byte for byte.\", \"lg\")])",
+          "points = Grid([inShort, proof], 2, 240)",
+          "inShort = Card([Title(\"In short\", \"sm\"), List([\"Untouched blocks keep their original Markdown bytes.\", \"Only the edited block is written again.\"])])",
+          "proof = Card([Label(\"Check\"), Code(\"ok := bytes.Equal(before, after)\", \"go\"), Text([\"See\", Link(\"CommonMark\", \"https://commonmark.org\")], \"sm\")], \"soft\")",
+          "figures = Source([\"metrics\"], [Box([Text(\"12 documents, 100% round trips\", \"md\", null, \"semibold\"), Caption(\"Figures are from the March run.\")], \"col\", 1, 4, \"surface\", \"lg\")])",
+          "history = Source([\"history\"], [List([ListItem(\"First prototype\", \"Editing in Markdown Preview only.\", \"March\"), ListItem(\"GenUI view mode\", \"A derived reading view.\", \"November\")], null, true)])",
           "notes = Col([Markdown(\"### Design notes\\n\\nBlocks are compared **before** writing.\"), Quote(\"What the reader sees is what is saved.\", \"Design review\")])"
         ]
       }

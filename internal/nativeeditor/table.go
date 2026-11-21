@@ -178,7 +178,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 									if r == 0 && k+1 < len(model.widths) {
 										model.resizeHandle(c, k, doc)
 									}
-									if next := child.Source(); next != cell.raw && version == doc.Version() {
+									if next := child.Source(); !child.state.Composing() && next != cell.raw && version == doc.Version() {
 										replacement := escapeCell(next)
 										if replacement != cell.raw {
 											idx := doc.sourceIndex()

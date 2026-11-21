@@ -22,6 +22,7 @@ type readingTable struct {
 	anchor, head                 cellPosition
 	dragging, selected           bool
 	dragX, leftWidth, rightWidth float32
+	dragCol, hoverCol            int
 }
 type tableCell struct {
 	start, end int
@@ -90,7 +91,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 		}
 	}
 	if model == nil || len(model.widths) != ncols {
-		model = &readingTable{bounds: map[cellPosition]ui.Rect{}, widths: make([]float32, ncols), minimum: make([]float32, ncols)}
+		model = &readingTable{bounds: map[cellPosition]ui.Rect{}, widths: make([]float32, ncols), minimum: make([]float32, ncols), dragCol: -1, hoverCol: -1}
 		for i := range model.widths {
 			model.minimum[i] = 112
 			for _, cells := range rows {
@@ -182,9 +183,6 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 										field.Focus()
 										model.focus = nil
 									}
-									if r == 0 && k+1 < len(model.widths) {
-										model.resizeHandle(c, k, doc)
-									}
 									if next := child.Source(); next != cell.raw && version == doc.Version() {
 										replacement := escapeCell(next)
 										if replacement != cell.raw {
@@ -206,6 +204,18 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 								})
 							}
 						})
+					}
+					model.hoverCol = -1
+					height := float32(len(rows)) * 36
+					boundary := float32(0)
+					for k := 0; k+1 < len(model.widths); k++ {
+						boundary += model.widths[k]
+						model.resizeHandle(c, k, boundary, height, doc)
+					}
+					if at, ok := model.guide(); ok {
+						ui.Box(c.Key("resize guide")).Absolute().Left(at-1).Top(0).Width(2).Height(height).
+							Background(portrait.Colors.Accent).Shadow(0, 0, 0, 1, portrait.Colors.AccentSoft).
+							IgnoreInput(true).AccessHidden(true)
 					}
 				})
 			})
@@ -337,17 +347,39 @@ func (m *readingTable) cellInput(pos cellPosition, doc *Document, services ui.Se
 	}
 }
 
-func (m *readingTable) resizeHandle(c *ui.Context, col int, doc *Document) {
-	h := ui.Box(c).Absolute().Right(0).Top(0).Width(7).Height(36).Cursor(ui.CursorResizeColumn).Label(fmt.Sprintf("Resize table column %d", col+1))
+// guide reports where the column-resize guide shows: the live edge of the
+// dragged column, or the hovered boundary.
+func (m *readingTable) guide() (float32, bool) {
+	col := m.dragCol
+	if col < 0 {
+		col = m.hoverCol
+	}
+	if col < 0 || col+1 >= len(m.widths) {
+		return 0, false
+	}
+	at := float32(0)
+	for k := 0; k <= col; k++ {
+		at += m.widths[k]
+	}
+	return at, true
+}
+
+func (m *readingTable) resizeHandle(c *ui.Context, col int, boundary, height float32, doc *Document) {
+	h := ui.Box(c.Key("resize " + fmt.Sprint(col))).Absolute().Left(boundary - 6).Top(0).Width(12).Height(height).Cursor(ui.CursorResizeColumn).Label(fmt.Sprintf("Resize table column %d", col+1))
+	if h.Hovered() && !m.dragging && m.dragCol < 0 {
+		m.hoverCol = col
+	}
 	left := h.Bounds().X
 	h.HandleInput(func(ev ui.InputEvent) bool {
 
 		switch ev.Kind {
 		case ui.InputPointerDown:
 			m.manual = true
+			m.dragCol = col
 			m.dragX = left + ev.X
 			m.leftWidth, m.rightWidth = m.widths[col], m.widths[col+1]
 		case ui.InputPointerUp:
+			m.dragCol = -1
 			if ev.Canceled {
 				m.widths[col], m.widths[col+1] = m.leftWidth, m.rightWidth
 			} else {

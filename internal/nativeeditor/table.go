@@ -2,6 +2,7 @@ package nativeeditor
 
 import (
 	"fmt"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"strings"
 	"unicode/utf8"
 
@@ -145,11 +146,11 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 									break
 								}
 								child := model.cells[r][k]
-								box := ui.Column(c.Key(k)).Width(model.widths[k]).Shrink(0).Padding(2, 4).Border(0.5, c.Theme().Border)
+								box := ui.Column(c.Key(k)).Width(model.widths[k]).Shrink(0).Padding(2, 4).Justify(ui.Center)
 								if r == 0 {
-									box.Background(c.Theme().Surface).Role(ui.RoleColumnHeader)
+									box.InsetShadow(0, -0.5, 0, 0, portrait.Colors.LineStrong).Role(ui.RoleColumnHeader)
 								} else {
-									box.Role(ui.RoleCell)
+									box.InsetShadow(0, -0.5, 0, 0, portrait.Colors.Line).Role(ui.RoleCell)
 								}
 								if model.chosen(cellPosition{r, k}) {
 									box.Background(c.Theme().Selection)
@@ -161,6 +162,12 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 									child.state.ReadingColumn = editor.ReadingColumn{}
 									child.state.Label = fmt.Sprintf("Table row %d column %d", r+1, k+1)
 									child.state.Theme = documentTheme(c.Theme(), Preview)
+									child.state.Font = portrait.Type.Small.Font(400)
+									if r == 0 {
+										child.state.Font.Weight = 600
+									}
+									child.state.LineHeight = portrait.Type.Small.LineHeight()
+									child.state.Theme.Background = unpainted
 									pos := cellPosition{r, k}
 									child.state.OnInput = model.cellInput(pos, doc, c.Services())
 									field := editor.View(c, &child.state).Width(model.widths[k] - 10).Height(31)

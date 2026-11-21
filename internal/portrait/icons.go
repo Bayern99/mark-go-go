@@ -35,3 +35,17 @@ func Glyph(c *ui.Context, icon Icon, size float32, color ui.Color) ui.Element {
 	}
 	return g
 }
+
+// Phosphor glyphs of the editor's blocks and links.
+var (
+	IconArrowUpRight   = Icon{Glyph: "\ue092"}
+	IconNote           = Icon{Glyph: "\ue348"}
+	IconLightbulb      = Icon{Glyph: "\ue2dc"}
+	IconInfo           = Icon{Glyph: "\ue2ce"}
+	IconWarning        = Icon{Glyph: "\ue4e0"}
+	IconWarningOctagon = Icon{Glyph: "\ue4e4"}
+	IconCheck          = Icon{Glyph: "\ue182"}
+)
+
+// IconCopy is the copy action's glyph.
+var IconCopy = Icon{Glyph: "\ue1ca"}

@@ -8,8 +8,10 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
 	"golang.org/x/text/collate"
@@ -25,7 +27,28 @@ type Reading struct {
 	Sources    func(*ui.Context, Node)
 	SelectItem func(Node, string)
 	CanSelect  func(Node) bool
+	// loads counts the views loaded, so that each one's cards come in anew;
+	// cards counts this frame's cards in reading order, for their stagger.
+	loads, cards uint64
+	inCard       bool
+	// halo counts the halos asked for; haloAt is when the last one began.
+	halo, haloShown uint64
+	haloAt          time.Time
 }
+
+// Phosphor glyphs of the reader (@phosphor-icons/web, regular).
+var (
+	iconCheck         = portrait.Icon{Glyph: "\ue182"}
+	iconWarning       = portrait.Icon{Glyph: "\ue4e0"}
+	iconWarningCircle = portrait.Icon{Glyph: "\ue4e2"}
+)
+
+type cardIn struct{ load uint64 }
+type haloScale struct{ run uint64 }
+type haloFade struct{ run uint64 }
+type rimTurn struct{ run uint64 }
+type rimFade struct{ run uint64 }
+type shimmer struct{}
 
 type componentState struct {
 	frame              ui.Handle
@@ -37,6 +60,9 @@ type componentState struct {
 
 func (r *Reading) Load(s *Surface) {
 	r.surface = s
+	if s != nil {
+		r.loads++
+	}
 	if r.states == nil {
 		r.states = map[string]*componentState{}
 	}
@@ -46,11 +72,75 @@ func (r *Reading) View(c *ui.Context) {
 		return
 	}
 	r.remaining = max(4096, len(r.surface.Nodes)*2)
-	ui.Scroll(c).TrackScroll(&r.scroll).Grow(1).MinHeight(0).Children(func() {
-		ui.Column(c).Padding(24).Gap(14).Children(func() {
-			r.node(c, "root", map[string]bool{})
+	r.cards = 0
+	ui.Column(c).Grow(1).MinHeight(0).Clip().Children(func() {
+		ui.Scroll(c).TrackScroll(&r.scroll).Grow(1).MinHeight(0).Children(func() {
+			ui.Column(c).Padding(24).Gap(portrait.GenUI.CardGap).Children(func() {
+				r.node(c, "root", map[string]bool{})
+			})
 		})
+		r.drawHalo(c)
 	})
+}
+
+// Halo plays the halo and the rim sweep over the view once, as a sign that
+// a generation is done. With reduced motion it shows nothing; the panel
+// says so in words.
+func (r *Reading) Halo() { r.halo++ }
+
+func (r *Reading) drawHalo(c *ui.Context) {
+	if r.halo == r.haloShown {
+		return
+	}
+	h, rim := portrait.GenUI.Halo, portrait.GenUI.Rim
+	if !portrait.Animates(c, false) {
+		r.haloShown = r.halo
+		return
+	}
+	if r.haloAt.IsZero() {
+		r.haloAt = c.Now()
+	}
+	if c.Now().Sub(r.haloAt) >= max(h.Duration, rim.Duration) {
+		r.haloShown, r.haloAt = r.halo, time.Time{}
+		return
+	}
+	run := r.halo
+	glow := ui.Box(c.Key("halo")).Absolute().Top(-h.Inset).Left(-h.Inset).Right(-h.Inset).Bottom(-h.Inset).
+		Radius(12).RadialGradient(h.Fill).IgnoreInput(true).AccessHidden(true).ZIndex(2)
+	scale := glow.Keyframes(haloScale{run}, []ui.Keyframe{{At: 0, Value: h.From}, {At: h.Duration, Value: h.To, Ease: h.Ease.Easing()}})
+	glow.Opacity(glow.Keyframes(haloFade{run}, h.Opacity())).TransformOrigin(h.Center.X, h.Center.Y).Scale(scale, scale)
+	edge := ui.Box(c.Key("rim")).Absolute().Top(0).Left(0).Right(0).Bottom(0).Radius(portrait.GenUI.CardRadius).
+		Border(rim.Width, ui.Color{}).IgnoreInput(true).AccessHidden(true).ZIndex(2)
+	angle := edge.Keyframes(rimTurn{run}, []ui.Keyframe{{At: 0, Value: rim.From}, {At: rim.Duration, Value: rim.To, Ease: rim.Ease.Easing()}})
+	edge.BorderConicGradient(ui.ConicGradient{Stops: rim.Stops, Angle: angle}).Opacity(edge.Keyframes(rimFade{run}, rim.Opacity()))
+}
+
+// card frames a GenUI block: paper with a hairline ring, coming in after
+// the cards before it. Blocks inside a Card are not framed again.
+func (r *Reading) card(c *ui.Context, e ui.Element, framed bool) ui.Element {
+	g := portrait.GenUI
+	if framed {
+		g.Card.Apply(e.Radius(g.CardRadius).Padding(g.CardPadding))
+	}
+	i := r.cards
+	r.cards++
+	if !portrait.Animates(c, false) {
+		return e
+	}
+	m := g.Enter
+	p := e.Keyframes(cardIn{r.loads}, []ui.Keyframe{{At: 0, Value: 0}, {At: m.Duration, Value: 1, Ease: m.Ease.Easing()}}, ui.KeyframeOptions{Delay: m.Delay(int(i))})
+	if p < 1 {
+		e.Opacity(p).Translate(0, (1-p)*m.Rise)
+		if blur := (1 - p) * m.Blur; blur > 0.01 {
+			e.Blur(blur)
+		}
+	}
+	return e
+}
+
+func cardTitle(c *ui.Context, title string) {
+	portrait.Type.Meta.In(portrait.FontDisplay).Apply(ui.Text(c, strings.ToUpper(title))).
+		FontWeight(600).LetterSpacing(0.07 * portrait.Type.Meta.Size).TextColor(portrait.Colors.Ink3).Role(ui.RoleHeading).Label(title)
 }
 func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 	if r.remaining <= 0 {
@@ -98,7 +188,13 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 			r.node(c, n.Tabs[state.tab].Child, parents)
 		})
 	case "Card":
-		layout(ui.Column(c).Gap(8).Padding(16).Border(1, c.Theme().Border).Radius(10), n).Children(func() { r.node(c, n.Child, parents) })
+		g := portrait.GenUI
+		g.Card.Apply(layout(ui.Column(c).Gap(8).Padding(g.CardPadding).Radius(g.CardRadius), n)).Children(func() {
+			outer := r.inCard
+			r.inCard = true
+			r.node(c, n.Child, parents)
+			r.inCard = outer
+		})
 	case "Text":
 		layout(ui.Column(c), n).Children(func() {
 			opts := &readOnlyMarkdown
@@ -112,17 +208,20 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 		if !busy {
 			state.height = state.frame.Bounds(c).H
 		}
-		frame := layout(ui.Column(c).Gap(8), n).Bind(&state.frame).Busy(busy)
+		frame := r.card(c, layout(ui.Column(c).Gap(8), n).Bind(&state.frame).Busy(busy), !r.inCard)
 		if busy {
-			frame.MinHeight(max(64, state.height)).Children(func() {
-				ui.Text(c, "Updating card…").Role(ui.RoleStatus)
-				skeleton(c)
+			frame.Background(portrait.GenUI.Replacing).MinHeight(max(64, state.height)).Children(func() {
+				if n.Title != "" {
+					cardTitle(c, n.Title)
+				}
+				portrait.Type.Meta.Apply(ui.Text(c, "Updating card…")).TextColor(portrait.Colors.Ink3).Role(ui.RoleStatus)
+				cardSkeleton(c)
 			})
 			return
 		}
 		frame.Children(func() {
 			if n.Title != "" {
-				ui.Text(c, n.Title).Bold().FontSize(18)
+				cardTitle(c, n.Title)
 			}
 			switch n.Component {
 			case "KeyPoints":
@@ -133,7 +232,11 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 				for i, raw := range n.Items[:count] {
 					var s string
 					if json.Unmarshal(raw, &s) == nil {
-						ui.Text(c, fmt.Sprintf("%d. %s", i+1, s)).Selectable()
+						ui.Row(c.Key(i)).Gap(8).AlignItems(ui.Start).Children(func() {
+							portrait.Type.Meta.In(portrait.FontDisplay).Apply(ui.Text(c, fmt.Sprintf("%02d", i+1))).FontWeight(600).FontFeatures("tnum").
+								TextColor(portrait.Colors.Ink3).Width(24).Shrink(0).Padding(4, 0, 0, 0).AccessHidden(true)
+							portrait.Type.Reading.Apply(ui.Text(c, s)).Grow(1).MinWidth(0).Selectable()
+						})
 					}
 				}
 				if len(n.Items) > 4 {
@@ -146,13 +249,26 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 					}
 				}
 			case "MetricGrid":
-				ui.Row(c).Gap(16).Wrap().Children(func() {
-					for _, m := range n.Metrics {
-						ui.Column(c).Padding(8).Children(func() {
-							ui.Text(c, m.Label)
-							ui.Text(c, m.Value+m.Unit).FontSize(22).Bold()
+				ui.Row(c).Gap(12).Wrap().AlignItems(ui.Stretch).Children(func() {
+					for i, m := range n.Metrics {
+						ui.Column(c.Key(i)).Gap(2).Radius(6).Padding(10).Background(portrait.Colors.Code).Grow(1).Basis(140).MinWidth(0).Children(func() {
+							portrait.Type.Meta.Apply(ui.Text(c, m.Label)).TextColor(portrait.Colors.Ink3)
+							ui.Row(c).Gap(3).AlignItems(ui.Baseline).Children(func() {
+								portrait.Type.Title.In(portrait.FontDisplay).Apply(ui.Text(c, m.Value)).FontWeight(600).FontFeatures("lnum", "tnum")
+								if m.Unit != "" {
+									portrait.Type.UI.Apply(ui.Text(c, m.Unit)).TextColor(portrait.Colors.Ink3)
+								}
+							})
 							if m.Change != "" {
-								ui.Text(c, strings.TrimSpace(m.Trend+" "+m.Change))
+								change := portrait.Colors.Ink3
+								switch m.Trend {
+								case "up":
+									change = portrait.Colors.Accent
+								case "down":
+									change = portrait.Colors.Danger
+								}
+								mark := map[string]string{"up": "▲ ", "down": "▼ ", "flat": "■ "}[m.Trend]
+								portrait.Type.Meta.Apply(ui.Text(c, mark+m.Change)).Label(strings.TrimSpace(m.Trend + " " + m.Change)).TextColor(change)
 							}
 						})
 					}
@@ -160,13 +276,19 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 			case "ComparisonTable":
 				comparison(c, n, state)
 			case "Timeline":
-				for _, e := range n.Events {
-					ui.Text(c, e.When).TextColor(c.Theme().TextMuted)
-					ui.Text(c, e.Title).Bold()
-					if e.Detail != "" {
-						ui.Text(c, e.Detail).Selectable()
+				ui.Column(c).Children(func() {
+					for i, e := range n.Events {
+						ui.Row(c.Key(i)).Gap(12).AlignItems(ui.Stretch).Children(func() {
+							portrait.Type.Meta.Apply(ui.Text(c, e.When)).FontWeight(600).TextColor(portrait.Colors.Accent).MinWidth(54).Shrink(0).Padding(6, 0, 0, 0)
+							ui.Column(c).Grow(1).MinWidth(0).Padding(0, 0, 12, 12).InsetShadow(2, 0, 0, 0, portrait.Colors.LineStrong).Children(func() {
+								portrait.Type.Reading.Apply(ui.Text(c, e.Title)).FontWeight(600)
+								if e.Detail != "" {
+									portrait.Type.Reading.Apply(ui.Text(c, e.Detail)).TextColor(portrait.Colors.Ink3).Selectable()
+								}
+							})
+						})
 					}
-				}
+				})
 			case "Checklist":
 				for i, raw := range n.Items {
 					var item struct {
@@ -177,11 +299,27 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 					if json.Unmarshal(raw, &item) != nil {
 						continue
 					}
-					label, status := "☐ ", "Incomplete. Show in source."
+					status := "Incomplete. Show in source."
 					if item.Done {
-						label, status = "☑ ", "Completed. Show in source."
+						status = "Completed. Show in source."
 					}
-					if ui.Button(c.Key(i), label+item.Text).Label(item.Text).Description(status).Disabled(r.SelectItem == nil || (r.CanSelect != nil && !r.CanSelect(n))).Clicked() {
+					disabled := r.SelectItem == nil || (r.CanSelect != nil && !r.CanSelect(n))
+					b := ui.ButtonBase(c.Key(i)).Label(item.Text).Description(status).Disabled(disabled).DimDisabled(false).Gap(8).Radius(6).Padding(4, 6).AlignItems(ui.Start)
+					if b.Hovered() && !disabled {
+						b.Background(portrait.Colors.AccentSoft)
+					}
+					b.Children(func() {
+						box := ui.Row(c).Size(16, 16).Shrink(0).Margin(6, 0, 0, 0).Radius(4).Border(1, portrait.Colors.Ink3).AlignItems(ui.Center).Justify(ui.Center)
+						ink := portrait.Colors.Ink
+						if item.Done {
+							ink = portrait.Colors.Ink3
+							box.Background(portrait.Colors.Accent).Border(1, portrait.Colors.Accent).Children(func() {
+								portrait.Glyph(c, iconCheck, 11, portrait.Colors.OnAccent)
+							})
+						}
+						portrait.Type.Reading.Apply(ui.Text(c, item.Text)).TextColor(ink).Grow(1).MinWidth(0)
+					})
+					if b.Clicked() {
 						quote := item.Text
 						if item.Quote != nil {
 							quote = *item.Quote
@@ -199,10 +337,37 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 	}
 }
 
-func skeleton(c *ui.Context) {
-	for _, width := range []float32{82, 64, 38} {
-		ui.Row(c).Height(7).WidthPercent(width).Radius(3).Background(c.Theme().Border).AccessHidden(true)
+// shimmering fills e as a skeleton bar: the glint sweeps across, or the
+// bar rests on the plain fill with reduced motion.
+func shimmering(c *ui.Context, e ui.Element) ui.Element {
+	s := portrait.GenUI.Shimmer
+	e.Radius(portrait.GenUI.SkeletonRadius).AccessHidden(true)
+	if !portrait.Loops(c) {
+		return e.Background(s.Base)
 	}
+	return e.LinearGradient(s.Gradient(e.Loop(shimmer{}, s.Period, ui.Linear)))
+}
+
+// viewSkeleton stands in for a whole view while it loads: a line, two
+// blocks side by side and a wide one.
+func viewSkeleton(c *ui.Context) {
+	ui.Column(c.Key("skeleton")).Gap(12).AccessHidden(true).Children(func() {
+		shimmering(c, ui.Box(c).WidthPercent(60).Height(14))
+		ui.Row(c).Wrap().Gap(12).Children(func() {
+			for i := range 2 {
+				shimmering(c, ui.Box(c.Key(i)).Grow(1).Basis(220).Height(96))
+			}
+		})
+		shimmering(c, ui.Box(c).FillWidth().Height(96))
+	})
+}
+
+// cardSkeleton stands in for a card being regenerated.
+func cardSkeleton(c *ui.Context) {
+	ui.Column(c.Key("skeleton")).Gap(8).Grow(1).AccessHidden(true).Children(func() {
+		shimmering(c, ui.Box(c).WidthPercent(60).Height(14))
+		shimmering(c, ui.Box(c).Grow(1).MinHeight(54))
+	})
 }
 
 var readOnlyMarkdown = markdown.Options{OnLink: func(string) {}}

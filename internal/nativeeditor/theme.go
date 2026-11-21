@@ -16,6 +16,7 @@ func documentTheme(t *ui.Theme, mode Mode) *editor.Theme {
 	th.Tokens[editor.TokenLink].Color = t.Accent
 	th.Tokens[editor.TokenDeleted].Color = t.TextMuted
 	if mode == Preview {
+		th.Tokens[editor.TokenCode].Family = "IBM Plex Mono"
 		for _, kind := range []editor.TokenKind{editor.TokenKeyword, editor.TokenString} {
 			th.Tokens[kind].Color = t.Accent
 		}

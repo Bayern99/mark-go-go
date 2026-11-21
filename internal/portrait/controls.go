@@ -181,13 +181,13 @@ func Field(c *ui.Context) ui.Element {
 	return f
 }
 
-// Popover shows build in a floating panel attached below anchor while
-// *open; Escape or a press outside closes it. It returns the panel, nil
-// while closed.
+// Popover shows build in a floating panel of overlay glass attached below
+// anchor while *open; Escape or a press outside closes it. It returns the
+// panel, nil while closed.
 func Popover(c *ui.Context, anchor ui.Element, open *bool, build func()) ui.Element {
 	return ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
-		panel.Margin(6, 0, 0, 0).Padding(5).Radius(12).Gap(2)
-		Materials.Pop.Apply(panel)
+		panel.MinWidth(anchor.Bounds().W).Margin(6, 0, 0, 0).Padding(5).Radius(12).Gap(2)
+		Materials.GlassOverlay.Apply(panel)
 		build()
 	})
 }

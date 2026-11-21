@@ -283,8 +283,8 @@ func TestPopoverPanelFloatsOnARaisedShadow(t *testing.T) {
 	}
 	b := pop.Bounds
 	cx := int(b.X + b.W/2)
-	if inside := luma(tt, cx, int(b.Y+b.H/2)-12); inside != 3*0xffff {
-		t.Fatalf("panel fill %d, want paper", inside)
+	if inside, chrome := luma(tt, cx, int(b.Y+b.H/2)-12), luma(tt, 10, 230); inside <= chrome {
+		t.Fatalf("panel fill %d not lighter than the chrome %d behind its overlay glass", inside, chrome)
 	}
 	if below, chrome := luma(tt, cx, int(b.Y+b.H)+4), luma(tt, 10, 230); below >= chrome {
 		t.Fatalf("no shadow under the panel: %d vs %d", below, chrome)

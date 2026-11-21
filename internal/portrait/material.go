@@ -1,6 +1,9 @@
 package portrait
 
-import "github.com/egoist/mygo/ui"
+import (
+	"github.com/egoist/mygo/plugins/glass"
+	"github.com/egoist/mygo/ui"
+)
 
 // Shadow is one CSS box-shadow layer.
 type Shadow struct {
@@ -50,6 +53,30 @@ type Glass struct {
 	Blur, Saturate, Brightness float32
 	Highlight                  ui.RadialGradient
 	Rim                        Shadows
+}
+
+// Apply fills e with the glass and adds its rim, replacing its fill and
+// shadows. Shape e with Radius.
+func (g Glass) Apply(e ui.Element) ui.Element {
+	e.Material(g).NoShadow()
+	return g.Rim.Apply(e)
+}
+
+// PaintMaterial paints the glass: the backdrop blurred by the official glass
+// plugin, the tint and the highlight. It paints opaque paper without the
+// highlight when the desktop asks for reduced transparency or increased
+// contrast, as the WebUI did for prefers-reduced-transparency and
+// forced-colors. Saturate and Brightness have no MyGo counterpart yet.
+func (g Glass) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
+	if prefs := p.Preferences(); prefs.ReduceTransparency || prefs.HighContrast {
+		p.FillRadii(box, radii, Colors.Paper)
+		return
+	}
+	glass.Blur{Radius: g.Blur}.PaintMaterial(p, box, radii)
+	p.FillRadii(box, radii, g.Tint)
+	if len(g.Highlight.Stops) > 0 {
+		p.FillRadialGradient(box, g.Highlight, radii[0])
+	}
 }
 
 // MaterialSet lists the Portrait materials.

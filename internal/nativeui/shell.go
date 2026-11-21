@@ -148,13 +148,13 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 						remaining -= left + 1
 					}
 					first := remaining - right - 1
-					if ui.Split(c.Key("research-split"), &first, center, func() { s.research(c, slots) }).Fill().SplitReset(remaining - 377).Changed() {
+					if ui.Split(c.Key("research-split"), &first, center, func() { s.research(c, slots, true) }).Fill().SplitReset(remaining - 377).Changed() {
 						s.rightWidth = clamp(remaining-first-1, 310, min(800, width*0.56))
 					}
 				}
 				if leftDocked {
 					actual := left
-					if ui.Split(c.Key("library-split"), &actual, func() { s.navigation(c, m, a) }, inside).Fill().SplitReset(248).Changed() {
+					if ui.Split(c.Key("library-split"), &actual, func() { s.navigation(c, m, a, true) }, inside).Fill().SplitReset(248).Changed() {
 						s.leftWidth = clamp(actual, 190, 420)
 					}
 				} else {
@@ -198,7 +198,7 @@ func (s *Shell) drawer(c *ui.Context, left bool, width, height float32, m Model,
 		if left {
 			w = min(width-24, s.leftWidth)
 		}
-		panel.Absolute().Top(8).Height(max(80, height-16)).Width(w).Radius(14).Material(glass(c, true)).Shadow(0, 8, 24, 0, ui.RGBA(0, 0, 0, 0.14)).Label(name)
+		portrait.Materials.GlassOverlay.Apply(panel.Absolute().Top(8).Height(max(80, height-16)).Width(w).Radius(14)).Label(name)
 		if left {
 			panel.Left(8)
 		} else {
@@ -214,9 +214,9 @@ func (s *Shell) drawer(c *ui.Context, left bool, width, height float32, m Model,
 			}
 		})
 		if left {
-			s.navigation(c, m, a)
+			s.navigation(c, m, a, false)
 		} else {
-			s.research(c, slots)
+			s.research(c, slots, false)
 		}
 	})
 	if panel.Dismissed() {
@@ -224,8 +224,8 @@ func (s *Shell) drawer(c *ui.Context, left bool, width, height float32, m Model,
 	}
 }
 
-func (s *Shell) research(c *ui.Context, slots Slots) {
-	panel(c).Role(ui.RoleComplementary).Label("Feynman research").Children(func() {
+func (s *Shell) research(c *ui.Context, slots Slots, docked bool) {
+	panel(c, docked).Role(ui.RoleComplementary).Label("Feynman research").Children(func() {
 		if slots.Research != nil {
 			slots.Research(c)
 		}

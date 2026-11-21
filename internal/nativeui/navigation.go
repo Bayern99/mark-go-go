@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
 )
@@ -43,7 +44,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions) {
 		} else {
 			meta = "Untitled window"
 		}
-		ui.Text(c, meta).FontSize(11).TextColor(muted).MaxLines(1).Ellipsis("…").Tooltip(meta)
+		portrait.Tooltip(c, ui.Text(c, meta).FontSize(11).TextColor(muted).MaxLines(1).Ellipsis("…"), meta)
 		ui.Row(c).Role(ui.RoleTabList).Label("Navigation views").Padding(2).Gap(2).Radius(9).Background(track).Children(func() {
 			for _, title := range []string{"Workspace", "Outline"} {
 				outline := title == "Outline"

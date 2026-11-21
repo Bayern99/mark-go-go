@@ -1,6 +1,7 @@
 package nativeui
 
 import (
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 	"strings"
 	"time"
@@ -62,7 +63,7 @@ func capsule(c *ui.Context, group string, keyboard bool) {
 }
 
 func control(c *ui.Context, title, label string) ui.Element {
-	b := ui.Button(c.Key(label), title).Label(label).Tooltip(label).Height(28).Padding(3, 8).Radius(8).FontSize(13).TextColor(ink).Font(bodyFont(title)).Background(paper).Border(0.6, rim)
+	b := portrait.Tooltip(c, ui.Button(c.Key(label), title).Label(label), label).Height(28).Padding(3, 8).Radius(8).FontSize(13).TextColor(ink).Font(bodyFont(title)).Background(paper).Border(0.6, rim)
 	if b.PressedInside() {
 		b.Background(track)
 	} else if b.Hovered() {
@@ -94,7 +95,7 @@ func discrete(c *ui.Context, title, label string, selected bool, group ...string
 }
 
 func iconButton(c *ui.Context, glyph, label string) ui.Element {
-	b := ui.ButtonBase(c.Key(label)).Label(label).Tooltip(label).Size(30, 28).Radius(7).AlignItems(ui.Center).Justify(ui.Center)
+	b := portrait.Tooltip(c, ui.ButtonBase(c.Key(label)).Label(label), label).Size(30, 28).Radius(7).AlignItems(ui.Center).Justify(ui.Center)
 	if b.PressedInside() {
 		b.Background(track)
 	} else if b.Hovered() {

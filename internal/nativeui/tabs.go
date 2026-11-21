@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
 )
@@ -106,7 +107,10 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 					title += " · " + status
 				}
 				ui.Row(c.Key(d.ID)).Radius(7).MaxWidth(cell).MinWidth(0).Height(29).AlignItems(ui.Center).Background(tabBackground(d.ID == s.activeID)).Children(func() {
-					tab := discrete(c, title, labels[d.ID], d.ID == s.activeID, "document tabs").MinWidth(0).Shrink(1).Role(ui.RoleTab).TabStop(d.ID == s.activeID).AccessSelected(d.ID == s.activeID).Description(status).Tooltip(d.Path)
+					tab := portrait.Tooltip(c, discrete(c, title, labels[d.ID], d.ID == s.activeID, "document tabs").MinWidth(0).Shrink(1).Role(ui.RoleTab).TabStop(d.ID == s.activeID).AccessSelected(d.ID == s.activeID), d.Path)
+					if status != "" {
+						tab.Description(status)
+					}
 					if s.tabFocus == d.ID && d.ID == s.activeID {
 						tab.Focus()
 						s.tabFocus = ""
@@ -184,6 +188,7 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 						})
 					})
 				})
+				pop.AttachedOrigin().Transition(portrait.Overlays.Popup.Transition(c, false))
 				if pop.Dismissed() {
 					button.Focus()
 				}

@@ -3,6 +3,7 @@ package nativeui
 import (
 	"slices"
 
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
 )
@@ -191,8 +192,21 @@ func (s *Shell) drawer(c *ui.Context, left bool, width, height float32, m Model,
 	if left {
 		open, anchor, name = &s.leftOpen, &s.leftToggle, "Navigation"
 	}
+	slide, origin := portrait.Overlays.DrawerRight, float32(1)
+	if left {
+		slide, origin = portrait.Overlays.DrawerLeft, 0
+	}
+	// The scrim fades on its own layer beneath the dialog, whose transparent
+	// backdrop slides and scales the panel: MyGo plays Enter and Exit only
+	// on direct children of the overlay layer, not on the dialog's panel.
+	if *open {
+		ui.Overlay(c, func() {
+			ui.Box(c.Key(name + " scrim")).Absolute().Left(0).Top(0).Right(0).Bottom(0).IgnoreInput(true).
+				Background(portrait.Colors.Scrim).Transition(portrait.Overlays.Scrim.Transition(c, false))
+		})
+	}
 	panel := ui.DialogBase(c.Key(name+" drawer"), open, func(back, panel ui.Element) {
-		back.Background(ui.RGBA(29, 29, 31, 0.08)).AlignItems(ui.Start).Justify(ui.Start)
+		back.AlignItems(ui.Start).Justify(ui.Start).TransformOrigin(origin, 0.5).Transition(slide.Transition(c, false))
 		w := min(width-24, s.rightWidth)
 		if left {
 			w = min(width-24, s.leftWidth)

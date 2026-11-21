@@ -51,8 +51,5 @@ var (
 	IconInfo           = Icon{Glyph: "\ue2ce"}
 	IconWarning        = Icon{Glyph: "\ue4e0"}
 	IconWarningOctagon = Icon{Glyph: "\ue4e4"}
-	IconCheck          = Icon{Glyph: "\ue182"}
+	IconCopy           = Icon{Glyph: "\ue1ca"}
 )
-
-// IconCopy is the copy action's glyph.
-var IconCopy = Icon{Glyph: "\ue1ca"}

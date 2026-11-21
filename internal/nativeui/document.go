@@ -32,7 +32,7 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 				}
 				for _, r := range m.Recents {
 					ui.Row(c.Key(r.Root)).Children(func() {
-						if portrait.Button(c, r.Name, r.Name).Tooltip(r.Root).Clicked() && a.OpenRecent != nil {
+						if portrait.Tooltip(c, portrait.Button(c, r.Name, r.Name), r.Root).Clicked() && a.OpenRecent != nil {
 							a.OpenRecent(r.Root)
 						}
 					})
@@ -51,7 +51,7 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 						ui.Text(c, crumb.Name).Bold().MaxLines(1).Ellipsis("…")
 						continue
 					}
-					b := ui.ButtonBase(c.Key(crumb.Path)).Label("Reveal " + crumb.Name).Tooltip(crumb.Path).Padding(2)
+					b := portrait.Tooltip(c, ui.ButtonBase(c.Key(crumb.Path)).Label("Reveal "+crumb.Name), crumb.Path).Padding(2)
 					b.Children(func() { ui.Text(c, crumb.Name).TextColor(muted).MaxLines(1) })
 					if b.Clicked() && a.RevealPath != nil {
 						a.RevealPath(crumb.Path)
@@ -114,7 +114,7 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 			}
 		})
 		ui.Row(c).Height(22).Padding(2, 12).Gap(6).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, doc.Path).Grow(1).MinWidth(0).MaxLines(1).Ellipsis("…").FontSize(11).TextColor(muted).Tooltip(doc.Path)
+			portrait.Tooltip(c, ui.Text(c, doc.Path).Grow(1).MinWidth(0).MaxLines(1).Ellipsis("…").FontSize(11).TextColor(muted), doc.Path)
 			state := "Saved"
 			if doc.Edited {
 				state = "Edited"

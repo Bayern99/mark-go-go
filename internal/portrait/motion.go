@@ -49,3 +49,42 @@ func Transition(c *ui.Context, keyboard bool, t ui.ElementTransition) ui.Element
 	t.Duration, t.ExitDuration, t.Animation = -1, -1, nil
 	return t
 }
+
+// OverlayMotion is how an overlay comes in: from From (transparent, as
+// Motion's zero Opacity is) to its place, over Duration along Ease. With
+// Exits it leaves the same way in reverse; the WebUI had no exits, which
+// the native shell adds for drawers, the scrim and popups.
+type OverlayMotion struct {
+	Duration time.Duration
+	Ease     CubicBezier
+	From     ui.Motion
+	Exits    bool
+}
+
+// OverlayMotions lists the WebUI's overlay keyframes.
+type OverlayMotions struct {
+	DrawerLeft, DrawerRight, Scrim, Popup, Tooltip OverlayMotion
+}
+
+// Overlays holds the overlay motions. Drawer, scrim and tooltip durations
+// are literals in the WebUI's CSS rather than tokens.
+var Overlays = OverlayMotions{
+	DrawerLeft:  OverlayMotion{180 * time.Millisecond, Motion.EaseInOut, ui.Motion{X: -14, Scale: 0.985}, true},
+	DrawerRight: OverlayMotion{180 * time.Millisecond, Motion.EaseInOut, ui.Motion{X: 14, Scale: 0.985}, true},
+	Scrim:       OverlayMotion{160 * time.Millisecond, Motion.EaseOut, ui.Motion{}, true},
+	Popup:       OverlayMotion{Motion.Menu, Motion.EaseOut, ui.Motion{Scale: 0.96, Blur: 2}, true},
+	Tooltip:     OverlayMotion{125 * time.Millisecond, Motion.EaseOut, ui.Motion{Scale: 0.96}, false},
+}
+
+// Transition is the motion as an ElementTransition for an element that is a
+// direct child of the overlay layer (MyGo plays Enter only on an element
+// whose parent the last frame showed). Only its entry and exit animate; it
+// lands at once when the change should not animate (Animates).
+func (o OverlayMotion) Transition(c *ui.Context, keyboard bool) ui.ElementTransition {
+	from := o.From
+	t := ui.ElementTransition{Duration: o.Duration, Ease: o.Ease.Easing(), Colors: true, Enter: &from}
+	if o.Exits {
+		t.Exit = &from
+	}
+	return Transition(c, keyboard, t)
+}

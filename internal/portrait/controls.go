@@ -86,7 +86,7 @@ func QuietButton(c *ui.Context, title, label string) ui.Element {
 func textButton(c *ui.Context, title, label string, look Look) ui.Element {
 	b := ui.ButtonBase(c.Key(label)).Label(label).Height(28).Padding(0, 11).Radius(8).Gap(6).AlignItems(ui.Center).Justify(ui.Center)
 	if label != title {
-		b.Tooltip(label)
+		Tooltip(c, b, label)
 	}
 	ink := Press(b, look)
 	b.Children(func() {
@@ -108,7 +108,7 @@ func QuietIconButton(c *ui.Context, icon Icon, label string) ui.Element {
 }
 
 func iconButton(c *ui.Context, icon Icon, label string, look Look) ui.Element {
-	b := ui.ButtonBase(c.Key(label)).Label(label).Tooltip(label).Size(28, 28).Radius(8).AlignItems(ui.Center).Justify(ui.Center)
+	b := Tooltip(c, ui.ButtonBase(c.Key(label)).Label(label), label).Size(28, 28).Radius(8).AlignItems(ui.Center).Justify(ui.Center)
 	ink := Press(b, look)
 	b.Children(func() { Glyph(c, icon, 15, ink) })
 	return b
@@ -187,7 +187,7 @@ func Field(c *ui.Context) ui.Element {
 func Popover(c *ui.Context, anchor ui.Element, open *bool, build func()) ui.Element {
 	return ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
 		panel.MinWidth(anchor.Bounds().W).Margin(6, 0, 0, 0).Padding(5).Radius(12).Gap(2)
-		Materials.GlassOverlay.Apply(panel)
+		Materials.GlassOverlay.Apply(panel).AttachedOrigin().Transition(Overlays.Popup.Transition(c, false))
 		build()
 	})
 }

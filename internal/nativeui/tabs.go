@@ -113,7 +113,10 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 					portrait.Materials.Row.Apply(cellRow)
 				}
 				cellRow.Children(func() {
-					tab := ui.ButtonBase(c.Key("tab")).Label(labels[d.ID]).Height(28).Padding(0, 4, 0, 8).Gap(6).AlignItems(ui.Center).MinWidth(0).Shrink(1).ZIndex(1).Role(ui.RoleTab).TabStop(selected).AccessSelected(selected).Description(status).Tooltip(d.Path)
+					tab := portrait.Tooltip(c, ui.ButtonBase(c.Key("tab")).Label(labels[d.ID]).Height(28).Padding(0, 4, 0, 8).Gap(6).AlignItems(ui.Center).MinWidth(0).Shrink(1).ZIndex(1).Role(ui.RoleTab).TabStop(selected).AccessSelected(selected), d.Path)
+					if status != "" {
+						tab.Description(status)
+					}
 					ink := portrait.Colors.Ink2
 					if selected || hovered {
 						ink = portrait.Colors.Ink

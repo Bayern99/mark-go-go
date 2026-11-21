@@ -3,6 +3,7 @@ package nativeui_test
 import (
 	"image/color"
 	"testing"
+	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
@@ -60,7 +61,7 @@ func openDrawerOverStripes(t *testing.T, prefs ui.Preferences) [][3]uint8 {
 	if !ok {
 		t.Fatal("research drawer did not open")
 	}
-	app.Frame()
+	app.Advance(time.Second)
 	b := drawer.Bounds
 	return pixelRow(app, int(b.X+b.W/2), int(b.Y+b.H/2))
 }
@@ -99,7 +100,7 @@ func openTabMenuOverStripes(t *testing.T, prefs ui.Preferences) [][3]uint8 {
 	if !ok {
 		t.Fatal("hidden-tabs popover did not open")
 	}
-	app.Frame()
+	app.Advance(time.Second)
 	b := pop.Bounds
 	return pixelRow(app, int(b.X+b.W/2), int(b.Y+b.H-2))
 }

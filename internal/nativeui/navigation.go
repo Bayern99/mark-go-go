@@ -50,7 +50,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 		} else {
 			meta = "Untitled window"
 		}
-		portrait.Type.Meta.Apply(ui.Text(c, meta)).TextColor(portrait.Colors.Ink3).MaxLines(1).Ellipsis("…").Tooltip(meta).Padding(0, 8)
+		portrait.Tooltip(c, portrait.Type.Meta.Apply(ui.Text(c, meta)).TextColor(portrait.Colors.Ink3).MaxLines(1).Ellipsis("…"), meta).Padding(0, 8)
 		portrait.Track(c, "navigation", func(t *portrait.Segments) {
 			for _, title := range []string{"Workspace", "Outline"} {
 				outline := title == "Outline"

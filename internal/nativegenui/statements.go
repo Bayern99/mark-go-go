@@ -1,34 +1,26 @@
 package nativegenui
 
 import (
-	_ "embed"
 	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/Bayern99/mark-go-go/internal/genui"
+	"github.com/Bayern99/mark-go-go/internal/genuikit"
 	"github.com/Bayern99/mark-go-go/internal/openuilang"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
 )
-
-//go:embed catalog_v3.json
-var statementCatalog []byte
-
-var statementLibrary = sync.OnceValues(func() (*openuilang.Library, error) {
-	return openuilang.LoadLibrary(statementCatalog)
-})
 
 func openStatements(data string) (*Surface, error) {
 	view, err := genui.ReadStatementView([]byte(data))
 	if err != nil {
 		return nil, err
 	}
-	library, err := statementLibrary()
+	library, err := genuikit.Library()
 	if err != nil {
 		return nil, err
 	}

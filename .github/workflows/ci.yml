@@ -30,7 +30,7 @@ jobs:
       - name: DEBUG-b7c1 loop
         run: |
           mkdir -p /tmp/dbg
-          DEBUG_A4F2_DIR=/tmp/dbg go test -race -count=1 -v -run 'TestDEBUGb7c1Code|TestDEBUGb7c1Shape|TestTextInlineCodeUsesPortraitMonoAtTwelvePoints' ./internal/nativegenui/ 2>&1 | tee /tmp/dbg/log.txt
+          DEBUG_A4F2_DIR=/tmp/dbg go test -race -count=1 -v -run 'TestDEBUGb7c1Code|TestDEBUGb7c1Shape|TestDEBUGb7c1Rich|TestTextInlineCodeUsesPortraitMonoAtTwelvePoints' ./internal/nativegenui/ 2>&1 | tee /tmp/dbg/log.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:

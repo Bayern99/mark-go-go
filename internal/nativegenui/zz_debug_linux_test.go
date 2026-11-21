@@ -70,3 +70,18 @@ func TestDEBUGb7c1Shape(t *testing.T) {
 		fmt.Printf("[DEBUG-b7c1] shape %q w=%.2f h=%.2f\n", fam, w, h)
 	}
 }
+
+func TestDEBUGb7c1Rich(t *testing.T) {
+	if os.Getenv("DEBUG_A4F2_DIR") == "" {
+		t.Skip()
+	}
+	for _, base := range []string{"", "IBM Plex Sans"} {
+		for _, fam := range []string{"IBM Plex Mono", "IBM Plex Mono, IBM Plex Sans SC", "monospace"} {
+			l := ui.ShapeRichText([]ui.Span{{Text: "Use "}, {Text: "printf", Font: fam, Size: 12}}, ui.Font{Family: base, Size: 14}, 0)
+			w, _ := l.Size()
+			only := ui.ShapeRichText([]ui.Span{{Text: "printf", Font: fam, Size: 12}}, ui.Font{Family: base, Size: 14}, 0)
+			w2, _ := only.Size()
+			fmt.Printf("[DEBUG-b7c1] rich base=%q code=%q mixed=%.2f only=%.2f\n", base, fam, w, w2)
+		}
+	}
+}

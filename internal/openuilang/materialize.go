@@ -199,9 +199,12 @@ func (m *materializer) lazyBuiltin(n *node, scoped map[string]bool) *node {
 	out := *n
 	out.args = make([]*node, len(n.args))
 	for i, arg := range n.args {
-		if i == 1 {
+		switch i {
+		case 0:
+			out.args[i] = m.expr(arg, scoped)
+		case 1:
 			out.args[i] = arg
-		} else {
+		default:
 			out.args[i] = m.expr(arg, next)
 		}
 	}

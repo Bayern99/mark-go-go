@@ -168,3 +168,51 @@ func FuzzParseNeverPanics(f *testing.F) {
 		program.Evaluate(nil)
 	})
 }
+
+func TestLoopVariableDoesNotHideItsSource(t *testing.T) {
+	lib := fixtureLibrary(t)
+	got := textOf(t, lib, "items = [1, 2]\nvalue = @Each(items, \"items\", items * 2)")
+	if !same(got, []any{2.0, 4.0}) {
+		t.Errorf("got %v", got)
+	}
+}
+
+func TestSetReadsQueryDefaults(t *testing.T) {
+	lib := fixtureLibrary(t)
+	program := lib.Parse("root = Stack([Button(\"Pick\", @Set($picked, q.id))])\nq = Query(\"load\", {}, {id: 7})")
+	tree, _ := program.Evaluate(nil)
+	children, _ := tree.Props.Get("children")
+	action, _ := children.([]any)[0].(*Element).Props.Get("action")
+	if got := program.EvaluateExpression(action.(*ActionPlan).Steps[0], nil); got != 7.0 {
+		t.Errorf("got %v", got)
+	}
+}
+
+func TestEnumRejectsLists(t *testing.T) {
+	lib := fixtureLibrary(t)
+	program := lib.Parse(`root = Stack([Tag("x", ["green"])])`)
+	if len(program.Errors) != 1 || program.Errors[0].Code != "type-mismatch" {
+		t.Fatalf("errors %+v", program.Errors)
+	}
+	tree, _ := program.Evaluate(nil)
+	want := map[string]any{"type": "Stack", "props": map[string]any{"children": []any{map[string]any{"type": "Tag", "props": map[string]any{"text": "x"}}}}}
+	if got := summarize(tree, program); !same(got, want) {
+		t.Errorf("got %v", got)
+	}
+}
+
+func TestSharedSubtreesParseQuickly(t *testing.T) {
+	lib := fixtureLibrary(t)
+	source := "root = $on ? Stack([Text(\"n\" + s0)]) : Stack([])\n$d = s0\n"
+	for i := 0; i < 60; i++ {
+		next := "s" + numberString(float64(i+1))
+		source += "s" + numberString(float64(i)) + " = " + next + " + " + next + "\n"
+	}
+	program := lib.Parse(source + "s60 = 1")
+	for _, e := range program.Errors {
+		if e.Code == "parse-exception" {
+			t.Fatal("parser failed")
+		}
+	}
+	program.Evaluate(nil)
+}

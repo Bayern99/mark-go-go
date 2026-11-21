@@ -238,7 +238,7 @@ func (s *issueSink) validate(value, schema any, component, path string) (any, bo
 	}
 	expected, enum, hasEnum := scalarInfo(spec)
 	if hasEnum {
-		if s.partial || !isPrimitive(value) {
+		if s.partial {
 			return value, false
 		}
 		for _, allowed := range enum {
@@ -305,7 +305,7 @@ func (s *issueSink) validateObject(value any, spec *Object, component, path stri
 	if props != nil {
 		for _, key := range props.Keys {
 			current, present := object.Get(key)
-			if !present {
+			if !present || isNullish(current) {
 				continue
 			}
 			sub := props.Values[key]

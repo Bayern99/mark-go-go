@@ -2490,6 +2490,106 @@
   }
  },
  "components": {
+  "Col": {
+   "signature": "Col(children: Node[], gap?: number, align?: \"start\" | \"center\" | \"end\" | \"stretch\" | \"baseline\")",
+   "description": "Stacks children vertically"
+  },
+  "Row": {
+   "signature": "Row(children: Node[], gap?: number, align?: \"start\" | \"center\" | \"end\" | \"stretch\" | \"baseline\", justify?: \"start\" | \"center\" | \"end\" | \"between\" | \"around\" | \"evenly\", wrap?: boolean)",
+   "description": "Lays children out horizontally"
+  },
+  "Box": {
+   "signature": "Box(children?: Node[], direction?: \"row\" | \"col\", gap?: number, padding?: number, background?: Color, radius?: number | \"sm\" | \"md\" | \"lg\" | \"full\", border?: boolean, width?: number, height?: number, flex?: number, align?: \"start\" | \"center\" | \"end\" | \"stretch\" | \"baseline\", justify?: \"start\" | \"center\" | \"end\" | \"between\" | \"around\" | \"evenly\", wrap?: boolean)",
+   "description": "A styled container"
+  },
+  "Grid": {
+   "signature": "Grid(children: Node[], columns?: number, minChildWidth?: number, gap?: number)",
+   "description": "Lays children out in equal columns"
+  },
+  "Card": {
+   "signature": "Card(children: Node[], variant?: \"outline\" | \"soft\", gap?: number, padding?: number)",
+   "description": "A framed group"
+  },
+  "Divider": {
+   "signature": "Divider()",
+   "description": "A thin line"
+  },
+  "Spacer": {
+   "signature": "Spacer()",
+   "description": "Takes the free space of its row or column"
+  },
+  "Title": {
+   "signature": "Title(text: string, size?: \"sm\" | \"md\" | \"lg\" | \"xl\" | \"2xl\" | \"3xl\", color?: Color)",
+   "description": "A heading"
+  },
+  "Text": {
+   "signature": "Text(text: string | Node[], size?: \"xs\" | \"sm\" | \"md\" | \"lg\", color?: Color, weight?: \"normal\" | \"medium\" | \"semibold\", italic?: boolean, lineThrough?: boolean, tabularNums?: boolean, maxLines?: number)",
+   "description": "Body text, or a run of strings and inline components"
+  },
+  "Caption": {
+   "signature": "Caption(text: string, color?: Color)",
+   "description": "Small secondary text"
+  },
+  "Label": {
+   "signature": "Label(text: string)",
+   "description": "A small label above a value"
+  },
+  "Badge": {
+   "signature": "Badge(text: string, color?: \"neutral\" | \"info\" | \"success\" | \"warning\" | \"danger\" | \"purple\" | \"pink\", icon?: string)",
+   "description": "A short status in a pill"
+  },
+  "Link": {
+   "signature": "Link(text: string, url: string)",
+   "description": "Text that opens a web address"
+  },
+  "ListItem": {
+   "signature": "ListItem(title: string, description?: string, marker?: string, children?: Node[])",
+   "description": "A list entry with a title"
+  },
+  "List": {
+   "signature": "List(items: (string | ListItem)[], marker?: \"bullet\" | \"number\" | \"none\", timeline?: boolean)",
+   "description": "A bulleted, numbered or timeline list"
+  },
+  "Markdown": {
+   "signature": "Markdown(text: string)",
+   "description": "Markdown prose"
+  },
+  "Quote": {
+   "signature": "Quote(text: string, cite?: string)",
+   "description": "A quotation"
+  },
+  "Code": {
+   "signature": "Code(code: string, language?: string)",
+   "description": "A code block"
+  },
+  "Source": {
+   "signature": "Source(sources: string[], children: Node[])",
+   "description": "Attributes its children to sections of the original document"
+  },
+  "Table": {
+   "signature": "Table(columns: string[], rows: any[][])",
+   "description": "Each row lists its cells in column order; a cell may be a component. Number columns align right"
+  },
+  "Chart": {
+   "signature": "Chart(type: \"bar\" | \"line\" | \"area\" | \"pie\" | \"donut\" | \"scatter\", data: {[key: string]: string | number}[], x?: string, series?: string[], format?: \"number\" | \"percent\", stacked?: boolean, height?: number)",
+   "description": "Rows of data drawn as a chart; x is the category key, series the value keys"
+  },
+  "Icon": {
+   "signature": "Icon(name: string, size?: \"sm\" | \"md\" | \"lg\" | \"xl\", color?: Color)",
+   "description": "An icon by name"
+  },
+  "Image": {
+   "signature": "Image(src: string, alt: string, aspectRatio?: number, radius?: number | \"sm\" | \"md\" | \"lg\" | \"full\", fit?: \"cover\" | \"contain\")",
+   "description": "An image the original document already contains"
+  },
+  "Carousel": {
+   "signature": "Carousel(children: Node[], itemWidth?: number, gap?: number)",
+   "description": "Children side by side, scrolled sideways"
+  },
+  "Popover": {
+   "signature": "Popover(trigger: Node, content: Node | Node[])",
+   "description": "An aside shown when its trigger is pressed"
+  },
   "Button": {
    "signature": "Button(label: string, action?: ActionExpression, variant?: \"solid\" | \"outline\" | \"soft\" | \"ghost\", color?: \"primary\" | \"danger\" | \"success\", size?: \"sm\" | \"md\" | \"lg\", icon?: string, disabled?: boolean, block?: boolean)",
    "description": "A button that runs an action; without one it does nothing in a saved view"

@@ -27,7 +27,11 @@ type BaseView struct {
 	messages  []json.RawMessage
 	existing  map[string]bool
 	replace   map[string]bool
+
+	statements bool
 }
+
+func (b *BaseView) Statements() bool { return b != nil && b.statements }
 
 type a2uiMessage struct {
 	CreateSurface    *a2uiComponents `json:"createSurface"`
@@ -55,6 +59,9 @@ func ReadBaseView(path string, ids []string) (*BaseView, error) {
 		return nil, notUpdatable("there is no view file.")
 	case snap.Error != "":
 		return nil, notUpdatable(snap.Error + ".")
+	}
+	if IsStatementView([]byte(snap.Text)) {
+		return readStatementBase(snap.Text, ids)
 	}
 	var file struct {
 		Version int               `json:"version"`
@@ -174,12 +181,19 @@ func (b *BaseView) Merge(a2ui json.RawMessage, added map[string]AgentSource) (ma
 			return nil, nil, fmt.Errorf(`The agent's message has %q; an update may only have "version" and "updateComponents".`, key)
 		}
 	}
-	var body a2uiComponents
-	if err := json.Unmarshal(envelope["updateComponents"], &body); err != nil || len(body.Components) == 0 {
-		return nil, nil, errors.New(`The agent's message is not an updateComponents with components.`)
+	if b.statements {
+		if err := b.checkStatements(envelope["updateComponents"]); err != nil {
+			return nil, nil, err
+		}
 	}
-	if body.SurfaceID != b.surfaceID {
-		return nil, nil, fmt.Errorf("The agent's update is for the surface %q; the view's surface is %q.", body.SurfaceID, b.surfaceID)
+	var body a2uiComponents
+	if !b.statements {
+		if err := json.Unmarshal(envelope["updateComponents"], &body); err != nil || len(body.Components) == 0 {
+			return nil, nil, errors.New(`The agent's message is not an updateComponents with components.`)
+		}
+		if body.SurfaceID != b.surfaceID {
+			return nil, nil, fmt.Errorf("The agent's update is for the surface %q; the view's surface is %q.", body.SurfaceID, b.surfaceID)
+		}
 	}
 	seen := map[string]bool{}
 	for _, c := range body.Components {

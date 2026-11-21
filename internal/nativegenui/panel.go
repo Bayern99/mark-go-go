@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"github.com/Bayern99/mark-go-go/internal/genuikit"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -324,7 +325,7 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 			v.noteTarget = n.ID
 			v.note = ""
 		}
-		if ui.Button(c, "Update card").Disabled(busy || d.Path == "" || v.reading.surface.Session != nil).Clicked() {
+		if ui.Button(c, "Update card").Disabled(busy || d.Path == "" || n.ComponentID == "" && v.reading.surface.Session != nil).Clicked() {
 			componentID := n.ComponentID
 			if componentID == "" {
 				componentID = n.ID
@@ -411,7 +412,10 @@ func (p *panel) generate(v *documentView, ids []string) {
 	if len(ids) > 0 {
 		mode = "update"
 	}
-	req := genui.GenerateRequest{Text: text, Mode: mode, Format: catalog, Request: v.request, ReplaceIDs: ids, Sections: workspace.GenerationSections(text)}
+	req := genui.GenerateRequest{Text: text, Mode: mode, Format: genuikit.Format(), Language: genui.StatementLanguage, Request: v.request, ReplaceIDs: ids, Sections: workspace.GenerationSections(text)}
+	if surface := v.reading.surface; mode == "update" && surface != nil && surface.Session == nil {
+		req.Format, req.Language = catalog, ""
+	}
 	done := p.host.StartGeneration(ctx, d.ID, req, func(progress genui.GenerateProgress) error {
 		p.win.Native().Update(func() {
 			if !p.closed && p.views[d.ID] == v {

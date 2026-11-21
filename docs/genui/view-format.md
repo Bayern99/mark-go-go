@@ -80,6 +80,8 @@ Version 3 keeps the A2UI envelope and writes each entry of `components` as one [
 - `Button`, `IconButton`, `Pressable`, `Form`, `Input`, `TextArea`, `Select`, `Checkbox`, `RadioGroup`, `SegmentedControl`, `Slider`, `DatePicker`, `Timer`, `Flashcard` and `Celebration` are controls. A control bound to a `$variable` changes it, and everything computed from it follows at once. What the reader changes lasts until the view is closed and is never written to the view file. `@OpenUrl` opens `http`, `https` and `mailto` addresses; `@ToAssistant` does nothing in a saved view. Inside a `Form`, an action that sends first checks each field's `rules` and shows what is wrong.
 - Expressions may call the catalog's 59 functions, such as `@Format`, `@Plural`, `@GroupBy` and `@AddDays`. `@Random`, `@Pick` and `@Shuffle` give a value only inside an action. Dates without a time zone are read in the reader's time zone.
 - Wrap content in `Source(["sourceId"], [children])` to attribute it to entries of `sources`.
+- A generated view is accepted when it has a `root`, every `Source` names an entry of `sources`, and its faulty statements number at most two, or a tenth of its statements when that is more. [The catalog](../../internal/genuikit/catalog.json) decides what is valid, and its signatures and [format text](../../internal/genuikit/format.txt) make up the generation prompt, so adding a component touches the catalog and the renderer only.
+- An update of part of a view names statements to replace. It may replace those and add new ones; every other statement stays.
 
 ```json
 {

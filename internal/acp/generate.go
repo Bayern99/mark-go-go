@@ -983,6 +983,7 @@ type sourceOut struct {
 
 type viewOut struct {
 	Version     int                  `json:"version"`
+	Language    string               `json:"language,omitempty"`
 	GeneratedAt string               `json:"generatedAt"`
 	Model       string               `json:"model,omitempty"`
 	Request     string               `json:"request,omitempty"`
@@ -1001,6 +1002,9 @@ func (r *genRun) writeView(ctx context.Context, sources map[string]genui.AgentSo
 		Request:     r.job.Req.Request,
 		Sources:     make(map[string]sourceOut, len(sources)),
 		A2UI:        a2ui,
+	}
+	if genui.WritesStatements(a2ui) {
+		view.Version, view.Language = genui.StatementViewVersion, genui.StatementLanguage
 	}
 	for key, src := range sources {
 		entry := sourceOut{Heading: src.Heading, Occurrence: src.Occurrence}

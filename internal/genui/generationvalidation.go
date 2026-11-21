@@ -89,7 +89,11 @@ func ValidateCandidate(ctx context.Context, candidate []byte) error {
 	if ctx != nil && ctx.Err() != nil {
 		return ErrCancelled
 	}
-	if err := ValidateGeneratedView(candidate); err != nil {
+	check := ValidateGeneratedView
+	if IsStatementView(candidate) {
+		check = validateStatementCandidate
+	}
+	if err := check(candidate); err != nil {
 		return NewFailure(FailInvalidOutput, "The generated view is not valid: "+err.Error(), HintInvalidOutput)
 	}
 	return nil

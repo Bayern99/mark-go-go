@@ -48,6 +48,8 @@ func (s *Surface) refresh() {
 		return
 	}
 	s.tree, s.notices = tree, nil
+	s.Nodes, s.owners = map[string]Node{}, map[*openuilang.Element]string{}
+	s.own(tree, "")
 	seen := map[string]bool{}
 	for _, problem := range append(program.Errors, problems...) {
 		notice := problem.Message
@@ -61,6 +63,40 @@ func (s *Surface) refresh() {
 	}
 	for _, name := range program.Unresolved {
 		s.notices = append(s.notices, fmt.Sprintf("“%s” is used but never defined.", name))
+	}
+}
+
+func (s *Surface) own(value any, owner string) {
+	switch v := value.(type) {
+	case []any:
+		for _, item := range v {
+			s.own(item, owner)
+		}
+	case *openuilang.Object:
+		for _, key := range v.Keys {
+			s.own(v.Values[key], owner)
+		}
+	case *openuilang.Element:
+		if v == nil || len(s.owners) > 1<<16 {
+			return
+		}
+		if v.StatementID != "" {
+			owner = v.StatementID
+		}
+		if _, seen := s.owners[v]; seen {
+			return
+		}
+		s.owners[v] = owner
+		if v.Type == "Source" {
+			n := Node{ID: "source" + strconv.Itoa(len(s.Nodes)), ComponentID: owner}
+			for _, id := range flatten(v.Props.Values["sources"], nil) {
+				if text, ok := id.(string); ok {
+					n.Sources = append(n.Sources, text)
+				}
+			}
+			s.Nodes[n.ID] = n
+		}
+		s.own(v.Props, owner)
 	}
 }
 
@@ -627,7 +663,7 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 			inner := at
 			inner.row = false
 			r.stack(c, p.value("children"), path, depth, inner, tier, true)
-			n := Node{ID: path, ComponentID: e.StatementID}
+			n := Node{ID: path, ComponentID: r.surface.owners[e]}
 			for _, id := range flatten(p.value("sources"), nil) {
 				if text, ok := id.(string); ok {
 					n.Sources = append(n.Sources, text)

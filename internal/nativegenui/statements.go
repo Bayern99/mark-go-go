@@ -34,11 +34,20 @@ func openStatements(data string) (*Surface, error) {
 		s.Sources[id] = Reference{Heading: source.Heading, Occurrence: source.Occurrence, Hash: source.Hash}
 	}
 	s.Session.Load(program)
-	var problems []openuilang.Error
-	s.tree, problems = s.Session.Render()
-	if s.tree == nil {
+	s.program = program
+	if s.refresh(); s.tree == nil {
 		return nil, errors.New("The view has no root component.")
 	}
+	return s, nil
+}
+
+func (s *Surface) refresh() {
+	program := s.program
+	tree, problems := s.Session.Render()
+	if tree == nil && s.tree != nil {
+		return
+	}
+	s.tree, s.notices = tree, nil
 	seen := map[string]bool{}
 	for _, problem := range append(program.Errors, problems...) {
 		notice := problem.Message
@@ -53,7 +62,6 @@ func openStatements(data string) (*Surface, error) {
 	for _, name := range program.Unresolved {
 		s.notices = append(s.notices, fmt.Sprintf("“%s” is used but never defined.", name))
 	}
-	return s, nil
 }
 
 const (
@@ -154,7 +162,7 @@ func holds(children any, parent string, test func(any) bool) bool {
 func rigid(children any) bool {
 	for _, child := range flatten(children, nil) {
 		switch kind(child) {
-		case "Badge", "Link", "Label":
+		case "Badge", "Link", "Label", "Button", "IconButton":
 		default:
 			return false
 		}
@@ -630,7 +638,7 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 			}
 		})
 	default:
-		if !r.media(c, e, p, path, depth, at) {
+		if !r.media(c, e, p, path, depth, at) && !r.control(c, e, p, path, depth, at) {
 			ui.Text(c, fmt.Sprintf("“%s” is not a component this app can show.", e.Type)).Role(ui.RoleAlert)
 		}
 	}

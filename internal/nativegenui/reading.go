@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/egoist/mygo/ui"
@@ -28,6 +29,11 @@ type Reading struct {
 	CanSelect  func(Node) bool
 	LoadImage  func(src string) (ui.ImageSource, error)
 	images     sync.Map
+	form       string
+	fields     map[string][]checkedField
+	problems   map[string]string
+	presses    []press
+	changed    bool
 }
 
 type componentState struct {
@@ -36,11 +42,16 @@ type componentState struct {
 	tab, column, order int
 	expanded, open     bool
 	scroll             ui.ScrollState
+	text, shown, note  string
+	number             float64
+	date               time.Time
+	editing, started   bool
 }
 
 func (r *Reading) Load(s *Surface) {
 	r.surface = s
 	r.images.Clear()
+	r.problems, r.presses, r.changed, r.form = map[string]string{}, nil, false, ""
 	if r.states == nil {
 		r.states = map[string]*componentState{}
 	}
@@ -53,7 +64,9 @@ func (r *Reading) View(c *ui.Context) {
 	ui.Scroll(c).TrackScroll(&r.scroll).Grow(1).MinHeight(0).Children(func() {
 		ui.Column(c).Padding(24).Gap(14).Children(func() {
 			if r.surface.Session != nil {
+				r.fields = map[string][]checkedField{}
 				r.statements(c)
+				r.settle(c)
 				return
 			}
 			r.node(c, "root", map[string]bool{})

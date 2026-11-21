@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 	"github.com/egoist/mygo/ui/markdown/parser"
@@ -163,8 +164,8 @@ func (p *previewLayout) codeBlock(snap editor.Snapshot, i int) {
 		_, start := p.document.Line(i, line)
 		p.styles = append(p.styles, editor.LineStyle{
 			Line:       snap.LineOf(start),
-			Font:       ui.Font{Family: "IBM Plex Mono", Size: 14},
-			LineHeight: 1.5,
+			Font:       portrait.Type.Code.Font(400),
+			LineHeight: portrait.Type.Code.LineHeight(),
 		})
 	}
 
@@ -198,7 +199,7 @@ func codeHeader(label, body string) func(*ui.Context, ui.Element, editor.Block) 
 	return func(c *ui.Context, e ui.Element, _ editor.Block) {
 		e.Children(func() {
 			ui.Row(c).AlignItems(ui.Center).Padding(4, 8).Children(func() {
-				ui.Text(c, label).Font("IBM Plex Sans").FontSize(12).TextColor(c.Theme().TextMuted)
+				portrait.Type.Meta.Apply(ui.Text(c, label)).TextColor(c.Theme().TextMuted)
 				ui.Spacer(c)
 				if ui.Button(c, "Copy code").KeepFocus().Clicked() {
 					c.Services().WriteClipboard(body)
@@ -226,7 +227,7 @@ func (p *previewLayout) specialBlock(snap editor.Snapshot, start, end int, kind,
 				}
 				if art.reason != "" {
 					ui.Text(c, label+" could not render: "+art.reason).Role(ui.RoleAlert).TextColor(c.Theme().Danger)
-					ui.Text(c, snap.Slice(start, end)).Font("IBM Plex Mono").FontSize(14).Wrap()
+					portrait.Type.Code.Apply(ui.Text(c, snap.Slice(start, end))).Wrap()
 				} else if art.svg != nil {
 					w, h := art.svg.Size()
 					scale := min(float32(1), 600/max(1, w), 360/max(1, h))
@@ -240,12 +241,12 @@ func (p *previewLayout) specialBlock(snap editor.Snapshot, start, end int, kind,
 					frontmatterRows(c, body)
 				} else if kind == "code" {
 					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-						ui.Text(c, label).Font("IBM Plex Sans").FontSize(12).TextColor(c.Theme().TextMuted)
+						portrait.Type.Meta.Apply(ui.Text(c, label)).TextColor(c.Theme().TextMuted)
 						if detail != "" {
-							ui.Text(c, detail).Font("IBM Plex Sans").FontSize(12).TextColor(c.Theme().TextMuted)
+							portrait.Type.Meta.Apply(ui.Text(c, detail)).TextColor(c.Theme().TextMuted)
 						}
 					})
-					ui.Text(c, body).Font("IBM Plex Mono").FontSize(14).Wrap().PreserveSpaces().Selectable()
+					portrait.Type.Code.Apply(ui.Text(c, body)).Wrap().PreserveSpaces().Selectable()
 				} else {
 					ui.Text(c, label).FontSize(12).TextColor(c.Theme().TextMuted)
 					ui.Text(c, body).Wrap().Selectable()

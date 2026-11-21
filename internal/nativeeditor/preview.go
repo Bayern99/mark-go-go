@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 	"github.com/egoist/mygo/ui/markdown/parser"
@@ -380,17 +381,17 @@ func pageMargin(line int, above bool, height float32) editor.Block {
 }
 
 func headingStyle(line, level int) editor.LineStyle {
-	sizes := [6]float32{28, 20, 16, 15, 14, 13}
-	size := sizes[level-1]
-	family := "IBM Plex Sans"
-	leading := float32(28)
-	if level <= 2 {
-		family = "Barlow Semi Condensed"
-	}
-	if level == 1 {
-		leading = 36
-	}
-	return editor.LineStyle{Line: line, Font: ui.Font{Family: family, Size: size, Weight: 600}, LineHeight: leading / size}
+	style := [6]portrait.TypeStyle{
+		portrait.Type.Display.In(portrait.FontDisplay),
+		portrait.Type.Title.In(portrait.FontDisplay),
+		portrait.Type.Reading,
+		portrait.Type.Reading,
+		portrait.Type.Reading,
+		portrait.Type.Reading,
+	}[level-1]
+	style.Size = [6]float32{28, 20, 16, 15, 14, 13}[level-1]
+	style.Leading = max(style.Leading, 28)
+	return editor.LineStyle{Line: line, Font: style.Font(600), LineHeight: style.LineHeight()}
 }
 
 func (p *previewLayout) literal(src string, in parser.Inline) {
@@ -487,10 +488,10 @@ func (d *Document) prepareView() {
 		st.OnInput = nil
 		st.OnHover = nil
 		st.Label = "Markdown source"
-		st.Font = ui.Font{Family: "IBM Plex Mono", Size: 14}
+		st.Font = portrait.Type.Code.Font(400)
 		st.ReadingColumn = editor.ReadingColumn{}
 		st.LineNumbers = editor.LineNumbersOn
-		st.LineHeight = 1.5
+		st.LineHeight = portrait.Type.Code.LineHeight()
 		if st.Projection != nil {
 			st.SetReplacements(nil)
 			st.SetBlocks(nil)
@@ -508,8 +509,8 @@ func (d *Document) prepareView() {
 	st.OnInput = d.previewInput
 	st.OnHover = d.previewHover
 	st.Label = "Markdown Preview"
-	st.Font = ui.Font{Family: "IBM Plex Sans", Size: 16}
-	st.LineHeight = 28.0 / 16.0
+	st.Font = portrait.Type.Reading.Font(400)
+	st.LineHeight = portrait.Type.Reading.LineHeight()
 	st.LineNumbers = editor.LineNumbersOff
 	st.ReadingColumn = editor.ReadingColumn{Width: 624, Left: 56, Right: 40}
 	if p.applied && !p.dirty && p.version == d.Version() {

@@ -12,7 +12,7 @@ func (b CubicBezier) Easing() ui.Easing { return ui.CubicBezier(b.X1, b.Y1, b.X2
 
 type MotionTokens struct {
 	Press, Switch, Expand, Enter, Menu, Jump, Morph time.Duration
-	EaseOut, EaseInOut                            CubicBezier
+	EaseOut, EaseInOut                              CubicBezier
 }
 
 var Motion = MotionTokens{

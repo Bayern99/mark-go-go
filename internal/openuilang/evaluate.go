@@ -370,11 +370,19 @@ func (c *evalContext) action(n *node) any {
 }
 
 func substituteRef(n *node, name string, value *node) *node {
+	return substituteShared(n, name, value, map[*node]*node{})
+}
+
+func substituteShared(n *node, name string, value *node, done map[*node]*node) (result *node) {
 	if n == nil {
 		return nil
 	}
+	if previous, ok := done[n]; ok {
+		return previous
+	}
+	defer func() { done[n] = result }()
 	out := *n
-	sub := func(child *node) *node { return substituteRef(child, name, value) }
+	sub := func(child *node) *node { return substituteShared(child, name, value, done) }
 	subAll := func(list []*node) []*node {
 		next := make([]*node, len(list))
 		for i, item := range list {
@@ -567,15 +575,9 @@ type StateReader func(name string) (any, bool)
 
 const evaluationBudget = 2_000_000
 
-func (p *Program) Evaluate(state StateReader) (root *Element, errors []Error) {
-	defer func() {
-		if recover() != nil {
-			root = nil
-			errors = append(errors, Error{Source: "runtime", Code: "runtime-error", StatementID: "root", Message: "evaluation failed"})
-		}
-	}()
+func (p *Program) context(state StateReader, errors *[]Error) *evalContext {
 	budget := evaluationBudget
-	ctx := &evalContext{lib: p.lib, errors: &errors, budget: &budget}
+	ctx := &evalContext{lib: p.lib, errors: errors, budget: &budget}
 	ctx.getState = func(name string) any {
 		if state != nil {
 			if value, ok := state(name); ok {
@@ -600,6 +602,17 @@ func (p *Program) Evaluate(state StateReader) (root *Element, errors []Error) {
 		}
 		return nil
 	}
+	return ctx
+}
+
+func (p *Program) Evaluate(state StateReader) (root *Element, errors []Error) {
+	defer func() {
+		if recover() != nil {
+			root = nil
+			errors = append(errors, Error{Source: "runtime", Code: "runtime-error", StatementID: "root", Message: "evaluation failed"})
+		}
+	}()
+	ctx := p.context(state, &errors)
 	root = p.Root
 	if root == nil && p.rootExpr != nil {
 		root, _ = ctx.evaluate(p.rootExpr, true).(*Element)
@@ -613,21 +626,13 @@ func (p *Program) Evaluate(state StateReader) (root *Element, errors []Error) {
 	return ctx.element(root, false), errors
 }
 
-func (p *Program) EvaluateExpression(step ActionStep, state StateReader) any {
-	if step.value == nil {
-		return nil
-	}
-	ctx := &evalContext{lib: p.lib, resolveRef: func(string) any { return nil }}
-	ctx.getState = func(name string) any {
-		if state != nil {
-			if value, ok := state(name); ok {
-				return value
-			}
+func (p *Program) EvaluateExpression(step ActionStep, state StateReader) (value any) {
+	defer func() {
+		if recover() != nil {
+			value = nil
 		}
-		value, _ := p.State.Get(name)
-		return value
-	}
-	return orNull(ctx.evaluate(step.value, false))
+	}()
+	return orNull(p.context(state, nil).evaluate(step.value, false))
 }
 
 func resolveField(object any, path string) any {

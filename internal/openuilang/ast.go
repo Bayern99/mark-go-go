@@ -50,23 +50,29 @@ func isRuntimeExpr(n *node) bool {
 	return false
 }
 
-func walkAST(n *node, visit func(*node)) {
-	if n == nil {
-		return
+func walkAST(root *node, visit func(*node)) {
+	seen := map[*node]bool{}
+	var walk func(*node)
+	walk = func(n *node) {
+		if n == nil || seen[n] {
+			return
+		}
+		seen[n] = true
+		visit(n)
+		for _, child := range n.args {
+			walk(child)
+		}
+		for _, entry := range n.mapped {
+			walk(entry.value)
+		}
+		for _, entry := range n.entries {
+			walk(entry.value)
+		}
+		walk(n.a)
+		walk(n.b)
+		walk(n.c)
 	}
-	visit(n)
-	for _, child := range n.args {
-		walkAST(child, visit)
-	}
-	for _, entry := range n.mapped {
-		walkAST(entry.value, visit)
-	}
-	for _, entry := range n.entries {
-		walkAST(entry.value, visit)
-	}
-	walkAST(n.a, visit)
-	walkAST(n.b, visit)
-	walkAST(n.c, visit)
+	walk(root)
 }
 
 func literalNode(value any) *node {

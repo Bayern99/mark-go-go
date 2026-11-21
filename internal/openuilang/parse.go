@@ -436,7 +436,9 @@ func (m *materializer) stateDefault(value any, declared *Object) any {
 		if !ok {
 			return nil
 		}
+		budget := evaluationBudget
 		ctx := &evalContext{
+			budget:     &budget,
 			lib:        m.lib,
 			getState:   func(name string) any { value, _ := declared.Get(name); return value },
 			resolveRef: func(string) any { return nil },

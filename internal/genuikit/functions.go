@@ -204,7 +204,8 @@ var listFunctions = map[string]function{
 		if step == 0 || math.IsNaN(step) || math.IsInf(step, 0) {
 			return nil, errors.New("step must be a non-zero number")
 		}
-		count := max(0, math.Ceil((end-start)/step))
+		steps, _ := strconv.ParseFloat(strconv.FormatFloat((end-start)/step, 'g', 12, 64), 64)
+		count := max(0, math.Ceil(steps))
 		if math.IsNaN(count) || count > maxItems {
 			return nil, tooMany(maxItems + 1)
 		}
@@ -318,8 +319,8 @@ var numberFunctions = map[string]function{
 		weights := a.list("weights")
 		sum := 0.0
 		for _, weight := range weights {
-			value, _ := weight.(float64)
-			if value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+			value, numeric := weight.(float64)
+			if !numeric || value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
 				return nil, errors.New("weights must be zero or more")
 			}
 			sum += value
@@ -405,7 +406,7 @@ var numberFunctions = map[string]function{
 }
 
 func digits(value float64, least, most int) string {
-	out := strconv.FormatFloat(math.Abs(value), 'f', most, 64)
+	out := halfUp(strconv.FormatFloat(math.Abs(value), 'f', -1, 64), most)
 	if most > least {
 		out = strings.TrimRight(out, "0")
 		whole, fraction, _ := strings.Cut(out, ".")
@@ -644,4 +645,27 @@ func channels(color string) ([3]float64, error) {
 		out[i] = float64(value)
 	}
 	return out, nil
+}
+
+func halfUp(decimal string, places int) string {
+	whole, fraction, _ := strings.Cut(decimal, ".")
+	for len(fraction) <= places {
+		fraction += "0"
+	}
+	up := fraction[places] >= '5'
+	kept := []byte(whole + fraction[:places])
+	for i := len(kept) - 1; up && i >= 0; i-- {
+		if up = kept[i] == '9'; up {
+			kept[i] = '0'
+		} else {
+			kept[i]++
+		}
+	}
+	if up {
+		kept = append([]byte{'1'}, kept...)
+	}
+	if places == 0 {
+		return string(kept)
+	}
+	return string(kept[:len(kept)-places]) + "." + string(kept[len(kept)-places:])
 }

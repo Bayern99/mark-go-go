@@ -1,0 +1,37 @@
+package portrait
+
+import "github.com/egoist/mygo/ui"
+
+// Icon is a Phosphor glyph, drawn mirrored left to right when Mirror is set
+// (the WebUI's transform: scaleX(-1)).
+type Icon struct {
+	Glyph  string
+	Mirror bool
+}
+
+// Mirrored returns the icon flipped left to right.
+func (i Icon) Mirrored() Icon { i.Mirror = !i.Mirror; return i }
+
+// Phosphor glyphs used by the WebUI baseline (@phosphor-icons/web, regular).
+var (
+	IconX               = Icon{Glyph: "\ue4f6"}
+	IconSidebar         = Icon{Glyph: "\uec24"}
+	IconPlugs           = Icon{Glyph: "\ueb56"}
+	IconCaretDown       = Icon{Glyph: "\ue136"}
+	IconCaretRight      = Icon{Glyph: "\ue13a"}
+	IconFileText        = Icon{Glyph: "\ue23a"}
+	IconFolder          = Icon{Glyph: "\ue24a"}
+	IconFolderOpen      = Icon{Glyph: "\ue256"}
+	IconMagnifyingGlass = Icon{Glyph: "\ue30c"}
+	IconDotsThree       = Icon{Glyph: "\ue1fe"}
+)
+
+// Glyph draws the icon at size in color. It is decoration: the control
+// holding it carries the accessible name.
+func Glyph(c *ui.Context, icon Icon, size float32, color ui.Color) ui.Element {
+	g := ui.Text(c, icon.Glyph).Font(FontIcons).FontSize(size).FixedLineHeight(size).TextColor(color).AccessHidden(true)
+	if icon.Mirror {
+		g.TransformOrigin(0.5, 0.5).Scale(-1, 1)
+	}
+	return g
+}

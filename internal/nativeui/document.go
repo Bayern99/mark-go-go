@@ -2,6 +2,8 @@ package nativeui
 
 import (
 	"fmt"
+
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
 )
@@ -17,10 +19,10 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 				ui.Text(c, "Welcome").Font("Barlow Semi Condensed").FontSize(30).Bold()
 				ui.Text(c, "Open a folder to browse Markdown files, or start an untitled document.").TextColor(muted)
 				ui.Row(c).Padding(10, 0).Gap(6).Children(func() {
-					if control(c, "Open Folder", "Open Folder").Clicked() && a.OpenFolder != nil {
+					if portrait.AccentButton(c, "Open Folder", "Open Folder").Clicked() && a.OpenFolder != nil {
 						a.OpenFolder()
 					}
-					if control(c, "New Document", "New Document").Clicked() && a.NewDocument != nil {
+					if portrait.Button(c, "New Document", "New Document").Clicked() && a.NewDocument != nil {
 						a.NewDocument()
 					}
 				})
@@ -30,7 +32,7 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 				}
 				for _, r := range m.Recents {
 					ui.Row(c.Key(r.Root)).Children(func() {
-						if control(c, r.Name, r.Name).Tooltip(r.Root).Clicked() && a.OpenRecent != nil {
+						if portrait.Button(c, r.Name, r.Name).Tooltip(r.Root).Clicked() && a.OpenRecent != nil {
 							a.OpenRecent(r.Root)
 						}
 					})
@@ -60,24 +62,24 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 			if m.Version > 0 {
 				ui.Text(c, fmt.Sprintf("v%d", m.Version)).FontSize(11).TextColor(muted).Padding(1, 5).Radius(8).Border(0.5, rim)
 			}
-			ui.Row(c).Role(ui.RoleTabList).Label("Document views").Padding(2).Radius(9).Background(track).Children(func() {
+			portrait.Track(c, "view modes", func(t *portrait.Segments) {
 				for i, title := range []string{"Preview", "Markdown", "GenUI"} {
 					mode := []string{"preview", "markdown", "genui"}[i]
 					if mode == "genui" && slots.GenUI == nil {
 						continue
 					}
 					selected := doc.ViewMode == mode || (mode == "preview" && doc.ViewMode != "genui" && doc.ViewMode != "markdown")
-					if discrete(c, title, title, selected, "view modes").Role(ui.RoleTab).AccessSelected(selected).Clicked() && a.SetMode != nil {
+					if t.Segment(title, title, selected).Role(ui.RoleTab).AccessSelected(selected).Clicked() && a.SetMode != nil {
 						a.SetMode(mode)
 					}
 				}
-			})
+			}).Label("Document views")
 			if m.Git && slots.Checkpoints != nil {
-				b := control(c, "Checkpoints", "Checkpoints")
+				b := portrait.Button(c, "Checkpoints", "Checkpoints").Expanded(s.checkpoints)
 				if b.Clicked() {
 					s.checkpoints = !s.checkpoints
 				}
-				ui.Popover(c, b, &s.checkpoints, func() { slots.Checkpoints(c) })
+				portrait.Popover(c, b, &s.checkpoints, func() { slots.Checkpoints(c) })
 			}
 		})
 		if doc.ActionError != "" {
@@ -97,7 +99,7 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 		}
 
 		if m.ReturnToGenUI && slots.GenUI != nil {
-			if control(c, "← Back to GenUI", "Back to GenUI").Clicked() && a.SetMode != nil {
+			if portrait.Button(c, "← Back to GenUI", "Back to GenUI").Clicked() && a.SetMode != nil {
 				a.SetMode("genui")
 			}
 		}

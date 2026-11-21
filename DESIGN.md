@@ -12,7 +12,7 @@ Mark Go Go 的正式界面由 MyGo Native UI 绘制。原文居中显示，导�
 ## 样式与交互
 
 - Portrait 使用连续白色正文、IBM Plex Sans / Sans SC 阅读字体、IBM Plex Mono 代码字体、Barlow Semi Condensed 展示字体和 Phosphor 图标。字体和许可证随 Go 应用资源打包。 [主题与材料](internal/nativeui/portrait.go) · [字体资源](internal/nativeui/fonts/)
-- 按钮和选中项使用轻凸起，分段控件使用浅凹面。导航胶囊和浮层使用半透明材料；减少透明度或高对比度偏好下使用不透明表面。键盘操作及减少动态效果偏好下，选中状态直接落位。 [Portrait 样式](internal/nativeui/portrait.go)
+- 按钮和选中项使用轻凸起，分段控件使用浅凹面。导航胶囊和浮层使用半透明材料；减少透明度或高对比度偏好下使用不透明表面。键盘操作及减少动态效果偏好下，选中状态直接落位。 [Portrait 控件](internal/portrait/controls.go)
 - 状态同时使用可读文字或控件名称表达。标签报告未保存、冲突、删除、只读和生成状态；可操作的标签、菜单、来源和输入控件提供原生角色与辅助说明。 [标签状态](internal/nativeui/tabs.go) · [可访问控件](internal/nativeui/)
 
 ## 界面改动如何验收

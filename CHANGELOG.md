@@ -9,6 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-21
+
+- 界面迁移到 MyGo 原生 UI：窗口、编辑器、文件栏、Feynman 研究栏和 GenUI 均由 Go 原生绘制，不再使用 WebView、Vite 或 Node 构建。Markdown 字节保真、工作区会话与 Feynman/Git 插件保持原有行为，并以 26 份 Markdown 语料和 Portrait 基准验证。 Mark Go Go now runs on the MyGo native UI; the WebView, Vite and Node build chain is retired.
+- 修复折叠最后一个 Section 时，位于文件末尾的光标会留在隐藏原文中的问题；嵌套标题不再生成独立折叠；表格单元格转义保留原始 Markdown 字节。
+- 修复 Feynman 异步会话切换完成后覆盖连接状态的问题；重置保留未发送草稿并清理分叉与研究树，切换或清空工作区根会重置提问状态。
+- 修复重启后文档滚动位置被重置，以及系统拼音组字时 `Esc`、`Cmd+Enter` 提前触发笔记与提交的问题。
+
 - Feynman 右栏支持可搜索工作流和 Skills、模型与思考级别、文件与图片附件、Markdown 回复、引用、工具过程与会话历史。研究栏可调宽，输入框保持可见。内置终端提供 Feynman 原生交互界面及管理命令。
 
 - 桌面端新增独立启停的 Feynman 与 Git 插件。Feynman 通过 pi-acp 续接工作区研究，将 Markdown 产物带入文档标签。Git 为当前已保存文档记录本地 Checkpoint。两者均可在比较文字后通过 Markdown 编辑器应用修改并撤销。

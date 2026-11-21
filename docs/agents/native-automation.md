@@ -75,6 +75,4 @@ VoiceOver 系统字幕读出了 Preview 编辑区的名称、类型、插入位�
 
 ## 正式候选包
 
-从提交 `9a22b9c` 导出干净源码，在 PATH 中无 Node 或 npm 的情况下构建 0.4.0。正式标签为 `mygo_nodownload,mygo_noinspector`，包内二进制为 Mach-O arm64。应用包通过严格验签，DMG 通过映像校验。只读挂载确认二进制、Info.plist 和 Applications 快捷方式，挂载的应用通过相同验签。包内资源检查覆盖 HTML、CSS、JavaScript 和 WebAssembly。此本地候选包经 ad hoc 签名，使用 `-skip-notarize`。
-
-DMG 大小为 23,952,384 字节，SHA-256 为 `6409de8fc9239440269d1f1df9e6c571f57490268b1109df19ea08a975c7a7a2`。同一提交通过 `scripts/verify.sh`，包括 Go 与 MyGo vet、Go 竞态测试和 Windows amd64 构建。Linux amd64 构建也通过。构建和校验记录保存在采样 Mac 的 `~/Library/Application Support/Mark Go Go Benchmarks/ab-5k.c7XbVH/release-9a22b9c/`。
+发布前从最终提交导出干净源码，在 PATH 中无 Node 或 npm 的情况下运行 `go tool mygo build -skip-notarize`。正式标签为 `mygo_nodownload,mygo_noinspector`，包内二进制应为 Mach-O arm64。依次检查应用包严格验签、DMG 映像校验，只读挂载后核对二进制、Info.plist、Applications 快捷方式和挂载应用的验签，并检查包内没有 HTML、CSS、JavaScript 和 WebAssembly 资源。无 Developer ID 身份时包经 ad hoc 签名且未公证。每个发布的 DMG 大小和 SHA-256 写在对应 GitHub Release；不同提交的校验和不可复用。同一提交还需通过 `scripts/verify.sh` 与 Linux amd64 构建。

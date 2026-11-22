@@ -25,11 +25,11 @@ type SettingsPatch struct {
 
 var SettingsChanged = desktop.Event[Settings]{}
 
-var defaultModels = []string{"gemini-3.8-flash", "gemini-4-argon", "claude-opus-5-5"}
+var defaultModels = []string{"gemini-4-hydrogen", "gemini-4-argon", "claude-opus-5-5"}
 
 func defaultSettings() Settings {
 	return Settings{
-		Model:        "gemini-3.8-flash",
+		Model:        "gemini-4-hydrogen",
 		AgentCommand: "agy",
 		Models:       slices.Clone(defaultModels),
 	}

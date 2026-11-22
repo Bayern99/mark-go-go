@@ -5,6 +5,8 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"github.com/Bayern99/mark-go-go/internal/genuikit"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -26,7 +28,7 @@ type documentView struct {
 	snapshot                                       genui.ViewEvent
 	loaded, settings, requestEdited, commandEdited bool
 	request, command, message, note, noteTarget    string
-	sourceText                                     string
+	sourceText, imagesFor                          string
 	sections                                       map[headingKey]workspace.Section
 	notes                                          []workspace.Note
 	failure                                        *genui.GenerateFailure
@@ -160,6 +162,14 @@ func (p *panel) draw(c *ui.Context) {
 			}
 		default:
 			v.reading.CanSelect = func(n Node) bool { return len(v.matches(n)) > 0 }
+			if v.imagesFor != d.Path || v.reading.LoadImage == nil {
+				directory := ""
+				if d.Path != "" {
+					directory = filepath.Dir(d.Path)
+				}
+				v.imagesFor, v.reading.LoadImage = d.Path, DocumentImages(raw, directory)
+				v.reading.images.Clear()
+			}
 			v.reading.SelectItem = func(n Node, text string) {
 				ss := v.matches(n)
 				if len(ss) == 0 {
@@ -195,6 +205,11 @@ func (v *documentView) index(raw string) {
 		v.sections[headingKey{workspace.NormalizeHeadingText(s.Heading), s.Occurrence}] = s
 	}
 	v.notes = workspace.ExtractNotes(raw)
+	v.imagesFor = ""
+}
+
+func (v *documentView) progressed(step genui.GenerateProgress) {
+	v.message = step.Text
 }
 
 func (v *documentView) source(id string) (Reference, workspace.Section, bool) {
@@ -218,7 +233,7 @@ func (v *documentView) changedIDs() []string {
 		for runtimeID, n := range v.reading.surface.Nodes {
 			for _, source := range n.Sources {
 				r, s, ok := v.source(source)
-				if !ok || (r.Hash != "" && r.Hash != s.Hash) {
+				if !ok || (r.Hash != "" && !s.UnchangedSince(r.Hash)) {
 					id := n.ComponentID
 					if id == "" {
 						id = n.ID
@@ -316,7 +331,7 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 				}
 				if !ok {
 					status, missing = "Source missing", true
-				} else if ref.Hash != "" && ref.Hash != s.Hash && status == "" {
+				} else if ref.Hash != "" && !s.UnchangedSince(ref.Hash) && status == "" {
 					status = "Source changed"
 				}
 			}
@@ -328,7 +343,7 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 			v.noteTarget = n.ID
 			v.note = ""
 		}
-		if sourceButton(c, "Update card", busy || d.Path == "").Clicked() {
+		if sourceButton(c, "Update card", busy || d.Path == "" || n.ComponentID == "" && v.reading.surface.Session != nil).Clicked() {
 			componentID := n.ComponentID
 			if componentID == "" {
 				componentID = n.ID
@@ -480,11 +495,14 @@ func (p *panel) generate(v *documentView, ids []string) {
 	if len(ids) > 0 {
 		mode = "update"
 	}
-	req := genui.GenerateRequest{Text: text, Mode: mode, Format: catalog, Request: v.request, ReplaceIDs: ids, Sections: workspace.GenerationSections(text)}
+	req := genui.GenerateRequest{Text: text, Mode: mode, Format: genuikit.Format(), Language: genui.StatementLanguage, Request: v.request, ReplaceIDs: ids, Sections: workspace.GenerationSections(text)}
+	if surface := v.reading.surface; mode == "update" && surface != nil && surface.Session == nil {
+		req.Format, req.Language = catalog, ""
+	}
 	done := p.host.StartGeneration(ctx, d.ID, req, func(progress genui.GenerateProgress) error {
 		p.win.Native().Update(func() {
 			if !p.closed && p.views[d.ID] == v {
-				v.message = strings.TrimSpace(progress.Phase + " " + progress.Text)
+				v.progressed(progress)
 			}
 		})
 		return ctx.Err()
@@ -494,18 +512,21 @@ func (p *panel) generate(v *documentView, ids []string) {
 		err := <-done
 		p.win.Native().Update(func() {
 			if !p.closed && p.views[d.ID] == v {
-				v.cancel = nil
-				v.reading.Replacing = nil
-				v.message = ""
-				if err != nil {
-					f := genui.FailureOf(err)
-					v.failure = &f
-				} else {
-					v.requestEdited = false
-					v.message = "View generated."
-					v.reading.Halo()
-				}
+				v.finished(err)
 			}
 		})
 	}()
+}
+func (v *documentView) finished(err error) {
+	v.cancel = nil
+	v.reading.Replacing = nil
+	v.message = ""
+	if err != nil {
+		f := genui.FailureOf(err)
+		v.failure = &f
+		return
+	}
+	v.requestEdited = false
+	v.message = "View generated."
+	v.reading.Halo()
 }

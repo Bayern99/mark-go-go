@@ -14,6 +14,8 @@
 | 原地 Markdown 编辑 · In-place Markdown editing | 在特殊块内直接编辑该块的 Markdown。 |
 | GenUI 视图 · GenUI view | 从原文派生的只读阅读视图。 |
 | 组件目录 · Catalog | GenUI 接受的组件及规则。 |
+| 语句 · Statement | 版本 3 视图里的一行 OpenUI Lang：`名称 = 组件(参数)`。 |
+| 原语 · Primitive | 版本 3 组件目录中的布局、文本等基础组件。 |
 | 来源引用 · Source reference | 组件所依据的原文章节。 |
 | 原文已改 · Source changed | 来源章节的内容已有变化。仅修改批注不触发。 |
 | 生成要求 · Generation request | 读者随 GenUI 保存并可沿用的生成偏好。 |

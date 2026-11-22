@@ -282,13 +282,6 @@ func codeSpan(t *testing.T, tt *ui.Tester, text string) (map[[2]int]bool, int) {
 	return cells, x1 - x0 + 1
 }
 
-func abs(v int) int {
-	if v < 0 {
-		return -v
-	}
-	return v
-}
-
 func referenceCode(t *testing.T) map[[2]int]bool {
 	t.Helper()
 	tt := ui.NewTester(func(c *ui.Context) {

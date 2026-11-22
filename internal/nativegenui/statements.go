@@ -43,6 +43,12 @@ func openStatements(data string) (*Surface, error) {
 	return s, nil
 }
 
+func (s *Surface) resume(session *openuilang.Session) {
+	session.Load(s.program)
+	s.Session = session
+	s.refresh()
+}
+
 func (s *Surface) refresh() {
 	program := s.program
 	tree, problems := s.Session.Render()
@@ -363,12 +369,43 @@ func (r *Reading) piece(c *ui.Context, value any, path string, depth int, at pla
 	case []any:
 		ui.Column(c.Key(path)).MinWidth(0).Children(func() { r.stack(c, v, path, depth+1, at, groupGap, false) })
 	case *openuilang.Element:
+		if v.StatementID != "" && slices.Contains(r.Replacing, v.StatementID) {
+			r.updating(c.Key(path), at)
+			return
+		}
 		r.element(c.Key(path), v, path, depth+1, at, way)
 	case string:
 		r.prose(c.Key(path), v, textStyle{size: at.bodySize(), color: c.Theme().Text, line: 1.55})
 	default:
 		r.prose(c.Key(path), fmt.Sprint(v), textStyle{size: at.bodySize(), color: c.Theme().Text, line: 1.55})
 	}
+}
+
+func (r *Reading) updating(c *ui.Context, at place) {
+	const line, bar = 18, 7
+	theme := c.Theme()
+	padding, radius, bars := float32(20), float32(14), 3
+	if at.card || at.compact {
+		padding, radius = 16, 12
+	}
+	frame := ui.Column(c).MinWidth(0).Gap(innerGap).Radius(radius).Border(1, theme.Text.Alpha(0.08)).Clip().Busy(true)
+	was, inset := frame.LayoutBounds(), padding
+	if was.H > 0 {
+		inset = min(padding, max(0, (was.H-line)/2))
+		bars = min(bars, max(0, int((was.H-2*inset-line)/(bar+innerGap))))
+		frame.Height(was.H)
+	}
+	switch {
+	case !at.row:
+	case was.W > 0:
+		frame.Basis(was.W)
+	default:
+		frame.Grow(1).Basis(rowShare)
+	}
+	frame.Padding(inset, padding).Children(func() {
+		ui.Text(c, "Updating card…").Font("IBM Plex Sans").FontSize(13).FixedLineHeight(line).TextColor(theme.TextMuted).Role(ui.RoleStatus)
+		skeleton(c, bars)
+	})
 }
 
 func (at place) bodySize() float32 {

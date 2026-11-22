@@ -97,7 +97,7 @@ func TestGenerateUpdate(t *testing.T) {
 		t.Errorf("a2ui = %s, want the view's message then the agent's", raw)
 	}
 	wantSources := map[string]string{
-		"s1": `{"heading":"Report","occurrence":1,"hash":"fnv1a32:d04be74a"}`,
+		"s1": `{"heading":"Report","occurrence":1,"hash":"fnv1a32:00000000"}`,
 		"s2": `{"heading":"Überblick 概要 🚀","occurrence":2,"hash":"fnv1a32:9da8db51"}`,
 		"s3": `{"heading":"Report","occurrence":1,"hash":"fnv1a32:d04be74a"}`,
 	}
@@ -213,4 +213,27 @@ func TestFullGenerationKeepsTheViewItReplaces(t *testing.T) {
 	}
 	sentinelKept(t, viewPath, now)
 	sentinelKept(t, genui.PrevViewPath(viewPath), []byte(baseViewText))
+}
+
+func TestUpdateKeepsTheModelThatGeneratedTheView(t *testing.T) {
+	viewPath := writeBase(t, "")
+	withArgon := func(mutate func(*GenerationJob)) func(*GenerationJob) {
+		return func(job *GenerationJob) {
+			mutate(job)
+			job.Model = "gemini-4-argon"
+		}
+	}
+	if err, _, _ := driveGeneration(t, fakeSpec{Out: updateOut}, nil, withArgon(updateJob(viewPath, "b"))); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if got := writtenView(t, viewPath).Model; got != "gemini-3.8-flash" {
+		t.Errorf("model after an update by gemini-4-argon = %q, want the view's own gemini-3.8-flash", got)
+	}
+
+	if err, _, _ := driveGeneration(t, fakeSpec{Out: minimalOut}, nil, withArgon(func(job *GenerationJob) { job.ViewPath = viewPath })); err != nil {
+		t.Fatalf("full generation: %v", err)
+	}
+	if got := writtenView(t, viewPath).Model; got != "gemini-4-argon" {
+		t.Errorf("model after a full generation by gemini-4-argon = %q, want gemini-4-argon", got)
+	}
 }

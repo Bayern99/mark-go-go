@@ -642,6 +642,25 @@ func (p *Program) EvaluateExpression(step ActionStep, state StateReader) (value 
 	return orNull(context.evaluate(step.value, false))
 }
 
+func (p *Program) assigned(binding *Binding, value any, state StateReader) (next any) {
+	defer func() {
+		if recover() != nil {
+			next = value
+		}
+	}()
+	if binding.expr == nil {
+		return value
+	}
+	context := p.context(func(name string) (any, bool) {
+		if name == "$value" {
+			return value, true
+		}
+		return state(name)
+	}, nil)
+	context.acting = true
+	return orNull(context.evaluate(binding.expr, false))
+}
+
 func resolveField(object any, path string) any {
 	if path == "" || isNullish(object) {
 		return nil

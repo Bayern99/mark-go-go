@@ -25,6 +25,9 @@ type Surface struct {
 	Session *openuilang.Session
 	tree    *openuilang.Element
 	notices []string
+	program *openuilang.Program
+	created []string
+	owners  map[*openuilang.Element]string
 }
 
 type Node struct {

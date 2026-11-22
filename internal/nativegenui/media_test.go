@@ -6,6 +6,8 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -235,5 +237,252 @@ func TestImageThatCannotBeReadKeepsItsDescription(t *testing.T) {
 	tt.Frame()
 	if !tt.HasText("Site plan") {
 		t.Fatalf("shown: %v", tt.Texts())
+	}
+}
+
+func TestAChartsLegendShowsTheSeriesLabelsItIsGivenAndTheKeysOtherwise(t *testing.T) {
+	rows := `[{channel: "搜索广告", budget: 420000, actual: 398200, forecast: 400000}, {channel: "社交媒体", budget: 310000, actual: 322400, forecast: 300000}]`
+	saved := `Chart("bar", ` + rows + `, "channel", ["budget", "actual"], "number", false, 220`
+	for name, chart := range map[string]struct {
+		statement   string
+		shown, kept []string
+	}{
+		"a saved chart without labels": {saved + `)`, []string{"budget", "actual"}, nil},
+		"every series labelled":        {saved + `, {budget: "预算", actual: "实际"})`, []string{"预算", "实际"}, []string{"budget", "actual"}},
+		"one series labelled":          {saved + `, {actual: "实际"})`, []string{"budget", "实际"}, []string{"actual"}},
+		"labels for derived series":    {`Chart("line", ` + rows + `, "channel", null, null, null, null, {forecast: "预测"})`, []string{"budget", "actual", "预测"}, []string{"forecast"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tt, text := shown(t, statementView(t, `root = Col([`+chart.statement+`])`), 640, nil)
+			if strings.Contains(text, "not a component") || strings.Contains(text, "never defined") {
+				t.Fatalf("shown:\n%s", text)
+			}
+			texts := tt.Texts()
+			for _, want := range chart.shown {
+				if !slices.Contains(texts, want) {
+					t.Errorf("the legend lacks %q: %v", want, texts)
+				}
+			}
+			for _, key := range chart.kept {
+				if slices.Contains(texts, key) {
+					t.Errorf("the legend still shows the key %q: %v", key, texts)
+				}
+			}
+			described := ""
+			for _, el := range tt.AccessAll() {
+				if el.Role == ui.RoleImage {
+					described = el.Description
+				}
+			}
+			for _, want := range chart.shown {
+				if !strings.Contains(described, want+" ") {
+					t.Errorf("the description lacks %q: %s", want, described)
+				}
+			}
+		})
+	}
+}
+
+func TestASavedChartKeepsItsHeightWhenLabelsFollowIt(t *testing.T) {
+	rows := `[{k: "A", one: 60, two: 40}, {k: "B", one: 30, two: 50}]`
+	plot := func(statement string) float32 {
+		tt, _ := shown(t, statementView(t, `root = Col([`+statement+`])`), 640, nil)
+		for _, el := range tt.AccessAll() {
+			if el.Role == ui.RoleImage {
+				return el.Bounds.H
+			}
+		}
+		t.Fatalf("no chart is shown for %s", statement)
+		return 0
+	}
+	short := plot(`Chart("bar", ` + rows + `, "k", ["one", "two"], "number", false, 120)`)
+	if tall := plot(`Chart("bar", ` + rows + `, "k", ["one", "two"], "number", false, 320)`); tall-short != 200 {
+		t.Fatalf("heights 120 and 320 draw charts %v and %v tall", short, tall)
+	}
+	if labelled := plot(`Chart("bar", ` + rows + `, "k", ["one", "two"], "number", false, 120, {one: "First", two: "Second"})`); labelled != short {
+		t.Errorf("the labelled chart is %v tall, the saved one %v", labelled, short)
+	}
+}
+
+func TestEveryTickOfAnAxisIsAbbreviatedTheSameWay(t *testing.T) {
+	tick := regexp.MustCompile(`^-?[\d,.]+([kMB]?)$`)
+	for name, chart := range map[string]struct {
+		statement string
+		unit      string
+		shown     []string
+	}{
+		"thousands either side of ten thousand": {`Chart("bar", [{k: "A", spend: 4200}, {k: "B", spend: 12400}], "k", ["spend"])`, "k", []string{"2k", "8k", "10k", "14k"}},
+		"a million above hundreds of thousands": {`Chart("line", [{k: "A", spend: 400000}, {k: "B", spend: 1150000}], "k", ["spend"])`, "M", []string{"0.2M", "0.8M", "1M", "1.2M"}},
+		"small values stay whole":               {`Chart("bar", [{k: "A", spend: 420}, {k: "B", spend: 7200}], "k", ["spend"])`, "", []string{"2,000", "8,000"}},
+		"both axes of a scatter":                {`Chart("scatter", [{x: 2500, spend: 4200}, {x: 12000, spend: 12400}], "x", ["spend"])`, "k", []string{"2k", "8k", "10k", "14k"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tt, _ := shown(t, statementView(t, `root = Col([`+chart.statement+`])`), 640, nil)
+			texts := tt.Texts()
+			for _, text := range texts {
+				if found := tick.FindStringSubmatch(text); found != nil && text != "0" && found[1] != chart.unit {
+					t.Errorf("the tick %q is not in %q like the others: %v", text, chart.unit, texts)
+				}
+			}
+			for _, want := range chart.shown {
+				if !slices.Contains(texts, want) {
+					t.Errorf("no tick reads %q: %v", want, texts)
+				}
+			}
+		})
+	}
+}
+
+var comparisonColumns = []string{"Option", "p95 latency at 200 QPS", "Recall@10", "Index build time (40M)", "Memory at rest", "Monthly cost (3 nodes)", "New services to operate", "Filtering with metadata"}
+
+const comparisonTable = `Card([Title("Summary table"), Table(["Option", "p95 latency at 200 QPS", "Recall@10", "Index build time (40M)", "Memory at rest", "Monthly cost (3 nodes)", "New services to operate", "Filtering with metadata"], [["pgvector 0.8", "71 ms", "0.94", "6 h 40 min", "148 GB", "$2,100", "0", "SQL WHERE"], ["Qdrant 1.12", "23 ms", "0.97", "2 h 10 min", "96 GB", "$2,850", "1", "Payload filters"], ["Milvus 2.5", "31 ms", "0.96", "1 h 35 min", "121 GB", "$4,300", "4", "Scalar filters"]])])`
+
+func cellsOf(tt *ui.Tester, role ui.Role) []ui.AccessInfo {
+	var cells []ui.AccessInfo
+	for _, el := range tt.AccessAll() {
+		if el.Role == role {
+			cells = append(cells, el)
+		}
+	}
+	return cells
+}
+
+func tableScroller(t *testing.T, tt *ui.Tester) ui.Rect {
+	t.Helper()
+	var scroller ui.Rect
+	for _, el := range tt.AccessAll() {
+		switch el.Role {
+		case ui.RoleScroll:
+			scroller = el.Bounds
+		case ui.RoleTable:
+			return scroller
+		}
+	}
+	t.Fatal("no table is shown")
+	return scroller
+}
+
+func TestEightColumnTableKeepsItsHeadersApartAtReadingWidth(t *testing.T) {
+	if err := nativeui.RegisterFonts(); err != nil {
+		t.Fatal(err)
+	}
+	tt, _ := shown(t, statementView(t, `root = Col([`+comparisonTable+`])`), 900, nil)
+	tt.Frame()
+	headers := cellsOf(tt, ui.RoleColumnHeader)
+	if len(headers) != len(comparisonColumns) {
+		t.Fatalf("%d headers are shown", len(headers))
+	}
+	for i := 1; i < len(headers); i++ {
+		if before, after := headers[i-1].Bounds, headers[i].Bounds; before.X+before.W > after.X+0.5 {
+			t.Errorf("%q ends at %v, past the start of %q at %v", headers[i-1].Name, before.X+before.W, headers[i].Name, after.X)
+		}
+	}
+	for i, cell := range cellsOf(tt, ui.RoleCell) {
+		if header := headers[i%len(headers)].Bounds; abs(int(cell.Bounds.X-header.X)) > 0 || abs(int(cell.Bounds.W-header.W)) > 0 {
+			t.Errorf("cell %d spans %v to %v under %q from %v to %v", i, cell.Bounds.X, cell.Bounds.X+cell.Bounds.W, headers[i%len(headers)].Name, header.X, header.X+header.W)
+		}
+	}
+	read := map[string]bool{}
+	inside := func() {
+		t.Helper()
+		for _, header := range cellsOf(tt, ui.RoleColumnHeader) {
+			text, _ := tt.Find(header.Name)
+			if text.W == 0 {
+				continue
+			}
+			read[header.Name] = true
+			if cell := header.Bounds; text.X < cell.X || text.X+text.W > cell.X+cell.W {
+				t.Errorf("%q spans %v to %v, outside its column from %v to %v", header.Name, text.X, text.X+text.W, cell.X, cell.X+cell.W)
+			}
+		}
+	}
+	inside()
+	if scroller := tableScroller(t, tt); len(read) < len(comparisonColumns) {
+		tt.Scroll(scroller.X+scroller.W/2, scroller.Y+scroller.H/2, 2000, 0)
+		tt.Frame()
+		inside()
+	}
+	for _, name := range comparisonColumns {
+		if !read[name] {
+			t.Errorf("the header %q cannot be scrolled into view", name)
+		}
+	}
+}
+
+const budgetTable = `Card([Title("预算与实际"), Table(["渠道", "预算（元）", "实际（元）", "差额（元）"], [["搜索广告", "420,000", "398,200", "-21,800"], ["社交媒体", "310,000", "322,400", Badge("+12,400", "danger")], ["线下活动", "260,000", "214,900", Badge("-45,100", "success")], ["内容制作", "150,000", "118,000", "-32,000"], ["工具订阅", "60,000", "33,000", "-900"]])])`
+
+func TestTableCellsBreakOnlyBetweenWords(t *testing.T) {
+	if err := nativeui.RegisterFonts(); err != nil {
+		t.Fatal(err)
+	}
+	const oneLine, twoLines = 30, 50
+	for width := 320; width <= 920; width += 40 {
+		for _, table := range []struct {
+			statement string
+			tallest   map[string]float32
+		}{
+			{comparisonTable, map[string]float32{"Option": oneLine, "pgvector 0.8": twoLines, "Qdrant 1.12": twoLines, "Milvus 2.5": twoLines}},
+			{`Table(["Guide", "Owner", "Reviewer", "Status", "Notes"], [["See Internationalization", "Ada Lovelace", "Lin Wei", "Ready for review", "Checked against the March run"]])`, map[string]float32{"See Internationalization": twoLines}},
+			{budgetTable, map[string]float32{"渠道": oneLine, "搜索广告": oneLine, "社交媒体": oneLine, "线下活动": oneLine, "内容制作": oneLine, "工具订阅": oneLine}},
+		} {
+			tt, _ := shown(t, statementView(t, `root = Col([`+table.statement+`])`), width, nil)
+			tt.Frame()
+			for text, tallest := range table.tallest {
+				if box, ok := tt.Find(text); !ok || box.H == 0 || box.H > tallest {
+					t.Errorf("width %d: %q is %v high, more lines than it has words", width, text, box.H)
+				}
+			}
+		}
+	}
+}
+
+func TestNarrowTableScrollsSidewaysWithItsBarBelowTheLastRow(t *testing.T) {
+	if err := nativeui.RegisterFonts(); err != nil {
+		t.Fatal(err)
+	}
+	tt, _ := shown(t, statementView(t, `root = Col([`+budgetTable+`])`), 340, nil)
+	tt.Frame()
+	scroller := tableScroller(t, tt)
+	cells := cellsOf(tt, ui.RoleCell)
+	last := cells[len(cells)-1].Bounds
+	if last.X+last.W <= scroller.X+scroller.W {
+		t.Fatalf("the table ends at %v inside %v and has nothing to scroll", last.X+last.W, scroller)
+	}
+	bar := ui.ScrollbarStyle{}.Resolve(ui.LightTheme()).TrackWidth
+	if bar <= 0 || last.Y+last.H > scroller.Y+scroller.H-bar {
+		t.Errorf("the last row ends at %v, under the %v point scroll bar at the bottom of %v", last.Y+last.H, bar, scroller)
+	}
+	if hidden, _ := tt.Find("-900"); hidden.W != 0 {
+		t.Fatalf("the last column shows at %v before scrolling", hidden)
+	}
+	tt.Scroll(scroller.X+scroller.W/2, scroller.Y+scroller.H/2, 2000, 0)
+	tt.Frame()
+	if reached, _ := tt.Find("-900"); reached.W == 0 || reached.X < scroller.X || reached.X+reached.W > scroller.X+scroller.W {
+		t.Errorf("the last column is at %v after scrolling to the end of %v", reached, scroller)
+	}
+}
+
+func TestNumberColumnWithBadgeCellsStaysRightAligned(t *testing.T) {
+	if err := nativeui.RegisterFonts(); err != nil {
+		t.Fatal(err)
+	}
+	for _, width := range []int{900, 340} {
+		tt, _ := shown(t, statementView(t, `root = Col([`+budgetTable+`])`), width, nil)
+		tt.Frame()
+		scroller := tableScroller(t, tt)
+		tt.Scroll(scroller.X+scroller.W/2, scroller.Y+scroller.H/2, 2000, 0)
+		tt.Frame()
+		long, _ := tt.Find("-21,800")
+		short, _ := tt.Find("-900")
+		edge := long.X + long.W
+		if long.W == 0 || short.W == 0 || short.W >= long.W || abs(int(short.X+short.W)-int(edge)) > 1 {
+			t.Errorf("width %d: the plain cells of the column end at %v and %v", width, edge, short.X+short.W)
+		}
+		for _, text := range []string{"+12,400", "-45,100"} {
+			badge, _ := tt.Find(text)
+			if inset := edge - (badge.X + badge.W); badge.W == 0 || inset < 0 || inset > 12 {
+				t.Errorf("width %d: the badge %q ends at %v in a column whose numbers end at %v", width, text, badge.X+badge.W, edge)
+			}
+		}
 	}
 }

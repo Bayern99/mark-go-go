@@ -652,6 +652,35 @@ func driveGeneration(t *testing.T, spec fakeSpec, progress func(genui.GeneratePr
 	return err, job, readFakeLog(t, logPath)
 }
 
+type savedView struct {
+	Model  string
+	Hashes map[string]string
+	A2UI   []json.RawMessage
+}
+
+func writtenView(t *testing.T, viewPath string) savedView {
+	t.Helper()
+	raw, err := os.ReadFile(viewPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var file struct {
+		Model   string `json:"model"`
+		Sources map[string]struct {
+			Hash string `json:"hash"`
+		} `json:"sources"`
+		A2UI []json.RawMessage `json:"a2ui"`
+	}
+	if err := json.Unmarshal(raw, &file); err != nil {
+		t.Fatalf("parse view: %v", err)
+	}
+	view := savedView{Model: file.Model, Hashes: map[string]string{}, A2UI: file.A2UI}
+	for id, source := range file.Sources {
+		view.Hashes[id] = source.Hash
+	}
+	return view
+}
+
 func readFakeLog(t *testing.T, path string) []map[string]any {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -940,19 +969,7 @@ func TestBlankAtTheEndOfTheDocumentLeavesTheLastSectionsSavedHashAlone(t *testin
 		if err != nil {
 			t.Fatalf("ending %q: RunGeneration: %v", blank, err)
 		}
-		raw, err := os.ReadFile(job.ViewPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var view struct {
-			Sources map[string]struct {
-				Hash string `json:"hash"`
-			} `json:"sources"`
-		}
-		if err := json.Unmarshal(raw, &view); err != nil {
-			t.Fatalf("parse view: %v", err)
-		}
-		if got := view.Sources["s1"].Hash; got != last.Hash {
+		if got := writtenView(t, job.ViewPath).Hashes["s1"]; got != last.Hash {
 			t.Errorf("ending %q: %s hash = %q, want the saved %s", blank, last.Heading, got, last.Hash)
 		}
 	}

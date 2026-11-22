@@ -105,34 +105,35 @@ func TestGoingBackToTheEarlierViewKeepsWhatTheReaderChangedInWhatItStillDeclares
 	}
 }
 
-func TestAViewGeneratedAgainInFullStartsFromItsOwnDefaults(t *testing.T) {
+func TestAWholeNewViewStartsFromItsOwnDefaultsWhoeverWroteIt(t *testing.T) {
 	again := []string{`$months = 4`, `root = Col([Slider($months, 0, 10, 1, "Months", "mo"), Text("Total " + @Format($months * 150, "currency", 0)), Checkbox(false, "Reviewed")])`}
-	for name, arrive := range map[string]func(*nativegenui.Reading, *nativegenui.Surface){
-		"the view arrives after the generation ends":  func(r *nativegenui.Reading, s *nativegenui.Surface) { r.Restart(); r.Load(s) },
-		"the view arrives before the generation ends": func(r *nativegenui.Reading, s *nativegenui.Surface) { r.Load(s); r.Restart() },
-	} {
-		t.Run(name, func(t *testing.T) {
-			var reader nativegenui.Reading
-			reader.Load(opened(t, viewFile(t, budgetPlan)))
-			tt := ui.NewTester(reader.View, 600, 600)
-			drag(t, tt, "Months", 0.2, 0.8)
-			if err := tt.Click("Reviewed"); err != nil {
-				t.Fatal(err)
-			}
-			if got := texts(tt); !strings.Contains(got, "Total $1,200") {
-				t.Fatalf("dragging to 8 months did not update the total:\n%s", got)
-			}
-
-			arrive(&reader, opened(t, viewFile(t, again)))
-			got := texts(tt)
-			if slider, _ := tt.Access("Months"); slider.Now != 4 || !strings.Contains(got, "Total $600") {
-				t.Errorf("the new view kept the months chosen in the old one: the slider reads %v in\n%s", slider.Now, got)
-			}
-			if box, _ := tt.Access("Reviewed"); box.Checked {
-				t.Error("the new view kept the box ticked in the old one")
-			}
-		})
+	var reader nativegenui.Reading
+	reader.Load(opened(t, viewFile(t, budgetPlan)))
+	tt := ui.NewTester(reader.View, 600, 600)
+	chosen := func(view string, months float64, total string, reviewed bool) {
+		t.Helper()
+		got := texts(tt)
+		if slider, _ := tt.Access("Months"); slider.Now != months || !strings.Contains(got, total) {
+			t.Errorf("%s: the slider reads %v, want %v and %s in\n%s", view, slider.Now, months, total, got)
+		}
+		if box, _ := tt.Access("Reviewed"); box.Checked != reviewed {
+			t.Errorf("%s: the box is ticked: %t, want %t", view, box.Checked, reviewed)
+		}
 	}
+	drag(t, tt, "Months", 0.2, 0.8)
+	if err := tt.Click("Reviewed"); err != nil {
+		t.Fatal(err)
+	}
+	chosen("the first view after the reader's changes", 8, "Total $1,200", true)
+
+	reader.Load(opened(t, viewFile(t, again)))
+	chosen("a whole new view", 4, "Total $600", false)
+
+	drag(t, tt, "Months", 0.4, 0.6)
+	chosen("the new view after the reader's changes", 6, "Total $900", false)
+
+	reader.Load(opened(t, viewFile(t, budgetPlan)))
+	chosen("the first view put back", 2, "Total $300", false)
 }
 
 func moved(from, to ui.Rect) bool {

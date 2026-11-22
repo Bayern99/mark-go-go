@@ -1,11 +1,11 @@
 package acp
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -811,21 +811,9 @@ func (r *genRun) handleToolCall(id, kind, title, name string, locations []Locati
 	for i, loc := range effectiveLocations {
 		paths[i] = loc.Path
 	}
-	label := title
-	if label == "" {
-		label = name
-	}
-	if label == "" {
-		label = id
-	}
 	if !notificationToolAllowed(r.dir, effectiveKind, paths) {
-		if label == "" {
-			label = effectiveKind
-		}
-		if label == "" {
-			label = "a tool call"
-		}
-		r.abort(fmt.Sprintf("The agent tried to use %q outside its folder, so the run was stopped and the view was not changed.", label))
+		stopped := cmp.Or(title, name, id, effectiveKind, "a tool call")
+		r.abort(fmt.Sprintf("The agent tried to use %q outside its folder, so the run was stopped and the view was not changed.", stopped))
 		return
 	}
 	switch effectiveKind {
@@ -1027,15 +1015,17 @@ func (r *genRun) writeView(ctx context.Context, sources map[string]genui.AgentSo
 	if ctx.Err() != nil {
 		return genui.ErrCancelled
 	}
-	validate := r.job.Validate
-	if validate == nil {
-		validate = genui.ValidateCandidate
-	}
 	if r.trace != nil {
 		r.trace.artifact("candidate", "", string(content))
 		r.trace.emit("validation.start", nil)
 	}
-	validationErr := validate(ctx, content)
+	var report genui.CandidateReport
+	var validationErr error
+	if r.job.Validate == nil {
+		report, validationErr = genui.CheckCandidate(ctx, content)
+	} else {
+		validationErr = r.job.Validate(ctx, content)
+	}
 	if ctx.Err() != nil {
 		return genui.ErrCancelled
 	}
@@ -1050,7 +1040,11 @@ func (r *genRun) writeView(ctx context.Context, sources map[string]genui.AgentSo
 		return r.outputError(validationErr.Error())
 	}
 	if r.trace != nil {
-		r.trace.emit("validation.result", map[string]any{"ok": true})
+		accepted := map[string]any{"ok": true}
+		if len(report.Degraded) > 0 {
+			accepted["degraded"] = report.Degraded
+		}
+		r.trace.emit("validation.result", accepted)
 	}
 	if ctx.Err() != nil {
 		return genui.ErrCancelled
@@ -1106,13 +1100,7 @@ func hashSection(text string, sec genui.SectionRef) (string, bool) {
 		return "", false
 	}
 	hashed.WriteString(part)
-	content := hashed.String()
-	if sec.End == utf16Len(text) {
-		content = genui.SectionTextAtDocumentEnd(content, text)
-	}
-	h := fnv.New32a()
-	h.Write([]byte(content))
-	return fmt.Sprintf("fnv1a32:%08x", h.Sum32()), true
+	return genui.SectionHash(hashed.String(), text, sec.End == utf16Len(text)), true
 }
 
 func utf16Len(s string) int {

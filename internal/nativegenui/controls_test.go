@@ -238,6 +238,42 @@ func TestClickingASlidersTrackSetsTheValueThere(t *testing.T) {
 	}
 }
 
+func TestPressingSpaceOrEnterOnASliderLeavesItsValueWhereItWas(t *testing.T) {
+	tt, before := shown(t, statementView(t, `$months = 8`, `root = Col([`+termSlider+`, Text("Pay for " + $months + " months")])`), 760, nil)
+	if !strings.Contains(before, "Pay for 8 months") {
+		t.Fatalf("the starting text is missing in\n%s", before)
+	}
+	slider, _ := tt.Access("Term")
+	track := slider.Bounds
+	tt.Key(0, ui.KeyTab)
+	if !tt.Focused("Term") {
+		t.Fatal("Tab did not focus the slider")
+	}
+	tt.Move(track.X+track.W*0.9, track.Y+track.H/2)
+	for name, key := range map[string]ui.Key{"Space": ui.KeySpace, "Enter": ui.KeyEnter} {
+		tt.Key(0, key)
+		if got := texts(tt); !strings.Contains(got, "Pay for 8 months") {
+			t.Errorf("%s with the pointer resting over the track moved the value:\n%s", name, got)
+		}
+	}
+	tt.Key(0, ui.KeyRight)
+	if got := texts(tt); !strings.Contains(got, "Pay for 9 months") {
+		t.Errorf("the right arrow did not move the focused slider one step:\n%s", got)
+	}
+	last, ok := tt.Find("24 mo")
+	if !ok {
+		t.Fatal("the last mark is not shown")
+	}
+	tt.ClickAt(last.X+last.W/2, track.Y+track.H/2)
+	if got := texts(tt); !strings.Contains(got, "Pay for 24 months") {
+		t.Errorf("a click on the track of the focused slider did not set the value there:\n%s", got)
+	}
+	tt.Key(0, ui.KeySpace)
+	if got := texts(tt); !strings.Contains(got, "Pay for 24 months") {
+		t.Errorf("Space after a click moved the value:\n%s", got)
+	}
+}
+
 func shade(t *testing.T, img *image.RGBA, x, y float32) int {
 	t.Helper()
 	at := image.Pt(int(x), int(y))

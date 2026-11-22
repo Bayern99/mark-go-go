@@ -232,7 +232,7 @@ func (v *documentView) changedIDs() []string {
 		for runtimeID, n := range v.reading.surface.Nodes {
 			for _, source := range n.Sources {
 				r, s, ok := v.source(source)
-				if !ok || (r.Hash != "" && r.Hash != s.Hash) {
+				if !ok || (r.Hash != "" && !s.UnchangedSince(r.Hash)) {
 					id := n.ComponentID
 					if id == "" {
 						id = n.ID
@@ -319,7 +319,7 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 			}
 			if !ok {
 				ui.Text(c, "Source missing")
-			} else if ref.Hash != "" && ref.Hash != s.Hash {
+			} else if ref.Hash != "" && !s.UnchangedSince(ref.Hash) {
 				ui.Text(c, "Source changed")
 			}
 		}
@@ -448,7 +448,4 @@ func (v *documentView) finished(err error) {
 		return
 	}
 	v.requestEdited = false
-	if len(v.lastIDs) == 0 {
-		v.reading.Restart()
-	}
 }

@@ -60,25 +60,6 @@ var (
 	)
 )
 
-func writtenHashes(t *testing.T, viewPath string) map[string]string {
-	t.Helper()
-	raw, err := os.ReadFile(viewPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var view struct {
-		Sources map[string]struct{ Hash string } `json:"sources"`
-	}
-	if err := json.Unmarshal(raw, &view); err != nil {
-		t.Fatalf("parse view: %v", err)
-	}
-	hashes := map[string]string{}
-	for id, source := range view.Sources {
-		hashes[id] = source.Hash
-	}
-	return hashes
-}
-
 func assertHashes(t *testing.T, got, want map[string]string) {
 	t.Helper()
 	if len(got) != len(want) {
@@ -224,7 +205,7 @@ func TestAnUpdateRehashesOnlyTheSourcesWhoseCardsItReplaced(t *testing.T) {
 			if err, _, _ := driveGeneration(t, fakeSpec{Out: test.out}, nil, updateJob(viewPath, test.replace...)); err != nil {
 				t.Fatalf("RunGeneration: %v", err)
 			}
-			assertHashes(t, writtenHashes(t, viewPath), test.want)
+			assertHashes(t, writtenView(t, viewPath).Hashes, test.want)
 		})
 	}
 }
@@ -246,7 +227,7 @@ func TestAFullGenerationRehashesEverySource(t *testing.T) {
 			if err, _, _ := driveGeneration(t, fakeSpec{Out: test.out}, nil, func(job *GenerationJob) { job.ViewPath = viewPath }); err != nil {
 				t.Fatalf("RunGeneration: %v", err)
 			}
-			assertHashes(t, writtenHashes(t, viewPath), map[string]string{"report": currentHash["Report"], "detail": currentHash["Detail"], "appendix": currentHash["Appendix"]})
+			assertHashes(t, writtenView(t, viewPath).Hashes, map[string]string{"report": currentHash["Report"], "detail": currentHash["Detail"], "appendix": currentHash["Appendix"]})
 		})
 	}
 }
@@ -269,11 +250,11 @@ func TestALaterUpdateCountsWhatEarlierUpdatesWrote(t *testing.T) {
 			if err, _, _ := driveGeneration(t, fakeSpec{Out: test.unsourced}, nil, updateJob(viewPath, "shared")); err != nil {
 				t.Fatalf("first update: %v", err)
 			}
-			assertHashes(t, writtenHashes(t, viewPath), map[string]string{"report": staleHash, "detail": staleHash, "appendix": staleHash})
+			assertHashes(t, writtenView(t, viewPath).Hashes, map[string]string{"report": staleHash, "detail": staleHash, "appendix": staleHash})
 			if err, _, _ := driveGeneration(t, fakeSpec{Out: test.renewed}, nil, updateJob(viewPath, "alsoShared")); err != nil {
 				t.Fatalf("second update: %v", err)
 			}
-			assertHashes(t, writtenHashes(t, viewPath), map[string]string{"report": staleHash, "detail": staleHash, "appendix": currentHash["Appendix"]})
+			assertHashes(t, writtenView(t, viewPath).Hashes, map[string]string{"report": staleHash, "detail": staleHash, "appendix": currentHash["Appendix"]})
 		})
 	}
 }

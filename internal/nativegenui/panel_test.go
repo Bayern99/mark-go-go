@@ -169,7 +169,7 @@ func TestChangedIDsUsesStoredIDsForRepeatedInstances(t *testing.T) {
 	}
 }
 
-func TestOnlyAFullGenerationThatSucceedsStartsTheReaderOver(t *testing.T) {
+func TestTheReaderStartsOverOnlyWhenAWholeNewViewArrives(t *testing.T) {
 	file := func(messages string) genui.ViewEvent {
 		return genui.ViewEvent{ID: "doc", Exists: true, Text: `{"version":3,"language":"openui-lang/1.0","sources":{},"a2ui":[` + messages + `]}`}
 	}
@@ -242,6 +242,25 @@ func TestOnlyAFullGenerationThatSucceedsStartsTheReaderOver(t *testing.T) {
 	if v.cancel != nil || v.reading.Replacing != nil {
 		t.Error("the finished generation still counts as running")
 	}
+
+	choose(0.8)
+	if got := total(); got != "Total 1200" {
+		t.Fatalf("dragging to 8 months in the new view shows %q", got)
+	}
+	p.updated(file(created))
+	if got := total(); got != "Total 300" {
+		t.Errorf("after the full generation is undone the page shows %q, want the earlier view's Total 300", got)
+	}
+
+	choose(0.8)
+	p.updated(file(created + update))
+	if got := total(); got != "Total 1200" || !app.HasText("New risks") {
+		t.Errorf("after an update written outside the panel the page shows %q, want the reader's Total 1200 beside the new card", got)
+	}
+	p.updated(file(again))
+	if got := total(); got != "Total 600" {
+		t.Errorf("after a whole new view written outside the panel the page shows %q, want the new view's Total 600", got)
+	}
 }
 
 func TestBlankAtTheEndOfTheDocumentDoesNotMarkItsLastSectionChanged(t *testing.T) {
@@ -274,6 +293,43 @@ func TestBlankAtTheEndOfTheDocumentDoesNotMarkItsLastSectionChanged(t *testing.T
 	}
 	if !markedChanged("# Overview\n\nAnother overview.\n") {
 		t.Error("a changed paragraph is not marked as changed")
+	}
+}
+
+func TestAViewSavedBeforeTheEndOfDocumentRuleIsNotMarkedChangedUntilItsSectionChanges(t *testing.T) {
+	for document, savedHash := range map[string]string{
+		"# Overview\n\nAn overview.":                     "fnv1a32:afd7b68d",
+		"# Overview\n\nAn overview.\n\n \n":              "fnv1a32:8dc4af77",
+		"# Overview\r\n\r\nAn overview.":                 "fnv1a32:11644d29",
+		"# Intro\n\nKept.\n\n# Overview\n\nAn overview.": "fnv1a32:afd7b68d",
+	} {
+		v := &documentView{reading: Reading{surface: &Surface{
+			Sources: map[string]Reference{"overview": {Heading: "Overview", Hash: savedHash}},
+			Nodes:   map[string]Node{"card": {ID: "card", ComponentID: "card", Sources: []string{"overview"}}},
+		}}}
+		p := &panel{win: &nativeui.Window{}}
+		app := ui.NewTester(func(c *ui.Context) {
+			p.drawSources(c, v, workspace.DocumentInfo{Path: "doc.md"}, v.reading.surface.Nodes["card"], false)
+		}, 620, 420)
+		markedChanged := func(document string) bool {
+			v.index(document)
+			app.Frame()
+			var names []string
+			for _, el := range app.AccessAll() {
+				names = append(names, el.Name)
+			}
+			marked := strings.Contains(strings.Join(names, "\n"), "Source changed")
+			if listed := slices.Contains(v.changedIDs(), "card"); listed != marked {
+				t.Errorf("%q: the source is marked changed: %t, its statement is offered for update: %t", document, marked, listed)
+			}
+			return marked
+		}
+		if markedChanged(document) {
+			t.Errorf("%q is marked as changed since the view was made", document)
+		}
+		if !markedChanged(strings.Replace(document, "An overview.", "Another overview.", 1)) {
+			t.Errorf("%q with a changed paragraph is not marked as changed", document)
+		}
 	}
 }
 

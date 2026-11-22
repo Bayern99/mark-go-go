@@ -39,9 +39,20 @@ func TestTheFormatsExampleIsAValidView(t *testing.T) {
 	}
 }
 
-func TestTheLayoutRulesCapTheMinimumWidthOfThreeCardsSideBySide(t *testing.T) {
-	if rules := layoutRules(t); !strings.Contains(rules, "Three cards sit side by side only when the Grid's minChildWidth is 240 or less") {
-		t.Errorf("the layout rules do not cap the minimum width of three cards side by side:\n%s", rules)
+func TestTheLayoutRulesGiveOneMinimumWidthRuleForCardsSideBySide(t *testing.T) {
+	var widthRules []string
+	for _, rule := range strings.Split(layoutRules(t), "\n- ") {
+		if strings.Contains(rule, "minChildWidth") {
+			widthRules = append(widthRules, rule)
+		}
+	}
+	if len(widthRules) != 1 {
+		t.Fatalf("%d layout rules set a Grid's minChildWidth, want one:\n%s", len(widthRules), strings.Join(widthRules, "\n"))
+	}
+	for _, want := range []string{"two cards side by side take a minChildWidth of 240 or more", "three side by side take columns 3 and a minChildWidth of 220 to 240", "the page fits three columns only up to 240"} {
+		if !strings.Contains(widthRules[0], want) {
+			t.Errorf("the rule for cards side by side lacks %q:\n%s", want, widthRules[0])
+		}
 	}
 }
 
@@ -149,18 +160,18 @@ func TestTheLayoutRulesTakeAControlsRangeAndDefaultFromTheDocument(t *testing.T)
 	}
 }
 
-func slidersIn(value any, into []*openuilang.Element) []*openuilang.Element {
+func componentsIn(value any, component string, into []*openuilang.Element) []*openuilang.Element {
 	switch value := value.(type) {
 	case *openuilang.Element:
-		if value.Type == "Slider" {
+		if value.Type == component {
 			into = append(into, value)
 		}
 		for _, key := range value.Props.Keys {
-			into = slidersIn(value.Props.Values[key], into)
+			into = componentsIn(value.Props.Values[key], component, into)
 		}
 	case []any:
 		for _, item := range value {
-			into = slidersIn(item, into)
+			into = componentsIn(item, component, into)
 		}
 	}
 	return into
@@ -172,7 +183,7 @@ func TestTheFormatsExampleTakesItsControlsRangeAndDefaultFromTheDocumentItDescri
 	for _, number := range figuresIn(description) {
 		stated[number] = true
 	}
-	sliders := slidersIn(root, nil)
+	sliders := componentsIn(root, "Slider", nil)
 	if len(sliders) == 0 {
 		t.Fatal("the example has no slider")
 	}
@@ -280,6 +291,32 @@ func TestTheFormatShowsHowToNameAChartsSeries(t *testing.T) {
 	root, problems := session.Render()
 	if root == nil || len(parsed.Errors)+len(problems)+len(parsed.Unresolved) > 0 {
 		t.Errorf("%s: root %v, errors %v %v, unresolved %v", usage[start:end+2], root != nil, parsed.Errors, problems, parsed.Unresolved)
+	}
+}
+
+func TestTheFormatsExampleNamesEverySeriesOfAChartThatShowsALegend(t *testing.T) {
+	_, _, root := exampleOfTheFormat(t)
+	legends := 0
+	for _, chart := range componentsIn(root, "Chart", nil) {
+		series, _ := chart.Props.Values["series"].([]any)
+		if len(series) < 2 {
+			continue
+		}
+		legends++
+		names, _ := chart.Props.Values["seriesLabels"].(*openuilang.Object)
+		for _, key := range series {
+			key, _ := key.(string)
+			if names == nil {
+				t.Errorf("the example's chart of %v has no seriesLabels", series)
+				break
+			}
+			if name, _ := names.Values[key].(string); name == "" || name == key {
+				t.Errorf("the example's chart names its series %q %q", key, name)
+			}
+		}
+	}
+	if legends == 0 {
+		t.Fatal("the example has no chart with several series")
 	}
 }
 

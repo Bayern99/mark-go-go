@@ -73,7 +73,7 @@ func (r *Reading) media(c *ui.Context, e *openuilang.Element, p props, path stri
 			for i, item := range flatten(p.value("children"), nil) {
 				at := path + "/" + strconv.Itoa(i)
 				ui.Column(c.Key(at + "#slide")).Width(width).Shrink(0).Children(func() {
-					r.piece(c, item, at, depth, place{compact: true, nested: true}, slot{})
+					r.piece(c, item, at, depth, place{compact: true, nested: true}, treatment{})
 				})
 			}
 		})
@@ -215,10 +215,19 @@ func grouped(value float64) string {
 }
 
 const (
-	cellInset    = 14
-	keptMeasure  = 8
-	widestInCell = 240
-	fitsKept     = 1 << 15
+	cellInset     = 14
+	noWrapEms     = 8
+	widestInCell  = 240
+	fitCacheLimit = 1 << 15
+)
+
+type cellContent int
+
+const (
+	blankCell cellContent = iota
+	writtenCell
+	rigidCell
+	flowingCell
 )
 
 type measuredText struct {
@@ -227,8 +236,9 @@ type measuredText struct {
 }
 
 type textFit struct {
-	least float32
-	whole bool
+	least, natural float32
+	lines          int
+	whole          bool
 }
 
 func (s textStyle) font(content string) ui.Font {
@@ -251,12 +261,13 @@ func (r *Reading) fitted(content string, style textStyle) textFit {
 	})
 	natural, _ := ui.ShapeText(shown, font, 0).Size()
 	result := textFit{least: natural, whole: true}
-	if kept := keptMeasure * font.Size; natural > kept {
+	if floor := noWrapEms * font.Size; natural > floor {
 		word, _ := ui.ShapeRichTextWith([]ui.Span{{Text: shown}}, font, ui.TextShape{Width: 1, NoBreakWords: true}).Size()
-		result = textFit{least: max(word, kept)}
+		result = textFit{least: max(word, floor)}
 	}
 	result.least = float32(math.Ceil(float64(result.least))) + 1
-	if r.fits == nil || len(r.fits) >= fitsKept {
+	result.natural, result.lines = natural, 1+strings.Count(strings.TrimSpace(shown), "\n")
+	if r.fits == nil || len(r.fits) >= fitCacheLimit {
 		r.fits = map[measuredText]textFit{}
 	}
 	r.fits[key] = result
@@ -285,18 +296,21 @@ func (r *Reading) table(c *ui.Context, p props, path string, depth int, at place
 		}
 		return nil
 	}
-	written := func(value any) (string, bool) {
+	contentOf := func(value any) (cellContent, string) {
 		switch value := value.(type) {
 		case nil:
-			return "", false
+			return blankCell, ""
 		case float64:
-			return grouped(value), true
+			return writtenCell, grouped(value)
 		case string:
-			return value, true
+			return writtenCell, value
 		case *openuilang.Element, []any:
-			return "", false
+			if rigid(value) {
+				return rigidCell, ""
+			}
+			return flowingCell, ""
 		}
-		return (props{}).show(value), true
+		return writtenCell, (props{}).show(value)
 	}
 	cellAt := func(row, column int) string {
 		return path + "/" + strconv.Itoa(row) + "/" + strconv.Itoa(column)
@@ -342,14 +356,13 @@ func (r *Reading) table(c *ui.Context, p props, path string, depth int, at place
 	for i, name := range columns {
 		least := r.fitted(name, head).least
 		for n, row := range rows {
-			value := cell(row, i)
-			if content, ok := written(value); ok {
-				least = max(least, r.fitted(content, body(i)).least)
-			} else if value == nil {
-			} else if rigid(value) {
+			switch content, text := contentOf(cell(row, i)); content {
+			case writtenCell:
+				least = max(least, r.fitted(text, body(i)).least)
+			case rigidCell:
 				least = max(least, float32(math.Ceil(float64(r.state(cellAt(n, i)+"#fit").frame.Bounds(c).W))))
-			} else {
-				least = max(least, keptMeasure*body(i).size)
+			case flowingCell:
+				least = max(least, noWrapEms*body(i).size)
 			}
 		}
 		widths[i] = least + 2*cellInset
@@ -385,28 +398,24 @@ func (r *Reading) table(c *ui.Context, p props, path string, depth int, at place
 			line("line" + strconv.Itoa(n))
 			strip("row"+strconv.Itoa(n), ui.RoleCell, func(i int) {
 				at, value := cellAt(n, i), cell(row, i)
-				if content, ok := written(value); ok {
+				switch content, text := contentOf(value); content {
+				case writtenCell:
 					style := body(i)
-					style.whole = r.fitted(content, style).whole
-					r.prose(c.Key(at), content, style)
-					return
-				}
-				if value == nil {
-					return
-				}
-				if !rigid(value) {
-					r.piece(c, value, at, depth, place{compact: true, nested: true}, slot{})
-					return
-				}
-				side := ui.Row(c.Key(at + "#side")).AlignItems(ui.Center)
-				if numeric[i] {
-					side.Justify(ui.End)
-				}
-				side.Children(func() {
-					ui.Row(c.Key(at + "#fit")).Bind(&r.state(at + "#fit").frame).Shrink(0).MaxWidth(widestInCell).AlignItems(ui.Center).Children(func() {
-						r.piece(c, value, at, depth, place{compact: true, nested: true, row: true}, slot{})
+					style.whole = r.fitted(text, style).whole
+					r.prose(c.Key(at), text, style)
+				case flowingCell:
+					r.piece(c, value, at, depth, place{compact: true, nested: true}, treatment{})
+				case rigidCell:
+					side := ui.Row(c.Key(at + "#side")).AlignItems(ui.Center)
+					if numeric[i] {
+						side.Justify(ui.End)
+					}
+					side.Children(func() {
+						ui.Row(c.Key(at + "#fit")).Bind(&r.state(at + "#fit").frame).Shrink(0).MaxWidth(widestInCell).AlignItems(ui.Center).Children(func() {
+							r.piece(c, value, at, depth, place{compact: true, nested: true, row: true}, treatment{})
+						})
 					})
-				})
+				}
 			})
 		}
 	}

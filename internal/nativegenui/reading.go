@@ -36,6 +36,7 @@ type Reading struct {
 	changed    bool
 	pressable  int
 	touched    map[string]bool
+	fits       map[measuredText]textFit
 }
 
 type componentState struct {

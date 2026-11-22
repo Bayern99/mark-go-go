@@ -744,6 +744,7 @@ type textStyle struct {
 	color          ui.Color
 	weight, lines  int
 	italic, struck bool
+	whole          bool
 	features       string
 	frame          *ui.Handle
 }
@@ -770,7 +771,11 @@ func (s textStyle) apply(text ui.Element, content string) ui.Element {
 func (r *Reading) prose(c *ui.Context, content string, style textStyle) {
 	marks := inlineMark.FindAllStringSubmatchIndex(content, -1)
 	block := func(text ui.Element) {
-		r.selectable(text.LineHeight(style.line).MinWidth(0).Wrap())
+		if r.selectable(text.LineHeight(style.line)); style.whole {
+			text.NoWrap()
+		} else {
+			text.MinWidth(0).Wrap()
+		}
 		if style.frame != nil {
 			text.Bind(style.frame)
 		}

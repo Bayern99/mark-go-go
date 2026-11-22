@@ -214,6 +214,55 @@ func grouped(value float64) string {
 	return sign + whole
 }
 
+const (
+	cellInset    = 14
+	keptMeasure  = 8
+	widestInCell = 240
+	fitsKept     = 1 << 15
+)
+
+type measuredText struct {
+	content string
+	font    ui.Font
+}
+
+type textFit struct {
+	least float32
+	whole bool
+}
+
+func (s textStyle) font(content string) ui.Font {
+	return ui.Font{Family: typeface(content), Size: s.size, Weight: s.weight, Italic: s.italic, Features: s.features}
+}
+
+func (r *Reading) fitted(content string, style textStyle) textFit {
+	font := style.font(content)
+	key := measuredText{content, font}
+	if known, ok := r.fits[key]; ok {
+		return known
+	}
+	shown := inlineMark.ReplaceAllStringFunc(content, func(mark string) string {
+		for _, part := range inlineMark.FindStringSubmatch(mark)[1:7] {
+			if part != "" {
+				return part
+			}
+		}
+		return mark
+	})
+	natural, _ := ui.ShapeText(shown, font, 0).Size()
+	result := textFit{least: natural, whole: true}
+	if kept := keptMeasure * font.Size; natural > kept {
+		word, _ := ui.ShapeRichTextWith([]ui.Span{{Text: shown}}, font, ui.TextShape{Width: 1, NoBreakWords: true}).Size()
+		result = textFit{least: max(word, kept)}
+	}
+	result.least = float32(math.Ceil(float64(result.least))) + 1
+	if r.fits == nil || len(r.fits) >= fitsKept {
+		r.fits = map[measuredText]textFit{}
+	}
+	r.fits[key] = result
+	return result
+}
+
 func (r *Reading) table(c *ui.Context, p props, path string, depth int, at place) {
 	theme := c.Theme()
 	var columns []string
@@ -236,6 +285,22 @@ func (r *Reading) table(c *ui.Context, p props, path string, depth int, at place
 		}
 		return nil
 	}
+	written := func(value any) (string, bool) {
+		switch value := value.(type) {
+		case nil:
+			return "", false
+		case float64:
+			return grouped(value), true
+		case string:
+			return value, true
+		case *openuilang.Element, []any:
+			return "", false
+		}
+		return (props{}).show(value), true
+	}
+	cellAt := func(row, column int) string {
+		return path + "/" + strconv.Itoa(row) + "/" + strconv.Itoa(column)
+	}
 	numeric := make([]bool, len(columns))
 	weights := make([]float32, len(columns))
 	for i, name := range columns {
@@ -254,56 +319,94 @@ func (r *Reading) table(c *ui.Context, p props, path string, depth int, at place
 				}
 				filled++
 				numeric[i] = numeric[i] && numericCell.MatchString(strings.TrimSpace(value))
+			case *openuilang.Element, []any:
+				widest = max(widest, 14)
 			default:
 				filled++
 				numeric[i] = false
-				widest = max(widest, 14)
 			}
 		}
 		numeric[i] = numeric[i] && filled > 0
 		weights[i] = float32(min(max(widest, 6), 28))
 	}
+	head := textStyle{size: 13, weight: 500, color: theme.TextMuted}
+	body := func(column int) textStyle {
+		style := textStyle{size: 14, line: 1.5, color: theme.Text}
+		if numeric[column] {
+			style.features = "tnum"
+		}
+		return style
+	}
+	widths := make([]float32, len(columns))
+	total := float32(0)
+	for i, name := range columns {
+		least := r.fitted(name, head).least
+		for n, row := range rows {
+			value := cell(row, i)
+			if content, ok := written(value); ok {
+				least = max(least, r.fitted(content, body(i)).least)
+			} else if value == nil {
+			} else if rigid(value) {
+				least = max(least, float32(math.Ceil(float64(r.state(cellAt(n, i)+"#fit").frame.Bounds(c).W))))
+			} else {
+				least = max(least, keptMeasure*body(i).size)
+			}
+		}
+		widths[i] = least + 2*cellInset
+		total += widths[i]
+	}
 	line := func(key string) {
 		ui.Column(c.Key(key)).Height(1).Shrink(0).Background(theme.Text.Alpha(0.08)).AccessHidden(true)
 	}
-	strip := func(key string, role ui.Role, build func(column int, slot ui.Element)) {
-		ui.Row(c.Key(key)).MinWidth(0).AlignItems(ui.Stretch).Role(ui.RoleRow).Children(func() {
+	strip := func(key string, role ui.Role, build func(column int)) {
+		ui.Row(c.Key(key)).AlignItems(ui.Stretch).Role(ui.RoleRow).Children(func() {
 			for i := range columns {
-				slot := ui.Column(c.Key(i)).Grow(weights[i]).Basis(0).MinWidth(0).Padding(10, 14).Justify(ui.Center).Role(role)
+				slot := ui.Column(c.Key(i)).Grow(weights[i]).Basis(widths[i]).Shrink(0).MinWidth(0).Padding(10, cellInset).Justify(ui.Center).Role(role)
 				if numeric[i] {
 					slot.AlignItems(ui.End)
 				}
-				slot.Children(func() { build(i, slot) })
+				slot.Children(func() { build(i) })
 			}
 		})
 	}
 	state := r.state(path)
-	least := float32(len(columns)) * 96
-	body := func() {
+	lines := func() {
 		ui.Column(c.Key("head")).Background(theme.Text.Alpha(0.03)).Children(func() {
-			strip("header", ui.RoleColumnHeader, func(i int, _ ui.Element) {
-				ui.Text(c, columns[i]).Font(typeface(columns[i])).FontSize(13).FontWeight(500).TextColor(theme.TextMuted).Wrap()
+			strip("header", ui.RoleColumnHeader, func(i int) {
+				name := head.apply(ui.Text(c, columns[i]), columns[i])
+				if r.fitted(columns[i], head).whole {
+					name.NoWrap()
+				} else {
+					name.Wrap()
+				}
 			})
 		})
 		for n, row := range rows {
 			line("line" + strconv.Itoa(n))
-			strip("row"+strconv.Itoa(n), ui.RoleCell, func(i int, _ ui.Element) {
-				at := path + "/" + strconv.Itoa(n) + "/" + strconv.Itoa(i)
-				style := textStyle{size: 14, line: 1.5, color: theme.Text}
-				if numeric[i] {
-					style.features = "tnum"
+			strip("row"+strconv.Itoa(n), ui.RoleCell, func(i int) {
+				at, value := cellAt(n, i), cell(row, i)
+				if content, ok := written(value); ok {
+					style := body(i)
+					style.whole = r.fitted(content, style).whole
+					r.prose(c.Key(at), content, style)
+					return
 				}
-				switch value := cell(row, i).(type) {
-				case nil:
-				case float64:
-					r.prose(c.Key(at), grouped(value), style)
-				case string:
-					r.prose(c.Key(at), value, style)
-				case *openuilang.Element, []any:
+				if value == nil {
+					return
+				}
+				if !rigid(value) {
 					r.piece(c, value, at, depth, place{compact: true, nested: true}, slot{})
-				default:
-					r.prose(c.Key(at), (props{}).show(value), style)
+					return
 				}
+				side := ui.Row(c.Key(at + "#side")).AlignItems(ui.Center)
+				if numeric[i] {
+					side.Justify(ui.End)
+				}
+				side.Children(func() {
+					ui.Row(c.Key(at + "#fit")).Bind(&r.state(at + "#fit").frame).Shrink(0).MaxWidth(widestInCell).AlignItems(ui.Center).Children(func() {
+						r.piece(c, value, at, depth, place{compact: true, nested: true, row: true}, slot{})
+					})
+				})
 			})
 		}
 	}
@@ -313,10 +416,13 @@ func (r *Reading) table(c *ui.Context, p props, path string, depth int, at place
 	}
 	frame.Children(func() {
 		grid := func(box ui.Element) {
-			box.Role(ui.RoleTable).RowCount(len(rows) + 1).ColumnCount(len(columns)).Children(body)
+			box.Role(ui.RoleTable).RowCount(len(rows) + 1).ColumnCount(len(columns)).Children(lines)
 		}
-		if width := state.frame.Bounds(c).W; width > 0 && width < least {
-			ui.ScrollHorizontal(c).MinWidth(0).Children(func() { grid(ui.Column(c).Width(least).Shrink(0)) })
+		if room := state.frame.Bounds(c).W - 2; room > 0 && total > room {
+			bar := ui.ScrollbarStyle{}.Resolve(theme).TrackWidth
+			ui.ScrollHorizontal(c).MinWidth(0).KeepScrollbars(true).Padding(0, 0, bar, 0).Children(func() {
+				grid(ui.Column(c).Width(total).Shrink(0))
+			})
 			return
 		}
 		grid(ui.Column(c).MinWidth(0))

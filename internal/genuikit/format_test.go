@@ -295,3 +295,12 @@ func TestTheFormatNamesTheLargestTextSizeAndWhereBigNumbersGo(t *testing.T) {
 		}
 	}
 }
+
+func TestTheLayoutRulesSizeATableForThePage(t *testing.T) {
+	rules := layoutRules(t)
+	for _, want := range []string{"about 760 points wide", "about five columns", "more attributes than subjects, put the attributes in rows and the subjects in columns"} {
+		if !strings.Contains(rules, want) {
+			t.Errorf("the layout rules lack %q", want)
+		}
+	}
+}

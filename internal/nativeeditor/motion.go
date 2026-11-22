@@ -1,12 +1,10 @@
 package nativeeditor
 
 import (
-	"strings"
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/editor"
 )
 
 type jumpHighlight struct {
@@ -14,29 +12,6 @@ type jumpHighlight struct {
 	at      int
 	version uint64
 	start   time.Time
-}
-
-type foldMotion struct {
-	key            string
-	folding        bool
-	start          time.Time
-	height         float32
-	text           string
-	body, end      int
-	version        uint64
-	headingLeading float32
-}
-
-func (m *foldMotion) progress(c *ui.Context) float32 {
-	if m.start.IsZero() {
-		m.start = c.Now()
-	}
-	t := float32(c.Now().Sub(m.start)) / float32(portrait.Motion.Expand)
-	if t >= 1 {
-		return 1
-	}
-	c.AnimationFrame()
-	return portrait.Motion.EaseOut.Easing()(max(t, 0))
 }
 
 var unpainted = portrait.Clear
@@ -94,7 +69,6 @@ func (d *Document) decorate(c *ui.Context, field ui.Element) {
 		d.codePanels()
 	}
 	d.jumpFill(c)
-	d.expandVeil(c, field)
 	field.Material(page{paper: c.Theme().Background, column: column, fills: append([]pageFill(nil), d.page...)})
 }
 
@@ -144,88 +118,4 @@ func (d *Document) jumpFill(c *ui.Context) {
 	}
 	r := ui.Rect{X: first.X, Y: first.Y, H: last.Y + last.H - first.Y}
 	d.page = append(d.page, pageFill{rect: r, left: 8, right: 8, radius: h.Radius, color: h.At(elapsed)})
-}
-
-func (d *Document) expandVeil(c *ui.Context, field ui.Element) {
-	m := d.fold
-	if m == nil || m.folding {
-		return
-	}
-	if m.version != d.Version() || d.mode != Preview {
-		d.fold = nil
-		return
-	}
-	f := m.progress(c)
-	if f >= 1 {
-		d.fold = nil
-		return
-	}
-	top, ok := d.state.Rect(m.body)
-	if !ok {
-		return
-	}
-	bottom, ok := d.state.Rect(m.end)
-	if !ok {
-		return
-	}
-	y1 := bottom.Y
-	if m.end >= d.state.Buffer.Len() {
-		y1 += bottom.H
-	}
-	paper := c.Theme().Background
-	field.DrawOver(func(p *ui.Painter, r ui.Rect) {
-		h := y1 - top.Y
-		if h <= 0 {
-			return
-		}
-		lifted := top.Y + h*f
-		fade := paper
-		fade.A = uint8(float32(paper.A)*(1-f) + 0.5)
-		p.Fill(ui.Rect{X: r.X, Y: r.Y + top.Y, W: r.W, H: lifted - top.Y}, fade, 0)
-		p.Fill(ui.Rect{X: r.X, Y: r.Y + lifted, W: r.W, H: y1 - lifted}, paper, 0)
-	})
-}
-
-func (p *previewLayout) startFold(section foldSection) {
-	d := p.owner
-	m := &foldMotion{key: section.key, folding: d.folded[section.key], body: section.body, end: section.end, version: d.Version()}
-	if m.folding {
-		top, ok := d.state.Rect(section.body)
-		bottom, ok2 := d.state.Rect(section.end)
-		if !ok || !ok2 {
-			return
-		}
-		m.height = bottom.Y - top.Y
-		if section.end >= d.state.Buffer.Len() {
-			m.height += bottom.H
-		}
-		m.text = strings.TrimSpace(p.display[p.displayOffset(section.body):p.displayOffset(section.end)])
-	}
-	d.fold = m
-}
-
-func (p *previewLayout) foldGhost(line int, key string) (editor.Block, bool) {
-	d := p.owner
-	m := d.fold
-	if m == nil || !m.folding || m.key != key || m.version != d.Version() {
-		return editor.Block{}, false
-	}
-	return editor.Block{Line: line, Height: m.height, Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
-		if d.fold != m {
-			e.Height(0)
-			return
-		}
-		f := m.progress(c)
-		if f >= 1 {
-			d.fold = nil
-			d.preview.dirty = true
-			e.Height(0)
-			c.Invalidate()
-			return
-		}
-		e.Height(m.height * (1 - f)).Clip().AccessHidden(true).IgnoreInput(true)
-		e.Children(func() {
-			portrait.Type.Reading.Apply(ui.Text(c, m.text)).Wrap().PreserveSpaces().TextColor(portrait.Colors.Ink).Opacity(1 - f).FillWidth()
-		})
-	}}, true
 }

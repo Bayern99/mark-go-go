@@ -92,26 +92,42 @@ func headingY(t *testing.T, d *nativeeditor.Document) float32 {
 	return r.Y
 }
 
-func TestFoldingCollapsesTheSectionOverExpandDuration(t *testing.T) {
+func toggleOffset(t *testing.T, tt *ui.Tester, d *nativeeditor.Document) float32 {
+	t.Helper()
+	b, ok := tt.Access("Fold Two")
+	if !ok {
+		t.Fatal("next heading has no fold toggle")
+	}
+	return b.Bounds.Y - headingY(t, d)
+}
+
+const frame = time.Second / 60
+
+func TestFoldingLandsInOneFrameWithNothingDrawnOverWhatFollows(t *testing.T) {
 	d := nativeeditor.New(foldSource)
 	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 760, 600)
 	tt.Frame()
-	open := headingY(t, d)
+	open, offset := headingY(t, d), toggleOffset(t, tt, d)
 	if err := tt.Click("Fold One"); err != nil {
 		t.Fatal(err)
 	}
-	start := headingY(t, d)
-	tt.Advance(portrait.Motion.Expand / 3)
-	mid := headingY(t, d)
-	tt.Advance(time.Second)
-	end := headingY(t, d)
-	if !(start > mid && mid > end && open-start < (open-end)/2) {
-		t.Fatalf("next heading went from %v to %v, %v, %v; want it to rise smoothly as the section collapses", open, start, mid, end)
+	landed := headingY(t, d)
+	if landed >= open {
+		t.Fatalf("next heading stayed at %v after folding, want it above %v", landed, open)
 	}
-	for _, text := range tt.Texts() {
-		if strings.Contains(text, "First body") {
-			t.Fatal("the collapsed section's text stayed on screen")
+	for elapsed := time.Duration(0); elapsed <= 2*portrait.Motion.Expand; elapsed += frame {
+		if y := headingY(t, d); y != landed {
+			t.Fatalf("at %v the next heading was at %v, want %v from the first frame", elapsed, y, landed)
 		}
+		if got := toggleOffset(t, tt, d); got != offset {
+			t.Fatalf("at %v the next heading's toggle sat %v from it, want %v as when settled", elapsed, got, offset)
+		}
+		for _, text := range tt.Texts() {
+			if strings.Contains(text, "First body") {
+				t.Fatalf("at %v the collapsed section's text was still drawn", elapsed)
+			}
+		}
+		tt.Advance(frame)
 	}
 }
 
@@ -140,10 +156,11 @@ func bodyInk(t *testing.T, tt *ui.Tester, d *nativeeditor.Document) int {
 	return ink(tt.Image(), ui.Rect{X: ra.X, Y: ra.Y, W: rb.X - ra.X, H: ra.H})
 }
 
-func TestExpandingFadesTheSectionIn(t *testing.T) {
+func TestExpandingShowsTheWholeSectionFromTheFirstFrame(t *testing.T) {
 	d := nativeeditor.New(foldSource)
 	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 760, 600)
 	tt.Frame()
+	open := headingY(t, d)
 	if err := tt.Click("Fold One"); err != nil {
 		t.Fatal(err)
 	}
@@ -151,13 +168,18 @@ func TestExpandingFadesTheSectionIn(t *testing.T) {
 	if err := tt.Click("Expand One"); err != nil {
 		t.Fatal(err)
 	}
-	start := bodyInk(t, tt, d)
-	tt.Advance(portrait.Motion.Expand / 3)
-	mid := bodyInk(t, tt, d)
-	tt.Advance(time.Second)
-	end := bodyInk(t, tt, d)
-	if !(start < mid && mid < end && start < end/2) {
-		t.Fatalf("expanded body ink went %d, %d, %d; want it to fade in", start, mid, end)
+	full := bodyInk(t, tt, d)
+	if full == 0 {
+		t.Fatal("the expanded section drew no ink")
+	}
+	for elapsed := time.Duration(0); elapsed <= 2*portrait.Motion.Expand; elapsed += frame {
+		if y := headingY(t, d); y != open {
+			t.Fatalf("at %v the next heading was at %v, want %v from the first frame", elapsed, y, open)
+		}
+		if got := bodyInk(t, tt, d); got != full {
+			t.Fatalf("at %v the expanded body drew %d ink, want %d from the first frame", elapsed, got, full)
+		}
+		tt.Advance(frame)
 	}
 }
 

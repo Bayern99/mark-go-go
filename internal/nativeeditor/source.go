@@ -39,7 +39,6 @@ type Document struct {
 	folded           map[string]bool
 	returns          map[string]int
 	landing          jumpHighlight
-	fold             *foldMotion
 	page             []pageFill
 }
 

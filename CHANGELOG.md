@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- 修复 Preview 标题折叠时被折叠段的残影叠在后文上、展开时后文先跳位再被遮罩盖住的问题：折叠与展开改为直接到位，与 WebUI 一致（#96）。 Heading folds and expansions in Preview now land at once, with no ghost drawn over the following content and no veil over content that already moved.
+
 ## [0.5.0] - 2026-11-21
 
 - 界面迁移到 MyGo 原生 UI：窗口、编辑器、文件栏、Feynman 研究栏和 GenUI 均由 Go 原生绘制，不再使用 WebView、Vite 或 Node 构建。Markdown 字节保真、工作区会话与 Feynman/Git 插件保持原有行为，并以 26 份 Markdown 语料和 Portrait 基准验证。 Mark Go Go now runs on the MyGo native UI; the WebView, Vite and Node build chain is retired.

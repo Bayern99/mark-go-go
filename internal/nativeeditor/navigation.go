@@ -54,7 +54,6 @@ func (p *previewLayout) heading(snap editor.Snapshot, i, firstText int) {
 		p.hiddenRanges = append(p.hiddenRanges, [2]int{from, end})
 	}
 	p.replace(b.Start, firstText, "")
-	section := p.sections[len(p.sections)-1]
 	leading := headingStyle(0, b.Level).LineHeight * headingStyle(0, b.Level).Font.Size
 	p.blocks = append(p.blocks, editor.Block{Line: snap.LineOf(b.Start), Above: true, Height: 1, Interactive: true, Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
 		e.Height(1).Children(func() {
@@ -67,18 +66,10 @@ func (p *previewLayout) heading(snap editor.Snapshot, i, firstText int) {
 			btn.Children(func() { portrait.Glyph(c, icon, 14, ink) })
 			if btn.Clicked() {
 				p.toggleFold(key)
-				if portrait.Animates(c, btn.FocusVisible()) {
-					p.startFold(section)
-				}
 				c.Invalidate()
 			}
 		})
 	}})
-	if folded {
-		if ghost, ok := p.foldGhost(snap.LineOf(b.End), key); ok {
-			p.blocks = append(p.blocks, ghost)
-		}
-	}
 }
 
 const foldToggleSize = 18

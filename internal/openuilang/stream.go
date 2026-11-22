@@ -150,6 +150,43 @@ func sourceStatements(input string) []sourceStatement {
 	return out
 }
 
+func Names(text string) []string {
+	var names []string
+	for _, stmt := range sourceStatements(stripFences(text)) {
+		names = append(names, stmt.id)
+	}
+	return names
+}
+
+type CallStrings struct {
+	Statement string
+	Strings   []string
+	Literal   bool
+}
+
+func FirstArgumentStrings(text, component string) []CallStrings {
+	var calls []CallStrings
+	for _, stmt := range sourceStatements(stripFences(text)) {
+		walkAST(stmt.expr, func(call *node) {
+			if call.k != kComp || call.name != component {
+				return
+			}
+			first := CallStrings{Statement: stmt.id, Literal: true}
+			walkAST(argAt(call.args, 0), func(n *node) {
+				switch n.k {
+				case kStr:
+					first.Strings = append(first.Strings, n.str)
+				case kArr:
+				default:
+					first.Literal = false
+				}
+			})
+			calls = append(calls, first)
+		})
+	}
+	return calls
+}
+
 func Merge(existing, patch string) string { return merge(existing, patch, true) }
 
 func Overlay(existing, patch string) string { return merge(existing, patch, false) }

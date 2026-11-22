@@ -46,6 +46,13 @@ func (s *Session) Set(name string, value any) {
 	s.store.Set(name, value)
 }
 
+func (s *Session) Assign(binding *Binding, value any) {
+	if s.program != nil {
+		value = s.program.assigned(binding, value, s.Get)
+	}
+	s.Set(binding.Target, value)
+}
+
 func fieldValue(value any) any {
 	if wrapped, ok := value.(*Object); ok {
 		if inner, ok := wrapped.Get("value"); ok {

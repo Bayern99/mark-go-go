@@ -435,6 +435,7 @@ func (s *Server) toolWriteGenUIView(ctx context.Context, binding *sessionBinding
 
 	envelope := struct {
 		Version     int                      `json:"version"`
+		Language    string                   `json:"language,omitempty"`
 		GeneratedAt string                   `json:"generatedAt"`
 		Model       string                   `json:"model,omitempty"`
 		Request     string                   `json:"request,omitempty"`
@@ -447,6 +448,9 @@ func (s *Server) toolWriteGenUIView(ctx context.Context, binding *sessionBinding
 		Request:     strings.TrimSpace(args.Request),
 		Sources:     sourcesOut,
 		A2UI:        args.A2UI,
+	}
+	if genui.WritesStatements(args.A2UI) {
+		envelope.Version, envelope.Language = genui.StatementViewVersion, genui.StatementLanguage
 	}
 	content, err := json.MarshalIndent(envelope, "", "  ")
 	if err != nil {

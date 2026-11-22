@@ -12,7 +12,7 @@ An update has the same shape with "updateComponents" in place of "createSurface"
 
 - "sources" maps an id you choose to a section of the document: its heading copied verbatim, and its occurrence, counting from 1, when several sections share that heading.
 - Wrap content in Source(["id"], [children]) to attribute it to those sections. Every fact taken from the document sits inside a Source, and each Source names the narrowest sections that hold its content.
-- Give each Source its own statement and write all of its content in that one statement, such as lead = Source(["overview"], [Card([Title("Overview", "md"), Text("...", "sm")])]), never in further statements such as lead_card or lead_text. An update then replaces that statement alone.
+- Give each Source its own statement and write all of its content in that one statement, such as lead = Source(["overview"], [Card([Title(...), List([...])])]), never in further statements such as lead_card or lead_list. An update then replaces that statement alone.
 - Leave the page title outside any Source, and never cite the document's first-level heading for it: that heading's section spans the whole document, so any edit would mark the title as changed.
 
 ## Syntax

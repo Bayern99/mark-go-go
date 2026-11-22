@@ -109,15 +109,16 @@ func (s *Surface) own(value any, owner string) {
 }
 
 const (
-	maxStatementDepth = 64
-	spaceStep         = 4
-	sectionGap        = 24
-	groupGap          = 12
-	innerGap          = 8
-	tightGap          = 4
-	readingWidth      = 760
-	subtitleSize      = 13
-	rowShare          = 220
+	maxStatementDepth   = 64
+	spaceStep           = 4
+	sectionGap          = 24
+	groupGap            = 12
+	innerGap            = 8
+	tightGap            = 4
+	readingWidth        = 760
+	subtitleSize        = 13
+	largestCompactTitle = "xl"
+	rowShare            = 220
 )
 
 type place struct {
@@ -684,8 +685,8 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 		if !ok {
 			face = titleType["md"]
 		}
-		if at.compact && face.size > 18 {
-			face.size, face.line, face.tracking = 18, 24.0/18, -0.3
+		if largest := titleType[largestCompactTitle]; at.compact && face.size > largest.size {
+			face = largest
 		}
 		color := theme.Text
 		if named, ok := ink(c, p.text("color")); ok {

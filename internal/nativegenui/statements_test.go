@@ -383,3 +383,41 @@ func TestOneLineAfterACardTitleIsItsSubtitleUntilItWraps(t *testing.T) {
 		}
 	}
 }
+
+func TestTitleSizesKeepTheirOrderInCompactPlaces(t *testing.T) {
+	const figure = "1,284 ms"
+	sizes := []string{"sm", "md", "lg", "xl", "2xl", "3xl"}
+	titles := func(open, close string) []ui.Rect {
+		var boxes []ui.Rect
+		for _, size := range sizes {
+			tt, text := shown(t, statementView(t, `root = Col([`+open+`Title("`+figure+`", "`+size+`")`+close+`], null, "start")`), 700, nil)
+			found := named(tt, ui.RoleHeading, figure)
+			if len(found) != 1 {
+				t.Fatalf("%s…%s, %s: %d titles read %q in\n%s", open, close, size, len(found), figure, text)
+			}
+			boxes = append(boxes, found[0])
+		}
+		return boxes
+	}
+	page := titles(``, ``)
+	for name, place := range map[string][2]string{
+		"card":      {`Card([`, `])`},
+		"grid cell": {`Grid([Col([`, `]), Text("Beside")])`},
+		"list item": {`List([`, `])`},
+	} {
+		drawn := titles(place[0], place[1])
+		for i, size := range sizes[:4] {
+			if drawn[i].W != page[i].W || drawn[i].H != page[i].H {
+				t.Errorf("%s: a %q title is %vx%v, on the page %vx%v", name, size, drawn[i].W, drawn[i].H, page[i].W, page[i].H)
+			}
+			if i > 0 && drawn[i].W <= drawn[i-1].W {
+				t.Errorf("%s: a %q title is %v wide, no wider than a %q title at %v", name, size, drawn[i].W, sizes[i-1], drawn[i-1].W)
+			}
+		}
+		for i, size := range sizes[4:] {
+			if at := drawn[4+i]; at.W != drawn[3].W || at.H != drawn[3].H {
+				t.Errorf("%s: a %q title is %vx%v, an \"xl\" title %vx%v", name, size, at.W, at.H, drawn[3].W, drawn[3].H)
+			}
+		}
+	}
+}

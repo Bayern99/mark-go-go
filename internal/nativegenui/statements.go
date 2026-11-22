@@ -200,13 +200,18 @@ type spannedWidth struct {
 	window, width float32
 }
 
-func (spanned *spannedWidth) fitsOnOneLine(c *ui.Context, text textFit) bool {
+func (spanned *spannedWidth) lastDrawn(c *ui.Context) float32 {
 	window, _ := c.Size()
 	width := spanned.frame.Bounds(c).W
 	if window != spanned.window || width != spanned.width {
 		spanned.window, spanned.width = window, width
 		c.Invalidate()
 	}
+	return width
+}
+
+func (spanned *spannedWidth) fitsOnOneLine(c *ui.Context, text textFit) bool {
+	width := spanned.lastDrawn(c)
 	return text.lines == 1 && (width == 0 || text.natural <= width+1)
 }
 

@@ -1,9 +1,11 @@
 package nativegenui
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -591,7 +593,7 @@ func (r *Reading) slider(c *ui.Context, field bound, p props, state *componentSt
 		if _, held := slider.PressedButton(); !held {
 			state.pointerPressed = false
 		}
-		r.marks(c, p.value("marks"), lo, hi, thumb/2)
+		r.marks(c, p.value("marks"), lo, hi, thumb/2, &state.spanned)
 	})
 	next := state.number
 	if step > 0 {
@@ -636,13 +638,21 @@ func segments(c *ui.Context, chosen *int, labels []string, block bool, group cho
 
 func sliderThumbWidth(theme *ui.Theme) float32 { return theme.Space(5) }
 
-func (r *Reading) marks(c *ui.Context, listed any, lo, hi float64, thumbInset float32) {
+const (
+	markLabelSize = 12
+	markLabelGap  = 4
+)
+
+type sliderMark struct {
+	at          float32
+	label       string
+	left, right float32
+	drawn       bool
+}
+
+func (r *Reading) marks(c *ui.Context, listed any, lo, hi float64, thumbInset float32, track *spannedWidth) {
 	theme := c.Theme()
-	type mark struct {
-		at    float32
-		label string
-	}
-	var marks []mark
+	var marks []sliderMark
 	for _, item := range flatten(listed, nil) {
 		object, ok := item.(*openuilang.Object)
 		if !ok {
@@ -650,15 +660,42 @@ func (r *Reading) marks(c *ui.Context, listed any, lo, hi float64, thumbInset fl
 		}
 		value, ok := object.Values["value"].(float64)
 		if label := words(object.Values["label"]); ok && value >= lo && value <= hi && label != "" {
-			marks = append(marks, mark{at: float32((value - lo) / (hi - lo)), label: label})
+			marks = append(marks, sliderMark{at: float32((value - lo) / (hi - lo)), label: label})
 		}
 	}
 	if len(marks) == 0 {
 		return
 	}
-	ui.Column(c).MinWidth(0).Height(16).MarginX(thumbInset).AccessHidden(true).Children(func() {
+	slices.SortStableFunc(marks, func(a, b sliderMark) int { return cmp.Compare(a.at, b.at) })
+	first, last := &marks[0], &marks[len(marks)-1]
+	first.drawn, last.drawn = true, true
+	if width := track.lastDrawn(c); width > 0 {
+		for i := range marks {
+			mark := &marks[i]
+			labelWidth, _ := c.MeasureText(0, ui.Span{Text: mark.label, Size: markLabelSize})
+			switch mark.at {
+			case 0:
+				mark.left = -thumbInset
+			case 1:
+				mark.left = width + thumbInset - labelWidth
+			default:
+				mark.left = mark.at*width - labelWidth/2
+			}
+			mark.right = mark.left + labelWidth
+		}
+		before := first
+		for i := 1; i < len(marks)-1; i++ {
+			if mark := &marks[i]; mark.left >= before.right+markLabelGap && mark.right+markLabelGap <= last.left {
+				mark.drawn, before = true, mark
+			}
+		}
+	}
+	ui.Column(c).MinWidth(0).Height(16).MarginX(thumbInset).AccessHidden(true).Bind(&track.frame).Children(func() {
 		for i, mark := range marks {
-			label := ui.Text(c.Key("mark"+strconv.Itoa(i)), mark.label).FontSize(12).TextColor(theme.TextMuted).NoWrap().Absolute()
+			if !mark.drawn {
+				continue
+			}
+			label := ui.Text(c.Key("mark"+strconv.Itoa(i)), mark.label).FontSize(markLabelSize).TextColor(theme.TextMuted).NoWrap().Absolute()
 			switch mark.at {
 			case 0:
 				label.Left(-thumbInset)

@@ -79,6 +79,6 @@ root = Col([head, summary, cost, risks, steps])
 $months = 6
 head = Col([Title("Storage migration", "xl"), Row([Badge("On track", "success"), Badge("Due March 14", "info", "calendar")], 2)], 2)
 summary = Source(["overview"], [Text("The team moves **12 services** from disk to object storage in three phases.")])
-cost = Source(["budget"], [Card([Title("Cost over time", "md"), Slider($months, 6, 12, 1, "Months"), Chart("bar", @Each(@Range(1, $months + 1), "m", {month: "M" + m, disk: m * 2300, object: m * 1400}), "month", ["disk", "object"]), Row([Caption("Saved by leaving disk"), Spacer(), Text(@Format($months * (2300 - 1400), "currency", 0), "lg", null, "semibold")])])])
+cost = Source(["budget"], [Card([Title("Cost over time", "md"), Slider($months, 6, 12, 1, "Months"), Chart("bar", @Each(@Range(1, $months + 1), "m", {month: "M" + m, disk: m * 2300, object: m * 1400}), "month", ["disk", "object"], null, null, null, {disk: "Disk", object: "Object storage"}), Row([Caption("Saved by leaving disk"), Spacer(), Text(@Format($months * (2300 - 1400), "currency", 0), "lg", null, "semibold")])])])
 risks = Source(["risks"], [Table(["Risk", "Likelihood", "Owner"], [["Slow restores", Badge("Medium", "warning"), "Ada"], ["Quota limits", Badge("Low", "success"), "Lin"]])])
 steps = Source(["plan"], [List([ListItem("Copy", "Mirror every bucket, two weeks.", "Jan 29"), ListItem("Switch reads", "Serve reads from object storage.", "Feb 12"), ListItem("Retire disks", "After 30 days without errors.", "Mar 14")], null, true)])

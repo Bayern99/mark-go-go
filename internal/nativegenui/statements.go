@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -118,8 +119,8 @@ type place struct {
 }
 
 type slot struct {
-	subtitle bool
-	measured *componentState
+	subtitle, fill bool
+	measured       *componentState
 }
 
 func (r *Reading) statements(c *ui.Context) {
@@ -230,6 +231,47 @@ func rigid(children any) bool {
 	return true
 }
 
+func grouping(value any) bool {
+	switch kind(value) {
+	case "Card", "Source", "Col", "Box":
+		return true
+	}
+	return false
+}
+
+func titles(value any) bool {
+	if kind(value) == "Title" {
+		return true
+	}
+	if kind(value) != "Col" {
+		return false
+	}
+	children := flatten((props{value.(*openuilang.Element).Props}).value("children"), nil)
+	for _, child := range children {
+		if kind(child) == "Title" {
+			return !wide(children)
+		}
+	}
+	return false
+}
+
+func opening(items []any) int {
+	for i, item := range items {
+		if titles(item) {
+			if i == 0 {
+				return 0
+			}
+			return i + 1
+		}
+		switch kind(item) {
+		case "Icon", "Badge", "Label", "IconButton":
+		default:
+			return 0
+		}
+	}
+	return 0
+}
+
 func badgeRow(value any) bool {
 	if kind(value) != "Row" {
 		return false
@@ -257,10 +299,13 @@ func flowGap(before, after any, tier float32) float32 {
 
 func (r *Reading) stack(c *ui.Context, value any, path string, depth int, at place, gap float32, flows bool) {
 	items := flatten(value, nil)
-	for i, item := range items {
-		at := at
+	r.span(c, items, 0, len(items), path, depth, at, gap, flows, slot{})
+}
+
+func (r *Reading) span(c *ui.Context, items []any, from, to int, path string, depth int, at place, gap float32, flows bool, way slot) {
+	for i := from; i < to; i++ {
+		item, at, way := items[i], at, way
 		at.card = at.card && kind(item) != "Card"
-		way := slot{}
 		if i > 0 {
 			space := gap
 			if flows {
@@ -284,6 +329,24 @@ func (r *Reading) stack(c *ui.Context, value any, path string, depth int, at pla
 		}
 		r.piece(c, item, path+"/"+strconv.Itoa(i), depth, at, way)
 	}
+}
+
+func (r *Reading) line(c *ui.Context, row ui.Element, p props, gap float32, path string, depth int, at place) {
+	items := flatten(p.value("children"), nil)
+	if slices.ContainsFunc(items, titles) {
+		row.Wrap()
+	}
+	row.Children(func() {
+		led := opening(items)
+		if led > 0 {
+			head := ui.Row(c.Key(path + "#opening")).Gap(gap).MaxWidthPercent(100)
+			if a, ok := crossAlign[p.text("align")]; ok {
+				head.AlignItems(a)
+			}
+			head.Children(func() { r.span(c, items, 0, led, path, depth, at, 0, false, slot{}) })
+		}
+		r.span(c, items, led, len(items), path, depth, at, 0, false, slot{})
+	})
 }
 
 func (r *Reading) piece(c *ui.Context, value any, path string, depth int, at place, way slot) {
@@ -418,7 +481,10 @@ func fill(c *ui.Context, name string) (ui.Color, bool) {
 }
 
 func flex(box ui.Element, p props) ui.Element {
-	box.MinWidth(0)
+	return arrange(box.MinWidth(0), p)
+}
+
+func arrange(box ui.Element, p props) ui.Element {
 	if a, ok := crossAlign[p.text("align")]; ok {
 		box.AlignItems(a)
 	}
@@ -452,7 +518,12 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 		if at.nested || at.compact {
 			tier = groupGap
 		}
-		col := flex(ui.Column(c), p)
+		col := ui.Column(c)
+		if at.row && titles(e) {
+			arrange(col.MaxWidthPercent(100), p)
+		} else {
+			flex(col, p)
+		}
 		if at.row && wide(p.value("children")) {
 			col.Grow(1).Basis(rowShare)
 		}
@@ -462,14 +533,15 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 	case "Row":
 		inner := at
 		inner.row = true
-		row := flex(ui.Row(c), p).Gap(p.space("gap", innerGap))
+		gap := p.space("gap", innerGap)
+		row := flex(ui.Row(c), p).Gap(gap)
 		if p.text("align") == "" {
 			row.AlignItems(ui.Center)
 		}
-		if _, set := p.value("wrap").(bool); !set && (rigid(p.value("children")) || wide(p.value("children")) || holds(p.value("children"), "Col", wide)) {
+		if _, set := p.value("wrap").(bool); !set && (rigid(p.value("children")) || wide(p.value("children")) || holds(p.value("children"), "Col", wide) || holds(p.value("children"), "Source", wide)) {
 			row.Wrap()
 		}
-		row.Children(func() { r.stack(c, p.value("children"), path, depth, inner, 0, false) })
+		r.line(c, row, p, gap, path, depth, inner)
 	case "Box":
 		inner := at
 		box := ui.Column(c)
@@ -506,10 +578,10 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 		}
 		gap := p.space("gap", 0)
 		if inner.row {
-			box.Gap(gap)
-			gap = 0
+			r.line(c, box.Gap(gap), p, gap, path, depth, inner)
+		} else {
+			box.Children(func() { r.stack(c, p.value("children"), path, depth, inner, gap, false) })
 		}
-		box.Children(func() { r.stack(c, p.value("children"), path, depth, inner, gap, false) })
 	case "Grid":
 		state := r.state(path)
 		gap := p.space("gap", groupGap)
@@ -532,8 +604,18 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 		if at.row {
 			grid.Grow(1).Basis(rowShare)
 		}
+		items := flatten(p.value("children"), nil)
+		paired := len(items)
+		if columns > 1 && paired%columns == 1 && grouping(items[paired-1]) {
+			paired--
+		}
 		grid.Children(func() {
-			r.stack(c, p.value("children"), path, depth, inner, 0, false)
+			r.span(c, items, 0, paired, path, depth, inner, 0, false, slot{fill: true})
+			if paired < len(items) {
+				ui.Column(c.Key(path + "#alone")).ColumnSpan(-1).MinWidth(0).Children(func() {
+					r.span(c, items, paired, len(items), path, depth, inner, 0, false, slot{})
+				})
+			}
 		})
 	case "Card":
 		padding, radius := float32(20), float32(14)
@@ -543,7 +625,10 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 		inner := place{compact: true, nested: true, card: true}
 		card := flex(ui.Column(c), p).Padding(p.space("padding", padding)).Radius(radius)
 		if at.row {
-			card.Grow(1).Basis(rowShare)
+			card.Grow(1).Basis(rowShare).AlignSelf(ui.Stretch)
+		}
+		if way.fill {
+			card.Grow(1)
 		}
 		if p.text("variant") == "soft" {
 			card.Background(theme.Text.Alpha(0.04))
@@ -569,7 +654,13 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 		if named, ok := ink(c, p.text("color")); ok {
 			color = named
 		}
-		r.selectable(ui.Text(c, p.text("text")).Font(typeface(p.text("text"))).FontSize(face.size).FontWeight(600).LineHeight(face.line).LetterSpacing(face.tracking).TextColor(color).Role(ui.RoleHeading).MinWidth(0).Wrap())
+		title := ui.Text(c, p.text("text")).Font(typeface(p.text("text"))).FontSize(face.size).FontWeight(600).LineHeight(face.line).LetterSpacing(face.tracking).TextColor(color).Role(ui.RoleHeading).Wrap()
+		if at.row {
+			title.MaxWidthPercent(100)
+		} else {
+			title.MinWidth(0)
+		}
+		r.selectable(title)
 	case "Text":
 		style := textStyle{size: at.bodySize(), line: 1.6, color: theme.Text, weight: 400}
 		if face, ok := textType[p.text("size")]; ok {
@@ -689,14 +780,21 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 			})
 		})
 	case "Source":
-		ui.Column(c).MinWidth(0).Children(func() {
+		frame := ui.Column(c).MinWidth(0)
+		fill := way.fill
+		if at.row && wide(p.value("children")) {
+			frame.Grow(1).Basis(rowShare).AlignSelf(ui.Stretch)
+			fill = true
+		}
+		frame.Children(func() {
 			tier := float32(sectionGap)
 			if at.nested || at.compact {
 				tier = groupGap
 			}
 			inner := at
 			inner.row = false
-			r.stack(c, p.value("children"), path, depth, inner, tier, true)
+			items := flatten(p.value("children"), nil)
+			r.span(c, items, 0, len(items), path, depth, inner, tier, true, slot{fill: fill})
 			n := Node{ID: path, ComponentID: r.surface.owners[e]}
 			for _, id := range flatten(p.value("sources"), nil) {
 				if text, ok := id.(string); ok {

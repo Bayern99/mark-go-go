@@ -1,11 +1,11 @@
 package acp
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -663,6 +663,13 @@ func (r *genRun) modelStamp() string {
 	return ""
 }
 
+func (r *genRun) viewModel() string {
+	if r.base != nil {
+		return r.base.Model()
+	}
+	return r.modelStamp()
+}
+
 func (r *genRun) notificationBelongsToSession(params json.RawMessage) bool {
 	var p struct {
 		SessionID string `json:"sessionId"`
@@ -804,32 +811,16 @@ func (r *genRun) handleToolCall(id, kind, title, name string, locations []Locati
 	for i, loc := range effectiveLocations {
 		paths[i] = loc.Path
 	}
-	label := title
-	if label == "" {
-		label = name
-	}
-	if label == "" {
-		label = id
-	}
 	if !notificationToolAllowed(r.dir, effectiveKind, paths) {
-		if label == "" {
-			label = effectiveKind
-		}
-		if label == "" {
-			label = "a tool call"
-		}
-		r.abort(fmt.Sprintf("The agent tried to use %q outside its folder, so the run was stopped and the view was not changed.", label))
+		stopped := cmp.Or(title, name, id, effectiveKind, "a tool call")
+		r.abort(fmt.Sprintf("The agent tried to use %q outside its folder, so the run was stopped and the view was not changed.", stopped))
 		return
 	}
 	switch effectiveKind {
 	case "read", "search":
-		if label != "" {
-			_ = r.send.step("reading", label)
-		}
+		_ = r.send.step("reading", "Reading its files")
 	case "edit":
-		if label != "" {
-			_ = r.send.step("writing", label)
-		}
+		_ = r.send.step("writing", "Writing the view")
 	}
 }
 
@@ -998,7 +989,7 @@ func (r *genRun) writeView(ctx context.Context, sources map[string]genui.AgentSo
 	view := viewOut{
 		Version:     2,
 		GeneratedAt: r.job.Now().UTC().Format(time.RFC3339),
-		Model:       r.modelStamp(),
+		Model:       r.viewModel(),
 		Request:     r.job.Req.Request,
 		Sources:     make(map[string]sourceOut, len(sources)),
 		A2UI:        a2ui,
@@ -1006,9 +997,14 @@ func (r *genRun) writeView(ctx context.Context, sources map[string]genui.AgentSo
 	if genui.WritesStatements(a2ui) {
 		view.Version, view.Language = genui.StatementViewVersion, genui.StatementLanguage
 	}
+	kept := r.base.KeptHashes(a2ui)
 	for key, src := range sources {
 		entry := sourceOut{Heading: src.Heading, Occurrence: src.Occurrence}
-		entry.Hash, _ = r.sectionHash(src)
+		if hash, keep := kept[key]; keep {
+			entry.Hash = hash
+		} else {
+			entry.Hash, _ = r.sectionHash(src)
+		}
 		view.Sources[key] = entry
 	}
 	data, err := json.MarshalIndent(view, "", "  ")
@@ -1019,15 +1015,17 @@ func (r *genRun) writeView(ctx context.Context, sources map[string]genui.AgentSo
 	if ctx.Err() != nil {
 		return genui.ErrCancelled
 	}
-	validate := r.job.Validate
-	if validate == nil {
-		validate = genui.ValidateCandidate
-	}
 	if r.trace != nil {
 		r.trace.artifact("candidate", "", string(content))
 		r.trace.emit("validation.start", nil)
 	}
-	validationErr := validate(ctx, content)
+	var report genui.CandidateReport
+	var validationErr error
+	if r.job.Validate == nil {
+		report, validationErr = genui.CheckCandidate(ctx, content)
+	} else {
+		validationErr = r.job.Validate(ctx, content)
+	}
 	if ctx.Err() != nil {
 		return genui.ErrCancelled
 	}
@@ -1042,7 +1040,11 @@ func (r *genRun) writeView(ctx context.Context, sources map[string]genui.AgentSo
 		return r.outputError(validationErr.Error())
 	}
 	if r.trace != nil {
-		r.trace.emit("validation.result", map[string]any{"ok": true})
+		accepted := map[string]any{"ok": true}
+		if len(report.Degraded) > 0 {
+			accepted["degraded"] = report.Degraded
+		}
+		r.trace.emit("validation.result", accepted)
 	}
 	if ctx.Err() != nil {
 		return genui.ErrCancelled
@@ -1080,7 +1082,7 @@ func (r *genRun) sectionHash(src genui.AgentSource) (hash string, ok bool) {
 }
 
 func hashSection(text string, sec genui.SectionRef) (string, bool) {
-	h := fnv.New32a()
+	var hashed strings.Builder
 	at := sec.Start
 	for _, cut := range sec.Exclude {
 		if cut.Start < at || cut.End < cut.Start || cut.End > sec.End {
@@ -1090,15 +1092,27 @@ func hashSection(text string, sec genui.SectionRef) (string, bool) {
 		if !ok {
 			return "", false
 		}
-		h.Write([]byte(part))
+		hashed.WriteString(part)
 		at = cut.End
 	}
 	part, ok := sliceUTF16(text, at, sec.End)
 	if !ok {
 		return "", false
 	}
-	h.Write([]byte(part))
-	return fmt.Sprintf("fnv1a32:%08x", h.Sum32()), true
+	hashed.WriteString(part)
+	return genui.SectionHash(hashed.String(), text, sec.End == utf16Len(text)), true
+}
+
+func utf16Len(s string) int {
+	n := 0
+	for _, r := range s {
+		l := utf16.RuneLen(r)
+		if l < 0 {
+			l = 1
+		}
+		n += l
+	}
+	return n
 }
 
 func hashUTF16Range(text string, start, end int) (string, bool) {

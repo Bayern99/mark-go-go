@@ -113,3 +113,18 @@ func TestThePromptForStatementsAsksForTheStatementFormat(t *testing.T) {
 		t.Error("a request without the statement language changed its prompt")
 	}
 }
+
+func TestThePromptForStatementsTurnsATableByItsColumnCount(t *testing.T) {
+	full := GenerationPrompt(GenerateRequest{Text: "# Doc", Mode: "full", Format: "FORMAT", Language: StatementLanguage}, nil, "/tmp/x")
+	if strings.Contains(full, "one row per subject and one column per shared attribute") {
+		t.Error("the prompt still fixes one row per subject however many attributes there are")
+	}
+	for _, want := range []string{"about five columns or fewer", "one row per attribute and one column per subject", "keeping every relevant subject and attribute"} {
+		if !strings.Contains(full, want) {
+			t.Errorf("the prompt lacks %q", want)
+		}
+	}
+	if old := GenerationPrompt(GenerateRequest{Text: "# Doc", Mode: "full", Format: "FORMAT"}, nil, "/tmp/x"); !strings.Contains(old, "ComparisonTable with one row per subject and one column per shared attribute") {
+		t.Error("a request without the statement language changed its table rule")
+	}
+}

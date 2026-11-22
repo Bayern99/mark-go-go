@@ -35,3 +35,13 @@ func TestTheFormatsExampleIsAValidView(t *testing.T) {
 		t.Errorf("root %v, errors %v %v, unresolved %v", root != nil, parsed.Errors, problems, parsed.Unresolved)
 	}
 }
+
+func TestTheFormatSizesATableForThePage(t *testing.T) {
+	_, layout, _ := strings.Cut(Format(), "## Layout")
+	layout, _, _ = strings.Cut(layout, "## Example")
+	for _, want := range []string{"about 760 points wide", "about five columns", "more attributes than subjects, put the attributes in rows and the subjects in columns"} {
+		if !strings.Contains(layout, want) {
+			t.Errorf("the layout rules lack %q", want)
+		}
+	}
+}

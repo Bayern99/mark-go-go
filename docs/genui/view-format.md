@@ -81,7 +81,7 @@ Version 3 keeps the A2UI envelope and writes each entry of `components` as one [
 - Expressions may call the catalog's 59 functions, such as `@Format`, `@Plural`, `@GroupBy` and `@AddDays`. `@Random`, `@Pick` and `@Shuffle` give a value only inside an action. Dates without a time zone are read in the reader's time zone.
 - Wrap content in `Source(["sourceId"], [children])` to attribute it to entries of `sources`.
 - A generated view is accepted when it has a `root`, every `Source` names an entry of `sources`, and its faulty statements number at most two, or a tenth of its statements when that is more. An optional property holding a value the catalog does not allow, such as a `Text` size of `"xl"`, is drawn with its default and reported; it does not make its statement faulty. An unknown component, a missing or mistyped required property and a name that is never defined do. [The catalog](../../internal/genuikit/catalog.json) decides what is valid, and its signatures and [format text](../../internal/genuikit/format.txt) make up the generation prompt, so adding a component touches the catalog and the renderer only.
-- An update of part of a view names statements to replace. It may replace those and add new ones; every other statement stays.
+- An update of part of a view names statements to replace. It may replace those and add new ones; every other statement stays. The app then adds `name = null` to the update for each statement that `root` no longer reaches, which deletes it. `$variable` declarations are never deleted, and the earlier messages stay byte for byte.
 
 ```json
 {

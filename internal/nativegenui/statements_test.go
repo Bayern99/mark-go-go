@@ -159,6 +159,25 @@ func TestStatementViewKeepsStatementsALaterUpdateUsesAgain(t *testing.T) {
 	}
 }
 
+func TestStatementViewOpensWithoutTheStatementsAnUpdateDeleted(t *testing.T) {
+	view, err := nativegenui.Open(`{"version":3,"language":"openui-lang/1.0","sources":{"s":{"heading":"Report"}},"a2ui":[
+		{"version":"1.0","createSurface":{"surfaceId":"view","catalogId":"markgogo.dev:genui/v3","components":["root = Col([phase])","phase = Source([\"s\"], [card])","card = Card([head, steps])","head = Title(\"Rehearsal\", \"md\")","steps = Text(\"Initial sync: 9 hours.\")"]}},
+		{"version":"1.0","updateComponents":{"surfaceId":"view","components":["phase = Source([\"s\"], [card_updated])","card_updated = Card([head, steps_updated])","steps_updated = Text(\"Initial sync: 11 hours.\")","card = null","steps = null"]}}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owners := map[string]bool{}
+	_, text := shown(t, view, 520, func(r *nativegenui.Reading) {
+		r.Sources = func(c *ui.Context, n nativegenui.Node) { owners[n.ComponentID] = true }
+	})
+	if !strings.Contains(text, "Rehearsal") || !strings.Contains(text, "11 hours") || strings.Contains(text, "9 hours") || strings.Contains(text, "never defined") {
+		t.Errorf("shown:\n%s", text)
+	}
+	if len(owners) != 1 || !owners["phase"] {
+		t.Errorf("sources are offered for the statements %v, want only phase", owners)
+	}
+}
+
 func TestStatementTextKeepsParenthesesInLinkAddresses(t *testing.T) {
 	view := statementView(t, `root = Col([Text("See [Go](https://en.wikipedia.org/wiki/Go_(programming_language)) for more."), ListItem("Alone", "Detail", "March")])`)
 	tt, text := shown(t, view, 520, nil)

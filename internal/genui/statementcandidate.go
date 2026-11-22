@@ -143,16 +143,12 @@ func readStatementBase(text string, ids []string) (*BaseView, error) {
 	for _, raw := range file.A2UI {
 		var message statementMessage
 		_ = json.Unmarshal(raw, &message)
-		batch := message.UpdateComponents
 		if message.CreateSurface != nil {
-			batch = message.CreateSurface
-			base.surfaceID = batch.SurfaceID
+			base.surfaceID = message.CreateSurface.SurfaceID
 		}
-		for _, statement := range batch.Components {
-			for _, name := range openuilang.Names(statement) {
-				base.existing[name] = true
-			}
-		}
+	}
+	for _, name := range openuilang.Names(base.statementText()) {
+		base.existing[name] = true
 	}
 	for _, id := range ids {
 		if !base.existing[id] {
@@ -191,6 +187,52 @@ func (b *BaseView) checkStatements(update json.RawMessage) error {
 		seen[name] = true
 	}
 	return nil
+}
+
+func (b *BaseView) statementText() string {
+	text := ""
+	for _, raw := range b.messages {
+		var message statementMessage
+		_ = json.Unmarshal(raw, &message)
+		batch := message.UpdateComponents
+		if message.CreateSurface != nil {
+			batch = message.CreateSurface
+		}
+		if batch != nil {
+			text = openuilang.Overlay(text, strings.Join(batch.Components, "\n"))
+		}
+	}
+	return text
+}
+
+type statementUpdate struct {
+	SurfaceID  string   `json:"surfaceId"`
+	Components []string `json:"components"`
+}
+
+func (b *BaseView) deletingUnreferenced(message json.RawMessage, envelope map[string]json.RawMessage) json.RawMessage {
+	var update statementUpdate
+	_ = json.Unmarshal(envelope["updateComponents"], &update)
+	earlier, written := b.statementText(), strings.Join(update.Components, "\n")
+	referenced := map[string]bool{}
+	for _, name := range openuilang.Names(openuilang.Merge(earlier, written)) {
+		referenced[name] = true
+	}
+	var deletions []string
+	for _, name := range openuilang.Names(openuilang.Overlay(earlier, written)) {
+		if !referenced[name] {
+			deletions = append(deletions, name+" = null")
+		}
+	}
+	if len(deletions) == 0 {
+		return message
+	}
+	update.Components = append(update.Components, deletions...)
+	deleting, _ := json.Marshal(struct {
+		Version          json.RawMessage `json:"version,omitempty"`
+		UpdateComponents statementUpdate `json:"updateComponents"`
+	}{envelope["version"], update})
+	return deleting
 }
 
 func statementPrompt(b *strings.Builder, base *BaseView) {

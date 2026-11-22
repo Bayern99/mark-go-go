@@ -102,6 +102,35 @@ func TestStatementViewNamesUnknownComponentsAndKeepsTheRest(t *testing.T) {
 	}
 }
 
+func TestStatementTextWithASizeTheCatalogDoesNotAllowIsDrawnAtTheDefaultSize(t *testing.T) {
+	figures := []string{"23 ms", "0.97", "$2,850 a month"}
+	boxes := func(size string) map[string]ui.Rect {
+		view := statementView(t, `root = Col([latency, recall, cost])`,
+			`latency = Card([Title("p95 latency", "md"), Text("23 ms", `+size+`, "success", "semibold")])`,
+			`recall = Card([Title("Recall@10", "md"), Row([Caption("Qdrant"), Text("0.97", `+size+`)])])`,
+			`cost = Source(["s"], [Text("$2,850 a month", `+size+`)])`)
+		tt, _ := shown(t, view, 520, nil)
+		found := map[string]ui.Rect{}
+		for _, name := range figures {
+			box, ok := tt.Find(name)
+			if !ok {
+				t.Fatalf("size %s: %q is not shown", size, name)
+			}
+			found[name] = box
+		}
+		return found
+	}
+	unset, oversized, large := boxes(`null`), boxes(`"xl"`), boxes(`"lg"`)
+	if large["$2,850 a month"].H <= unset["$2,850 a month"].H {
+		t.Fatalf("a large text is %v high and one without a size %v", large["$2,850 a month"].H, unset["$2,850 a month"].H)
+	}
+	for _, name := range figures {
+		if oversized[name] != unset[name] {
+			t.Errorf("%q is drawn at %v, without a size at %v", name, oversized[name], unset[name])
+		}
+	}
+}
+
 func TestStatementViewRejectsWhatItCannotRead(t *testing.T) {
 	for name, file := range map[string]string{
 		"object components": `{"version":3,"language":"openui-lang/1.0","a2ui":[{"version":"1.0","createSurface":{"surfaceId":"v","catalogId":"markgogo.dev:genui/v3","components":[{"id":"root","component":"Text","text":"x"}]}}]}`,

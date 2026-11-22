@@ -1,6 +1,7 @@
 package genuikit
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -33,5 +34,25 @@ func TestTheFormatsExampleIsAValidView(t *testing.T) {
 	root, problems := session.Render()
 	if root == nil || len(parsed.Errors)+len(problems)+len(parsed.Unresolved) > 0 {
 		t.Errorf("root %v, errors %v %v, unresolved %v", root != nil, parsed.Errors, problems, parsed.Unresolved)
+	}
+}
+
+func TestTheFormatNamesTheLargestTextSizeAndWhereBigNumbersGo(t *testing.T) {
+	var top struct {
+		Components map[string]struct{ Signature string }
+	}
+	if err := json.Unmarshal(catalog, &top); err != nil {
+		t.Fatal(err)
+	}
+	_, sizes, _ := strings.Cut(top.Components["Text"].Signature, "size?: ")
+	sizes, _, _ = strings.Cut(sizes, ", ")
+	choices := strings.Split(sizes, " | ")
+	largest := choices[len(choices)-1]
+	_, layout, _ := strings.Cut(Format(), "## Layout")
+	layout, _, _ = strings.Cut(layout, "## Example")
+	for _, want := range []string{"Text sizes stop at " + largest + ": a big number is a Title", "its subtitle: one short phrase that fits a single line"} {
+		if !strings.Contains(layout, want) {
+			t.Errorf("the layout rules lack %q", want)
+		}
 	}
 }

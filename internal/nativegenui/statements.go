@@ -108,6 +108,7 @@ const (
 	innerGap          = 8
 	tightGap          = 4
 	readingWidth      = 760
+	subtitleSize      = 13
 	rowShare          = 220
 )
 
@@ -116,7 +117,8 @@ type place struct {
 }
 
 type slot struct {
-	opener, subtitle bool
+	subtitle bool
+	measured *componentState
 }
 
 func (r *Reading) statements(c *ui.Context) {
@@ -174,6 +176,27 @@ func opens(value any) bool {
 		}
 	}
 	return false
+}
+
+func phrase(value any) bool {
+	if kind(value) != "Text" {
+		return false
+	}
+	_, plain := (props{value.(*openuilang.Element).Props}).value("text").(string)
+	return plain
+}
+
+func (state *componentState) wraps(c *ui.Context) bool {
+	box := state.frame.Bounds(c)
+	width, _ := c.Size()
+	if laid := [3]float32{width, box.W, box.H}; laid != state.laid {
+		state.laid = laid
+		c.Invalidate()
+	}
+	if state.line > 0 && box.H > 0 {
+		state.paragraph = box.H >= 1.5*state.line
+	}
+	return state.paragraph
 }
 
 func wide(children any) bool {
@@ -241,15 +264,23 @@ func (r *Reading) stack(c *ui.Context, value any, path string, depth int, at pla
 			space := gap
 			if flows {
 				space = flowGap(items[i-1], item, gap)
-				if at.card && i == 1 && kind(items[0]) == "Title" && opens(items[0]) && (kind(item) == "Text" || kind(item) == "Caption") {
-					space, way.subtitle = 2, true
+				if at.card && i == 1 && kind(items[0]) == "Title" && opens(items[0]) {
+					switch {
+					case kind(item) == "Caption":
+						way.subtitle = true
+					case phrase(item):
+						way.measured = r.state(path + "/" + strconv.Itoa(i))
+						way.subtitle = !way.measured.wraps(c)
+					}
+					if way.subtitle {
+						space = 2
+					}
 				}
 			}
 			if space > 0 {
 				ui.Column(c.Key(path + "#" + strconv.Itoa(i))).Height(space).Shrink(0).AccessHidden(true)
 			}
 		}
-		way.opener = at.card && i == 0 && opens(item)
 		r.piece(c, item, path+"/"+strconv.Itoa(i), depth, at, way)
 	}
 }
@@ -530,18 +561,14 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 		if !ok {
 			face = titleType["md"]
 		}
-		weight := 600
-		switch {
-		case way.opener:
-			face.size, face.line, face.tracking, weight = 14, 20.0/14, 0, 500
-		case at.compact && face.size > 18:
+		if at.compact && face.size > 18 {
 			face.size, face.line, face.tracking = 18, 24.0/18, -0.3
 		}
 		color := theme.Text
 		if named, ok := ink(c, p.text("color")); ok {
 			color = named
 		}
-		r.selectable(ui.Text(c, p.text("text")).Font(typeface(p.text("text"))).FontSize(face.size).FontWeight(weight).LineHeight(face.line).LetterSpacing(face.tracking).TextColor(color).Role(ui.RoleHeading).MinWidth(0).Wrap())
+		r.selectable(ui.Text(c, p.text("text")).Font(typeface(p.text("text"))).FontSize(face.size).FontWeight(600).LineHeight(face.line).LetterSpacing(face.tracking).TextColor(color).Role(ui.RoleHeading).MinWidth(0).Wrap())
 	case "Text":
 		style := textStyle{size: at.bodySize(), line: 1.6, color: theme.Text, weight: 400}
 		if face, ok := textType[p.text("size")]; ok {
@@ -551,7 +578,13 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 			}
 		}
 		if way.subtitle {
-			style.size, style.line, style.color = 13, 18.0/13, theme.TextMuted
+			style.color = theme.TextMuted
+			if style.size > subtitleSize {
+				style.size, style.line = subtitleSize, 18.0/subtitleSize
+			}
+		}
+		if way.measured != nil {
+			way.measured.line, style.frame = style.size*style.line, &way.measured.frame
 		}
 		if named, ok := ink(c, p.text("color")); ok {
 			style.color = named
@@ -593,7 +626,7 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 	case "Caption":
 		style := textStyle{size: 12, line: 1.6, color: theme.TextMuted, weight: 400}
 		if way.subtitle {
-			style.size, style.line = 13, 18.0/13
+			style.size, style.line = subtitleSize, 18.0/subtitleSize
 		}
 		if named, ok := ink(c, p.text("color")); ok {
 			style.color = named
@@ -711,6 +744,7 @@ type textStyle struct {
 	weight, lines  int
 	italic, struck bool
 	features       string
+	frame          *ui.Handle
 }
 
 var inlineMark = regexp.MustCompile("\\*\\*([^*\n]+)\\*\\*|__([^_\n]+)__|\\*([^*\n]+)\\*|`([^`\n]+)`|~~([^~\n]+)~~|\\[([^\\]\n]+)\\]\\(((?:[^()\\s]|\\([^()\\s]*\\))+)\\)")
@@ -736,6 +770,9 @@ func (r *Reading) prose(c *ui.Context, content string, style textStyle) {
 	marks := inlineMark.FindAllStringSubmatchIndex(content, -1)
 	block := func(text ui.Element) {
 		r.selectable(text.LineHeight(style.line).MinWidth(0).Wrap())
+		if style.frame != nil {
+			text.Bind(style.frame)
+		}
 		if style.lines > 0 {
 			text.MaxLines(style.lines)
 		}

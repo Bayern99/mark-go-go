@@ -35,3 +35,11 @@ func TestTheFormatsExampleIsAValidView(t *testing.T) {
 		t.Errorf("root %v, errors %v %v, unresolved %v", root != nil, parsed.Errors, problems, parsed.Unresolved)
 	}
 }
+
+func TestTheFormatCapsTheMinimumWidthOfThreeCardsSideBySide(t *testing.T) {
+	_, layout, _ := strings.Cut(Format(), "## Layout")
+	layout, _, _ = strings.Cut(layout, "## Example")
+	if !strings.Contains(layout, "Three cards sit side by side only when the Grid's minChildWidth is 240 or less") {
+		t.Errorf("the layout rules do not cap the minimum width of three cards side by side:\n%s", layout)
+	}
+}

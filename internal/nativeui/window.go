@@ -13,6 +13,7 @@ import (
 	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"github.com/Bayern99/mark-go-go/internal/nativeeditor"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -54,7 +55,7 @@ func NewWindow(host *workspace.Service, opts mygo.WindowOptions, extensions ...f
 	w := &Window{host: host, documents: make(map[string]*openDocument)}
 	opts.Content = ui.View(w.View)
 	mygo.RunOnMain(func() {
-		if err := RegisterFonts(); err != nil {
+		if err := portrait.RegisterFonts(); err != nil {
 			w.failure = err.Error()
 		}
 		w.preferences = preferencesFor(host.UserDataDir())

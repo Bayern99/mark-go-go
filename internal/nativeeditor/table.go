@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 )
@@ -21,6 +22,7 @@ type readingTable struct {
 	anchor, head                 cellPosition
 	dragging, selected           bool
 	dragX, leftWidth, rightWidth float32
+	dragCol, hoverCol            int
 }
 type tableCell struct {
 	start, end int
@@ -89,7 +91,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 		}
 	}
 	if model == nil || len(model.widths) != ncols {
-		model = &readingTable{bounds: map[cellPosition]ui.Rect{}, widths: make([]float32, ncols), minimum: make([]float32, ncols)}
+		model = &readingTable{bounds: map[cellPosition]ui.Rect{}, widths: make([]float32, ncols), minimum: make([]float32, ncols), dragCol: -1, hoverCol: -1}
 		for i := range model.widths {
 			model.minimum[i] = 112
 			for _, cells := range rows {
@@ -128,7 +130,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 	}
 	version := p.version
 	p.standIn(snap, b.Start, snap.LineEnd(snap.LineOf(b.End)), strings.Join(visible, "\n"), editor.Block{Label: "Markdown table", Width: width, Height: float32(len(rows)) * 36, Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
-		if !model.manual && e.LayoutBounds().W > 0 {
+		if !model.manual && model.dragCol < 0 && e.LayoutBounds().W > 0 {
 			model.fit(e.LayoutBounds().W)
 		}
 		gridWidth := float32(0)
@@ -145,11 +147,12 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 									break
 								}
 								child := model.cells[r][k]
-								box := ui.Column(c.Key(k)).Width(model.widths[k]).Shrink(0).Padding(2, 4).Border(0.5, c.Theme().Border)
+								pos := cellPosition{r, k}
+								box := ui.Column(c.Key(k)).Width(model.widths[k]).Shrink(0).Padding(2, 4).Justify(ui.Center)
 								if r == 0 {
-									box.Background(c.Theme().Surface).Role(ui.RoleColumnHeader)
+									box.InsetShadow(0, -0.5, 0, 0, portrait.Colors.LineStrong).Role(ui.RoleColumnHeader)
 								} else {
-									box.Role(ui.RoleCell)
+									box.InsetShadow(0, -0.5, 0, 0, portrait.Colors.Line).Role(ui.RoleCell)
 								}
 								if model.chosen(cellPosition{r, k}) {
 									box.Background(c.Theme().Selection)
@@ -161,7 +164,12 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 									child.state.ReadingColumn = editor.ReadingColumn{}
 									child.state.Label = fmt.Sprintf("Table row %d column %d", r+1, k+1)
 									child.state.Theme = documentTheme(c.Theme(), Preview)
-									pos := cellPosition{r, k}
+									child.state.Font = portrait.Type.Small.Font(400)
+									if r == 0 {
+										child.state.Font.Weight = 600
+									}
+									child.state.LineHeight = portrait.Type.Small.LineHeight()
+									child.state.Theme.Background = unpainted
 									child.state.OnInput = model.cellInput(pos, doc, c.Services())
 									field := editor.View(c, &child.state).Width(model.widths[k] - 10).Height(31)
 									model.bounds[pos] = field.Bounds()
@@ -174,9 +182,6 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 									if model.focus == child {
 										field.Focus()
 										model.focus = nil
-									}
-									if r == 0 && k+1 < len(model.widths) {
-										model.resizeHandle(c, k, doc)
 									}
 									if next := child.Source(); next != cell.raw && version == doc.Version() {
 										replacement := escapeCell(next)
@@ -199,6 +204,17 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 								})
 							}
 						})
+					}
+					model.hoverCol = -1
+					boundary := float32(0)
+					for k := 0; k+1 < len(model.widths); k++ {
+						boundary += model.widths[k]
+						model.resizeHandle(c, k, boundary, doc)
+					}
+					if at, ok := model.guide(); ok {
+						ui.Box(c.Key("resize guide")).Absolute().Left(at-1).Top(0).Bottom(0).Width(2).
+							Background(portrait.Colors.Accent).Shadow(0, 0, 0, 1, portrait.Colors.AccentSoft).
+							IgnoreInput(true).AccessHidden(true)
 					}
 				})
 			})
@@ -330,32 +346,54 @@ func (m *readingTable) cellInput(pos cellPosition, doc *Document, services ui.Se
 	}
 }
 
-func (m *readingTable) resizeHandle(c *ui.Context, col int, doc *Document) {
-	h := ui.Box(c).Absolute().Right(0).Top(0).Width(7).Height(36).Cursor(ui.CursorResizeColumn).Label(fmt.Sprintf("Resize table column %d", col+1))
-	left := h.Bounds().X
-	h.HandleInput(func(ev ui.InputEvent) bool {
+func (m *readingTable) guide() (float32, bool) {
+	col := m.dragCol
+	if col < 0 {
+		col = m.hoverCol
+	}
+	if col < 0 || col+1 >= len(m.widths) {
+		return 0, false
+	}
+	at := float32(0)
+	for k := 0; k <= col; k++ {
+		at += m.widths[k]
+	}
+	return at, true
+}
 
+func (m *readingTable) resizeHandle(c *ui.Context, col int, boundary float32, doc *Document) {
+	h := ui.Box(c.Key("resize " + fmt.Sprint(col))).Absolute().Left(boundary - 4).Top(0).Bottom(0).Width(8).
+		Cursor(ui.CursorResizeColumn).KeepFocus().Label(fmt.Sprintf("Resize table column %d", col+1))
+	if h.Hovered() && !m.dragging && m.dragCol < 0 {
+		m.hoverCol = col
+	}
+	handle := ui.Local(h, "resize handle", func() ui.Handle { return ui.Handle{} })
+	h.Bind(handle)
+	h.HandleInput(func(ev ui.InputEvent) bool {
+		if ev.Button != 0 {
+			return false
+		}
 		switch ev.Kind {
 		case ui.InputPointerDown:
-			m.manual = true
-			m.dragX = left + ev.X
+			m.dragCol = col
+			m.dragX = handle.Bounds(c).X + ev.X
 			m.leftWidth, m.rightWidth = m.widths[col], m.widths[col+1]
-		case ui.InputPointerUp:
-			if ev.Canceled {
-				m.widths[col], m.widths[col+1] = m.leftWidth, m.rightWidth
-			} else {
-				doc.saveTables()
-			}
-			return true
-		case ui.InputPointerMove:
-			if ev.Button != 0 {
+		case ui.InputPointerMove, ui.InputPointerUp:
+			if m.dragCol != col {
 				return false
 			}
-			dx := max(72-m.leftWidth, min(m.rightWidth-72, left+ev.X-m.dragX))
+			dx := max(72-m.leftWidth, min(m.rightWidth-72, handle.Bounds(c).X+ev.X-m.dragX))
 			if ev.Canceled {
 				dx = 0
 			}
 			m.widths[col], m.widths[col+1] = m.leftWidth+dx, m.rightWidth-dx
+			if ev.Kind == ui.InputPointerUp {
+				m.dragCol = -1
+				if dx != 0 {
+					m.manual = true
+					doc.saveTables()
+				}
+			}
 		default:
 			return false
 		}

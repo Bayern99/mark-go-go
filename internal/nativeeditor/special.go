@@ -5,7 +5,9 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 	"github.com/egoist/mygo/ui/markdown/parser"
@@ -163,8 +165,8 @@ func (p *previewLayout) codeBlock(snap editor.Snapshot, i int) {
 		_, start := p.document.Line(i, line)
 		p.styles = append(p.styles, editor.LineStyle{
 			Line:       snap.LineOf(start),
-			Font:       ui.Font{Family: "IBM Plex Mono", Size: 14},
-			LineHeight: 1.5,
+			Font:       portrait.Type.Code.Font(400),
+			LineHeight: portrait.Type.Code.LineHeight(),
 		})
 	}
 
@@ -176,10 +178,14 @@ func (p *previewLayout) codeBlock(snap editor.Snapshot, i int) {
 	if b.Fenced && firstLine < lastLine {
 		headerLine++
 	}
+	if n := p.document.LineCount(i); n > 0 {
+		_, last := p.document.Line(i, n-1)
+		p.code = append(p.code, codePanel{first: snap.LineStart(headerLine), last: snap.LineStart(snap.LineOf(last))})
+	}
 	p.blocks = append(p.blocks, editor.Block{
 		Line:        headerLine,
 		Above:       true,
-		Height:      26,
+		Height:      codeHeaderHeight,
 		Interactive: true,
 		Label:       "Code block: " + label,
 		Content:     codeHeader(label, body),
@@ -194,18 +200,109 @@ func (p *previewLayout) hideFenceLine(snap editor.Snapshot, line int) {
 	p.replace(start, end, "")
 }
 
+const codeHeaderHeight = 30
+
+type codePanel struct{ first, last int }
+
 func codeHeader(label, body string) func(*ui.Context, ui.Element, editor.Block) {
 	return func(c *ui.Context, e ui.Element, _ editor.Block) {
-		e.Children(func() {
-			ui.Row(c).AlignItems(ui.Center).Padding(4, 8).Children(func() {
-				ui.Text(c, label).Font("IBM Plex Sans").FontSize(12).TextColor(c.Theme().TextMuted)
+		e.Height(codeHeaderHeight).Children(func() {
+			ui.Row(c).Height(codeHeaderHeight).AlignItems(ui.Center).Gap(8).Children(func() {
+				kicker(c, label, portrait.Colors.Ink3)
 				ui.Spacer(c)
-				if ui.Button(c, "Copy code").KeepFocus().Clicked() {
-					c.Services().WriteClipboard(body)
-				}
+				copyButton(c, body)
 			})
 		})
 	}
+}
+
+type copiedKey struct{}
+
+func copyButton(c *ui.Context, body string) {
+	b := ui.ButtonBase(c.Key("copy")).Label("Copy code").KeepFocus().Size(24, 24).Radius(6).AlignItems(ui.Center).Justify(ui.Center)
+	portrait.Tooltip(c, b, "Copy code")
+	ink := portrait.Press(b, portrait.Quiet)
+	copied := ui.Local(b, copiedKey{}, func() time.Time { return time.Time{} })
+	if b.Clicked() {
+		c.Services().WriteClipboard(body)
+		*copied = c.Now()
+	}
+	icon := portrait.IconCopy
+	morphing := false
+	if !copied.IsZero() && c.Now().Sub(*copied) < copiedFor {
+		icon, ink, morphing = portrait.IconCheck, portrait.Colors.Accent, true
+		c.After(copiedFor - c.Now().Sub(*copied))
+	}
+	b.Children(func() {
+		if !morphing {
+			portrait.Glyph(c, icon, 14, ink)
+			return
+		}
+		from := ui.Motion{Opacity: 0.25, Scale: 0.76, Blur: 1.5}
+		ui.Box(c.Key("check")).Transition(portrait.Transition(c, false, ui.ElementTransition{Duration: portrait.Motion.Morph, Ease: portrait.Motion.EaseOut.Easing(), Enter: &from})).Children(func() {
+			portrait.Glyph(c, icon, 14, ink)
+		})
+	})
+}
+
+const copiedFor = 1200 * time.Millisecond
+
+func kicker(c *ui.Context, label string, ink ui.Color) ui.Element {
+	return portrait.Type.Meta.In(portrait.FontDisplay).Apply(ui.Text(c, strings.ToUpper(label))).FontWeight(500).LetterSpacing(0.04 * portrait.Type.Meta.Size).TextColor(ink).MaxLines(1).Ellipsis("…")
+}
+
+type blockLook struct {
+	fill, ink, kickerInk ui.Color
+	icon                 portrait.Icon
+	rim, stripes         bool
+	padY, padX           float32
+	text                 portrait.TypeStyle
+}
+
+func lookOf(kind string) blockLook {
+	paper := blockLook{fill: portrait.Colors.Code, ink: portrait.Colors.Ink, kickerInk: portrait.Colors.Ink3, rim: true, padY: 10, padX: 14, text: portrait.Type.Code}
+	switch kind = strings.ToLower(kind); kind {
+	case "note alert", "tip alert", "important alert", "warning alert", "caution alert":
+		l := blockLook{fill: portrait.Colors.NoteSoft, ink: portrait.Colors.Ink, kickerInk: portrait.Colors.Note, padY: 10, padX: 14, text: portrait.Type.Reading}
+		switch kind {
+		case "note alert":
+			l.icon = portrait.IconNote
+		case "tip alert":
+			l.icon = portrait.IconLightbulb
+		case "important alert":
+			l.icon = portrait.IconInfo
+		case "warning alert":
+			l.icon, l.fill, l.kickerInk = portrait.IconWarning, portrait.Colors.WarningSoft, portrait.Colors.Warning
+		case "caution alert":
+			l.icon, l.fill, l.kickerInk = portrait.IconWarningOctagon, portrait.Colors.CautionSoft, portrait.Colors.Caution
+		}
+		return l
+	case "note":
+		return blockLook{fill: portrait.Colors.Fill, ink: portrait.Colors.Ink2, kickerInk: portrait.Colors.Accent, icon: portrait.IconNote, padY: 8, padX: 10, text: portrait.Type.Small}
+	case "footnote":
+		return blockLook{fill: portrait.Colors.Fill, ink: portrait.Colors.Ink2, kickerInk: portrait.Colors.Accent, padY: 8, padX: 10, text: portrait.Type.Small}
+	case "html", "frontmatter", "reference definition":
+		paper.fill, paper.stripes, paper.ink = ui.Transparent, true, portrait.Colors.Ink2
+		if kind == "frontmatter" {
+			paper.stripes, paper.text = false, portrait.Type.Control
+		}
+		return paper
+	}
+	return paper
+}
+
+func (l blockLook) paint(e ui.Element) ui.Element {
+	e.Radius(8).Padding(l.padY, l.padX).Gap(4).Clip()
+	if l.fill.A > 0 {
+		e.Background(l.fill)
+	}
+	if l.stripes {
+		e.Stripes(portrait.Colors.Fill, 1, 6, 135)
+	}
+	if l.rim {
+		e.InsetShadow(0, 0, 0, 0.5, portrait.Colors.Line)
+	}
+	return e
 }
 
 func (p *previewLayout) specialBlock(snap editor.Snapshot, start, end int, kind, label, detail, body string) {
@@ -213,9 +310,11 @@ func (p *previewLayout) specialBlock(snap editor.Snapshot, start, end int, kind,
 	if d.draft != nil && d.draft.anchor == start && d.draft.kind == kind {
 		p.draftAnchored = true
 	}
+	look := lookOf(kind)
 	p.standIn(snap, start, end, body, editor.Block{Label: label + " block", Height: 80, Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
 		e.Children(func() {
-			ui.Column(c).FillWidth().Padding(8, 12).Gap(5).Children(func() {
+			frame := look.paint(ui.Column(c).FillWidth())
+			frame.Children(func() {
 				if draft := d.draft; draft != nil && draft.anchor == start && draft.kind == kind {
 					d.drawDraft(c, draft)
 					return
@@ -224,46 +323,97 @@ func (p *previewLayout) specialBlock(snap editor.Snapshot, start, end int, kind,
 				if kind == "math" || kind == "Mermaid" {
 					art = d.renderImage(kind, body)
 				}
-				if art.reason != "" {
-					ui.Text(c, label+" could not render: "+art.reason).Role(ui.RoleAlert).TextColor(c.Theme().Danger)
-					ui.Text(c, snap.Slice(start, end)).Font("IBM Plex Mono").FontSize(14).Wrap()
-				} else if art.svg != nil {
+				heading := func() {
+					ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
+						if look.icon.Glyph != "" {
+							portrait.Glyph(c, look.icon, 14, look.kickerInk)
+						}
+						name := strings.TrimSuffix(label, " alert")
+						k := kicker(c, name, look.kickerInk)
+						if look.icon.Glyph != "" {
+							k.FontWeight(600).LetterSpacing(0.07 * portrait.Type.Meta.Size)
+						}
+						if detail != "" {
+							portrait.Type.Meta.In(portrait.FontMono).Apply(ui.Text(c, detail)).TextColor(portrait.Colors.Ink3)
+						}
+						ui.Spacer(c)
+						d.blockActions(c, e, snap, start, end, kind, label)
+					})
+				}
+				switch {
+				case art.reason != "":
+					heading()
+					portrait.Type.Meta.Apply(ui.Text(c, label+" could not render: "+art.reason)).Role(ui.RoleAlert).TextColor(portrait.Colors.Danger).Wrap()
+					portrait.Type.Code.Apply(ui.Text(c, snap.Slice(start, end))).TextColor(portrait.Colors.Ink).Wrap()
+				case art.svg != nil:
+					heading()
 					w, h := art.svg.Size()
 					scale := min(float32(1), 600/max(1, w), 360/max(1, h))
 					name := "Typeset equation"
 					if kind == "Mermaid" {
 						name = "Mermaid diagram"
 					}
-					ui.Image(c, art.svg).Size(max(1, w*scale), max(1, h*scale)).Label(name).Tooltip(body)
-				} else if kind == "frontmatter" {
-					ui.Text(c, label).FontSize(12).TextColor(c.Theme().TextMuted)
-					frontmatterRows(c, body)
-				} else if kind == "code" {
-					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-						ui.Text(c, label).Font("IBM Plex Sans").FontSize(12).TextColor(c.Theme().TextMuted)
-						if detail != "" {
-							ui.Text(c, detail).Font("IBM Plex Sans").FontSize(12).TextColor(c.Theme().TextMuted)
-						}
+					ui.Row(c).FillWidth().Justify(ui.Center).Padding(4, 2).Children(func() {
+						ui.Image(c, art.svg).Size(max(1, w*scale), max(1, h*scale)).Label(name).Tooltip(body)
 					})
-					ui.Text(c, body).Font("IBM Plex Mono").FontSize(14).Wrap().PreserveSpaces().Selectable()
-				} else {
-					ui.Text(c, label).FontSize(12).TextColor(c.Theme().TextMuted)
-					ui.Text(c, body).Wrap().Selectable()
-				}
-				if kind == "footnote" && ui.Button(c, "Return to reference "+label).AlignSelf(ui.Start).Clicked() {
-					p.returnTo(label)
-					c.Invalidate()
-				}
-				if kind == "note" && !d.state.ReadOnly && ui.Button(c, "Delete note").AlignSelf(ui.Start).Clicked() {
-					d.deleteNote(snap, start, end)
-					c.Invalidate()
-				}
-				if !d.state.ReadOnly && ui.Button(c, "Edit "+kind).AlignSelf(ui.Start).Clicked() && d.Version() == snap.Version() {
-					d.openDraft(start, end, kind)
+				case kind == "frontmatter":
+					heading()
+					frontmatterRows(c, body)
+				case kind == "code":
+					heading()
+					look.text.Apply(ui.Text(c, body)).TextColor(look.ink).Wrap().PreserveSpaces().Selectable()
+				case kind == "footnote" || kind == "note":
+					ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Start).Children(func() {
+						if kind == "note" {
+							portrait.Glyph(c, look.icon, 15, look.kickerInk).Margin(3, 0, 0, 0)
+						} else {
+							portrait.Type.Meta.In(portrait.FontDisplay).Apply(ui.Text(c, label)).FontFeatures("tnum").TextColor(look.kickerInk).Margin(3, 0, 0, 0)
+						}
+						look.text.Apply(ui.Text(c, body)).TextColor(look.ink).Wrap().Selectable().Grow(1).Shrink(1).MinWidth(0)
+						d.blockActions(c, e, snap, start, end, kind, label)
+					})
+				default:
+					heading()
+					look.text.Apply(ui.Text(c, body)).TextColor(look.ink).Wrap().Selectable()
 				}
 			})
 		})
 	}})
+}
+
+func (d *Document) blockActions(c *ui.Context, block ui.Element, snap editor.Snapshot, start, end int, kind, label string) {
+	row := ui.Row(c).Gap(4).AlignItems(ui.Center)
+	shown := block.Hovered() || block.FocusWithin() || !c.Preferences().Hover()
+	row.Opacity(row.AnimateTo(actionsKey{}, flag(shown), ui.Animation{Duration: portrait.Motion.Switch, Ease: portrait.Motion.EaseOut.Easing(), NonMotion: true}))
+	row.Children(func() {
+		if kind == "footnote" && smallButton(c, "Return to reference "+label, "Return to reference "+label, portrait.Raised).Clicked() {
+			d.preview.returnTo(label)
+			c.Invalidate()
+		}
+		if kind == "note" && !d.state.ReadOnly && smallButton(c, "Delete note", "Delete note", portrait.Raised).Clicked() {
+			d.deleteNote(snap, start, end)
+			c.Invalidate()
+		}
+		if !d.state.ReadOnly && smallButton(c, "Edit", "Edit "+kind, portrait.Quiet).Clicked() && d.Version() == snap.Version() {
+			d.openDraft(start, end, kind)
+		}
+	})
+}
+
+type actionsKey struct{}
+
+func flag(b bool) float32 {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+func smallButton(c *ui.Context, title, label string, look portrait.Look) ui.Element {
+	b := ui.ButtonBase(c.Key(label)).Label(label).Height(22).Padding(0, 8).Radius(6).AlignItems(ui.Center).Justify(ui.Center)
+	ink := portrait.Press(b, look)
+	b.Children(func() { portrait.Type.Meta.Apply(ui.Text(c, title)).FontWeight(500).TextColor(ink).MaxLines(1) })
+	return b
 }
 
 func (d *Document) openDraft(start, end int, kind string) {
@@ -308,26 +458,34 @@ func preserveLines(raw, next string) string {
 }
 
 func (d *Document) drawDraft(c *ui.Context, draft *blockDraft) {
+	in := ui.Motion{Y: -3, Scale: 0.99, Blur: 1.5}
+	ui.Column(c.Key("composer")).FillWidth().TransformOrigin(0.5, 0).Transition(portrait.Transition(c, false, ui.ElementTransition{Duration: portrait.Motion.Expand, Ease: portrait.Motion.EaseOut.Easing(), Enter: &in})).Children(func() {
+		d.composer(c, draft)
+	})
+}
+
+func (d *Document) composer(c *ui.Context, draft *blockDraft) {
 	name := "Markdown block editor"
 	if draft.kind == "link" {
 		name = "Link destination"
 	} else if draft.kind == "note" || draft.kind == "new note" {
 		name = "Note"
 	}
-	entry := ui.TextArea(c, &draft.text).Label(name).Height(100).FillWidth()
+	entry := ui.TextArea(c, &draft.text).Label(name).Height(100).FillWidth().Radius(8).Background(portrait.Colors.Paper)
+	portrait.Rings.Editing.Apply(entry)
 	if draft.focus {
 		entry.Focus()
 		draft.focus = false
 	}
 	composing := entry.Composing()
 	save, cancel := entry.Shortcut(ui.Cmd, ui.KeyEnter) && !composing, entry.Shortcut(0, ui.KeyEscape) && !composing
-	ui.Row(c).Gap(6).Children(func() {
+	ui.Row(c).Gap(6).Margin(8, 0, 0, 0).Children(func() {
 		emptyLink := draft.kind == "link" && strings.TrimSpace(draft.text) == ""
 		emptyNote := (draft.kind == "note" || draft.kind == "new note") && strings.TrimSpace(draft.text) == ""
-		if ui.Button(c, "Save").Disabled(d.state.ReadOnly || emptyLink || emptyNote).Clicked() {
+		if portrait.AccentButton(c, "Save", "Save").Disabled(d.state.ReadOnly || emptyLink || emptyNote).Clicked() {
 			save = true
 		}
-		if ui.Button(c, "Cancel").Clicked() {
+		if portrait.Button(c, "Cancel", "Cancel").Clicked() {
 			cancel = true
 		}
 	})

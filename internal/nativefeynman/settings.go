@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -59,7 +60,7 @@ func (p *panel) settings(c *ui.Context) {
 		}
 	})
 	if s.cliError != "" {
-		ui.Text(c, s.cliError).Role(ui.RoleAlert).TextColor(errorColor).FontSize(11).FillWidth()
+		text(c, portrait.Type.Meta, s.cliError).Role(ui.RoleAlert).TextColor(portrait.Colors.Danger).FillWidth().Wrap()
 	}
 	if s.cliResult != "" {
 		resultText(c, "Command result", s.cliResult, "")
@@ -76,7 +77,7 @@ func (p *panel) settings(c *ui.Context) {
 
 func (p *panel) statusSettings(c *ui.Context) {
 	s := p.state
-	ui.Column(c.Key("feynman-status-settings")).Gap(4).Padding(7).Radius(8).Background(trackColor).Children(func() {
+	ui.Column(c.Key("feynman-status-settings")).Gap(4).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
 		sectionTitle(c, "Status and diagnostics")
 		ui.Row(c).Wrap().Gap(4).Children(func() {
 			if smallButton(c, "Run Doctor", "Run feynman doctor").Disabled(s.cliBusy).Clicked() {
@@ -102,8 +103,8 @@ func (p *panel) statusSettings(c *ui.Context) {
 				ui.Collapsible(c.Key("cli-status-"+section.Title), section.Title, p.collapsibleState("cli-status-"+section.Title), func() {
 					for _, entry := range section.Entries {
 						ui.Row(c).Gap(5).Children(func() {
-							ui.Text(c, entry.Key).Grow(1).FontSize(10).TextColor(mutedColor)
-							ui.Text(c, entry.Value).FontSize(10).FillWidth()
+							text(c, portrait.Type.Meta, entry.Key).Grow(1).TextColor(portrait.Colors.Ink3)
+							text(c, portrait.Type.Meta, entry.Value).TextColor(portrait.Colors.Ink).FillWidth()
 						})
 					}
 				}).FillWidth()
@@ -119,7 +120,10 @@ func (p *panel) statusSettings(c *ui.Context) {
 				}
 				mutedText(c, "Doctor · "+status)
 				for _, issue := range s.doctorResult.Issues {
-					ui.Text(c, "• "+issue).FontSize(10).TextColor(warningColor).FillWidth()
+					ui.Row(c).Gap(6).AlignItems(ui.Start).FillWidth().Children(func() {
+						portrait.Glyph(c, portrait.IconWarningCircle, 13, portrait.Colors.Warn).Margin(1, 0, 0, 0)
+						text(c, portrait.Type.Meta, issue).TextColor(portrait.Colors.Warn).Grow(1).MinWidth(0).Wrap()
+					})
 				}
 			} else {
 				resultText(c, s.doctorResult.Command, s.doctorResult.RawOutput, s.doctorResult.Error)
@@ -133,7 +137,7 @@ func (p *panel) statusSettings(c *ui.Context) {
 
 func (p *panel) modelSettings(c *ui.Context) {
 	s := p.state
-	ui.Column(c.Key("feynman-model-settings")).Gap(4).Padding(7).Radius(8).Background(trackColor).Children(func() {
+	ui.Column(c.Key("feynman-model-settings")).Gap(4).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
 		sectionTitle(c, "Models and service tier")
 		ui.Row(c).Wrap().Gap(4).AlignItems(ui.Center).Children(func() {
 			input(c, "feynman-provider-login", "Model provider", &p.loginProvider, "Optional provider, such as anthropic")
@@ -171,7 +175,7 @@ func (p *panel) cliModelRow(c *ui.Context, model feynman.CLIModelEntry) {
 	}
 	ui.Row(c.Key("feynman-model-"+model.ID)).Wrap().Gap(4).AlignItems(ui.Center).Padding(3, 0).Children(func() {
 		ui.Column(c).Grow(1).Children(func() {
-			ui.Text(c, label).FontSize(11).Bold()
+			text(c, portrait.Type.UI, label).FontWeight(600).TextColor(portrait.Colors.Ink)
 			meta := model.Provider
 			if model.Current {
 				meta += " · current"
@@ -206,7 +210,7 @@ func (p *panel) modelAction(action, value string) {
 
 func (p *panel) alphaSettings(c *ui.Context) {
 	s := p.state
-	ui.Column(c.Key("feynman-alpha-settings")).Gap(4).Padding(7).Radius(8).Background(trackColor).Children(func() {
+	ui.Column(c.Key("feynman-alpha-settings")).Gap(4).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
 		sectionTitle(c, "alphaXiv account")
 		if s.alphaStatus == nil {
 			mutedText(c, "alphaXiv status has not loaded.")
@@ -242,7 +246,7 @@ func (p *panel) alphaSettings(c *ui.Context) {
 
 func (p *panel) searchSettings(c *ui.Context) {
 	s := p.state
-	ui.Column(c.Key("feynman-search-settings")).Gap(4).Padding(7).Radius(8).Background(trackColor).Children(func() {
+	ui.Column(c.Key("feynman-search-settings")).Gap(4).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
 		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
 			sectionTitle(c, "Web search")
 			ui.Row(c).Grow(1)
@@ -264,8 +268,8 @@ func (p *panel) searchSettings(c *ui.Context) {
 			if s.searchStatus.Parsed {
 				for _, entry := range s.searchStatus.Entries {
 					ui.Row(c).Gap(5).Children(func() {
-						ui.Text(c, entry.Key).Grow(1).FontSize(10).TextColor(mutedColor)
-						ui.Text(c, entry.Value).FontSize(10)
+						text(c, portrait.Type.Meta, entry.Key).Grow(1).TextColor(portrait.Colors.Ink3)
+						text(c, portrait.Type.Meta, entry.Value).TextColor(portrait.Colors.Ink)
 					})
 				}
 				for _, provider := range strings.Split(s.searchStatus.SavedAPIKeys, ",") {
@@ -305,7 +309,7 @@ func (p *panel) searchSettings(c *ui.Context) {
 
 func (p *panel) mcpSettings(c *ui.Context) {
 	s := p.state
-	ui.Column(c.Key("feynman-mcp-settings")).Gap(4).Padding(7).Radius(8).Background(trackColor).Children(func() {
+	ui.Column(c.Key("feynman-mcp-settings")).Gap(4).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
 		sectionTitle(c, "MCP servers")
 		if s.mcpServers != nil {
 			if !s.mcpServers.Parsed {
@@ -314,7 +318,7 @@ func (p *panel) mcpSettings(c *ui.Context) {
 				for _, server := range s.mcpServers.Servers {
 					ui.Row(c.Key("mcp-server-" + server.Name)).Wrap().Gap(4).AlignItems(ui.Center).Children(func() {
 						ui.Column(c).Grow(1).Children(func() {
-							ui.Text(c, server.Name).FontSize(11).Bold()
+							text(c, portrait.Type.UI, server.Name).FontWeight(600).TextColor(portrait.Colors.Ink)
 							mutedText(c, strings.Join([]string{server.Scope, server.Transport, server.Status}, " · "))
 						})
 						if smallButton(c, "Remove", "Remove MCP server "+server.Name).Disabled(s.cliBusy).Clicked() {
@@ -331,11 +335,7 @@ func (p *panel) mcpSettings(c *ui.Context) {
 		input(c, "feynman-mcp-name", "Server name", &p.serverName, "Name")
 		ui.Row(c).Wrap().Gap(4).Children(func() {
 			for _, transport := range []string{"http", "stdio"} {
-				button := smallButton(c, transport, "Use "+transport+" transport")
-				if p.serverTransport == transport {
-					button.Background(ui.Hex("#e8f0ed"))
-				}
-				if button.Clicked() {
+				if choiceButton(c, "research-transport-"+transport, transport, "Use "+transport+" transport", p.serverTransport == transport, true).Clicked() {
 					p.serverTransport = transport
 				}
 			}
@@ -391,7 +391,7 @@ func (p *panel) addMCPServer() {
 
 func (p *panel) packageSettings(c *ui.Context) {
 	s := p.state
-	ui.Column(c.Key("feynman-package-settings")).Gap(4).Padding(7).Radius(8).Background(trackColor).Children(func() {
+	ui.Column(c.Key("feynman-package-settings")).Gap(4).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
 		sectionTitle(c, "Workflows, skills and extensions")
 		if s.packages != nil {
 			if !s.packages.Parsed {
@@ -400,7 +400,7 @@ func (p *panel) packageSettings(c *ui.Context) {
 				for _, item := range s.packages.Packages {
 					ui.Row(c.Key("feynman-package-" + item.Name)).Wrap().Gap(4).AlignItems(ui.Center).Children(func() {
 						ui.Column(c).Grow(1).Children(func() {
-							ui.Text(c, item.Name).FontSize(11).Bold()
+							text(c, portrait.Type.UI, item.Name).FontWeight(600).TextColor(portrait.Colors.Ink)
 							mutedText(c, item.Kind+" · "+item.Description)
 						})
 						action := "install"

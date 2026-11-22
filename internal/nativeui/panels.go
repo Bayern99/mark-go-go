@@ -30,7 +30,7 @@ func (w *Window) Reveal(offset int) {
 	if d == nil {
 		return
 	}
-	if err := d.SelectUTF16(offset, offset); err != nil {
+	if err := d.Reveal(offset); err != nil {
 		w.failure = err.Error()
 		return
 	}

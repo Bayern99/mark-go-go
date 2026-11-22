@@ -2,6 +2,8 @@ package nativeui
 
 import (
 	"fmt"
+
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
 )
@@ -10,27 +12,27 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 	ui.Column(c).Fill().MinWidth(0).Role(ui.RoleMain).Label("Document").Children(func() {
 		if doc.ID == "" {
 			if m.Workspace.Kind == "folder" {
-				ui.Text(c, "Open a Markdown file from this folder.").Padding(24).TextColor(muted)
+				ui.Text(c, "Open a Markdown file from this folder.").Padding(24).TextColor(portrait.Colors.Ink3)
 				return
 			}
 			ui.Scroll(c).Fill().Padding(32).Children(func() {
-				ui.Text(c, "Welcome").Font("Barlow Semi Condensed").FontSize(30).Bold()
-				ui.Text(c, "Open a folder to browse Markdown files, or start an untitled document.").TextColor(muted)
+				portrait.Type.Title.In(portrait.FontDisplay).Apply(ui.Text(c, "Welcome")).Bold().TextColor(portrait.Colors.Ink)
+				ui.Text(c, "Open a folder to browse Markdown files, or start an untitled document.").TextColor(portrait.Colors.Ink3)
 				ui.Row(c).Padding(10, 0).Gap(6).Children(func() {
-					if control(c, "Open Folder", "Open Folder").Clicked() && a.OpenFolder != nil {
+					if portrait.AccentButton(c, "Open Folder", "Open Folder").Clicked() && a.OpenFolder != nil {
 						a.OpenFolder()
 					}
-					if control(c, "New Document", "New Document").Clicked() && a.NewDocument != nil {
+					if portrait.Button(c, "New Document", "New Document").Clicked() && a.NewDocument != nil {
 						a.NewDocument()
 					}
 				})
-				ui.Text(c, "Recent Workspaces").Font("Barlow Semi Condensed").FontSize(18).Bold()
+				portrait.Type.Meta.Apply(ui.Text(c, "RECENT WORKSPACES")).Label("Recent Workspaces").Role(ui.RoleHeading).Bold().LetterSpacing(0.08 * portrait.Type.Meta.Size).TextColor(portrait.Colors.Ink3)
 				if len(m.Recents) == 0 {
-					ui.Text(c, "No recent workspaces yet.").TextColor(muted)
+					ui.Text(c, "No recent workspaces yet.").TextColor(portrait.Colors.Ink3)
 				}
 				for _, r := range m.Recents {
 					ui.Row(c.Key(r.Root)).Children(func() {
-						if control(c, r.Name, r.Name).Tooltip(r.Root).Clicked() && a.OpenRecent != nil {
+						if portrait.Tooltip(c, portrait.Button(c, r.Name, r.Name), r.Root).Clicked() && a.OpenRecent != nil {
 							a.OpenRecent(r.Root)
 						}
 					})
@@ -49,35 +51,35 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 						ui.Text(c, crumb.Name).Bold().MaxLines(1).Ellipsis("…")
 						continue
 					}
-					b := ui.ButtonBase(c.Key(crumb.Path)).Label("Reveal " + crumb.Name).Tooltip(crumb.Path).Padding(2)
-					b.Children(func() { ui.Text(c, crumb.Name).TextColor(muted).MaxLines(1) })
+					b := portrait.Tooltip(c, ui.ButtonBase(c.Key(crumb.Path)).Label("Reveal "+crumb.Name), crumb.Path).Padding(2)
+					b.Children(func() { ui.Text(c, crumb.Name).TextColor(portrait.Colors.Ink3).MaxLines(1) })
 					if b.Clicked() && a.RevealPath != nil {
 						a.RevealPath(crumb.Path)
 					}
-					ui.Text(c, "/").TextColor(muted)
+					ui.Text(c, "/").TextColor(portrait.Colors.Ink3)
 				}
 			})
 			if m.Version > 0 {
-				ui.Text(c, fmt.Sprintf("v%d", m.Version)).FontSize(11).TextColor(muted).Padding(1, 5).Radius(8).Border(0.5, rim)
+				portrait.Type.Meta.Apply(ui.Text(c, fmt.Sprintf("v%d", m.Version))).TextColor(portrait.Colors.Ink3).Padding(1, 5).Radius(8).Border(0.5, portrait.Colors.LineStrong)
 			}
-			ui.Row(c).Role(ui.RoleTabList).Label("Document views").Padding(2).Radius(9).Background(track).Children(func() {
+			portrait.Track(c, "view modes", func(t *portrait.Segments) {
 				for i, title := range []string{"Preview", "Markdown", "GenUI"} {
 					mode := []string{"preview", "markdown", "genui"}[i]
 					if mode == "genui" && slots.GenUI == nil {
 						continue
 					}
 					selected := doc.ViewMode == mode || (mode == "preview" && doc.ViewMode != "genui" && doc.ViewMode != "markdown")
-					if discrete(c, title, title, selected, "view modes").Role(ui.RoleTab).AccessSelected(selected).Clicked() && a.SetMode != nil {
+					if t.Segment(c, title, title, selected).Role(ui.RoleTab).AccessSelected(selected).Clicked() && a.SetMode != nil {
 						a.SetMode(mode)
 					}
 				}
-			})
+			}).Label("Document views")
 			if m.Git && slots.Checkpoints != nil {
-				b := control(c, "Checkpoints", "Checkpoints")
+				b := portrait.Button(c, "Checkpoints", "Checkpoints").Expanded(s.checkpoints)
 				if b.Clicked() {
 					s.checkpoints = !s.checkpoints
 				}
-				ui.Popover(c, b, &s.checkpoints, func() { slots.Checkpoints(c) })
+				portrait.Popover(c, b, &s.checkpoints, func() { slots.Checkpoints(c) })
 			}
 		})
 		if doc.ActionError != "" {
@@ -93,11 +95,11 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 			banner(c, "The file was deleted on disk. Edits are still available in this window.")
 		}
 		if doc.ReadOnly {
-			ui.Text(c, "Read only").TextColor(muted)
+			ui.Text(c, "Read only").TextColor(portrait.Colors.Ink3)
 		}
 
 		if m.ReturnToGenUI && slots.GenUI != nil {
-			if control(c, "← Back to GenUI", "Back to GenUI").Clicked() && a.SetMode != nil {
+			if portrait.ButtonLeadingIcon(c, portrait.IconArrowLeft, "Back to GenUI", "Back to GenUI").Clicked() && a.SetMode != nil {
 				a.SetMode("genui")
 			}
 		}
@@ -112,7 +114,7 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 			}
 		})
 		ui.Row(c).Height(22).Padding(2, 12).Gap(6).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, doc.Path).Grow(1).MinWidth(0).MaxLines(1).Ellipsis("…").FontSize(11).TextColor(muted).Tooltip(doc.Path)
+			portrait.Tooltip(c, portrait.Type.Meta.Apply(ui.Text(c, doc.Path)).Grow(1).MinWidth(0).MaxLines(1).Ellipsis("…").TextColor(portrait.Colors.Ink3), doc.Path)
 			state := "Saved"
 			if doc.Edited {
 				state = "Edited"
@@ -123,7 +125,7 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 			if doc.Generating {
 				state += " · generating"
 			}
-			ui.Text(c, state).FontSize(11).TextColor(muted)
+			portrait.Type.Meta.Apply(ui.Text(c, state)).TextColor(portrait.Colors.Ink3)
 		})
 	})
 }

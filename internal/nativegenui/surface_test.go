@@ -2,6 +2,7 @@ package nativegenui
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -91,7 +92,7 @@ func TestOpenExpandsReadOnlyChildListTemplates(t *testing.T) {
 	renderedSources := []string{}
 	var reader Reading
 	reader.Sources = func(_ *ui.Context, node Node) {
-		if len(node.Sources) > 0 {
+		if len(node.Sources) > 0 && !slices.Contains(renderedSources, node.ID) {
 			renderedSources = append(renderedSources, node.ID)
 		}
 	}

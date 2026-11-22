@@ -7,8 +7,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/Bayern99/mark-go-go/internal/genui"
 )
 
 type traceRecorder struct {
@@ -386,11 +384,9 @@ func TestTheValidationResultListsThePropertiesTheReaderDrawsWithTheirDefaults(t 
 		},
 	} {
 		tr := &traceRecorder{}
-		err, _, _ := driveGeneration(t, fakeSpec{Out: statementsFull(test.statements...)}, nil, func(job *GenerationJob) {
-			job.Req.Language = genui.StatementLanguage
-			job.Validate = nil
+		err, _, _ := driveGeneration(t, fakeSpec{Out: statementsFull(test.statements...)}, nil, statementsWithDefaultValidator(func(job *GenerationJob) {
 			job.Observe = tr.observe
-		})
+		}))
 		if err != nil {
 			t.Fatalf("%s: RunGeneration: %v", name, err)
 		}

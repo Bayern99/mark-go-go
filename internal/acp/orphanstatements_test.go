@@ -36,13 +36,13 @@ func statementsFull(statements ...string) string {
 func generatedStatementView(t *testing.T, statements ...string) string {
 	t.Helper()
 	viewPath := filepath.Join(t.TempDir(), ".notes.md.genui.json")
-	if err, _, _ := driveGeneration(t, fakeSpec{Out: statementsFull(statements...)}, nil, validated(func(job *GenerationJob) { job.ViewPath = viewPath })); err != nil {
+	if err, _, _ := driveGeneration(t, fakeSpec{Out: statementsFull(statements...)}, nil, statementsWithDefaultValidator(func(job *GenerationJob) { job.ViewPath = viewPath })); err != nil {
 		t.Fatalf("full generation: %v", err)
 	}
 	return viewPath
 }
 
-func validated(mutate func(*GenerationJob)) func(*GenerationJob) {
+func statementsWithDefaultValidator(mutate func(*GenerationJob)) func(*GenerationJob) {
 	return func(job *GenerationJob) {
 		mutate(job)
 		job.Req.Language = genui.StatementLanguage
@@ -84,7 +84,7 @@ func TestAnUpdateDeletesTheStatementsItLeavesUnreferenced(t *testing.T) {
 	viewPath := generatedStatementView(t, rehearsalPlan...)
 	created := writtenView(t, viewPath).A2UI[0]
 
-	if err, _, _ := driveGeneration(t, fakeSpec{Out: statementsUpdate(rehearsalUpdate...)}, nil, validated(updateJob(viewPath, "phase2_src"))); err != nil {
+	if err, _, _ := driveGeneration(t, fakeSpec{Out: statementsUpdate(rehearsalUpdate...)}, nil, statementsWithDefaultValidator(updateJob(viewPath, "phase2_src"))); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 
@@ -108,7 +108,7 @@ func TestAnUpdateDeletesTheStatementsItLeavesUnreferenced(t *testing.T) {
 func TestAnUpdateThatLeavesNothingUnreferencedIsWrittenAsTheAgentWroteIt(t *testing.T) {
 	viewPath := generatedStatementView(t, rehearsalPlan...)
 	out := statementsUpdate(`phase2_src = Source(["detail"], [phase2_card, phase2_note])`, `phase2_note = Caption("Schema changes are frozen until cutover.")`)
-	if err, _, _ := driveGeneration(t, fakeSpec{Out: out}, nil, validated(updateJob(viewPath, "phase2_src"))); err != nil {
+	if err, _, _ := driveGeneration(t, fakeSpec{Out: out}, nil, statementsWithDefaultValidator(updateJob(viewPath, "phase2_src"))); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	var agent struct {
@@ -129,7 +129,7 @@ func TestAnUpdateKeepsTheVariablesItNoLongerUses(t *testing.T) {
 		`phase1_tasks = Col([Checkbox($p1_backup, "Restore last night's backup"), Checkbox($p1_replay, "Replay 24 hours of traffic")], 2)`,
 	)
 	out := statementsUpdate(`phase1_src = Source(["report"], [Checkbox($p1_backup, "Restore last night's backup")])`)
-	if err, _, _ := driveGeneration(t, fakeSpec{Out: out}, nil, validated(updateJob(viewPath, "phase1_src"))); err != nil {
+	if err, _, _ := driveGeneration(t, fakeSpec{Out: out}, nil, statementsWithDefaultValidator(updateJob(viewPath, "phase1_src"))); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	wantUpdate := []string{`phase1_src = Source(["report"], [Checkbox($p1_backup, "Restore last night's backup")])`, `phase1_tasks = null`}
@@ -144,7 +144,7 @@ func TestAnUpdateKeepsTheVariablesItNoLongerUses(t *testing.T) {
 
 func TestALaterUpdateMayReuseTheNameOfADeletedStatementAndLeavesEarlierMessagesAlone(t *testing.T) {
 	viewPath := generatedStatementView(t, rehearsalPlan...)
-	if err, _, _ := driveGeneration(t, fakeSpec{Out: statementsUpdate(rehearsalUpdate...)}, nil, validated(updateJob(viewPath, "phase2_src"))); err != nil {
+	if err, _, _ := driveGeneration(t, fakeSpec{Out: statementsUpdate(rehearsalUpdate...)}, nil, statementsWithDefaultValidator(updateJob(viewPath, "phase2_src"))); err != nil {
 		t.Fatalf("first update: %v", err)
 	}
 	earlier := writtenView(t, viewPath).A2UI
@@ -153,7 +153,7 @@ func TestALaterUpdateMayReuseTheNameOfADeletedStatementAndLeavesEarlierMessagesA
 		`phase2_src = Source(["detail"], [phase2_card])`,
 		`phase2_card = Card([phase2_head, Text("Both rehearsals are done.", "sm")])`,
 	}
-	if err, _, _ := driveGeneration(t, fakeSpec{Out: statementsUpdate(second...)}, nil, validated(updateJob(viewPath, "phase2_src"))); err != nil {
+	if err, _, _ := driveGeneration(t, fakeSpec{Out: statementsUpdate(second...)}, nil, statementsWithDefaultValidator(updateJob(viewPath, "phase2_src"))); err != nil {
 		t.Fatalf("second update: %v", err)
 	}
 
@@ -184,7 +184,7 @@ func TestAnUpdateDeletesAStatementAnEarlierMessageLeftUnreferenced(t *testing.T)
 		`phase2_steps = List(["Rehearse the cutover twice on staging."], "number")`,
 	)
 	out := statementsUpdate(`goal_src = Source(["report"], [Text("Move the orders cluster to 17.4.")])`)
-	if err, _, _ := driveGeneration(t, fakeSpec{Out: out}, nil, validated(updateJob(viewPath, "goal_src"))); err != nil {
+	if err, _, _ := driveGeneration(t, fakeSpec{Out: out}, nil, statementsWithDefaultValidator(updateJob(viewPath, "goal_src"))); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	wantUpdate := []string{`goal_src = Source(["report"], [Text("Move the orders cluster to 17.4.")])`, `phase2_steps = null`}

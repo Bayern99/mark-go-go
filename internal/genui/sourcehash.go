@@ -121,12 +121,12 @@ func (b *BaseView) statementSourceUses(messages []json.RawMessage) ([]sourceUse,
 		written[name] = true
 	}
 	var uses []sourceUse
-	for _, argument := range openuilang.FirstArguments(openuilang.Merge(earlier, update), "Source") {
-		if !argument.Literal && !written[argument.Statement] {
+	for _, ids := range openuilang.FirstArgumentStrings(openuilang.Merge(earlier, update), "Source") {
+		if !ids.Literal && !written[ids.Statement] {
 			return nil, false
 		}
-		for _, source := range argument.Strings {
-			uses = append(uses, sourceUse{source, written[argument.Statement]})
+		for _, source := range ids.Strings {
+			uses = append(uses, sourceUse{source, written[ids.Statement]})
 		}
 	}
 	return uses, true

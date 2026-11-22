@@ -73,7 +73,7 @@ func (r *Reading) media(c *ui.Context, e *openuilang.Element, p props, path stri
 			for i, item := range flatten(p.value("children"), nil) {
 				at := path + "/" + strconv.Itoa(i)
 				ui.Column(c.Key(at + "#slide")).Width(width).Shrink(0).Children(func() {
-					r.piece(c, item, at, depth, place{compact: true, nested: true}, slot{})
+					r.piece(c, item, at, depth, place{compact: true, nested: true}, treatment{})
 				})
 			}
 		})
@@ -215,10 +215,10 @@ func grouped(value float64) string {
 }
 
 const (
-	cellInset    = 14
-	keptMeasure  = 8
-	widestInCell = 240
-	fitsKept     = 1 << 15
+	cellInset     = 14
+	noWrapEms     = 8
+	widestInCell  = 240
+	fitCacheLimit = 1 << 15
 )
 
 type cellContent int
@@ -261,13 +261,13 @@ func (r *Reading) fitted(content string, style textStyle) textFit {
 	})
 	natural, _ := ui.ShapeText(shown, font, 0).Size()
 	result := textFit{least: natural, whole: true}
-	if kept := keptMeasure * font.Size; natural > kept {
+	if floor := noWrapEms * font.Size; natural > floor {
 		word, _ := ui.ShapeRichTextWith([]ui.Span{{Text: shown}}, font, ui.TextShape{Width: 1, NoBreakWords: true}).Size()
-		result = textFit{least: max(word, kept)}
+		result = textFit{least: max(word, floor)}
 	}
 	result.least = float32(math.Ceil(float64(result.least))) + 1
 	result.natural, result.lines = natural, 1+strings.Count(strings.TrimSpace(shown), "\n")
-	if r.fits == nil || len(r.fits) >= fitsKept {
+	if r.fits == nil || len(r.fits) >= fitCacheLimit {
 		r.fits = map[measuredText]textFit{}
 	}
 	r.fits[key] = result
@@ -362,7 +362,7 @@ func (r *Reading) table(c *ui.Context, p props, path string, depth int, at place
 			case rigidCell:
 				least = max(least, float32(math.Ceil(float64(r.state(cellAt(n, i)+"#fit").frame.Bounds(c).W))))
 			case flowingCell:
-				least = max(least, keptMeasure*body(i).size)
+				least = max(least, noWrapEms*body(i).size)
 			}
 		}
 		widths[i] = least + 2*cellInset
@@ -404,7 +404,7 @@ func (r *Reading) table(c *ui.Context, p props, path string, depth int, at place
 					style.whole = r.fitted(text, style).whole
 					r.prose(c.Key(at), text, style)
 				case flowingCell:
-					r.piece(c, value, at, depth, place{compact: true, nested: true}, slot{})
+					r.piece(c, value, at, depth, place{compact: true, nested: true}, treatment{})
 				case rigidCell:
 					side := ui.Row(c.Key(at + "#side")).AlignItems(ui.Center)
 					if numeric[i] {
@@ -412,7 +412,7 @@ func (r *Reading) table(c *ui.Context, p props, path string, depth int, at place
 					}
 					side.Children(func() {
 						ui.Row(c.Key(at + "#fit")).Bind(&r.state(at + "#fit").frame).Shrink(0).MaxWidth(widestInCell).AlignItems(ui.Center).Children(func() {
-							r.piece(c, value, at, depth, place{compact: true, nested: true, row: true}, slot{})
+							r.piece(c, value, at, depth, place{compact: true, nested: true, row: true}, treatment{})
 						})
 					})
 				}

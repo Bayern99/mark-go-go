@@ -11,9 +11,9 @@ func TestSettingsStore(t *testing.T) {
 	dir := t.TempDir()
 	st := &settingsStore{dir: dir}
 	wantDefaults := Settings{
-		Model:        "gemini-3.8-flash",
+		Model:        "gemini-4-hydrogen",
 		AgentCommand: "agy",
-		Models:       []string{"gemini-3.8-flash", "gemini-4-argon", "claude-opus-5-5"},
+		Models:       []string{"gemini-4-hydrogen", "gemini-4-argon", "claude-opus-5-5"},
 	}
 	if got := st.get(); !reflect.DeepEqual(got, wantDefaults) {
 		t.Errorf("defaults = %+v, want %+v", got, wantDefaults)

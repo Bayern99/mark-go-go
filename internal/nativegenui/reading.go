@@ -8,8 +8,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 	"unicode"
 
+	"github.com/Bayern99/mark-go-go/internal/openuilang"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
 	"golang.org/x/text/collate"
@@ -25,18 +28,54 @@ type Reading struct {
 	Sources    func(*ui.Context, Node)
 	SelectItem func(Node, string)
 	CanSelect  func(Node) bool
+	LoadImage  func(src string) (ui.ImageSource, error)
+	images     sync.Map
+	form       string
+	fields     map[string][]checkedField
+	problems   map[string]string
+	presses    []press
+	changed    bool
+	pressable  int
+	touched    map[string]bool
+	fits       map[measuredText]textFit
+	session    *openuilang.Session
+	created    []string
 }
 
 type componentState struct {
 	frame              ui.Handle
 	height             float32
 	tab, column, order int
-	expanded           bool
+	expanded, open     bool
 	scroll             ui.ScrollState
+	text, shown, note  string
+	number             float64
+	date               time.Time
+	editing, started   bool
+	running, flipped   bool
+	pointerPressed     bool
+	spanned            spannedWidth
 }
 
 func (r *Reading) Load(s *Surface) {
 	r.surface = s
+	if s != nil && s.Session != nil {
+		if r.session != nil && slices.Equal(r.created, s.created) {
+			s.resume(r.session)
+		} else {
+			r.touched = nil
+		}
+		r.session, r.created = s.Session, s.created
+	}
+	r.images.Clear()
+	r.problems, r.presses, r.changed, r.form = map[string]string{}, nil, false, ""
+	if r.touched == nil {
+		r.touched = map[string]bool{}
+	}
+	for _, state := range r.states {
+		state.text, state.shown, state.note, state.number, state.date = "", "", "", 0, time.Time{}
+		state.editing, state.started, state.running, state.flipped = false, false, false, false
+	}
 	if r.states == nil {
 		r.states = map[string]*componentState{}
 	}
@@ -49,7 +88,9 @@ func (r *Reading) View(c *ui.Context) {
 	ui.Scroll(c).TrackScroll(&r.scroll).Grow(1).MinHeight(0).Children(func() {
 		ui.Column(c).Padding(24).Gap(14).Children(func() {
 			if r.surface.Session != nil {
+				r.fields = map[string][]checkedField{}
 				r.statements(c)
+				r.settle(c)
 				return
 			}
 			r.node(c, "root", map[string]bool{})
@@ -119,8 +160,8 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 		frame := layout(ui.Column(c).Gap(8), n).Bind(&state.frame).Busy(busy)
 		if busy {
 			frame.MinHeight(max(64, state.height)).Children(func() {
-				ui.Text(c, "Updating card…").Role(ui.RoleStatus)
-				skeleton(c)
+				updatingStatus(c)
+				skeleton(c, 3)
 			})
 			return
 		}
@@ -203,8 +244,12 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 	}
 }
 
-func skeleton(c *ui.Context) {
-	for _, width := range []float32{82, 64, 38} {
+func updatingStatus(c *ui.Context) ui.Element {
+	return ui.Text(c, "Updating card…").Role(ui.RoleStatus)
+}
+
+func skeleton(c *ui.Context, bars int) {
+	for _, width := range []float32{82, 64, 38}[:bars] {
 		ui.Row(c).Height(7).WidthPercent(width).Radius(3).Background(c.Theme().Border).AccessHidden(true)
 	}
 }

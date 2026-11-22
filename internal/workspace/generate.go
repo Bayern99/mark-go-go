@@ -272,7 +272,6 @@ func (h *Service) StartGeneration(ctx context.Context, documentID string, req ge
 		ViewPath:     genui.ViewPath(docPath),
 		Now:          time.Now,
 		Models:       models,
-		Validate:     genui.ValidateCandidate,
 		AgentCache:   h.agentCache,
 		BeforeWrite: func() error {
 			return h.commitGenerationWrite(s, slot)

@@ -2,8 +2,8 @@
 
 For `report.md`, write `.report.md.genui.json` beside the original. The app watches the file and reads it as a derived view. The host validates generated output before committing it.
 
-- Set `version` to `2` and put the A2UI 1.0 messages in `a2ui`. Create one surface using `markgogo.dev:genui/v1`, with a tree rooted at `root`. Use identifier names such as `overviewCard` for component IDs. Follow [the file parser](viewFile.ts), [catalog definitions](a2ui.tsx) and [component schemas](components.tsx).
-- For a source reference, use the plain text of its heading, including the numbering and punctuation. Set `occurrence` from `1` for repeated headings. Components reference these entries by ID. The generator computes hashes from source sections, excluding reader notes. See [source matching](sources.ts) and [section extraction](../../markdown/sections.ts).
+- Set `version` to `2` and put the A2UI 1.0 messages in `a2ui`. Create one surface using `markgogo.dev:genui/v1`, with a tree rooted at `root`. Use identifier names such as `overviewCard` for component IDs. Follow [the file parser](../../internal/genui/update.go), [catalog definitions](../../internal/nativegenui/catalog.txt) and [component schemas](../../internal/nativegenui/surface.go).
+- For a source reference, use the plain text of its heading, including the numbering and punctuation. Set `occurrence` from `1` for repeated headings. Components reference these entries by ID. The generator computes hashes from source sections, excluding reader notes. See [source matching](../../internal/nativegenui/panel.go) and [section extraction](../../internal/workspace/sections.go).
 
 ## Example
 

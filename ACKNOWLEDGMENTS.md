@@ -7,7 +7,7 @@
 MyGo Native UI 提供窗口和控件基础，应用以 Go 代码绘制工作区、编辑器、GenUI 与 Feynman 面板。
 
 - [窗口外壳、标签与导航](internal/nativeui/) · [Markdown Preview 与 Markdown 编辑](internal/nativeeditor/) · [GenUI 阅读视图](internal/nativegenui/)
-- IBM Plex Sans、Sans SC、Mono 与 Barlow Semi Condensed 字体，以及 Phosphor 图标随原生应用打包。[字体与随附许可证](internal/nativeui/fonts/) · [Portrait 样式](internal/nativeui/portrait.go)
+- IBM Plex Sans、Sans SC、Mono 与 Barlow Semi Condensed 字体，以及 Phosphor 图标随原生应用打包。[字体与随附许可证](internal/portrait/fonts/) · [Portrait 样式](internal/nativeui/portrait.go)
 
 ## 设计与交互参考
 
@@ -20,5 +20,5 @@ MyGo Native UI 提供窗口和控件基础，应用以 Go 代码绘制工作区�
 
 - Egoist 与贡献者的 **MyGo** 提供原生桌面宿主和 UI 工具包。仓库包含 MIT 许可的 v0.10.0 代码，以及文档组和工作区生命周期补丁。[上游](https://github.com/egoist/mygo/tree/v0.10.0) · [MyGo 许可证](third_party/mygo/LICENSE) · [补丁说明](docs/mygo-document-groups.md)
 - 原生 Markdown 与图表功能使用 [go.mod](go.mod) 中声明的 Go 模块。Feynman 插件直接连接本机的 **Feynman** CLI；GenUI 文件遵循保存于 [格式说明](docs/genui/view-format.md) 的 A2UI 协议。
-- **IBM Plex** 与 **Barlow Semi Condensed** 采用 SIL Open Font License，**Phosphor Icons** 采用 MIT 许可证。[字体和图标许可证](internal/nativeui/fonts/) · [应用 MIT 许可证](LICENSE)
+- **IBM Plex** 与 **Barlow Semi Condensed** 采用 SIL Open Font License，**Phosphor Icons** 采用 MIT 许可证。[字体和图标许可证](internal/portrait/fonts/) · [应用 MIT 许可证](LICENSE)
 - 随附资源中的 Go 依赖、数学字体与 Unicode CLDR 许可记录位于 [resources/licenses](resources/licenses/)。MyGo 的本地化表由 **Unicode CLDR 48.2.0** 生成。[CLDR 数据](https://github.com/unicode-org/cldr-json/tree/48.2.0) · [随附许可证](resources/licenses/Unicode-3.0-CLDR.txt)

@@ -1,6 +1,7 @@
 package nativeeditor
 
 import (
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 )
@@ -16,27 +17,23 @@ func documentTheme(t *ui.Theme, mode Mode) *editor.Theme {
 	th.Tokens[editor.TokenLink].Color = t.Accent
 	th.Tokens[editor.TokenDeleted].Color = t.TextMuted
 	if mode == Preview {
-		th.Tokens[editor.TokenCode].Family = "IBM Plex Mono"
-		for _, kind := range []editor.TokenKind{editor.TokenKeyword, editor.TokenString} {
-			th.Tokens[kind].Color = t.Accent
-		}
-		for _, kind := range []editor.TokenKind{editor.TokenNumber, editor.TokenConstant} {
-			th.Tokens[kind].Color = t.Warning
-		}
+		th.Tokens[editor.TokenCode].Family = portrait.FontMono
+	}
+	if mode == Preview || mode == Markdown {
+		colorTokens(&th, t.Accent, editor.TokenKeyword, editor.TokenString)
+		colorTokens(&th, t.Warning, editor.TokenNumber, editor.TokenConstant)
 		th.Tokens[editor.TokenComment] = editor.TokenStyle{Color: t.TextMuted, Italic: true}
 	}
 	if mode == Markdown {
-		for _, kind := range []editor.TokenKind{editor.TokenMeta, editor.TokenPunctuation, editor.TokenOperator} {
-			th.Tokens[kind].Color = ui.Hex("#a1a1a6")
-		}
-		for _, kind := range []editor.TokenKind{editor.TokenCode, editor.TokenKeyword, editor.TokenString, editor.TokenTag} {
-			th.Tokens[kind].Color = t.Accent
-		}
-		for _, kind := range []editor.TokenKind{editor.TokenNumber, editor.TokenConstant} {
-			th.Tokens[kind].Color = t.Warning
-		}
+		colorTokens(&th, portrait.Colors.Ink4, editor.TokenMeta, editor.TokenPunctuation, editor.TokenOperator)
+		colorTokens(&th, t.Accent, editor.TokenCode, editor.TokenTag)
 		th.Tokens[editor.TokenInvalid].Color = t.Danger
-		th.Tokens[editor.TokenComment] = editor.TokenStyle{Color: t.TextMuted, Italic: true}
 	}
 	return &th
+}
+
+func colorTokens(th *editor.Theme, color ui.Color, kinds ...editor.TokenKind) {
+	for _, kind := range kinds {
+		th.Tokens[kind].Color = color
+	}
 }

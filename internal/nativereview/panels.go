@@ -7,6 +7,7 @@ import (
 
 	"github.com/Bayern99/mark-go-go/internal/nativeeditor"
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/review"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
@@ -144,7 +145,7 @@ func (p *panel) proposalPopover(c *ui.Context) {
 			ui.Text(c, active.Summary).Wrap()
 		}
 		if active.Source != "" {
-			ui.Text(c, active.Source).FontSize(12).TextColor(c.Theme().TextMuted)
+			portrait.Type.Meta.Apply(ui.Text(c, active.Source)).TextColor(portrait.Colors.Ink3)
 		}
 		if !proposalTargets(p.win.Active(), active) {
 			if ui.Button(c, "Open "+proposalLabel(active)).Clicked() {

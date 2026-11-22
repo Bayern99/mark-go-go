@@ -9,3 +9,4 @@ to focused native controls.
 Other local changes support document groups, workspace lifecycle and loading WebKit
 on macOS only when an application requests a web feature.
 See docs/mygo-document-groups.md.
+plugins/glass is copied from the same commit without group.go (it needs ui/shader, which is not vendored) and without its tests.

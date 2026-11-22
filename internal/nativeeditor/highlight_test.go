@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 )
@@ -46,7 +47,7 @@ func TestMarkdownHighlighterUsesParsedCodeSpans(t *testing.T) {
 }
 
 func TestPreviewInlineCodeUsesPortraitFontAndPreservesBytes(t *testing.T) {
-	font, err := os.ReadFile(filepath.Join("..", "nativeui", "fonts", "ibm-plex-mono-400-normal.ttf"))
+	font, err := os.ReadFile(filepath.Join("..", "portrait", "fonts", "ibm-plex-mono-400-normal.ttf"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +65,7 @@ func TestPreviewInlineCodeUsesPortraitFontAndPreservesBytes(t *testing.T) {
 		if !okA || !okB || !okZ || b.X <= a.X || math.Abs(float64((b.X-a.X)-(z.X-b.X))) > 0.1 {
 			t.Fatalf("inline code is not monospaced: %v %v %v", a, b, z)
 		}
-		if got := doc.state.Theme.Tokens[editor.TokenCode].Family; got != "IBM Plex Mono" {
+		if got := doc.state.Theme.Tokens[editor.TokenCode].Family; got != portrait.FontMono {
 			t.Fatalf("inline code font = %q", got)
 		}
 	}

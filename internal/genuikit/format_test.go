@@ -39,9 +39,20 @@ func TestTheFormatsExampleIsAValidView(t *testing.T) {
 	}
 }
 
-func TestTheLayoutRulesCapTheMinimumWidthOfThreeCardsSideBySide(t *testing.T) {
-	if rules := layoutRules(t); !strings.Contains(rules, "Three cards sit side by side only when the Grid's minChildWidth is 240 or less") {
-		t.Errorf("the layout rules do not cap the minimum width of three cards side by side:\n%s", rules)
+func TestTheLayoutRulesGiveOneMinimumWidthRuleForCardsSideBySide(t *testing.T) {
+	var widthRules []string
+	for _, rule := range strings.Split(layoutRules(t), "\n- ") {
+		if strings.Contains(rule, "minChildWidth") {
+			widthRules = append(widthRules, rule)
+		}
+	}
+	if len(widthRules) != 1 {
+		t.Fatalf("%d layout rules set a Grid's minChildWidth, want one:\n%s", len(widthRules), strings.Join(widthRules, "\n"))
+	}
+	for _, want := range []string{"two cards side by side take a minChildWidth of 240 or more", "three side by side take columns 3 and a minChildWidth of 220 to 240", "the page fits three columns only up to 240"} {
+		if !strings.Contains(widthRules[0], want) {
+			t.Errorf("the rule for cards side by side lacks %q:\n%s", want, widthRules[0])
+		}
 	}
 }
 

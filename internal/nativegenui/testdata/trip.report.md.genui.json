@@ -1,0 +1,28 @@
+{
+  "version": 3,
+  "language": "openui-lang/1.0",
+  "sources": {},
+  "a2ui": [
+    {
+      "version": "1.0",
+      "createSurface": {
+        "surfaceId": "view",
+        "catalogId": "markgogo.dev:genui/v3",
+        "components": [
+          "root = Col([title, intro, facts, Title(\"Day by day\", \"md\"), days, Title(\"Budget\", \"md\"), budget, Title(\"What it costs\", \"md\"), costs, Title(\"Getting around\", \"md\"), transit])",
+          "title = Title(\"Three days in Lisbon\", \"xl\")",
+          "intro = Text(\"Hills, tiled facades and the Tagus: start in **Alfama**, give a day to Belém, then take the train to Sintra.\")",
+          "facts = Row([Badge(\"Best in April to June\", null, \"calendar\"), Badge(\"Tram 28\", \"info\", \"train\"), Badge(\"About €120 a day\", \"success\", \"wallet\")], 2, null, null, true)",
+          "days = Grid(@Each(plan, \"d\", Card([Row([Badge(\"Day \" + d.day, \"info\"), Text(d.title, \"md\", null, \"semibold\")], 2), Text([Icon(\"map-pin\", \"sm\"), d.place], \"sm\"), Text(d.text, \"sm\", \"muted\")], \"soft\")), 3, 200, 3)",
+          "plan = [{day: 1, title: \"Alfama\", place: \"São Jorge Castle\", text: \"Climb to the castle, then lunch on grilled sardines.\"}, {day: 2, title: \"Belém\", place: \"Jerónimos Monastery\", text: \"The monastery, the tower and pastéis de Belém.\"}, {day: 3, title: \"Sintra\", place: \"Pena Palace\", text: \"Train from Rossio; book the palace for 9 AM.\"}]",
+          "budget = Grid([Card([Title(\"Daily spend\", \"sm\"), Caption(\"Euros per person\"), Chart(\"bar\", spend, \"day\", [\"Food\", \"Transport\", \"Sights\"], null, true, 220)]), Card([Title(\"Where it goes\", \"sm\"), Caption(\"Share of the three days\"), Chart(\"donut\", shares, \"item\", [\"cost\"], \"percent\")])], 2, 280, 3)",
+          "spend = [{day: \"Day 1\", Food: 48, Transport: 7, Sights: 15}, {day: \"Day 2\", Food: 42, Transport: 12, Sights: 28}, {day: \"Day 3\", Food: 39, Transport: 21, Sights: 34}]",
+          "shares = [{item: \"Food\", cost: 129}, {item: \"Sights\", cost: 77}, {item: \"Transport\", cost: 40}, {item: \"Coffee and pastries\", cost: 24}]",
+          "costs = Table([\"Item\", \"When\", \"Price\", \"Book ahead\"], [[\"São Jorge Castle\", \"Day 1\", \"€15\", Badge(\"No\")], [\"Jerónimos Monastery\", \"Day 2\", \"€12\", Badge(\"Yes\", \"warning\")], [\"Pena Palace\", \"Day 3\", \"€20\", Badge(\"Yes\", \"warning\")], [\"Tram 28 day pass\", \"Any\", \"€7\", Badge(\"No\")]])",
+          "transit = Row([Col([List([ListItem(\"Rossio station\", \"Trains to Sintra leave every 20 minutes.\", \"08:40\"), ListItem(\"Sintra\", \"Bus 434 climbs to the palace.\", \"09:25\"), ListItem(\"Pena Palace\", \"Allow two hours with the park.\", \"10:00\")], null, true)]), Col([Chart(\"line\", crowd, \"hour\", [\"Visitors\"], null, false, 180), Caption(\"Visitors at Pena Palace by hour\")])], 6, \"start\")",
+          "crowd = [{hour: \"9\", Visitors: 120}, {hour: \"10\", Visitors: 340}, {hour: \"11\", Visitors: 610}, {hour: \"12\", Visitors: 720}, {hour: \"13\", Visitors: 650}, {hour: \"14\", Visitors: 580}, {hour: \"15\", Visitors: 430}, {hour: \"16\", Visitors: 260}]"
+        ]
+      }
+    }
+  ]
+}

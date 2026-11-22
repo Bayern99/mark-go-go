@@ -3,6 +3,7 @@ package acp
 import (
 	"encoding/json"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -365,4 +366,37 @@ func TestGenerationTraceFailureIsNeverSuccess(t *testing.T) {
 			t.Errorf("run.end = %v, want no forged actual thought level and a note", end)
 		}
 	})
+}
+
+func TestTheValidationResultListsThePropertiesTheReaderDrawsWithTheirDefaults(t *testing.T) {
+	const oversized = `field "/size" expects one of ["xs", "sm", "md", "lg"] but got "xl"`
+	for name, test := range map[string]struct {
+		statements []string
+		want       []any
+	}{
+		"a text size the catalog does not allow": {
+			[]string{`root = Col([latency])`, `latency = Source(["report"], [Text("23 ms", "xl")])`},
+			[]any{map[string]any{"statement": "latency", "component": "Text", "property": "size", "message": oversized}},
+		},
+		"nothing degraded": {
+			[]string{`root = Col([latency])`, `latency = Source(["report"], [Text("23 ms", "lg")])`},
+			nil,
+		},
+	} {
+		tr := &traceRecorder{}
+		err, _, _ := driveGeneration(t, fakeSpec{Out: statementsFull(test.statements...)}, nil, statementsWithDefaultValidator(func(job *GenerationJob) {
+			job.Observe = tr.observe
+		}))
+		if err != nil {
+			t.Fatalf("%s: RunGeneration: %v", name, err)
+		}
+		result := tr.last(t, "validation.result")
+		if !traceBool(result, "ok") {
+			t.Errorf("%s: validation.result = %v, want an accepted view", name, result)
+		}
+		degraded, listed := result["degraded"]
+		if got, _ := degraded.([]any); !reflect.DeepEqual(got, test.want) || listed != (test.want != nil) {
+			t.Errorf("%s: validation.result degraded = %v (listed %t), want %v", name, degraded, listed, test.want)
+		}
+	}
 }

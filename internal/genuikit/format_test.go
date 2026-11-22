@@ -1,6 +1,7 @@
 package genuikit
 
 import (
+	"encoding/json"
 	"regexp"
 	"strconv"
 	"strings"
@@ -35,6 +36,12 @@ func TestTheFormatsExampleIsAValidView(t *testing.T) {
 	root, problems := session.Render()
 	if root == nil || len(parsed.Errors)+len(problems)+len(parsed.Unresolved) > 0 {
 		t.Errorf("root %v, errors %v %v, unresolved %v", root != nil, parsed.Errors, problems, parsed.Unresolved)
+	}
+}
+
+func TestTheLayoutRulesCapTheMinimumWidthOfThreeCardsSideBySide(t *testing.T) {
+	if rules := layoutRules(t); !strings.Contains(rules, "Three cards sit side by side only when the Grid's minChildWidth is 240 or less") {
+		t.Errorf("the layout rules do not cap the minimum width of three cards side by side:\n%s", rules)
 	}
 }
 
@@ -248,6 +255,57 @@ func TestTheFormatTellsTimelineMarkersFromNumberedSteps(t *testing.T) {
 	layout, _, _ = strings.Cut(layout, "## Example")
 	for _, want := range []string{"third argument of ListItem", "time or date", `List([...], "number")`} {
 		if !strings.Contains(layout, want) {
+			t.Errorf("the layout rules lack %q", want)
+		}
+	}
+}
+
+func TestTheFormatShowsHowToNameAChartsSeries(t *testing.T) {
+	if !strings.Contains(Format(), `height?: number, seriesLabels?: {[key: string]: string})`) {
+		t.Error("seriesLabels is not the last property of Chart's signature")
+	}
+	rules := layoutRules(t)
+	_, usage, found := strings.Cut(rules, "seriesLabels")
+	start, end := strings.Index(usage, "Chart("), strings.Index(usage, "})")
+	if !found || start < 0 || end < start {
+		t.Fatalf("the layout rules show no Chart with seriesLabels:\n%s", rules)
+	}
+	library, err := Library()
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed := library.Parse("root = Col([" + usage[start:end+2] + "])\nrows = [{channel: \"Search\", budget: 420, actual: 398}]")
+	session := openuilang.NewSession()
+	session.Load(parsed)
+	root, problems := session.Render()
+	if root == nil || len(parsed.Errors)+len(problems)+len(parsed.Unresolved) > 0 {
+		t.Errorf("%s: root %v, errors %v %v, unresolved %v", usage[start:end+2], root != nil, parsed.Errors, problems, parsed.Unresolved)
+	}
+}
+
+func TestTheFormatNamesTheLargestTextSizeAndWhereBigNumbersGo(t *testing.T) {
+	var top struct {
+		Components map[string]struct{ Signature string }
+	}
+	if err := json.Unmarshal(catalog, &top); err != nil {
+		t.Fatal(err)
+	}
+	_, sizes, _ := strings.Cut(top.Components["Text"].Signature, "size?: ")
+	sizes, _, _ = strings.Cut(sizes, ", ")
+	choices := strings.Split(sizes, " | ")
+	largest := choices[len(choices)-1]
+	rules := layoutRules(t)
+	for _, want := range []string{"Text sizes stop at " + largest + ": a big number is a Title", "its subtitle: one short phrase that fits a single line"} {
+		if !strings.Contains(rules, want) {
+			t.Errorf("the layout rules lack %q", want)
+		}
+	}
+}
+
+func TestTheLayoutRulesSizeATableForThePage(t *testing.T) {
+	rules := layoutRules(t)
+	for _, want := range []string{"about 760 points wide", "about five columns", "more attributes than subjects, put the attributes in rows and the subjects in columns"} {
+		if !strings.Contains(rules, want) {
 			t.Errorf("the layout rules lack %q", want)
 		}
 	}

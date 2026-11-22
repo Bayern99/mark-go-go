@@ -36,6 +36,7 @@ type Reading struct {
 	changed    bool
 	pressable  int
 	touched    map[string]bool
+	fits       map[measuredText]textFit
 }
 
 type componentState struct {
@@ -49,6 +50,9 @@ type componentState struct {
 	date               time.Time
 	editing, started   bool
 	running, flipped   bool
+	line               float32
+	laid               [3]float32
+	paragraph          bool
 }
 
 func (r *Reading) Load(s *Surface) {

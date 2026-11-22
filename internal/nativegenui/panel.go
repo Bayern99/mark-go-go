@@ -153,7 +153,7 @@ func (p *panel) draw(c *ui.Context) {
 		case v.snapshot.Error != "":
 			ui.Text(c, v.snapshot.Error).Role(ui.RoleAlert)
 		case v.cancel != nil && v.reading.surface == nil:
-			ui.Column(c).Gap(8).Padding(20).Busy(true).Children(func() { ui.Text(c, "Generating view…").Role(ui.RoleStatus); skeleton(c) })
+			ui.Column(c).Gap(8).Padding(20).Busy(true).Children(func() { ui.Text(c, "Generating view…").Role(ui.RoleStatus); skeleton(c, 3) })
 		case v.reading.surface == nil:
 			ui.Text(c, "No view yet.")
 			if ui.Button(c, "Set up generation").Clicked() {
@@ -207,6 +207,10 @@ func (v *documentView) index(raw string) {
 	v.imagesFor = ""
 }
 
+func (v *documentView) progressed(step genui.GenerateProgress) {
+	v.message = step.Text
+}
+
 func (v *documentView) source(id string) (Reference, workspace.Section, bool) {
 	ref := v.reading.surface.Sources[id]
 	s, ok := v.sections[headingKey{workspace.NormalizeHeadingText(ref.Heading), max(1, ref.Occurrence)}]
@@ -228,7 +232,7 @@ func (v *documentView) changedIDs() []string {
 		for runtimeID, n := range v.reading.surface.Nodes {
 			for _, source := range n.Sources {
 				r, s, ok := v.source(source)
-				if !ok || (r.Hash != "" && r.Hash != s.Hash) {
+				if !ok || (r.Hash != "" && !s.UnchangedSince(r.Hash)) {
 					id := n.ComponentID
 					if id == "" {
 						id = n.ID
@@ -315,7 +319,7 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 			}
 			if !ok {
 				ui.Text(c, "Source missing")
-			} else if ref.Hash != "" && ref.Hash != s.Hash {
+			} else if ref.Hash != "" && !s.UnchangedSince(ref.Hash) {
 				ui.Text(c, "Source changed")
 			}
 		}
@@ -419,7 +423,7 @@ func (p *panel) generate(v *documentView, ids []string) {
 	done := p.host.StartGeneration(ctx, d.ID, req, func(progress genui.GenerateProgress) error {
 		p.win.Native().Update(func() {
 			if !p.closed && p.views[d.ID] == v {
-				v.message = strings.TrimSpace(progress.Phase + " " + progress.Text)
+				v.progressed(progress)
 			}
 		})
 		return ctx.Err()
@@ -429,16 +433,19 @@ func (p *panel) generate(v *documentView, ids []string) {
 		err := <-done
 		p.win.Native().Update(func() {
 			if !p.closed && p.views[d.ID] == v {
-				v.cancel = nil
-				v.reading.Replacing = nil
-				v.message = ""
-				if err != nil {
-					f := genui.FailureOf(err)
-					v.failure = &f
-				} else {
-					v.requestEdited = false
-				}
+				v.finished(err)
 			}
 		})
 	}()
+}
+func (v *documentView) finished(err error) {
+	v.cancel = nil
+	v.reading.Replacing = nil
+	v.message = ""
+	if err != nil {
+		f := genui.FailureOf(err)
+		v.failure = &f
+		return
+	}
+	v.requestEdited = false
 }

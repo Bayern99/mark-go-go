@@ -1,8 +1,6 @@
 package workspace
 
 import (
-	"fmt"
-	"hash/fnv"
 	"regexp"
 	"strings"
 
@@ -19,6 +17,12 @@ type Section struct {
 	StartLine  int    `json:"startLine"`
 	EndLine    int    `json:"endLine"`
 	Hash       string `json:"hash"`
+
+	hashAsWritten string
+}
+
+func (s Section) UnchangedSince(savedHash string) bool {
+	return savedHash == s.Hash || savedHash == s.hashAsWritten
 }
 
 type Note struct {
@@ -53,12 +57,6 @@ var (
 	inlineRefRe   = regexp.MustCompile(`\[([^\]]+)\]\[[^\]]*\]`)
 	htmlStartRe   = regexp.MustCompile(`^[ \t]{0,3}</?[A-Za-z!?]`)
 )
-
-func SectionHash(text string) string {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(text))
-	return fmt.Sprintf("fnv1a32:%08x", h.Sum32())
-}
 
 func NormalizeHeadingText(text string) string {
 	return strings.ToLower(strings.Join(strings.Fields(text), " "))
@@ -407,12 +405,12 @@ func ExtractSections(markdown string) []Section {
 			}
 		}
 
-		hasher := fnv.New32a()
+		var hashed strings.Builder
 		at := h.byteOffset
 		for _, n := range notes {
 			if n.Start >= h.offset && n.End <= endUTF16 {
 				if n.cutStartByte > at {
-					_, _ = hasher.Write([]byte(markdown[at:n.cutStartByte]))
+					hashed.WriteString(markdown[at:n.cutStartByte])
 				}
 				if n.endByte > at {
 					at = n.endByte
@@ -420,9 +418,9 @@ func ExtractSections(markdown string) []Section {
 			}
 		}
 		if endByte > at {
-			_, _ = hasher.Write([]byte(markdown[at:endByte]))
+			hashed.WriteString(markdown[at:endByte])
 		}
-		hash := fmt.Sprintf("fnv1a32:%08x", hasher.Sum32())
+		hash := genui.SectionHash(hashed.String(), markdown, endByte == len(markdown))
 
 		endLine := lineForUTF16Offset(lineStarts, endUTF16)
 		if endLine < h.line {
@@ -439,6 +437,8 @@ func ExtractSections(markdown string) []Section {
 			StartLine:  h.line,
 			EndLine:    endLine,
 			Hash:       hash,
+
+			hashAsWritten: genui.SectionHashAsWritten(hashed.String()),
 		}
 	}
 	return out

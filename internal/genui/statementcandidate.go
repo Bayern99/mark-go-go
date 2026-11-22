@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/Bayern99/mark-go-go/internal/genuikit"
@@ -15,16 +16,25 @@ const (
 	statementFaultShare = 10
 )
 
-type statementMessage struct {
-	CreateSurface    *statementBatch `json:"createSurface"`
-	UpdateComponents *statementBatch `json:"updateComponents"`
+type viewMessage[Component any] struct {
+	CreateSurface    *componentBatch[Component] `json:"createSurface"`
+	UpdateComponents *componentBatch[Component] `json:"updateComponents"`
 }
 
-type statementBatch struct {
-	SurfaceID  string   `json:"surfaceId"`
-	CatalogID  string   `json:"catalogId"`
-	Components []string `json:"components"`
+type componentBatch[Component any] struct {
+	SurfaceID  string      `json:"surfaceId"`
+	CatalogID  string      `json:"catalogId"`
+	Components []Component `json:"components"`
 }
+
+func (m viewMessage[Component]) batch() *componentBatch[Component] {
+	if m.CreateSurface != nil {
+		return m.CreateSurface
+	}
+	return m.UpdateComponents
+}
+
+type statementMessage = viewMessage[string]
 
 func WritesStatements(a2ui json.RawMessage) bool {
 	var messages []statementMessage
@@ -58,14 +68,26 @@ func eachSourceID(value any, seen map[*openuilang.Element]bool, visit func(strin
 	}
 }
 
-func validateStatementCandidate(raw []byte) error {
+type DegradedProperty struct {
+	Statement string `json:"statement"`
+	Component string `json:"component"`
+	Property  string `json:"property"`
+	Message   string `json:"message"`
+}
+
+type CandidateReport struct {
+	Degraded []DegradedProperty
+}
+
+func validateStatementCandidate(raw []byte) (CandidateReport, error) {
+	var report CandidateReport
 	view, err := ReadStatementView(raw)
 	if err != nil {
-		return err
+		return report, err
 	}
 	library, err := genuikit.Library()
 	if err != nil {
-		return err
+		return report, err
 	}
 	text := ""
 	for _, batch := range view.Statements {
@@ -77,11 +99,18 @@ func validateStatementCandidate(raw []byte) error {
 	session.Load(program)
 	root, problems := session.Render()
 	if root == nil {
-		return newValidationError("NO_ROOT", "The view has no root statement, such as root = Col([...]).", "/a2ui/0/createSurface/components", "")
+		return report, newValidationError("NO_ROOT", "The view has no root statement, such as root = Col([...]).", "/a2ui/0/createSurface/components", "")
 	}
 	seen := map[string]bool{}
 	var faults []string
 	for _, problem := range append(program.Errors, problems...) {
+		if problem.Degraded {
+			property := DegradedProperty{Statement: problem.StatementID, Component: problem.Component, Property: strings.TrimPrefix(problem.Path, "/"), Message: problem.Message}
+			if !slices.Contains(report.Degraded, property) {
+				report.Degraded = append(report.Degraded, property)
+			}
+			continue
+		}
 		key, fault := problem.StatementID, problem.StatementID+": "+problem.Message
 		if key == "" {
 			key, fault = problem.Message, problem.Message
@@ -95,7 +124,7 @@ func validateStatementCandidate(raw []byte) error {
 		faults = append(faults, fmt.Sprintf("%q is used but never defined", name))
 	}
 	if allowed := max(statementFaultFloor, count/statementFaultShare); len(faults) > allowed {
-		return newValidationError("TOO_MANY_FAULTS", fmt.Sprintf("The view has %d faulty statements, more than the %d it may have. The first are: %s.", len(faults), allowed, strings.Join(faults[:min(3, len(faults))], "; ")), "/a2ui", "")
+		return report, newValidationError("TOO_MANY_FAULTS", fmt.Sprintf("The view has %d faulty statements, more than the %d it may have. The first are: %s.", len(faults), allowed, strings.Join(faults[:min(3, len(faults))], "; ")), "/a2ui", "")
 	}
 	var missing error
 	eachSourceID(root, map[*openuilang.Element]bool{}, func(id string) {
@@ -103,7 +132,7 @@ func validateStatementCandidate(raw []byte) error {
 			missing = newValidationError("MISSING_SOURCE", fmt.Sprintf("A Source names %q, which is not in the view's sources.", id), "/sources", "")
 		}
 	})
-	return missing
+	return report, missing
 }
 
 func readStatementBase(text string, ids []string) (*BaseView, error) {
@@ -123,16 +152,12 @@ func readStatementBase(text string, ids []string) (*BaseView, error) {
 	for _, raw := range file.A2UI {
 		var message statementMessage
 		_ = json.Unmarshal(raw, &message)
-		batch := message.UpdateComponents
 		if message.CreateSurface != nil {
-			batch = message.CreateSurface
-			base.surfaceID = batch.SurfaceID
+			base.surfaceID = message.CreateSurface.SurfaceID
 		}
-		for _, statement := range batch.Components {
-			for _, name := range openuilang.Names(statement) {
-				base.existing[name] = true
-			}
-		}
+	}
+	for _, name := range openuilang.Names(base.statementText()) {
+		base.existing[name] = true
 	}
 	for _, id := range ids {
 		if !base.existing[id] {
@@ -171,6 +196,48 @@ func (b *BaseView) checkStatements(update json.RawMessage) error {
 		seen[name] = true
 	}
 	return nil
+}
+
+func (b *BaseView) statementText() string {
+	text := ""
+	for _, raw := range b.messages {
+		var message statementMessage
+		_ = json.Unmarshal(raw, &message)
+		if batch := message.batch(); batch != nil {
+			text = openuilang.Overlay(text, strings.Join(batch.Components, "\n"))
+		}
+	}
+	return text
+}
+
+type statementUpdate struct {
+	SurfaceID  string   `json:"surfaceId"`
+	Components []string `json:"components"`
+}
+
+func (b *BaseView) deletingUnreferenced(message json.RawMessage, envelope map[string]json.RawMessage) json.RawMessage {
+	var update statementUpdate
+	_ = json.Unmarshal(envelope["updateComponents"], &update)
+	earlier, written := b.statementText(), strings.Join(update.Components, "\n")
+	referenced := map[string]bool{}
+	for _, name := range openuilang.Names(openuilang.Merge(earlier, written)) {
+		referenced[name] = true
+	}
+	var deletions []string
+	for _, name := range openuilang.Names(openuilang.Overlay(earlier, written)) {
+		if !referenced[name] {
+			deletions = append(deletions, name+" = null")
+		}
+	}
+	if len(deletions) == 0 {
+		return message
+	}
+	update.Components = append(update.Components, deletions...)
+	deleting, _ := json.Marshal(struct {
+		Version          json.RawMessage `json:"version,omitempty"`
+		UpdateComponents statementUpdate `json:"updateComponents"`
+	}{envelope["version"], update})
+	return deleting
 }
 
 func statementPrompt(b *strings.Builder, base *BaseView) {

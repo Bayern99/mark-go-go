@@ -14,6 +14,7 @@ type Error struct {
 	Message     string
 	StatementID string
 	Severity    string
+	Degraded    bool
 }
 
 func jsType(value any) string {

@@ -348,9 +348,12 @@ func TestReducedMotionPopoverLandsAtOnce(t *testing.T) {
 	if err := app.Click("More documents"); err != nil {
 		t.Fatal(err)
 	}
-	f, _ := app.Access("Filter open tabs")
+	f, opened := app.Access("Filter open tabs")
 	app.Advance(time.Second)
-	g, _ := app.Access("Filter open tabs")
+	g, stayed := app.Access("Filter open tabs")
+	if !opened || !stayed {
+		t.Fatal("overflow popover is not open")
+	}
 	if f.Bounds != g.Bounds {
 		t.Fatalf("popover moved with reduced motion: %v then %v", f.Bounds, g.Bounds)
 	}

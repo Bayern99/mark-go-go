@@ -16,6 +16,9 @@ func documentTheme(t *ui.Theme, mode Mode) *editor.Theme {
 	th.Tokens[editor.TokenEmphasis].Italic = true
 	th.Tokens[editor.TokenLink].Color = t.Accent
 	th.Tokens[editor.TokenDeleted].Color = t.TextMuted
+	if mode == Preview {
+		th.Tokens[editor.TokenCode].Family = portrait.FontMono
+	}
 	if mode == Preview || mode == Markdown {
 		colorTokens(&th, t.Accent, editor.TokenKeyword, editor.TokenString)
 		colorTokens(&th, t.Warning, editor.TokenNumber, editor.TokenConstant)

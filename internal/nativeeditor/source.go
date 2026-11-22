@@ -45,7 +45,9 @@ type Document struct {
 
 func New(source string) *Document {
 	buffer := editor.NewSourceBuffer(source)
-	buffer.SetLanguage(editor.LanguageNamed("Markdown"))
+	language := *editor.LanguageNamed("Markdown")
+	language.Highlighter = newMarkdownHighlighter
+	buffer.SetLanguage(&language)
 	return &Document{mode: Preview, images: &inlineImages{}, state: editor.State{
 		Buffer: buffer, Label: "Markdown Preview", SoftWrap: true,
 		NoAutoClose: true, NoIndentGuides: true, NoScrollPastEnd: true,

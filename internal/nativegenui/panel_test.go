@@ -277,6 +277,43 @@ func TestBlankAtTheEndOfTheDocumentDoesNotMarkItsLastSectionChanged(t *testing.T
 	}
 }
 
+func TestAViewSavedBeforeTheEndOfDocumentRuleIsNotMarkedChangedUntilItsSectionChanges(t *testing.T) {
+	for document, savedHash := range map[string]string{
+		"# Overview\n\nAn overview.":                     "fnv1a32:afd7b68d",
+		"# Overview\n\nAn overview.\n\n \n":              "fnv1a32:8dc4af77",
+		"# Overview\r\n\r\nAn overview.":                 "fnv1a32:11644d29",
+		"# Intro\n\nKept.\n\n# Overview\n\nAn overview.": "fnv1a32:afd7b68d",
+	} {
+		v := &documentView{reading: Reading{surface: &Surface{
+			Sources: map[string]Reference{"overview": {Heading: "Overview", Hash: savedHash}},
+			Nodes:   map[string]Node{"card": {ID: "card", ComponentID: "card", Sources: []string{"overview"}}},
+		}}}
+		p := &panel{win: &nativeui.Window{}}
+		app := ui.NewTester(func(c *ui.Context) {
+			p.drawSources(c, v, workspace.DocumentInfo{Path: "doc.md"}, v.reading.surface.Nodes["card"], false)
+		}, 620, 420)
+		markedChanged := func(document string) bool {
+			v.index(document)
+			app.Frame()
+			var names []string
+			for _, el := range app.AccessAll() {
+				names = append(names, el.Name)
+			}
+			marked := strings.Contains(strings.Join(names, "\n"), "Source changed")
+			if listed := slices.Contains(v.changedIDs(), "card"); listed != marked {
+				t.Errorf("%q: the source is marked changed: %t, its statement is offered for update: %t", document, marked, listed)
+			}
+			return marked
+		}
+		if markedChanged(document) {
+			t.Errorf("%q is marked as changed since the view was made", document)
+		}
+		if !markedChanged(strings.Replace(document, "An overview.", "Another overview.", 1)) {
+			t.Errorf("%q with a changed paragraph is not marked as changed", document)
+		}
+	}
+}
+
 func TestGenerationProgressSaysEachStepOnce(t *testing.T) {
 	v := &documentView{}
 	for _, step := range []genui.GenerateProgress{

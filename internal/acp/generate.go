@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -1112,13 +1111,7 @@ func hashSection(text string, sec genui.SectionRef) (string, bool) {
 		return "", false
 	}
 	hashed.WriteString(part)
-	content := hashed.String()
-	if sec.End == utf16Len(text) {
-		content = genui.SectionTextAtDocumentEnd(content, text)
-	}
-	h := fnv.New32a()
-	h.Write([]byte(content))
-	return fmt.Sprintf("fnv1a32:%08x", h.Sum32()), true
+	return genui.SectionHash(hashed.String(), text, sec.End == utf16Len(text)), true
 }
 
 func utf16Len(s string) int {

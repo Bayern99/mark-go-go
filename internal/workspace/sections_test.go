@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Bayern99/mark-go-go/internal/genui"
 )
 
 type sectionVectorFixture struct {
@@ -38,8 +40,10 @@ type sectionVectorFixture struct {
 				Start int `json:"start"`
 				End   int `json:"end"`
 			} `json:"exclude"`
-			Text string `json:"text"`
-			Hash string `json:"hash"`
+			Text          string `json:"text"`
+			Hash          string `json:"hash"`
+			TextAsWritten string `json:"textAsWritten"`
+			HashAsWritten string `json:"hashAsWritten"`
 		} `json:"sections"`
 	} `json:"notes"`
 }
@@ -61,8 +65,8 @@ func TestSectionVectorsParity(t *testing.T) {
 	fx := loadSectionVectors(t)
 
 	for _, tc := range fx.Hashes {
-		if got := SectionHash(tc.Text); got != tc.Hash {
-			t.Errorf("SectionHash(%q) = %q, want %q", tc.Text, got, tc.Hash)
+		if got := genui.SectionHashAsWritten(tc.Text); got != tc.Hash {
+			t.Errorf("SectionHashAsWritten(%q) = %q, want %q", tc.Text, got, tc.Hash)
 		}
 	}
 
@@ -94,6 +98,27 @@ func TestSectionVectorsParity(t *testing.T) {
 			t.Errorf("notes.section[%d] = %+v, want {Heading:%q Occurrence:%d Start:%d End:%d Hash:%q}",
 				i, got, want.Heading, want.Occurrence, want.Start, want.End, want.Hash)
 		}
+	}
+
+	earlierRule := 0
+	for i, want := range fx.Notes.Sections {
+		got, saved := noteSections[i], want.Hash
+		if want.HashAsWritten != "" {
+			earlierRule++
+			saved = want.HashAsWritten
+			if written := genui.SectionHashAsWritten(want.TextAsWritten); written != saved || saved == want.Hash {
+				t.Errorf("notes.section[%d]: the text as written hashes to %q, the vector says %q and %q under the current rule", i, written, saved, want.Hash)
+			}
+		}
+		if !got.UnchangedSince(want.Hash) || !got.UnchangedSince(saved) {
+			t.Errorf("notes.section[%d] counts as changed since a view saved %q or %q", i, want.Hash, saved)
+		}
+		if other := fx.Notes.Sections[(i+1)%len(fx.Notes.Sections)]; got.UnchangedSince(other.Hash) {
+			t.Errorf("notes.section[%d] counts as unchanged since a view saved %q", i, other.Hash)
+		}
+	}
+	if earlierRule == 0 {
+		t.Error("no vector gives a hash under the earlier rule")
 	}
 
 	withoutNotesSections := ExtractSections(fx.Notes.TextWithoutNotes)

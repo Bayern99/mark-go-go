@@ -1,5 +1,5 @@
 {
-  "description": "Shared section/hash vectors. Each section text runs from its heading to the next heading of the same or higher level, or EOF; start/end are UTF-16 offsets into document; hash is fnv1a32 over the UTF-8 bytes of that text; key is the heading text normalized for matching (whitespace runs to one space, trimmed, lower case). Expected values computed independently (Python). Read by the web tests and the Go host tests.",
+  "description": "Shared section/hash vectors. Each section text runs from its heading to the next heading of the same or higher level, or EOF; start/end are UTF-16 offsets into document; hash is fnv1a32 over the UTF-8 bytes of that text, where a section that runs to EOF ends in one line break whatever blank space the file ends with (CRLF when the document uses it); key is the heading text normalized for matching (whitespace runs to one space, trimmed, lower case). Expected values computed independently (Python). Read by the web tests and the Go host tests.",
   "hashes": [
     {
       "text": "",
@@ -131,8 +131,8 @@
             "end": 177
           }
         ],
-        "text": "# End\n\nLast.",
-        "hash": "fnv1a32:e72da377"
+        "text": "# End\n\nLast.\n",
+        "hash": "fnv1a32:69d85dc7"
       }
     ]
   }

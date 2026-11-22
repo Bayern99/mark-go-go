@@ -214,3 +214,41 @@ func TestFullGenerationKeepsTheViewItReplaces(t *testing.T) {
 	sentinelKept(t, viewPath, now)
 	sentinelKept(t, genui.PrevViewPath(viewPath), []byte(baseViewText))
 }
+
+func viewModel(t *testing.T, viewPath string) string {
+	t.Helper()
+	raw, err := os.ReadFile(viewPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var view struct {
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal(raw, &view); err != nil {
+		t.Fatalf("parse view: %v", err)
+	}
+	return view.Model
+}
+
+func TestUpdateKeepsTheModelThatGeneratedTheView(t *testing.T) {
+	viewPath := writeBase(t, "")
+	withArgon := func(mutate func(*GenerationJob)) func(*GenerationJob) {
+		return func(job *GenerationJob) {
+			mutate(job)
+			job.Model = "gemini-4-argon"
+		}
+	}
+	if err, _, _ := driveGeneration(t, fakeSpec{Out: updateOut}, nil, withArgon(updateJob(viewPath, "b"))); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if got := viewModel(t, viewPath); got != "gemini-3.8-flash" {
+		t.Errorf("model after an update by gemini-4-argon = %q, want the view's own gemini-3.8-flash", got)
+	}
+
+	if err, _, _ := driveGeneration(t, fakeSpec{Out: minimalOut}, nil, withArgon(func(job *GenerationJob) { job.ViewPath = viewPath })); err != nil {
+		t.Fatalf("full generation: %v", err)
+	}
+	if got := viewModel(t, viewPath); got != "gemini-4-argon" {
+		t.Errorf("model after a full generation by gemini-4-argon = %q, want gemini-4-argon", got)
+	}
+}

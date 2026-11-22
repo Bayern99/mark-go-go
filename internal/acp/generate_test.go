@@ -18,7 +18,6 @@ import (
 	"syscall"
 	"testing"
 	"time"
-	"unicode/utf16"
 
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"github.com/Bayern99/mark-go-go/internal/genui"
@@ -29,6 +28,7 @@ const (
 	fakeSpecEnv       = "MARKGOGO_FAKE_SPEC"
 	fakeLogEnv        = "MARKGOGO_FAKE_LOG"
 	fakePipeHolderEnv = "MARKGOGO_FAKE_PIPE_HOLDER"
+	fakeFolderInTitle = "{folder}"
 )
 
 func TestMain(m *testing.M) {
@@ -436,7 +436,7 @@ func fakePlayScenario(spec *fakeSpec, cwd, sessionID string, nextID *int64, send
 				"toolCallId":    id,
 				"name":          tc.Name,
 				"kind":          tc.Kind,
-				"title":         tc.Title,
+				"title":         strings.ReplaceAll(tc.Title, fakeFolderInTitle, filepath.Base(cwd)),
 				"status":        status,
 				"locations":     fakeLocations(cwd, tc.Locations),
 			},
@@ -763,24 +763,12 @@ func compactJSON(t *testing.T, s string) string {
 	return buf.String()
 }
 
-func utf16Len(s string) int {
-	n := 0
-	for _, r := range s {
-		l := utf16.RuneLen(r)
-		if l < 0 {
-			l = 1
-		}
-		n += l
-	}
-	return n
-}
-
 func TestHashAndNormalizeVectors(t *testing.T) {
 	vectors := loadVectors(t)
 	for _, h := range vectors.Hashes {
-		got, ok := hashUTF16Range(h.Text, 0, utf16Len(h.Text))
+		got, ok := hashUTF16Range(h.Text+"# Next\n", 0, utf16Len(h.Text))
 		if !ok || got != h.Hash {
-			t.Errorf("hashUTF16Range(%q) = %q, %v; want %s", h.Text, got, ok, h.Hash)
+			t.Errorf("hashUTF16Range(%q before another section) = %q, %v; want %s", h.Text, got, ok, h.Hash)
 		}
 	}
 	for _, n := range vectors.Normalize {
@@ -934,6 +922,68 @@ func TestGenerateHappyPath(t *testing.T) {
 	for _, sec := range vectors.Sections {
 		if strings.Contains(text, strings.TrimRight(sec.Text, "\n")) {
 			t.Errorf("view file contains section %q body verbatim", sec.Heading)
+		}
+	}
+}
+
+func TestBlankAtTheEndOfTheDocumentLeavesTheLastSectionsSavedHashAlone(t *testing.T) {
+	vectors := loadVectors(t)
+	last := vectors.Sections[len(vectors.Sections)-1]
+	body := strings.TrimRight(vectors.Document, "\n")
+	out := fmt.Sprintf(`{"sources":{"s1":{"heading":%q,"occurrence":%d}},"a2ui":[{"type":"Text"}]}`, last.Heading, last.Occurrence)
+	for _, blank := range []string{"", "\n", "\n\n\n", " \t\n"} {
+		err, job, _ := driveGeneration(t, fakeSpec{Out: out}, nil, func(job *GenerationJob) {
+			job.Req.Text = body + blank
+			job.Req.Sections = sectionsOf(vectors)
+			job.Req.Sections[len(job.Req.Sections)-1].End = utf16Len(job.Req.Text)
+		})
+		if err != nil {
+			t.Fatalf("ending %q: RunGeneration: %v", blank, err)
+		}
+		raw, err := os.ReadFile(job.ViewPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var view struct {
+			Sources map[string]struct {
+				Hash string `json:"hash"`
+			} `json:"sources"`
+		}
+		if err := json.Unmarshal(raw, &view); err != nil {
+			t.Fatalf("parse view: %v", err)
+		}
+		if got := view.Sources["s1"].Hash; got != last.Hash {
+			t.Errorf("ending %q: %s hash = %q, want the saved %s", blank, last.Heading, got, last.Hash)
+		}
+	}
+}
+
+func TestProgressSaysEachStepInWordsWithoutTheAgentsFolder(t *testing.T) {
+	spec := fakeSpec{
+		Thought: true,
+		ToolCalls: []fakeToolCallSpec{
+			{Name: "read_file", Kind: "read", Title: "File ../" + fakeFolderInTitle + "/source.md", Locations: []string{"source.md"}},
+			{Name: "write_file", Kind: "edit", Title: "File ../" + fakeFolderInTitle + "/out.json", Locations: []string{"out.json"}},
+		},
+		Out: minimalOut,
+	}
+	progress := &progressCollector{}
+	err, _, log := driveGeneration(t, spec, progress.collect, nil)
+	if err != nil {
+		t.Fatalf("RunGeneration: %v", err)
+	}
+	var texts []string
+	for _, step := range progress.got() {
+		texts = append(texts, step.Text)
+	}
+	want := []string{"Starting the agent", "Agent ready", "Thinking", "Reading its files", "Writing the view", "Checking the view"}
+	if !reflect.DeepEqual(texts, want) {
+		t.Errorf("progress texts = %q, want %q", texts, want)
+	}
+	folder := filepath.Base(logEntries(log, "cwd")[0]["cwd"].(string))
+	for _, text := range texts {
+		if strings.Contains(text, folder) {
+			t.Errorf("progress text %q names the agent's temporary folder %s", text, folder)
 		}
 	}
 }

@@ -1027,15 +1027,17 @@ func (r *genRun) writeView(ctx context.Context, sources map[string]genui.AgentSo
 	if ctx.Err() != nil {
 		return genui.ErrCancelled
 	}
-	validate := r.job.Validate
-	if validate == nil {
-		validate = genui.ValidateCandidate
-	}
 	if r.trace != nil {
 		r.trace.artifact("candidate", "", string(content))
 		r.trace.emit("validation.start", nil)
 	}
-	validationErr := validate(ctx, content)
+	var report genui.CandidateReport
+	var validationErr error
+	if r.job.Validate == nil {
+		report, validationErr = genui.CheckCandidate(ctx, content)
+	} else {
+		validationErr = r.job.Validate(ctx, content)
+	}
 	if ctx.Err() != nil {
 		return genui.ErrCancelled
 	}
@@ -1050,7 +1052,11 @@ func (r *genRun) writeView(ctx context.Context, sources map[string]genui.AgentSo
 		return r.outputError(validationErr.Error())
 	}
 	if r.trace != nil {
-		r.trace.emit("validation.result", map[string]any{"ok": true})
+		accepted := map[string]any{"ok": true}
+		if len(report.Degraded) > 0 {
+			accepted["degraded"] = report.Degraded
+		}
+		r.trace.emit("validation.result", accepted)
 	}
 	if ctx.Err() != nil {
 		return genui.ErrCancelled

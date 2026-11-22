@@ -60,10 +60,10 @@ func eachSourceID(value any, seen map[*openuilang.Element]bool, visit func(strin
 }
 
 type DegradedProperty struct {
-	Statement string
-	Component string
-	Property  string
-	Message   string
+	Statement string `json:"statement"`
+	Component string `json:"component"`
+	Property  string `json:"property"`
+	Message   string `json:"message"`
 }
 
 type CandidateReport struct {

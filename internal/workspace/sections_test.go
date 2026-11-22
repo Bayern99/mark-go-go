@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -134,5 +135,37 @@ func TestExtractNotesDetails(t *testing.T) {
 	}
 	if notes[2].Text != "last" || notes[2].SectionHeading != "End" || notes[2].SectionOccurrence != 1 {
 		t.Errorf("note[2] = %+v", notes[2])
+	}
+}
+
+func TestBlankAtTheEndOfTheDocumentLeavesSavedSectionHashesAlone(t *testing.T) {
+	fx := loadSectionVectors(t)
+	body := strings.TrimRight(fx.Document, "\n")
+	for _, blank := range []string{"", "\n", "\n\n\n", " \t\n", "\n  "} {
+		sections := ExtractSections(body + blank)
+		if len(sections) != len(fx.Sections) {
+			t.Fatalf("ending %q: %d sections, want %d", blank, len(sections), len(fx.Sections))
+		}
+		for i, saved := range fx.Sections {
+			if sections[i].Hash != saved.Hash {
+				t.Errorf("ending %q: %s hash = %s, want the saved %s", blank, saved.Heading, sections[i].Hash, saved.Hash)
+			}
+		}
+	}
+}
+
+func TestBlankAtTheEndOfACRLFDocumentLeavesSavedSectionHashesAlone(t *testing.T) {
+	const body = "# One\r\n\r\nFirst.\r\n\r\n## Two\r\n\r\nSecond."
+	saved := []string{"fnv1a32:dc8415af", "fnv1a32:b38d3fde"}
+	for _, blank := range []string{"", "\r\n", "\r\n\r\n", "\n", " \r\n"} {
+		sections := ExtractSections(body + blank)
+		if len(sections) != len(saved) {
+			t.Fatalf("ending %q: %d sections, want %d", blank, len(sections), len(saved))
+		}
+		for i, want := range saved {
+			if sections[i].Hash != want {
+				t.Errorf("ending %q: %s hash = %s, want the saved %s", blank, sections[i].Heading, sections[i].Hash, want)
+			}
+		}
 	}
 }

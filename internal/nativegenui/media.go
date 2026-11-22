@@ -406,8 +406,14 @@ func (r *Reading) chart(c *ui.Context, p props, path string, at place) {
 	}
 	all := make([]series, len(names))
 	colors := palette(len(names))
+	named, _ := p.value("seriesLabels").(*openuilang.Object)
 	for s, name := range names {
 		all[s] = series{name: name, color: colors[s], values: make([]float64, len(rows))}
+		if named != nil {
+			if label := strings.TrimSpace(words(named.Values[name])); label != "" {
+				all[s].name = label
+			}
+		}
 		for i, row := range rows {
 			if value, ok := row.Values[name].(float64); ok && !math.IsNaN(value) && !math.IsInf(value, 0) {
 				all[s].values[i] = value
@@ -468,17 +474,26 @@ func tickLabel(c *ui.Context, theme *ui.Theme) func(chart.Side, chart.Tick) {
 	}
 }
 
-func compact(value float64) string {
-	magnitude := math.Abs(value)
-	switch {
-	case magnitude >= 1e9:
-		return grouped(value/1e9) + "B"
-	case magnitude >= 1e6:
-		return grouped(value/1e6) + "M"
-	case magnitude >= 1e4:
-		return grouped(value/1e3) + "k"
+func abbreviate(ticks []chart.Tick) {
+	largest := 0.0
+	for _, tick := range ticks {
+		largest = max(largest, math.Abs(tick.Value))
 	}
-	return grouped(value)
+	divisor, unit := 1.0, ""
+	switch {
+	case largest >= 1e9:
+		divisor, unit = 1e9, "B"
+	case largest >= 1e6:
+		divisor, unit = 1e6, "M"
+	case largest >= 1e4:
+		divisor, unit = 1e3, "k"
+	}
+	for i, tick := range ticks {
+		ticks[i].Label = grouped(tick.Value / divisor)
+		if tick.Value != 0 {
+			ticks[i].Label += unit
+		}
+	}
 }
 
 func valueScale(lo, hi float64) (chart.Linear, []chart.Tick) {
@@ -488,9 +503,7 @@ func valueScale(lo, hi float64) (chart.Linear, []chart.Tick) {
 	}
 	scale := chart.NewLinear(lo, hi).Nice(5)
 	ticks := scale.Ticks(5)
-	for i := range ticks {
-		ticks[i].Label = compact(ticks[i].Value)
-	}
+	abbreviate(ticks)
 	return scale, ticks
 }
 
@@ -610,9 +623,7 @@ func (r *Reading) scatter(c *ui.Context, rows []*openuilang.Object, key string, 
 	}
 	x := chart.NewLinear(xLo, xHi).Nice(6)
 	xTicks := x.Ticks(6)
-	for i := range xTicks {
-		xTicks[i].Label = compact(xTicks[i].Value)
-	}
+	abbreviate(xTicks)
 	y, yTicks := valueScale(yLo, yHi)
 	chart.Plot(c, chart.Axes{Left: yTicks, Bottom: xTicks, Label: tickLabel(c, theme)}, func(area ui.Element) {
 		area.Draw(func(p *ui.Painter, box ui.Rect) {

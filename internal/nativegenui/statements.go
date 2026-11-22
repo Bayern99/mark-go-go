@@ -391,10 +391,8 @@ func (r *Reading) piece(c *ui.Context, value any, path string, depth int, at pla
 func (r *Reading) updating(c *ui.Context, at place) {
 	const line, bar = 18, 7
 	theme := c.Theme()
-	padding, radius, bars := float32(20), float32(14), 3
-	if at.card || at.compact {
-		padding, radius = 16, 12
-	}
+	padding, radius := at.cardInset()
+	bars := 3
 	frame := ui.Column(c).MinWidth(0).Gap(innerGap).Radius(radius).Border(1, theme.Text.Alpha(0.08)).Clip().Busy(true)
 	was, inset := frame.LayoutBounds(), padding
 	if was.H > 0 {
@@ -410,9 +408,16 @@ func (r *Reading) updating(c *ui.Context, at place) {
 		frame.Grow(1).Basis(rowShare)
 	}
 	frame.Padding(inset, padding).Children(func() {
-		ui.Text(c, "Updating card…").Font("IBM Plex Sans").FontSize(13).FixedLineHeight(line).TextColor(theme.TextMuted).Role(ui.RoleStatus)
+		updatingStatus(c).Font("IBM Plex Sans").FontSize(13).FixedLineHeight(line).TextColor(theme.TextMuted)
 		skeleton(c, bars)
 	})
+}
+
+func (at place) cardInset() (padding, radius float32) {
+	if at.card || at.compact {
+		return 16, 12
+	}
+	return 20, 14
 }
 
 func (at place) bodySize() float32 {
@@ -696,10 +701,7 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 			}
 		})
 	case "Card":
-		padding, radius := float32(20), float32(14)
-		if at.card || at.compact {
-			padding, radius = 16, 12
-		}
+		padding, radius := at.cardInset()
 		inner := place{compact: true, nested: true, card: true}
 		card := flex(ui.Column(c), p).Padding(p.space("padding", padding)).Radius(radius)
 		if at.row {

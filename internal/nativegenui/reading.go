@@ -160,7 +160,7 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 		frame := layout(ui.Column(c).Gap(8), n).Bind(&state.frame).Busy(busy)
 		if busy {
 			frame.MinHeight(max(64, state.height)).Children(func() {
-				ui.Text(c, "Updating card…").Role(ui.RoleStatus)
+				updatingStatus(c)
 				skeleton(c, 3)
 			})
 			return
@@ -242,6 +242,10 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 			}
 		})
 	}
+}
+
+func updatingStatus(c *ui.Context) ui.Element {
+	return ui.Text(c, "Updating card…").Role(ui.RoleStatus)
 }
 
 func skeleton(c *ui.Context, bars int) {

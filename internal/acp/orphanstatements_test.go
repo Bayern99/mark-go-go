@@ -50,21 +50,6 @@ func validated(mutate func(*GenerationJob)) func(*GenerationJob) {
 	}
 }
 
-func writtenMessages(t *testing.T, viewPath string) []json.RawMessage {
-	t.Helper()
-	raw, err := os.ReadFile(viewPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var view struct {
-		A2UI []json.RawMessage `json:"a2ui"`
-	}
-	if err := json.Unmarshal(raw, &view); err != nil {
-		t.Fatalf("parse view: %v", err)
-	}
-	return view.A2UI
-}
-
 func updateStatements(t *testing.T, message json.RawMessage) []string {
 	t.Helper()
 	var update struct {
@@ -97,13 +82,13 @@ func reopenedStatements(t *testing.T, viewPath string) []string {
 
 func TestAnUpdateDeletesTheStatementsItLeavesUnreferenced(t *testing.T) {
 	viewPath := generatedStatementView(t, rehearsalPlan...)
-	created := writtenMessages(t, viewPath)[0]
+	created := writtenView(t, viewPath).A2UI[0]
 
 	if err, _, _ := driveGeneration(t, fakeSpec{Out: statementsUpdate(rehearsalUpdate...)}, nil, validated(updateJob(viewPath, "phase2_src"))); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 
-	messages := writtenMessages(t, viewPath)
+	messages := writtenView(t, viewPath).A2UI
 	if len(messages) != 2 {
 		t.Fatalf("the view holds %d messages, want the first and the update", len(messages))
 	}
@@ -130,7 +115,7 @@ func TestAnUpdateThatLeavesNothingUnreferencedIsWrittenAsTheAgentWroteIt(t *test
 		A2UI []json.RawMessage `json:"a2ui"`
 	}
 	_ = json.Unmarshal([]byte(out), &agent)
-	if got, want := compactJSON(t, string(writtenMessages(t, viewPath)[1])), compactJSON(t, string(agent.A2UI[0])); got != want {
+	if got, want := compactJSON(t, string(writtenView(t, viewPath).A2UI[1])), compactJSON(t, string(agent.A2UI[0])); got != want {
 		t.Errorf("the update message is %s, want the agent's %s", got, want)
 	}
 }
@@ -148,7 +133,7 @@ func TestAnUpdateKeepsTheVariablesItNoLongerUses(t *testing.T) {
 		t.Fatalf("update: %v", err)
 	}
 	wantUpdate := []string{`phase1_src = Source(["report"], [Checkbox($p1_backup, "Restore last night's backup")])`, `phase1_tasks = null`}
-	if got := updateStatements(t, writtenMessages(t, viewPath)[1]); !slices.Equal(got, wantUpdate) {
+	if got := updateStatements(t, writtenView(t, viewPath).A2UI[1]); !slices.Equal(got, wantUpdate) {
 		t.Errorf("the update message holds %q, want %q", got, wantUpdate)
 	}
 	wantReopened := []string{"root", "$p1_backup", "$p1_replay", "phase1_src"}
@@ -162,7 +147,7 @@ func TestALaterUpdateMayReuseTheNameOfADeletedStatementAndLeavesEarlierMessagesA
 	if err, _, _ := driveGeneration(t, fakeSpec{Out: statementsUpdate(rehearsalUpdate...)}, nil, validated(updateJob(viewPath, "phase2_src"))); err != nil {
 		t.Fatalf("first update: %v", err)
 	}
-	earlier := writtenMessages(t, viewPath)
+	earlier := writtenView(t, viewPath).A2UI
 
 	second := []string{
 		`phase2_src = Source(["detail"], [phase2_card])`,
@@ -172,7 +157,7 @@ func TestALaterUpdateMayReuseTheNameOfADeletedStatementAndLeavesEarlierMessagesA
 		t.Fatalf("second update: %v", err)
 	}
 
-	messages := writtenMessages(t, viewPath)
+	messages := writtenView(t, viewPath).A2UI
 	if len(messages) != 3 {
 		t.Fatalf("the view holds %d messages, want three", len(messages))
 	}
@@ -203,7 +188,7 @@ func TestAnUpdateDeletesAStatementAnEarlierMessageLeftUnreferenced(t *testing.T)
 		t.Fatalf("update: %v", err)
 	}
 	wantUpdate := []string{`goal_src = Source(["report"], [Text("Move the orders cluster to 17.4.")])`, `phase2_steps = null`}
-	if got := updateStatements(t, writtenMessages(t, viewPath)[1]); !slices.Equal(got, wantUpdate) {
+	if got := updateStatements(t, writtenView(t, viewPath).A2UI[1]); !slices.Equal(got, wantUpdate) {
 		t.Errorf("the update message holds %q, want %q", got, wantUpdate)
 	}
 	wantReopened := []string{"root", "goal_src", "phase2_src"}

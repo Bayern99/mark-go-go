@@ -24,7 +24,7 @@ func (b *BaseView) KeptHashes(merged json.RawMessage) map[string]string {
 	_ = json.Unmarshal(merged, &messages)
 	sourceUses := componentSourceUses
 	if b.statements {
-		sourceUses = statementSourceUses
+		sourceUses = b.statementSourceUses
 	}
 	renewed := map[string]bool{}
 	if uses, known := sourceUses(messages); known {
@@ -73,16 +73,11 @@ func componentSourceUses(messages []json.RawMessage) ([]sourceUse, bool) {
 	components := map[string]sourcedComponent{}
 	var written map[string]bool
 	for _, raw := range messages {
-		var message struct {
-			CreateSurface, UpdateComponents *struct{ Components []sourcedComponent }
-		}
+		var message viewMessage[sourcedComponent]
 		if json.Unmarshal(raw, &message) != nil {
 			return nil, false
 		}
-		batch := message.UpdateComponents
-		if message.CreateSurface != nil {
-			batch = message.CreateSurface
-		}
+		batch := message.batch()
 		written = map[string]bool{}
 		if batch == nil {
 			continue
@@ -115,25 +110,12 @@ func componentSourceUses(messages []json.RawMessage) ([]sourceUse, bool) {
 	return uses, true
 }
 
-func statementSourceUses(messages []json.RawMessage) ([]sourceUse, bool) {
-	earlier, update := "", ""
-	for i, raw := range messages {
-		var message statementMessage
-		if json.Unmarshal(raw, &message) != nil {
-			return nil, false
-		}
-		batch := message.UpdateComponents
-		if message.CreateSurface != nil {
-			batch = message.CreateSurface
-		}
-		if batch == nil {
-			return nil, false
-		}
-		update = strings.Join(batch.Components, "\n")
-		if i < len(messages)-1 {
-			earlier = openuilang.Overlay(earlier, update)
-		}
+func (b *BaseView) statementSourceUses(messages []json.RawMessage) ([]sourceUse, bool) {
+	var last statementMessage
+	if len(messages) == 0 || json.Unmarshal(messages[len(messages)-1], &last) != nil || last.batch() == nil {
+		return nil, false
 	}
+	earlier, update := b.statementText(), strings.Join(last.batch().Components, "\n")
 	written := map[string]bool{}
 	for _, name := range openuilang.Names(update) {
 		written[name] = true

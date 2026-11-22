@@ -16,16 +16,25 @@ const (
 	statementFaultShare = 10
 )
 
-type statementMessage struct {
-	CreateSurface    *statementBatch `json:"createSurface"`
-	UpdateComponents *statementBatch `json:"updateComponents"`
+type viewMessage[Component any] struct {
+	CreateSurface    *componentBatch[Component] `json:"createSurface"`
+	UpdateComponents *componentBatch[Component] `json:"updateComponents"`
 }
 
-type statementBatch struct {
-	SurfaceID  string   `json:"surfaceId"`
-	CatalogID  string   `json:"catalogId"`
-	Components []string `json:"components"`
+type componentBatch[Component any] struct {
+	SurfaceID  string      `json:"surfaceId"`
+	CatalogID  string      `json:"catalogId"`
+	Components []Component `json:"components"`
 }
+
+func (m viewMessage[Component]) batch() *componentBatch[Component] {
+	if m.CreateSurface != nil {
+		return m.CreateSurface
+	}
+	return m.UpdateComponents
+}
+
+type statementMessage = viewMessage[string]
 
 func WritesStatements(a2ui json.RawMessage) bool {
 	var messages []statementMessage
@@ -194,11 +203,7 @@ func (b *BaseView) statementText() string {
 	for _, raw := range b.messages {
 		var message statementMessage
 		_ = json.Unmarshal(raw, &message)
-		batch := message.UpdateComponents
-		if message.CreateSurface != nil {
-			batch = message.CreateSurface
-		}
-		if batch != nil {
+		if batch := message.batch(); batch != nil {
 			text = openuilang.Overlay(text, strings.Join(batch.Components, "\n"))
 		}
 	}

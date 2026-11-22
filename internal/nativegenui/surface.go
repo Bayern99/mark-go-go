@@ -26,6 +26,8 @@ type Surface struct {
 	tree    *openuilang.Element
 	notices []string
 	program *openuilang.Program
+	created []string
+	owners  map[*openuilang.Element]string
 }
 
 type Node struct {

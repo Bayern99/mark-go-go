@@ -2,7 +2,7 @@
 
 [中文](README.md) · [Credits and licenses](ACKNOWLEDGMENTS.en.md)
 
-Mark Go Go is a local Markdown editor for macOS. Folder workspaces share a window and its document tabs. `Ctrl+Tab` switches between recent documents, and `⌘/` switches between the editable Preview and Markdown views. Select **GenUI** in the centre, then open **GenUI settings** at the top right of the view to choose a model, generate a reading view or update it.
+Mark Go Go is a local Markdown editor for macOS. Folder workspaces share a window and its document tabs. `Ctrl+Tab` switches between recent documents, and `⌘/` switches between the editable Preview and Markdown views. Select **GenUI** in the centre, then open **Generation settings** at the top right of the view to choose a model, generate a reading view or update it.
 
 ## Optional plugins
 

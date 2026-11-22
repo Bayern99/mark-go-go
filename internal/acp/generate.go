@@ -1006,9 +1006,14 @@ func (r *genRun) writeView(ctx context.Context, sources map[string]genui.AgentSo
 	if genui.WritesStatements(a2ui) {
 		view.Version, view.Language = genui.StatementViewVersion, genui.StatementLanguage
 	}
+	kept := r.base.KeptHashes(a2ui)
 	for key, src := range sources {
 		entry := sourceOut{Heading: src.Heading, Occurrence: src.Occurrence}
-		entry.Hash, _ = r.sectionHash(src)
+		if hash, keep := kept[key]; keep {
+			entry.Hash = hash
+		} else {
+			entry.Hash, _ = r.sectionHash(src)
+		}
 		view.Sources[key] = entry
 	}
 	data, err := json.MarshalIndent(view, "", "  ")

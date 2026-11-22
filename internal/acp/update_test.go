@@ -97,7 +97,7 @@ func TestGenerateUpdate(t *testing.T) {
 		t.Errorf("a2ui = %s, want the view's message then the agent's", raw)
 	}
 	wantSources := map[string]string{
-		"s1": `{"heading":"Report","occurrence":1,"hash":"fnv1a32:d04be74a"}`,
+		"s1": `{"heading":"Report","occurrence":1,"hash":"fnv1a32:00000000"}`,
 		"s2": `{"heading":"Überblick 概要 🚀","occurrence":2,"hash":"fnv1a32:9da8db51"}`,
 		"s3": `{"heading":"Report","occurrence":1,"hash":"fnv1a32:d04be74a"}`,
 	}

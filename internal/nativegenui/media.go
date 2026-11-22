@@ -227,8 +227,9 @@ type measuredText struct {
 }
 
 type textFit struct {
-	least float32
-	whole bool
+	least, natural float32
+	lines          int
+	whole          bool
 }
 
 func (s textStyle) font(content string) ui.Font {
@@ -256,6 +257,7 @@ func (r *Reading) fitted(content string, style textStyle) textFit {
 		result = textFit{least: max(word, kept)}
 	}
 	result.least = float32(math.Ceil(float64(result.least))) + 1
+	result.natural, result.lines = natural, 1+strings.Count(strings.TrimSpace(shown), "\n")
 	if r.fits == nil || len(r.fits) >= fitsKept {
 		r.fits = map[measuredText]textFit{}
 	}

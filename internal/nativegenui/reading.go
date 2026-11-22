@@ -54,9 +54,7 @@ type componentState struct {
 	editing, started   bool
 	running, flipped   bool
 	pointerPressed     bool
-	line               float32
-	laid               [3]float32
-	paragraph          bool
+	spanned            spannedWidth
 }
 
 func (r *Reading) Load(s *Surface) {

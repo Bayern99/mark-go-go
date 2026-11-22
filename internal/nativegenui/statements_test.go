@@ -384,6 +384,35 @@ func TestOneLineAfterACardTitleIsItsSubtitleUntilItWraps(t *testing.T) {
 	}
 }
 
+func TestTextAfterACardTitleIsStyledByItsWidthAloneNotByHowTheWindowGotThere(t *testing.T) {
+	const phrase = "Three phases, finished by the middle of March"
+	view := func() *nativegenui.Surface {
+		return statementView(t, `root = Col([Card([Title("Plan", "md"), Text("`+phrase+`")]), Card([Title("Plan", "md"), Divider(), Text("`+phrase+`")])])`)
+	}
+	wide, _ := shown(t, view(), 700, nil)
+	_, oneBodyLine := afterTitleAndAsBody(t, wide, phrase)
+	narrow, _ := shown(t, view(), 220, nil)
+	subtitleBesideWrappedBody := 0
+	for width := 240; width <= 460; width += 4 {
+		fresh, _ := shown(t, view(), width, nil)
+		want, body := afterTitleAndAsBody(t, fresh, phrase)
+		if want.H < oneBodyLine.H && body.H > oneBodyLine.H {
+			subtitleBesideWrappedBody++
+		}
+		for from, resized := range map[string]*ui.Tester{"wider": wide, "narrower": narrow} {
+			resized.SetSize(width, 600)
+			if got, _ := afterTitleAndAsBody(t, resized, phrase); got.H != want.H || got.W != want.W {
+				t.Errorf("width %d: the phrase takes %vx%v after the window came from %s, %vx%v on a fresh load", width, got.W, got.H, from, want.W, want.H)
+			}
+		}
+		wide.SetSize(700, 600)
+		narrow.SetSize(220, 600)
+	}
+	if subtitleBesideWrappedBody == 0 {
+		t.Error("no width shows the phrase on one line as a subtitle while it takes two lines as body text")
+	}
+}
+
 func TestTitleSizesKeepTheirOrderInCompactPlaces(t *testing.T) {
 	const figure = "1,284 ms"
 	sizes := []string{"sm", "md", "lg", "xl", "2xl", "3xl"}

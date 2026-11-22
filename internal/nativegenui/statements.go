@@ -127,7 +127,6 @@ type place struct {
 
 type slot struct {
 	subtitle, fill bool
-	measured       *componentState
 }
 
 func (r *Reading) statements(c *ui.Context) {
@@ -195,17 +194,19 @@ func phrase(value any) bool {
 	return plain
 }
 
-func (state *componentState) wraps(c *ui.Context) bool {
-	box := state.frame.Bounds(c)
-	width, _ := c.Size()
-	if laid := [3]float32{width, box.W, box.H}; laid != state.laid {
-		state.laid = laid
+type spannedWidth struct {
+	frame         ui.Handle
+	window, width float32
+}
+
+func (spanned *spannedWidth) fitsOnOneLine(c *ui.Context, text textFit) bool {
+	window, _ := c.Size()
+	width := spanned.frame.Bounds(c).W
+	if window != spanned.window || width != spanned.width {
+		spanned.window, spanned.width = window, width
 		c.Invalidate()
 	}
-	if state.line > 0 && box.H > 0 {
-		state.paragraph = box.H >= 1.5*state.line
-	}
-	return state.paragraph
+	return text.lines == 1 && (width == 0 || text.natural <= width+1)
 }
 
 func wide(children any) bool {
@@ -315,6 +316,7 @@ func (r *Reading) span(c *ui.Context, items []any, from, to int, path string, de
 		at.card = at.card && kind(item) != "Card"
 		if i > 0 {
 			space := gap
+			var spanned *spannedWidth
 			if flows {
 				space = flowGap(items[i-1], item, gap)
 				if at.card && i == 1 && kind(items[0]) == "Title" && opens(items[0]) {
@@ -322,8 +324,9 @@ func (r *Reading) span(c *ui.Context, items []any, from, to int, path string, de
 					case kind(item) == "Caption":
 						way.subtitle = true
 					case phrase(item):
-						way.measured = r.state(path + "/" + strconv.Itoa(i))
-						way.subtitle = !way.measured.wraps(c)
+						p := props{item.(*openuilang.Element).Props}
+						spanned = &r.state(path + "/" + strconv.Itoa(i)).spanned
+						way.subtitle = spanned.fitsOnOneLine(c, r.fitted(p.text("text"), at.textStyle(c, p, true)))
 					}
 					if way.subtitle {
 						space = 2
@@ -331,7 +334,10 @@ func (r *Reading) span(c *ui.Context, items []any, from, to int, path string, de
 				}
 			}
 			if space > 0 {
-				ui.Column(c.Key(path + "#" + strconv.Itoa(i))).Height(space).Shrink(0).AccessHidden(true)
+				spacer := ui.Column(c.Key(path + "#" + strconv.Itoa(i))).Height(space).Shrink(0).AccessHidden(true)
+				if spanned != nil {
+					spacer.AlignSelf(ui.Stretch).Bind(&spanned.frame)
+				}
 			}
 		}
 		r.piece(c, item, path+"/"+strconv.Itoa(i), depth, at, way)
@@ -414,6 +420,40 @@ func (at place) bodySize() float32 {
 		return 15
 	}
 	return 16
+}
+
+func (at place) textStyle(c *ui.Context, p props, subtitle bool) textStyle {
+	theme := c.Theme()
+	style := textStyle{size: at.bodySize(), line: 1.6, color: theme.Text, weight: 400}
+	if face, ok := textType[p.text("size")]; ok {
+		style.size, style.line = face.size, face.line
+		if at.compact && p.text("size") == "md" {
+			style.size, style.line = 15, 22.0/15
+		}
+	}
+	if subtitle {
+		style.color = theme.TextMuted
+		if style.size > subtitleSize {
+			style.size, style.line = subtitleSize, 18.0/subtitleSize
+		}
+	}
+	if named, ok := ink(c, p.text("color")); ok {
+		style.color = named
+	}
+	switch p.text("weight") {
+	case "medium":
+		style.weight = 500
+	case "semibold":
+		style.weight = 600
+	}
+	style.italic, style.struck = p.on("italic"), p.on("lineThrough")
+	if lines, ok := p.number("maxLines"); ok {
+		style.lines = int(lines + 0.5)
+	}
+	if p.on("tabularNums") {
+		style.features = "tnum"
+	}
+	return style
 }
 
 type props struct{ values *openuilang.Object }
@@ -700,38 +740,7 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 		}
 		r.selectable(title)
 	case "Text":
-		style := textStyle{size: at.bodySize(), line: 1.6, color: theme.Text, weight: 400}
-		if face, ok := textType[p.text("size")]; ok {
-			style.size, style.line = face.size, face.line
-			if at.compact && p.text("size") == "md" {
-				style.size, style.line = 15, 22.0/15
-			}
-		}
-		if way.subtitle {
-			style.color = theme.TextMuted
-			if style.size > subtitleSize {
-				style.size, style.line = subtitleSize, 18.0/subtitleSize
-			}
-		}
-		if way.measured != nil {
-			way.measured.line, style.frame = style.size*style.line, &way.measured.frame
-		}
-		if named, ok := ink(c, p.text("color")); ok {
-			style.color = named
-		}
-		switch p.text("weight") {
-		case "medium":
-			style.weight = 500
-		case "semibold":
-			style.weight = 600
-		}
-		style.italic, style.struck = p.on("italic"), p.on("lineThrough")
-		if lines, ok := p.number("maxLines"); ok {
-			style.lines = int(lines + 0.5)
-		}
-		if p.on("tabularNums") {
-			style.features = "tnum"
-		}
+		style := at.textStyle(c, p, way.subtitle)
 		run, inline := p.value("text").([]any)
 		if !inline {
 			r.prose(c, p.text("text"), style)
@@ -882,7 +891,6 @@ type textStyle struct {
 	italic, struck bool
 	whole          bool
 	features       string
-	frame          *ui.Handle
 }
 
 var inlineMark = regexp.MustCompile("\\*\\*([^*\n]+)\\*\\*|__([^_\n]+)__|\\*([^*\n]+)\\*|`([^`\n]+)`|~~([^~\n]+)~~|\\[([^\\]\n]+)\\]\\(((?:[^()\\s]|\\([^()\\s]*\\))+)\\)")
@@ -911,9 +919,6 @@ func (r *Reading) prose(c *ui.Context, content string, style textStyle) {
 			text.NoWrap()
 		} else {
 			text.MinWidth(0).Wrap()
-		}
-		if style.frame != nil {
-			text.Bind(style.frame)
 		}
 		if style.lines > 0 {
 			text.MaxLines(style.lines)

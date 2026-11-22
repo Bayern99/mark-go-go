@@ -1,6 +1,7 @@
 package acp
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -810,21 +811,9 @@ func (r *genRun) handleToolCall(id, kind, title, name string, locations []Locati
 	for i, loc := range effectiveLocations {
 		paths[i] = loc.Path
 	}
-	label := title
-	if label == "" {
-		label = name
-	}
-	if label == "" {
-		label = id
-	}
 	if !notificationToolAllowed(r.dir, effectiveKind, paths) {
-		if label == "" {
-			label = effectiveKind
-		}
-		if label == "" {
-			label = "a tool call"
-		}
-		r.abort(fmt.Sprintf("The agent tried to use %q outside its folder, so the run was stopped and the view was not changed.", label))
+		stopped := cmp.Or(title, name, id, effectiveKind, "a tool call")
+		r.abort(fmt.Sprintf("The agent tried to use %q outside its folder, so the run was stopped and the view was not changed.", stopped))
 		return
 	}
 	switch effectiveKind {

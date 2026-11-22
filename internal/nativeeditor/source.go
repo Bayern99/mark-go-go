@@ -38,11 +38,16 @@ type Document struct {
 	hasPendingScroll bool
 	folded           map[string]bool
 	returns          map[string]int
+	landing          jumpHighlight
+	fold             *foldMotion
+	page             []pageFill
 }
 
 func New(source string) *Document {
 	buffer := editor.NewSourceBuffer(source)
-	buffer.SetLanguage(editor.LanguageNamed("Markdown"))
+	language := *editor.LanguageNamed("Markdown")
+	language.Highlighter = newMarkdownHighlighter
+	buffer.SetLanguage(&language)
 	return &Document{mode: Preview, images: &inlineImages{}, state: editor.State{
 		Buffer: buffer, Label: "Markdown Preview", SoftWrap: true,
 		NoAutoClose: true, NoIndentGuides: true, NoScrollPastEnd: true,
@@ -62,6 +67,10 @@ func (d *Document) sourceIndex() *sourceIndex {
 func (d *Document) Source() string { return d.sourceIndex().raw }
 
 func (d *Document) Apply(revision uint64, start, end int, expected, replacement string) error {
+	return d.apply(revision, start, end, expected, replacement, nil)
+}
+
+func (d *Document) apply(revision uint64, start, end int, expected, replacement string, owner any) error {
 	if d.state.ReadOnly {
 		return ErrReadOnly
 	}
@@ -87,7 +96,13 @@ func (d *Document) Apply(revision uint64, start, end int, expected, replacement 
 		end++
 		replacement += "\n"
 	}
-	if !d.state.Buffer.ReplaceAtVersion(revision, idx.editorAtRaw(start), idx.editorAtRaw(end), replacement) {
+	var applied bool
+	if owner != nil {
+		applied = d.state.Buffer.ReplaceCompositionAtVersion(revision, idx.editorAtRaw(start), idx.editorAtRaw(end), replacement, owner)
+	} else {
+		applied = d.state.Buffer.ReplaceAtVersion(revision, idx.editorAtRaw(start), idx.editorAtRaw(end), replacement)
+	}
+	if !applied {
 		return ErrRevision
 	}
 	return nil
@@ -126,6 +141,12 @@ func (d *Document) SetMode(mode Mode) bool {
 		return false
 	}
 	d.draft = nil
+	for _, table := range d.tables {
+		for child := range table.composing {
+			d.state.Buffer.EndComposition(&child.state)
+		}
+		clear(table.composing)
+	}
 	d.state.Buffer.EndTyping()
 	d.mode = mode
 	return true
@@ -174,7 +195,9 @@ func (d *Document) View(c *ui.Context, readOnly bool) ui.Element {
 		d.hasPendingScroll = false
 		d.state.SetScrollY(float64(d.pendingScrollY))
 	}
+	d.state.Theme.Background = unpainted
 	field := editor.View(c, &d.state)
+	d.decorate(c, field)
 	if d.hasPendingScroll {
 		c.Invalidate()
 	}

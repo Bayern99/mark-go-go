@@ -2,6 +2,7 @@ package feynman
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,47 @@ import (
 	"testing"
 	"time"
 )
+
+func TestMacTerminalOpenTimeout(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	deadline, _ := ctx.Deadline()
+	var path string
+	err := openMacTerminal(ctx, "feynman setup", func(gotCtx context.Context, name string, args ...string) *exec.Cmd {
+		if gotDeadline, ok := gotCtx.Deadline(); !ok || !gotDeadline.Equal(deadline) {
+			t.Fatalf("open deadline = %v, %v; want %v", gotDeadline, ok, deadline)
+		}
+		if name != "open" || len(args) != 3 || args[0] != "-b" || args[1] != "com.apple.Terminal" {
+			t.Fatalf("unexpected Terminal command: %s %q", name, args)
+		}
+		path = args[2]
+		if filepath.Ext(path) != ".command" {
+			t.Fatalf("unexpected Terminal document: %q", path)
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("launcher missing before open: %v", err)
+		}
+		cmd := exec.CommandContext(gotCtx, os.Args[0], "-test.run=^TestMacTerminalBlockingOpen$")
+		cmd.Env = append(os.Environ(), "MGO_FIXTURE_BLOCKING_OPEN=1")
+		return cmd
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("open error = %v, want context.DeadlineExceeded", err)
+	}
+	if path == "" {
+		t.Fatal("open was not invoked")
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("timed-out handoff left a launcher: %v", err)
+	}
+}
+
+func TestMacTerminalBlockingOpen(t *testing.T) {
+	if os.Getenv("MGO_FIXTURE_BLOCKING_OPEN") != "1" {
+		return
+	}
+	<-time.NewTimer(time.Hour).C
+}
 
 func TestMacTerminalHandsOffWizard(t *testing.T) {
 	if runtime.GOOS != "darwin" {

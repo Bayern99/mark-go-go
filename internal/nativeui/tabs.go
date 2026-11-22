@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
 )
@@ -89,25 +90,48 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 	}
 	start := max(0, active-count+1)
 	end := min(len(docs), start+count)
-	ui.Row(c).Height(42).Padding(5, 9).Gap(5).AlignItems(ui.Center).Children(func() {
+	ui.Row(c).Height(42).Padding(8, 8, 2, 8).Gap(6).AlignItems(ui.Center).Children(func() {
 		if width < 641 {
-			toggle := iconButton(c, "\uec24", "Show navigation").Width(33).Expanded(s.leftOpen).Bind(&s.leftToggle)
+			toggle := portrait.IconButton(c, portrait.IconSidebar, "Show navigation").Expanded(s.leftOpen).Bind(&s.leftToggle)
+			toggle.ObserveInput(func(ev ui.InputEvent) {
+				if ev.Kind == ui.InputKeyDown && (ev.Key == ui.KeyEnter || ev.Key == ui.KeySpace) {
+					s.leftKeys.Flip()
+					s.rightKeys.Flip()
+				}
+			})
 			if toggle.Clicked() {
 				s.leftOpen = !s.leftOpen
 				s.rightOpen = false
 			}
 		}
-		ui.Row(c).Role(ui.RoleTabList).Label("Documents").Padding(2).Radius(9).Background(track).Grow(1).MinWidth(0).Gap(3).AlignItems(ui.Center).Children(func() {
+		portrait.Track(c, "document tabs", func(t *portrait.Segments) {
 			for i := start; i < end; i++ {
 				d := docs[i]
-				title := labels[d.ID]
+				selected := d.ID == s.activeID
 				status := stateLabel(d.Edited, d.Conflict, d.Deleted, d.ReadOnly, d.Generating)
+				title := labels[d.ID]
 				if status != "" {
 					title += " · " + status
 				}
-				ui.Row(c.Key(d.ID)).Radius(7).MaxWidth(cell).MinWidth(0).Height(29).AlignItems(ui.Center).Background(tabBackground(d.ID == s.activeID)).Children(func() {
-					tab := discrete(c, title, labels[d.ID], d.ID == s.activeID, "document tabs").MinWidth(0).Shrink(1).Role(ui.RoleTab).TabStop(d.ID == s.activeID).AccessSelected(d.ID == s.activeID).Description(status).Tooltip(d.Path)
-					if s.tabFocus == d.ID && d.ID == s.activeID {
+				cellRow := ui.Row(c.Key(d.ID)).Radius(7).MaxWidth(cell).MinWidth(0).Height(28).AlignItems(ui.Center).Padding(0, 4, 0, 0)
+				hovered := cellRow.Hovered()
+				if hovered && !selected {
+					portrait.Materials.Row.Apply(cellRow)
+				}
+				cellRow.Children(func() {
+					tab := portrait.Tooltip(c, ui.ButtonBase(c.Key("tab")).Label(labels[d.ID]).Height(28).Padding(0, 4, 0, 8).Gap(6).AlignItems(ui.Center).MinWidth(0).Shrink(1).ZIndex(1).Role(ui.RoleTab).TabStop(selected).AccessSelected(selected), d.Path)
+					if status != "" {
+						tab.Description(status)
+					}
+					ink := portrait.Colors.Ink2
+					if selected || hovered {
+						ink = portrait.Colors.Ink
+					}
+					tab.Children(func() {
+						portrait.Glyph(c, portrait.IconFileText, 12, portrait.Colors.Ink3)
+						portrait.Type.UI.Apply(ui.Text(c, title)).TextColor(ink).MaxLines(1).Ellipsis("…").MinWidth(0)
+					})
+					if s.tabFocus == d.ID && selected {
 						tab.Focus()
 						s.tabFocus = ""
 						s.focusedTab = true
@@ -131,21 +155,30 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 							a.Activate(s.tabFocus)
 						}
 					}
-					if iconButton(c, "\ue4f6", "Close "+labels[d.ID]).Size(23, 23).Padding(0).Clicked() && a.CloseDocument != nil {
+					closeTab := portrait.QuietIconButton(c, portrait.IconX, "Close "+labels[d.ID]).Size(20, 20).Radius(6).ZIndex(1)
+					if !hovered && !closeTab.Hovered() {
+						closeTab.Opacity(0.55)
+					}
+					if closeTab.Clicked() && a.CloseDocument != nil {
 						a.CloseDocument(d.ID)
 					}
+					t.Capsule(c, tab, selected)
 				})
 			}
 			if count < len(docs) {
-				button := control(c, fmt.Sprintf("+%d", len(docs)-count), "More documents").Expanded(s.overflow)
+				button := portrait.Button(c, fmt.Sprintf("+%d", len(docs)-count), "More documents").Height(26).Padding(0, 8).MinWidth(32).Expanded(s.overflow)
 				if button.Clicked() {
 					s.overflow = !s.overflow
 					s.tabQuery = ""
 					s.focusFilter = s.overflow
 				}
-				pop := ui.Popover(c, button, &s.overflow, func() {
-					ui.Column(c).Width(min(340, width-40)).Gap(5).Padding(6).Children(func() {
-						filter := ui.TextInput(c, &s.tabQuery).Label("Filter open tabs").Placeholder("Filter open tabs")
+				pop := portrait.Popover(c, button, &s.overflow, func() {
+					ui.Column(c).Width(min(340, width-40)).Gap(5).Padding(1).Children(func() {
+						var filter ui.Element
+						portrait.Field(c).Children(func() {
+							portrait.Glyph(c, portrait.IconMagnifyingGlass, 13, portrait.Colors.Ink3)
+							filter = portrait.Type.UI.Apply(ui.TextInputBase(c, &s.tabQuery)).FocusRing(false).Label("Filter open tabs").Placeholder("Filter open tabs").Grow(1).MinWidth(0)
+						})
 						if s.focusFilter {
 							filter.Focus()
 							s.focusFilter = false
@@ -166,7 +199,7 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 							slices.SortStableFunc(hidden, func(a, b workspace.DocumentInfo) int { return rank(a.ID) - rank(b.ID) })
 							next := filter.Shortcut(0, ui.KeyDown)
 							for i, d := range hidden {
-								item := discrete(c, labels[d.ID], labels[d.ID], false)
+								item := portrait.QuietButton(c, labels[d.ID], labels[d.ID]).FillWidth().Justify(ui.Start).Padding(0, 8)
 								if i == 0 && next {
 									item.Focus()
 								}
@@ -179,7 +212,7 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 								}
 							}
 							if len(hidden) == 0 {
-								ui.Text(c, "No matching documents").TextColor(muted)
+								portrait.Type.UI.Apply(ui.Text(c, "No matching documents")).TextColor(portrait.Colors.Ink3).Padding(4, 8)
 							}
 						})
 					})
@@ -188,8 +221,9 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 					button.Focus()
 				}
 			}
-		})
-		iconButton(c, "\ueb56", "Plugins").Menu(func(menu *ui.Menu) {
+		}).Label("Documents").Height(32).Gap(3).Shrink(1).MinWidth(0).Clip()
+		ui.Row(c).Grow(1)
+		portrait.IconButton(c, portrait.IconPlugs, "Plugins").Menu(func(menu *ui.Menu) {
 			if menu.Item("Feynman").Checked(m.Feynman).Chosen() && a.SetFeynman != nil {
 				a.SetFeynman(!m.Feynman)
 			}
@@ -199,17 +233,16 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 		})
 		if m.Feynman {
 			visible := s.rightOpen || width >= 1180 && !s.hideResearch
-			toggle := iconButton(c, "\uec24", "Toggle research").Expanded(visible).KeyShortcuts(ui.Cmd|ui.Alt, ui.Key0).Bind(&s.rightToggle)
+			toggle := portrait.IconButton(c, portrait.IconSidebar.Mirrored(), "Toggle research").Expanded(visible).KeyShortcuts(ui.Cmd|ui.Alt, ui.Key0).Bind(&s.rightToggle)
+			toggle.ObserveInput(func(ev ui.InputEvent) {
+				if ev.Kind == ui.InputKeyDown && (ev.Key == ui.KeyEnter || ev.Key == ui.KeySpace) {
+					s.leftKeys.Flip()
+					s.rightKeys.Flip()
+				}
+			})
 			if toggle.Clicked() {
 				s.toggleResearch(width)
 			}
 		}
 	})
-}
-
-func tabBackground(selected bool) ui.Color {
-	if selected {
-		return paper
-	}
-	return track
 }

@@ -47,6 +47,7 @@ type Theme struct {
 
 // TokenStyle is how a kind of token shows.
 type TokenStyle struct {
+	Family string
 	Color  ui.Color
 	Italic bool
 	Bold   bool

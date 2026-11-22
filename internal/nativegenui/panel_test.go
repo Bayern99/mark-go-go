@@ -2,9 +2,11 @@ package nativegenui
 
 import (
 	"errors"
+	"image"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/genui"
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
@@ -167,6 +169,57 @@ func TestChangedIDsUsesStoredIDsForRepeatedInstances(t *testing.T) {
 			t.Errorf("changed IDs included a runtime row ID: %q", id)
 		}
 	}
+}
+
+func TestLoadingShowsAShimmeringSkeletonUnderReadableStatus(t *testing.T) {
+	for _, reduce := range []bool{false, true} {
+		app := ui.NewTesterWith(func(c *ui.Context) {
+			loading(c, "Loading the GenUI view", "Reading the view file for this document.")
+		}, 640, 420, ui.TesterOptions{Preferences: ui.Preferences{ReduceMotion: reduce}})
+		app.Frame()
+		status, ok := app.AccessByRole(ui.RoleStatus, "Loading the GenUI view")
+		if !ok || !status.Busy || !app.HasText("Reading the view file for this document.") {
+			t.Fatalf("reduce %v: status %+v, texts %v", reduce, status, app.Texts())
+		}
+		before := app.Image()
+		app.Advance(400 * time.Millisecond)
+		moved := changedPixels(before, app.Image()) != 0
+		if moved == reduce || app.FramePending() == reduce {
+			t.Fatalf("reduce %v: skeleton shimmer moved %v, frames pending %v", reduce, moved, app.FramePending())
+		}
+	}
+}
+
+func TestSourceStatusSaysWhenTheSourceIsMissing(t *testing.T) {
+	v := &documentView{reading: Reading{surface: &Surface{
+		Sources: map[string]Reference{"gone": {Heading: "Gone"}},
+		Nodes:   map[string]Node{"card": {ID: "card", Sources: []string{"gone"}}},
+	}}}
+	v.index("# Overview\n\nAn overview.\n")
+	p := &panel{win: &nativeui.Window{}}
+	app := ui.NewTester(func(c *ui.Context) {
+		p.drawSources(c, v, workspace.DocumentInfo{Path: "doc.md"}, v.reading.surface.Nodes["card"], false)
+	}, 620, 200)
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RoleStatus, "Source missing"); !ok {
+		t.Fatal("a missing source is not announced")
+	}
+	if heading, ok := app.Access("Gone"); !ok || !heading.Disabled {
+		t.Fatalf("the missing source heading %+v, want disabled", heading)
+	}
+	if add, ok := app.Access("Add note"); !ok || !add.Disabled {
+		t.Fatalf("Add note %+v, want disabled without a source", add)
+	}
+}
+
+func changedPixels(a, b *image.RGBA) int {
+	n := 0
+	for i := 0; i+3 < len(a.Pix) && i+3 < len(b.Pix); i += 4 {
+		if a.Pix[i] != b.Pix[i] || a.Pix[i+1] != b.Pix[i+1] || a.Pix[i+2] != b.Pix[i+2] {
+			n++
+		}
+	}
+	return n
 }
 
 func TestTheReaderStartsOverOnlyWhenAWholeNewViewArrives(t *testing.T) {

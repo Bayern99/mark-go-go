@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/Bayern99/mark-go-go/internal/nativegenui"
-	"github.com/Bayern99/mark-go-go/internal/nativeui"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -116,7 +116,7 @@ func TestWideTableScrollsSidewaysInANarrowWindow(t *testing.T) {
 }
 
 func TestIconsDrawByPhosphorAndLucideNames(t *testing.T) {
-	if err := nativeui.RegisterFonts(); err != nil {
+	if err := portrait.RegisterFonts(); err != nil {
 		t.Fatal(err)
 	}
 	ink := func(name string) int {
@@ -363,7 +363,7 @@ func tableScroller(t *testing.T, tt *ui.Tester) ui.Rect {
 }
 
 func TestEightColumnTableKeepsItsHeadersApartAtReadingWidth(t *testing.T) {
-	if err := nativeui.RegisterFonts(); err != nil {
+	if err := portrait.RegisterFonts(); err != nil {
 		t.Fatal(err)
 	}
 	tt, _ := shown(t, statementView(t, `root = Col([`+comparisonTable+`])`), 900, nil)
@@ -412,7 +412,7 @@ func TestEightColumnTableKeepsItsHeadersApartAtReadingWidth(t *testing.T) {
 const budgetTable = `Card([Title("预算与实际"), Table(["渠道", "预算（元）", "实际（元）", "差额（元）"], [["搜索广告", "420,000", "398,200", "-21,800"], ["社交媒体", "310,000", "322,400", Badge("+12,400", "danger")], ["线下活动", "260,000", "214,900", Badge("-45,100", "success")], ["内容制作", "150,000", "118,000", "-32,000"], ["工具订阅", "60,000", "33,000", "-900"]])])`
 
 func TestTableCellsBreakOnlyBetweenWords(t *testing.T) {
-	if err := nativeui.RegisterFonts(); err != nil {
+	if err := portrait.RegisterFonts(); err != nil {
 		t.Fatal(err)
 	}
 	const oneLine, twoLines = 30, 50
@@ -437,7 +437,7 @@ func TestTableCellsBreakOnlyBetweenWords(t *testing.T) {
 }
 
 func TestNarrowTableScrollsSidewaysWithItsBarBelowTheLastRow(t *testing.T) {
-	if err := nativeui.RegisterFonts(); err != nil {
+	if err := portrait.RegisterFonts(); err != nil {
 		t.Fatal(err)
 	}
 	tt, _ := shown(t, statementView(t, `root = Col([`+budgetTable+`])`), 340, nil)
@@ -463,7 +463,7 @@ func TestNarrowTableScrollsSidewaysWithItsBarBelowTheLastRow(t *testing.T) {
 }
 
 func TestNumberColumnWithBadgeCellsStaysRightAligned(t *testing.T) {
-	if err := nativeui.RegisterFonts(); err != nil {
+	if err := portrait.RegisterFonts(); err != nil {
 		t.Fatal(err)
 	}
 	for _, width := range []int{900, 340} {

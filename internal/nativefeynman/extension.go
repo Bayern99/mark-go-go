@@ -7,6 +7,7 @@ import (
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/review"
 	"github.com/egoist/mygo/ui"
 )
@@ -329,14 +330,15 @@ func (p *panel) draw(c *ui.Context) {
 	ui.Column(c.Key("feynman-pane")).Fill().MinWidth(0).Children(func() {
 		p.header(c)
 		if s.root == "" {
-			ui.Text(c, "Open a workspace folder to start research.").TextColor(mutedColor).Padding(8, 10)
+			text(c, portrait.Type.UI, "Open a workspace folder to start research.").TextColor(portrait.Colors.Ink3).Padding(8, 10)
 			return
 		}
 		p.tabs(c)
 		if s.error != "" {
-			ui.Row(c).Role(ui.RoleAlert).Padding(6, 8).Gap(6).Children(func() {
-				ui.Text(c, s.error).Grow(1).TextColor(errorColor)
-				if smallButton(c, "Dismiss", "Dismiss research error").Clicked() {
+			ui.Row(c).Role(ui.RoleAlert).Margin(0, 0, 6, 0).Padding(6, 9).Gap(6).Radius(8).Background(portrait.Colors.DangerSoft).AlignItems(ui.Center).Children(func() {
+				portrait.Glyph(c, portrait.IconWarningCircle, 15, portrait.Colors.Danger)
+				text(c, portrait.Type.Meta, s.error).Grow(1).MinWidth(0).Wrap().TextColor(portrait.Colors.Danger)
+				if portrait.QuietIconButton(c, portrait.IconX, "Dismiss research error").Clicked() {
 					s.error = ""
 				}
 			})
@@ -352,6 +354,30 @@ func (p *panel) draw(c *ui.Context) {
 			p.chat(c)
 		}
 	})
+}
+
+func (p *panel) heading(c *ui.Context) {
+	s := p.state
+	portrait.Glyph(c, portrait.IconAtom, 20, portrait.Colors.Accent)
+	ui.Column(c).Grow(1).MinWidth(0).Children(func() {
+		text(c, portrait.Type.Small, "Feynman").FontWeight(600).TextColor(portrait.Colors.Ink)
+		name := s.root
+		if i := strings.LastIndex(name, "/"); i >= 0 && i+1 < len(name) {
+			name = name[i+1:]
+		}
+		if s.title != "" {
+			name += " · " + s.title
+		}
+		portrait.Tooltip(c, text(c, portrait.Type.Meta, name).MaxLines(1).Ellipsis("…").TextColor(portrait.Colors.Ink3), s.root)
+	})
+	if s.status == statusWorking {
+		portrait.Spinner(c, "Feynman is working")
+	}
+	status := string(s.status)
+	if status == "" {
+		status = string(statusOffline)
+	}
+	text(c, portrait.Type.Meta, status).TextColor(statusColor(s.status)).Label("Feynman connection status")
 }
 
 func (p *panel) header(c *ui.Context) {
@@ -372,7 +398,7 @@ func (p *panel) header(c *ui.Context) {
 			}
 		}
 		if compact {
-			ui.Popover(c, button, &s.sessionsOpen, func() {
+			portrait.Popover(c, button, &s.sessionsOpen, func() {
 				popoverWidth := min(float32(352), max(float32(280), width-128))
 				maxHeight := max(float32(120), height-170)
 				ui.Column(c).Width(popoverWidth).Children(func() {
@@ -386,48 +412,16 @@ func (p *panel) header(c *ui.Context) {
 	}
 	if compact {
 		ui.Column(c.Key("feynman-heading")).Padding(2, 6).Children(func() {
-			ui.Row(c.Key("feynman-heading-title")).Height(30).Gap(5).AlignItems(ui.Center).Children(func() {
+			ui.Row(c.Key("feynman-heading-title")).MinHeight(30).Gap(6).AlignItems(ui.Center).Children(func() {
 				history()
-				ui.Text(c, "✣").FontSize(15).TextColor(accentColor).Tooltip("Feynman")
-				ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-					ui.Text(c, "Feynman").Bold().FontSize(14)
-					name := s.root
-					if i := strings.LastIndex(name, "/"); i >= 0 && i+1 < len(name) {
-						name = name[i+1:]
-					}
-					if s.title != "" {
-						name += " · " + s.title
-					}
-					ui.Text(c, name).MaxLines(1).Ellipsis("…").FontSize(10).TextColor(mutedColor).Tooltip(s.root)
-				})
-				status := string(s.status)
-				if status == "" {
-					status = string(statusOffline)
-				}
-				ui.Text(c, status).FontSize(10).TextColor(statusColor(s.status)).Label("Feynman connection status")
+				p.heading(c)
 				connect()
 			})
 		})
 		return
 	}
-	ui.Row(c.Key("feynman-heading")).Height(34).Gap(5).AlignItems(ui.Center).Padding(4, 6).Children(func() {
-		ui.Text(c, "✣").FontSize(15).TextColor(accentColor).Tooltip("Feynman")
-		ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-			ui.Text(c, "Feynman").Bold().FontSize(14)
-			name := s.root
-			if i := strings.LastIndex(name, "/"); i >= 0 && i+1 < len(name) {
-				name = name[i+1:]
-			}
-			if s.title != "" {
-				name += " · " + s.title
-			}
-			ui.Text(c, name).MaxLines(1).Ellipsis("…").FontSize(10).TextColor(mutedColor).Tooltip(s.root)
-		})
-		status := string(s.status)
-		if status == "" {
-			status = string(statusOffline)
-		}
-		ui.Text(c, status).FontSize(10).TextColor(statusColor(s.status)).Label("Feynman connection status")
+	ui.Row(c.Key("feynman-heading")).MinHeight(38).Gap(8).AlignItems(ui.Center).Padding(4, 6).Children(func() {
+		p.heading(c)
 		connect()
 		history()
 	})
@@ -438,12 +432,10 @@ func (p *panel) header(c *ui.Context) {
 
 func (p *panel) tabs(c *ui.Context) {
 	s := p.state
-	ui.Row(c.Key("feynman-tabs")).Gap(3).Padding(3).Radius(8).Background(trackColor).Children(func() {
+	portrait.Track(c, "feynman tabs", func(t *portrait.Segments) {
 		for _, tab := range []struct{ id, label string }{{"chat", "Chat"}, {"files", "Files"}, {"settings", "Settings"}, {"alpha", "alphaXiv"}} {
-			button := ui.Button(c.Key("feynman-tab-"+tab.id), tab.label).Label(tab.label).MinHeight(26).Padding(4, 7).Radius(6)
-			if s.selectedTab == tab.id {
-				button.Background(paperColor).Border(0.5, rimColor).Bold()
-			}
+			selected := s.selectedTab == tab.id
+			button := t.Segment(c, tab.label, tab.label, selected).Grow(1).Role(ui.RoleTab).AccessSelected(selected)
 			if button.Clicked() {
 				s.selectedTab = tab.id
 				if tab.id == "files" {
@@ -457,5 +449,5 @@ func (p *panel) tabs(c *ui.Context) {
 				}
 			}
 		}
-	})
+	}).Margin(2, 0, 6, 0)
 }

@@ -166,6 +166,36 @@ func (b *Buffer) ReplaceAtVersion(version uint64, start, end int, replacement st
 	return true
 }
 
+func (b *Buffer) ReplaceCompositionAtVersion(version uint64, start, end int, replacement string, owner any) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.version != version || start < 0 || end < start || end > b.text.Len() {
+		return false
+	}
+	text, codes := exactEnds(replacement)
+	b.editEnds([]Edit{{Start: start, End: end, Text: text}}, []string{codes}, editCompose, owner, nil)
+	return true
+}
+
+func (b *Buffer) EndComposition(owner any) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if n := len(b.undo); n > 0 && b.open == 0 && !b.lastEdit.IsZero() {
+		tx := b.undo[n-1]
+		if tx.kind == editCompose && tx.owner == owner {
+			before := Buffer{text: b.text, ends: b.ends, exactSource: b.exactSource}
+			for i := len(tx.edits) - 1; i >= 0; i-- {
+				text, ends, _, _ := before.replace(tx.edits[i], tx.ends[i])
+				before.text, before.ends = text, ends
+			}
+			if sameText(before.text, b.text) && sameText(before.ends.codes, b.ends.codes) {
+				b.undo = b.undo[:n-1]
+			}
+		}
+	}
+	b.lastEdit = time.Time{}
+}
+
 func (b *Buffer) exactEdit(start, end int, replacement string) {
 	text, codes := exactEnds(replacement)
 	b.editEnds([]Edit{{Start: start, End: end, Text: text}}, []string{codes}, editOther, nil, nil)

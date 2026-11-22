@@ -3,6 +3,7 @@ package nativeui
 import (
 	"slices"
 
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
 )
@@ -44,6 +45,7 @@ type Shell struct {
 	history                                          []string
 	leftWidth, rightWidth                            float32
 	leftToggle, rightToggle                          ui.Handle
+	leftKeys, rightKeys                              portrait.KeyTrigger
 	queries                                          map[string]string
 	scrolls                                          map[string]*ui.ScrollState
 	openCheckpoints                                  map[string]bool
@@ -99,14 +101,16 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 	}
 	if c.Shortcut(ui.Cmd|ui.Alt, ui.Key0) && m.Feynman {
 		s.toggleResearch(width)
+		s.leftKeys.Flip()
+		s.rightKeys.Flip()
 	}
-	t := portraitTheme()
+	t := portrait.Theme()
 	root := ui.Themed(c, &t).Fill()
 	if paths := root.DroppedFiles(); len(paths) > 0 && a.Drop != nil {
 		a.Drop(slices.Clone(paths))
 	}
 	root.Children(func() {
-		ui.Column(c).Fill().Background(paper).TextColor(ink).Font("IBM Plex Sans").Children(func() {
+		ui.Column(c).Fill().Background(portrait.Colors.Paper).TextColor(portrait.Colors.Ink).Font(portrait.FontSans).Children(func() {
 
 			if m.Message != "" {
 				banner(c, m.Message)
@@ -147,13 +151,13 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 						remaining -= left + 1
 					}
 					first := remaining - right - 1
-					if ui.Split(c.Key("research-split"), &first, center, func() { s.research(c, slots) }).Fill().SplitReset(remaining - 377).Changed() {
+					if ui.Split(c.Key("research-split"), &first, center, func() { s.research(c, slots, true) }).Fill().SplitReset(remaining - 377).Changed() {
 						s.rightWidth = clamp(remaining-first-1, 310, min(800, width*0.56))
 					}
 				}
 				if leftDocked {
 					actual := left
-					if ui.Split(c.Key("library-split"), &actual, func() { s.navigation(c, m, a) }, inside).Fill().SplitReset(248).Changed() {
+					if ui.Split(c.Key("library-split"), &actual, func() { s.navigation(c, m, a, true) }, inside).Fill().SplitReset(248).Changed() {
 						s.leftWidth = clamp(actual, 190, 420)
 					}
 				} else {
@@ -187,17 +191,29 @@ func (s *Shell) toggleResearch(width float32) {
 }
 
 func (s *Shell) drawer(c *ui.Context, left bool, width, height float32, m Model, a Actions, slots Slots) {
-	open, anchor, name := &s.rightOpen, &s.rightToggle, "Research"
+	open, anchor, name, keys := &s.rightOpen, &s.rightToggle, "Research", &s.rightKeys
 	if left {
-		open, anchor, name = &s.leftOpen, &s.leftToggle, "Navigation"
+		open, anchor, name, keys = &s.leftOpen, &s.leftToggle, "Navigation", &s.leftKeys
+	}
+	keyboard := keys.Live(c)
+	slide, origin := portrait.Overlays.DrawerRight, float32(1)
+	if left {
+		slide, origin = portrait.Overlays.DrawerLeft, 0
+	}
+	if *open {
+		ui.Overlay(c, func() {
+			ui.Box(c.Key(name + " scrim")).Absolute().Left(0).Top(0).Right(0).Bottom(0).IgnoreInput(true).
+				Background(portrait.Colors.Scrim).Transition(portrait.Overlays.Scrim.Transition(c, keyboard))
+		})
 	}
 	panel := ui.DialogBase(c.Key(name+" drawer"), open, func(back, panel ui.Element) {
-		back.Background(ui.RGBA(29, 29, 31, 0.08)).AlignItems(ui.Start).Justify(ui.Start)
+		panel.ObserveInput(keys.Observe)
+		back.AlignItems(ui.Start).Justify(ui.Start).TransformOrigin(origin, 0.5).Transition(slide.Transition(c, keyboard))
 		w := min(width-24, s.rightWidth)
 		if left {
 			w = min(width-24, s.leftWidth)
 		}
-		panel.Absolute().Top(8).Height(max(80, height-16)).Width(w).Radius(14).Material(glass(c, true)).Shadow(0, 8, 24, 0, ui.RGBA(0, 0, 0, 0.14)).Label(name)
+		portrait.Materials.GlassOverlay.Apply(panel.Absolute().Top(8).Height(max(80, height-16)).Width(w).Radius(14)).Label(name)
 		if left {
 			panel.Left(8)
 		} else {
@@ -205,7 +221,7 @@ func (s *Shell) drawer(c *ui.Context, left bool, width, height float32, m Model,
 		}
 		ui.Row(c).Padding(6, 10).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, name).Bold().Grow(1)
-			close := control(c, "×", "Close "+name).Width(28)
+			close := portrait.QuietIconButton(c, portrait.IconX, "Close "+name)
 			close.AutoFocus()
 			if close.Clicked() {
 				*open = false
@@ -213,9 +229,9 @@ func (s *Shell) drawer(c *ui.Context, left bool, width, height float32, m Model,
 			}
 		})
 		if left {
-			s.navigation(c, m, a)
+			s.navigation(c, m, a, false)
 		} else {
-			s.research(c, slots)
+			s.research(c, slots, false)
 		}
 	})
 	if panel.Dismissed() {
@@ -223,8 +239,8 @@ func (s *Shell) drawer(c *ui.Context, left bool, width, height float32, m Model,
 	}
 }
 
-func (s *Shell) research(c *ui.Context, slots Slots) {
-	panel(c).Role(ui.RoleComplementary).Label("Feynman research").Children(func() {
+func (s *Shell) research(c *ui.Context, slots Slots, docked bool) {
+	panel(c, docked).Role(ui.RoleComplementary).Label("Feynman research").Children(func() {
 		if slots.Research != nil {
 			slots.Research(c)
 		}

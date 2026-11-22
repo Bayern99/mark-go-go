@@ -113,40 +113,7 @@ func openSystemTerminal(ctx context.Context, command, profile string) error {
 	}
 	switch runtime.GOOS {
 	case "darwin":
-		file, err := os.CreateTemp("", "mark-go-go-feynman-*.command")
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-		path := file.Name()
-		opened := false
-		defer func() {
-			if !opened {
-				_ = os.Remove(path)
-			}
-		}()
-		if _, err := fmt.Fprintf(file, "#!/bin/sh\n/bin/rm -f -- %s\n%s\n", shellQuoteArg(path), launchCmd); err != nil {
-			return err
-		}
-		if err := file.Chmod(0700); err != nil {
-			return err
-		}
-		if err := file.Close(); err != nil {
-			return err
-		}
-		cmd := exec.CommandContext(ctx, "open", "-b", "com.apple.Terminal", path)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			msg := strings.TrimSpace(string(out))
-			if msg != "" {
-				return fmt.Errorf("open Terminal: %s", msg)
-			}
-			return err
-		}
-		opened = true
-		return nil
+		return openMacTerminal(ctx, launchCmd, exec.CommandContext)
 	case "windows":
 		cmd := exec.Command("cmd.exe", "/c", "start", "", "cmd.exe", "/k", command)
 		cmd.Env = feynmanProfileEnv(cmd.Environ(), profile)
@@ -172,6 +139,43 @@ func openSystemTerminal(ctx context.Context, command, profile string) error {
 		}
 		return errors.New("No supported terminal emulator found. Run the command in your terminal: " + launchCmd)
 	}
+}
+
+func openMacTerminal(ctx context.Context, launchCmd string, commandContext func(context.Context, string, ...string) *exec.Cmd) error {
+	file, err := os.CreateTemp("", "mark-go-go-feynman-*.command")
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	path := file.Name()
+	opened := false
+	defer func() {
+		if !opened {
+			_ = os.Remove(path)
+		}
+	}()
+	if _, err := fmt.Fprintf(file, "#!/bin/sh\n/bin/rm -f -- %s\n%s\n", shellQuoteArg(path), launchCmd); err != nil {
+		return err
+	}
+	if err := file.Chmod(0700); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	cmd := commandContext(ctx, "open", "-b", "com.apple.Terminal", path)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		msg := strings.TrimSpace(string(out))
+		if msg != "" {
+			return fmt.Errorf("open Terminal: %s", msg)
+		}
+		return err
+	}
+	opened = true
+	return nil
 }
 
 func startTerminal(cmd *exec.Cmd) error {

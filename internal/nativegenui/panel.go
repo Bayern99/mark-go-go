@@ -13,6 +13,7 @@ import (
 
 	"github.com/Bayern99/mark-go-go/internal/genui"
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
 )
@@ -123,7 +124,7 @@ func (p *panel) draw(c *ui.Context) {
 	busy := v.cancel != nil || d.Generating
 	ui.Column(c).Fill().MinHeight(0).Gap(8).Padding(12).Children(func() {
 		ui.Row(c).Justify(ui.End).Children(func() {
-			if ui.Button(c, "Generation settings").Expanded(v.settings).Clicked() {
+			if portrait.QuietButton(c, "Generation settings", "Generation settings").Expanded(v.settings).Clicked() {
 				v.settings = !v.settings
 			}
 		})
@@ -140,18 +141,18 @@ func (p *panel) draw(c *ui.Context) {
 			}
 		}
 		if v.message != "" {
-			ui.Text(c, v.message).Role(ui.RoleStatus)
+			portrait.Type.UI.Apply(ui.Text(c, v.message)).TextColor(portrait.Colors.Ink2).Role(ui.RoleStatus)
 		}
 		if v.cancel != nil && ui.Button(c, "Cancel generation").Clicked() {
 			v.cancel()
 		}
 		switch {
 		case !v.loaded:
-			ui.Text(c, "Loading view…")
+			loading(c, "Loading the GenUI view", "Reading the view file for this document.")
 		case v.snapshot.Error != "":
 			ui.Text(c, v.snapshot.Error).Role(ui.RoleAlert)
 		case v.cancel != nil && v.reading.surface == nil:
-			ui.Column(c).Gap(8).Padding(20).Busy(true).Children(func() { ui.Text(c, "Generating view…").Role(ui.RoleStatus); skeleton(c) })
+			loading(c, "Generating view…", "Your agent is laying out this document.")
 		case v.reading.surface == nil:
 			ui.Text(c, "No view yet.")
 			if ui.Button(c, "Set up generation").Clicked() {
@@ -282,39 +283,52 @@ func (p *panel) drawSettings(c *ui.Context, v *documentView, d workspace.Documen
 
 func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.DocumentInfo, n Node, busy bool) {
 	ss := v.matches(n)
+	var notes []string
 	for _, note := range v.notes {
 		if slices.ContainsFunc(ss, func(s workspace.Section) bool { return note.Start >= s.Start && note.End <= s.End }) {
-			ui.Text(c, "Note: "+note.Text).Selectable()
+			notes = append(notes, note.Text)
 		}
 	}
-	ui.Row(c).Gap(6).Wrap().Children(func() {
-		ui.Text(c, "From")
-		for i, id := range n.Sources {
-			ref, s, ok := v.source(id)
-			label := ref.Heading
-			if label == "" {
-				label = id
+	if len(notes) > 0 {
+		ui.Column(c).Gap(6).Margin(2, 0, 0, 0).Role(ui.RoleList).Label("Notes").Children(func() {
+			for i, note := range notes {
+				portrait.Type.Meta.Apply(ui.Text(c.Key(i), note)).Padding(4, 8, 4, 11).Radius(4).Background(portrait.Colors.WarningSoft).
+					InsetShadow(3, 0, 0, 0, portrait.Colors.Warning).Selectable()
 			}
-			if ref.Occurrence > 1 {
-				label = fmt.Sprintf("%s (%d)", label, ref.Occurrence)
+		})
+	}
+	status, missing := "", false
+	ui.Row(c).Wrap().GapX(10).GapY(6).AlignItems(ui.Center).Margin(2, 0, 0, 0).Padding(8, 0, 0, 0).Shadow(0, -0.5, 0, 0, portrait.Colors.LineStrong).Children(func() {
+		ui.Row(c).Wrap().Gap(4).AlignItems(ui.Center).Grow(1).MinWidth(0).Children(func() {
+			portrait.Type.Meta.Apply(ui.Text(c, "From")).TextColor(portrait.Colors.Ink3)
+			for i, id := range n.Sources {
+				ref, s, ok := v.source(id)
+				label := ref.Heading
+				if label == "" {
+					label = id
+				}
+				if ref.Occurrence > 1 {
+					label = fmt.Sprintf("%s (%d)", label, ref.Occurrence)
+				}
+				if sourceHeading(c.Key(i), label, !ok).Clicked() {
+					p.win.Reveal(s.Start)
+					_ = p.win.Source().SelectUTF16(s.Start, s.End)
+				}
+				if !ok {
+					status, missing = "Source missing", true
+				} else if ref.Hash != "" && ref.Hash != s.Hash && status == "" {
+					status = "Source changed"
+				}
 			}
-			if ui.Button(c.Key(i), label).Disabled(!ok).Clicked() {
-				p.win.Reveal(s.Start)
-				_ = p.win.Source().SelectUTF16(s.Start, s.End)
-			}
-			if !ok {
-				ui.Text(c, "Source missing")
-			} else if ref.Hash != "" && ref.Hash != s.Hash {
-				ui.Text(c, "Source changed")
-			}
+		})
+		if status != "" {
+			sourceStatus(c, status, missing)
 		}
-	})
-	ui.Row(c).Gap(6).Children(func() {
-		if ui.Button(c, "Add note").Disabled(d.ReadOnly || len(ss) == 0).Clicked() {
+		if sourceButton(c, "Add note", d.ReadOnly || len(ss) == 0).Clicked() {
 			v.noteTarget = n.ID
 			v.note = ""
 		}
-		if ui.Button(c, "Update card").Disabled(busy || d.Path == "").Clicked() {
+		if sourceButton(c, "Update card", busy || d.Path == "").Clicked() {
 			componentID := n.ComponentID
 			if componentID == "" {
 				componentID = n.ID
@@ -330,18 +344,83 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 	saveShortcut := note.Shortcut(ui.Cmd, ui.KeyEnter) && !composing
 	cancelShortcut := note.Shortcut(0, ui.KeyEscape) && !composing
 	enabled := len(ss) > 0 && !d.ReadOnly && strings.TrimSpace(v.note) != ""
-	if (ui.Button(c, "Save note").Disabled(!enabled).Clicked() || saveShortcut) && enabled {
+	if (portrait.AccentButton(c, "Save note", "Save note").Disabled(!enabled).Clicked() || saveShortcut) && enabled {
 		v.message = message(p.addNote(ss[0], v.note))
 		if v.message == "" {
 			v.noteTarget = ""
 			v.note = ""
 		}
 	}
-	if ui.Button(c, "Cancel note").Clicked() || cancelShortcut {
+	if portrait.QuietButton(c, "Cancel note", "Cancel note").Clicked() || cancelShortcut {
 		v.noteTarget = ""
 		v.note = ""
 	}
 }
+
+func sourceHeading(c *ui.Context, label string, disabled bool) ui.Element {
+	b := ui.ButtonBase(c).Label(label).Disabled(disabled).DimDisabled(false).Radius(3)
+	ink, line := portrait.Colors.Accent, portrait.Colors.LineStrong
+	if disabled {
+		ink = portrait.Colors.Ink3
+	} else if b.Hovered() {
+		b.Background(portrait.Colors.AccentSoft)
+		line = portrait.Colors.Accent
+	}
+	b.Children(func() {
+		portrait.Type.Meta.Apply(ui.Text(c, label)).TextColor(ink).Underline().UnderlineOffset(2).DecorationColor(line)
+	})
+	return b
+}
+
+func sourceStatus(c *ui.Context, text string, missing bool) {
+	fill, ink, icon := portrait.Colors.WarnSoft, portrait.Colors.Warn, portrait.IconWarning
+	if missing {
+		fill, ink, icon = portrait.Colors.DangerSoft, portrait.Colors.Danger, portrait.IconWarningCircle
+	}
+	ui.Row(c.Key("status")).Gap(4).AlignItems(ui.Center).Radius(999).Padding(1, 8).Background(fill).Role(ui.RoleStatus).Label(text).Children(func() {
+		portrait.Glyph(c, icon, 12, ink)
+		portrait.Type.Meta.Apply(ui.Text(c, text)).TextColor(ink)
+	})
+}
+
+type sourceHover struct{}
+type sourcePress struct{}
+
+func sourceButton(c *ui.Context, label string, disabled bool) ui.Element {
+	g := portrait.GenUI
+	b := ui.ButtonBase(c.Key(label)).Label(label).Disabled(disabled).DimDisabled(false).Padding(2, 8).Radius(6).AlignItems(ui.Center)
+	ease := portrait.Motion.EaseOut.Easing()
+	hovered, pressed := b.Hovered() && !disabled, b.Pressed() && !disabled
+	h := b.AnimateTo(sourceHover{}, flag(hovered && !pressed), ui.Animation{Duration: portrait.Motion.Press, Ease: ease, NonMotion: true})
+	pr := b.AnimateTo(sourcePress{}, flag(pressed), ui.Animation{Duration: portrait.Motion.Press, Ease: ease})
+	g.Source.Mix(g.SourceHover, h).Mix(g.SourcePress, pr).Apply(b)
+	scale := 1 - 0.03*pr
+	b.TransformOrigin(0.5, 0.5).Translate(0, 0.5*pr).Scale(scale, scale)
+	ink := portrait.Colors.Accent
+	if disabled {
+		ink = portrait.Colors.Ink3
+	}
+	b.Children(func() { portrait.Type.Meta.Apply(ui.Text(c, label)).TextColor(ink) })
+	return b
+}
+
+func flag(b bool) float32 {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+func loading(c *ui.Context, title, detail string) {
+	ui.Column(c.Key("loading")).Gap(12).Padding(72, 0, 24, 0).FillWidth().MaxWidth(520).AlignSelf(ui.Center).Busy(true).Role(ui.RoleStatus).Label(title).Children(func() {
+		ui.Column(c).Gap(4).Children(func() {
+			portrait.Type.Title.In(portrait.FontDisplay).Apply(ui.Text(c, title)).FontWeight(600).TextColor(portrait.Colors.Ink)
+			portrait.Type.Small.Apply(ui.Text(c, detail)).TextColor(portrait.Colors.Ink2)
+		})
+		viewSkeleton(c)
+	})
+}
+
 func message(err error) string {
 	if err != nil {
 		return err.Error()
@@ -423,6 +502,8 @@ func (p *panel) generate(v *documentView, ids []string) {
 					v.failure = &f
 				} else {
 					v.requestEdited = false
+					v.message = "View generated."
+					v.reading.Halo()
 				}
 			}
 		})

@@ -86,13 +86,25 @@ func newValidationError(code, message, path, componentID string) *ValidationErro
 }
 
 func ValidateCandidate(ctx context.Context, candidate []byte) error {
+	_, err := CheckCandidate(ctx, candidate)
+	return err
+}
+
+func CheckCandidate(ctx context.Context, candidate []byte) (CandidateReport, error) {
 	if ctx != nil && ctx.Err() != nil {
-		return ErrCancelled
+		return CandidateReport{}, ErrCancelled
 	}
-	if err := ValidateGeneratedView(candidate); err != nil {
-		return NewFailure(FailInvalidOutput, "The generated view is not valid: "+err.Error(), HintInvalidOutput)
+	var report CandidateReport
+	var err error
+	if IsStatementView(candidate) {
+		report, err = validateStatementCandidate(candidate)
+	} else {
+		err = ValidateGeneratedView(candidate)
 	}
-	return nil
+	if err != nil {
+		return CandidateReport{}, NewFailure(FailInvalidOutput, "The generated view is not valid: "+err.Error(), HintInvalidOutput)
+	}
+	return report, nil
 }
 
 func ValidationUnavailable(detail string) error {
@@ -105,6 +117,10 @@ func ValidateGeneratedView(raw []byte) error {
 }
 
 func ValidateStoredView(raw []byte) error {
+	if IsStatementView(raw) {
+		_, err := ReadStatementView(raw)
+		return err
+	}
 	return validateView(raw, true)
 }
 

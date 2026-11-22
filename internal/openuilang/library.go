@@ -32,6 +32,7 @@ type Library struct {
 	calls          map[string]*callDef
 	bindable       map[string]map[string]bool
 	functions      map[string]Function
+	actionOnly     map[string]bool
 }
 
 func builtinCall(kind string, lazy bool, names ...string) *callDef {
@@ -82,6 +83,7 @@ func LoadLibrary(spec []byte) (*Library, error) {
 		components: map[string][]paramDef{},
 		calls:      map[string]*callDef{},
 		bindable:   map[string]map[string]bool{},
+		actionOnly: map[string]bool{},
 		functions:  map[string]Function{},
 	}
 	lib.root, _ = top.Values["root"].(string)
@@ -155,6 +157,11 @@ func LoadLibrary(spec []byte) (*Library, error) {
 }
 
 func (l *Library) RegisterFunction(name string, fn Function) { l.functions[name] = fn }
+
+func (l *Library) RegisterActionFunction(name string, fn Function) {
+	l.functions[name] = fn
+	l.actionOnly[name] = true
+}
 
 func (l *Library) isRuntimeCall(name string) bool {
 	return l.calls[name] != nil || isReservedCall(name)

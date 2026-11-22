@@ -1,9 +1,12 @@
 package nativegenui
 
 import (
+	"errors"
 	"slices"
+	"strings"
 	"testing"
 
+	"github.com/Bayern99/mark-go-go/internal/genui"
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
@@ -162,6 +165,185 @@ func TestChangedIDsUsesStoredIDsForRepeatedInstances(t *testing.T) {
 	for _, id := range got {
 		if id == "row-[/items/0]" || id == "row-[/items/1]" {
 			t.Errorf("changed IDs included a runtime row ID: %q", id)
+		}
+	}
+}
+
+func TestTheReaderStartsOverOnlyWhenAWholeNewViewArrives(t *testing.T) {
+	file := func(messages string) genui.ViewEvent {
+		return genui.ViewEvent{ID: "doc", Exists: true, Text: `{"version":3,"language":"openui-lang/1.0","sources":{},"a2ui":[` + messages + `]}`}
+	}
+	const created = `{"version":"1.0","createSurface":{"surfaceId":"view","catalogId":"markgogo.dev:genui/v3","components":["$months = 2","root = Col([plan, risks])","plan = Card([Slider($months, 0, 10, 1, \"Months\", \"mo\"), Text(\"Total \" + $months * 150)])","risks = Card([Text(\"Old risks\")])"]}}`
+	const update = `,{"version":"1.0","updateComponents":{"surfaceId":"view","components":["risks = Card([Text(\"New risks\")])"]}}`
+	const again = `{"version":"1.0","createSurface":{"surfaceId":"view","catalogId":"markgogo.dev:genui/v3","components":["$months = 4","root = Col([Slider($months, 0, 10, 1, \"Months\", \"mo\"), Text(\"Total \" + $months * 150)])"]}}`
+
+	v := &documentView{}
+	p := &panel{views: map[string]*documentView{"doc": v}}
+	p.updated(file(created))
+	app := ui.NewTester(v.reading.View, 600, 600)
+	total := func() string {
+		app.Frame()
+		app.Frame()
+		for _, text := range app.Texts() {
+			if strings.HasPrefix(text, "Total ") {
+				return text
+			}
+		}
+		return strings.Join(app.Texts(), "\n")
+	}
+	choose := func(share float32) {
+		app.Frame()
+		slider, ok := app.Access("Months")
+		if !ok {
+			t.Fatal("no slider named Months")
+		}
+		box := slider.Bounds
+		app.Press(box.X+box.W*0.2, box.Y+box.H/2)
+		app.Move(box.X+box.W*share, box.Y+box.H/2)
+		app.Release(box.X+box.W*share, box.Y+box.H/2)
+	}
+	generating := func(ids ...string) {
+		v.cancel, v.lastIDs, v.reading.Replacing = func() {}, ids, ids
+	}
+
+	choose(0.8)
+	if got := total(); got != "Total 1200" {
+		t.Fatalf("dragging to 8 months shows %q", got)
+	}
+
+	generating("risks")
+	if got := total(); got != "Total 1200" || !app.HasText("Updating card…") || app.HasText("Old risks") {
+		t.Errorf("while a card is updated the page shows %q and %v, want a placeholder in place of the card", got, app.Texts())
+	}
+	v.finished(errors.New("the agent stopped"))
+	if got := total(); got != "Total 1200" || app.HasText("Updating card…") || !app.HasText("Old risks") || v.failure == nil {
+		t.Errorf("after an update that failed the page shows %q and %v, failure %v, want the card as it was", got, app.Texts(), v.failure)
+	}
+
+	generating("risks")
+	v.finished(nil)
+	p.updated(file(created + update))
+	if got := total(); got != "Total 1200" || !app.HasText("New risks") {
+		t.Errorf("after an update of another card the page shows %q, want the reader's Total 1200 beside the new card", got)
+	}
+
+	generating()
+	v.finished(errors.New("the agent stopped"))
+	if got := total(); got != "Total 1200" || v.failure == nil {
+		t.Errorf("after a full generation that failed the page shows %q, failure %v", got, v.failure)
+	}
+
+	generating()
+	v.finished(nil)
+	p.updated(file(again))
+	if got := total(); got != "Total 600" {
+		t.Errorf("after a full generation the page shows %q, want the new view's Total 600", got)
+	}
+	if v.cancel != nil || v.reading.Replacing != nil {
+		t.Error("the finished generation still counts as running")
+	}
+
+	choose(0.8)
+	if got := total(); got != "Total 1200" {
+		t.Fatalf("dragging to 8 months in the new view shows %q", got)
+	}
+	p.updated(file(created))
+	if got := total(); got != "Total 300" {
+		t.Errorf("after the full generation is undone the page shows %q, want the earlier view's Total 300", got)
+	}
+
+	choose(0.8)
+	p.updated(file(created + update))
+	if got := total(); got != "Total 1200" || !app.HasText("New risks") {
+		t.Errorf("after an update written outside the panel the page shows %q, want the reader's Total 1200 beside the new card", got)
+	}
+	p.updated(file(again))
+	if got := total(); got != "Total 600" {
+		t.Errorf("after a whole new view written outside the panel the page shows %q, want the new view's Total 600", got)
+	}
+}
+
+func TestBlankAtTheEndOfTheDocumentDoesNotMarkItsLastSectionChanged(t *testing.T) {
+	v := &documentView{reading: Reading{surface: &Surface{
+		Sources: map[string]Reference{"overview": {Heading: "Overview", Hash: "fnv1a32:57945685"}},
+		Nodes:   map[string]Node{"card": {ID: "card", Sources: []string{"overview"}}},
+	}}}
+	p := &panel{win: &nativeui.Window{}}
+	app := ui.NewTester(func(c *ui.Context) {
+		p.drawSources(c, v, workspace.DocumentInfo{Path: "doc.md"}, v.reading.surface.Nodes["card"], false)
+	}, 620, 420)
+	markedChanged := func(document string) bool {
+		v.index(document)
+		app.Frame()
+		var names []string
+		for _, el := range app.AccessAll() {
+			names = append(names, el.Name)
+		}
+		return strings.Contains(strings.Join(names, "\n"), "Source changed")
+	}
+
+	for _, document := range []string{
+		"# Overview\n\nAn overview.\n",
+		"# Overview\n\nAn overview.",
+		"# Overview\n\nAn overview.\n\n \n",
+	} {
+		if markedChanged(document) {
+			t.Errorf("%q is marked as changed since the view was made", document)
+		}
+	}
+	if !markedChanged("# Overview\n\nAnother overview.\n") {
+		t.Error("a changed paragraph is not marked as changed")
+	}
+}
+
+func TestAViewSavedBeforeTheEndOfDocumentRuleIsNotMarkedChangedUntilItsSectionChanges(t *testing.T) {
+	for document, savedHash := range map[string]string{
+		"# Overview\n\nAn overview.":                     "fnv1a32:afd7b68d",
+		"# Overview\n\nAn overview.\n\n \n":              "fnv1a32:8dc4af77",
+		"# Overview\r\n\r\nAn overview.":                 "fnv1a32:11644d29",
+		"# Intro\n\nKept.\n\n# Overview\n\nAn overview.": "fnv1a32:afd7b68d",
+	} {
+		v := &documentView{reading: Reading{surface: &Surface{
+			Sources: map[string]Reference{"overview": {Heading: "Overview", Hash: savedHash}},
+			Nodes:   map[string]Node{"card": {ID: "card", ComponentID: "card", Sources: []string{"overview"}}},
+		}}}
+		p := &panel{win: &nativeui.Window{}}
+		app := ui.NewTester(func(c *ui.Context) {
+			p.drawSources(c, v, workspace.DocumentInfo{Path: "doc.md"}, v.reading.surface.Nodes["card"], false)
+		}, 620, 420)
+		markedChanged := func(document string) bool {
+			v.index(document)
+			app.Frame()
+			var names []string
+			for _, el := range app.AccessAll() {
+				names = append(names, el.Name)
+			}
+			marked := strings.Contains(strings.Join(names, "\n"), "Source changed")
+			if listed := slices.Contains(v.changedIDs(), "card"); listed != marked {
+				t.Errorf("%q: the source is marked changed: %t, its statement is offered for update: %t", document, marked, listed)
+			}
+			return marked
+		}
+		if markedChanged(document) {
+			t.Errorf("%q is marked as changed since the view was made", document)
+		}
+		if !markedChanged(strings.Replace(document, "An overview.", "Another overview.", 1)) {
+			t.Errorf("%q with a changed paragraph is not marked as changed", document)
+		}
+	}
+}
+
+func TestGenerationProgressSaysEachStepOnce(t *testing.T) {
+	v := &documentView{}
+	for _, step := range []genui.GenerateProgress{
+		{Phase: "starting", Text: "Starting the agent"},
+		{Phase: "thinking", Text: "Thinking"},
+		{Phase: "writing", Text: "Writing the view"},
+		{Phase: "checking", Text: "Checking the view"},
+	} {
+		v.progressed(step)
+		if v.message != step.Text {
+			t.Errorf("status during %q = %q, want %q", step.Phase, v.message, step.Text)
 		}
 	}
 }

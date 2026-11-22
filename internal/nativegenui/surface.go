@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Bayern99/mark-go-go/internal/genui"
+	"github.com/Bayern99/mark-go-go/internal/openuilang"
 )
 
 type Reference struct {
@@ -21,6 +22,12 @@ type Surface struct {
 	Nodes   map[string]Node
 	Sources map[string]Reference
 	Request string
+	Session *openuilang.Session
+	tree    *openuilang.Element
+	notices []string
+	program *openuilang.Program
+	created []string
+	owners  map[*openuilang.Element]string
 }
 
 type Node struct {
@@ -111,6 +118,9 @@ type operation struct {
 func Open(data string) (*Surface, error) {
 	if len(data) > genui.MaxViewBytes {
 		return nil, errors.New("GenUI view exceeds the size limit")
+	}
+	if genui.IsStatementView([]byte(data)) {
+		return openStatements(data)
 	}
 	var file struct {
 		Sources map[string]Reference

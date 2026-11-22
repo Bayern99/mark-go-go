@@ -292,3 +292,75 @@ func TestTimelineWithoutMarkersHasNoMarkerColumn(t *testing.T) {
 		}
 	}
 }
+
+func named(tt *ui.Tester, role ui.Role, name string) []ui.Rect {
+	var boxes []ui.Rect
+	for _, el := range tt.AccessAll() {
+		if el.Role == role && el.Name == name {
+			boxes = append(boxes, el.Bounds)
+		}
+	}
+	return boxes
+}
+
+func TestCardTitleIsSetNoSmallerThanTheCardsContent(t *testing.T) {
+	const words = "Speed against operations"
+	for _, size := range []string{"sm", "md"} {
+		view := statementView(t, `root = Col([Title("`+words+`", "`+size+`"), Card([Title("`+words+`", "`+size+`")]), Card([Title("Trade-offs", "`+size+`"), List([ListItem("`+words+`", "Detail")])]), Card([Title("Context", "`+size+`"), Divider(), Text("`+words+`")])], null, "start")`)
+		tt, text := shown(t, view, 700, nil)
+		titles, plain := named(tt, ui.RoleHeading, words), named(tt, ui.RoleText, words)
+		if len(titles) != 2 || len(plain) != 2 {
+			t.Fatalf("%s: %d titles and %d texts read %q in\n%s", size, len(titles), len(plain), words, text)
+		}
+		page, card, item, body := titles[0].W, titles[1].W, plain[0].W, plain[1].W
+		if card != page {
+			t.Errorf("%s: the same words are %v wide as a card's title and %v wide as a title outside a card", size, card, page)
+		}
+		if card < item || card < body {
+			t.Errorf("%s: the same words are %v wide as the card's title, %v as a list entry's title and %v as body text", size, card, item, body)
+		}
+	}
+}
+
+func afterTitleAndAsBody(t *testing.T, tt *ui.Tester, words string) (afterTitle, body ui.Rect) {
+	t.Helper()
+	boxes := named(tt, ui.RoleText, words)
+	if len(boxes) != 2 {
+		t.Fatalf("%d texts read %q", len(boxes), words)
+	}
+	return boxes[0], boxes[1]
+}
+
+func TestParagraphAfterACardTitleIsSetAsBodyText(t *testing.T) {
+	const paragraph = "The search team needs a vector store for 40 million 768-dimension embeddings, growing by about 2 million a month. The target is p95 query latency under 50 ms at 200 queries per second with recall@10 of at least 0.95."
+	for _, size := range []string{``, `, "sm"`, `, "xs"`} {
+		text := `Text("` + paragraph + `"` + size + `)`
+		view := statementView(t, `root = Col([Card([Title("Context", "md"), `+text+`]), Card([Title("Context", "md"), Divider(), `+text+`])])`)
+		for _, width := range []int{700, 320} {
+			tt, _ := shown(t, view, width, nil)
+			afterTitle, body := afterTitleAndAsBody(t, tt, paragraph)
+			if afterTitle.H != body.H || afterTitle.W != body.W {
+				t.Errorf("Text(…%s) at width %d: the paragraph takes %vx%v after the card's title and %vx%v as body text", size, width, afterTitle.W, afterTitle.H, body.W, body.H)
+			}
+		}
+	}
+}
+
+func TestOneLineAfterACardTitleIsItsSubtitleUntilItWraps(t *testing.T) {
+	const phrase = "Three phases, finished by the middle of March"
+	for _, size := range []string{``, `, "sm"`} {
+		text := `Text("` + phrase + `"` + size + `)`
+		view := statementView(t, `root = Col([Card([Title("Plan", "md"), `+text+`]), Card([Title("Plan", "md"), Divider(), `+text+`])])`)
+		tt, _ := shown(t, view, 700, nil)
+		for _, step := range []struct {
+			width    int
+			subtitle bool
+		}{{700, true}, {220, false}, {700, true}} {
+			tt.SetSize(step.width, 600)
+			afterTitle, body := afterTitleAndAsBody(t, tt, phrase)
+			if smaller := afterTitle.H < body.H; smaller != step.subtitle {
+				t.Errorf("Text(…%s) at width %d: the phrase is %v high after the card's title and %v high as body text", size, step.width, afterTitle.H, body.H)
+			}
+		}
+	}
+}

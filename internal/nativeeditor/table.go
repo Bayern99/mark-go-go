@@ -15,6 +15,7 @@ type readingTable struct {
 	seen                         uint64
 	focus                        *Document
 	cells                        [][]*Document
+	composing                    map[*Document]tableCell
 	widths                       []float32
 	minimum                      []float32
 	manual                       bool
@@ -183,15 +184,31 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 										field.Focus()
 										model.focus = nil
 									}
+									_, wasComposing := model.composing[child]
+									composing := child.state.Composing()
+									var owner any
+									if composing || wasComposing {
+										owner = &child.state
+									}
+									if composing {
+										if model.composing == nil {
+											model.composing = make(map[*Document]tableCell)
+										}
+										model.composing[child] = cell
+									}
 									if next := child.Source(); next != cell.raw && version == doc.Version() {
 										replacement := escapeCell(next)
 										if replacement != cell.raw {
 											idx := doc.sourceIndex()
 											a, z := idx.rawAtEditor(cell.start), idx.rawAtEditor(cell.end)
-											if err := doc.Apply(version, a, z, idx.raw[a:z], replacement); err != nil {
+											if err := doc.apply(version, a, z, idx.raw[a:z], replacement, owner); err != nil {
 												child.Reload(cell.raw)
 											}
 										}
+									}
+									if wasComposing && !composing {
+										doc.state.Buffer.EndComposition(owner)
+										delete(model.composing, child)
 									}
 									if field.Focused() && (!model.selected) {
 										sel := child.state.Selection()

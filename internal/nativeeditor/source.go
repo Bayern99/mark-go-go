@@ -65,6 +65,10 @@ func (d *Document) sourceIndex() *sourceIndex {
 func (d *Document) Source() string { return d.sourceIndex().raw }
 
 func (d *Document) Apply(revision uint64, start, end int, expected, replacement string) error {
+	return d.apply(revision, start, end, expected, replacement, nil)
+}
+
+func (d *Document) apply(revision uint64, start, end int, expected, replacement string, owner any) error {
 	if d.state.ReadOnly {
 		return ErrReadOnly
 	}
@@ -90,7 +94,13 @@ func (d *Document) Apply(revision uint64, start, end int, expected, replacement 
 		end++
 		replacement += "\n"
 	}
-	if !d.state.Buffer.ReplaceAtVersion(revision, idx.editorAtRaw(start), idx.editorAtRaw(end), replacement) {
+	var applied bool
+	if owner != nil {
+		applied = d.state.Buffer.ReplaceCompositionAtVersion(revision, idx.editorAtRaw(start), idx.editorAtRaw(end), replacement, owner)
+	} else {
+		applied = d.state.Buffer.ReplaceAtVersion(revision, idx.editorAtRaw(start), idx.editorAtRaw(end), replacement)
+	}
+	if !applied {
 		return ErrRevision
 	}
 	return nil
@@ -129,6 +139,12 @@ func (d *Document) SetMode(mode Mode) bool {
 		return false
 	}
 	d.draft = nil
+	for _, table := range d.tables {
+		for child := range table.composing {
+			d.state.Buffer.EndComposition(&child.state)
+		}
+		clear(table.composing)
+	}
 	d.state.Buffer.EndTyping()
 	d.mode = mode
 	return true

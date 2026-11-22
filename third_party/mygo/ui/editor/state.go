@@ -616,6 +616,8 @@ func (st *State) SetSuggestion(offset int, text string) {
 // frame.
 func (st *State) Focused() bool { return st.ed.focused }
 
+func (st *State) Composing() bool { return st.ed.markedActive }
+
 // VisibleLines returns the first and the last line, from 0, that the
 // last frame showed, those hidden by folds among them.
 func (st *State) VisibleLines() (first, last int) { return st.ed.shown[0], st.ed.shown[1] }

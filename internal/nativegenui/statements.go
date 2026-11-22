@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/Bayern99/mark-go-go/internal/genui"
 	"github.com/Bayern99/mark-go-go/internal/genuikit"
@@ -977,20 +978,40 @@ const (
 	markerFeatures     = "tnum"
 )
 
+func breaksLine(r rune) bool {
+	switch r {
+	case '\u00a0', '\u2007', '\u202f':
+		return false
+	}
+	return unicode.IsSpace(r)
+}
+
 func (r *Reading) list(c *ui.Context, p props, items []any, path string, depth int) {
 	theme := c.Theme()
 	timeline, numbered, bare := p.on("timeline"), p.text("marker") == "number", p.text("marker") == "none"
-	markerColumn := float32(0)
+	widestMarker, longestMarkerWord := float32(0), float32(0)
 	for _, item := range items {
 		if kind(item) != "ListItem" {
 			continue
 		}
-		if label := (props{item.(*openuilang.Element).Props}).text("marker"); label != "" {
-			width, _ := c.MeasureText(0, ui.Span{Text: label, Font: typeface(label), Size: markerSize, Features: markerFeatures})
-			markerColumn = max(markerColumn, float32(math.Ceil(float64(width))))
+		label := (props{item.(*openuilang.Element).Props}).text("marker")
+		if label == "" {
+			continue
+		}
+		measured := func(text string) float32 {
+			width, _ := c.MeasureText(0, ui.Span{Text: text, Font: typeface(label), Size: markerSize, Features: markerFeatures})
+			return float32(math.Ceil(float64(width)))
+		}
+		whole := measured(label)
+		widestMarker = max(widestMarker, whole)
+		if whole <= widestMarkerColumn {
+			continue
+		}
+		for _, word := range strings.FieldsFunc(label, breaksLine) {
+			longestMarkerWord = max(longestMarkerWord, measured(word))
 		}
 	}
-	markerColumn = min(markerColumn, widestMarkerColumn)
+	markerColumn := max(min(widestMarker, widestMarkerColumn), longestMarkerWord)
 	labelled := markerColumn > 0
 	gap := float32(10)
 	if timeline {

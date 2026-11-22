@@ -294,6 +294,44 @@ func TestTimelineMarkerWiderThanTheFixedColumnWrapsInsideIt(t *testing.T) {
 	}
 }
 
+func TestMarkerOfOneWordWiderThanTheFixedColumnStaysWholeOnOneLine(t *testing.T) {
+	dates := []string{"2026-09-30", "2026-10-15T02:00", "2026年9月30日", "30\u00a0Sep\u00a02026"}
+	entries := `ListItem("Review", "The team looks back.", "1")`
+	for _, date := range dates {
+		entries += `, ListItem("On ` + date + `", "No new work lands.", "` + date + `")`
+	}
+	for name, list := range map[string]string{
+		"timeline": `List([` + entries + `], null, true)`,
+		"list":     `List([` + entries + `])`,
+	} {
+		for _, width := range []int{900, 320} {
+			line := oneLineMarker(t, width)
+			tt, _ := shown(t, statementView(t, `root = Col([Text("Before the steps"), `+list+`])`), width, nil)
+			before, ok := tt.Find("Before the steps")
+			if !ok {
+				t.Fatalf("%s, width %v: the text before the steps is not shown", name, width)
+			}
+			edge := before.X
+			steps := stepStart(t, tt, edge, "Review")
+			for _, date := range dates {
+				if at := stepStart(t, tt, edge, "On "+date); at != steps {
+					t.Errorf("%s, width %v: the step of %q starts %v points in, the first step %v", name, width, date, at, steps)
+				}
+				box, ok := tt.Find(date)
+				if !ok || box.W == 0 {
+					t.Fatalf("%s, width %v: %q is not shown", name, width, date)
+				}
+				if box.H > line*1.5 {
+					t.Errorf("%s, width %v: %q is %v tall, a one-line marker %v", name, width, date, box.H, line)
+				}
+				if box.X != edge || box.X+box.W > edge+steps {
+					t.Errorf("%s, width %v: %q spans %v to %v, the list starts at %v and its steps at %v", name, width, date, box.X, box.X+box.W, edge, edge+steps)
+				}
+			}
+		}
+	}
+}
+
 func TestTimelineWithoutMarkersHasNoMarkerColumn(t *testing.T) {
 	for _, width := range []int{900, 320} {
 		tt, edge := timeline(t, width, `ListItem("Copy", "Mirror every bucket.", "1"), ListItem("Switch reads", "Serve reads from object storage.", "2")`)

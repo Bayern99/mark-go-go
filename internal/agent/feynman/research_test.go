@@ -787,22 +787,36 @@ func containsArgPair(args []string, flag, val string) bool {
 	return false
 }
 
+var unclaimed sync.Map
+
 func waitUpdate(t *testing.T, events <-chan ResearchUpdate, kind string) ResearchUpdate {
 	t.Helper()
+	held, _ := unclaimed.Load(events)
+	earlier, _ := held.([]ResearchUpdate)
+	for i, e := range earlier {
+		if e.Kind == kind {
+			unclaimed.Store(events, append(earlier[:i:i], earlier[i+1:]...))
+			return e
+		}
+	}
 	timeout := time.After(5 * time.Second)
 	for {
 		select {
 		case e := <-events:
 			if e.Kind == kind {
+				unclaimed.Store(events, earlier)
 				return e
 			}
+			earlier = append(earlier, e)
 		case <-timeout:
+			unclaimed.Store(events, earlier)
 			t.Fatalf("timed out waiting for ResearchUpdate kind %q", kind)
 		}
 	}
 }
 
 func drainEvents(events <-chan ResearchUpdate) {
+	unclaimed.Delete(events)
 	for {
 		select {
 		case <-events:

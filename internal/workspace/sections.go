@@ -407,12 +407,12 @@ func ExtractSections(markdown string) []Section {
 			}
 		}
 
-		hasher := fnv.New32a()
+		var hashed strings.Builder
 		at := h.byteOffset
 		for _, n := range notes {
 			if n.Start >= h.offset && n.End <= endUTF16 {
 				if n.cutStartByte > at {
-					_, _ = hasher.Write([]byte(markdown[at:n.cutStartByte]))
+					hashed.WriteString(markdown[at:n.cutStartByte])
 				}
 				if n.endByte > at {
 					at = n.endByte
@@ -420,9 +420,12 @@ func ExtractSections(markdown string) []Section {
 			}
 		}
 		if endByte > at {
-			_, _ = hasher.Write([]byte(markdown[at:endByte]))
+			hashed.WriteString(markdown[at:endByte])
 		}
-		hash := fmt.Sprintf("fnv1a32:%08x", hasher.Sum32())
+		hash := SectionHash(hashed.String())
+		if endByte == len(markdown) {
+			hash = SectionHash(genui.SectionTextAtDocumentEnd(hashed.String(), markdown))
+		}
 
 		endLine := lineForUTF16Offset(lineStarts, endUTF16)
 		if endLine < h.line {

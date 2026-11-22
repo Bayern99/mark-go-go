@@ -169,7 +169,7 @@ func TestChangedIDsUsesStoredIDsForRepeatedInstances(t *testing.T) {
 	}
 }
 
-func TestOnlyAFullGenerationThatSucceedsStartsTheReaderOver(t *testing.T) {
+func TestTheReaderStartsOverOnlyWhenAWholeNewViewArrives(t *testing.T) {
 	file := func(messages string) genui.ViewEvent {
 		return genui.ViewEvent{ID: "doc", Exists: true, Text: `{"version":3,"language":"openui-lang/1.0","sources":{},"a2ui":[` + messages + `]}`}
 	}
@@ -241,6 +241,25 @@ func TestOnlyAFullGenerationThatSucceedsStartsTheReaderOver(t *testing.T) {
 	}
 	if v.cancel != nil || v.reading.Replacing != nil {
 		t.Error("the finished generation still counts as running")
+	}
+
+	choose(0.8)
+	if got := total(); got != "Total 1200" {
+		t.Fatalf("dragging to 8 months in the new view shows %q", got)
+	}
+	p.updated(file(created))
+	if got := total(); got != "Total 300" {
+		t.Errorf("after the full generation is undone the page shows %q, want the earlier view's Total 300", got)
+	}
+
+	choose(0.8)
+	p.updated(file(created + update))
+	if got := total(); got != "Total 1200" || !app.HasText("New risks") {
+		t.Errorf("after an update written outside the panel the page shows %q, want the reader's Total 1200 beside the new card", got)
+	}
+	p.updated(file(again))
+	if got := total(); got != "Total 600" {
+		t.Errorf("after a whole new view written outside the panel the page shows %q, want the new view's Total 600", got)
 	}
 }
 

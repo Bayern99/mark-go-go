@@ -31,7 +31,7 @@ func openStatements(data string) (*Surface, error) {
 		text = openuilang.Overlay(text, strings.Join(batch, "\n"))
 	}
 	program := library.Parse(text)
-	s := &Surface{Nodes: map[string]Node{}, Sources: map[string]Reference{}, Request: view.Request, Session: openuilang.NewSession()}
+	s := &Surface{Nodes: map[string]Node{}, Sources: map[string]Reference{}, Request: view.Request, Session: openuilang.NewSession(), created: view.Statements[0]}
 	for id, source := range view.Sources {
 		s.Sources[id] = Reference{Heading: source.Heading, Occurrence: source.Occurrence, Hash: source.Hash}
 	}

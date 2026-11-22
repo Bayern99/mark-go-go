@@ -448,7 +448,4 @@ func (v *documentView) finished(err error) {
 		return
 	}
 	v.requestEdited = false
-	if len(v.lastIDs) == 0 {
-		v.reading.Restart()
-	}
 }

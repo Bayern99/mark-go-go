@@ -39,6 +39,7 @@ type Reading struct {
 	touched    map[string]bool
 	fits       map[measuredText]textFit
 	session    *openuilang.Session
+	created    []string
 }
 
 type componentState struct {
@@ -60,10 +61,12 @@ type componentState struct {
 func (r *Reading) Load(s *Surface) {
 	r.surface = s
 	if s != nil && s.Session != nil {
-		if r.session != nil {
+		if r.session != nil && slices.Equal(r.created, s.created) {
 			s.resume(r.session)
+		} else {
+			r.touched = nil
 		}
-		r.session = s.Session
+		r.session, r.created = s.Session, s.created
 	}
 	r.images.Clear()
 	r.problems, r.presses, r.changed, r.form = map[string]string{}, nil, false, ""
@@ -77,13 +80,6 @@ func (r *Reading) Load(s *Surface) {
 	if r.states == nil {
 		r.states = map[string]*componentState{}
 	}
-}
-func (r *Reading) Restart() {
-	r.session, r.touched = nil, nil
-	if s := r.surface; s != nil && s.Session != nil {
-		s.resume(openuilang.NewSession())
-	}
-	r.Load(r.surface)
 }
 func (r *Reading) View(c *ui.Context) {
 	if r.surface == nil {

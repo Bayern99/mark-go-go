@@ -11,8 +11,12 @@ import (
 )
 
 func narrowShell(prefs ui.Preferences, model nativeui.Model) *ui.Tester {
+	return narrowShellActions(prefs, model, nativeui.Actions{})
+}
+
+func narrowShellActions(prefs ui.Preferences, model nativeui.Model, a nativeui.Actions) *ui.Tester {
 	var shell nativeui.Shell
-	return ui.NewTesterWith(func(c *ui.Context) { shell.Draw(c, model, nativeui.Actions{}, nativeui.Slots{}) }, 480, 360, ui.TesterOptions{Preferences: prefs})
+	return ui.NewTesterWith(func(c *ui.Context) { shell.Draw(c, model, a, nativeui.Slots{}) }, 480, 360, ui.TesterOptions{Preferences: prefs})
 }
 
 func dialogBounds(t *testing.T, app *ui.Tester, name string) ui.Rect {
@@ -169,36 +173,145 @@ func TestReducedMotionDrawersLandAtOnce(t *testing.T) {
 	}
 }
 
-func overflowShell(prefs ui.Preferences) *ui.Tester {
-	return narrowShell(prefs, nativeui.Model{Workspace: workspace.WorkspaceSnapshot{ActiveID: "a", Documents: []workspace.DocumentInfo{{ID: "a", Name: "One.md"}, {ID: "b", Name: "Two.md"}, {ID: "c", Name: "Three.md"}, {ID: "d", Name: "Four.md"}, {ID: "e", Name: "Five.md"}}}})
+func overflowModel() nativeui.Model {
+	return nativeui.Model{Workspace: workspace.WorkspaceSnapshot{ActiveID: "a", Documents: []workspace.DocumentInfo{{ID: "a", Name: "One.md"}, {ID: "b", Name: "Two.md"}, {ID: "c", Name: "Three.md"}, {ID: "d", Name: "Four.md"}, {ID: "e", Name: "Five.md"}}}}
 }
 
-func TestPopoverScalesInFromItsAnchor(t *testing.T) {
+func overflowShell(prefs ui.Preferences) *ui.Tester {
+	return narrowShell(prefs, overflowModel())
+}
+
+func changingFramesIn(frames []*image.RGBA, r ui.Rect) int {
+	n := 0
+	for i := 1; i < len(frames); i++ {
+		if changedPixelsIn(frames[i-1], frames[i], r) > 0 {
+			n++
+		}
+	}
+	return n
+}
+
+func changedPixelsIn(a, b *image.RGBA, r ui.Rect) int {
+	if r == (ui.Rect{}) {
+		return changedPixels(a, b)
+	}
+	n := 0
+	x0, y0 := max(0, int(r.X)), max(0, int(r.Y))
+	x1, y1 := min(a.Rect.Dx(), int(r.X+r.W+1)), min(a.Rect.Dy(), int(r.Y+r.H+1))
+	for y := y0; y < y1; y++ {
+		for x := x0; x < x1; x++ {
+			i := a.PixOffset(x, y)
+			if a.Pix[i] != b.Pix[i] || a.Pix[i+1] != b.Pix[i+1] || a.Pix[i+2] != b.Pix[i+2] {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+func TestPopoverEntersThroughIntermediateStatesThenSettles(t *testing.T) {
 	app := overflowShell(ui.Preferences{})
 	if err := app.Click("More documents"); err != nil {
 		t.Fatal(err)
 	}
-	field := func() ui.Rect {
-		f, ok := app.Access("Filter open tabs")
+	popup := func() ui.Rect {
+		p, ok := app.AccessByRole(ui.RolePopup, "")
 		if !ok {
 			t.Fatal("overflow popover is not open")
 		}
-		return f.Bounds
+		return p.Bounds
 	}
-	start := field()
-	app.Advance(50 * time.Millisecond)
-	mid := field()
+	var samples []ui.Rect
+	samples = append(samples, popup())
+	for range 25 {
+		app.Advance(8 * time.Millisecond)
+		samples = append(samples, popup())
+	}
 	app.Advance(time.Second)
-	end := field()
-	if !(start.W < mid.W && mid.W < end.W) {
-		t.Fatalf("popover field width: start %v mid %v end %v, want growing", start.W, mid.W, end.W)
+	settled := popup()
+	for i := 1; i < len(samples); i++ {
+		if samples[i].W < samples[i-1].W {
+			t.Fatalf("popover width shrank while entering: %v then %v at %dms", samples[i-1].W, samples[i].W, i*8)
+		}
 	}
-	app.ClickAt(240, 200)
-	closing := app.Image()
+	if !(samples[0].W < settled.W) {
+		t.Fatalf("popover opened at its settled width %v", settled.W)
+	}
+	distinct := map[ui.Rect]bool{}
+	for i := 1; i <= 20; i++ {
+		if samples[i] != samples[0] && samples[i] != settled {
+			distinct[samples[i]] = true
+		}
+	}
+	if len(distinct) < 3 {
+		t.Fatalf("only %d distinct intermediate popover bounds in the first 160ms, want at least 3", len(distinct))
+	}
+	if samples[25] != settled {
+		t.Fatalf("popover bounds at 200ms %v, settled %v", samples[25], settled)
+	}
+}
+
+func TestPopoverPointerCloseLeavesThroughAnExitThenTakesNoInput(t *testing.T) {
+	var activated []string
+	actions := nativeui.Actions{Activate: func(id string) { activated = append(activated, id) }}
+	app := narrowShellActions(ui.Preferences{}, overflowModel(), actions)
+	if err := app.Click("More documents"); err != nil {
+		t.Fatal(err)
+	}
+	app.Advance(time.Second)
+	pop, ok := app.AccessByRole(ui.RolePopup, "")
+	if !ok {
+		t.Fatal("overflow popover is not open")
+	}
+	item, ok := app.Access("Five.md")
+	if !ok {
+		t.Fatal("Five.md is not in the overflow popover")
+	}
+	cx, cy := item.Bounds.X+item.Bounds.W/2, item.Bounds.Y+item.Bounds.H/2
+	app.ClickAt(240, 300)
+	if _, ok := app.AccessByRole(ui.RolePopup, ""); ok {
+		t.Fatal("the popover is still in the access tree after the outside click")
+	}
+	var frames []*image.RGBA
+	frames = append(frames, app.Image())
+	for range 25 {
+		app.Advance(8 * time.Millisecond)
+		frames = append(frames, app.Image())
+	}
+	if n := changingFramesIn(frames, pop.Bounds); n < 3 {
+		t.Fatalf("the popover's exit painted %d new frames in 200ms, want at least 3", n)
+	}
+	rest := app.Image()
 	app.Advance(400 * time.Millisecond)
-	if changedPixels(closing, app.Image()) == 0 {
-		t.Fatal("popover vanished at once; want an exit")
+	if changedPixelsIn(rest, app.Image(), pop.Bounds) != 0 {
+		t.Fatal("the popover kept animating after its exit")
 	}
+	activated = nil
+	app.ClickAt(cx, cy)
+	if len(activated) != 0 {
+		t.Fatalf("clicking where Five.md was activated %v", activated)
+	}
+	if _, ok := app.AccessByRole(ui.RolePopup, ""); ok {
+		t.Fatal("clicking where the popover was reopened it")
+	}
+	t.Run("during the exit", func(t *testing.T) {
+		var hits []string
+		fresh := narrowShellActions(ui.Preferences{}, overflowModel(), nativeui.Actions{Activate: func(id string) { hits = append(hits, id) }})
+		if err := fresh.Click("More documents"); err != nil {
+			t.Fatal(err)
+		}
+		fresh.Advance(time.Second)
+		item, ok := fresh.Access("Five.md")
+		if !ok {
+			t.Fatal("Five.md is not in the overflow popover")
+		}
+		fresh.ClickAt(240, 300)
+		fresh.Advance(16 * time.Millisecond)
+		fresh.ClickAt(item.Bounds.X+item.Bounds.W/2, item.Bounds.Y+item.Bounds.H/2)
+		if len(hits) != 0 {
+			t.Fatalf("clicking where Five.md was during its exit activated %v", hits)
+		}
+	})
 }
 
 func TestPopoverLandsAtOnceForKeyboard(t *testing.T) {
@@ -240,6 +353,15 @@ func TestReducedMotionPopoverLandsAtOnce(t *testing.T) {
 	g, _ := app.Access("Filter open tabs")
 	if f.Bounds != g.Bounds {
 		t.Fatalf("popover moved with reduced motion: %v then %v", f.Bounds, g.Bounds)
+	}
+	app.ClickAt(240, 300)
+	if _, ok := app.AccessByRole(ui.RolePopup, ""); ok {
+		t.Fatal("the popover is still in the access tree after the outside click")
+	}
+	closed := app.Image()
+	app.Advance(400 * time.Millisecond)
+	if changedPixels(closed, app.Image()) != 0 {
+		t.Fatal("popover played an exit with reduced motion")
 	}
 }
 

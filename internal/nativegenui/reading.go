@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/Bayern99/mark-go-go/internal/openuilang"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
 	"golang.org/x/text/collate"
@@ -36,6 +37,7 @@ type Reading struct {
 	changed    bool
 	pressable  int
 	touched    map[string]bool
+	session    *openuilang.Session
 }
 
 type componentState struct {
@@ -53,9 +55,17 @@ type componentState struct {
 
 func (r *Reading) Load(s *Surface) {
 	r.surface = s
+	if s != nil && s.Session != nil {
+		if r.session != nil {
+			s.resume(r.session)
+		}
+		r.session = s.Session
+	}
 	r.images.Clear()
 	r.problems, r.presses, r.changed, r.form = map[string]string{}, nil, false, ""
-	r.touched = map[string]bool{}
+	if r.touched == nil {
+		r.touched = map[string]bool{}
+	}
 	for _, state := range r.states {
 		state.text, state.shown, state.note, state.number, state.date = "", "", "", 0, time.Time{}
 		state.editing, state.started, state.running, state.flipped = false, false, false, false
@@ -63,6 +73,13 @@ func (r *Reading) Load(s *Surface) {
 	if r.states == nil {
 		r.states = map[string]*componentState{}
 	}
+}
+func (r *Reading) Restart() {
+	r.session, r.touched = nil, nil
+	if s := r.surface; s != nil && s.Session != nil {
+		s.resume(openuilang.NewSession())
+	}
+	r.Load(r.surface)
 }
 func (r *Reading) View(c *ui.Context) {
 	if r.surface == nil {
@@ -145,7 +162,7 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 		if busy {
 			frame.MinHeight(max(64, state.height)).Children(func() {
 				ui.Text(c, "Updating card…").Role(ui.RoleStatus)
-				skeleton(c)
+				skeleton(c, 3)
 			})
 			return
 		}
@@ -228,8 +245,8 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 	}
 }
 
-func skeleton(c *ui.Context) {
-	for _, width := range []float32{82, 64, 38} {
+func skeleton(c *ui.Context, bars int) {
+	for _, width := range []float32{82, 64, 38}[:bars] {
 		ui.Row(c).Height(7).WidthPercent(width).Radius(3).Background(c.Theme().Border).AccessHidden(true)
 	}
 }

@@ -153,7 +153,7 @@ func (p *panel) draw(c *ui.Context) {
 		case v.snapshot.Error != "":
 			ui.Text(c, v.snapshot.Error).Role(ui.RoleAlert)
 		case v.cancel != nil && v.reading.surface == nil:
-			ui.Column(c).Gap(8).Padding(20).Busy(true).Children(func() { ui.Text(c, "Generating view…").Role(ui.RoleStatus); skeleton(c) })
+			ui.Column(c).Gap(8).Padding(20).Busy(true).Children(func() { ui.Text(c, "Generating view…").Role(ui.RoleStatus); skeleton(c, 3) })
 		case v.reading.surface == nil:
 			ui.Text(c, "No view yet.")
 			if ui.Button(c, "Set up generation").Clicked() {
@@ -429,16 +429,22 @@ func (p *panel) generate(v *documentView, ids []string) {
 		err := <-done
 		p.win.Native().Update(func() {
 			if !p.closed && p.views[d.ID] == v {
-				v.cancel = nil
-				v.reading.Replacing = nil
-				v.message = ""
-				if err != nil {
-					f := genui.FailureOf(err)
-					v.failure = &f
-				} else {
-					v.requestEdited = false
-				}
+				v.finished(err)
 			}
 		})
 	}()
+}
+func (v *documentView) finished(err error) {
+	v.cancel = nil
+	v.reading.Replacing = nil
+	v.message = ""
+	if err != nil {
+		f := genui.FailureOf(err)
+		v.failure = &f
+		return
+	}
+	v.requestEdited = false
+	if len(v.lastIDs) == 0 {
+		v.reading.Restart()
+	}
 }

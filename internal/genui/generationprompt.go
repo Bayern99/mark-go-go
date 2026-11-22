@@ -38,7 +38,7 @@ func GenerationPrompt(req GenerateRequest, base *BaseView, dir string) string {
 	b.WriteString("- Cover every item and detail directly needed to answer the reader's request, including rows spread across different sections; do not stop after the first matching section. Do not widen the question to adjacent topics or append background audits, summaries, evaluations or recommendations unless requested.\n")
 	if statements {
 		b.WriteString("- When subjects are compared on shared attributes, use a Table turned so that it has about five columns or fewer: one row per subject and one column per attribute when the attributes are few, otherwise one row per attribute and one column per subject, keeping every relevant subject and attribute.\n")
-		b.WriteString("- For an ordered sequence such as phases, events or route steps, use a timeline List in the order the document gives, keeping each stage's condition or duration.\n")
+		b.WriteString("- For a sequence of phases or events that the document dates or times, use a timeline List in the order the document gives, with each entry's time or date as its marker; for steps that only have a number, use a numbered List. Keep each stage's condition or duration.\n")
 		b.WriteString("- Choose the component whose shape fits the content. Do not force facts into a component that misrepresents them, and do not repeat the same summary in several components.\n")
 		b.WriteString("- Show a Checkbox as checked only when the document states the item is done. Never invent completion.\n")
 		b.WriteString("- A chart, a computed figure or a control must only use numbers the document states. Never invent data points to fill a chart.\n")

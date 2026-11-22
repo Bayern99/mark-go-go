@@ -50,6 +50,9 @@ type componentState struct {
 	date               time.Time
 	editing, started   bool
 	running, flipped   bool
+	line               float32
+	laid               [3]float32
+	paragraph          bool
 }
 
 func (r *Reading) Load(s *Surface) {

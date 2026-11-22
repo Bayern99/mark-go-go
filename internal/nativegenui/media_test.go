@@ -6,6 +6,8 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -235,6 +237,99 @@ func TestImageThatCannotBeReadKeepsItsDescription(t *testing.T) {
 	tt.Frame()
 	if !tt.HasText("Site plan") {
 		t.Fatalf("shown: %v", tt.Texts())
+	}
+}
+
+func TestAChartsLegendShowsTheSeriesLabelsItIsGivenAndTheKeysOtherwise(t *testing.T) {
+	rows := `[{channel: "搜索广告", budget: 420000, actual: 398200, forecast: 400000}, {channel: "社交媒体", budget: 310000, actual: 322400, forecast: 300000}]`
+	saved := `Chart("bar", ` + rows + `, "channel", ["budget", "actual"], "number", false, 220`
+	for name, chart := range map[string]struct {
+		statement   string
+		shown, kept []string
+	}{
+		"a saved chart without labels": {saved + `)`, []string{"budget", "actual"}, nil},
+		"every series labelled":        {saved + `, {budget: "预算", actual: "实际"})`, []string{"预算", "实际"}, []string{"budget", "actual"}},
+		"one series labelled":          {saved + `, {actual: "实际"})`, []string{"budget", "实际"}, []string{"actual"}},
+		"labels for derived series":    {`Chart("line", ` + rows + `, "channel", null, null, null, null, {forecast: "预测"})`, []string{"budget", "actual", "预测"}, []string{"forecast"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tt, text := shown(t, statementView(t, `root = Col([`+chart.statement+`])`), 640, nil)
+			if strings.Contains(text, "not a component") || strings.Contains(text, "never defined") {
+				t.Fatalf("shown:\n%s", text)
+			}
+			texts := tt.Texts()
+			for _, want := range chart.shown {
+				if !slices.Contains(texts, want) {
+					t.Errorf("the legend lacks %q: %v", want, texts)
+				}
+			}
+			for _, key := range chart.kept {
+				if slices.Contains(texts, key) {
+					t.Errorf("the legend still shows the key %q: %v", key, texts)
+				}
+			}
+			described := ""
+			for _, el := range tt.AccessAll() {
+				if el.Role == ui.RoleImage {
+					described = el.Description
+				}
+			}
+			for _, want := range chart.shown {
+				if !strings.Contains(described, want+" ") {
+					t.Errorf("the description lacks %q: %s", want, described)
+				}
+			}
+		})
+	}
+}
+
+func TestASavedChartKeepsItsHeightWhenLabelsFollowIt(t *testing.T) {
+	rows := `[{k: "A", one: 60, two: 40}, {k: "B", one: 30, two: 50}]`
+	plot := func(statement string) float32 {
+		tt, _ := shown(t, statementView(t, `root = Col([`+statement+`])`), 640, nil)
+		for _, el := range tt.AccessAll() {
+			if el.Role == ui.RoleImage {
+				return el.Bounds.H
+			}
+		}
+		t.Fatalf("no chart is shown for %s", statement)
+		return 0
+	}
+	short := plot(`Chart("bar", ` + rows + `, "k", ["one", "two"], "number", false, 120)`)
+	if tall := plot(`Chart("bar", ` + rows + `, "k", ["one", "two"], "number", false, 320)`); tall-short != 200 {
+		t.Fatalf("heights 120 and 320 draw charts %v and %v tall", short, tall)
+	}
+	if labelled := plot(`Chart("bar", ` + rows + `, "k", ["one", "two"], "number", false, 120, {one: "First", two: "Second"})`); labelled != short {
+		t.Errorf("the labelled chart is %v tall, the saved one %v", labelled, short)
+	}
+}
+
+func TestEveryTickOfAnAxisIsAbbreviatedTheSameWay(t *testing.T) {
+	tick := regexp.MustCompile(`^-?[\d,.]+([kMB]?)$`)
+	for name, chart := range map[string]struct {
+		statement string
+		unit      string
+		shown     []string
+	}{
+		"thousands either side of ten thousand": {`Chart("bar", [{k: "A", spend: 4200}, {k: "B", spend: 12400}], "k", ["spend"])`, "k", []string{"2k", "8k", "10k", "14k"}},
+		"a million above hundreds of thousands": {`Chart("line", [{k: "A", spend: 400000}, {k: "B", spend: 1150000}], "k", ["spend"])`, "M", []string{"0.2M", "0.8M", "1M", "1.2M"}},
+		"small values stay whole":               {`Chart("bar", [{k: "A", spend: 420}, {k: "B", spend: 7200}], "k", ["spend"])`, "", []string{"2,000", "8,000"}},
+		"both axes of a scatter":                {`Chart("scatter", [{x: 2500, spend: 4200}, {x: 12000, spend: 12400}], "x", ["spend"])`, "k", []string{"2k", "8k", "10k", "14k"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tt, _ := shown(t, statementView(t, `root = Col([`+chart.statement+`])`), 640, nil)
+			texts := tt.Texts()
+			for _, text := range texts {
+				if found := tick.FindStringSubmatch(text); found != nil && text != "0" && found[1] != chart.unit {
+					t.Errorf("the tick %q is not in %q like the others: %v", text, chart.unit, texts)
+				}
+			}
+			for _, want := range chart.shown {
+				if !slices.Contains(texts, want) {
+					t.Errorf("no tick reads %q: %v", want, texts)
+				}
+			}
+		})
 	}
 }
 

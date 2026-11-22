@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -110,6 +111,93 @@ func TestThePromptForStatementsAsksForTheStatementFormat(t *testing.T) {
 		}
 	}
 	if old := GenerationPrompt(GenerateRequest{Text: "# Doc", Mode: "full", Format: "FORMAT"}, nil, "/tmp/x"); strings.Contains(old, StatementCatalogID) || !strings.Contains(old, "ComparisonTable") {
+		t.Error("a request without the statement language changed its prompt")
+	}
+}
+
+var threeOversizedTexts = []string{
+	`root = Col([latency, recall, cost])`,
+	`latency = Card([Title("p95 latency", "md"), Text("23 ms", "xl", "success", "semibold")])`,
+	`recall = Card([Title("Recall@10", "md"), Text("0.97", "xl")])`,
+	`cost = Source(["overview"], [Text("$2,850 a month", "xl")])`,
+}
+
+func TestAStatementCandidateIsAcceptedWhenOptionalPropertiesHoldValuesTheCatalogDoesNotAllow(t *testing.T) {
+	if err := ValidateCandidate(context.Background(), statementCandidate(t, oneSource, threeOversizedTexts)); err != nil {
+		t.Fatalf("rejected with %v", err)
+	}
+}
+
+func TestTheCandidateReportListsEachDegradedPropertyWithItsStatement(t *testing.T) {
+	const oversized = `field "/size" expects one of ["xs", "sm", "md", "lg"] but got "xl"`
+	for name, test := range map[string]struct {
+		statements []string
+		want       []DegradedProperty
+	}{
+		"one in each of three statements": {threeOversizedTexts, []DegradedProperty{
+			{Statement: "latency", Component: "Text", Property: "size", Message: oversized},
+			{Statement: "recall", Component: "Text", Property: "size", Message: oversized},
+			{Statement: "cost", Component: "Text", Property: "size", Message: oversized},
+		}},
+		"the same property twice in a statement": {[]string{`root = Col([pair])`, `pair = Row([Text("23 ms", "xl"), Text("0.97", "xl")])`}, []DegradedProperty{
+			{Statement: "pair", Component: "Text", Property: "size", Message: oversized},
+		}},
+		"a property of a component that is dropped": {[]string{`root = Col([chart])`, `chart = Chart("spiral", [{month: "Jan", cost: 1}], "month", ["cost"], "money")`}, nil},
+		"properties of several components": {[]string{`root = Col([Badge("Late", "loud"), Row([Title("Costs", "huge")], 2, "middle"), Text("Struck", "md", "muted", "bold", "yes")])`}, []DegradedProperty{
+			{Statement: "root", Component: "Badge", Property: "color", Message: `field "/color" expects one of ["neutral", "info", "success", "warning", "danger", "purple", "pink"] but got "loud"`},
+			{Statement: "root", Component: "Title", Property: "size", Message: `field "/size" expects one of ["sm", "md", "lg", "xl", "2xl", "3xl"] but got "huge"`},
+			{Statement: "root", Component: "Row", Property: "align", Message: `field "/align" expects one of ["start", "center", "end", "stretch", "baseline"] but got "middle"`},
+			{Statement: "root", Component: "Text", Property: "weight", Message: `field "/weight" expects one of ["normal", "medium", "semibold"] but got "bold"`},
+			{Statement: "root", Component: "Text", Property: "italic", Message: `field "/italic" expects boolean but got string`},
+		}},
+	} {
+		report, err := CheckCandidate(context.Background(), statementCandidate(t, oneSource, test.statements))
+		if err != nil {
+			t.Errorf("%s: rejected with %v", name, err)
+		}
+		if !slices.Equal(report.Degraded, test.want) {
+			t.Errorf("%s: degraded %+v, want %+v", name, report.Degraded, test.want)
+		}
+	}
+}
+
+func TestAStatementCandidateStillCountsTheStatementsItCannotDraw(t *testing.T) {
+	oversized := threeOversizedTexts[1:]
+	for name, test := range map[string]struct {
+		statements []string
+		want       string
+	}{
+		"unknown components":                         {[]string{`root = Col([a, b, c])`, `a = Sparkle("x")`, `b = Glitter("y")`, `c = Shimmer("z")`}, "3 faulty statements"},
+		"missing required arguments":                 {[]string{`root = Col([a, b, c])`, `a = Text()`, `b = Badge()`, `c = Link("Docs")`}, "3 faulty statements"},
+		"undefined references":                       {[]string{`root = Col([a, b, c])`}, "3 faulty statements"},
+		"required properties of the wrong type":      {[]string{`root = Col([a, b, c])`, `a = Chart("spiral", [{month: "Jan", cost: 1}])`, `b = Title(12)`, `c = Slider($n, "low", 10)`, `$n = 3`}, "3 faulty statements"},
+		"two faults beside degraded properties":      {append([]string{`root = Col([latency, recall, cost, a, b])`, `a = Sparkle("x")`, `b = Title(12)`}, oversized...), ""},
+		"three faults beside degraded properties":    {append([]string{`root = Col([latency, recall, cost, a, b, c])`, `a = Sparkle("x")`, `b = Title(12)`, `c = Text()`}, oversized...), "3 faulty statements"},
+		"a degraded property on a dropped component": {[]string{`root = Col([a, b, c])`, `a = Chart("spiral", [{month: "Jan", cost: 1}], "month", ["cost"], "money")`, `b = Glitter("y")`, `c = Shimmer("z")`}, "3 faulty statements"},
+	} {
+		report, err := CheckCandidate(context.Background(), statementCandidate(t, oneSource, test.statements))
+		switch {
+		case test.want == "" && err != nil:
+			t.Errorf("%s: rejected with %v", name, err)
+		case test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)):
+			t.Errorf("%s: got %v, want an error with %q", name, err, test.want)
+		case test.want != "" && len(report.Degraded) > 0:
+			t.Errorf("%s: a rejected candidate reports %+v", name, report.Degraded)
+		}
+	}
+}
+
+func TestThePromptForStatementsKeepsNumberedStepsOutOfTheTimeline(t *testing.T) {
+	full := GenerationPrompt(GenerateRequest{Text: "# Doc", Mode: "full", Format: "FORMAT", Language: StatementLanguage}, nil, "/tmp/x")
+	for _, want := range []string{"use a timeline List", "time or date as its marker", "use a numbered List"} {
+		if !strings.Contains(full, want) {
+			t.Errorf("the prompt lacks %q", want)
+		}
+	}
+	if strings.Contains(full, "route steps, use a timeline List") {
+		t.Error("the prompt still sends every ordered sequence to a timeline")
+	}
+	if old := GenerationPrompt(GenerateRequest{Text: "# Doc", Mode: "full", Format: "FORMAT"}, nil, "/tmp/x"); !strings.Contains(old, "route steps, use Timeline") || strings.Contains(old, "numbered List") {
 		t.Error("a request without the statement language changed its prompt")
 	}
 }

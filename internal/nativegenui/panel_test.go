@@ -2,8 +2,10 @@ package nativegenui
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
+	"github.com/Bayern99/mark-go-go/internal/genui"
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
@@ -162,6 +164,54 @@ func TestChangedIDsUsesStoredIDsForRepeatedInstances(t *testing.T) {
 	for _, id := range got {
 		if id == "row-[/items/0]" || id == "row-[/items/1]" {
 			t.Errorf("changed IDs included a runtime row ID: %q", id)
+		}
+	}
+}
+
+func TestBlankAtTheEndOfTheDocumentDoesNotMarkItsLastSectionChanged(t *testing.T) {
+	v := &documentView{reading: Reading{surface: &Surface{
+		Sources: map[string]Reference{"overview": {Heading: "Overview", Hash: "fnv1a32:57945685"}},
+		Nodes:   map[string]Node{"card": {ID: "card", Sources: []string{"overview"}}},
+	}}}
+	p := &panel{win: &nativeui.Window{}}
+	app := ui.NewTester(func(c *ui.Context) {
+		p.drawSources(c, v, workspace.DocumentInfo{Path: "doc.md"}, v.reading.surface.Nodes["card"], false)
+	}, 620, 420)
+	markedChanged := func(document string) bool {
+		v.index(document)
+		app.Frame()
+		var names []string
+		for _, el := range app.AccessAll() {
+			names = append(names, el.Name)
+		}
+		return strings.Contains(strings.Join(names, "\n"), "Source changed")
+	}
+
+	for _, document := range []string{
+		"# Overview\n\nAn overview.\n",
+		"# Overview\n\nAn overview.",
+		"# Overview\n\nAn overview.\n\n \n",
+	} {
+		if markedChanged(document) {
+			t.Errorf("%q is marked as changed since the view was made", document)
+		}
+	}
+	if !markedChanged("# Overview\n\nAnother overview.\n") {
+		t.Error("a changed paragraph is not marked as changed")
+	}
+}
+
+func TestGenerationProgressSaysEachStepOnce(t *testing.T) {
+	v := &documentView{}
+	for _, step := range []genui.GenerateProgress{
+		{Phase: "starting", Text: "Starting the agent"},
+		{Phase: "thinking", Text: "Thinking"},
+		{Phase: "writing", Text: "Writing the view"},
+		{Phase: "checking", Text: "Checking the view"},
+	} {
+		v.progressed(step)
+		if v.message != step.Text {
+			t.Errorf("status during %q = %q, want %q", step.Phase, v.message, step.Text)
 		}
 	}
 }

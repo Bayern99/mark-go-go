@@ -207,6 +207,10 @@ func (v *documentView) index(raw string) {
 	v.imagesFor = ""
 }
 
+func (v *documentView) progressed(step genui.GenerateProgress) {
+	v.message = step.Text
+}
+
 func (v *documentView) source(id string) (Reference, workspace.Section, bool) {
 	ref := v.reading.surface.Sources[id]
 	s, ok := v.sections[headingKey{workspace.NormalizeHeadingText(ref.Heading), max(1, ref.Occurrence)}]
@@ -419,7 +423,7 @@ func (p *panel) generate(v *documentView, ids []string) {
 	done := p.host.StartGeneration(ctx, d.ID, req, func(progress genui.GenerateProgress) error {
 		p.win.Native().Update(func() {
 			if !p.closed && p.views[d.ID] == v {
-				v.message = strings.TrimSpace(progress.Phase + " " + progress.Text)
+				v.progressed(progress)
 			}
 		})
 		return ctx.Err()

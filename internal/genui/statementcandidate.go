@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/Bayern99/mark-go-go/internal/genuikit"
@@ -58,14 +59,26 @@ func eachSourceID(value any, seen map[*openuilang.Element]bool, visit func(strin
 	}
 }
 
-func validateStatementCandidate(raw []byte) error {
+type DegradedProperty struct {
+	Statement string
+	Component string
+	Property  string
+	Message   string
+}
+
+type CandidateReport struct {
+	Degraded []DegradedProperty
+}
+
+func validateStatementCandidate(raw []byte) (CandidateReport, error) {
+	var report CandidateReport
 	view, err := ReadStatementView(raw)
 	if err != nil {
-		return err
+		return report, err
 	}
 	library, err := genuikit.Library()
 	if err != nil {
-		return err
+		return report, err
 	}
 	text := ""
 	for _, batch := range view.Statements {
@@ -77,11 +90,18 @@ func validateStatementCandidate(raw []byte) error {
 	session.Load(program)
 	root, problems := session.Render()
 	if root == nil {
-		return newValidationError("NO_ROOT", "The view has no root statement, such as root = Col([...]).", "/a2ui/0/createSurface/components", "")
+		return report, newValidationError("NO_ROOT", "The view has no root statement, such as root = Col([...]).", "/a2ui/0/createSurface/components", "")
 	}
 	seen := map[string]bool{}
 	var faults []string
 	for _, problem := range append(program.Errors, problems...) {
+		if problem.Degraded {
+			property := DegradedProperty{Statement: problem.StatementID, Component: problem.Component, Property: strings.TrimPrefix(problem.Path, "/"), Message: problem.Message}
+			if !slices.Contains(report.Degraded, property) {
+				report.Degraded = append(report.Degraded, property)
+			}
+			continue
+		}
 		key, fault := problem.StatementID, problem.StatementID+": "+problem.Message
 		if key == "" {
 			key, fault = problem.Message, problem.Message
@@ -95,7 +115,7 @@ func validateStatementCandidate(raw []byte) error {
 		faults = append(faults, fmt.Sprintf("%q is used but never defined", name))
 	}
 	if allowed := max(statementFaultFloor, count/statementFaultShare); len(faults) > allowed {
-		return newValidationError("TOO_MANY_FAULTS", fmt.Sprintf("The view has %d faulty statements, more than the %d it may have. The first are: %s.", len(faults), allowed, strings.Join(faults[:min(3, len(faults))], "; ")), "/a2ui", "")
+		return report, newValidationError("TOO_MANY_FAULTS", fmt.Sprintf("The view has %d faulty statements, more than the %d it may have. The first are: %s.", len(faults), allowed, strings.Join(faults[:min(3, len(faults))], "; ")), "/a2ui", "")
 	}
 	var missing error
 	eachSourceID(root, map[*openuilang.Element]bool{}, func(id string) {
@@ -103,7 +123,7 @@ func validateStatementCandidate(raw []byte) error {
 			missing = newValidationError("MISSING_SOURCE", fmt.Sprintf("A Source names %q, which is not in the view's sources.", id), "/sources", "")
 		}
 	})
-	return missing
+	return report, missing
 }
 
 func readStatementBase(text string, ids []string) (*BaseView, error) {

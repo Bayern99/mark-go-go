@@ -453,7 +453,7 @@
    },
    "Chart": {
     "type": "object",
-    "description": "Rows of data drawn as a chart; x is the category key, series the value keys",
+    "description": "Rows of data drawn as a chart; x is the category key, series the value keys, seriesLabels the name the legend shows for a series key",
     "properties": {
      "type": {
       "type": "string",
@@ -490,6 +490,9 @@
      },
      "height": {
       "type": "number"
+     },
+     "seriesLabels": {
+      "type": "object"
      }
     },
     "required": [
@@ -2571,8 +2574,8 @@
    "description": "Each row lists its cells in column order; a cell may be a component. Number columns align right"
   },
   "Chart": {
-   "signature": "Chart(type: \"bar\" | \"line\" | \"area\" | \"pie\" | \"donut\" | \"scatter\", data: {[key: string]: string | number}[], x?: string, series?: string[], format?: \"number\" | \"percent\", stacked?: boolean, height?: number)",
-   "description": "Rows of data drawn as a chart; x is the category key, series the value keys"
+   "signature": "Chart(type: \"bar\" | \"line\" | \"area\" | \"pie\" | \"donut\" | \"scatter\", data: {[key: string]: string | number}[], x?: string, series?: string[], format?: \"number\" | \"percent\", stacked?: boolean, height?: number, seriesLabels?: {[key: string]: string})",
+   "description": "Rows of data drawn as a chart; x is the category key, series the value keys, seriesLabels the name the legend shows for a series key"
   },
   "Icon": {
    "signature": "Icon(name: string, size?: \"sm\" | \"md\" | \"lg\" | \"xl\", color?: Color)",

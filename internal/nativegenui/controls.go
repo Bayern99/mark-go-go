@@ -577,11 +577,19 @@ func (r *Reading) slider(c *ui.Context, field bound, p props, state *componentSt
 		if step > 0 {
 			slider.Step(step)
 		}
+		slider.ObserveInput(func(ev ui.InputEvent) {
+			if ev.Kind == ui.InputPointerDown && ev.Button == 0 {
+				state.pointerPressed = true
+			}
+		})
 		thumb := sliderThumbWidth(theme)
-		if slider.Clicked() {
+		if slider.Clicked() && state.pointerPressed {
 			if x, _, over := slider.PointerPosition(); over && slider.Bounds().W > thumb {
 				state.number = lo + float64(min(max((x-thumb/2)/(slider.Bounds().W-thumb), 0), 1))*(hi-lo)
 			}
+		}
+		if _, held := slider.PressedButton(); !held {
+			state.pointerPressed = false
 		}
 		r.marks(c, p.value("marks"), lo, hi, thumb/2)
 	})

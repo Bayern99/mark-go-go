@@ -335,6 +335,7 @@ func (m *materializer) component(n *node) any {
 	}
 	props := NewObject()
 	drop := false
+	var degraded []int
 	for i := 0; i < len(params) && i < len(n.args); i++ {
 		param := params[i]
 		value := m.value(n.args[i])
@@ -342,12 +343,19 @@ func (m *materializer) component(n *node) any {
 		if param.schema == nil {
 			continue
 		}
+		before := len(m.errors)
 		next, bad := m.validate(value, param.schema, name, "/"+param.name)
 		if bad {
 			next, bad = resolveInvalid(param.required, param.hasDefault, param.defaultVal)
 			if bad {
 				drop = true
 				continue
+			}
+			if !param.required {
+				for at := before; at < len(m.errors); at++ {
+					m.errors[at].Degraded = true
+					degraded = append(degraded, at)
+				}
 			}
 		}
 		if _, gone := next.(undefinedValue); gone {
@@ -377,6 +385,9 @@ func (m *materializer) component(n *node) any {
 		missing = true
 	}
 	if missing || drop {
+		for _, at := range degraded {
+			m.errors[at].Degraded = false
+		}
 		return nil
 	}
 	el := &Element{Type: name, Props: props}

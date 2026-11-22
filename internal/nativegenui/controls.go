@@ -468,12 +468,7 @@ func (r *Reading) control(c *ui.Context, e *openuilang.Element, p props, path st
 			return true
 		}
 		state.tab = current
-		segments := ui.Segmented(c, &state.tab, labels...).Label("Choice").MinWidth(0)
-		if p.on("block") {
-			segments.FillEqually()
-		} else {
-			segments.AlignSelf(ui.Start)
-		}
+		segments(c, &state.tab, labels, p.on("block"), chosenSegment(path))
 		if state.tab != current && state.tab >= 0 && state.tab < len(options) {
 			field.set(options[state.tab].value)
 		}
@@ -582,19 +577,13 @@ func (r *Reading) slider(c *ui.Context, field bound, p props, state *componentSt
 		if step > 0 {
 			slider.Step(step)
 		}
-		var marks []choice
-		for _, item := range flatten(p.value("marks"), nil) {
-			if mark, ok := item.(*openuilang.Object); ok {
-				marks = append(marks, choice{label: words(mark.Values["label"])})
+		thumb := sliderThumbWidth(theme)
+		if slider.Clicked() {
+			if x, _, over := slider.PointerPosition(); over && slider.Bounds().W > thumb {
+				state.number = lo + float64(min(max((x-thumb/2)/(slider.Bounds().W-thumb), 0), 1))*(hi-lo)
 			}
 		}
-		if len(marks) > 0 {
-			ui.Row(c).MinWidth(0).Justify(ui.SpaceBetween).AccessHidden(true).Children(func() {
-				for i, mark := range marks {
-					ui.Text(c.Key("mark"+strconv.Itoa(i)), mark.label).FontSize(12).TextColor(theme.TextMuted)
-				}
-			})
-		}
+		r.marks(c, p.value("marks"), lo, hi, thumb/2)
 	})
 	next := state.number
 	if step > 0 {
@@ -604,6 +593,74 @@ func (r *Reading) slider(c *ui.Context, field bound, p props, state *componentSt
 	if next = min(max(next, lo), hi); next != current {
 		field.set(next)
 	}
+}
+
+type chosenSegment string
+
+func segments(c *ui.Context, chosen *int, labels []string, block bool, group chosenSegment) {
+	theme := c.Theme()
+	parts := ui.SegmentedBase(c, chosen, len(labels))
+	track := parts.Track.Label("Choice").MinWidth(0).AlignItems(ui.Stretch).Padding(2).Gap(2).Radius(9).Background(theme.Text.Alpha(0.08)).InsetShadow(0, 1, 2, 0, ui.RGBA(0, 0, 0, 0.05))
+	track.Children(func() {
+		for i, label := range labels {
+			segment := parts.Segment(i).MinWidth(0).MinHeight(28).Padding(4, 12).Radius(7).Cursor(ui.CursorPointer)
+			ink := theme.TextMuted
+			if i == *chosen || segment.Hovered() {
+				ink = theme.Text
+			}
+			segment.Children(func() {
+				if i == *chosen {
+					raised := ui.Row(c.Key("chosen")).Absolute().Top(0).Left(0).Right(0).Bottom(0).Radius(7).Background(theme.Background).Border(0.5, theme.Text.Alpha(0.10)).Shadow(0, 1, 2, 0, ui.RGBA(0, 0, 0, 0.10)).AccessHidden(true)
+					if !segment.FocusVisible() && !c.Preferences().ReduceMotion {
+						raised.Transition(ui.ElementTransition{Match: group, Duration: 160 * time.Millisecond})
+					}
+				}
+				ui.Text(c, label).ZIndex(1).Font(typeface(label)).FontSize(13).FontWeight(500).TextColor(ink).MaxLines(1).Ellipsis("…")
+			})
+		}
+	})
+	if block {
+		track.FillEqually()
+	} else {
+		track.AlignSelf(ui.Start)
+	}
+}
+
+func sliderThumbWidth(theme *ui.Theme) float32 { return theme.Space(5) }
+
+func (r *Reading) marks(c *ui.Context, listed any, lo, hi float64, thumbInset float32) {
+	theme := c.Theme()
+	type mark struct {
+		at    float32
+		label string
+	}
+	var marks []mark
+	for _, item := range flatten(listed, nil) {
+		object, ok := item.(*openuilang.Object)
+		if !ok {
+			continue
+		}
+		value, ok := object.Values["value"].(float64)
+		if label := words(object.Values["label"]); ok && value >= lo && value <= hi && label != "" {
+			marks = append(marks, mark{at: float32((value - lo) / (hi - lo)), label: label})
+		}
+	}
+	if len(marks) == 0 {
+		return
+	}
+	ui.Column(c).MinWidth(0).Height(16).MarginX(thumbInset).AccessHidden(true).Children(func() {
+		for i, mark := range marks {
+			label := ui.Text(c.Key("mark"+strconv.Itoa(i)), mark.label).FontSize(12).TextColor(theme.TextMuted).NoWrap().Absolute()
+			switch mark.at {
+			case 0:
+				label.Left(-thumbInset)
+			case 1:
+				label.Right(-thumbInset)
+			default:
+				label.LeftPercent(mark.at*100).TranslatePercent(-50, 0)
+			}
+		}
+	})
 }
 
 func (r *Reading) radios(c *ui.Context, field bound, p props, state *componentState) {

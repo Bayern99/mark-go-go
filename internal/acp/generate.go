@@ -663,6 +663,13 @@ func (r *genRun) modelStamp() string {
 	return ""
 }
 
+func (r *genRun) viewModel() string {
+	if r.base != nil {
+		return r.base.Model()
+	}
+	return r.modelStamp()
+}
+
 func (r *genRun) notificationBelongsToSession(params json.RawMessage) bool {
 	var p struct {
 		SessionID string `json:"sessionId"`
@@ -823,13 +830,9 @@ func (r *genRun) handleToolCall(id, kind, title, name string, locations []Locati
 	}
 	switch effectiveKind {
 	case "read", "search":
-		if label != "" {
-			_ = r.send.step("reading", label)
-		}
+		_ = r.send.step("reading", "Reading its files")
 	case "edit":
-		if label != "" {
-			_ = r.send.step("writing", label)
-		}
+		_ = r.send.step("writing", "Writing the view")
 	}
 }
 
@@ -998,7 +1001,7 @@ func (r *genRun) writeView(ctx context.Context, sources map[string]genui.AgentSo
 	view := viewOut{
 		Version:     2,
 		GeneratedAt: r.job.Now().UTC().Format(time.RFC3339),
-		Model:       r.modelStamp(),
+		Model:       r.viewModel(),
 		Request:     r.job.Req.Request,
 		Sources:     make(map[string]sourceOut, len(sources)),
 		A2UI:        a2ui,
@@ -1085,7 +1088,7 @@ func (r *genRun) sectionHash(src genui.AgentSource) (hash string, ok bool) {
 }
 
 func hashSection(text string, sec genui.SectionRef) (string, bool) {
-	h := fnv.New32a()
+	var hashed strings.Builder
 	at := sec.Start
 	for _, cut := range sec.Exclude {
 		if cut.Start < at || cut.End < cut.Start || cut.End > sec.End {
@@ -1095,15 +1098,33 @@ func hashSection(text string, sec genui.SectionRef) (string, bool) {
 		if !ok {
 			return "", false
 		}
-		h.Write([]byte(part))
+		hashed.WriteString(part)
 		at = cut.End
 	}
 	part, ok := sliceUTF16(text, at, sec.End)
 	if !ok {
 		return "", false
 	}
-	h.Write([]byte(part))
+	hashed.WriteString(part)
+	content := hashed.String()
+	if sec.End == utf16Len(text) {
+		content = genui.SectionTextAtDocumentEnd(content, text)
+	}
+	h := fnv.New32a()
+	h.Write([]byte(content))
 	return fmt.Sprintf("fnv1a32:%08x", h.Sum32()), true
+}
+
+func utf16Len(s string) int {
+	n := 0
+	for _, r := range s {
+		l := utf16.RuneLen(r)
+		if l < 0 {
+			l = 1
+		}
+		n += l
+	}
+	return n
 }
 
 func hashUTF16Range(text string, start, end int) (string, bool) {

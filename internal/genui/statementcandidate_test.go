@@ -186,3 +186,18 @@ func TestAStatementCandidateStillCountsTheStatementsItCannotDraw(t *testing.T) {
 		}
 	}
 }
+
+func TestThePromptForStatementsKeepsNumberedStepsOutOfTheTimeline(t *testing.T) {
+	full := GenerationPrompt(GenerateRequest{Text: "# Doc", Mode: "full", Format: "FORMAT", Language: StatementLanguage}, nil, "/tmp/x")
+	for _, want := range []string{"use a timeline List", "time or date as its marker", "use a numbered List"} {
+		if !strings.Contains(full, want) {
+			t.Errorf("the prompt lacks %q", want)
+		}
+	}
+	if strings.Contains(full, "route steps, use a timeline List") {
+		t.Error("the prompt still sends every ordered sequence to a timeline")
+	}
+	if old := GenerationPrompt(GenerateRequest{Text: "# Doc", Mode: "full", Format: "FORMAT"}, nil, "/tmp/x"); !strings.Contains(old, "route steps, use Timeline") || strings.Contains(old, "numbered List") {
+		t.Error("a request without the statement language changed its prompt")
+	}
+}

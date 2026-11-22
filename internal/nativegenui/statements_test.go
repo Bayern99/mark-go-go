@@ -175,3 +175,120 @@ func TestStatementTextKeepsParenthesesInLinkAddresses(t *testing.T) {
 	}
 	t.Fatalf("no link named Go in\n%s", text)
 }
+
+const fixedMarkerColumnStepStart = 107
+
+func timeline(t *testing.T, width int, steps string) (*ui.Tester, float32) {
+	t.Helper()
+	tt, _ := shown(t, statementView(t, `root = Col([Text("Before the steps"), List([`+steps+`], null, true)])`), width, nil)
+	edge, ok := tt.Find("Before the steps")
+	if !ok {
+		t.Fatal("the text before the steps is not shown")
+	}
+	return tt, edge.X
+}
+
+func stepStart(t *testing.T, tt *ui.Tester, edge float32, title string) float32 {
+	t.Helper()
+	box, ok := tt.Find(title)
+	if !ok {
+		t.Fatalf("%q is not shown", title)
+	}
+	return box.X - edge
+}
+
+func oneLineMarker(t *testing.T, width int) float32 {
+	t.Helper()
+	tt, _ := timeline(t, width, `ListItem("Only", "One step.", "1")`)
+	box, ok := tt.Find("1")
+	if !ok || box.H == 0 {
+		t.Fatalf("the marker is %v", box)
+	}
+	return box.H
+}
+
+func TestTimelineMarkerColumnIsAsWideAsItsMarkers(t *testing.T) {
+	for _, width := range []int{900, 320} {
+		tt, edge := timeline(t, width, `ListItem("Copy", "Mirror every bucket.", "1"), ListItem("Switch reads", "Serve reads from object storage.", "2"), ListItem("Retire disks", "After 30 days without errors.", "3")`)
+		if marker, ok := tt.Find("1"); !ok || marker.X != edge {
+			t.Errorf("width %v: the marker is at %v, the list starts at %v", width, marker, edge)
+		}
+		digits := stepStart(t, tt, edge, "Copy")
+		if digits > fixedMarkerColumnStepStart/2 {
+			t.Errorf("width %v: steps with one-digit markers start %v points into the list, %v with the fixed column", width, digits, fixedMarkerColumnStepStart)
+		}
+		for _, title := range []string{"Switch reads", "Retire disks"} {
+			if at := stepStart(t, tt, edge, title); at != digits {
+				t.Errorf("width %v: %q starts %v points in, the first step %v", width, title, at, digits)
+			}
+		}
+	}
+}
+
+func TestTimelineDateMarkersStayWholeOnOneLine(t *testing.T) {
+	dates := []string{"May 2", "Mar 14", "3月14日"}
+	for _, width := range []int{900, 320} {
+		line := oneLineMarker(t, width)
+		digitTimeline, digitEdge := timeline(t, width, `ListItem("Only", "One step.", "1")`)
+		digits := stepStart(t, digitTimeline, digitEdge, "Only")
+		tt, edge := timeline(t, width, `ListItem("Kickoff", "The team meets.", "May 2"), ListItem("Freeze", "No new work lands.", "Mar 14"), ListItem("发布", "对外公布。", "3月14日")`)
+		steps := stepStart(t, tt, edge, "Kickoff")
+		for _, title := range []string{"Freeze", "发布"} {
+			if at := stepStart(t, tt, edge, title); at != steps {
+				t.Errorf("width %v: %q starts %v points in, the first step %v", width, title, at, steps)
+			}
+		}
+		for _, date := range dates {
+			box, ok := tt.Find(date)
+			if !ok || box.W == 0 {
+				t.Fatalf("width %v: %q is not shown", width, date)
+			}
+			if box.H != line {
+				t.Errorf("width %v: %q is %v tall, a one-line marker %v", width, date, box.H, line)
+			}
+			if box.X != edge || box.X+box.W > edge+steps {
+				t.Errorf("width %v: %q spans %v to %v, the list starts at %v and its steps at %v", width, date, box.X, box.X+box.W, edge, edge+steps)
+			}
+		}
+		if steps <= digits || steps >= fixedMarkerColumnStepStart {
+			t.Errorf("width %v: steps with dates start %v points in, %v with one digit and %v with the fixed column", width, steps, digits, fixedMarkerColumnStepStart)
+		}
+	}
+}
+
+func TestTimelineMarkerWiderThanTheFixedColumnWrapsInsideIt(t *testing.T) {
+	for _, width := range []int{900, 320} {
+		line := oneLineMarker(t, width)
+		tt, edge := timeline(t, width, `ListItem("Freeze", "No new work lands.", "September 30, 2026 at 02:00"), ListItem("Ship", "Released to everyone.", "1")`)
+		box, ok := tt.Find("September 30, 2026 at 02:00")
+		if !ok || box.H <= line {
+			t.Errorf("width %v: the long marker is %v, one line is %v tall", width, box, line)
+		}
+		for _, title := range []string{"Freeze", "Ship"} {
+			if at := stepStart(t, tt, edge, title); at != fixedMarkerColumnStepStart {
+				t.Errorf("width %v: %q starts %v points in, %v with the fixed column", width, title, at, fixedMarkerColumnStepStart)
+			}
+		}
+		if box.X+box.W > edge+stepStart(t, tt, edge, "Freeze") {
+			t.Errorf("width %v: the long marker ends at %v, its step starts at %v", width, box.X+box.W, edge+stepStart(t, tt, edge, "Freeze"))
+		}
+	}
+}
+
+func TestTimelineWithoutMarkersHasNoMarkerColumn(t *testing.T) {
+	for _, width := range []int{900, 320} {
+		tt, edge := timeline(t, width, `ListItem("Copy", "Mirror every bucket.", "1"), ListItem("Switch reads", "Serve reads from object storage.", "2")`)
+		marked := stepStart(t, tt, edge, "Copy")
+		for name, steps := range map[string]string{
+			"entries without a marker": `ListItem("Copy", "Mirror every bucket."), ListItem("Switch reads", "Serve reads from object storage.", "")`,
+			"plain strings":            `"Copy", "Switch reads"`,
+		} {
+			tt, edge := timeline(t, width, steps)
+			for _, title := range []string{"Copy", "Switch reads"} {
+				if at := stepStart(t, tt, edge, title); at >= marked || at > 24 {
+					t.Errorf("width %v, %s: %q starts %v points in, %v with one-digit markers", width, name, title, at, marked)
+				}
+			}
+		}
+	}
+}

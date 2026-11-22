@@ -178,8 +178,8 @@ func TestLoadingAViewAgainStopsItsRunningTimer(t *testing.T) {
 	tt.Frame()
 	reader.Load(statementView(t, lines...))
 	tt.Advance(5 * time.Second)
-	if got := texts(tt); !strings.Contains(got, "00:30") || !strings.Contains(got, "Start") {
-		t.Errorf("the reloaded timer kept running:\n%s", got)
+	if got := texts(tt); !strings.Contains(got, "00:28") || !strings.Contains(got, "Start") {
+		t.Errorf("the reloaded timer kept running, or lost the time it had reached:\n%s", got)
 	}
 }
 

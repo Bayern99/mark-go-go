@@ -1,6 +1,7 @@
 package nativegenui
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -165,6 +166,81 @@ func TestChangedIDsUsesStoredIDsForRepeatedInstances(t *testing.T) {
 		if id == "row-[/items/0]" || id == "row-[/items/1]" {
 			t.Errorf("changed IDs included a runtime row ID: %q", id)
 		}
+	}
+}
+
+func TestOnlyAFullGenerationThatSucceedsStartsTheReaderOver(t *testing.T) {
+	file := func(messages string) genui.ViewEvent {
+		return genui.ViewEvent{ID: "doc", Exists: true, Text: `{"version":3,"language":"openui-lang/1.0","sources":{},"a2ui":[` + messages + `]}`}
+	}
+	const created = `{"version":"1.0","createSurface":{"surfaceId":"view","catalogId":"markgogo.dev:genui/v3","components":["$months = 2","root = Col([plan, risks])","plan = Card([Slider($months, 0, 10, 1, \"Months\", \"mo\"), Text(\"Total \" + $months * 150)])","risks = Card([Text(\"Old risks\")])"]}}`
+	const update = `,{"version":"1.0","updateComponents":{"surfaceId":"view","components":["risks = Card([Text(\"New risks\")])"]}}`
+	const again = `{"version":"1.0","createSurface":{"surfaceId":"view","catalogId":"markgogo.dev:genui/v3","components":["$months = 4","root = Col([Slider($months, 0, 10, 1, \"Months\", \"mo\"), Text(\"Total \" + $months * 150)])"]}}`
+
+	v := &documentView{}
+	p := &panel{views: map[string]*documentView{"doc": v}}
+	p.updated(file(created))
+	app := ui.NewTester(v.reading.View, 600, 600)
+	total := func() string {
+		app.Frame()
+		app.Frame()
+		for _, text := range app.Texts() {
+			if strings.HasPrefix(text, "Total ") {
+				return text
+			}
+		}
+		return strings.Join(app.Texts(), "\n")
+	}
+	choose := func(share float32) {
+		app.Frame()
+		slider, ok := app.Access("Months")
+		if !ok {
+			t.Fatal("no slider named Months")
+		}
+		box := slider.Bounds
+		app.Press(box.X+box.W*0.2, box.Y+box.H/2)
+		app.Move(box.X+box.W*share, box.Y+box.H/2)
+		app.Release(box.X+box.W*share, box.Y+box.H/2)
+	}
+	generating := func(ids ...string) {
+		v.cancel, v.lastIDs, v.reading.Replacing = func() {}, ids, ids
+	}
+
+	choose(0.8)
+	if got := total(); got != "Total 1200" {
+		t.Fatalf("dragging to 8 months shows %q", got)
+	}
+
+	generating("risks")
+	if got := total(); got != "Total 1200" || !app.HasText("Updating card…") || app.HasText("Old risks") {
+		t.Errorf("while a card is updated the page shows %q and %v, want a placeholder in place of the card", got, app.Texts())
+	}
+	v.finished(errors.New("the agent stopped"))
+	if got := total(); got != "Total 1200" || app.HasText("Updating card…") || !app.HasText("Old risks") || v.failure == nil {
+		t.Errorf("after an update that failed the page shows %q and %v, failure %v, want the card as it was", got, app.Texts(), v.failure)
+	}
+
+	generating("risks")
+	v.finished(nil)
+	p.updated(file(created + update))
+	if got := total(); got != "Total 1200" || !app.HasText("New risks") {
+		t.Errorf("after an update of another card the page shows %q, want the reader's Total 1200 beside the new card", got)
+	}
+
+	generating()
+	v.finished(errors.New("the agent stopped"))
+	if got := total(); got != "Total 1200" || v.failure == nil {
+		t.Errorf("after a full generation that failed the page shows %q, failure %v", got, v.failure)
+	}
+
+	generating()
+	v.finished(nil)
+	p.updated(file(again))
+	if got := total(); got != "Total 600" {
+		t.Errorf("after a full generation the page shows %q, want the new view's Total 600", got)
+	}
+	if v.cancel != nil || v.reading.Replacing != nil {
+		t.Error("the finished generation still counts as running")
 	}
 }
 

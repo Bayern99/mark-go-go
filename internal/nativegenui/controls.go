@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/openuilang"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -235,15 +236,15 @@ func (r *Reading) labelled(c *ui.Context, label string, required bool, problem s
 	ui.Column(c).MinWidth(0).Gap(6).AlignItems(ui.Stretch).Children(func() {
 		if label != "" {
 			ui.Row(c.Key("label")).Gap(4).MinWidth(0).AccessHidden(true).Children(func() {
-				ui.Text(c, label).FontSize(14).FontWeight(500).TextColor(theme.Text).MinWidth(0).Wrap()
+				ui.Text(c, label).FontSize(portrait.Reader.Field).FontWeight(500).TextColor(theme.Text).MinWidth(0).Wrap()
 				if required {
-					ui.Text(c, "*").FontSize(14).TextColor(theme.Danger)
+					ui.Text(c, "*").FontSize(portrait.Reader.Field).TextColor(theme.Danger)
 				}
 			})
 		}
 		control()
 		if problem != "" {
-			ui.Text(c.Key("problem"), problem).FontSize(13).TextColor(theme.Danger).Role(ui.RoleAlert).MinWidth(0).Wrap()
+			ui.Text(c.Key("problem"), problem).FontSize(portrait.Reader.Label).TextColor(theme.Danger).Role(ui.RoleAlert).MinWidth(0).Wrap()
 		}
 	})
 }
@@ -269,7 +270,7 @@ func (r *Reading) button(c *ui.Context, p props, at place) {
 	case "danger":
 		tone = theme.Danger
 	case "success":
-		tone = ui.Hex("#1f8a5b")
+		tone = portrait.Reader.Success
 	}
 	height, size, pad := float32(controlHeight), float32(15), float32(16)
 	switch p.text("size") {
@@ -278,7 +279,7 @@ func (r *Reading) button(c *ui.Context, p props, at place) {
 	case "lg":
 		height, size, pad = 48, 16, 20
 	}
-	back, front, border := tone, ui.Hex("#ffffff"), ui.Color{}
+	back, front, border := tone, portrait.Colors.OnAccent, ui.Color{}
 	switch p.text("variant") {
 	case "outline":
 		back, front, border = ui.Color{}, tone, tone.Alpha(0.45)
@@ -324,7 +325,7 @@ func (r *Reading) control(c *ui.Context, e *openuilang.Element, p props, path st
 		case "ghost":
 			border = ui.Color{}
 		case "solid":
-			back, front, border = theme.Accent, ui.Hex("#ffffff"), ui.Color{}
+			back, front, border = theme.Accent, portrait.Colors.OnAccent, ui.Color{}
 		}
 		button := ui.Button(c, "").Label(label).Tooltip(p.text("label")).Width(controlHeight).Height(controlHeight).Padding(0).Radius(999).Background(back).Border(1, border).Shrink(0).AlignSelf(ui.Start)
 		button.Children(func() {
@@ -489,13 +490,13 @@ func (r *Reading) control(c *ui.Context, e *openuilang.Element, p props, path st
 		ui.Column(c).MinWidth(0).Gap(4).Children(func() {
 			box := named(ui.Checkbox(c, &state.expanded, ""), label, "", required).MinWidth(0)
 			box.Children(func() {
-				text := ui.Text(c, label).FontSize(15).TextColor(theme.Text).MinWidth(0).Wrap().AccessHidden(true)
+				text := ui.Text(c, label).FontSize(portrait.Reader.Body).TextColor(theme.Text).MinWidth(0).Wrap().AccessHidden(true)
 				if checked && p.on("lineThrough") {
 					text.Strikethrough().TextColor(theme.TextMuted)
 				}
 			})
 			if problem != "" {
-				ui.Text(c.Key("problem"), problem).FontSize(13).TextColor(theme.Danger).Role(ui.RoleAlert)
+				ui.Text(c.Key("problem"), problem).FontSize(portrait.Reader.Label).TextColor(theme.Danger).Role(ui.RoleAlert)
 			}
 		})
 		if state.expanded != checked {
@@ -519,14 +520,14 @@ func (r *Reading) control(c *ui.Context, e *openuilang.Element, p props, path st
 		r.pressable++
 		card.Children(func() {
 			if text, ok := p.value(side).(string); ok {
-				ui.Text(c.Key(side), text).Font(typeface(text)).FontSize(21).FontWeight(600).TextColor(theme.Text).TextAlign(ui.Center).MinWidth(0).Wrap()
+				ui.Text(c.Key(side), text).Font(typeface(text)).FontSize(portrait.Reader.Flip).FontWeight(600).TextColor(theme.Text).TextAlign(ui.Center).MinWidth(0).Wrap()
 			} else {
 				ui.Column(c.Key(side)).MinWidth(0).AlignSelf(ui.Stretch).Children(func() {
 					r.stack(c, p.value(side), path+"/"+side, depth, place{compact: true, nested: true}, groupGap, true)
 				})
 			}
 			if hint := p.text("hint"); hint != "" && !state.flipped {
-				ui.Text(c.Key("hint"), hint).FontSize(13).TextColor(theme.TextMuted).TextAlign(ui.Center).MinWidth(0).Wrap()
+				ui.Text(c.Key("hint"), hint).FontSize(portrait.Reader.Label).TextColor(theme.TextMuted).TextAlign(ui.Center).MinWidth(0).Wrap()
 			}
 		})
 		r.pressable--
@@ -567,8 +568,8 @@ func (r *Reading) slider(c *ui.Context, field bound, p props, state *componentSt
 	label := p.text("label")
 	ui.Column(c).MinWidth(0).Gap(8).AlignItems(ui.Stretch).Children(func() {
 		ui.Row(c).Gap(12).MinWidth(0).Justify(ui.SpaceBetween).AlignItems(ui.Center).AccessHidden(true).Children(func() {
-			ui.Text(c, label).FontSize(14).FontWeight(500).TextColor(theme.Text).MinWidth(0).Wrap()
-			ui.Text(c, measure(current, p.text("unit"))).FontSize(14).FontWeight(600).FontFeatures("tnum").TextColor(theme.Text).Shrink(0)
+			ui.Text(c, label).FontSize(portrait.Reader.Field).FontWeight(500).TextColor(theme.Text).MinWidth(0).Wrap()
+			ui.Text(c, measure(current, p.text("unit"))).FontSize(portrait.Reader.Field).FontWeight(600).FontFeatures("tnum").TextColor(theme.Text).Shrink(0)
 		})
 		slider := ui.Slider(c, &state.number, lo, hi).MinWidth(0)
 		if label != "" {
@@ -610,7 +611,7 @@ type chosenSegment string
 func segments(c *ui.Context, chosen *int, labels []string, block bool, group chosenSegment) {
 	theme := c.Theme()
 	parts := ui.SegmentedBase(c, chosen, len(labels))
-	track := parts.Track.Label("Choice").MinWidth(0).AlignItems(ui.Stretch).Padding(2).Gap(2).Radius(9).Background(theme.Text.Alpha(0.08)).InsetShadow(0, 1, 2, 0, ui.RGBA(0, 0, 0, 0.05))
+	track := parts.Track.Label("Choice").MinWidth(0).AlignItems(ui.Stretch).Padding(2).Gap(2).Radius(9).Background(theme.Text.Alpha(0.08)).InsetShadow(0, 1, 2, 0, portrait.Reader.TrackShade)
 	track.Children(func() {
 		for i, label := range labels {
 			segment := parts.Segment(i).MinWidth(0).MinHeight(28).Padding(4, 12).Radius(7).Cursor(ui.CursorPointer)
@@ -620,12 +621,12 @@ func segments(c *ui.Context, chosen *int, labels []string, block bool, group cho
 			}
 			segment.Children(func() {
 				if i == *chosen {
-					raised := ui.Row(c.Key("chosen")).Absolute().Top(0).Left(0).Right(0).Bottom(0).Radius(7).Background(theme.Background).Border(0.5, theme.Text.Alpha(0.10)).Shadow(0, 1, 2, 0, ui.RGBA(0, 0, 0, 0.10)).AccessHidden(true)
+					raised := ui.Row(c.Key("chosen")).Absolute().Top(0).Left(0).Right(0).Bottom(0).Radius(7).Background(theme.Background).Border(0.5, theme.Text.Alpha(0.10)).Shadow(0, 1, 2, 0, portrait.Reader.RaisedShade).AccessHidden(true)
 					if !segment.FocusVisible() && !c.Preferences().ReduceMotion {
 						raised.Transition(ui.ElementTransition{Match: group, Duration: 160 * time.Millisecond})
 					}
 				}
-				ui.Text(c, label).ZIndex(1).Font(typeface(label)).FontSize(13).FontWeight(500).TextColor(ink).MaxLines(1).Ellipsis("…")
+				ui.Text(c, label).ZIndex(1).Font(typeface(label)).FontSize(portrait.Reader.Label).FontWeight(500).TextColor(ink).MaxLines(1).Ellipsis("…")
 			})
 		}
 	})
@@ -739,9 +740,9 @@ func (r *Reading) radios(c *ui.Context, field bound, p props, state *componentSt
 					item.Radius(12).Padding(12, 14).Gap(2).AlignSelf(ui.Stretch)
 				}
 				item.Children(func() {
-					ui.Text(c, option.label).FontSize(14).FontWeight(500).TextColor(theme.Text).MinWidth(0).Wrap().AccessHidden(true)
+					ui.Text(c, option.label).FontSize(portrait.Reader.Field).FontWeight(500).TextColor(theme.Text).MinWidth(0).Wrap().AccessHidden(true)
 					if option.description != "" && variant == "cards" {
-						ui.Text(c, option.description).FontSize(13).TextColor(theme.TextMuted).MinWidth(0).Wrap().AccessHidden(true)
+						ui.Text(c, option.description).FontSize(portrait.Reader.Label).TextColor(theme.TextMuted).MinWidth(0).Wrap().AccessHidden(true)
 					}
 				})
 				if item.Clicked() {
@@ -827,10 +828,10 @@ func (r *Reading) timer(c *ui.Context, field bound, p props, state *componentSta
 	clock := fmt.Sprintf("%02d:%02d", int(left)/60, int(left)%60)
 	ui.Column(c).MinWidth(0).Gap(8).Role(ui.RoleGroup).Label(strings.TrimSpace(label + " timer")).Children(func() {
 		if label != "" {
-			ui.Text(c, label).FontSize(14).FontWeight(500).TextColor(theme.TextMuted).MinWidth(0).Wrap()
+			ui.Text(c, label).FontSize(portrait.Reader.Field).FontWeight(500).TextColor(theme.TextMuted).MinWidth(0).Wrap()
 		}
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Wrap().MinWidth(0).Children(func() {
-			ui.Text(c, clock).Font("IBM Plex Mono").FontSize(32).FontWeight(600).TextColor(theme.Text).Shrink(0)
+			ui.Text(c, clock).Font(portrait.FontMono).FontSize(portrait.Reader.Clock).FontWeight(600).TextColor(theme.Text).Shrink(0)
 			toggle := "Start"
 			if state.running {
 				toggle = "Pause"
@@ -848,7 +849,7 @@ func (r *Reading) timer(c *ui.Context, field bound, p props, state *componentSta
 	})
 }
 
-var confetti = []string{"#0285ff", "#00a67d", "#8b5cf6", "#f4a340", "#e46d91", "#4b9ca6"}
+var confetti = portrait.Reader.Charts
 
 func (r *Reading) celebration(c *ui.Context, when bool, state *componentState) {
 	turned := when && !state.flipped && state.started
@@ -878,7 +879,7 @@ func (r *Reading) celebration(c *ui.Context, when bool, state *componentState) {
 			sway := float32(math.Sin(seed+float64(progress)*8)) * 10
 			x := box.X + box.W*spread + sway
 			y := box.Y + progress*speed*260 - 20
-			painter.Fill(ui.Rect{X: x, Y: y, W: 6, H: 10}, ui.Hex(confetti[i%len(confetti)]).Alpha(1-progress), 2)
+			painter.Fill(ui.Rect{X: x, Y: y, W: 6, H: 10}, confetti[i%len(confetti)].Alpha(1-progress), 2)
 		}
 	})
 }

@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/Bayern99/mark-go-go/internal/openuilang"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/chart"
 	"github.com/egoist/mygo/ui/markdown"
@@ -37,7 +38,7 @@ var iconSizes = map[string]float32{"sm": 16, "md": 20, "lg": 24, "xl": 32}
 func (r *Reading) glyph(c *ui.Context, name string, size float32, color ui.Color) {
 	name = strings.ToLower(strings.TrimSpace(name))
 	if glyph, ok := icons()[name]; ok {
-		ui.Text(c.Key("icon:"+name), glyph).Font("Phosphor").FontSize(size).FixedLineHeight(size).TextColor(color).Shrink(0).AccessHidden(true)
+		ui.Text(c.Key("icon:"+name), glyph).Font(portrait.FontIcons).FontSize(size).FixedLineHeight(size).TextColor(color).Shrink(0).AccessHidden(true)
 	}
 }
 
@@ -176,7 +177,7 @@ func (r *Reading) image(c *ui.Context, p props, at place) {
 		empty.Children(func() {
 			r.glyph(c, "image", 24, theme.Text.Alpha(0.25))
 			if alt != "" {
-				ui.Text(c, alt).FontSize(12).TextColor(theme.TextMuted).Wrap().TextAlign(ui.Center).AccessHidden(true)
+				ui.Text(c, alt).FontSize(portrait.Reader.Caption).TextColor(theme.TextMuted).Wrap().TextAlign(ui.Center).AccessHidden(true)
 			}
 		})
 		return
@@ -460,7 +461,7 @@ func palette(count int) []ui.Color {
 	names := []string{"chart1", "chart2", "chart3", "chart4", "chart5", "chart6"}
 	colors := make([]ui.Color, max(count, 1))
 	for i := range colors {
-		colors[i] = ui.Hex(charts[names[i%len(names)]])
+		colors[i] = charts[names[i%len(names)]]
 	}
 	if len(colors) > 2 && len(colors)%2 == 0 {
 		colors = append(colors[len(colors)-1:], colors[:len(colors)-1]...)
@@ -579,13 +580,13 @@ func (r *Reading) chart(c *ui.Context, p props, path string, at place) {
 func swatch(c *ui.Context, name string, color ui.Color, theme *ui.Theme) {
 	ui.Row(c).Gap(6).AlignItems(ui.Center).MinWidth(0).Children(func() {
 		ui.Column(c).Width(8).Height(8).Radius(2).Shrink(0).Background(color)
-		ui.Text(c, name).Font(typeface(name)).FontSize(12).TextColor(theme.TextMuted)
+		ui.Text(c, name).Font(typeface(name)).FontSize(portrait.Reader.Caption).TextColor(theme.TextMuted)
 	})
 }
 
 func tickLabel(c *ui.Context, theme *ui.Theme) func(chart.Side, chart.Tick) {
 	return func(_ chart.Side, t chart.Tick) {
-		ui.Text(c, t.Label).Font(typeface(t.Label)).FontSize(11).TextColor(theme.TextMuted).FontFeatures("tnum").NoWrap()
+		ui.Text(c, t.Label).Font(typeface(t.Label)).FontSize(portrait.Reader.Tick).TextColor(theme.TextMuted).FontFeatures("tnum").NoWrap()
 	}
 }
 
@@ -779,12 +780,12 @@ func (r *Reading) pie(c *ui.Context, labels []string, one series, ring, share bo
 			for i, label := range labels {
 				ui.Row(c.Key(i)).Gap(8).AlignItems(ui.Center).MinWidth(0).Children(func() {
 					ui.Column(c).Width(8).Height(8).Radius(2).Shrink(0).Background(colors[i])
-					ui.Text(c, label).Font(typeface(label)).FontSize(13).TextColor(theme.Text).MinWidth(0).Wrap()
+					ui.Text(c, label).Font(typeface(label)).FontSize(portrait.Reader.Label).TextColor(theme.Text).MinWidth(0).Wrap()
 					value := grouped(one.values[i])
 					if share && total > 0 {
 						value = grouped(math.Round(max(one.values[i], 0)/total*1000)/10) + "%"
 					}
-					ui.Text(c, value).FontSize(13).TextColor(theme.TextMuted).FontFeatures("tnum").Shrink(0)
+					ui.Text(c, value).FontSize(portrait.Reader.Label).TextColor(theme.TextMuted).FontFeatures("tnum").Shrink(0)
 				})
 			}
 		})

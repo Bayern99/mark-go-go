@@ -14,6 +14,7 @@ import (
 	"github.com/Bayern99/mark-go-go/internal/genui"
 	"github.com/Bayern99/mark-go-go/internal/genuikit"
 	"github.com/Bayern99/mark-go-go/internal/openuilang"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
 )
@@ -417,7 +418,7 @@ func (r *Reading) updating(c *ui.Context, at place) {
 		frame.Grow(1).Basis(rowShare)
 	}
 	frame.Padding(inset, padding).Children(func() {
-		updatingStatus(c).Font("IBM Plex Sans").FontSize(13).FixedLineHeight(statusHeight).TextColor(theme.TextMuted)
+		updatingStatus(c).Font(portrait.FontSans).FontSize(portrait.Reader.Label).FixedLineHeight(statusHeight).TextColor(theme.TextMuted)
 		skeleton(c, bars)
 	})
 }
@@ -520,7 +521,7 @@ var (
 	}
 	textType = map[string]struct{ size, line float32 }{"xs": {12, 1.6}, "sm": {14, 1.55}, "md": {16, 1.6}, "lg": {18, 1.55}}
 	radii    = map[string]float32{"sm": 6, "md": 10, "lg": 12, "xl": 14, "full": 999}
-	charts   = map[string]string{"chart1": "#0285ff", "chart2": "#00a67d", "chart3": "#8b5cf6", "chart4": "#f4a340", "chart5": "#e46d91", "chart6": "#4b9ca6"}
+	charts   = map[string]ui.Color{"chart1": portrait.Reader.Charts[0], "chart2": portrait.Reader.Charts[1], "chart3": portrait.Reader.Charts[2], "chart4": portrait.Reader.Charts[3], "chart5": portrait.Reader.Charts[4], "chart6": portrait.Reader.Charts[5]}
 	hexColor = regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$`)
 )
 
@@ -545,15 +546,15 @@ func ink(c *ui.Context, name string) (ui.Color, bool) {
 	case "danger":
 		return t.Danger, true
 	case "purple":
-		return ui.Hex("#6d28d9"), true
+		return portrait.Reader.Purple, true
 	case "pink":
-		return ui.Hex("#a61e5c"), true
+		return portrait.Reader.Pink, true
 	}
-	if hex, ok := charts[name]; ok {
-		return ui.Hex(hex), true
+	if color, ok := charts[name]; ok {
+		return color, true
 	}
 	if hexColor.MatchString(name) {
-		return ui.Hex(name), true
+		return portrait.ViewColor(name), true
 	}
 	return ui.Color{}, false
 }
@@ -796,7 +797,7 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 		}
 		pill.Children(func() {
 			r.glyph(c, p.text("icon"), 14, color)
-			ui.Text(c, p.text("text")).Font(typeface(p.text("text"))).FontSize(13).FontWeight(500).FixedLineHeight(18).TextColor(color)
+			ui.Text(c, p.text("text")).Font(typeface(p.text("text"))).FontSize(portrait.Reader.Label).FontWeight(500).FixedLineHeight(18).TextColor(color)
 		})
 	case "Link":
 		address := p.text("url")
@@ -829,12 +830,12 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 		ui.Column(c).Radius(12).Clip().Border(1, theme.Text.Alpha(0.08)).Background(theme.Text.Alpha(0.04)).MinWidth(0).Role(ui.RoleGroup).Label(name).Children(func() {
 			if language := p.text("language"); language != "" {
 				ui.Row(c).Padding(6, 14).Children(func() {
-					ui.Text(c, language).FontSize(12).TextColor(theme.TextMuted).AccessHidden(true)
+					ui.Text(c, language).FontSize(portrait.Reader.Caption).TextColor(theme.TextMuted).AccessHidden(true)
 				})
 				ui.Column(c).Height(1).Shrink(0).Background(theme.Text.Alpha(0.08)).AccessHidden(true)
 			}
 			ui.Column(c).Padding(14, 16).MinWidth(0).Children(func() {
-				ui.Text(c, p.text("code")).Font("IBM Plex Mono").FontSize(13).LineHeight(1.6).MinWidth(0).Wrap().Selectable()
+				ui.Text(c, p.text("code")).Font(portrait.FontMono).FontSize(portrait.Type.Code.Size).LineHeight(1.6).MinWidth(0).Wrap().Selectable()
 			})
 		})
 	case "Source":
@@ -962,7 +963,7 @@ func (r *Reading) prose(c *ui.Context, content string, style textStyle) {
 			} else if text, ok := part(3); ok {
 				style.apply(ui.Text(key, text), content).Italic()
 			} else if text, ok := part(4); ok {
-				style.apply(ui.Text(key, text), content).Font("IBM Plex Mono").FontSize(style.size - 1).TextBackground(c.Theme().Text.Alpha(0.06))
+				style.apply(ui.Text(key, text), content).Font(portrait.FontMono).FontSize(style.size - 1).TextBackground(c.Theme().Text.Alpha(0.06))
 			} else if text, ok := part(5); ok {
 				style.apply(ui.Text(key, text), content).Strikethrough()
 			} else if text, ok := part(6); ok {
@@ -1052,7 +1053,7 @@ func (r *Reading) list(c *ui.Context, p props, items []any, path string, depth i
 					ui.Column(c.Key("gap")).Width(14).Shrink(0)
 				case numbered:
 					ui.Column(c.Key("number")).Width(24).Height(24).Shrink(0).Radius(12).Background(theme.Text).AlignItems(ui.Center).Justify(ui.Center).AccessHidden(true).Children(func() {
-						ui.Text(c, strconv.Itoa(i+1)).FontSize(13).FontWeight(500).TextColor(theme.Background).FontFeatures("tnum")
+						ui.Text(c, strconv.Itoa(i+1)).FontSize(portrait.Reader.Label).FontWeight(500).TextColor(theme.Background).FontFeatures("tnum")
 					})
 					ui.Column(c.Key("gap")).Width(12).Shrink(0)
 				case !bare && !labelled:

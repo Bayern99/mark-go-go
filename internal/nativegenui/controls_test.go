@@ -2,7 +2,9 @@ package nativegenui_test
 
 import (
 	"image"
+	"math"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -216,6 +218,37 @@ func TestASlidersMarkLabelsSitWhereTheirValuesAreOnTheTrack(t *testing.T) {
 		}
 		if first > six-4*month || last < twelve+11*month {
 			t.Errorf("width %d: the end marks sit at %v and %v, more than a month from 1 and 24", width, first, last)
+		}
+	}
+}
+
+func TestASlidersMarkLabelsNeverTouchEachOther(t *testing.T) {
+	for name, slider := range map[string]struct {
+		marks          string
+		byValue, shown []string
+	}{
+		"a label touching the one before it": {`{value: 0, label: "0%"}, {value: 48, label: "48%"}, {value: 50, label: "50%"}, {value: 100, label: "100%"}`, []string{"0%", "48%", "50%", "100%"}, []string{"0%", "48%", "100%"}},
+		"a label touching the last one":      {`{value: 0, label: "0%"}, {value: 50, label: "50%"}, {value: 98, label: "98%"}, {value: 100, label: "100%"}`, []string{"0%", "50%", "98%", "100%"}, []string{"0%", "50%", "100%"}},
+		"marks listed out of value order":    {`{value: 100, label: "100%"}, {value: 50, label: "50%"}, {value: 0, label: "0%"}, {value: 48, label: "48%"}`, []string{"0%", "48%", "50%", "100%"}, []string{"0%", "48%", "100%"}},
+		"labels with room between them":      {`{value: 0, label: "0%"}, {value: 25, label: "25%"}, {value: 50, label: "50%"}, {value: 75, label: "75%"}, {value: 100, label: "100%"}`, []string{"0%", "25%", "50%", "75%", "100%"}, []string{"0%", "25%", "50%", "75%", "100%"}},
+	} {
+		for _, width := range []int{760, 340} {
+			tt, _ := shown(t, statementView(t, `$share = 20`, `root = Col([Slider($share, 0, 100, 1, "Share", "%", [`+slider.marks+`])])`), width, nil)
+			var found []string
+			before, end := "", float32(math.Inf(-1))
+			for _, label := range slider.byValue {
+				box, ok := tt.Find(label)
+				if !ok || box.W == 0 {
+					continue
+				}
+				if box.X <= end {
+					t.Errorf("%s, width %d: %q starts at %v, %q before it ends at %v", name, width, label, box.X, before, end)
+				}
+				found, before, end = append(found, label), label, box.X+box.W
+			}
+			if !slices.Equal(found, slider.shown) {
+				t.Errorf("%s, width %d: the labels shown are %q, want %q", name, width, found, slider.shown)
+			}
 		}
 	}
 }

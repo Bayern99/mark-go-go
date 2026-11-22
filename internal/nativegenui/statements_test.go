@@ -131,6 +131,37 @@ func TestStatementTextWithASizeTheCatalogDoesNotAllowIsDrawnAtTheDefaultSize(t *
 	}
 }
 
+func TestTheReadersNoticeListsOnlyWhatIsLeftOutOfTheView(t *testing.T) {
+	alerts := func(tt *ui.Tester) []string {
+		var notices []string
+		for _, el := range tt.AccessAll() {
+			if el.Role == ui.RoleAlert {
+				notices = append(notices, el.Name)
+			}
+		}
+		return notices
+	}
+	const drawnAtItsDefault = `Col([Badge("Late", "loud"), Row([Title("Costs", "huge")], 2, "middle"), Text("23 ms", "xl", "muted", "bold")])`
+	tt, text := shown(t, statementView(t, `root = `+drawnAtItsDefault), 520, nil)
+	for _, content := range []string{"Late", "Costs", "23 ms"} {
+		if box, ok := tt.Find(content); !ok || box.W == 0 || box.H == 0 {
+			t.Errorf("%q is drawn at %v", content, box)
+		}
+	}
+	if notices := alerts(tt); len(notices) > 0 || strings.Contains(text, "expects one of") {
+		t.Errorf("a view with nothing left out shows the notices %q in\n%s", notices, text)
+	}
+
+	tt, text = shown(t, statementView(t, `root = Col([figures, Sparkle("x"), Text()])`, `figures = `+drawnAtItsDefault), 520, nil)
+	if box, ok := tt.Find("23 ms"); !ok || box.W == 0 || box.H == 0 {
+		t.Errorf("%q is drawn at %v", "23 ms", box)
+	}
+	notices := alerts(tt)
+	if len(notices) != 2 || !strings.Contains(text, "“Sparkle” is not a component this app can show.") || !strings.Contains(text, `missing required field "/text"`) {
+		t.Errorf("a view without its unknown component and its text that has no content shows the notices %q", notices)
+	}
+}
+
 func TestStatementViewRejectsWhatItCannotRead(t *testing.T) {
 	for name, file := range map[string]string{
 		"object components": `{"version":3,"language":"openui-lang/1.0","a2ui":[{"version":"1.0","createSurface":{"surfaceId":"v","catalogId":"markgogo.dev:genui/v3","components":[{"id":"root","component":"Text","text":"x"}]}}]}`,
@@ -290,6 +321,44 @@ func TestTimelineMarkerWiderThanTheFixedColumnWrapsInsideIt(t *testing.T) {
 		}
 		if box.X+box.W > edge+stepStart(t, tt, edge, "Freeze") {
 			t.Errorf("width %v: the long marker ends at %v, its step starts at %v", width, box.X+box.W, edge+stepStart(t, tt, edge, "Freeze"))
+		}
+	}
+}
+
+func TestMarkerOfOneWordWiderThanTheFixedColumnStaysWholeOnOneLine(t *testing.T) {
+	dates := []string{"2026-09-30", "2026-10-15T02:00", "2026年9月30日", "30\u00a0Sep\u00a02026"}
+	entries := `ListItem("Review", "The team looks back.", "1")`
+	for _, date := range dates {
+		entries += `, ListItem("On ` + date + `", "No new work lands.", "` + date + `")`
+	}
+	for name, list := range map[string]string{
+		"timeline": `List([` + entries + `], null, true)`,
+		"list":     `List([` + entries + `])`,
+	} {
+		for _, width := range []int{900, 320} {
+			line := oneLineMarker(t, width)
+			tt, _ := shown(t, statementView(t, `root = Col([Text("Before the steps"), `+list+`])`), width, nil)
+			before, ok := tt.Find("Before the steps")
+			if !ok {
+				t.Fatalf("%s, width %v: the text before the steps is not shown", name, width)
+			}
+			edge := before.X
+			steps := stepStart(t, tt, edge, "Review")
+			for _, date := range dates {
+				if at := stepStart(t, tt, edge, "On "+date); at != steps {
+					t.Errorf("%s, width %v: the step of %q starts %v points in, the first step %v", name, width, date, at, steps)
+				}
+				box, ok := tt.Find(date)
+				if !ok || box.W == 0 {
+					t.Fatalf("%s, width %v: %q is not shown", name, width, date)
+				}
+				if box.H > line*1.5 {
+					t.Errorf("%s, width %v: %q is %v tall, a one-line marker %v", name, width, date, box.H, line)
+				}
+				if box.X != edge || box.X+box.W > edge+steps {
+					t.Errorf("%s, width %v: %q spans %v to %v, the list starts at %v and its steps at %v", name, width, date, box.X, box.X+box.W, edge, edge+steps)
+				}
+			}
 		}
 	}
 }

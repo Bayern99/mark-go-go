@@ -131,6 +131,37 @@ func TestStatementTextWithASizeTheCatalogDoesNotAllowIsDrawnAtTheDefaultSize(t *
 	}
 }
 
+func TestTheReadersNoticeListsOnlyWhatIsLeftOutOfTheView(t *testing.T) {
+	alerts := func(tt *ui.Tester) []string {
+		var notices []string
+		for _, el := range tt.AccessAll() {
+			if el.Role == ui.RoleAlert {
+				notices = append(notices, el.Name)
+			}
+		}
+		return notices
+	}
+	const drawnAtItsDefault = `Col([Badge("Late", "loud"), Row([Title("Costs", "huge")], 2, "middle"), Text("23 ms", "xl", "muted", "bold")])`
+	tt, text := shown(t, statementView(t, `root = `+drawnAtItsDefault), 520, nil)
+	for _, content := range []string{"Late", "Costs", "23 ms"} {
+		if box, ok := tt.Find(content); !ok || box.W == 0 || box.H == 0 {
+			t.Errorf("%q is drawn at %v", content, box)
+		}
+	}
+	if notices := alerts(tt); len(notices) > 0 || strings.Contains(text, "expects one of") {
+		t.Errorf("a view with nothing left out shows the notices %q in\n%s", notices, text)
+	}
+
+	tt, text = shown(t, statementView(t, `root = Col([figures, Sparkle("x"), Text()])`, `figures = `+drawnAtItsDefault), 520, nil)
+	if box, ok := tt.Find("23 ms"); !ok || box.W == 0 || box.H == 0 {
+		t.Errorf("%q is drawn at %v", "23 ms", box)
+	}
+	notices := alerts(tt)
+	if len(notices) != 2 || !strings.Contains(text, "“Sparkle” is not a component this app can show.") || !strings.Contains(text, `missing required field "/text"`) {
+		t.Errorf("a view without its unknown component and its text that has no content shows the notices %q", notices)
+	}
+}
+
 func TestStatementViewRejectsWhatItCannotRead(t *testing.T) {
 	for name, file := range map[string]string{
 		"object components": `{"version":3,"language":"openui-lang/1.0","a2ui":[{"version":"1.0","createSurface":{"surfaceId":"v","catalogId":"markgogo.dev:genui/v3","components":[{"id":"root","component":"Text","text":"x"}]}}]}`,

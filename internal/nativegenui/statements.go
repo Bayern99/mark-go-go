@@ -61,6 +61,9 @@ func (s *Surface) refresh() {
 	s.own(tree, "")
 	seen := map[string]bool{}
 	for _, problem := range append(program.Errors, problems...) {
+		if problem.Degraded {
+			continue
+		}
 		notice := problem.Message
 		if problem.Code == "unknown-component" {
 			notice = fmt.Sprintf("“%s” is not a component this app can show.", problem.Component)

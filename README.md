@@ -2,7 +2,7 @@
 
 [English](README.en.md) · [致谢与许可](ACKNOWLEDGMENTS.md)
 
-Mark Go Go 是 macOS 本地 Markdown 编辑器。多个文件夹工作区共享窗口和文档标签，`Ctrl+Tab` 在最近的文档间往返。按 `⌘/` 在可编辑的预览和 Markdown 间切换。切到中央的 **GenUI**，在视图右上角打开 **GenUI settings**，即可选择模型、生成或更新阅读视图。
+Mark Go Go 是 macOS 本地 Markdown 编辑器。多个文件夹工作区共享窗口和文档标签，`Ctrl+Tab` 在最近的文档间往返。按 `⌘/` 在可编辑的预览和 Markdown 间切换。切到中央的 **GenUI**，在视图右上角打开 **Generation settings**，即可选择模型、生成或更新阅读视图。
 
 ## 可选插件
 

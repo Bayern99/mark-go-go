@@ -122,6 +122,14 @@ func (b *BaseView) Raw() []byte {
 	return b.raw
 }
 
+func (b *BaseView) Model() string {
+	var file struct {
+		Model string `json:"model"`
+	}
+	_ = json.Unmarshal(b.Raw(), &file)
+	return file.Model
+}
+
 func (b *BaseView) SurfaceID() string {
 	if b == nil {
 		return ""

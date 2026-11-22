@@ -158,6 +158,35 @@ func Names(text string) []string {
 	return names
 }
 
+type Argument struct {
+	Statement string
+	Strings   []string
+	Literal   bool
+}
+
+func FirstArguments(text, component string) []Argument {
+	var arguments []Argument
+	for _, stmt := range sourceStatements(stripFences(text)) {
+		walkAST(stmt.expr, func(call *node) {
+			if call.k != kComp || call.name != component {
+				return
+			}
+			argument := Argument{Statement: stmt.id, Literal: true}
+			walkAST(argAt(call.args, 0), func(n *node) {
+				switch n.k {
+				case kStr:
+					argument.Strings = append(argument.Strings, n.str)
+				case kArr:
+				default:
+					argument.Literal = false
+				}
+			})
+			arguments = append(arguments, argument)
+		})
+	}
+	return arguments
+}
+
 func Merge(existing, patch string) string { return merge(existing, patch, true) }
 
 func Overlay(existing, patch string) string { return merge(existing, patch, false) }

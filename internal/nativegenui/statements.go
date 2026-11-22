@@ -3,6 +3,7 @@ package nativegenui
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -822,15 +823,27 @@ func (r *Reading) prose(c *ui.Context, content string, style textStyle) {
 	})
 }
 
+const (
+	widestMarkerColumn = 72
+	markerSize         = 13
+	markerFeatures     = "tnum"
+)
+
 func (r *Reading) list(c *ui.Context, p props, items []any, path string, depth int) {
 	theme := c.Theme()
 	timeline, numbered, bare := p.on("timeline"), p.text("marker") == "number", p.text("marker") == "none"
-	labelled := false
+	markerColumn := float32(0)
 	for _, item := range items {
-		if kind(item) == "ListItem" && (props{item.(*openuilang.Element).Props}).text("marker") != "" {
-			labelled = true
+		if kind(item) != "ListItem" {
+			continue
+		}
+		if label := (props{item.(*openuilang.Element).Props}).text("marker"); label != "" {
+			width, _ := c.MeasureText(0, ui.Span{Text: label, Font: typeface(label), Size: markerSize, Features: markerFeatures})
+			markerColumn = max(markerColumn, float32(math.Ceil(float64(width))))
 		}
 	}
+	markerColumn = min(markerColumn, widestMarkerColumn)
+	labelled := markerColumn > 0
 	gap := float32(10)
 	if timeline {
 		gap = 0
@@ -845,8 +858,8 @@ func (r *Reading) list(c *ui.Context, p props, items []any, path string, depth i
 			}
 			ui.Row(c.Key(at + "#row")).MinWidth(0).AlignItems(ui.Stretch).Role(ui.RoleListItem).Children(func() {
 				if labelled {
-					ui.Column(c.Key("label")).Width(72).Shrink(0).Children(func() {
-						ui.Text(c, label).Font(typeface(label)).FontSize(13).FixedLineHeight(24).TextColor(theme.TextMuted).Wrap().FontFeatures("tnum")
+					ui.Column(c.Key("label")).Width(markerColumn).Shrink(0).Children(func() {
+						ui.Text(c, label).Font(typeface(label)).FontSize(markerSize).FixedLineHeight(24).TextColor(theme.TextMuted).Wrap().FontFeatures(markerFeatures)
 					})
 					ui.Column(c.Key("labelgap")).Width(12).Shrink(0)
 				}

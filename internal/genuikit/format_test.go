@@ -310,3 +310,86 @@ func TestTheLayoutRulesSizeATableForThePage(t *testing.T) {
 		}
 	}
 }
+
+func sourceRules(t *testing.T) string {
+	t.Helper()
+	_, rest, found := strings.Cut(Format(), "## Sources")
+	rules, _, ended := strings.Cut(rest, "## Syntax")
+	if !found || !ended {
+		t.Fatal("the format has no Sources section before its Syntax")
+	}
+	return rules
+}
+
+func TestTheSourceRulesKeepASourcesContentInOneStatement(t *testing.T) {
+	rules := sourceRules(t)
+	for _, want := range []string{"\n- Give each Source its own statement and write all of its content in that one statement", "An update then replaces that statement alone"} {
+		if !strings.Contains(rules, want) {
+			t.Errorf("the source rules lack %q", want)
+		}
+	}
+}
+
+func TestTheSourceRulesKeepThePageTitleOffTheFirstLevelHeading(t *testing.T) {
+	rules := sourceRules(t)
+	for _, want := range []string{"\n- Leave the page title outside any Source", "first-level heading", "spans the whole document"} {
+		if !strings.Contains(rules, want) {
+			t.Errorf("the source rules lack %q", want)
+		}
+	}
+}
+
+func TestTheFormatsExampleWritesEachSourcesContentInTheSourcesOwnStatement(t *testing.T) {
+	_, _, root := exampleOfTheFormat(t)
+	sources := 0
+	eachElement(root, func(source *openuilang.Element) {
+		if source.Type != "Source" {
+			return
+		}
+		sources++
+		if source.StatementID == "" {
+			t.Error("a Source of the example has no statement of its own")
+		}
+		eachElement(source.Props, func(inner *openuilang.Element) {
+			if inner.StatementID != "" && inner.StatementID != source.StatementID {
+				t.Errorf("the Source %q of the example keeps its %s in the statement %q", source.StatementID, inner.Type, inner.StatementID)
+			}
+		})
+	})
+	if sources == 0 {
+		t.Fatal("the example has no Source")
+	}
+}
+
+func TestTheFormatsExampleKeepsItsPageTitleOutOfEverySource(t *testing.T) {
+	_, _, root := exampleOfTheFormat(t)
+	sourced := map[*openuilang.Element]bool{}
+	var titles []*openuilang.Element
+	eachElement(root, func(element *openuilang.Element) {
+		switch element.Type {
+		case "Title":
+			titles = append(titles, element)
+		case "Source":
+			eachElement(element.Props, func(inner *openuilang.Element) { sourced[inner] = true })
+		}
+	})
+	if len(titles) == 0 {
+		t.Fatal("the example has no title")
+	}
+	if text, _ := titles[0].Props.Get("text"); sourced[titles[0]] {
+		t.Errorf("the example's page title %q sits inside a Source", text)
+	}
+}
+
+func TestTheFormatLeavesDeletingUnreferencedStatementsToTheApp(t *testing.T) {
+	_, rest, found := strings.Cut(Format(), "## Message")
+	message, _, ended := strings.Cut(rest, "## Sources")
+	if !found || !ended {
+		t.Fatal("the format has no Message section before its Sources")
+	}
+	for _, want := range []string{"The app deletes the statements an update leaves unreferenced", "name = null", "never write such a statement yourself"} {
+		if !strings.Contains(message, want) {
+			t.Errorf("the message rules lack %q", want)
+		}
+	}
+}

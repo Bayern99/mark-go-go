@@ -230,7 +230,11 @@ func (b *BaseView) Merge(a2ui json.RawMessage, added map[string]AgentSource) (ma
 		sources[key] = src
 	}
 
-	merged, err := json.Marshal(append(append([]json.RawMessage(nil), b.messages...), messages[0]))
+	update := messages[0]
+	if b.statements {
+		update = b.deletingUnreferenced(update, envelope)
+	}
+	merged, err := json.Marshal(append(append([]json.RawMessage(nil), b.messages...), update))
 	if err != nil {
 		return nil, nil, errors.New("The agent's update could not be added to the view.")
 	}

@@ -1,0 +1,84 @@
+A view is written in openui-lang, one statement per entry of "components".
+
+## Message
+
+out.json for a new view:
+
+{"sources": {"overview": {"heading": "Overview", "occurrence": 1}}, "a2ui": [{"version": "1.0", "createSurface": {"surfaceId": "view", "catalogId": "markgogo.dev:genui/v3", "components": ["root = Col([title, lead])", "title = Title(\"Block-preserving edits\", \"xl\")", "lead = Source([\"overview\"], [Text(\"Edits keep untouched blocks byte for byte.\")])"]}}]}
+
+An update has the same shape with "updateComponents" in place of "createSurface" and no "catalogId"; a statement in it replaces the statement of the same name. The app deletes the statements an update leaves unreferenced by adding name = null for each to that update: never write such a statement yourself.
+
+## Sources
+
+- "sources" maps an id you choose to a section of the document: its heading copied verbatim, and its occurrence, counting from 1, when several sections share that heading.
+- Wrap content in Source(["id"], [children]) to attribute it to those sections. Every fact taken from the document sits inside a Source, and each Source names the narrowest sections that hold its content.
+- Give each Source its own statement and write all of its content in that one statement, such as lead = Source(["overview"], [Card([Title(...), List([...])])]), never in further statements such as lead_card or lead_list. An update then replaces that statement alone.
+- Leave the page title outside any Source, and never cite the document's first-level heading for it: that heading's section spans the whole document, so any edit would mark the title as changed.
+
+## Syntax
+
+1. Each statement is `identifier = Expression`. `root = Col(...)` is the entry point; write it first.
+2. Arguments are positional: write Title("Plan", "xl"), never Title(text: "Plan"). Pass null to skip an optional argument, and leave trailing optional arguments out.
+3. Define a statement once and refer to it by name: card = Card([...]) and then root = Col([card]). Any name used must be defined.
+4. Strings use double quotes with backslash escapes. Lists are [a, b]; objects are {key: value}.
+5. `$name = default` declares a variable the reader can change. Defaults are literals, never expressions or @calls. A property typed $binding<...> takes a variable and writes to it.
+6. Expressions: + - * / %, == != > < >= <=, && || !, `cond ? a : b`, (grouping), member access row.field (on a list it takes that field from every item) and index list[0]. + joins when either side is a string. There is no @If: the ternary also picks between components.
+7. Only the components and @functions listed below exist. You cannot define your own.
+8. The loop variable of @Each exists only inside that call: write list = @Each(rows, "r", Text(r.name)), never a separate statement that uses r.
+
+## Components
+
+{{components}}
+
+Color is one of "ink", "muted", "faint", "info", "success", "warning", "danger", "purple", "pink", "canvas", "surface", "surface-strong", "border", "chart1" to "chart6", or a hex color.
+Option is a string or {value, label}; Choice is a string or {value, label, description}. Rules is {required, email, url, numeric, min, max, minLength, maxLength, pattern}.
+gap and padding count 4-point steps. Icon names are Phosphor or common lucide names, such as "map-pin", "check-circle", "arrow-right".
+
+## Functions
+
+- @Count(list), @First(list), @Last(list): the size, first item and last item of a list
+- @Sum(numbers), @Avg(numbers), @Min(numbers), @Max(numbers): totals of a list of numbers
+- @Sort(list, field, direction?: "asc" | "desc"): the list ordered by a field
+- @Filter(list, field, operator: "==" | "!=" | ">" | "<" | ">=" | "<=" | "contains", value): the items that match
+- @Round(number, decimals?), @Abs(number), @Floor(number), @Ceil(number)
+- @Each(list, "name", template): the template once for each item, with the item as name
+{{functions}}
+
+## Actions
+
+A Button, IconButton or Pressable takes one action, or Action([a, b]) to run several in order:
+
+- @Set($name, value) changes a variable; @Reset($a, $b) puts variables back to their defaults.
+- @OpenUrl("https://...") opens a web address.
+- @ToAssistant is not available in a saved view: do not use it.
+
+## Layout
+
+- Compose the view like a page: a Title, a short Text, then a mix of blocks that show the content. Row, Grid and Carousel set things side by side; Badge rows give quick facts; Card only groups a block; Popover holds an aside.
+- Spacing has three tiers that nest: inner (gap 1-2) for a title with its subtitle or tags; group (gap 3-4) between blocks inside a Card or grid cell; section between the blocks of the page. Leave gap unset on the root Col and on a Card's own contents: the app applies the tiers. Set it on a Row, a Grid or an inner Col. Never use one gap for everything.
+- Text sizes stop at "lg": a big number is a Title, never a larger Text. A Text right after a card's Title is its subtitle: one short phrase that fits a single line. A longer Text there is drawn as body text.
+- Keep cards compact: Title "md" for a card heading ("xl" or "2xl" only for a single big number), Text "sm" for the body, then facts as Badges or label and value rows: Row([Caption("Owner"), Spacer(), Text("Ada", "sm")]). Cards side by side in a Grid hold the same blocks in the same order.
+- In a Grid of cards, two cards side by side take a minChildWidth of 240 or more; three side by side take columns 3 and a minChildWidth of 220 to 240, because the page fits three columns only up to 240: with a wider minimum the third card takes a row of its own.
+- Pick the medium that shows the content: Chart for numbers across time or categories, Table to compare subjects on shared attributes, List with timeline true for events or phases that have a time or date, List([...], "number") for numbered steps, Code for code, Quote for a quotation.
+- The page is about 760 points wide, and a Card or a block beside another leaves less. Keep a Table to about five columns of short cells: when a comparison has more attributes than subjects, put the attributes in rows and the subjects in columns. A table wider than its place scrolls sideways.
+- In a timeline, the third argument of ListItem is the entry's time or date as the document writes it, kept out of the title: ListItem("Put the API into read-only mode.", null, "02:00"). Never number a timeline with "1", "2", "3": steps that have only a number go in List([...], "number"), which numbers them itself.
+- Show one set of figures in one component: a Chart, a Table or a List, never the same figures in two of them. A second component may repeat them only when it adds columns the first lacks.
+- A Chart with several series shows a legend of them. Name every series for the reader with seriesLabels, in the document's language; without it the legend shows the raw keys: Chart("bar", rows, "channel", ["budget", "actual"], null, null, null, {budget: "Budget", actual: "Actual spend"}).
+- Use Image only with the address of an image the document itself shows. Otherwise use an Icon or Badges.
+- When the document holds numbers, choices or steps the reader may want to explore, make them work on the page: keep the inputs in $variables, compute what is shown from them with expressions and @functions, and change them with a Slider, SegmentedControl, Checkbox or @Set. Every starting value and every figure computed must come from the document.
+- Take a control's range and default from the document: the least and greatest value of a Slider and the default of its $variable are numbers the document states. When the document gives no range and the reader's request asks for none, leave the control out.
+- Derive rows once with @Each(list, "x", {...}), then reuse them in Table, Chart, @Sum(rows.field) and @Join.
+- Format money, percentages and large numbers with @Format, counts with @Plural and dates with @FormatDate. Show @Percent as @Format(@Percent(part, total), "percent").
+- @Random, @Pick and @Shuffle give a value only inside @Set.
+
+## Example
+
+A view of a short project report that prices disk at $2,300 a month and object storage at $1,400 and expects the move to take 6 to 12 months. The slider's range and default and every figure computed are the report's own numbers:
+
+root = Col([head, summary, cost, risks, steps])
+$months = 6
+head = Col([Title("Storage migration", "xl"), Row([Badge("On track", "success"), Badge("Due March 14", "info", "calendar")], 2)], 2)
+summary = Source(["overview"], [Text("The team moves **12 services** from disk to object storage in three phases.")])
+cost = Source(["budget"], [Card([Title("Cost over time", "md"), Slider($months, 6, 12, 1, "Months"), Chart("bar", @Each(@Range(1, $months + 1), "m", {month: "M" + m, disk: m * 2300, object: m * 1400}), "month", ["disk", "object"], null, null, null, {disk: "Disk", object: "Object storage"}), Row([Caption("Saved by leaving disk"), Spacer(), Text(@Format($months * (2300 - 1400), "currency", 0), "lg", null, "semibold")])])])
+risks = Source(["risks"], [Table(["Risk", "Likelihood", "Owner"], [["Slow restores", Badge("Medium", "warning"), "Ada"], ["Quota limits", Badge("Low", "success"), "Lin"]])])
+steps = Source(["plan"], [List([ListItem("Copy", "Mirror every bucket, two weeks.", "Jan 29"), ListItem("Switch reads", "Serve reads from object storage.", "Feb 12"), ListItem("Retire disks", "After 30 days without errors.", "Mar 14")], null, true)])

@@ -21,6 +21,7 @@ type GenerateRequest struct {
 	ReplaceIDs []string     `json:"replaceIds,omitempty"`
 	Request    string       `json:"request,omitempty"`
 	Format     string       `json:"format"`
+	Language   string       `json:"language,omitempty"`
 	Sections   []SectionRef `json:"sections"`
 }
 

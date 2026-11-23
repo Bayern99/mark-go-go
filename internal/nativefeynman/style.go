@@ -114,7 +114,7 @@ func mutedText(c *ui.Context, value string) {
 
 func resultText(c *ui.Context, title, value string, errText string) {
 	if errText != "" {
-		text(c, portrait.Type.Meta, errText).Role(ui.RoleAlert).TextColor(portrait.Colors.Danger)
+		text(c, portrait.Type.Meta, errText).Role(ui.RoleAlert).TextColor(portrait.Colors.Danger).FillWidth().Wrap()
 	}
 	if value == "" {
 		return

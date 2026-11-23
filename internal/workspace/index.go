@@ -697,7 +697,11 @@ func (h *Service) emitNav(w *workspace) {
 	if !selected {
 		return
 	}
-	_ = NavigationChanged.Emit(w.win, h.navSnapshot(w))
+	emit := h.navigationChanged
+	if emit == nil {
+		emit = NavigationChanged.Emit
+	}
+	_ = emit(w.win, h.navSnapshot(w))
 }
 
 func (h *Service) emitSearch(w *workspace, idx *workspaceIndex) {
@@ -713,7 +717,11 @@ func (h *Service) emitSearch(w *workspace, idx *workspaceIndex) {
 	idx.mu.Lock()
 	query := idx.query
 	idx.mu.Unlock()
-	_ = SearchReady.Emit(w.win, h.searchLockedResult(w, idx, query))
+	emit := h.searchReady
+	if emit == nil {
+		emit = SearchReady.Emit
+	}
+	_ = emit(w.win, h.searchLockedResult(w, idx, query))
 }
 
 func (h *Service) navSnapshot(w *workspace) NavSnapshot {

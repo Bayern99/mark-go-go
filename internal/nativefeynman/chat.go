@@ -18,7 +18,6 @@ import (
 
 func (p *panel) chat(c *ui.Context) {
 	s := p.state
-	p.configControls(c)
 	if len(s.statuses) > 0 {
 		ui.Row(c).Wrap().Gap(4).Children(func() {
 			for key, value := range s.statuses {
@@ -64,105 +63,6 @@ func (p *panel) chat(c *ui.Context) {
 		})
 	}
 	p.composer(c)
-}
-
-func (p *panel) configControls(c *ui.Context) {
-	s := p.state
-	var model *feynman.ResearchModel
-	if s.session.Model != nil {
-		model = s.session.Model
-	}
-	if len(s.models) == 0 && len(s.thinking) == 0 && len(s.configs) == 0 && !s.hasStats {
-		return
-	}
-	if compactResearchLayout(c) {
-		p.compactConfigControls(c, model)
-		return
-	}
-	card(ui.Column(c.Key("research-configs"))).Gap(4).Padding(6, 7).Children(func() {
-		if model != nil {
-			label := model.Name
-			if label == "" {
-				label = model.ID
-			}
-			portrait.Tooltip(c, text(c, portrait.Type.Meta, "Model · "+label).FontWeight(600).TextColor(portrait.Colors.Ink2), model.Provider+"/"+model.ID)
-		}
-		p.configChoices(c)
-	})
-}
-
-func (p *panel) compactConfigControls(c *ui.Context, model *feynman.ResearchModel) {
-	modelName := "Choose model"
-	if model != nil {
-		modelName = model.Name
-		if modelName == "" {
-			modelName = model.ID
-		}
-		modelName = "Model · " + modelName
-	}
-	thinking := p.state.thinkingLevel
-	if thinking == "" {
-		thinking = "default"
-	}
-	open := p.collapsibleState("compact-research-config")
-	width, height := c.Size()
-	card(ui.Row(c.Key("research-compact-config-row"))).Gap(5).Padding(3, 5).AlignItems(ui.Center).Children(func() {
-		button := option(c, "research-compact-config", modelName, "Research model and thinking settings", portrait.Quiet, false, false).Description("Choose a research model and thinking level").Grow(1).Justify(ui.Start)
-		if button.Clicked() {
-			*open = !*open
-		}
-		mutedText(c, "Thinking · "+thinking)
-		portrait.Popover(c, button, open, func() {
-			popoverWidth := min(float32(352), max(float32(280), width-112))
-			maxHeight := max(float32(128), height-180)
-			ui.Column(c).Width(popoverWidth).Children(func() {
-				ui.Scroll(c.Key("research-config-popover-scroll")).MaxHeight(maxHeight).FillWidth().Label("Research model and thinking settings").Children(func() {
-					ui.Column(c).Gap(4).Padding(7).Children(func() { p.configChoices(c) })
-				})
-			})
-		})
-	})
-}
-
-func (p *panel) configChoices(c *ui.Context) {
-	s := p.state
-	if len(s.models) > 0 {
-		ui.Row(c).Wrap().Gap(3).Children(func() {
-			for _, option := range s.models {
-				value := option.Name
-				if value == "" {
-					value = option.ID
-				}
-				current := s.session.Model != nil && s.session.Model.Provider == option.Provider && s.session.Model.ID == option.ID
-				if choiceButton(c, "research-model-"+option.Provider+"/"+option.ID, value, "Use "+option.Provider+" model "+option.ID, current, false).Clicked() && s.status == statusReady {
-					p.runUpdate(func() (func(), error) {
-						got, err := p.host.SetModel(p.window.Context(), s.root, option.Provider, option.ID)
-						return func() { s.session.Model = &got }, err
-					})
-				}
-			}
-		})
-	}
-	if len(s.thinking) > 0 {
-		ui.Row(c).Wrap().Gap(3).AlignItems(ui.Center).Children(func() {
-			mutedText(c, "Thinking")
-			for _, level := range s.thinking {
-				if choiceButton(c, "research-thinking-"+level, level, "Set thinking level to "+level, level == s.thinkingLevel, false).Clicked() && s.status == statusReady {
-					p.runUpdate(func() (func(), error) {
-						err := p.host.SetThinkingLevel(p.window.Context(), s.root, level)
-						return func() { s.thinkingLevel = level }, err
-					})
-				}
-			}
-		})
-	}
-	if s.hasStats {
-		label := fmt.Sprintf("%d tokens · $%.4f", s.stats.Tokens.Total, s.stats.Cost)
-		if s.stats.ContextUsage != nil && s.stats.ContextUsage.ContextWindow > 0 {
-			label = fmt.Sprintf("%d / %d tokens · $%.4f", s.stats.ContextUsage.Tokens, s.stats.ContextUsage.ContextWindow, s.stats.Cost)
-		}
-		mutedText(c, label)
-	}
 }
 
 func (p *panel) message(c *ui.Context, index int, item message, streaming bool) {
@@ -374,100 +274,103 @@ func (p *panel) composer(c *ui.Context) {
 	if compact {
 		paddingY, gap = 3, 3
 	}
-	composer := ui.Column(c.Key("feynman-composer")).Padding(paddingY, 7).Gap(gap).Radius(12).Background(portrait.Colors.Paper).Border(1, portrait.Colors.LineStrong)
-	if composer.FocusWithin() {
-		portrait.Rings.Editing.Apply(composer)
-	}
-	composer.Children(func() {
-		if len(s.sources) > 0 || s.includeDoc {
-			ui.Row(c).Wrap().Gap(4).Children(func() {
-				if s.includeDoc {
-					doc := p.window.Active()
-					label := doc.Name
-					if label == "" {
-						label = "Current document"
-					}
-					if chip(c, "research-document", portrait.Icon{}, "Document · "+label, "Remove active document from the research prompt", compact).Clicked() {
-						s.includeDoc = false
-					}
-				}
-				for _, source := range s.sources {
-					path := source
-					if i := strings.LastIndex(path, "/"); i >= 0 {
-						path = path[i+1:]
-					}
-					if chip(c, "research-source-"+source, portrait.IconPaperclip, path, "Remove attached source "+source, compact).Clicked() {
-						s.sources = without(s.sources, source)
-					}
-				}
-			})
+	ui.Column(c.Key("feynman-compose")).Children(func() {
+		composer := ui.Column(c.Key("feynman-composer")).Padding(paddingY, 7).Gap(gap).Radius(12).Background(portrait.Colors.Paper).Border(1, portrait.Colors.LineStrong)
+		if composer.FocusWithin() {
+			portrait.Rings.Editing.Apply(composer)
 		}
-		if s.actionsOpen {
-			p.commandList(c)
-		}
-		promptHeight := float32(76)
-		if compact {
-			promptHeight = 44
-		}
-		entry := area(c, "research-draft", "Research prompt", &s.draft, promptPlaceholder(s.status), promptHeight).
-			OnTextKey(func(key ui.TextKey) bool {
-				if key.Key != ui.KeyEnter || key.Mods != 0 {
-					return false
-				}
-				if s.actionsOpen && strings.HasPrefix(s.draft, "/") {
-					if command := p.matchingCommand(strings.TrimSpace(strings.TrimPrefix(s.draft, "/"))); command != nil {
-						s.draft = "/" + command.Name + " "
-						s.actionsOpen = false
-						key.SetText(s.draft)
-						return true
+		composer.Children(func() {
+			if len(s.sources) > 0 || s.includeDoc {
+				ui.Row(c).Wrap().Gap(4).Children(func() {
+					if s.includeDoc {
+						doc := p.window.Active()
+						label := doc.Name
+						if label == "" {
+							label = "Current document"
+						}
+						if chip(c, "research-document", portrait.Icon{}, "Document · "+label, "Remove active document from the research prompt", compact).Clicked() {
+							s.includeDoc = false
+						}
 					}
-				}
-				if s.status == statusWorking {
-					p.followUp()
-				} else {
-					p.send()
-				}
-				key.SetText("")
-				return true
-			})
-		entry.Border(0, ui.Transparent).NoShadow().FocusRing(false)
-		if compact {
-			entry.MinHeight(promptHeight)
-		}
-		if entry.Changed() && strings.HasPrefix(s.draft, "/") {
-			s.actionsOpen = true
-		}
-		ui.Row(c).Wrap().Gap(4).AlignItems(ui.Center).Children(func() {
-			if smallButton(c, "Attach", "Attach source files").Disabled(s.status == statusOffline || s.status == statusConnecting).Clicked() {
-				p.attachSources()
+					for _, source := range s.sources {
+						path := source
+						if i := strings.LastIndex(path, "/"); i >= 0 {
+							path = path[i+1:]
+						}
+						if chip(c, "research-source-"+source, portrait.IconPaperclip, path, "Remove attached source "+source, compact).Clicked() {
+							s.sources = without(s.sources, source)
+						}
+					}
+				})
 			}
-			if smallButton(c, "Actions", "Browse workflows, skills and extensions").Disabled(len(s.commands) == 0).Clicked() {
-				s.actionsOpen = !s.actionsOpen
-				if s.actionsOpen {
-					s.actionsOpen = true
-				}
+			if s.actionsOpen {
+				p.commandList(c)
 			}
-			if doc := p.window.Active(); doc.ID != "" && doc.Path != "" && !doc.ReadOnly {
-				ui.Checkbox(c.Key("research-include-document"), &s.includeDoc, "Include document")
+			promptHeight := float32(76)
+			if compact {
+				promptHeight = 44
 			}
-			ui.Row(c).Grow(1).Justify(ui.End).Gap(4).Children(func() {
-				if s.status == statusWorking {
-					if smallButton(c, "Steer", "Send a steering message").Disabled(strings.TrimSpace(s.draft) == "").Clicked() {
-						p.steer()
+			entry := area(c, "research-draft", "Research prompt", &s.draft, promptPlaceholder(s.status), promptHeight).
+				OnTextKey(func(key ui.TextKey) bool {
+					if key.Key != ui.KeyEnter || key.Mods != 0 {
+						return false
 					}
-					if smallButton(c, "Follow up", "Queue a follow-up message").Disabled(strings.TrimSpace(s.draft) == "").Clicked() {
+					if s.actionsOpen && strings.HasPrefix(s.draft, "/") {
+						if command := p.matchingCommand(strings.TrimSpace(strings.TrimPrefix(s.draft, "/"))); command != nil {
+							s.draft = "/" + command.Name + " "
+							s.actionsOpen = false
+							key.SetText(s.draft)
+							return true
+						}
+					}
+					if s.status == statusWorking {
 						p.followUp()
-					}
-					if controlButton(c, "Stop", "Stop the current research action").Clicked() {
-						p.run(func() error { return p.host.Abort(p.window.Context(), s.root) })
-					}
-				} else {
-					if option(c, "research-control-Send", "Send", "Send research prompt", portrait.Accent, false, false).Disabled(s.status != statusReady || strings.TrimSpace(s.draft) == "").Clicked() {
+					} else {
 						p.send()
 					}
+					key.SetText("")
+					return true
+				})
+			entry.Border(0, ui.Transparent).NoShadow().FocusRing(false)
+			if compact {
+				entry.MinHeight(promptHeight)
+			}
+			if entry.Changed() && strings.HasPrefix(s.draft, "/") {
+				s.actionsOpen = true
+			}
+			ui.Row(c).Wrap().Gap(4).AlignItems(ui.Center).Children(func() {
+				if smallButton(c, "Attach", "Attach source files").Disabled(s.status == statusOffline || s.status == statusConnecting).Clicked() {
+					p.attachSources()
 				}
+				if smallButton(c, "Actions", "Browse workflows, skills and extensions").Disabled(len(s.commands) == 0).Clicked() {
+					s.actionsOpen = !s.actionsOpen
+					if s.actionsOpen {
+						s.actionsOpen = true
+					}
+				}
+				if doc := p.window.Active(); doc.ID != "" && doc.Path != "" && !doc.ReadOnly {
+					ui.Checkbox(c.Key("research-include-document"), &s.includeDoc, "Include document")
+				}
+				ui.Row(c).Grow(1).Justify(ui.End).Gap(4).Children(func() {
+					if s.status == statusWorking {
+						if smallButton(c, "Steer", "Send a steering message").Disabled(strings.TrimSpace(s.draft) == "").Clicked() {
+							p.steer()
+						}
+						if smallButton(c, "Follow up", "Queue a follow-up message").Disabled(strings.TrimSpace(s.draft) == "").Clicked() {
+							p.followUp()
+						}
+						if controlButton(c, "Stop", "Stop the current research action").Clicked() {
+							p.run(func() error { return p.host.Abort(p.window.Context(), s.root) })
+						}
+					} else {
+						if option(c, "research-control-Send", "Send", "Send research prompt", portrait.Accent, false, false).Disabled(s.status != statusReady || strings.TrimSpace(s.draft) == "").Clicked() {
+							p.send()
+						}
+					}
+				})
 			})
 		})
+		p.configControls(c)
 	})
 }
 

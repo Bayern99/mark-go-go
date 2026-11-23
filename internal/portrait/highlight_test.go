@@ -41,6 +41,8 @@ func TestEditorIconsArePhosphorCodepoints(t *testing.T) {
 	}{
 		{"caret-down", portrait.IconCaretDown, "\ue136"},
 		{"caret-right", portrait.IconCaretRight, "\ue13a"},
+		{"cube", portrait.IconCube, "\ue1da"},
+		{"sliders-horizontal", portrait.IconSlidersHorizontal, "\ue434"},
 		{"arrow-up-right", portrait.IconArrowUpRight, "\ue092"},
 		{"arrow-left", portrait.IconArrowLeft, "\ue058"},
 		{"note", portrait.IconNote, "\ue348"},

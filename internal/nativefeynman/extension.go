@@ -52,6 +52,8 @@ type panel struct {
 	permissionID      string
 	questionPending   bool
 	collapsed         map[string]*bool
+	pickerStates      map[string]*researchPickerState
+	pickerFocus       string
 	cliPassword       string
 	searchKey         string
 	serverLocal       bool

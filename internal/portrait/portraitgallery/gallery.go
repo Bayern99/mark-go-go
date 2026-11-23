@@ -261,13 +261,41 @@ func preferences(p Preference) ui.Preferences {
 	return ui.Preferences{HighContrast: p == HighContrast, ReduceTransparency: p == ReduceTransparency}
 }
 
-func renderCell(cell Cell, needImage bool) (cellRender, error) {
+type cellSession struct {
+	preference Preference
+	tester     *ui.Tester
+	cell       Cell
+	seq        int
+	pressed    bool
+	px, py     float32
+}
+
+func newCellSession(pref Preference) *cellSession {
+	s := &cellSession{preference: pref}
+	s.tester = ui.NewTesterWith(func(c *ui.Context) {
+		if s.cell.Component == "" {
+			return
+		}
+		cellView(c.Key(fmt.Sprintf("s%d:%s", s.seq, cellName(s.cell))), s.cell)
+	}, cellWidth, cellHeight, ui.TesterOptions{Preferences: preferences(pref)})
+	return s
+}
+
+func (s *cellSession) render(cell Cell, needImage bool) (cellRender, error) {
 	cell = normalize(cell)
 	cell.drive = true
 	if err := Validate(cell); err != nil {
 		return cellRender{}, err
 	}
-	tt := ui.NewTesterWith(func(c *ui.Context) { cellView(c, cell) }, cellWidth, cellHeight, ui.TesterOptions{Preferences: preferences(cell.Preference)})
+	tt := s.tester
+	if s.pressed {
+		tt.Release(s.px, s.py)
+		s.pressed = false
+	}
+	s.seq++
+	s.cell = cell
+	tt.Move(0, 0)
+	tt.Frame()
 	d, _ := Lookup(cell.Component)
 	target, ok := tt.AccessByRole(d.Role, labelFor(cell))
 	if !ok {
@@ -282,6 +310,7 @@ func renderCell(cell Cell, needImage bool) (cellRender, error) {
 		tt.Move(cx, cy)
 		tt.Press(cx, cy)
 		tt.Advance(300 * time.Millisecond)
+		s.pressed, s.px, s.py = true, cx, cy
 	case FocusVisible:
 		// Build keeps focus on this cell; Tab makes that focus visible.
 		tt.Key(0, ui.KeyTab)
@@ -296,10 +325,17 @@ func renderCell(cell Cell, needImage bool) (cellRender, error) {
 	return cellRender{image: img, tester: tt, cell: cell, def: d, target: target}, nil
 }
 
-func renderSheet(component Component, preference Preference, surface Surface, needImage bool, inspect func(cellRender)) (*image.RGBA, error) {
+func renderCell(cell Cell, needImage bool) (cellRender, error) {
+	return newCellSession(normalize(cell).Preference).render(cell, needImage)
+}
+
+func renderSheetWith(session *cellSession, component Component, preference Preference, surface Surface, needImage bool, inspect func(cellRender)) (*image.RGBA, error) {
 	cell := normalize(Cell{Component: component, Preference: preference, Surface: surface})
 	if err := Validate(cell); err != nil {
 		return nil, err
+	}
+	if session == nil {
+		session = newCellSession(cell.Preference)
 	}
 	width := cellWidth * len(States)
 	var sheet *image.RGBA
@@ -309,7 +345,7 @@ func renderSheet(component Component, preference Preference, surface Surface, ne
 		draw.Draw(sheet, image.Rect(0, 0, width, headerHeight), header.Image(), image.Point{}, draw.Src)
 	}
 	for i, state := range States {
-		rendered, err := renderCell(Cell{Component: component, State: state, Preference: cell.Preference, Surface: cell.Surface}, needImage)
+		rendered, err := session.render(Cell{Component: component, State: state, Preference: cell.Preference, Surface: cell.Surface}, needImage)
 		if err != nil {
 			return nil, err
 		}
@@ -328,5 +364,5 @@ func renderSheet(component Component, preference Preference, surface Surface, ne
 // surface. Each state is driven independently so hover, press, focus, and
 // tooltips can all appear in the same returned image.
 func RenderSheet(component Component, preference Preference, surface Surface) (*image.RGBA, error) {
-	return renderSheet(component, preference, surface, true, nil)
+	return renderSheetWith(nil, component, preference, surface, true, nil)
 }

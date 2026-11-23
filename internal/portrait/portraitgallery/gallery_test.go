@@ -36,6 +36,10 @@ func TestGallery(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	sessions := make(map[Preference]*cellSession, len(Preferences))
+	for _, pref := range Preferences {
+		sessions[pref] = newCellSession(pref)
+	}
 	for _, component := range Components() {
 		t.Run(string(component.Name), func(t *testing.T) {
 			surfaces := Surfaces
@@ -51,14 +55,14 @@ func TestGallery(t *testing.T) {
 			for _, preference := range Preferences {
 				for _, surface := range surfaces {
 					if !needImage && (preference != Default || surface != surfaces[0]) {
-						rendered, err := renderCell(Cell{Component: component.Name, State: Rest, Preference: preference, Surface: surface}, false)
+						rendered, err := sessions[preference].render(Cell{Component: component.Name, State: Rest, Preference: preference, Surface: surface}, false)
 						if err != nil {
 							t.Fatal(err)
 						}
 						assertCellStructure(t, rendered)
 						continue
 					}
-					sheet, err := renderSheet(component.Name, preference, surface, needImage, func(rendered cellRender) {
+					sheet, err := renderSheetWith(sessions[preference], component.Name, preference, surface, needImage, func(rendered cellRender) {
 						assertCellStructure(t, rendered)
 					})
 					if err != nil {
@@ -150,8 +154,9 @@ func inside(inner, outer ui.Rect) bool {
 }
 
 func TestCardIsOpaqueOnGlass(t *testing.T) {
+	session := newCellSession(Default)
 	for _, surface := range []Surface{Paper, Chrome, Glass} {
-		rendered, err := renderCell(Cell{Component: Card, State: Rest, Surface: surface}, true)
+		rendered, err := session.render(Cell{Component: Card, State: Rest, Surface: surface}, true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -198,11 +203,15 @@ func TestGalleryButtonsChangeWhilePressedAndRecover(t *testing.T) {
 		{HighContrast, Chrome},
 		{ReduceTransparency, Glass},
 	}
+	sessions := make(map[Preference]*cellSession, len(Preferences))
+	for _, pref := range Preferences {
+		sessions[pref] = newCellSession(pref)
+	}
 	for _, component := range components {
 		for _, combo := range combos {
 			t.Run(fmt.Sprintf("%s/%s/%s", component, combo.preference, combo.surface), func(t *testing.T) {
 				cell := Cell{Component: component, State: Rest, Preference: combo.preference, Surface: combo.surface}
-				rendered, err := renderCell(cell, true)
+				rendered, err := sessions[combo.preference].render(cell, true)
 				if err != nil {
 					t.Fatal(err)
 				}

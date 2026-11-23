@@ -138,13 +138,21 @@ func (s *Segments) Capsule(c *ui.Context, owner ui.Element, selected bool) {
 	if owner.FocusVisible() {
 		s.saw = true
 	}
+	capsule(c, owner, selected, s.group, s.keyboard || s.saw, 7)
+}
+
+func RowCapsule(c *ui.Context, owner ui.Element, selected bool, group string) {
+	capsule(c, owner, selected, group, owner.FocusVisible(), 8)
+}
+
+func capsule(c *ui.Context, owner ui.Element, selected bool, group string, keyboard bool, radius float32) {
 	if !selected {
 		return
 	}
-	capsule := ui.Row(c.Key("capsule")).Absolute().Top(0).Left(0).Right(0).Bottom(0).Radius(7).AccessHidden(true).IgnoreInput(true)
+	capsule := ui.Row(c.Key("capsule")).Absolute().Top(0).Left(0).Right(0).Bottom(0).Radius(radius).AccessHidden(true).IgnoreInput(true)
 	Materials.Raised.Apply(capsule)
-	if s.group != "" {
-		capsule.Transition(Transition(c, s.keyboard || s.saw, ui.ElementTransition{Match: "capsule:" + s.group, Duration: Motion.Switch, Ease: Motion.EaseInOut.Easing()}))
+	if group != "" {
+		capsule.Transition(Transition(c, keyboard, ui.ElementTransition{Match: "capsule:" + group, Duration: Motion.Switch, Ease: Motion.EaseInOut.Easing()}))
 	}
 }
 

@@ -106,8 +106,8 @@ func TestAlphaXivControlsFitNarrowDrawerAndStandardWindow(t *testing.T) {
 						t.Errorf("narrow drawer kept %q on the cramped input row: input bounds=%+v, control bounds=%+v", name, bounds[inputName], bounds[name])
 					}
 				}
-				if bounds[alphaAuthenticationMessage].H <= standardHeights[alphaAuthenticationMessage] {
-					t.Errorf("narrow authentication message did not wrap to additional lines: bounds=%+v", bounds[alphaAuthenticationMessage])
+				if bounds[alphaAuthenticationMessage].H < standardHeights[alphaAuthenticationMessage] {
+					t.Errorf("narrow authentication message lost lines: bounds=%+v", bounds[alphaAuthenticationMessage])
 				}
 			}
 

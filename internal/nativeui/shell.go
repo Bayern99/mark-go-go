@@ -113,10 +113,10 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 		ui.Column(c).Fill().Background(portrait.Colors.Paper).TextColor(portrait.Colors.Ink).Font(portrait.FontSans).Children(func() {
 
 			if m.Message != "" {
-				banner(c, m.Message)
+				portrait.Alert(c, portrait.Tones.Danger, m.Message, "")
 			}
 			if m.Workspace.RestoreError != "" {
-				banner(c, m.Workspace.RestoreError)
+				portrait.Alert(c, portrait.Tones.Danger, m.Workspace.RestoreError, "")
 			}
 			ui.Row(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Padding(8).Gap(0).Children(func() {
 				leftDocked := width >= 641
@@ -167,6 +167,7 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 		})
 		s.drawer(c, true, width, height, m, a, slots)
 		s.drawer(c, false, width, height, m, a, slots)
+		portrait.Toasts(c)
 	})
 }
 

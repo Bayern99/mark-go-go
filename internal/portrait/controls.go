@@ -12,6 +12,9 @@ const (
 	Raised Look = iota
 	Accent
 	Quiet
+	Danger
+	DangerOutline
+	Link
 )
 
 type feedback struct {
@@ -21,9 +24,12 @@ type feedback struct {
 }
 
 var looks = [...]feedback{
-	Raised: {Materials.Raised, Materials.RaisedHover, Materials.RaisedPress, Colors.Ink, Colors.Ink, 0.98},
-	Accent: {Materials.AccentRaised, Materials.AccentRaisedHover, Materials.AccentRaisedPress, Colors.OnAccent, Colors.OnAccent, 0.985},
-	Quiet:  {Surface{ui.Transparent, ui.Transparent, nil}, Materials.Row, Materials.RaisedPress, Colors.Ink2, Colors.Ink, 0.97},
+	Raised:        {Materials.Raised, Materials.RaisedHover, Materials.RaisedPress, Colors.Ink, Colors.Ink, 0.98},
+	Accent:        {Materials.AccentRaised, Materials.AccentRaisedHover, Materials.AccentRaisedPress, Colors.OnAccent, Colors.OnAccent, 0.985},
+	Quiet:         {Surface{ui.Transparent, ui.Transparent, nil}, Materials.Row, Materials.RaisedPress, Colors.Ink2, Colors.Ink, 0.97},
+	Danger:        {dangerRest, dangerHover, dangerPress, Tones.Danger.OnSolid, Tones.Danger.OnSolid, 0.985},
+	DangerOutline: {dangerOutlineRest, dangerOutlineHover, dangerOutlinePress, Tones.Danger.Ink, Tones.Danger.Ink, 0.98},
+	Link:          {Surface{ui.Transparent, ui.Transparent, nil}, Surface{ui.Transparent, ui.Transparent, nil}, Surface{Colors.AccentSoft, Colors.AccentSoft, nil}, Colors.Accent, Colors.Accent, 0.98},
 }
 
 var Rings = struct{ Field, Editing Shadows }{
@@ -58,58 +64,12 @@ func flag(b bool) float32 {
 	return 0
 }
 
-func Button(c *ui.Context, title, label string) ui.Element {
-	return textButton(c, Icon{}, title, label, Raised)
-}
-
-func ButtonLeadingIcon(c *ui.Context, icon Icon, title, label string) ui.Element {
-	return textButton(c, icon, title, label, Raised)
-}
-
-func AccentButton(c *ui.Context, title, label string) ui.Element {
-	return textButton(c, Icon{}, title, label, Accent)
-}
-
-func QuietButton(c *ui.Context, title, label string) ui.Element {
-	return textButton(c, Icon{}, title, label, Quiet)
-}
-
-func textButton(c *ui.Context, icon Icon, title, label string, look Look) ui.Element {
-	b := ui.ButtonBase(c.Key(label)).Label(label).Height(28).Padding(0, 11).Radius(8).Gap(6).AlignItems(ui.Center).Justify(ui.Center)
-	if label != title {
-		Tooltip(c, b, label)
-	}
-	ink := Press(b, look)
-	b.Children(func() {
-		if icon.Glyph != "" {
-			Glyph(c, icon, Type.UI.Size, ink).Shrink(0)
-		}
-		Type.UI.Apply(ui.Text(c, title)).FontWeight(500).TextColor(ink).MaxLines(1).Ellipsis("…")
-	})
-	return b
-}
-
-func IconButton(c *ui.Context, icon Icon, label string) ui.Element {
-	return iconButton(c, icon, label, Raised)
-}
-
-func QuietIconButton(c *ui.Context, icon Icon, label string) ui.Element {
-	return iconButton(c, icon, label, Quiet)
-}
-
-func iconButton(c *ui.Context, icon Icon, label string, look Look) ui.Element {
-	b := Tooltip(c, ui.ButtonBase(c.Key(label)).Label(label), label).Size(28, 28).Radius(8).AlignItems(ui.Center).Justify(ui.Center)
-	ink := Press(b, look)
-	b.Children(func() { Glyph(c, icon, 15, ink) })
-	return b
-}
-
 type Segments struct {
 	group string
 }
 
 func Track(c *ui.Context, group string, build func(s *Segments)) ui.Element {
-	t := ui.Row(c.Key("track:" + group)).Role(ui.RoleTabList).Padding(2).Gap(2).Radius(9).AlignItems(ui.Center)
+	t := ui.Row(c.Key("track:" + group)).Role(ui.RoleTabList).Padding(2).Gap(2).Radius(Radii.Track).AlignItems(ui.Center)
 	Surface{Materials.GlassSelected, Materials.GlassSelected, Materials.Track.Shadows}.Apply(t)
 	s := &Segments{group: group}
 	t.Children(func() { build(s) })
@@ -117,7 +77,7 @@ func Track(c *ui.Context, group string, build func(s *Segments)) ui.Element {
 }
 
 func (s *Segments) Segment(c *ui.Context, title, label string, selected bool) ui.Element {
-	b := ui.ButtonBase(c.Key(label)).Label(label).Height(24).Padding(0, 10).Radius(7).AlignItems(ui.Center).Justify(ui.Center).MinWidth(0)
+	b := ui.ButtonBase(c.Key(label)).Label(label).Height(24).Padding(0, 10).Radius(Radii.Segment).AlignItems(ui.Center).Justify(ui.Center).MinWidth(0)
 	ink := Colors.Ink3
 	if selected || b.Hovered() {
 		ink = Colors.Ink
@@ -130,11 +90,11 @@ func (s *Segments) Segment(c *ui.Context, title, label string, selected bool) ui
 }
 
 func (s *Segments) Capsule(c *ui.Context, owner ui.Element, selected bool) {
-	capsule(c, owner, selected, s.group, 7)
+	capsule(c, owner, selected, s.group, Radii.Segment)
 }
 
 func RowCapsule(c *ui.Context, owner ui.Element, selected bool, group string) {
-	capsule(c, owner, selected, group, 8)
+	capsule(c, owner, selected, group, Radii.M)
 }
 
 func capsule(c *ui.Context, _ ui.Element, selected bool, group string, radius float32) {
@@ -148,8 +108,8 @@ func capsule(c *ui.Context, _ ui.Element, selected bool, group string, radius fl
 	}
 }
 
-func Field(c *ui.Context) ui.Element {
-	f := ui.Row(c).Height(30).Padding(0, 4, 0, 8).Gap(6).Radius(8).AlignItems(ui.Center)
+func InputFrame(c *ui.Context) ui.Element {
+	f := ui.Row(c).Height(30).Padding(0, 4, 0, 8).Gap(6).Radius(Radii.M).AlignItems(ui.Center)
 	if f.FocusWithin() {
 		Surface{Colors.Paper, Colors.Paper, Rings.Field}.Apply(f)
 	} else {
@@ -172,7 +132,7 @@ func Popover(c *ui.Context, anchor ui.Element, open *bool, build func()) ui.Elem
 				keys.dismiss = true
 			}
 		})
-		panel.MinWidth(anchor.Bounds().W).Margin(6, 0, 0, 0).Padding(5).Radius(12).Gap(2)
+		panel.MinWidth(anchor.Bounds().W).Margin(6, 0, 0, 0).Padding(5).Radius(Radii.L).Gap(2)
 		Materials.GlassOverlay.Apply(panel).AttachedOrigin().Transition(Overlays.Popup.Transition(c, keyboard))
 		build()
 	})

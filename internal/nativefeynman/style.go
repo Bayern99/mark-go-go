@@ -6,14 +6,14 @@ import (
 	"github.com/egoist/mygo/ui/markdown"
 )
 
-func statusColor(status connectionStatus) ui.Color {
+func statusTone(status connectionStatus) portrait.Tone {
 	switch status {
 	case statusReady:
-		return portrait.Colors.Accent
+		return portrait.Tones.Accent
 	case statusWorking, statusConnecting:
-		return portrait.Colors.Warn
+		return portrait.Tones.Warning
 	default:
-		return portrait.Colors.Ink3
+		return portrait.Tones.Neutral
 	}
 }
 
@@ -22,23 +22,13 @@ func text(c *ui.Context, step portrait.TypeStyle, value string) ui.Element {
 }
 
 func option(c *ui.Context, key, title, description string, look portrait.Look, small, selected bool) ui.Element {
-	b := portrait.Tooltip(c, ui.ButtonBase(c.Key(key)).Label(description), description).Gap(5).AlignItems(ui.Center).Justify(ui.Center).MinWidth(0)
-	step := portrait.Type.UI
+	size := portrait.Sizes.Regular
 	if small {
-		b.Height(22).Padding(0, 8).Radius(6)
-		step = portrait.Type.Meta
-	} else {
-		b.Height(28).Padding(0, 11).Radius(8)
+		size = portrait.Sizes.Compact
 	}
-	ink := portrait.Press(b, look)
-	if selected {
-		portrait.Surface{From: portrait.Colors.AccentSoft, To: portrait.Colors.AccentSoft}.Apply(b)
-		ink = portrait.Colors.Accent
-	}
-	b.Children(func() {
-		text(c, step, title).FontWeight(500).TextColor(ink).MaxLines(1).Ellipsis("…").MinWidth(0)
-	})
-	return b
+	return portrait.ButtonWith(c.Key(key), title, description, portrait.ButtonSpec{
+		Look: look, Size: size, Selected: selected,
+	}).MinWidth(0)
 }
 
 func controlButton(c *ui.Context, label, description string) ui.Element {
@@ -84,28 +74,44 @@ func chip(c *ui.Context, key string, icon portrait.Icon, label, description stri
 	return b
 }
 
-func field(e ui.Element) ui.Element {
-	e.FillWidth().MinWidth(0).Radius(7).Border(1, portrait.Colors.LineStrong).Background(portrait.Colors.Paper)
-	if e.Focused() {
-		portrait.Rings.Field.Apply(e)
-	}
-	return portrait.Type.UI.Apply(e)
+func field(c *ui.Context, key string, size float32, build func() ui.Element, configure ...func(ui.Element)) ui.Element {
+	frame := portrait.InputFrame(c.Key(key)).Height(size).FillWidth().MinWidth(0)
+	frame.Children(func() {
+		entry := portrait.Type.UI.Apply(build()).FocusRing(false).Grow(1).MinWidth(0)
+		for _, fn := range configure {
+			fn(entry)
+		}
+	})
+	return frame
 }
 
-func input(c *ui.Context, key, label string, value *string, placeholder string) ui.Element {
-	return field(ui.TextInput(c.Key(key), value).Label(label).Placeholder(placeholder).Height(31).Padding(5, 8))
+func input(c *ui.Context, key, label string, value *string, placeholder string, configure ...func(ui.Element)) ui.Element {
+	return sizedInput(c, key, label, value, placeholder, portrait.Sizes.Large, configure...)
 }
 
-func area(c *ui.Context, key, label string, value *string, placeholder string, rows float32) ui.Element {
-	return field(ui.TextArea(c.Key(key), value).Label(label).Placeholder(placeholder).Height(rows).Padding(7, 8))
+func filterInput(c *ui.Context, key, label string, value *string, placeholder string, configure ...func(ui.Element)) ui.Element {
+	return sizedInput(c, key, label, value, placeholder, portrait.Sizes.Regular, configure...)
 }
 
-func card(e ui.Element) ui.Element {
-	return e.Radius(9).Background(portrait.Colors.Fill)
+func sizedInput(c *ui.Context, key, label string, value *string, placeholder string, size float32, configure ...func(ui.Element)) ui.Element {
+	return field(c, key, size, func() ui.Element {
+		return ui.TextInputBase(c, value).Label(label).Placeholder(placeholder)
+	}, configure...)
+}
+
+func area(c *ui.Context, key, label string, value *string, placeholder string, rows float32, configure ...func(ui.Element)) ui.Element {
+	frame := field(c, key, rows, func() ui.Element {
+		return ui.TextAreaBase(c, value).Label(label).Placeholder(placeholder).Height(rows)
+	}, configure...)
+	return frame.AlignItems(ui.Start)
+}
+
+func card(c *ui.Context) ui.Element {
+	return portrait.Card(c)
 }
 
 func sectionTitle(c *ui.Context, title string) ui.Element {
-	return text(c, portrait.Type.Reading.In(portrait.FontDisplay), title).FontWeight(600).TextColor(portrait.Colors.Ink)
+	return text(c, portrait.Type.Heading, title).FontWeight(600).TextColor(portrait.Colors.Ink)
 }
 
 func mutedText(c *ui.Context, value string) {
@@ -114,12 +120,12 @@ func mutedText(c *ui.Context, value string) {
 
 func resultText(c *ui.Context, title, value string, errText string) {
 	if errText != "" {
-		text(c, portrait.Type.Meta, errText).Role(ui.RoleAlert).TextColor(portrait.Colors.Danger).FillWidth().Wrap()
+		portrait.Alert(c, portrait.Tones.Danger, errText, "")
 	}
 	if value == "" {
 		return
 	}
-	ui.Column(c.Key("result-"+title)).Padding(7, 8).Gap(3).Radius(7).Background(portrait.Colors.Code).Children(func() {
+	card(c.Key("result-"+title)).Padding(7, 8).Gap(3).Background(portrait.Colors.Code).Children(func() {
 		text(c, portrait.Type.Meta, title).FontWeight(600).TextColor(portrait.Colors.Ink2)
 		text(c, portrait.Type.Meta.In(portrait.FontMono), value).TextColor(portrait.Colors.Ink).Wrap().FillWidth()
 	})
@@ -132,7 +138,7 @@ func markdownOptions(o *markdown.Options) *markdown.Options {
 		CodeLabelSize: portrait.Type.Meta.Size / base, ListNumberSize: portrait.Type.Meta.Size / base, ImagePlaceholderSize: portrait.Type.Meta.Size / base,
 		Text: portrait.Colors.Ink, Muted: portrait.Colors.Ink3, Link: portrait.Colors.Accent, Code: portrait.Colors.Ink, CodeBackground: portrait.Colors.Fill,
 		QuoteBar: portrait.Colors.Accent, QuoteText: portrait.Colors.Ink2, Rule: portrait.Colors.Line,
-		CodeBlockBackground: portrait.Colors.Fill, CodeBlockBorder: portrait.Colors.Line, CodeBlockRadius: 7,
+		CodeBlockBackground: portrait.Colors.Fill, CodeBlockBorder: portrait.Colors.Line, CodeBlockRadius: portrait.Radii.M,
 		TableBorder: portrait.Colors.Line, TableHeader: portrait.Colors.Fill, Checkbox: portrait.Colors.Accent,
 		Headings: [6]markdown.HeadingStyle{
 			{Size: portrait.Type.Reading.Size / base}, {Size: portrait.Type.Small.Size / base}, {Size: portrait.Type.UI.Size / base}, {Size: portrait.Type.UI.Size / base}, {Size: portrait.Type.UI.Size / base}, {Size: portrait.Type.UI.Size / base, Color: portrait.Colors.Ink2},

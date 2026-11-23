@@ -12,6 +12,7 @@ import (
 	"github.com/Bayern99/mark-go-go/internal/review"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
 )
@@ -34,7 +35,7 @@ func (p *panel) chat(c *ui.Context) {
 		})
 	}
 	if len(s.widgets) > 0 {
-		card(ui.Column(c)).Gap(3).Padding(7, 9).Children(func() {
+		card(c).Gap(3).Padding(7, 9).Children(func() {
 			for key, widget := range s.widgets {
 				for _, line := range widget.WidgetLines {
 					text(c, portrait.Type.Meta, line).TextColor(portrait.Colors.Ink2).Label(key)
@@ -96,8 +97,10 @@ func (p *panel) message(c *ui.Context, index int, item message, streaming bool) 
 				markdown.View(c.Key(key+"-markdown"), item.text, options).FillWidth()
 			}
 			p.image(c, item.image)
-			if smallButton(c, "Copy", "Copy Feynman response").AlignSelf(ui.Start).Clicked() {
-				mygo.Clipboard.WriteText(item.text)
+			if item.text != "" && smallButton(c, "Copy", "Copy Feynman response").AlignSelf(ui.Start).Clicked() {
+				if err := mygo.Clipboard.Write(transfer.TextData(item.text)); err == nil {
+					portrait.Notify(c, portrait.ToastSpec{ID: "copy", Tone: portrait.Tones.Success, Title: "Copied"})
+				}
 			}
 		})
 	case "thought":
@@ -114,7 +117,7 @@ func (p *panel) message(c *ui.Context, index int, item message, streaming bool) 
 		}
 		portrait.Type.Meta.Apply(ui.Text(c.Key(key), item.text)).Role(ui.RoleStatus).FillWidth().Wrap().TextColor(ink).Padding(6, 9).Radius(8).Background(fill)
 	case "plan":
-		card(ui.Column(c.Key(key))).Gap(4).Padding(7, 9).Children(func() {
+		card(c.Key(key)).Gap(4).Padding(7, 9).Children(func() {
 			text(c, portrait.Type.Meta, "Research plan").FontWeight(600).TextColor(portrait.Colors.Ink2)
 			for _, step := range item.steps {
 				icon, ink := portrait.IconCircle, portrait.Colors.Ink3
@@ -241,7 +244,7 @@ func (p *panel) composer(c *ui.Context) {
 	compact := compactResearchLayout(c)
 	if s.queue.Steering != nil || s.queue.FollowUp != nil {
 		if len(s.queue.Steering)+len(s.queue.FollowUp) > 0 {
-			card(ui.Column(c.Key("research-queue"))).Gap(2).Padding(4, 8).Children(func() {
+			card(c.Key("research-queue")).Gap(2).Padding(4, 8).Children(func() {
 				mutedText(c, fmt.Sprintf("Queue · %d steering · %d follow-up", len(s.queue.Steering), len(s.queue.FollowUp)))
 				for _, item := range s.queue.Steering {
 					text(c, portrait.Type.Meta, "Steer · "+item).MaxLines(2).Ellipsis("…").TextColor(portrait.Colors.Ink2).FillWidth()
@@ -310,8 +313,10 @@ func (p *panel) composer(c *ui.Context) {
 			if compact {
 				promptHeight = 44
 			}
-			entry := area(c, "research-draft", "Research prompt", &s.draft, promptPlaceholder(s.status), promptHeight).
-				OnTextKey(func(key ui.TextKey) bool {
+			var draftEditor ui.Element
+			entry := area(c, "research-draft", "Research prompt", &s.draft, promptPlaceholder(s.status), promptHeight, func(editor ui.Element) {
+				draftEditor = editor
+				editor.OnTextKey(func(key ui.TextKey) bool {
 					if key.Key != ui.KeyEnter || key.Mods != 0 {
 						return false
 					}
@@ -331,11 +336,11 @@ func (p *panel) composer(c *ui.Context) {
 					key.SetText("")
 					return true
 				})
-			entry.Border(0, ui.Transparent).NoShadow().FocusRing(false)
+			}).Background(ui.Transparent).NoShadow()
 			if compact {
 				entry.MinHeight(promptHeight)
 			}
-			if entry.Changed() && strings.HasPrefix(s.draft, "/") {
+			if draftEditor.Changed() && strings.HasPrefix(s.draft, "/") {
 				s.actionsOpen = true
 			}
 			ui.Row(c).Wrap().Gap(4).AlignItems(ui.Center).Children(func() {
@@ -349,7 +354,7 @@ func (p *panel) composer(c *ui.Context) {
 					}
 				}
 				if doc := p.window.Active(); doc.ID != "" && doc.Path != "" && !doc.ReadOnly {
-					ui.Checkbox(c.Key("research-include-document"), &s.includeDoc, "Include document")
+					portrait.Checkbox(c.Key("research-include-document"), &s.includeDoc, "Include document")
 				}
 				ui.Row(c).Grow(1).Justify(ui.End).Gap(4).Children(func() {
 					if s.status == statusWorking {
@@ -397,8 +402,11 @@ func (p *panel) commandList(c *ui.Context) {
 	if strings.HasPrefix(s.draft, "/") {
 		query = strings.TrimSpace(strings.TrimPrefix(s.draft, "/"))
 	}
-	filter := field(ui.TextInput(c.Key("research-actions-filter"), &p.commandQuery).Label("Filter research actions").Placeholder("Find a workflow, skill or extension…").Height(29))
-	if filter.Changed() {
+	var filterEditor ui.Element
+	filterInput(c, "research-actions-filter", "Filter research actions", &p.commandQuery, "Find a workflow, skill or extension…", func(editor ui.Element) {
+		filterEditor = editor
+	})
+	if filterEditor.Changed() {
 		query = p.commandQuery
 	}
 	ui.Scroll(c.Key("research-actions-list")).MaxHeight(170).FillWidth().Label("Research actions").Children(func() {
@@ -508,7 +516,7 @@ func (p *panel) question(c *ui.Context, question feynman.ResearchUpdate) {
 		options := question.Options
 		filterable := len(options) > 6
 		if filterable {
-			input(c, "research-question-filter", "Filter choices", &p.questionFind, "Find a choice…")
+			filterInput(c, "research-question-filter", "Filter choices", &p.questionFind, "Find a choice…")
 		}
 		if confirm {
 			ui.Row(c).Gap(4).Children(func() {
@@ -557,7 +565,7 @@ func (p *panel) question(c *ui.Context, question feynman.ResearchUpdate) {
 
 func (p *panel) sessions(c *ui.Context) {
 	s := p.state
-	card(ui.Column(c.Key("feynman-session-history"))).FillWidth().Padding(6, 8).Gap(4).Children(func() {
+	card(c.Key("feynman-session-history")).FillWidth().Padding(6, 8).Gap(4).Children(func() {
 		title := "Conversations"
 		if p.sessionView == "fork" {
 			title = "Fork from a message"
@@ -614,7 +622,7 @@ func (p *panel) sessions(c *ui.Context) {
 					p.renameSession()
 				}
 			})
-			input(c, "feynman-session-filter", "Filter conversations", &s.sessionFilter, "Find a conversation…")
+			filterInput(c, "feynman-session-filter", "Filter conversations", &s.sessionFilter, "Find a conversation…")
 			ui.Scroll(c.Key("feynman-sessions-list")).MaxHeight(170).FillWidth().Label("Workspace conversations").Children(func() {
 				for _, row := range s.sessionRows {
 					title := row.Title
@@ -631,8 +639,14 @@ func (p *panel) sessions(c *ui.Context) {
 					if discreteButton(c, title, row.Preview, mark).Disabled(row.Current || s.status != statusReady || s.draft != "" || len(s.sources) > 0).Clicked() {
 						p.selectSession(row.ID)
 					}
-					if !row.Current && smallButton(c, "Delete", "Delete conversation "+title).Clicked() {
-						p.deleteSession(row.ID)
+					if !row.Current {
+						trigger := smallButton(c, "Delete", "Delete conversation "+title)
+						p.confirmOnClick("delete-conversation:"+row.ID, trigger, portrait.ConfirmSpec{
+							Title:        "Delete conversation?",
+							Body:         "Delete “" + title + "”? This action cannot be undone.",
+							ConfirmLabel: "Delete",
+							OnConfirm:    func() { p.deleteSession(row.ID) },
+						})
 					}
 				}
 				if len(s.sessionRows) == 0 {

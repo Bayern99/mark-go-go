@@ -40,6 +40,7 @@ type Window struct {
 	documents                     map[string]*openDocument
 	focusSource                   bool
 	failure                       string
+	toasts                        []portrait.ToastSpec
 	shell                         Shell
 	slots                         Slots
 	navigation                    workspace.NavSnapshot
@@ -233,15 +234,15 @@ func (w *Window) command(cmd workspace.NativeCommand) {
 	case "undo", "redo":
 		w.updateMenu()
 	case "save":
-		go w.action(func() error { return w.host.Save(w.ctx, cmd.ID) })
+		go w.actionToast(func() error { return w.host.Save(w.ctx, cmd.ID) }, portrait.ToastSpec{ID: "save:" + cmd.ID, Tone: portrait.Tones.Success, Title: "Saved"})
 	case "saveAs":
-		go w.action(func() error { return w.host.SaveAs(w.ctx, cmd.ID) })
+		go w.actionToast(func() error { return w.host.SaveAs(w.ctx, cmd.ID) }, portrait.ToastSpec{ID: "save:" + cmd.ID, Tone: portrait.Tones.Success, Title: "Saved"})
 	case "rename":
 		go w.action(func() error { return w.host.Rename(w.ctx, cmd.ID) })
 	case "moveTo":
 		go w.action(func() error { return w.host.MoveTo(w.ctx, cmd.ID) })
 	case "revert":
-		go w.action(func() error { return w.host.Revert(w.ctx, cmd.ID) })
+		go w.actionToast(func() error { return w.host.Revert(w.ctx, cmd.ID) }, portrait.ToastSpec{ID: "restore:" + cmd.ID, Tone: portrait.Tones.Success, Title: "Restored"})
 	case "duplicate":
 		go w.action(func() error { _, err := w.host.Duplicate(w.ctx, cmd.ID); return err })
 	case "close":
@@ -258,11 +259,25 @@ func (w *Window) command(cmd workspace.NativeCommand) {
 }
 
 func (w *Window) action(run func() error) {
+	w.actionToast(run, portrait.ToastSpec{})
+}
+
+func (w *Window) Notify(spec portrait.ToastSpec) {
+	if w == nil {
+		return
+	}
+	w.toasts = append(w.toasts, spec)
+}
+
+func (w *Window) actionToast(run func() error, success portrait.ToastSpec) {
 	err := run()
 	w.win.Update(func() {
 		w.failure = ""
 		if err != nil && !errors.Is(err, mygo.ErrCanceled) {
 			w.failure = err.Error()
+		}
+		if err == nil && success.Title != "" {
+			w.toasts = append(w.toasts, success)
 		}
 	})
 }
@@ -394,6 +409,10 @@ func (w *Window) View(c *ui.Context) {
 		}
 	}
 	oldWidth := w.shell.rightWidth
+	for _, spec := range w.toasts {
+		portrait.Notify(c, spec)
+	}
+	w.toasts = nil
 	w.shell.Draw(c, model, actions, slots)
 	w.updateMenu()
 	if oldWidth != 0 && oldWidth != w.shell.rightWidth {

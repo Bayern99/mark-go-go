@@ -81,6 +81,82 @@ func TestShellIconsArePhosphorGlyphsWithNamesAndTooltips(t *testing.T) {
 	}
 }
 
+func documentStatusDot(t *testing.T, app *ui.Tester, label string) ui.AccessInfo {
+	t.Helper()
+	dot, ok := app.AccessByRole(ui.RoleText, label)
+	if !ok || dot.Offscreen || dot.Bounds.W != 6 || dot.Bounds.H != 6 {
+		t.Fatalf("%s dot = %+v, found %v; want a visible 6px status dot", label, dot, ok)
+	}
+	if dot.Description != label {
+		t.Errorf("%s dot tooltip = %q, want %q", label, dot.Description, label)
+	}
+	return dot
+}
+
+func TestDocumentTabStatesAreCompactToneDots(t *testing.T) {
+	var shell nativeui.Shell
+	model := nativeui.Model{Workspace: workspace.WorkspaceSnapshot{ActiveID: "a", Documents: []workspace.DocumentInfo{{
+		ID: "a", Name: "Paper.md", Edited: true, Conflict: true, Deleted: true, ReadOnly: true, Generating: true,
+	}}}}
+	app := ui.NewTester(func(c *ui.Context) {
+		shell.Draw(c, model, nativeui.Actions{}, nativeui.Slots{})
+	}, 1280, 820)
+	app.Frame()
+	tab, ok := app.AccessByRole(ui.RoleTab, "Paper.md")
+	if !ok {
+		t.Fatalf("document title was combined with its states: %v", app.Texts())
+	}
+	wantDescription := "Unsaved · Conflict · Deleted · Read only · Generating"
+	if tab.Description != wantDescription {
+		t.Errorf("tab description = %q, want %q", tab.Description, wantDescription)
+	}
+	for _, label := range []string{"Unsaved", "Conflict", "Deleted", "Read only", "Generating"} {
+		documentStatusDot(t, app, label)
+		for _, info := range app.AccessAll() {
+			if info.Role == ui.RoleText && info.Name == label && info.Bounds.H == portrait.Sizes.Compact {
+				t.Errorf("%s is still rendered as a text badge: %+v", label, info)
+			}
+		}
+	}
+}
+
+func TestNarrowUnsavedDocumentTabExposesStatusWithoutATextBadge(t *testing.T) {
+	const name = "Untitled document with a long name.md"
+	var shell nativeui.Shell
+	model := nativeui.Model{Workspace: workspace.WorkspaceSnapshot{ActiveID: "a", Documents: []workspace.DocumentInfo{{
+		ID: "a", Name: name, Edited: true,
+	}}}}
+	app := ui.NewTester(func(c *ui.Context) {
+		shell.Draw(c, model, nativeui.Actions{}, nativeui.Slots{})
+	}, 1280, 820)
+	app.Frame()
+	tab, ok := app.AccessByRole(ui.RoleTab, name)
+	if !ok || tab.Description != "Unsaved" {
+		t.Fatalf("narrow tab = %+v, found %v; want its accessible name and Unsaved description", tab, ok)
+	}
+	title, ok := app.AccessByRole(ui.RoleText, name)
+	if !ok || title.Bounds.W < 60 {
+		t.Fatalf("document title bounds = %+v, found %v; want room for the filename", title.Bounds, ok)
+	}
+	for _, info := range app.AccessAll() {
+		if info.Role == ui.RoleText && info.Name == "Unsaved" && info.Bounds.H == portrait.Sizes.Compact {
+			t.Fatalf("Unsaved is still rendered as a text capsule: %+v", info)
+		}
+	}
+	dot := documentStatusDot(t, app, "Unsaved")
+	x, y := int(dot.Bounds.X+dot.Bounds.W/2), int(dot.Bounds.Y+dot.Bounds.H/2)
+	r, g, b, a := app.Image().At(x, y).RGBA()
+	solid := portrait.Tones.Warning.Solid
+	if uint8(r>>8) != solid.R || uint8(g>>8) != solid.G || uint8(b>>8) != solid.B || uint8(a>>8) != solid.A {
+		t.Errorf("Unsaved dot color = (%d, %d, %d, %d), want Warning.Solid %+v", r, g, b, a, solid)
+	}
+	app.Move(dot.Bounds.X+dot.Bounds.W/2, dot.Bounds.Y+dot.Bounds.H/2)
+	app.Advance(time.Second)
+	if _, ok := app.AccessByRole(ui.RoleTooltip, "Unsaved"); !ok {
+		t.Fatal("hovering the Unsaved dot did not show its tooltip")
+	}
+}
+
 func TestTabBarButtonSinksWhilePressed(t *testing.T) {
 	var shell nativeui.Shell
 	app := ui.NewTester(func(c *ui.Context) {

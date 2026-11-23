@@ -90,26 +90,24 @@ func diffLine(c *ui.Context, line review.DiffLine) {
 }
 
 func hunkButtons(c *ui.Context, h review.DiffHunk, decisions map[string]review.HunkDecision) {
-	ui.Row(c).Gap(6).Wrap().Children(func() {
-		if decide(c, "Accept", "Accept hunk", decisions[h.ID] == review.HunkAccepted, h.Conflict) {
+	portrait.Group(c, "Hunk actions", func(g *portrait.GroupBuilder) {
+		if decide(c, g, "Accept", "Accept hunk", decisions[h.ID] == review.HunkAccepted, h.Conflict) {
 			decisions[h.ID] = review.HunkAccepted
 		}
-		if decide(c, "Reject", "Reject hunk", decisions[h.ID] == review.HunkRejected, false) {
+		if decide(c, g, "Reject", "Reject hunk", decisions[h.ID] == review.HunkRejected, false) {
 			decisions[h.ID] = review.HunkRejected
 		}
-		if decisions[h.ID] != "" && decide(c, "Clear", "Clear choice", false, false) {
+		if decisions[h.ID] != "" && decide(c, g, "Clear", "Clear choice", false, false) {
 			delete(decisions, h.ID)
 		}
 	})
 }
 
-func decide(c *ui.Context, title, label string, selected, disabled bool) bool {
-	b := portrait.QuietButton(c, title, label).Selected(selected).Disabled(disabled)
-	switch {
-	case disabled:
+func decide(c *ui.Context, g *portrait.GroupBuilder, title, label string, selected, disabled bool) bool {
+	b := portrait.ButtonWith(c, title, label, portrait.ButtonSpec{Look: portrait.Quiet, Selected: selected}).Disabled(disabled)
+	if disabled {
 		b.Opacity(0.5)
-	case selected && !b.Pressed():
-		portrait.Materials.Row.Apply(b)
 	}
+	g.Add(b)
 	return b.Clicked()
 }

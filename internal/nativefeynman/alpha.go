@@ -45,7 +45,7 @@ func (p *panel) alphaXiv(c *ui.Context) {
 			ui.Row(c).Wrap().Gap(4).AlignItems(ui.Center).Children(func() {
 				input(c, "alpha-paper-id", "Paper ID", &p.alphaPaperID, "arXiv ID or alphaXiv ID").Basis(200).Grow(1)
 				ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-					ui.Checkbox(c.Key("alpha-full-text"), &p.alphaFullText, "Full text")
+					portrait.Checkbox(c.Key("alpha-full-text"), &p.alphaFullText, "Full text")
 					if controlButton(c, "Inspect", "Get alphaXiv paper details").Disabled(s.cliBusy || strings.TrimSpace(p.alphaPaperID) == "").Clicked() {
 						p.alphaInspect()
 					}

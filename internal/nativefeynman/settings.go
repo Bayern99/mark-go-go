@@ -278,21 +278,22 @@ func (p *panel) searchSettings(c *ui.Context) {
 						continue
 					}
 					provider := provider
-					if smallButton(c, "Clear "+provider+" API key", "Remove the saved "+provider+" API key").Disabled(s.cliBusy).Clicked() {
-						p.runUpdate(func() (func(), error) {
-							result, err := p.host.CLISearchAction(p.window.Context(), s.root, "clear-key", provider, "")
-							status, statusErr := p.host.CLISearchStatus(p.window.Context(), s.root)
-							return func() { s.cliResult = firstNonEmpty(result.Summary, result.RawOutput); s.searchStatus = &status }, errorsJoin(err, statusErr)
-						})
-					}
+					trigger := smallButton(c, "Clear "+provider+" API key", "Remove the saved "+provider+" API key").Disabled(s.cliBusy)
+					p.confirmOnClick("clear-search-key:"+provider, trigger, portrait.ConfirmSpec{
+						Title:        "Clear API key?",
+						Body:         "Remove the saved " + provider + " API key? This action cannot be undone.",
+						ConfirmLabel: "Clear API key",
+						OnConfirm:    func() { p.clearSearchKey(provider) },
+					})
 				}
 			} else {
 				resultText(c, s.searchStatus.Command, s.searchStatus.RawOutput, s.searchStatus.Error)
 			}
 		}
 		input(c, "feynman-search-provider", "Search provider", &p.searchProvider, "auto, exa, brave, tavily…")
-		key := input(c, "feynman-search-key", "Optional API key", &p.searchKey, "Leave blank to use existing authentication").Password()
-		_ = key
+		input(c, "feynman-search-key", "Optional API key", &p.searchKey, "Leave blank to use existing authentication", func(entry ui.Element) {
+			entry.Password()
+		})
 		if smallButton(c, "Save search settings", "Set the selected web search provider and API key").Disabled(s.cliBusy || strings.TrimSpace(p.searchProvider) == "").Clicked() {
 			p.runUpdate(func() (func(), error) {
 				result, err := p.host.CLISearchAction(p.window.Context(), s.root, "set", strings.TrimSpace(p.searchProvider), strings.TrimSpace(p.searchKey))
@@ -321,13 +322,13 @@ func (p *panel) mcpSettings(c *ui.Context) {
 							text(c, portrait.Type.UI, server.Name).FontWeight(600).TextColor(portrait.Colors.Ink)
 							mutedText(c, strings.Join([]string{server.Scope, server.Transport, server.Status}, " · "))
 						})
-						if smallButton(c, "Remove", "Remove MCP server "+server.Name).Disabled(s.cliBusy).Clicked() {
-							p.runUpdate(func() (func(), error) {
-								result, err := p.host.CLIMCPRemove(p.window.Context(), s.root, server.Name, server.Scope == "project")
-								rows, rowsErr := p.host.CLIMCPList(p.window.Context(), s.root)
-								return func() { s.cliResult = firstNonEmpty(result.Summary, result.RawOutput); s.mcpServers = &rows }, errorsJoin(err, rowsErr)
-							})
-						}
+						trigger := smallButton(c, "Remove", "Remove MCP server "+server.Name).Disabled(s.cliBusy)
+						p.confirmOnClick("remove-mcp:"+server.Scope+":"+server.Name, trigger, portrait.ConfirmSpec{
+							Title:        "Remove MCP server?",
+							Body:         "Remove “" + server.Name + "” from Feynman? This action cannot be undone.",
+							ConfirmLabel: "Remove",
+							OnConfirm:    func() { p.removeMCPServer(server) },
+						})
 					})
 				}
 			}
@@ -356,10 +357,22 @@ func (p *panel) mcpSettings(c *ui.Context) {
 		if p.serverTransport == "http" {
 			input(c, "feynman-mcp-bearer-env", "Bearer token environment variable", &p.serverBearerEnv, "Optional environment variable name")
 		}
-		ui.Checkbox(c.Key("feynman-mcp-local"), &p.serverLocal, "Project-local configuration")
+		portrait.Checkbox(c.Key("feynman-mcp-local"), &p.serverLocal, "Project-local configuration")
 		if controlButton(c, "Add MCP server", "Add MCP server to Feynman").Disabled(s.cliBusy || strings.TrimSpace(p.serverName) == "").Clicked() {
 			p.addMCPServer()
 		}
+	})
+}
+
+func (p *panel) removeMCPServer(server feynman.CLIMCPServer) {
+	s := p.state
+	p.runUpdate(func() (func(), error) {
+		result, err := p.host.CLIMCPRemove(p.window.Context(), s.root, server.Name, server.Scope == "project")
+		rows, rowsErr := p.host.CLIMCPList(p.window.Context(), s.root)
+		return func() {
+			s.cliResult = firstNonEmpty(result.Summary, result.RawOutput)
+			s.mcpServers = &rows
+		}, errorsJoin(err, rowsErr)
 	})
 }
 

@@ -4,7 +4,8 @@ Mark Go Go 的正式界面由 MyGo Native UI 绘制。原文居中显示，导�
 
 ## 视觉基准
 
-- 视觉基准是退役 WebUI 固定提交 [c6504af 的 web/src](https://github.com/Bayern99/mark-go-go/tree/c6504af20b2129486bc05ee4db314f8e5fb555d2/web/src) 中的 Portrait 浅色变量。目标是观感与节奏等价，允许像素差异；深色主题不在范围内。决策见 [ADR 0010](docs/adr/0010-portrait-on-mygo-base-widgets.md) 和 [ADR 0006](docs/adr/0006-preserved-blocks-and-semantic-colors.md)。
+- 已有变量的视觉基准是退役 WebUI 固定提交 [c6504af 的 web/src](https://github.com/Bayern99/mark-go-go/tree/c6504af20b2129486bc05ee4db314f8e5fb555d2/web/src) 中的 Portrait 浅色变量。目标是观感与节奏等价，允许像素差异；深色主题不在范围内。决策见 [ADR 0010](docs/adr/0010-portrait-on-mygo-base-widgets.md) 和 [ADR 0006](docs/adr/0006-preserved-blocks-and-semantic-colors.md)。
+- WebUI 没有的组件参考 coss ui（[cosscom/ui@b2336c4](https://github.com/cosscom/ui/tree/b2336c45f2b7355c42678ce786b6f14d62b819be)，MIT）的组件语义与状态模型，不引入 React、Tailwind 或 WebView。每个设计变量登记 `webui@c6504af`、`coss@b2336c4` 或 `portrait-derived` 之一；Tone、圆角、尺寸、材质与交互边界见 [ADR 0012](docs/adr/0012-portrait-2-coss-reference-and-contracts.md)。
 - 框架做不到的效果使用最接近的做法，并逐项记成带 `needs-triage` 标签的 issue，写明 WebUI 效果、替代做法、缺少的能力和自行实现的成本与收益。
 
 ## Portrait 模块
@@ -38,6 +39,6 @@ Mark Go Go 的正式界面由 MyGo Native UI 绘制。原文居中显示，导�
 ## 界面改动如何验收
 
 1. 先从目标交互找到原生窗口、状态与绘制代码。按需检查空态、错误、禁用、键盘焦点和窗口缩放行为。
-2. 新的设计变量加入 Portrait 模块，并在其对照表测试中与 WebUI 基准值比较；界面行为通过 `ui.Tester` 在界面的公开绘制入口测试。
+2. 新的设计变量加入 Portrait 模块并登记来源，通过 [ADR 0012](docs/adr/0012-portrait-2-coss-reference-and-contracts.md) 的五类契约：来源登记、取值锁定（WebUI 来源仍与 c6504af 比较）、WCAG AA 实算、封闭阶梯和派生不变量；原生包的存量字面量只减不增。组件外观在 Portrait Visual Gallery 中以结构与关系型像素断言验收，界面行为通过 `ui.Tester` 在界面的公开绘制入口测试。
 3. 运行覆盖该功能的 Go 测试；Markdown 编辑和 Preview 保真还由 [26 份原文语料](internal/testdata/markdown/) 覆盖。
 4. 涉及原生菜单、Finder、输入法或辅助技术时，在 macOS 应用中执行 [原生 Automation 流程](docs/agents/native-automation.md)，并记录对应构建和实测结果。

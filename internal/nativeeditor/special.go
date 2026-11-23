@@ -227,20 +227,34 @@ func codeHeader(label, body string) func(*ui.Context, ui.Element, editor.Block) 
 
 type copiedKey struct{}
 
+type copiedState struct {
+	at     time.Time
+	notify bool
+}
+
 func copyButton(c *ui.Context, body string) {
 	b := ui.ButtonBase(c.Key("copy")).Label("Copy code").KeepFocus().Size(24, 24).Radius(6).AlignItems(ui.Center).Justify(ui.Center)
 	portrait.Tooltip(c, b, "Copy code")
 	ink := portrait.Press(b, portrait.Quiet)
-	copied := ui.Local(b, copiedKey{}, func() time.Time { return time.Time{} })
-	if b.Clicked() {
-		c.Services().WriteClipboard(body)
-		*copied = c.Now()
+	copied := ui.Local(b, copiedKey{}, func() copiedState { return copiedState{} })
+	if copied.notify {
+		copied.notify = false
+		portrait.Notify(c, portrait.ToastSpec{ID: "copy", Tone: portrait.Tones.Success, Title: "Copied"})
+	}
+	if b.Clicked() && body != "" {
+		now := c.Now()
+		c.WriteClipboardThen(body, func(err error) {
+			if err == nil {
+				copied.at = now
+				copied.notify = true
+			}
+		})
 	}
 	icon := portrait.IconCopy
 	morphing := false
-	if !copied.IsZero() && c.Now().Sub(*copied) < copiedFor {
+	if !copied.at.IsZero() && c.Now().Sub(copied.at) < copiedFor {
 		icon, ink, morphing = portrait.IconCheck, portrait.Colors.Accent, true
-		c.After(copiedFor - c.Now().Sub(*copied))
+		c.After(copiedFor - c.Now().Sub(copied.at))
 	}
 	b.Children(func() {
 		if !morphing {
@@ -403,15 +417,15 @@ func (d *Document) blockActions(c *ui.Context, block ui.Element, snap editor.Sna
 	shown := block.Hovered() || block.FocusWithin() || !c.Preferences().Hover()
 	row.Opacity(row.AnimateTo(actionsKey{}, flag(shown), ui.Animation{Duration: portrait.Motion.Switch, Ease: portrait.Motion.EaseOut.Easing(), NonMotion: true}))
 	row.Children(func() {
-		if kind == "footnote" && smallButton(c, "Return to reference "+label, "Return to reference "+label, portrait.Raised).Clicked() {
+		if kind == "footnote" && smallButton(c, "Return to reference "+label, "Return to reference "+label).Clicked() {
 			d.preview.returnTo(label)
 			c.Invalidate()
 		}
-		if kind == "note" && !d.state.ReadOnly && smallButton(c, "Delete note", "Delete note", portrait.Raised).Clicked() {
+		if kind == "note" && !d.state.ReadOnly && smallButton(c, "Delete note", "Delete note").Clicked() {
 			d.deleteNote(snap, start, end)
 			c.Invalidate()
 		}
-		if !d.state.ReadOnly && smallButton(c, "Edit", "Edit "+kind, portrait.Quiet).Clicked() && d.Version() == snap.Version() {
+		if !d.state.ReadOnly && smallButton(c, "Edit", "Edit "+kind).Clicked() && d.Version() == snap.Version() {
 			d.openDraft(start, end, kind)
 		}
 	})
@@ -426,11 +440,8 @@ func flag(b bool) float32 {
 	return 0
 }
 
-func smallButton(c *ui.Context, title, label string, look portrait.Look) ui.Element {
-	b := ui.ButtonBase(c.Key(label)).Label(label).Height(22).Padding(0, 8).Radius(6).AlignItems(ui.Center).Justify(ui.Center)
-	ink := portrait.Press(b, look)
-	b.Children(func() { portrait.Type.Meta.Apply(ui.Text(c, title)).FontWeight(500).TextColor(ink).MaxLines(1) })
-	return b
+func smallButton(c *ui.Context, title, label string) ui.Element {
+	return portrait.ButtonWith(c, title, label, portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Compact})
 }
 
 func (d *Document) openDraft(start, end int, kind string) {

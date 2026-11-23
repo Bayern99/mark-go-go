@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/review"
 	"github.com/egoist/mygo/ui"
 )
@@ -17,11 +18,15 @@ type checkpointState struct {
 	diff                                 []review.DiffHunk
 }
 
+func checkpointEmpty(c *ui.Context, title, description string) ui.Element {
+	return portrait.Empty(c, portrait.EmptySpec{Icon: portrait.IconFileText, Title: title, Description: description})
+}
+
 func (p *panel) drawCheckpoints(c *ui.Context) {
 	width, _ := c.Size()
 	active := p.win.Active()
 	if active.Path == "" {
-		ui.Text(c, "Save this document to use Checkpoints.")
+		checkpointEmpty(c, "Save this document to use Checkpoints.", "Save the document before creating a version snapshot.")
 		return
 	}
 	s := p.checkpointDocs[active.ID]
@@ -50,7 +55,7 @@ func (p *panel) drawCheckpoints(c *ui.Context) {
 			ui.Text(c, "Loading checkpoints…")
 		}
 		if s.loaded && len(s.items) == 0 {
-			ui.Text(c, "No checkpoints for this document.")
+			checkpointEmpty(c, "No checkpoints for this document.", "Create a checkpoint to save a version for comparison or restoration.")
 		}
 		if len(s.items) > 0 {
 			p.drawCheckpointList(c, s)

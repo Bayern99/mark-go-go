@@ -71,7 +71,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 		}).Label("Navigation views").Margin(2, 0, 6, 0)
 		if s.outline {
 			scroll := s.scrollState("outline:" + w.ActiveID)
-			ui.Scroll(c.Key("outline:" + w.ActiveID)).FillWidth().Grow(1).TrackScroll(scroll).Label("Document outline").Children(func() {
+			ui.Scroll(c.Key("outline:" + w.ActiveID)).FillWidth().Grow(1).TrackScroll(scroll).Label("Document outline").MaskLinearGradient(scrollEdgeMask(180)).Children(func() {
 				for _, section := range m.Sections {
 					if navRow(c, fmt.Sprintf("heading-%d", section.Start), section.Heading, "", section.Level-1, false, portrait.IconFileText, "").Clicked() && a.Reveal != nil {
 						s.leftOpen = false
@@ -85,7 +85,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 			return
 		}
 		if w.Kind == "folder" {
-			portrait.Field(c).Margin(4, 2, 8, 2).Children(func() {
+			portrait.InputFrame(c).Margin(4, 2, 8, 2).Children(func() {
 				if portrait.Type.UI.Apply(ui.TextInputBase(c.Key("filter:"+w.Root), &s.query)).FocusRing(false).Grow(1).MinWidth(0).Placeholder("Filter files and headings").Label("Filter files and headings").Changed() && a.Filter != nil {
 					s.queries[w.Root] = s.query
 					a.Filter(s.query)
@@ -104,7 +104,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 			scrollKey = "filter:" + w.Root
 		}
 		capsuleGroup := "workspace:" + scrollKey
-		ui.Scroll(c.Key(scrollKey)).Grow(1).FillWidth().Role(ui.RoleTree).FocusGroup(ui.Vertical).Label("Workspace files").TrackScroll(s.scrollState(scrollKey)).Children(func() {
+		ui.Scroll(c.Key(scrollKey)).Grow(1).FillWidth().Role(ui.RoleTree).FocusGroup(ui.Vertical).Label("Workspace files").TrackScroll(s.scrollState(scrollKey)).MaskLinearGradient(scrollEdgeMask(180)).Children(func() {
 			if strings.TrimSpace(s.query) != "" {
 				if strings.TrimSpace(s.query) != m.Search.Query {
 					return
@@ -177,7 +177,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 				}
 			}
 			if m.Navigation.Error != "" {
-				banner(c, m.Navigation.Error)
+				portrait.Alert(c, portrait.Tones.Danger, m.Navigation.Error, "")
 			} else if m.Navigation.Status == workspace.IndexScanning || m.Navigation.Status == workspace.IndexIndexing {
 				ui.Text(c, fmt.Sprintf("Indexing %d of %d files", m.Navigation.Indexed, m.Navigation.Total)).Role(ui.RoleStatus).TextColor(portrait.Colors.Ink3)
 			} else if len(m.Navigation.Entries) == 0 {

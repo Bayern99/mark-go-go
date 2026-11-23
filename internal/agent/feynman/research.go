@@ -165,49 +165,56 @@ func (h *ResearchManager) connect(w WorkspaceRef, emit func(ResearchUpdate)) err
 		return err
 	}
 	sessionsDir := h.profileSessionsDir()
-	h.mu.Lock()
-	if h.closed {
-		h.mu.Unlock()
-		return errors.New("Research is closing.")
-	}
-	if live := h.sessions[root]; live != nil {
-		select {
-		case <-live.stopped:
-			h.mu.Unlock()
-			return errors.New("Feynman is disconnecting.")
-		default:
-		}
-		h.mu.Unlock()
-		if live.win != w.Window {
-			return errors.New("This workspace is connected in another window.")
-		}
-		<-live.ready
+	var s *researchSession
+	var beforeStart func(root, work string) error
+	for {
 		h.mu.Lock()
-		defer h.mu.Unlock()
-		if live.startErr != nil {
-			return live.startErr
+		if h.closed {
+			h.mu.Unlock()
+			return errors.New("Research is closing.")
 		}
-		select {
-		case <-live.stopped:
-			return errors.New("Feynman disconnected.")
-		default:
-			return nil
+		if live := h.sessions[root]; live != nil {
+			select {
+			case <-live.stopped:
+				drained := live.drained
+				h.mu.Unlock()
+				<-drained
+				continue
+			default:
+			}
+			h.mu.Unlock()
+			if live.win != w.Window {
+				return errors.New("This workspace is connected in another window.")
+			}
+			<-live.ready
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			if live.startErr != nil {
+				return live.startErr
+			}
+			select {
+			case <-live.stopped:
+				return errors.New("Feynman disconnected.")
+			default:
+				return nil
+			}
 		}
+		s = &researchSession{
+			work:         work,
+			win:          w.Window,
+			sessionsDir:  sessionsDir,
+			imagePrompts: true,
+			questionSlot: make(chan struct{}, 1),
+			ready:        make(chan struct{}),
+			stopped:      make(chan struct{}),
+			drained:      make(chan struct{}),
+			emit:         func(e ResearchUpdate) { e.Root = root; emit(e) },
+		}
+		beforeStart = h.beforeStart
+		h.sessions[root] = s
+		h.mu.Unlock()
+		break
 	}
-	s := &researchSession{
-		work:         work,
-		win:          w.Window,
-		sessionsDir:  sessionsDir,
-		imagePrompts: true,
-		questionSlot: make(chan struct{}, 1),
-		ready:        make(chan struct{}),
-		stopped:      make(chan struct{}),
-		drained:      make(chan struct{}),
-		emit:         func(e ResearchUpdate) { e.Root = root; emit(e) },
-	}
-	beforeStart := h.beforeStart
-	h.sessions[root] = s
-	h.mu.Unlock()
 
 	failSetup := func(err error) error {
 		h.mu.Lock()

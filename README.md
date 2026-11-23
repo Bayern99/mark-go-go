@@ -38,3 +38,4 @@ scripts/verify.sh
 脚本运行 Go 格式、vet、MyGo vet、竞态测试及 Windows amd64 交叉编译。macOS 原生窗口、菜单和重启使用 [原生 Automation 与 macOS 验证流程](docs/agents/native-automation.md)。历史 WebKit 基线及同机对照方法见 [Portrait 性能记录](docs/agents/portrait-performance.md)。
 
 [架构与代码入口](ARCHITECTURE.md) · [界面设计](DESIGN.md) · [更新日志](CHANGELOG.md) · [验收记录](docs/acceptance.md) · [MIT 许可证](LICENSE)
+

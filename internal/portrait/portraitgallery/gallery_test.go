@@ -24,7 +24,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestGallery(t *testing.T) {
-	for _, required := range []Component{Button, AccentButton, QuietButton, DangerButton, DangerOutlineButton, LinkButton, IconButton, Group, Track, InputFrame, Tooltip, Spinner} {
+	for _, required := range []Component{Button, AccentButton, QuietButton, DangerButton, DangerOutlineButton, LinkButton, IconButton, Group, Track, InputFrame, Tooltip, Spinner, Card, Frame, Skeleton} {
 		if _, ok := Lookup(required); !ok {
 			t.Fatalf("required component %s is not registered", required)
 		}
@@ -38,13 +38,17 @@ func TestGallery(t *testing.T) {
 	}
 	for _, component := range Components() {
 		t.Run(string(component.Name), func(t *testing.T) {
+			surfaces := Surfaces
+			if len(component.AllowedSurfaces) > 0 {
+				surfaces = component.AllowedSurfaces
+			}
 			var overview *image.RGBA
 			row := 0
 			if dir != "" {
-				overview = image.NewRGBA(image.Rect(0, 0, cellWidth*len(States), (headerHeight+cellHeight)*len(Preferences)*len(Surfaces)))
+				overview = image.NewRGBA(image.Rect(0, 0, cellWidth*len(States), (headerHeight+cellHeight)*len(Preferences)*len(surfaces)))
 			}
 			for _, preference := range Preferences {
-				for _, surface := range Surfaces {
+				for _, surface := range surfaces {
 					sheet, err := renderSheet(component.Name, preference, surface, func(rendered cellRender) {
 						assertCellStructure(t, rendered)
 					})
@@ -136,14 +140,38 @@ func inside(inner, outer ui.Rect) bool {
 		inner.X+inner.W <= outer.X+outer.W+tolerance && inner.Y+inner.H <= outer.Y+outer.H+tolerance
 }
 
+func TestCardIsOpaqueOnGlass(t *testing.T) {
+	for _, surface := range []Surface{Paper, Chrome, Glass} {
+		rendered, err := renderCell(Cell{Component: Card, State: Rest, Surface: surface})
+		if err != nil {
+			t.Fatal(err)
+		}
+		bounds := rendered.target.Bounds
+		x, y := int(bounds.X+bounds.W/2), int(bounds.Y+bounds.H-4)
+		r, g, b, a := rendered.image.At(x, y).RGBA()
+		if r != 0xffff || g != 0xffff || b != 0xffff || a != 0xffff {
+			t.Errorf("Card interior on %s = rgba(%d, %d, %d, %d), want opaque white", surface, r, g, b, a)
+		}
+	}
+}
+
 func TestGalleryRejectsFrameAwayFromPaper(t *testing.T) {
-	frame := Definition{Name: "Frame", AllowedSurfaces: []Surface{Paper}}
-	if err := frame.ValidateSurface(Paper); err != nil {
+	frame, ok := Lookup(Frame)
+	if !ok {
+		t.Fatal("Frame is not registered")
+	}
+	if err := Validate(Cell{Component: Frame, Surface: Paper}); err != nil {
 		t.Fatalf("Paper must be accepted: %v", err)
 	}
 	for _, surface := range []Surface{Chrome, Glass} {
 		if err := frame.ValidateSurface(surface); err == nil {
-			t.Fatalf("Frame on %s passed its surface constraint", surface)
+			t.Errorf("Frame on %s passed its surface constraint", surface)
+		}
+		if err := Validate(Cell{Component: Frame, Surface: surface}); err == nil {
+			t.Errorf("Frame cell on %s passed validation", surface)
+		}
+		if _, err := RenderSheet(Frame, Default, surface); err == nil {
+			t.Errorf("Frame sheet on %s rendered without an error", surface)
 		}
 	}
 }

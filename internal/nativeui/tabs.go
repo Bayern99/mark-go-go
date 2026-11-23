@@ -52,22 +52,36 @@ func tabLabels(docs []workspace.DocumentInfo) map[string]string {
 	return out
 }
 
-func stateLabel(edited, conflict, deleted, readOnly, generating bool) string {
-	var tags []string
+type documentState struct {
+	label string
+	tone  portrait.Tone
+}
+
+func documentStates(edited, conflict, deleted, readOnly, generating bool) []documentState {
+	var states []documentState
 	if edited {
-		tags = append(tags, "Unsaved")
+		states = append(states, documentState{"Unsaved", portrait.Tones.Warning})
 	}
 	if conflict {
-		tags = append(tags, "Conflict")
+		states = append(states, documentState{"Conflict", portrait.Tones.Danger})
 	}
 	if deleted {
-		tags = append(tags, "Deleted")
+		states = append(states, documentState{"Deleted", portrait.Tones.Danger})
 	}
 	if readOnly {
-		tags = append(tags, "Read only")
+		states = append(states, documentState{"Read only", portrait.Tones.Neutral})
 	}
 	if generating {
-		tags = append(tags, "Generating")
+		states = append(states, documentState{"Generating", portrait.Tones.Accent})
+	}
+	return states
+}
+
+func stateLabel(edited, conflict, deleted, readOnly, generating bool) string {
+	states := documentStates(edited, conflict, deleted, readOnly, generating)
+	tags := make([]string, len(states))
+	for i, state := range states {
+		tags[i] = state.label
 	}
 	return strings.Join(tags, " · ")
 }
@@ -108,11 +122,8 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 			for i := start; i < end; i++ {
 				d := docs[i]
 				selected := d.ID == s.activeID
+				states := documentStates(d.Edited, d.Conflict, d.Deleted, d.ReadOnly, d.Generating)
 				status := stateLabel(d.Edited, d.Conflict, d.Deleted, d.ReadOnly, d.Generating)
-				title := labels[d.ID]
-				if status != "" {
-					title += " · " + status
-				}
 				cellRow := ui.Row(c.Key(d.ID)).Radius(7).MaxWidth(cell).MinWidth(0).Height(28).AlignItems(ui.Center).Padding(0, 4, 0, 0)
 				hovered := cellRow.Hovered()
 				if hovered && !selected {
@@ -129,7 +140,7 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 					}
 					tab.Children(func() {
 						portrait.Glyph(c, portrait.IconFileText, 12, portrait.Colors.Ink3)
-						portrait.Type.UI.Apply(ui.Text(c, title)).TextColor(ink).MaxLines(1).Ellipsis("…").MinWidth(0)
+						portrait.Type.UI.Apply(ui.Text(c, labels[d.ID])).TextColor(ink).MaxLines(1).Ellipsis("…").MinWidth(0)
 					})
 					if s.tabFocus == d.ID && selected {
 						tab.Focus()
@@ -154,6 +165,9 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 							s.tabFocus = docs[len(docs)-1].ID
 							a.Activate(s.tabFocus)
 						}
+					}
+					for _, state := range states {
+						portrait.Badge(c, state.label, state.tone).Shrink(1).ZIndex(1)
 					}
 					closeTab := portrait.QuietIconButton(c, portrait.IconX, "Close "+labels[d.ID]).Size(20, 20).Radius(6).ZIndex(1)
 					if !hovered && !closeTab.Hovered() {
@@ -221,7 +235,7 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 					button.Focus()
 				}
 			}
-		}).Label("Documents").Height(32).Gap(3).Shrink(1).MinWidth(0).Clip()
+		}).Label("Documents").Height(32).Gap(3).Shrink(1).MinWidth(0).Clip().MaskLinearGradient(scrollEdgeMask(90))
 		ui.Row(c).Grow(1)
 		portrait.IconButton(c, portrait.IconPlugs, "Plugins").Menu(func(menu *ui.Menu) {
 			if menu.Item("Feynman").Checked(m.Feynman).Chosen() && a.SetFeynman != nil {

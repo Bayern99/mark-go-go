@@ -22,7 +22,9 @@ func main() {
 				ui.Column(c).Padding(16).Gap(16).AlignItems(ui.Start).Children(func() {
 					for _, surface := range portraitgallery.Surfaces {
 						for _, component := range portraitgallery.Components() {
-							portraitgallery.Sheet(c, component.Name, portraitgallery.Default, surface)
+							if component.ValidateSurface(surface) == nil {
+								portraitgallery.Sheet(c, component.Name, portraitgallery.Default, surface)
+							}
 						}
 					}
 				})

@@ -81,6 +81,31 @@ func TestShellIconsArePhosphorGlyphsWithNamesAndTooltips(t *testing.T) {
 	}
 }
 
+func TestDocumentTabStatesAreTextBadges(t *testing.T) {
+	var shell nativeui.Shell
+	model := nativeui.Model{Workspace: workspace.WorkspaceSnapshot{ActiveID: "a", Documents: []workspace.DocumentInfo{{
+		ID: "a", Name: "Paper.md", Edited: true, Conflict: true, Deleted: true, ReadOnly: true, Generating: true,
+	}}}}
+	app := ui.NewTester(func(c *ui.Context) {
+		shell.Draw(c, model, nativeui.Actions{}, nativeui.Slots{})
+	}, 1280, 820)
+	app.Frame()
+	tab, ok := app.AccessByRole(ui.RoleTab, "Paper.md")
+	if !ok {
+		t.Fatalf("document title was combined with its states: %v", app.Texts())
+	}
+	wantDescription := "Unsaved · Conflict · Deleted · Read only · Generating"
+	if tab.Description != wantDescription {
+		t.Errorf("tab description = %q, want %q", tab.Description, wantDescription)
+	}
+	for _, label := range []string{"Unsaved", "Conflict", "Deleted", "Read only", "Generating"} {
+		badge, ok := app.AccessByRole(ui.RoleText, label)
+		if !ok || badge.Offscreen || badge.Bounds.W <= 0 || badge.Bounds.H != portrait.Sizes.Compact {
+			t.Errorf("%s badge = %+v, found %v; want a visible compact text badge", label, badge, ok)
+		}
+	}
+}
+
 func TestTabBarButtonSinksWhilePressed(t *testing.T) {
 	var shell nativeui.Shell
 	app := ui.NewTester(func(c *ui.Context) {

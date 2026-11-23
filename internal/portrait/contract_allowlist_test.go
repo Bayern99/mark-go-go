@@ -132,9 +132,6 @@ var nativeLiteralAllowlist = map[string]map[string]int{
 		"Radius(6)":     1,
 		"Radius(8)":     1,
 	},
-	"../nativeui/portrait.go": {
-		"Radius(13)": 1,
-	},
 	"../nativeui/shell.go": {
 		"MinHeight(0)": 2,
 		"Radius(14)":   1,

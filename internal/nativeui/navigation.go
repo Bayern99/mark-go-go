@@ -71,7 +71,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 		}).Label("Navigation views").Margin(2, 0, 6, 0)
 		if s.outline {
 			scroll := s.scrollState("outline:" + w.ActiveID)
-			ui.Scroll(c.Key("outline:" + w.ActiveID)).FillWidth().Grow(1).TrackScroll(scroll).Label("Document outline").Children(func() {
+			ui.Scroll(c.Key("outline:" + w.ActiveID)).FillWidth().Grow(1).TrackScroll(scroll).Label("Document outline").MaskLinearGradient(scrollEdgeMask(180)).Children(func() {
 				for _, section := range m.Sections {
 					if navRow(c, fmt.Sprintf("heading-%d", section.Start), section.Heading, "", section.Level-1, false, portrait.IconFileText, "").Clicked() && a.Reveal != nil {
 						s.leftOpen = false
@@ -104,7 +104,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 			scrollKey = "filter:" + w.Root
 		}
 		capsuleGroup := "workspace:" + scrollKey
-		ui.Scroll(c.Key(scrollKey)).Grow(1).FillWidth().Role(ui.RoleTree).FocusGroup(ui.Vertical).Label("Workspace files").TrackScroll(s.scrollState(scrollKey)).Children(func() {
+		ui.Scroll(c.Key(scrollKey)).Grow(1).FillWidth().Role(ui.RoleTree).FocusGroup(ui.Vertical).Label("Workspace files").TrackScroll(s.scrollState(scrollKey)).MaskLinearGradient(scrollEdgeMask(180)).Children(func() {
 			if strings.TrimSpace(s.query) != "" {
 				if strings.TrimSpace(s.query) != m.Search.Query {
 					return

@@ -28,6 +28,13 @@ func Confirm(c *ui.Context, open *bool, spec ConfirmSpec) ui.Element {
 	width, _ := c.Size()
 	owner := ui.Box(c.Key("confirm:"+spec.Title)).Absolute().Size(0, 0)
 	wasOpen := ui.Local(owner, "was open", func() bool { return false })
+	returned := ui.Local(owner, "returned", func() bool { return false })
+	if *returned {
+		if spec.Return != nil {
+			spec.Return.CancelFocus(c)
+		}
+		*returned = false
+	}
 	var panel ui.Element
 	owner.Children(func() {
 		panel = ui.DialogBase(c, open, func(back, panel ui.Element) {
@@ -62,6 +69,7 @@ func Confirm(c *ui.Context, open *bool, spec ConfirmSpec) ui.Element {
 	if *wasOpen && !*open && spec.Return != nil {
 		if target := c.Resolve(*spec.Return); target.Valid() {
 			spec.Return.Focus(c)
+			*returned = true
 		} else {
 			spec.Return.CancelFocus(c)
 		}

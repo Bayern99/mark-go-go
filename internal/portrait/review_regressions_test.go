@@ -74,3 +74,51 @@ func TestConfirmDoesNotStealFocusLaterWhenTriggerDisappeared(t *testing.T) {
 		t.Fatalf("Keep lost focus when vanished trigger reappeared: %+v", keep)
 	}
 }
+
+func TestConfirmDoesNotStealFocusLaterWhenTriggerWasDisabled(t *testing.T) {
+	var trigger, other ui.Handle
+	disableTrigger := false
+	open := false
+	app := ui.NewTester(func(c *ui.Context) {
+		ui.Row(c).Gap(8).Children(func() {
+			del := portrait.Button(c, "Delete", "Delete").Bind(&trigger).Disabled(disableTrigger)
+			if del.Clicked() {
+				open = true
+			}
+			portrait.Button(c, "Keep", "Keep").Bind(&other)
+		})
+		portrait.Confirm(c, &open, portrait.ConfirmSpec{
+			Title: "Delete item?", Body: "This cannot be undone.",
+			Return: &trigger,
+		})
+	}, 520, 320)
+
+	app.Frame()
+	if err := app.Click("Delete"); err != nil {
+		t.Fatal(err)
+	}
+	app.Frame()
+	if !open {
+		t.Fatal("confirm dialog did not open")
+	}
+	// Trigger stays bound but disabled while dialog closes.
+	disableTrigger = true
+	app.Frame()
+	app.Key(0, ui.KeyEscape)
+	app.Frame()
+	if open {
+		t.Fatal("confirm dialog did not close on Escape")
+	}
+	// Focus another control.
+	if err := app.Click("Keep"); err != nil {
+		t.Fatal(err)
+	}
+	app.Frame()
+	// Re-enabling trigger later must NOT steal focus from Keep.
+	disableTrigger = false
+	app.Frame()
+	keep, ok := app.AccessByRole(ui.RoleButton, "Keep")
+	if !ok || !keep.Focused {
+		t.Fatalf("Keep lost focus when previously disabled trigger was re-enabled: %+v", keep)
+	}
+}

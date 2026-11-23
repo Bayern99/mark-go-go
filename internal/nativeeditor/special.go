@@ -234,6 +234,7 @@ func copyButton(c *ui.Context, body string) {
 	copied := ui.Local(b, copiedKey{}, func() time.Time { return time.Time{} })
 	if b.Clicked() {
 		c.Services().WriteClipboard(body)
+		portrait.Notify(c, portrait.ToastSpec{ID: "copy", Tone: portrait.Tones.Success, Title: "Copied"})
 		*copied = c.Now()
 	}
 	icon := portrait.IconCopy

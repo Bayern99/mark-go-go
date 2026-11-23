@@ -72,7 +72,15 @@ func nativeLiteralCounts(t *testing.T) map[string]map[string]int {
 			if !ok {
 				return true
 			}
-			sel, ok := call.Fun.(*ast.SelectorExpr)
+			fun := call.Fun
+			for {
+				paren, ok := fun.(*ast.ParenExpr)
+				if !ok {
+					break
+				}
+				fun = paren.X
+			}
+			sel, ok := fun.(*ast.SelectorExpr)
 			if !ok || !dimensionMethods[sel.Sel.Name] {
 				return true
 			}

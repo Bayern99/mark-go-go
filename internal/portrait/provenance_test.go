@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
@@ -43,6 +44,7 @@ var tokenProvenance = func() map[string]string {
 	register(sourceWebUI, "Type", "Display", "Title", "Reading", "Small", "UI", "Control", "Meta", "Code", "H4", "H5", "H6")
 	register(sourceDerived, "Type", "Heading")
 	register(sourceDerived, "DefaultSkeleton", "Period", "Base", "Glint")
+	register(sourceDerived, "Frame", "Inset", "InnerRadius", "OuterRadius")
 	return provenance
 }()
 
@@ -58,6 +60,9 @@ func TestEveryTokenDeclaresProvenance(t *testing.T) {
 		{"Sizes", portrait.Sizes},
 		{"Type", portrait.Type},
 		{"DefaultSkeleton", portrait.DefaultSkeleton},
+		{"Frame", struct {
+			Inset, InnerRadius, OuterRadius float32
+		}{portrait.FrameInset, portrait.FrameInnerRadius, portrait.FrameOuterRadius}},
 	} {
 		collectTokenPaths(root.name, reflect.ValueOf(root.value), actual)
 	}
@@ -95,6 +100,16 @@ func TestTokensMatchTheirSource(t *testing.T) {
 	}
 	if got, want := portrait.Type.Heading, portrait.Type.Reading.In(portrait.FontDisplay); got != want {
 		t.Errorf("Heading = %+v, want Reading.In(FontDisplay) = %+v", got, want)
+	}
+	if got, want := portrait.DefaultSkeleton, (portrait.Skeleton{
+		Period: 1300 * time.Millisecond,
+		Base:   portrait.Colors.Fill,
+		Glint:  ui.RGBA(253, 253, 253, 0.828),
+	}); got != want {
+		t.Errorf("DefaultSkeleton = %+v, want %+v", got, want)
+	}
+	if portrait.FrameInset != 4 || portrait.FrameInnerRadius != portrait.Radii.M || portrait.FrameOuterRadius != portrait.Radii.L {
+		t.Errorf("Frame tokens = (%v, %v, %v), want (4, %v, %v)", portrait.FrameInset, portrait.FrameInnerRadius, portrait.FrameOuterRadius, portrait.Radii.M, portrait.Radii.L)
 	}
 
 	accent := expectedTone(portrait.Colors.Accent, portrait.Colors.Accent)

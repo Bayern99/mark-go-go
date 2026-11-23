@@ -98,6 +98,7 @@ func (p *panel) message(c *ui.Context, index int, item message, streaming bool) 
 			p.image(c, item.image)
 			if smallButton(c, "Copy", "Copy Feynman response").AlignSelf(ui.Start).Clicked() {
 				mygo.Clipboard.WriteText(item.text)
+				portrait.Notify(c, portrait.ToastSpec{ID: "copy", Tone: portrait.Tones.Success, Title: "Copied"})
 			}
 		})
 	case "thought":

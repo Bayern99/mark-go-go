@@ -50,6 +50,9 @@ func TestDerivedTokenInvariants(t *testing.T) {
 	if got, want := portrait.Radii.Segment, portrait.Radii.Track-2; got != want {
 		t.Errorf("Segment radius = %v, want Track - 2 = %v", got, want)
 	}
+	if portrait.FrameInset != 4 {
+		t.Errorf("Frame inset = %v, want 4", portrait.FrameInset)
+	}
 	if got, want := portrait.FrameOuterRadius, portrait.FrameInnerRadius+portrait.FrameInset; got != want {
 		t.Errorf("Frame outer radius = %v, want inner radius + inset = %v", got, want)
 	}

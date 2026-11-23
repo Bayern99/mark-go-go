@@ -40,23 +40,27 @@ func (s TypeStyle) Apply(e ui.Element) ui.Element {
 }
 
 type TypeScale struct {
-	Display, Title, Reading, Small, UI, Control, Meta, Code TypeStyle
-	H4, H5, H6                                              TypeStyle
+	Display, Heading, Title, Reading, Small, UI, Control, Meta, Code TypeStyle
+	H4, H5, H6                                                       TypeStyle
 }
 
-var Type = TypeScale{
-	Display: TypeStyle{FontSans, 28, 36, 0},
-	Title:   TypeStyle{FontSans, 20, 28, 0},
-	Reading: TypeStyle{FontSans, 16, 28, 0.01 * 16},
-	Small:   TypeStyle{FontSans, 14, 22, 0},
-	UI:      TypeStyle{FontSans, 13, 18, 0},
-	Control: TypeStyle{FontSans, 13, 20, 0},
-	Meta:    TypeStyle{FontSans, 12, 16, 0},
-	Code:    TypeStyle{FontMono, 13, 22, 0},
-	H4:      TypeStyle{FontSans, 15, 28, 0},
-	H5:      TypeStyle{FontSans, 14, 28, 0},
-	H6:      TypeStyle{FontSans, 13, 28, 0},
-}
+var Type = func() TypeScale {
+	scale := TypeScale{
+		Display: TypeStyle{FontSans, 28, 36, 0},
+		Title:   TypeStyle{FontSans, 20, 28, 0},
+		Reading: TypeStyle{FontSans, 16, 28, 0.01 * 16},
+		Small:   TypeStyle{FontSans, 14, 22, 0},
+		UI:      TypeStyle{FontSans, 13, 18, 0},
+		Control: TypeStyle{FontSans, 13, 20, 0},
+		Meta:    TypeStyle{FontSans, 12, 16, 0},
+		Code:    TypeStyle{FontMono, 13, 22, 0},
+		H4:      TypeStyle{FontSans, 15, 28, 0},
+		H5:      TypeStyle{FontSans, 14, 28, 0},
+		H6:      TypeStyle{FontSans, 13, 28, 0},
+	}
+	scale.Heading = scale.Reading.In(FontDisplay)
+	return scale
+}()
 
 type Palette struct {
 	Chrome, Paper, Code                  ui.Color
@@ -67,7 +71,7 @@ type Palette struct {
 	Warn, WarnSoft, Danger, DangerSoft   ui.Color
 	Note, NoteSoft, Warning, WarningSoft ui.Color
 	Caution, CautionSoft                 ui.Color
-	Focus, Scrim                         ui.Color
+	Focus, Scrim, ModalScrim             ui.Color
 }
 
 var Colors = Palette{
@@ -82,6 +86,7 @@ var Colors = Palette{
 	Warning: ui.Hex("#9a4d12"), WarningSoft: ui.RGBA(154, 77, 18, 0.09),
 	Caution: ui.Hex("#a83a3a"), CautionSoft: ui.RGBA(168, 58, 58, 0.08),
 	Focus: ui.RGBA(47, 111, 98, 0.34), Scrim: ui.RGBA(29, 29, 31, 0.08),
+	ModalScrim: ui.RGBA(29, 29, 31, 0.12),
 }
 
 func black(a float32) ui.Color { return ui.RGBA(0, 0, 0, a) }

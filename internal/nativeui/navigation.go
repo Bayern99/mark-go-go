@@ -85,7 +85,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 			return
 		}
 		if w.Kind == "folder" {
-			portrait.Field(c).Margin(4, 2, 8, 2).Children(func() {
+			portrait.InputFrame(c).Margin(4, 2, 8, 2).Children(func() {
 				if portrait.Type.UI.Apply(ui.TextInputBase(c.Key("filter:"+w.Root), &s.query)).FocusRing(false).Grow(1).MinWidth(0).Placeholder("Filter files and headings").Label("Filter files and headings").Changed() && a.Filter != nil {
 					s.queries[w.Root] = s.query
 					a.Filter(s.query)

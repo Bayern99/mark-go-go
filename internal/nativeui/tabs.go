@@ -175,7 +175,7 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 				pop := portrait.Popover(c, button, &s.overflow, func() {
 					ui.Column(c).Width(min(340, width-40)).Gap(5).Padding(1).Children(func() {
 						var filter ui.Element
-						portrait.Field(c).Children(func() {
+						portrait.InputFrame(c).Children(func() {
 							portrait.Glyph(c, portrait.IconMagnifyingGlass, 13, portrait.Colors.Ink3)
 							filter = portrait.Type.UI.Apply(ui.TextInputBase(c, &s.tabQuery)).FocusRing(false).Label("Filter open tabs").Placeholder("Filter open tabs").Grow(1).MinWidth(0)
 						})

@@ -148,7 +148,7 @@ func capsule(c *ui.Context, _ ui.Element, selected bool, group string, radius fl
 	}
 }
 
-func Field(c *ui.Context) ui.Element {
+func InputFrame(c *ui.Context) ui.Element {
 	f := ui.Row(c).Height(30).Padding(0, 4, 0, 8).Gap(6).Radius(8).AlignItems(ui.Center)
 	if f.FocusWithin() {
 		Surface{Colors.Paper, Colors.Paper, Rings.Field}.Apply(f)

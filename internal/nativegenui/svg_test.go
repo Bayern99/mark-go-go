@@ -149,6 +149,36 @@ func TestSvgRasterizesAtViewBoxAndDeviceScale(t *testing.T) {
 	}
 }
 
+func TestSvgLargePathsStayWithinPathSpanLimit(t *testing.T) {
+	const deviceScale = 2
+	tests := []struct {
+		name  string
+		shape string
+	}{
+		{name: "fill", shape: `Polygon("0,-100 1000000,-100 1000000,150 0,150", "#0285ff")`},
+		{name: "stroke", shape: `Path("M0 25 L1000000 25", "none", "#0285ff", 8)`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			view := statementView(t, `root = Col([Svg([`+test.shape+`], "0 0 100 50", "Large drawing")])`)
+			tt, text := shown(t, view, 524, nil)
+			if strings.Contains(text, "pathSpanMax") {
+				t.Fatalf("the large path was dropped:\n%s", text)
+			}
+			tt.SetScale(deviceScale)
+			box, ok := tt.Access("Large drawing")
+			if !ok {
+				t.Fatal("no accessible drawing")
+			}
+			x := int((box.Bounds.X + box.Bounds.W/2) * deviceScale)
+			y := int((box.Bounds.Y + box.Bounds.H/2) * deviceScale)
+			if got := tt.Image().RGBAAt(x, y); got != firstSeries {
+				t.Errorf("the viewport center is %v, want the path color %v", got, firstSeries)
+			}
+		})
+	}
+}
+
 func TestSvgSupportsEveryPrimitiveAndAllCommonPathCommands(t *testing.T) {
 	const allCommands = `M1 1 m1 1 L10 10 l1 0 H20 h2 V20 v2 C25 20 25 25 30 25 c2 0 2 2 4 2 S40 30 42 25 s2 -2 4 -2 Q45 20 50 25 q2 2 4 0 T60 25 t4 0 A5 5 0 0 1 70 30 a5 5 0 0 1 5 5 Z z`
 	view := statementView(t, `root = Col([Svg([

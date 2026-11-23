@@ -168,7 +168,7 @@ func (p *Painter) clipSelf(e *node) {
 // size it is drawn at.
 func (p *Painter) ClipPath(path *Path, fn func()) {
 	saved := p.clip
-	f, _, savedTransform := p.flattenPath(path)
+	f, _, savedTransform := p.flattenPath(path, 0)
 	p.pushPathClip(f)
 	p.transform = savedTransform
 	fn()

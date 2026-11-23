@@ -44,12 +44,13 @@ func TestGallery(t *testing.T) {
 			}
 			var overview *image.RGBA
 			row := 0
-			if dir != "" {
+			needImage := dir != ""
+			if needImage {
 				overview = image.NewRGBA(image.Rect(0, 0, cellWidth*len(States), (headerHeight+cellHeight)*len(Preferences)*len(surfaces)))
 			}
 			for _, preference := range Preferences {
 				for _, surface := range surfaces {
-					sheet, err := renderSheet(component.Name, preference, surface, func(rendered cellRender) {
+					sheet, err := renderSheet(component.Name, preference, surface, needImage, func(rendered cellRender) {
 						assertCellStructure(t, rendered)
 					})
 					if err != nil {
@@ -142,7 +143,7 @@ func inside(inner, outer ui.Rect) bool {
 
 func TestCardIsOpaqueOnGlass(t *testing.T) {
 	for _, surface := range []Surface{Paper, Chrome, Glass} {
-		rendered, err := renderCell(Cell{Component: Card, State: Rest, Surface: surface})
+		rendered, err := renderCell(Cell{Component: Card, State: Rest, Surface: surface}, true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -186,7 +187,7 @@ func TestGalleryButtonsChangeWhilePressedAndRecover(t *testing.T) {
 			for _, surface := range Surfaces {
 				t.Run(fmt.Sprintf("%s/%s/%s", component, preference, surface), func(t *testing.T) {
 					cell := Cell{Component: component, State: Rest, Preference: preference, Surface: surface}
-					rendered, err := renderCell(cell)
+					rendered, err := renderCell(cell, true)
 					if err != nil {
 						t.Fatal(err)
 					}

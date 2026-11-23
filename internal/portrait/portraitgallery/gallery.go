@@ -261,7 +261,7 @@ func preferences(p Preference) ui.Preferences {
 	return ui.Preferences{HighContrast: p == HighContrast, ReduceTransparency: p == ReduceTransparency}
 }
 
-func renderCell(cell Cell) (cellRender, error) {
+func renderCell(cell Cell, needImage bool) (cellRender, error) {
 	cell = normalize(cell)
 	cell.drive = true
 	if err := Validate(cell); err != nil {
@@ -289,28 +289,37 @@ func renderCell(cell Cell) (cellRender, error) {
 	case Loading:
 		tt.Advance(225 * time.Millisecond)
 	}
-	return cellRender{image: tt.Image(), tester: tt, cell: cell, def: d, target: target}, nil
+	var img *image.RGBA
+	if needImage {
+		img = tt.Image()
+	}
+	return cellRender{image: img, tester: tt, cell: cell, def: d, target: target}, nil
 }
 
-func renderSheet(component Component, preference Preference, surface Surface, inspect func(cellRender)) (*image.RGBA, error) {
+func renderSheet(component Component, preference Preference, surface Surface, needImage bool, inspect func(cellRender)) (*image.RGBA, error) {
 	cell := normalize(Cell{Component: component, Preference: preference, Surface: surface})
 	if err := Validate(cell); err != nil {
 		return nil, err
 	}
 	width := cellWidth * len(States)
-	header := ui.NewTesterWith(func(c *ui.Context) { sheetHeader(c, component, cell.Preference, cell.Surface) }, width, headerHeight, ui.TesterOptions{Preferences: preferences(cell.Preference)})
-	sheet := image.NewRGBA(image.Rect(0, 0, width, headerHeight+cellHeight))
-	draw.Draw(sheet, image.Rect(0, 0, width, headerHeight), header.Image(), image.Point{}, draw.Src)
+	var sheet *image.RGBA
+	if needImage {
+		header := ui.NewTesterWith(func(c *ui.Context) { sheetHeader(c, component, cell.Preference, cell.Surface) }, width, headerHeight, ui.TesterOptions{Preferences: preferences(cell.Preference)})
+		sheet = image.NewRGBA(image.Rect(0, 0, width, headerHeight+cellHeight))
+		draw.Draw(sheet, image.Rect(0, 0, width, headerHeight), header.Image(), image.Point{}, draw.Src)
+	}
 	for i, state := range States {
-		rendered, err := renderCell(Cell{Component: component, State: state, Preference: cell.Preference, Surface: cell.Surface})
+		rendered, err := renderCell(Cell{Component: component, State: state, Preference: cell.Preference, Surface: cell.Surface}, needImage)
 		if err != nil {
 			return nil, err
 		}
 		if inspect != nil {
 			inspect(rendered)
 		}
-		at := image.Rect(i*cellWidth, headerHeight, (i+1)*cellWidth, headerHeight+cellHeight)
-		draw.Draw(sheet, at, rendered.image, image.Point{}, draw.Src)
+		if sheet != nil {
+			at := image.Rect(i*cellWidth, headerHeight, (i+1)*cellWidth, headerHeight+cellHeight)
+			draw.Draw(sheet, at, rendered.image, image.Point{}, draw.Src)
+		}
 	}
 	return sheet, nil
 }
@@ -319,5 +328,5 @@ func renderSheet(component Component, preference Preference, surface Surface, in
 // surface. Each state is driven independently so hover, press, focus, and
 // tooltips can all appear in the same returned image.
 func RenderSheet(component Component, preference Preference, surface Surface) (*image.RGBA, error) {
-	return renderSheet(component, preference, surface, nil)
+	return renderSheet(component, preference, surface, true, nil)
 }

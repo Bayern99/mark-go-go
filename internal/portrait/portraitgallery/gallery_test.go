@@ -24,7 +24,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestGallery(t *testing.T) {
-	for _, required := range []Component{Button, AccentButton, QuietButton, IconButton, Track, InputFrame, Tooltip, Spinner} {
+	for _, required := range []Component{Button, AccentButton, QuietButton, DangerButton, DangerOutlineButton, LinkButton, IconButton, Group, Track, InputFrame, Tooltip, Spinner} {
 		if _, ok := Lookup(required); !ok {
 			t.Fatalf("required component %s is not registered", required)
 		}
@@ -116,6 +116,12 @@ func assertCellStructure(t *testing.T, rendered cellRender) {
 	if cell.State == Disabled && !target.Disabled {
 		t.Fatalf("%s: disabled state is not exposed", cellName(cell))
 	}
+	if cell.State == Loading && isButton(cell.Component) && (!target.Disabled || !target.Busy) {
+		t.Fatalf("%s: loading state is not exposed as busy and disabled: %+v", cellName(cell), target)
+	}
+	if cell.State == Selected && isButton(cell.Component) && !target.Checked {
+		t.Fatalf("%s: selected state is not exposed", cellName(cell))
+	}
 	if cell.State == Invalid && cell.Component == InputFrame && !target.Invalid {
 		t.Fatalf("%s: invalid state is not exposed", cellName(cell))
 	}
@@ -143,7 +149,11 @@ func TestGalleryRejectsFrameAwayFromPaper(t *testing.T) {
 }
 
 func TestGalleryButtonsChangeWhilePressedAndRecover(t *testing.T) {
-	for _, component := range []Component{Button, AccentButton, QuietButton, IconButton} {
+	components := []Component{IconButton, Group}
+	for _, axis := range buttonAxes {
+		components = append(components, axis.name)
+	}
+	for _, component := range components {
 		for _, preference := range Preferences {
 			for _, surface := range Surfaces {
 				t.Run(fmt.Sprintf("%s/%s/%s", component, preference, surface), func(t *testing.T) {
@@ -170,6 +180,18 @@ func TestGalleryButtonsChangeWhilePressedAndRecover(t *testing.T) {
 			}
 		}
 	}
+}
+
+func isButton(component Component) bool {
+	if component == IconButton || component == Group {
+		return true
+	}
+	for _, axis := range buttonAxes {
+		if axis.name == component {
+			return true
+		}
+	}
+	return false
 }
 
 func region(img *image.RGBA, bounds ui.Rect) []uint32 {

@@ -12,6 +12,9 @@ const (
 	Raised Look = iota
 	Accent
 	Quiet
+	Danger
+	DangerOutline
+	Link
 )
 
 type feedback struct {
@@ -21,9 +24,12 @@ type feedback struct {
 }
 
 var looks = [...]feedback{
-	Raised: {Materials.Raised, Materials.RaisedHover, Materials.RaisedPress, Colors.Ink, Colors.Ink, 0.98},
-	Accent: {Materials.AccentRaised, Materials.AccentRaisedHover, Materials.AccentRaisedPress, Colors.OnAccent, Colors.OnAccent, 0.985},
-	Quiet:  {Surface{ui.Transparent, ui.Transparent, nil}, Materials.Row, Materials.RaisedPress, Colors.Ink2, Colors.Ink, 0.97},
+	Raised:        {Materials.Raised, Materials.RaisedHover, Materials.RaisedPress, Colors.Ink, Colors.Ink, 0.98},
+	Accent:        {Materials.AccentRaised, Materials.AccentRaisedHover, Materials.AccentRaisedPress, Colors.OnAccent, Colors.OnAccent, 0.985},
+	Quiet:         {Surface{ui.Transparent, ui.Transparent, nil}, Materials.Row, Materials.RaisedPress, Colors.Ink2, Colors.Ink, 0.97},
+	Danger:        {dangerRest, dangerHover, dangerPress, Tones.Danger.OnSolid, Tones.Danger.OnSolid, 0.985},
+	DangerOutline: {dangerOutlineRest, dangerOutlineHover, dangerOutlinePress, Tones.Danger.Ink, Tones.Danger.Ink, 0.98},
+	Link:          {Surface{ui.Transparent, ui.Transparent, nil}, Surface{ui.Transparent, ui.Transparent, nil}, Surface{Colors.AccentSoft, Colors.AccentSoft, nil}, Colors.Accent, Colors.Accent, 0.98},
 }
 
 var Rings = struct{ Field, Editing Shadows }{
@@ -56,52 +62,6 @@ func flag(b bool) float32 {
 		return 1
 	}
 	return 0
-}
-
-func Button(c *ui.Context, title, label string) ui.Element {
-	return textButton(c, Icon{}, title, label, Raised)
-}
-
-func ButtonLeadingIcon(c *ui.Context, icon Icon, title, label string) ui.Element {
-	return textButton(c, icon, title, label, Raised)
-}
-
-func AccentButton(c *ui.Context, title, label string) ui.Element {
-	return textButton(c, Icon{}, title, label, Accent)
-}
-
-func QuietButton(c *ui.Context, title, label string) ui.Element {
-	return textButton(c, Icon{}, title, label, Quiet)
-}
-
-func textButton(c *ui.Context, icon Icon, title, label string, look Look) ui.Element {
-	b := ui.ButtonBase(c.Key(label)).Label(label).Height(28).Padding(0, 11).Radius(8).Gap(6).AlignItems(ui.Center).Justify(ui.Center)
-	if label != title {
-		Tooltip(c, b, label)
-	}
-	ink := Press(b, look)
-	b.Children(func() {
-		if icon.Glyph != "" {
-			Glyph(c, icon, Type.UI.Size, ink).Shrink(0)
-		}
-		Type.UI.Apply(ui.Text(c, title)).FontWeight(500).TextColor(ink).MaxLines(1).Ellipsis("…")
-	})
-	return b
-}
-
-func IconButton(c *ui.Context, icon Icon, label string) ui.Element {
-	return iconButton(c, icon, label, Raised)
-}
-
-func QuietIconButton(c *ui.Context, icon Icon, label string) ui.Element {
-	return iconButton(c, icon, label, Quiet)
-}
-
-func iconButton(c *ui.Context, icon Icon, label string, look Look) ui.Element {
-	b := Tooltip(c, ui.ButtonBase(c.Key(label)).Label(label), label).Size(28, 28).Radius(8).AlignItems(ui.Center).Justify(ui.Center)
-	ink := Press(b, look)
-	b.Children(func() { Glyph(c, icon, 15, ink) })
-	return b
 }
 
 type Segments struct {

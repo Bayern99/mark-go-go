@@ -186,11 +186,23 @@ func TestDiffHunkActionsSitInTheHeader(t *testing.T) {
 	if accept.Bounds.Y > header.Y+header.H || accept.Bounds.Y+accept.Bounds.H < header.Y {
 		t.Fatalf("Accept hunk %v is not beside the range %v", accept.Bounds, header)
 	}
+	group, ok := tt.AccessByRole(ui.RoleGroup, "Hunk actions")
+	if !ok || accept.Bounds.X < group.Bounds.X || accept.Bounds.X+accept.Bounds.W > group.Bounds.X+group.Bounds.W {
+		t.Fatalf("Accept hunk %v is not in the connected action group %+v (found %v)", accept.Bounds, group, ok)
+	}
+	reject, _ := tt.Access("Reject hunk")
+	if gap := reject.Bounds.X - (accept.Bounds.X + accept.Bounds.W); gap < -0.001 || gap > 0.001 {
+		t.Fatalf("Accept/Reject gap = %v, want a connected group", gap)
+	}
 	if err := tt.Click("Accept hunk"); err != nil {
 		t.Fatal(err)
 	}
 	if decisions["hunk-1"] != review.HunkAccepted {
 		t.Fatalf("decisions %v", decisions)
+	}
+	accept, _ = tt.Access("Accept hunk")
+	if !accept.Checked {
+		t.Fatalf("accepted action is not exposed as selected: %+v", accept)
 	}
 }
 

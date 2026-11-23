@@ -10,8 +10,7 @@ var nativeLiteralAllowlist = map[string]map[string]int{
 	},
 	"../nativeeditor/special.go": {
 		"Height(100)": 1,
-		"Height(22)":  1,
-		"Radius(6)":   2,
+		"Radius(6)":   1,
 		"Radius(8)":   2,
 	},
 	"../nativeeditor/table.go": {

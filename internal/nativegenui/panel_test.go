@@ -4,6 +4,7 @@ import (
 	"errors"
 	"image"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -383,6 +384,47 @@ func TestAViewSavedBeforeTheEndOfDocumentRuleIsNotMarkedChangedUntilItsSectionCh
 		if !markedChanged(strings.Replace(document, "An overview.", "Another overview.", 1)) {
 			t.Errorf("%q with a changed paragraph is not marked as changed", document)
 		}
+	}
+}
+
+func TestDeletingAViewClearsOnlyAnUneditedGenerationRequest(t *testing.T) {
+	file := func(request string) genui.ViewEvent {
+		const created = `{"version":"1.0","createSurface":{"surfaceId":"view","catalogId":"markgogo.dev:genui/v3","components":["root = Col([card])","card = Card([Text(\"View\")])"]}}`
+		return genui.ViewEvent{ID: "doc", Exists: true, Text: `{"version":3,"request":` + strconv.Quote(request) + `,"language":"openui-lang/1.0","sources":{},"a2ui":[` + created + `]}`}
+	}
+	for _, test := range []struct {
+		name, draft, want string
+	}{
+		{name: "an unedited request is cleared", want: ""},
+		{name: "a reader draft is preserved", draft: "Keep this draft", want: "Keep this draft"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			v := &documentView{}
+			p := &panel{views: map[string]*documentView{"doc": v}}
+			p.updated(file("Old request"))
+			if v.request != "Old request" {
+				t.Fatalf("loaded request = %q, want the sidecar request", v.request)
+			}
+			if test.draft != "" {
+				v.request = test.draft
+				v.requestEdited = true
+			}
+
+			p.updated(genui.ViewEvent{ID: "doc"})
+			if v.request != test.want {
+				t.Errorf("request after deletion = %q, want %q", v.request, test.want)
+			}
+			if got := v.generationRequest("# Overview", nil).Request; got != test.want {
+				t.Errorf("next generation request = %q, want %q", got, test.want)
+			}
+
+			if test.draft == "" {
+				p.updated(file("New request"))
+				if v.request != "New request" {
+					t.Errorf("request after a new sidecar arrives = %q, want %q", v.request, "New request")
+				}
+			}
+		})
 	}
 }
 

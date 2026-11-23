@@ -97,6 +97,58 @@ func TestSvgPixelRegressionScalesViewBoxToAvailableWidth(t *testing.T) {
 	}
 }
 
+func svgVerticalEdgeTransition(img *image.RGBA, x, y int, ink color.RGBA) int {
+	background := img.RGBAAt(x, y-16)
+	distance := func(a, b color.RGBA) int {
+		return abs(int(a.R)-int(b.R)) + abs(int(a.G)-int(b.G)) + abs(int(a.B)-int(b.B))
+	}
+	transition := 0
+	for at := y - 16; at <= y+16; at++ {
+		pixel := img.RGBAAt(x, at)
+		if distance(pixel, background) >= 12 && distance(pixel, ink) >= 12 {
+			transition++
+		}
+	}
+	return transition
+}
+
+func TestSvgRasterizesAtViewBoxAndDeviceScale(t *testing.T) {
+	const deviceScale = 2
+	const width = 524
+	tests := []struct {
+		name, shape string
+		at          [2]float32
+		ink         color.RGBA
+		max         int
+	}{
+		{name: "circle", shape: `Circle(50, 25, 20, "#00a67d")`, at: [2]float32{0.5, 0.1}, ink: secondSeries, max: 2},
+		{name: "diagonal stroke", shape: `Line(10, 40, 40, 10, "#0285ff", 1)`, at: [2]float32{0.25, 0.5}, ink: firstSeries, max: 4},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			view := statementView(t, `root = Col([Svg([`+test.shape+`], "0 0 100 50", "HiDPI drawing")])`)
+			tt, text := shown(t, view, width, nil)
+			if strings.Contains(text, "was left out") {
+				t.Fatalf("the drawing did not open:\n%s", text)
+			}
+			tt.SetScale(deviceScale)
+			img := tt.Image()
+			if got, want := img.Bounds().Dx(), width*deviceScale; got != want {
+				t.Fatalf("the frame is %d pixels wide, want %d at %dx scale", got, want, deviceScale)
+			}
+			box, ok := tt.Access("HiDPI drawing")
+			if !ok {
+				t.Fatal("no accessible drawing")
+			}
+			x := int((box.Bounds.X+box.Bounds.W*test.at[0])*deviceScale + 0.5)
+			y := int((box.Bounds.Y+box.Bounds.H*test.at[1])*deviceScale + 0.5)
+			if transition := svgVerticalEdgeTransition(img, x, y, test.ink); transition > test.max {
+				t.Errorf("the edge spans %d partially covered physical pixels, want at most %d", transition, test.max)
+			}
+		})
+	}
+}
+
 func TestSvgSupportsEveryPrimitiveAndAllCommonPathCommands(t *testing.T) {
 	const allCommands = `M1 1 m1 1 L10 10 l1 0 H20 h2 V20 v2 C25 20 25 25 30 25 c2 0 2 2 4 2 S40 30 42 25 s2 -2 4 -2 Q45 20 50 25 q2 2 4 0 T60 25 t4 0 A5 5 0 0 1 70 30 a5 5 0 0 1 5 5 Z z`
 	view := statementView(t, `root = Col([Svg([
@@ -111,6 +163,7 @@ func TestSvgSupportsEveryPrimitiveAndAllCommonPathCommands(t *testing.T) {
 		G([Rect(0, 0, 8, 8, "#00a67d"), SvgText("G", 12, 8, 8, "#00a67d")], "translate(75 30) rotate(10 4 4)", 0.8)
 	], "0 0 100 50", "All drawing primitives")])`)
 	tt, text := shown(t, view, 640, nil)
+	tt.SetScale(2)
 	if strings.Contains(text, "was left out") || strings.Contains(text, "not a component") || strings.Contains(text, "never defined") {
 		t.Fatalf("a supported drawing reported a problem:\n%s", text)
 	}

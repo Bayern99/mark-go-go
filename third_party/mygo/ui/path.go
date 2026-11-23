@@ -1002,19 +1002,37 @@ func fillMask(z *vec.Rasterizer, f *flatPath, dst []byte, stride int) {
 	}
 }
 
+// flattenPath flattens path at the scale its transform shows it, leaving
+// only a reduction, turn or skew for the renderer. Its mask therefore covers
+// the path's device pixels instead of being enlarged from its untransformed
+// size. The returned transform restores the painter after drawing.
+func (p *Painter) flattenPath(path *Path) (f *flatPath, scale float32, saved scene.Affine) {
+	f, scale, saved = &p.rt.paths.flat, p.scale, p.transform
+	if saved.Set {
+		b := path.Bounds()
+		q := transformScale(saved, b.X+b.W/2, b.Y+b.H/2)
+		if q > 1 && float64(scale)*float64(q) <= math.MaxFloat32 {
+			scale *= q
+			p.transform = saved.Mul(scene.Scaling(1/q, 1/q))
+		}
+	}
+	path.flatten(f, scale)
+	return
+}
+
 // FillPath fills a path, by its FillRule.
 func (p *Painter) FillPath(path *Path, c Color) {
-	f := &p.rt.paths.flat
-	path.flatten(f, p.scale)
+	f, _, saved := p.flattenPath(path)
 	p.drawPath(f, 0, c, nil)
+	p.transform = saved
 }
 
 // FillPathGradient fills a path with a gradient across its bounds, as the
 // area under a chart's line.
 func (p *Painter) FillPathGradient(path *Path, g LinearGradient) {
-	f := &p.rt.paths.flat
-	path.flatten(f, p.scale)
+	f, _, saved := p.flattenPath(path)
 	p.drawPath(f, 0, g.From, &g)
+	p.transform = saved
 }
 
 // StrokePath draws the outline of a path, width DIPs wide, with the
@@ -1028,9 +1046,9 @@ func (p *Painter) FillPathGradient(path *Path, g LinearGradient) {
 // still draw, on the CPU, more slowly, which is logged once. Opaque lines
 // of StrokePolyline draw without masks on a GPU.
 func (p *Painter) StrokePath(path *Path, width float32, c Color) {
-	f := &p.rt.paths.flat
-	path.flatten(f, p.scale)
-	p.drawPath(f, width*p.scale, c.Alpha(f.capFade(width*p.scale)), nil)
+	f, scale, saved := p.flattenPath(path)
+	p.drawPath(f, width*scale, c.Alpha(f.capFade(width*scale)), nil)
+	p.transform = saved
 }
 
 // capFade returns how opaque a stroke width pixels wide of f shows:
@@ -1142,31 +1160,31 @@ func (f *flatPath) dashAt(at float32) (k int, left float32) {
 // FillPathConicGradient fills a path with a conic gradient around its
 // bounds.
 func (p *Painter) FillPathConicGradient(path *Path, g ConicGradient) {
-	f := &p.rt.paths.flat
-	path.flatten(f, p.scale)
+	f, _, saved := p.flattenPath(path)
 	p.drawPathPaint(f, 0, Color{R: 255, G: 255, B: 255, A: 255}, nil, &g)
+	p.transform = saved
 }
 
 // StrokePathConicGradient draws the outline of a path as StrokePath does,
 // in a conic gradient around its bounds.
 func (p *Painter) StrokePathConicGradient(path *Path, width float32, g ConicGradient) {
-	f := &p.rt.paths.flat
-	path.flatten(f, p.scale)
+	f, scale, savedTransform := p.flattenPath(path)
 	// Trimmed short, it fades as its caps would (capFade).
 	saved := p.opacity
-	p.opacity *= f.capFade(width * p.scale)
-	p.drawPathPaint(f, width*p.scale, Color{R: 255, G: 255, B: 255, A: 255}, nil, &g)
+	p.opacity *= f.capFade(width * scale)
+	p.drawPathPaint(f, width*scale, Color{R: 255, G: 255, B: 255, A: 255}, nil, &g)
 	p.opacity = saved
+	p.transform = savedTransform
 }
 
 // StrokePathGradient draws the outline of a path as StrokePath does, in a
 // gradient across its bounds.
 func (p *Painter) StrokePathGradient(path *Path, width float32, g LinearGradient) {
-	f := &p.rt.paths.flat
-	path.flatten(f, p.scale)
-	k := f.capFade(width * p.scale)
+	f, scale, saved := p.flattenPath(path)
+	k := f.capFade(width * scale)
 	g.From, g.To = g.From.Alpha(k), g.To.Alpha(k)
-	p.drawPath(f, width*p.scale, g.From, &g)
+	p.drawPath(f, width*scale, g.From, &g)
+	p.transform = saved
 }
 
 func fillInto(z *vec.Rasterizer, f *flatPath, x0, y0 float32) {

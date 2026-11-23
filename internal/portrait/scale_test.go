@@ -50,8 +50,8 @@ func TestDerivedTokenInvariants(t *testing.T) {
 	if got, want := portrait.Radii.Segment, portrait.Radii.Track-2; got != want {
 		t.Errorf("Segment radius = %v, want Track - 2 = %v", got, want)
 	}
-	if got, want := portrait.Radii.L, portrait.Radii.M+4; got != want {
-		t.Errorf("Frame outer radius = %v, want inner radius + 4 = %v", got, want)
+	if got, want := portrait.FrameOuterRadius, portrait.FrameInnerRadius+portrait.FrameInset; got != want {
+		t.Errorf("Frame outer radius = %v, want inner radius + inset = %v", got, want)
 	}
 	if alpha := float32(portrait.Colors.ModalScrim.A) / 255; alpha > 0.16 {
 		t.Errorf("ModalScrim alpha = %v, want at most 0.16", alpha)

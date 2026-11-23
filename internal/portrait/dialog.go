@@ -59,8 +59,12 @@ func Confirm(c *ui.Context, open *bool, spec ConfirmSpec) ui.Element {
 			})
 		})
 	})
-	if *wasOpen && !*open {
-		spec.Return.Focus(c)
+	if *wasOpen && !*open && spec.Return != nil {
+		if target := c.Resolve(*spec.Return); target.Valid() {
+			spec.Return.Focus(c)
+		} else {
+			spec.Return.CancelFocus(c)
+		}
 	}
 	*wasOpen = *open
 	return panel

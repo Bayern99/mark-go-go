@@ -49,15 +49,12 @@ type Shell struct {
 	queries                                          map[string]string
 	scrolls                                          map[string]*ui.ScrollState
 	openCheckpoints                                  map[string]bool
-	generating                                       map[string]bool
-	copied                                           bool
 }
 
 func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 	if !s.ready {
 		s.queries = map[string]string{}
 		s.openCheckpoints = map[string]bool{}
-		s.generating = map[string]bool{}
 		s.leftWidth, s.ready = 248, true
 		if s.rightWidth == 0 {
 			s.rightWidth = 376
@@ -90,11 +87,6 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 		s.checkpoints = false
 	}
 	doc := activeDocument(m.Workspace)
-	s.generationFeedback(c, m.Workspace.Documents)
-	if s.copied {
-		portrait.Notify(c, portrait.ToastSpec{ID: "copy", Tone: portrait.Tones.Success, Title: "Copied"})
-		s.copied = false
-	}
 	if c.Shortcut(ui.Ctrl, ui.KeyTab) || c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyTab) {
 		if len(s.history) > 1 && a.Activate != nil {
 			a.Activate(s.history[1])
@@ -114,11 +106,6 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 	}
 	t := portrait.Theme()
 	root := ui.Themed(c, &t).Fill()
-	root.ObserveInput(func(ev ui.InputEvent) {
-		if ev.Kind == ui.InputCommand && ev.Text == "copy" {
-			s.copied = true
-		}
-	})
 	if paths := root.DroppedFiles(); len(paths) > 0 && a.Drop != nil {
 		a.Drop(slices.Clone(paths))
 	}
@@ -182,25 +169,6 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 		s.drawer(c, false, width, height, m, a, slots)
 		portrait.Toasts(c)
 	})
-}
-
-func (s *Shell) generationFeedback(c *ui.Context, documents []workspace.DocumentInfo) {
-	current := make(map[string]bool, len(documents))
-	for _, doc := range documents {
-		if !doc.Generating {
-			continue
-		}
-		current[doc.ID] = true
-		if !s.generating[doc.ID] {
-			portrait.Notify(c, portrait.ToastSpec{ID: "generation:" + doc.ID, Tone: portrait.Tones.Info, Title: "Generating…", Timeout: -1})
-		}
-	}
-	for id := range s.generating {
-		if !current[id] {
-			portrait.Notify(c, portrait.ToastSpec{ID: "generation:" + id, Tone: portrait.Tones.Success, Title: "Generated"})
-		}
-	}
-	s.generating = current
 }
 
 func clamp(value, low, high float32) float32 { return max(low, min(value, high)) }

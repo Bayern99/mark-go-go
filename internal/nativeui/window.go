@@ -262,6 +262,13 @@ func (w *Window) action(run func() error) {
 	w.actionToast(run, portrait.ToastSpec{})
 }
 
+func (w *Window) Notify(spec portrait.ToastSpec) {
+	if w == nil {
+		return
+	}
+	w.toasts = append(w.toasts, spec)
+}
+
 func (w *Window) actionToast(run func() error, success portrait.ToastSpec) {
 	err := run()
 	w.win.Update(func() {

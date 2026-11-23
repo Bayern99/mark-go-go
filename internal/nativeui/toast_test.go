@@ -100,27 +100,40 @@ func TestGenerationAndCopyFeedback(t *testing.T) {
 		Documents: []workspace.DocumentInfo{{ID: "a", Name: "Paper.md", ViewMode: "preview", Generating: true}},
 	}}
 	text := "selected"
+	var pending *portrait.ToastSpec
 	app := ui.NewTester(func(c *ui.Context) {
+		if pending != nil {
+			portrait.Notify(c, *pending)
+			pending = nil
+		}
 		shell.Draw(c, model, Actions{}, Slots{Document: func(c *ui.Context) {
 			ui.TextInput(c, &text).Label("Document source").AutoFocus()
 		}})
 	}, 1280, 820)
+	pending = &portrait.ToastSpec{ID: "generation:a", Tone: portrait.Tones.Info, Title: "Generating…", Timeout: -1}
 	app.Frame()
 	if !app.HasText("Generating…") {
 		t.Fatal("generation did not show its persistent progress toast")
 	}
+	// Clearing Generating without an explicit completion notification must not fabricate success.
 	model.Workspace.Documents[0].Generating = false
 	app.Frame()
-	if app.HasText("Generating…") || !app.HasText("Generated") {
-		t.Fatalf("generation toast did not update in place: %q", app.Texts())
+	if app.HasText("Generated") {
+		t.Fatalf("clearing Generating blindly reported Generated: %q", app.Texts())
 	}
+	pending = &portrait.ToastSpec{ID: "generation:a", Tone: portrait.Tones.Danger, Title: "Generation failed"}
+	app.Frame()
+	if app.HasText("Generating…") || !app.HasText("Generation failed") {
+		t.Fatalf("generation toast did not update in place on failure: %q", app.Texts())
+	}
+	// Empty-selection copy command must not fabricate a Copied toast.
 	if err := app.Click("Document source"); err != nil {
 		t.Fatal(err)
 	}
 	app.Command("copy")
 	app.Frame()
 	app.Advance(portrait.Motion.Enter)
-	if !app.HasText("Copied") {
-		t.Fatal("copy command did not show feedback")
+	if app.HasText("Copied") {
+		t.Fatal("copy command with no selection fabricated Copied toast")
 	}
 }

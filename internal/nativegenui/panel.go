@@ -566,6 +566,7 @@ func (p *panel) generate(v *documentView, ids []string) {
 	v.reading.Replacing = v.lastIDs
 	v.message = "Starting generation…"
 	req := v.generationRequest(text, ids)
+	p.win.Notify(portrait.ToastSpec{ID: "generation:" + d.ID, Tone: portrait.Tones.Info, Title: "Generating…", Timeout: -1})
 	done := p.host.StartGeneration(ctx, d.ID, req, func(progress genui.GenerateProgress) error {
 		p.win.Native().Update(func() {
 			if !p.closed && p.views[d.ID] == v {
@@ -580,6 +581,14 @@ func (p *panel) generate(v *documentView, ids []string) {
 		p.win.Native().Update(func() {
 			if !p.closed && p.views[d.ID] == v {
 				v.finished(err)
+				switch {
+				case err == nil:
+					p.win.Notify(portrait.ToastSpec{ID: "generation:" + d.ID, Tone: portrait.Tones.Success, Title: "Generated"})
+				case errors.Is(err, context.Canceled):
+					p.win.Notify(portrait.ToastSpec{ID: "generation:" + d.ID, Tone: portrait.Tones.Neutral, Title: "Generation canceled"})
+				default:
+					p.win.Notify(portrait.ToastSpec{ID: "generation:" + d.ID, Tone: portrait.Tones.Danger, Title: "Generation failed"})
+				}
 			}
 		})
 	}()

@@ -38,9 +38,11 @@ var tokenProvenance = func() map[string]string {
 		register(sourceDerived, "Tones."+name, "Solid", "OnSolid", "Ink", "Soft", "Wash", "Border", "Ring")
 	}
 	register(sourceDerived, "Radii", "XS", "S", "M", "L", "XL", "Pill", "Track", "Segment")
-	register(sourceCOSS, "Sizes", "Compact", "Regular", "Large")
+	// Sizes reference coss's three desktop control tiers, tuned to Portrait's 22/28/32 density.
+	register(sourceDerived, "Sizes", "Compact", "Regular", "Large")
 	register(sourceWebUI, "Type", "Display", "Title", "Reading", "Small", "UI", "Control", "Meta", "Code", "H4", "H5", "H6")
 	register(sourceDerived, "Type", "Heading")
+	register(sourceDerived, "DefaultSkeleton", "Period", "Base", "Glint")
 	return provenance
 }()
 
@@ -55,6 +57,7 @@ func TestEveryTokenDeclaresProvenance(t *testing.T) {
 		{"Radii", portrait.Radii},
 		{"Sizes", portrait.Sizes},
 		{"Type", portrait.Type},
+		{"DefaultSkeleton", portrait.DefaultSkeleton},
 	} {
 		collectTokenPaths(root.name, reflect.ValueOf(root.value), actual)
 	}
@@ -107,9 +110,10 @@ func TestTokensMatchTheirSource(t *testing.T) {
 		t.Errorf("Tones = %+v, want %+v", portrait.Tones, wantTones)
 	}
 
-	assertTokenSources(t, sourceCOSS, "Sizes.Compact", "Sizes.Regular", "Sizes.Large")
 	assertTokenSources(t, sourceDerived,
 		"Colors.ModalScrim", "Type.Heading",
+		"Sizes.Compact", "Sizes.Regular", "Sizes.Large",
+		"DefaultSkeleton.Period", "DefaultSkeleton.Base", "DefaultSkeleton.Glint",
 		"Radii.XS", "Radii.S", "Radii.M", "Radii.L", "Radii.XL", "Radii.Pill", "Radii.Track", "Radii.Segment",
 	)
 }

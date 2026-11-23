@@ -70,8 +70,10 @@ func TestResearchDrawerAt480By360KeepsComposerVisibleAndFocusable(t *testing.T) 
 			t.Errorf("research prompt takes %v DIP, leaving too little room for the conversation", info.Bounds.H)
 		}
 	}
-	if _, ok := app.AccessByRole(ui.RoleButton, "Research model and thinking settings"); !ok {
-		t.Fatal("compact model and thinking controls are unavailable")
+	for _, name := range []string{"Model", "Thinking"} {
+		if _, ok := app.AccessByRole(ui.RoleButton, name); !ok {
+			t.Fatalf("compact composer has no %s picker", name)
+		}
 	}
 	if bounds, ok := app.Find("Feynman conversation"); !ok || bounds.H < 40 {
 		t.Fatalf("conversation scroll bounds = %+v, present=%t; want at least 40 DIP", bounds, ok)
@@ -92,11 +94,11 @@ func TestResearchDrawerAt480By360KeepsComposerVisibleAndFocusable(t *testing.T) 
 	if !app.Focused("Attach source files") {
 		t.Fatal("Tab from the research prompt did not reach Attach source files")
 	}
-	if err := app.Click("Research model and thinking settings"); err != nil {
-		t.Fatalf("open compact model settings: %v", err)
+	if err := app.Click("Model"); err != nil {
+		t.Fatalf("open compact model picker: %v", err)
 	}
 	app.Frame()
-	for _, name := range []string{"Use local model hold", "Set thinking level to medium"} {
+	for _, name := range []string{"Use local model hold"} {
 		info, ok := app.AccessByRole(ui.RoleButton, name)
 		if !ok {
 			t.Errorf("compact model popover has no accessible %q control", name)
@@ -105,15 +107,15 @@ func TestResearchDrawerAt480By360KeepsComposerVisibleAndFocusable(t *testing.T) 
 		}
 	}
 	if !app.HasText("1500 / 200000 tokens") {
-		t.Error("compact model settings hid the fixture usage statistics")
+		t.Error("composer configuration row hid the fixture usage statistics")
 	}
 	app.Key(0, ui.KeyEscape)
 	app.Frame()
-	if _, ok := app.AccessByRole(ui.RoleButton, "Research model and thinking settings"); !ok {
-		t.Fatal("closing compact model settings removed its trigger")
+	if _, ok := app.AccessByRole(ui.RoleButton, "Model"); !ok {
+		t.Fatal("closing the compact model picker removed its trigger")
 	}
-	if !app.Focused("Research model and thinking settings") {
-		t.Fatal("Escape did not return focus to the compact model settings trigger")
+	if !app.Focused("Model") {
+		t.Fatal("Escape did not return focus to the Model trigger")
 	}
 }
 
@@ -178,16 +180,64 @@ func TestResearchHistoryPopoverFitsNarrowWindowWithoutDisplacingComposer(t *test
 	}
 }
 
-func TestResearchLayoutKeepsExpandedModelControlsAtStandardWindow(t *testing.T) {
+func TestResearchComposerConfigRowWrapsWithoutShrinkingPrompt(t *testing.T) {
 	p := fixtureReadyPanel()
-	app := ui.NewTester(func(c *ui.Context) { drawFixturePane(c, p, 320, 820) }, 1280, 820)
+	p.state.configs = []feynman.ResearchConfig{{
+		ID: "steering_mode", Name: "Steering mode", CurrentValue: "queue",
+		Options: []feynman.ResearchConfigValue{{Value: "queue", Name: "Queue for later"}, {Value: "interrupt", Name: "Interrupt"}},
+	}}
+	app := ui.NewTester(func(c *ui.Context) { drawFixturePane(c, p, 220, 500) }, 480, 640)
 	app.Frame()
-	for _, name := range []string{"Use anthropic model claude-sonnet-4-5", "Set thinking level to medium"} {
-		if _, ok := app.AccessByRole(ui.RoleButton, name); !ok {
-			t.Errorf("standard layout lost expanded control %q", name)
+
+	model, modelOK := app.AccessByRole(ui.RoleButton, "Model")
+	thinking, thinkingOK := app.AccessByRole(ui.RoleButton, "Thinking")
+	extra, extraOK := app.AccessByRole(ui.RoleButton, "Steering mode")
+	prompt, promptOK := app.AccessByRole(ui.RoleTextField, "Research prompt")
+	usage, usageOK := app.Access("1500 / 200000 tokens · $0.0125")
+	if !modelOK || !thinkingOK || !extraOK || !promptOK || !usageOK {
+		t.Fatalf("narrow composer lost a control: model=%t thinking=%t extra=%t prompt=%t usage=%t", modelOK, thinkingOK, extraOK, promptOK, usageOK)
+	}
+	if thinking.Bounds.Y <= model.Bounds.Y && extra.Bounds.Y <= model.Bounds.Y {
+		t.Fatalf("configuration controls did not wrap at 220 DIP: model=%+v thinking=%+v extra=%+v", model.Bounds, thinking.Bounds, extra.Bounds)
+	}
+	if prompt.Bounds.H > 50 {
+		t.Errorf("wrapped configuration row squeezed the prompt to %v DIP", prompt.Bounds.H)
+	}
+	for name, info := range map[string]ui.AccessInfo{"Model": model, "Thinking": thinking, "Steering mode": extra, "Research prompt": prompt, "Usage": usage} {
+		if info.Offscreen || info.Bounds.X < 96 || info.Bounds.X+info.Bounds.W > 316 || info.Bounds.Y+info.Bounds.H > 548 {
+			t.Errorf("%s is outside the narrow drawer: %+v offscreen=%t", name, info.Bounds, info.Offscreen)
 		}
 	}
-	if _, ok := app.AccessByRole(ui.RoleButton, "Research model and thinking settings"); ok {
-		t.Fatal("standard layout unexpectedly switched to compact controls")
+	if bounds, ok := app.Find("Feynman conversation"); !ok || bounds.H < 40 {
+		t.Fatalf("wrapped configuration row removed the conversation: bounds=%+v present=%t", bounds, ok)
+	}
+}
+
+func TestResearchLayoutUsesComposerPickersAtStandardWindow(t *testing.T) {
+	p := fixtureReadyPanel()
+	app := ui.NewTester(func(c *ui.Context) { drawFixturePane(c, p, 320, 772) }, 1280, 820)
+	app.Frame()
+	for _, name := range []string{"Model", "Thinking"} {
+		if _, ok := app.AccessByRole(ui.RoleButton, name); !ok {
+			t.Errorf("standard composer lost compact picker %q", name)
+		}
+	}
+	for _, name := range []string{"Use anthropic model claude-sonnet-4-5", "Set thinking level to medium"} {
+		if _, ok := app.AccessByRole(ui.RoleButton, name); ok {
+			t.Errorf("Chat top still exposes expanded control %q", name)
+		}
+	}
+	prompt, _ := app.AccessByRole(ui.RoleTextField, "Research prompt")
+	model, _ := app.AccessByRole(ui.RoleButton, "Model")
+	usage, _ := app.Access("1500 / 200000 tokens · $0.0125")
+	if model.Bounds.Y < prompt.Bounds.Y+prompt.Bounds.H || usage.Bounds.Y < prompt.Bounds.Y+prompt.Bounds.H {
+		t.Errorf("configuration controls are not below the prompt: prompt=%+v model=%+v usage=%+v", prompt.Bounds, model.Bounds, usage.Bounds)
+	}
+	if err := app.Click("Thinking"); err != nil {
+		t.Fatalf("open Thinking picker: %v", err)
+	}
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RoleButton, "Set thinking level to medium"); !ok {
+		t.Fatal("Thinking picker did not expose the current thinking level")
 	}
 }

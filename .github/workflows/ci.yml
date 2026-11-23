@@ -53,7 +53,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [nativegenui, portrait, remaining]
+        suite: [nativegenui, nativeui, portrait, remaining]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -67,9 +67,12 @@ jobs:
         run: |
           if [[ "$SUITE" == remaining ]]; then
             module="$(go list -m)"
-            selected="$(go list ./... | grep -Fxv -e "$module/internal/nativegenui" -e "$module/internal/portrait")"
+            selected="$(go list ./... | grep -Fxv \
+              -e "$module/internal/nativegenui" \
+              -e "$module/internal/nativeui" \
+              -e "$module/internal/portrait")"
             mapfile -t packages <<< "$selected"
             go test -race "${packages[@]}"
           else
-            go test -race -v "./internal/$SUITE"
+            go test -race "./internal/$SUITE"
           fi

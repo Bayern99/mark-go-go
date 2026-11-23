@@ -20,7 +20,6 @@ type previewLayout struct {
 	foldUntil     int
 	hiddenRanges  [][2]int
 	sections      []foldSection
-	code          []codePanel
 	headings      map[string]int
 	refs          map[string][]int
 	frontEnd      int
@@ -29,6 +28,7 @@ type previewLayout struct {
 	replacements  []editor.Replacement
 	readable      map[int]string
 	styles        []editor.LineStyle
+	backgrounds   []editor.LineBackground
 	blocks        []editor.Block
 	display       string
 	segments      []displaySegment
@@ -81,7 +81,6 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	p.foldUntil = 0
 	p.hiddenRanges = p.hiddenRanges[:0]
 	p.sections = p.sections[:0]
-	p.code = p.code[:0]
 	p.headings = map[string]int{}
 	p.refs = map[string][]int{}
 	snap := buffer.Snapshot()
@@ -92,6 +91,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	p.readable = make(map[int]string)
 	p.replacements = p.replacements[:0]
 	p.styles = p.styles[:0]
+	p.backgrounds = p.backgrounds[:0]
 	p.blocks = append(p.blocks[:0], pageMargin(0, true, 44), pageMargin(snap.LineCount()-1, false, 120))
 	p.frontEnd = p.frontmatter(snap)
 	frontEnd := p.frontEnd
@@ -192,12 +192,18 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 		}
 		for k := range p.document.LineCount(i) {
 			_, start := p.document.Line(i, k)
-			lineStart := snap.LineStart(snap.LineOf(start))
+			line := snap.LineOf(start)
+			lineStart := snap.LineStart(line)
+			quoteDepth := 0
 			for n := lineStart; n < start; n++ {
 				if src[n] == '>' {
+					quoteDepth++
 					p.readable[n] = ""
 					p.replacements = append(p.replacements, editor.Replacement{Start: n, End: n + 1, Width: quoteBarWidth, Content: quoteBar})
 				}
+			}
+			if quoteDepth > 0 {
+				p.addIndent(line, float32(quoteDepth*quoteBarInset), 0)
 			}
 		}
 		inlines := p.document.Inlines(i)
@@ -305,7 +311,23 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	p.indexDisplay(src)
 }
 
-const quoteBarWidth = 16
+const (
+	quoteBarWidth = 2
+	quoteBarInset = 14
+)
+
+// addIndent adds horizontal insets to a line's existing font style, or
+// gives it a style of its own. Quoted headings need both.
+func (p *previewLayout) addIndent(line int, left, right float32) {
+	for i := len(p.styles) - 1; i >= 0; i-- {
+		if p.styles[i].Line == line {
+			p.styles[i].Left += left
+			p.styles[i].Right += right
+			return
+		}
+	}
+	p.styles = append(p.styles, editor.LineStyle{Line: line, Left: left, Right: right})
+}
 
 func quoteBar(c *ui.Context, e ui.Element, _ editor.Replacement) {
 	e.Children(func() {
@@ -527,6 +549,7 @@ func (d *Document) prepareView() {
 		st.Label = "Markdown source"
 		st.Font = portrait.Type.Code.Font(400)
 		st.ReadingColumn = editor.ReadingColumn{}
+		st.LineBackgrounds = nil
 		st.LineNumbers = editor.LineNumbersOn
 		st.LineHeight = portrait.Type.Code.LineHeight()
 		if st.Projection != nil {

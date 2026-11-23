@@ -170,7 +170,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 										child.state.Font.Weight = 600
 									}
 									child.state.LineHeight = portrait.Type.Small.LineHeight()
-									child.state.Theme.Background = unpainted
+									child.state.Theme.Background = portrait.Clear
 									child.state.OnInput = model.cellInput(pos, doc, c.Services())
 									field := editor.View(c, &child.state).Width(model.widths[k] - 10).Height(31)
 									model.bounds[pos] = field.Bounds()

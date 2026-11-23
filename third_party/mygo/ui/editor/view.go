@@ -37,8 +37,11 @@ type view struct {
 	tabSize    int
 	wrap       bool
 	wrapWidth  float32
-	scale      float32
-	theme      *Theme
+	// leftInset and rightInset are a styled line's horizontal insets.
+	// leftInset is part of every row's indent; both reduce wrapWidth.
+	leftInset, rightInset float32
+	scale                 float32
+	theme                 *Theme
 	// sys is the text system of the window the editor draws in, which
 	// build sets of the context each frame: a Tester's window shapes
 	// apart from the others' shared system (#1722). A view styled before
@@ -1181,9 +1184,9 @@ func (v *view) layoutRows(l *lineLayout) {
 		if i < len(breaks) {
 			to = breaks[i]
 		}
-		row := rowLayout{from: from, to: to}
+		row := rowLayout{from: from, to: to, indent: v.leftInset}
 		if i > 0 {
-			row.indent = indent
+			row.indent += indent
 		}
 		// The rows of a wrapped line are shaped as they show, not all
 		// of a long line's at once, but those wrapBreaks shaped to fit.
@@ -1192,6 +1195,7 @@ func (v *view) layoutRows(l *lineLayout) {
 		l.width = max(l.width, row.indent+row.width)
 		from = to
 	}
+	l.width += v.rightInset
 	if v.wrap {
 		v.heights.wraps.set(l.n, len(l.rows))
 	}
@@ -1245,7 +1249,7 @@ func (v *view) piece(l *lineLayout, p *rowPiece) *text.Layout {
 		// their advances, which placed the pieces, add up to, as Core Text
 		// does between Han and Latin letters: an unwrapped line is as wide
 		// as its last piece ends, where a caret at its end shows.
-		if w := p.x + p.l.Width; !v.wrap && p.to == len(l.disp) && w > l.width {
+		if w := p.x + p.l.Width + v.leftInset + v.rightInset; !v.wrap && p.to == len(l.disp) && w > l.width {
 			l.width = w
 			v.measured.set(l.n, w)
 		}

@@ -5,6 +5,7 @@ import (
 
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/editor"
 )
 
 type jumpHighlight struct {
@@ -12,45 +13,6 @@ type jumpHighlight struct {
 	at      int
 	version uint64
 	start   time.Time
-}
-
-var unpainted = portrait.Clear
-
-type pageFill struct {
-	rect        ui.Rect
-	left, right float32
-	radius      float32
-	color, rim  ui.Color
-}
-
-type page struct {
-	paper  ui.Color
-	column float32
-	fills  []pageFill
-}
-
-func (pg page) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
-	p.FillRadii(box, radii, pg.paper)
-	for _, f := range pg.fills {
-		r := f.rect
-		r.X += box.X
-		r.Y += box.Y
-		if r.W <= 0 {
-			right := box.X + box.W - 40
-			if pg.column > 0 {
-				right = min(r.X+pg.column, right)
-			}
-			r.W = right - r.X
-		}
-		r.X -= f.left
-		r.W += f.left + f.right
-		if r.W > 0 && r.H > 0 {
-			p.Fill(r, f.color, f.radius)
-			if f.rim.A > 0 {
-				p.Stroke(r, f.rim, f.radius, 0.5)
-			}
-		}
-	}
 }
 
 func (d *Document) Reveal(offset int) error {
@@ -61,29 +23,13 @@ func (d *Document) Reveal(offset int) error {
 	return nil
 }
 
-func (d *Document) decorate(c *ui.Context, field ui.Element) {
-	d.page = d.page[:0]
-	column := float32(0)
+// decorate gives the editor the line backgrounds it paints in its own text
+// geometry. Keeping them here, rather than drawing around the editor, makes
+// panels follow wrapping, folds and scrolling in the same frame as the text.
+func (d *Document) decorate(c *ui.Context) {
+	d.state.LineBackgrounds = append([]editor.LineBackground(nil), d.preview.backgrounds...)
 	if d.mode == Preview {
-		column = d.state.ReadingColumn.Width
-		d.codePanels()
-	}
-	d.jumpFill(c)
-	field.Material(page{paper: c.Theme().Background, column: column, fills: append([]pageFill(nil), d.page...)})
-}
-
-func (d *Document) codePanels() {
-	for _, cp := range d.preview.code {
-		top, ok := d.state.Rect(cp.first)
-		if !ok {
-			continue
-		}
-		last, ok := d.state.Rect(cp.last)
-		if !ok {
-			continue
-		}
-		r := ui.Rect{X: top.X, Y: top.Y - codeHeaderHeight, H: last.Y + last.H + 12 - (top.Y - codeHeaderHeight)}
-		d.page = append(d.page, pageFill{rect: r, left: 16, radius: 8, color: portrait.Colors.Code, rim: portrait.Colors.Line})
+		d.jumpFill(c)
 	}
 }
 
@@ -108,14 +54,9 @@ func (d *Document) jumpFill(c *ui.Context) {
 	c.AnimationFrame()
 	snap := d.state.Buffer.Snapshot()
 	line := snap.LineOf(min(j.at, snap.Len()))
-	first, ok := d.state.Rect(snap.LineStart(line))
-	if !ok {
-		return
-	}
-	last, ok := d.state.Rect(snap.LineEnd(line))
-	if !ok {
-		last = first
-	}
-	r := ui.Rect{X: first.X, Y: first.Y, H: last.Y + last.H - first.Y}
-	d.page = append(d.page, pageFill{rect: r, left: 8, right: 8, radius: h.Radius, color: h.At(elapsed)})
+	d.state.LineBackgrounds = append(d.state.LineBackgrounds, editor.LineBackground{
+		First: line, Last: line,
+		Color: h.At(elapsed), Radius: h.Radius,
+		ReadingColumn: true, PaddingLeft: 8, PaddingRight: 8,
+	})
 }

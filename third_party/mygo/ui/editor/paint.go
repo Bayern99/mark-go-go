@@ -185,6 +185,9 @@ func (ed *editor) paint(p *ui.Painter, r ui.Rect) {
 	if ed.elementsMoved() {
 		ed.services.Invalidate()
 	}
+	// Joined backgrounds sit under both text and app blocks, such as a
+	// code block's header. Plain backgrounds retain their per-row order.
+	ed.paintDecoratedBackgrounds(p, r, &f)
 	ed.paintBlocks(p, r, &f)
 	text := ui.Rect{X: r.X + ed.gutterW, Y: r.Y, W: r.W - ed.gutterW, H: r.H}
 	p.Clip(text, 0, func() {
@@ -435,7 +438,7 @@ func (ed *editor) paintLine(p *ui.Painter, r ui.Rect, f *frame, line int, g line
 			p.Fill(ui.Rect{X: textRect.X, Y: y, W: textRect.W, H: lh}, style.bg, 0)
 		}
 		for _, b := range ed.o.backgrounds {
-			if line >= b.First && line <= b.Last && b.Color.A > 0 {
+			if line >= b.First && line <= b.Last && b.Color.A > 0 && !b.decorated() {
 				p.Fill(ui.Rect{X: textRect.X, Y: y, W: textRect.W, H: lh}, b.Color, 0)
 			}
 		}
@@ -576,6 +579,68 @@ func (ed *editor) paintLine(p *ui.Painter, r ui.Rect, f *frame, line int, g line
 				ed.paintCaret(p, cr)
 			}
 		}
+	}
+}
+
+// decorated reports whether a line background uses the joined-rectangle
+// geometry. Plain backgrounds retain their original per-row painting.
+func (b LineBackground) decorated() bool {
+	return b.Radius != 0 || b.Stroke > 0 || b.ReadingColumn || b.PaddingLeft != 0 || b.PaddingRight != 0 || b.PaddingTop != 0 || b.PaddingBottom != 0
+}
+
+// paintDecoratedBackgrounds paints each run of consecutive visible lines
+// of a decorated background as one rectangle. Hidden lines split a run,
+// just as they split the text the background belongs to.
+func (ed *editor) paintDecoratedBackgrounds(p *ui.Painter, r ui.Rect, f *frame) {
+	h := &ed.view.heights
+	for _, b := range ed.o.backgrounds {
+		if !b.decorated() || b.First > b.Last || b.Last < f.first || b.First > f.last {
+			continue
+		}
+		x, w := r.X+ed.gutterW, r.W-ed.gutterW
+		if b.ReadingColumn {
+			x, w = r.X+ed.textX, ed.textWidth()
+		}
+		x -= b.PaddingLeft
+		w += b.PaddingLeft + b.PaddingRight
+		top, bottom := 0.0, 0.0
+		open := false
+		flush := func() {
+			if !open {
+				return
+			}
+			rc := ui.Rect{X: x, Y: r.Y + float32(top-ed.scrollY), W: w, H: float32(bottom - top)}
+			if rc.H > 0 && rc.W > 0 {
+				radius := max(0, b.Radius)
+				if b.Color.A > 0 {
+					p.Fill(rc, b.Color, radius)
+				}
+				if b.Stroke > 0 && b.StrokeColor.A > 0 {
+					p.Stroke(rc, b.StrokeColor, radius, b.Stroke)
+				}
+			}
+			open = false
+		}
+		for line := max(b.First, f.first); line <= min(b.Last, f.last); line++ {
+			g := h.geometry(line)
+			if g.hidden {
+				flush()
+				continue
+			}
+			lineTop, lineBottom := g.rows, g.below
+			if line == b.First {
+				lineTop -= float64(b.PaddingTop)
+			}
+			if line == b.Last {
+				lineBottom += float64(b.PaddingBottom)
+			}
+			if !open {
+				top = lineTop
+				open = true
+			}
+			bottom = lineBottom
+		}
+		flush()
 	}
 }
 

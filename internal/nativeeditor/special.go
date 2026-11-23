@@ -167,6 +167,8 @@ func (p *previewLayout) codeBlock(snap editor.Snapshot, i int) {
 			Line:       snap.LineOf(start),
 			Font:       portrait.Type.Code.Font(400),
 			LineHeight: portrait.Type.Code.LineHeight(),
+			Left:       codePanelInset,
+			Right:      codePanelInset,
 		})
 	}
 
@@ -180,7 +182,13 @@ func (p *previewLayout) codeBlock(snap editor.Snapshot, i int) {
 	}
 	if n := p.document.LineCount(i); n > 0 {
 		_, last := p.document.Line(i, n-1)
-		p.code = append(p.code, codePanel{first: snap.LineStart(headerLine), last: snap.LineStart(snap.LineOf(last))})
+		p.backgrounds = append(p.backgrounds, editor.LineBackground{
+			First: headerLine, Last: snap.LineOf(last),
+			Color: portrait.Colors.Code, Radius: 8,
+			Stroke: 0.5, StrokeColor: portrait.Colors.Line,
+			ReadingColumn: true,
+			PaddingTop:    codeHeaderHeight, PaddingBottom: 12,
+		})
 	}
 	p.blocks = append(p.blocks, editor.Block{
 		Line:        headerLine,
@@ -200,13 +208,14 @@ func (p *previewLayout) hideFenceLine(snap editor.Snapshot, line int) {
 	p.replace(start, end, "")
 }
 
-const codeHeaderHeight = 30
-
-type codePanel struct{ first, last int }
+const (
+	codeHeaderHeight = 30
+	codePanelInset   = 16
+)
 
 func codeHeader(label, body string) func(*ui.Context, ui.Element, editor.Block) {
 	return func(c *ui.Context, e ui.Element, _ editor.Block) {
-		e.Height(codeHeaderHeight).Children(func() {
+		e.Height(codeHeaderHeight).Padding(0, codePanelInset).Children(func() {
 			ui.Row(c).Height(codeHeaderHeight).AlignItems(ui.Center).Gap(8).Children(func() {
 				codeKicker(c, label, portrait.Colors.Ink3)
 				ui.Spacer(c)

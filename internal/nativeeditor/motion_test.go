@@ -49,6 +49,9 @@ func TestOutlineJumpHighlightsTheHeadingAndFadesWithinJumpDuration(t *testing.T)
 		t.Fatal("heading not laid out")
 	}
 	x, y := r.X-4, r.Y+r.H/2
+	if got := tint(tt.Image(), r.X-8, r.Y); got != 0 {
+		t.Fatalf("rounded highlight painted its top-left outer corner (%d)", got)
+	}
 	start := tint(tt.Image(), x, y)
 
 	tt.Advance(portrait.Motion.Jump * 35 / 100)

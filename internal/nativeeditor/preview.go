@@ -44,6 +44,33 @@ func (p *previewLayout) replace(start, end int, text string) {
 	}
 }
 
+func previewTaskCheckbox(c *ui.Context, checked *bool) ui.Element {
+	t := c.Theme()
+	control := ui.CheckboxBase(c, checked).FocusRing(false)
+	control.Children(func() {
+		fill, border := t.Background, t.Border.Mix(t.Text, 0.25)
+		if *checked {
+			fill, border = portrait.Colors.Ink3, portrait.Colors.Ink3
+		}
+		radius := t.Space(1)
+		box := ui.Box(c).Size(t.Space(4), t.Space(4)).Radius(radius).Shrink(0).Background(fill).Border(1, border)
+		box.DrawOver(func(p *ui.Painter, r ui.Rect) {
+			if !*checked && control.Hovered() {
+				p.Stroke(r, t.Accent, radius, 1)
+			}
+			if *checked {
+				var mark ui.Path
+				mark.MoveTo(r.X+r.W*0.22, r.Y+r.H*0.52).LineTo(r.X+r.W*0.42, r.Y+r.H*0.71).LineTo(r.X+r.W*0.78, r.Y+r.H*0.31)
+				p.StrokePath(&mark, t.Space(0.5), portrait.Colors.Paper)
+			}
+			if control.FocusVisible() {
+				p.FocusRing(r, [4]float32{radius, radius, radius, radius})
+			}
+		})
+	})
+	return control
+}
+
 func (p *previewLayout) build(buffer *editor.Buffer) {
 	if p.document == nil {
 		p.document = parser.New(parser.Default | parser.ExtDollarMath)
@@ -140,7 +167,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 						Content: func(c *ui.Context, e ui.Element, _ editor.Replacement) {
 							e.Children(func() {
 								value := checked
-								control := ui.Checkbox(c, &value, "").Label(description).Disabled(p.owner.state.ReadOnly)
+								control := previewTaskCheckbox(c, &value).Label(description).Disabled(p.owner.state.ReadOnly)
 								if control.Changed() && !p.owner.state.ReadOnly {
 									idx := p.owner.sourceIndex()
 									a, z := idx.rawAtEditor(task), idx.rawAtEditor(task+3)

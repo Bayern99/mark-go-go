@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Bayern99/mark-go-go/internal/nativeeditor"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 )
@@ -129,6 +130,89 @@ func TestPreviewTaskCheckboxEditsSourceAndSharesUndo(t *testing.T) {
 	}
 	if !d.Redo() || d.Source() != "- [x] Finish task\r\n" {
 		t.Fatal("Redo did not restore the task toggle")
+	}
+}
+
+func TestPreviewTaskCheckboxUsesMutedCheckedColors(t *testing.T) {
+	d := nativeeditor.New("- [X] Done\r\n- [ ] Next\r\n")
+	theme := portrait.Theme()
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Themed(c, &theme).Fill().Children(func() { d.View(c, false).Fill() })
+	}, 560, 300)
+	tt.Frame()
+
+	checked, ok := tt.AccessByRole(ui.RoleCheckBox, "Task: Done")
+	if !ok || !checked.Checked || checked.Disabled {
+		t.Fatalf("checked task accessibility = %+v, %v", checked, ok)
+	}
+	unchecked, ok := tt.AccessByRole(ui.RoleCheckBox, "Task: Next")
+	if !ok || unchecked.Checked || unchecked.Disabled {
+		t.Fatalf("unchecked task accessibility = %+v, %v", unchecked, ok)
+	}
+
+	rgba := func(c ui.Color) color.RGBA { return color.RGBA{R: c.R, G: c.G, B: c.B, A: c.A} }
+	over := func(front, back ui.Color) color.RGBA {
+		blend := func(a, b uint8) uint8 {
+			return uint8((int(a)*int(front.A) + int(b)*(255-int(front.A)) + 127) / 255)
+		}
+		return color.RGBA{R: blend(front.R, back.R), G: blend(front.G, back.G), B: blend(front.B, back.B), A: 255}
+	}
+	pixel := func(r ui.Rect, x, y float32) color.RGBA {
+		return tt.Image().RGBAAt(int(r.X+x), int(r.Y+y))
+	}
+	if got, want := pixel(checked.Bounds, checked.Bounds.W/2, 3), rgba(portrait.Colors.Ink3); got != want {
+		t.Errorf("checked task fill = %v; want muted outline color %v", got, want)
+	}
+	if got, want := pixel(checked.Bounds, 0, checked.Bounds.H/2), rgba(portrait.Colors.Ink3); got != want {
+		t.Errorf("checked task border = %v; want muted outline color %v", got, want)
+	}
+	accent, mark := rgba(portrait.Colors.Accent), rgba(portrait.Colors.Paper)
+	foundMark := false
+	for y := int(checked.Bounds.Y); y < int(checked.Bounds.Y+checked.Bounds.H); y++ {
+		for x := int(checked.Bounds.X); x < int(checked.Bounds.X+checked.Bounds.W); x++ {
+			px := tt.Image().RGBAAt(x, y)
+			if px == accent {
+				t.Fatalf("checked task still uses green accent at (%d, %d)", x, y)
+			}
+			if x < int(checked.Bounds.X+ui.LightTheme().Space(4)) {
+				foundMark = foundMark || px == mark
+			}
+		}
+	}
+	if !foundMark {
+		t.Error("checked task has no paper-colored check mark")
+	}
+
+	if got, want := pixel(unchecked.Bounds, unchecked.Bounds.W/2, unchecked.Bounds.H/2), rgba(theme.Background); got != want {
+		t.Errorf("unchecked task fill = %v; want %v", got, want)
+	}
+	if got, want := pixel(unchecked.Bounds, 0, unchecked.Bounds.H/2), over(theme.Border.Mix(theme.Text, 0.25), theme.Background); got != want {
+		t.Errorf("unchecked task border = %v; want %v", got, want)
+	}
+	tt.Move(unchecked.Bounds.X+unchecked.Bounds.W/2, unchecked.Bounds.Y+unchecked.Bounds.H/2)
+	tt.Frame()
+	if got, want := pixel(unchecked.Bounds, 0, unchecked.Bounds.H/2), rgba(theme.Accent); got != want {
+		t.Errorf("hovered unchecked task border = %v; want %v", got, want)
+	}
+
+	if d.Source() != "- [X] Done\r\n- [ ] Next\r\n" || d.Modified() {
+		t.Fatal("drawing or hovering task checkboxes changed the source")
+	}
+}
+
+func TestPreviewTaskCheckboxReadOnlyKeepsStateAndSource(t *testing.T) {
+	const src = "- [x] Locked\r\n"
+	d := nativeeditor.New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, true).Fill() }, 560, 300)
+	tt.Frame()
+	node, ok := tt.AccessByRole(ui.RoleCheckBox, "Task: Locked")
+	if !ok || !node.Checked || !node.Disabled {
+		t.Fatalf("read-only task accessibility = %+v, %v", node, ok)
+	}
+	tt.ClickAt(node.Bounds.X+node.Bounds.W/2, node.Bounds.Y+node.Bounds.H/2)
+	tt.Key(0, ui.KeySpace)
+	if d.Source() != src || d.CanUndo() {
+		t.Fatalf("read-only task changed source or history: %q, undo %v", d.Source(), d.CanUndo())
 	}
 }
 

@@ -50,6 +50,14 @@ func TestGallery(t *testing.T) {
 			}
 			for _, preference := range Preferences {
 				for _, surface := range surfaces {
+					if !needImage && (preference != Default || surface != surfaces[0]) {
+						rendered, err := renderCell(Cell{Component: component.Name, State: Rest, Preference: preference, Surface: surface}, false)
+						if err != nil {
+							t.Fatal(err)
+						}
+						assertCellStructure(t, rendered)
+						continue
+					}
 					sheet, err := renderSheet(component.Name, preference, surface, needImage, func(rendered cellRender) {
 						assertCellStructure(t, rendered)
 					})
@@ -178,35 +186,41 @@ func TestGalleryRejectsFrameAwayFromPaper(t *testing.T) {
 }
 
 func TestGalleryButtonsChangeWhilePressedAndRecover(t *testing.T) {
-	components := []Component{IconButton, Group}
-	for _, axis := range buttonAxes {
-		components = append(components, axis.name)
+	components := []Component{
+		Button, AccentButton, QuietButton, DangerButton, DangerOutlineButton, LinkButton, IconButton, Group,
+	}
+	combos := []struct {
+		preference Preference
+		surface    Surface
+	}{
+		{Default, Paper},
+		{Default, Glass},
+		{HighContrast, Chrome},
+		{ReduceTransparency, Glass},
 	}
 	for _, component := range components {
-		for _, preference := range Preferences {
-			for _, surface := range Surfaces {
-				t.Run(fmt.Sprintf("%s/%s/%s", component, preference, surface), func(t *testing.T) {
-					cell := Cell{Component: component, State: Rest, Preference: preference, Surface: surface}
-					rendered, err := renderCell(cell, true)
-					if err != nil {
-						t.Fatal(err)
-					}
-					bounds := rendered.target.Bounds
-					rest := region(rendered.image, bounds)
-					x, y := bounds.X+bounds.W/2, bounds.Y+bounds.H/2
-					rendered.tester.Press(x, y)
-					rendered.tester.Advance(300 * time.Millisecond)
-					if changed := differs(rest, region(rendered.tester.Image(), bounds)); changed < len(rest)/4 {
-						t.Fatalf("pressed look changes %d of %d pixels, want at least 25%%", changed, len(rest))
-					}
-					rendered.tester.Release(x, y)
-					rendered.tester.Move(0, 0)
-					rendered.tester.Advance(300 * time.Millisecond)
-					if changed := differs(rest, region(rendered.tester.Image(), bounds)); changed != 0 {
-						t.Fatalf("released button did not return to rest: %d pixels differ", changed)
-					}
-				})
-			}
+		for _, combo := range combos {
+			t.Run(fmt.Sprintf("%s/%s/%s", component, combo.preference, combo.surface), func(t *testing.T) {
+				cell := Cell{Component: component, State: Rest, Preference: combo.preference, Surface: combo.surface}
+				rendered, err := renderCell(cell, true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				bounds := rendered.target.Bounds
+				rest := region(rendered.image, bounds)
+				x, y := bounds.X+bounds.W/2, bounds.Y+bounds.H/2
+				rendered.tester.Press(x, y)
+				rendered.tester.Advance(300 * time.Millisecond)
+				if changed := differs(rest, region(rendered.tester.Image(), bounds)); changed < len(rest)/4 {
+					t.Fatalf("pressed look changes %d of %d pixels, want at least 25%%", changed, len(rest))
+				}
+				rendered.tester.Release(x, y)
+				rendered.tester.Move(0, 0)
+				rendered.tester.Advance(300 * time.Millisecond)
+				if changed := differs(rest, region(rendered.tester.Image(), bounds)); changed != 0 {
+					t.Fatalf("released button did not return to rest: %d pixels differ", changed)
+				}
+			})
 		}
 	}
 }

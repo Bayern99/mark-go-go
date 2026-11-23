@@ -97,19 +97,20 @@ func TestSvgPixelRegressionScalesViewBoxToAvailableWidth(t *testing.T) {
 	}
 }
 
-func svgVerticalEdgeTransition(img *image.RGBA, x, y int, ink color.RGBA) int {
+func svgVerticalEdgeTransition(img *image.RGBA, x, y int, ink color.RGBA) (transition int, hitBackground, hitInk bool) {
 	background := img.RGBAAt(x, y-16)
 	distance := func(a, b color.RGBA) int {
 		return abs(int(a.R)-int(b.R)) + abs(int(a.G)-int(b.G)) + abs(int(a.B)-int(b.B))
 	}
-	transition := 0
 	for at := y - 16; at <= y+16; at++ {
 		pixel := img.RGBAAt(x, at)
+		hitBackground = hitBackground || distance(pixel, background) < 12
+		hitInk = hitInk || distance(pixel, ink) < 12
 		if distance(pixel, background) >= 12 && distance(pixel, ink) >= 12 {
 			transition++
 		}
 	}
-	return transition
+	return transition, hitBackground, hitInk
 }
 
 func TestSvgRasterizesAtViewBoxAndDeviceScale(t *testing.T) {
@@ -142,7 +143,11 @@ func TestSvgRasterizesAtViewBoxAndDeviceScale(t *testing.T) {
 			}
 			x := int((box.Bounds.X+box.Bounds.W*test.at[0])*deviceScale + 0.5)
 			y := int((box.Bounds.Y+box.Bounds.H*test.at[1])*deviceScale + 0.5)
-			if transition := svgVerticalEdgeTransition(img, x, y, test.ink); transition > test.max {
+			transition, hitBackground, hitInk := svgVerticalEdgeTransition(img, x, y, test.ink)
+			if !hitBackground || !hitInk {
+				t.Errorf("the scan line at (%d, %d) hits background %t and ink %t; want both, so the edge transition assertion cannot pass on an empty drawing", x, y, hitBackground, hitInk)
+			}
+			if transition > test.max {
 				t.Errorf("the edge spans %d partially covered physical pixels, want at most %d", transition, test.max)
 			}
 		})

@@ -137,9 +137,18 @@ type treatment struct {
 func (r *Reading) statements(c *ui.Context) {
 	ui.Row(c).Justify(ui.Center).MinWidth(0).Children(func() {
 		ui.Column(c).Grow(1).Basis(0).MinWidth(0).MaxWidth(readingWidth).Children(func() {
+			r.drawingProblems = map[string]string{}
 			r.piece(c, r.surface.tree, "root", 0, place{}, treatment{})
 			for i, notice := range r.surface.notices {
 				ui.Text(c.Key("notice"+strconv.Itoa(i)), notice).Role(ui.RoleAlert).Margin(groupGap, 0, 0, 0)
+			}
+			paths := make([]string, 0, len(r.drawingProblems))
+			for path := range r.drawingProblems {
+				paths = append(paths, path)
+			}
+			slices.Sort(paths)
+			for i, path := range paths {
+				ui.Text(c.Key("drawing-notice"+strconv.Itoa(i)), r.drawingProblems[path]).Role(ui.RoleAlert).Margin(groupGap, 0, 0, 0)
 			}
 		})
 	})
@@ -222,7 +231,7 @@ func (spanned *spannedWidth) fitsOnOneLine(c *ui.Context, text textFit) bool {
 func wide(children any) bool {
 	for _, child := range flatten(children, nil) {
 		switch kind(child) {
-		case "Chart", "Table", "Grid", "Card", "Carousel", "Image":
+		case "Chart", "Table", "Grid", "Card", "Carousel", "Image", "Svg":
 			return true
 		}
 	}

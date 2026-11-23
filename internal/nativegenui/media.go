@@ -57,6 +57,8 @@ func (r *Reading) media(c *ui.Context, e *openuilang.Element, p props, path stri
 		r.glyph(c, p.text("name"), size, color)
 	case "Image":
 		r.image(c, p, at)
+	case "Svg":
+		r.svg(c, p, path, at)
 	case "Table":
 		r.table(c, p, path, depth, at)
 	case "Chart":

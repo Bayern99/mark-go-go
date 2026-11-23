@@ -34,6 +34,7 @@ type Reading struct {
 	form            string
 	fields          map[string][]checkedField
 	problems        map[string]string
+	drawingProblems map[string]string
 	presses         []press
 	changed         bool
 	pressable       int

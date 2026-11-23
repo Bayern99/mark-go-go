@@ -12,7 +12,7 @@ import (
 
 func TestTheFormatListsEveryComponentAndFunctionOfTheCatalog(t *testing.T) {
 	text := Format()
-	for _, want := range []string{"- Col(children: Node[]", "- Slider(value: $binding<number>", "- Source(sources: string[], children: Node[])", "- @Format(", "- @Each("} {
+	for _, want := range []string{"- Col(children: Node[]", "- Slider(value: $binding<number>", "- Source(sources: string[], children: Node[])", "- Svg(children: (Circle | Ellipse | Rect | Line | Path | Polyline | Polygon | SvgText | G)[]", "- @Format(", "- @Each("} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the format lacks %q", want)
 		}

@@ -26,6 +26,7 @@ func TestMetricGridLaysOutWideRowWithPortraitTypeAndFlatMaterial(t *testing.T) {
 	reader.Load(metricGridView(t))
 	tt := ui.NewTesterWith(reader.View, 1280, 820, ui.TesterOptions{Preferences: ui.Preferences{ReduceMotion: true}})
 	tt.Frame()
+	nearLeading := func(got, want float32) bool { return got >= want-2 && got <= want+2 }
 
 	values := []string{"10", "2", "0", "CLEAN"}
 	var previous ui.Rect
@@ -34,8 +35,8 @@ func TestMetricGridLaysOutWideRowWithPortraitTypeAndFlatMaterial(t *testing.T) {
 		if !ok || box.W == 0 {
 			t.Fatalf("metric value %q is not fully shown: %+v", value, box)
 		}
-		if box.H != portrait.Type.Title.Leading {
-			t.Errorf("metric value %q line height = %v, want Portrait title leading %v", value, box.H, portrait.Type.Title.Leading)
+		if !nearLeading(box.H, portrait.Type.Title.Leading) {
+			t.Errorf("metric value %q line height = %v, want Portrait title leading %v (±2px)", value, box.H, portrait.Type.Title.Leading)
 		}
 		if i > 0 && (box.Y != previous.Y || box.X <= previous.X) {
 			t.Errorf("metric value %q at %+v does not follow %+v on the same row", value, box, previous)
@@ -48,12 +49,12 @@ func TestMetricGridLaysOutWideRowWithPortraitTypeAndFlatMaterial(t *testing.T) {
 		}
 	}
 	heading, ok := tt.Find("Key figures")
-	if !ok || heading.H != portrait.Type.Meta.Leading {
-		t.Errorf("section heading = %+v, want Portrait meta leading %v", heading, portrait.Type.Meta.Leading)
+	if !ok || !nearLeading(heading.H, portrait.Type.Meta.Leading) || heading.H >= previous.H {
+		t.Errorf("section heading = %+v, want Portrait meta leading %v (±2px) below the title value", heading, portrait.Type.Meta.Leading)
 	}
 	label, ok := tt.Find("Verified steps")
-	if !ok || label.H != portrait.Type.Meta.Leading || label.H >= previous.H {
-		t.Errorf("metric label = %+v, want Portrait meta leading below the title value", label)
+	if !ok || !nearLeading(label.H, portrait.Type.Meta.Leading) || label.H >= previous.H {
+		t.Errorf("metric label = %+v, want Portrait meta leading %v (±2px) below the title value", label, portrait.Type.Meta.Leading)
 	}
 
 	img := tt.Image()

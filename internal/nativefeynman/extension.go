@@ -34,60 +34,63 @@ func (e Extension) Attach(window *nativeui.Window) nativeui.Panels {
 }
 
 type panel struct {
-	window            *nativeui.Window
-	host              *feynman.ResearchHost
-	review            *review.Service
-	state             *paneState
-	connected         string
-	settingsRoot      string
-	closed            bool
-	chatScroll        ui.ScrollState
-	filesScroll       ui.ScrollState
-	settingsScr       ui.ScrollState
-	alphaScroll       ui.ScrollState
-	commandQuery      string
-	questionText      string
-	questionPick      string
-	questionFind      string
-	permissionID      string
-	questionPending   bool
-	collapsed         map[string]*bool
-	pickerStates      map[string]*researchPickerState
-	pickerFocus       string
-	cliPassword       string
-	searchKey         string
-	serverLocal       bool
-	serverArgs        string
-	serverEnv         string
-	serverHeaders     string
-	serverTransport   string
-	serverExposure    string
-	serverName        string
-	serverURL         string
-	serverCommand     string
-	serverCwd         string
-	serverDescription string
-	serverBearerEnv   string
-	sessionView       string
-	forkMessages      []feynman.ResearchForkMessage
-	researchTree      *feynman.ResearchTree
-	loginProvider     string
-	tierValue         string
-	searchProvider    string
-	packageTarget     string
-	modelTarget       string
-	alphaQuery        string
-	alphaMode         string
-	alphaPaperID      string
-	alphaQuestion     string
-	alphaRepoURL      string
-	alphaFilePath     string
-	alphaNoteInput    string
-	alphaFullText     bool
-	alphaAnnotation   *feynman.CLIAlphaAnnotateResult
-	alphaAskResult    *feynman.CLICommandResult
-	alphaCodeResult   *feynman.CLICommandResult
-	decodedImages     map[string]decodedDataImage
+	window              *nativeui.Window
+	host                *feynman.ResearchHost
+	review              *review.Service
+	state               *paneState
+	connected           string
+	settingsRoot        string
+	closed              bool
+	chatScroll          ui.ScrollState
+	filesScroll         ui.ScrollState
+	settingsScr         ui.ScrollState
+	alphaScroll         ui.ScrollState
+	commandQuery        string
+	questionText        string
+	questionPick        string
+	questionFind        string
+	permissionID        string
+	questionPending     bool
+	collapsed           map[string]*bool
+	pickerStates        map[string]*researchPickerState
+	pickerFocus         string
+	cliPassword         string
+	searchKey           string
+	serverLocal         bool
+	serverArgs          string
+	serverEnv           string
+	serverHeaders       string
+	serverTransport     string
+	serverExposure      string
+	serverName          string
+	serverURL           string
+	serverCommand       string
+	serverCwd           string
+	serverDescription   string
+	serverBearerEnv     string
+	sessionView         string
+	forkMessages        []feynman.ResearchForkMessage
+	researchTree        *feynman.ResearchTree
+	loginProvider       string
+	tierValue           string
+	searchProvider      string
+	packageTarget       string
+	modelTarget         string
+	alphaQuery          string
+	alphaMode           string
+	alphaPaperID        string
+	alphaQuestion       string
+	alphaRepoURL        string
+	alphaFilePath       string
+	alphaNoteInput      string
+	alphaFullText       bool
+	alphaAnnotation     *feynman.CLIAlphaAnnotateResult
+	alphaAskResult      *feynman.CLICommandResult
+	alphaCodeResult     *feynman.CLICommandResult
+	decodedImages       map[string]decodedDataImage
+	confirmationOpen    bool
+	confirmationSpec    portrait.ConfirmSpec
+	confirmationReturns map[string]*ui.Handle
 }
 
 func (p *panel) collapsibleState(key string) *bool {
@@ -219,6 +222,8 @@ func (p *panel) resetSessionViews() {
 // stale conversations, forks, and trees cannot leak into the new root.
 func (p *panel) switchRoot(root string) {
 	p.settingsRoot = ""
+	p.confirmationOpen = false
+	p.confirmationSpec = portrait.ConfirmSpec{}
 	p.state = newPaneState(root)
 	p.resetSessionViews()
 }
@@ -356,6 +361,7 @@ func (p *panel) draw(c *ui.Context) {
 			p.chat(c)
 		}
 	})
+	p.drawConfirmation(c)
 }
 
 func (p *panel) heading(c *ui.Context) {
@@ -379,7 +385,7 @@ func (p *panel) heading(c *ui.Context) {
 	if status == "" {
 		status = string(statusOffline)
 	}
-	text(c, portrait.Type.Meta, status).TextColor(statusColor(s.status)).Label("Feynman connection status")
+	portrait.Badge(c, status, statusTone(s.status)).Label("Feynman connection status")
 }
 
 func (p *panel) header(c *ui.Context) {

@@ -22,7 +22,6 @@ var nativeLiteralAllowlist = map[string]map[string]int{
 		"Radius(9)":    5,
 	},
 	"../nativefeynman/chat.go": {
-		"Height(29)":     1,
 		"MaxHeight(130)": 1,
 		"MaxHeight(170)": 4,
 		"MaxHeight(220)": 1,
@@ -56,15 +55,10 @@ var nativeLiteralAllowlist = map[string]map[string]int{
 	},
 	"../nativefeynman/style.go": {
 		"Height(20)":    1,
-		"Height(22)":    2,
-		"Height(28)":    1,
-		"Height(31)":    1,
+		"Height(22)":    1,
 		"MinHeight(28)": 1,
 		"Radius(5)":     1,
-		"Radius(6)":     1,
-		"Radius(7)":     2,
-		"Radius(8)":     2,
-		"Radius(9)":     1,
+		"Radius(8)":     1,
 	},
 	"../nativegenui/controls.go": {
 		"Height(0)":      1,

@@ -348,7 +348,7 @@ func (p *panel) configPicker(c *ui.Context, picker researchPicker) {
 		})
 
 		ui.Column(c).Width(min(float32(302), max(float32(120), width-16))).Children(func() {
-			portrait.InputFrame(c).Children(func() {
+			portrait.InputFrame(c).Height(portrait.Sizes.Regular).Children(func() {
 				portrait.Glyph(c, portrait.IconMagnifyingGlass, 13, portrait.Colors.Ink3)
 				filter := portrait.Type.UI.Apply(ui.TextInputBase(c, &state.query)).
 					FocusRing(false).Label("Find " + picker.label).

@@ -2,10 +2,18 @@ name: CI
 
 on:
   pull_request:
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - '.gitignore'
+    # Keep this workflow optional for PRs: a path-filtered required check stays pending.
+    paths:
+      - '**'
+      - '!README*.md'
+      - '!ACKNOWLEDGMENTS*.md'
+      - '!AGENTS.md'
+      - '!ARCHITECTURE.md'
+      - '!CHANGELOG.md'
+      - '!DESIGN.md'
+      - '!GLOSSARY.md'
+      - '!docs/**/*.md'
+      - 'docs/genui/view-format.md'
   push:
     branches: [main]
   workflow_dispatch:
@@ -14,11 +22,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  go:
+  checks:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -34,8 +42,37 @@ jobs:
             printf 'Go files need gofmt:\n%s\n' "$unformatted" >&2
             exit 1
           fi
-      - run: go vet ./...
       - run: go tool mygo vet
-      - run: go test -race ./...
       - name: Cross-compile Windows host
         run: GOOS=windows GOARCH=amd64 go build ./...
+
+  race:
+    name: Race tests (${{ matrix.suite }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [nativegenui, nativeui, portrait, remaining]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Run race tests
+        shell: bash
+        env:
+          SUITE: ${{ matrix.suite }}
+        run: |
+          if [[ "$SUITE" == remaining ]]; then
+            module="$(go list -m)"
+            selected="$(go list ./... | grep -Fxv \
+              -e "$module/internal/nativegenui" \
+              -e "$module/internal/nativeui" \
+              -e "$module/internal/portrait")"
+            mapfile -t packages <<< "$selected"
+            go test -race "${packages[@]}"
+          else
+            go test -race "./internal/$SUITE"
+          fi

@@ -87,7 +87,7 @@ func (st *viewState) images(c *ui.Context, i int) ui.Element {
 				}
 				ph := ui.Row(c).Padding(th.em(0.5), th.em(0.75)).Radius(th.em(0.3)).Background(th.CodeBackground)
 				ph.Role(ui.RoleImage).Label(alt)
-				ph.Children(func() { ui.Text(c, label).TextColor(th.Muted).FontSize(th.em(0.875)) })
+				ph.Children(func() { ui.Text(c, label).TextColor(th.Muted).FontSize(th.em(th.ImagePlaceholderSize)) })
 				continue
 			}
 			img := ui.Image(c, src).Radius(th.em(0.3)).MaxWidthPercent(100).Label(alt)

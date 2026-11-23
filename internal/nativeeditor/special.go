@@ -227,23 +227,34 @@ func codeHeader(label, body string) func(*ui.Context, ui.Element, editor.Block) 
 
 type copiedKey struct{}
 
+type copiedState struct {
+	at     time.Time
+	notify bool
+}
+
 func copyButton(c *ui.Context, body string) {
 	b := ui.ButtonBase(c.Key("copy")).Label("Copy code").KeepFocus().Size(24, 24).Radius(6).AlignItems(ui.Center).Justify(ui.Center)
 	portrait.Tooltip(c, b, "Copy code")
 	ink := portrait.Press(b, portrait.Quiet)
-	copied := ui.Local(b, copiedKey{}, func() time.Time { return time.Time{} })
+	copied := ui.Local(b, copiedKey{}, func() copiedState { return copiedState{} })
+	if copied.notify {
+		copied.notify = false
+		portrait.Notify(c, portrait.ToastSpec{ID: "copy", Tone: portrait.Tones.Success, Title: "Copied"})
+	}
 	if b.Clicked() && body != "" {
-		c.Services().WriteClipboard(body)
-		if c.Services().ReadClipboard() == body {
-			portrait.Notify(c, portrait.ToastSpec{ID: "copy", Tone: portrait.Tones.Success, Title: "Copied"})
-			*copied = c.Now()
-		}
+		now := c.Now()
+		c.WriteClipboardThen(body, func(err error) {
+			if err == nil {
+				copied.at = now
+				copied.notify = true
+			}
+		})
 	}
 	icon := portrait.IconCopy
 	morphing := false
-	if !copied.IsZero() && c.Now().Sub(*copied) < copiedFor {
+	if !copied.at.IsZero() && c.Now().Sub(copied.at) < copiedFor {
 		icon, ink, morphing = portrait.IconCheck, portrait.Colors.Accent, true
-		c.After(copiedFor - c.Now().Sub(*copied))
+		c.After(copiedFor - c.Now().Sub(copied.at))
 	}
 	b.Children(func() {
 		if !morphing {

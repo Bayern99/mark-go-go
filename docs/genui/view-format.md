@@ -117,3 +117,4 @@ Version 3 keeps the A2UI envelope and writes each entry of `components` as one [
   ]
 }
 ```
+

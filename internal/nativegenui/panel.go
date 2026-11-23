@@ -193,6 +193,7 @@ func (p *panel) draw(c *ui.Context) {
 						}
 					}
 				}
+				highlightCard(reader, n)
 				p.win.Reveal(start)
 				_ = p.win.Source().SelectUTF16(start, end)
 			}
@@ -377,6 +378,7 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 					label = fmt.Sprintf("%s (%d)", label, ref.Occurrence)
 				}
 				if sourceHeading(c.Key(i), label, !ok).Clicked() {
+					highlightCard(v.reader(), n)
 					p.win.Reveal(s.Start)
 					_ = p.win.Source().SelectUTF16(s.Start, s.End)
 				}
@@ -421,6 +423,14 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 		v.noteTarget = ""
 		v.note = ""
 	}
+}
+
+func highlightCard(reader *Reading, n Node) {
+	id := n.ComponentID
+	if id == "" {
+		id = n.ID
+	}
+	reader.Highlight(id)
 }
 
 func sourceHeading(c *ui.Context, label string, disabled bool) ui.Element {

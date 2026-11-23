@@ -148,6 +148,76 @@ type treatment struct {
 	subtitle, fill bool
 }
 
+func (s *Surface) jumpTarget(id string) *openuilang.Element {
+	if id == "" {
+		return nil
+	}
+	return s.findJumpTarget(s.tree, id, nil, map[*openuilang.Element]bool{})
+}
+
+func (s *Surface) findJumpTarget(value any, id string, card *openuilang.Element, seen map[*openuilang.Element]bool) *openuilang.Element {
+	switch v := value.(type) {
+	case []any:
+		for _, item := range v {
+			if target := s.findJumpTarget(item, id, card, seen); target != nil {
+				return target
+			}
+		}
+	case *openuilang.Object:
+		for _, key := range v.Keys {
+			if target := s.findJumpTarget(v.Values[key], id, card, seen); target != nil {
+				return target
+			}
+		}
+	case *openuilang.Element:
+		if v == nil || seen[v] {
+			return nil
+		}
+		seen[v] = true
+		if v.Type == "Card" {
+			card = v
+		}
+		if v.StatementID == id || s.owners[v] == id {
+			if card != nil {
+				return card
+			}
+			if card = firstStatementCard(v.Props, map[*openuilang.Element]bool{}); card != nil {
+				return card
+			}
+			return v
+		}
+		return s.findJumpTarget(v.Props, id, card, seen)
+	}
+	return nil
+}
+
+func firstStatementCard(value any, seen map[*openuilang.Element]bool) *openuilang.Element {
+	switch v := value.(type) {
+	case []any:
+		for _, item := range v {
+			if card := firstStatementCard(item, seen); card != nil {
+				return card
+			}
+		}
+	case *openuilang.Object:
+		for _, key := range v.Keys {
+			if card := firstStatementCard(v.Values[key], seen); card != nil {
+				return card
+			}
+		}
+	case *openuilang.Element:
+		if v == nil || seen[v] {
+			return nil
+		}
+		seen[v] = true
+		if v.Type == "Card" {
+			return v
+		}
+		return firstStatementCard(v.Props, seen)
+	}
+	return nil
+}
+
 func (r *Reading) statements(c *ui.Context) {
 	ui.Row(c).Justify(ui.Center).MinWidth(0).Children(func() {
 		ui.Column(c).Grow(1).Basis(0).MinWidth(0).MaxWidth(readingWidth).Children(func() {
@@ -743,12 +813,14 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 		if as.fill {
 			card.Grow(1)
 		}
+		base := theme.Background
 		if p.text("variant") == "soft" {
-			card.Background(theme.Text.Alpha(0.04))
+			base = theme.Text.Alpha(0.04)
+			card.Background(base)
 		} else {
-			card.Background(theme.Background).Border(1, theme.Text.Alpha(0.08))
+			card.Background(base).Border(1, theme.Text.Alpha(0.08))
 		}
-		card.Children(func() {
+		r.jump(c, card, base, r.jumpElement == e).Children(func() {
 			r.stack(c, p.value("children"), path, depth, inner, p.space("gap", groupGap), !gapped)
 		})
 	case "Divider":
@@ -862,7 +934,7 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 			})
 		})
 	case "Source":
-		frame := ui.Column(c).MinWidth(0)
+		frame := r.jump(c, ui.Column(c).MinWidth(0), ui.Transparent, r.jumpElement == e)
 		fill := as.fill
 		if at.row && wide(p.value("children")) {
 			frame.Grow(1).Basis(rowShare).AlignSelf(ui.Stretch)

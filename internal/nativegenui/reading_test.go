@@ -1,6 +1,7 @@
 package nativegenui_test
 
 import (
+	"fmt"
 	"image"
 	"slices"
 	"strings"
@@ -283,6 +284,166 @@ func TestNoHaloWithReducedMotion(t *testing.T) {
 	tt.Advance(300 * time.Millisecond)
 	if changedPixels(still, tt.Image()) != 0 || tt.FramePending() {
 		t.Fatal("the halo played with reduced motion")
+	}
+}
+
+func locatedCards(t *testing.T, version int) (*nativegenui.Surface, string) {
+	t.Helper()
+	if version == 2 {
+		return threeCards(t), "b"
+	}
+	view, err := nativegenui.Open(`{"version":3,"language":"openui-lang/1.0","sources":{"s":{"heading":"Report"}},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"view","catalogId":"markgogo.dev:genui/v3","components":[` +
+		`"root = Col([first, second])",` +
+		`"first = Card([first_source])",` +
+		`"first_source = Source([\"s\"], [Text(\"Alpha point\")])",` +
+		`"second = Card([second_source])",` +
+		`"second_source = Source([\"s\"], [Text(\"Beta point\")])"` + `]}}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return view, "second_source"
+}
+
+func colorDelta(a, b *image.RGBA) int {
+	n := 0
+	for i := 0; i+2 < len(a.Pix) && i+2 < len(b.Pix); i++ {
+		n += abs(int(a.Pix[i]) - int(b.Pix[i]))
+	}
+	return n
+}
+
+func changedPixelsIn(a, b *image.RGBA, r ui.Rect) int {
+	n := 0
+	for y := max(0, int(r.Y)); y < min(a.Rect.Dy(), int(r.Y+r.H)); y++ {
+		for x := max(0, int(r.X)); x < min(a.Rect.Dx(), int(r.X+r.W)); x++ {
+			a, b := a.RGBAAt(x, y), b.RGBAAt(x, y)
+			if a != b {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+func TestLocatedCardHighlightsAndFadesWithinJumpDuration(t *testing.T) {
+	for _, version := range []int{2, 3} {
+		t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
+			view, id := locatedCards(t, version)
+			var reader nativegenui.Reading
+			reader.Load(view)
+			tt := ui.NewTester(reader.View, 520, 600)
+			tt.Advance(time.Second)
+			still := tt.Image()
+			target, ok := tt.Find("Beta point")
+			if !ok {
+				t.Fatal("target card content is not shown")
+			}
+			other, _ := tt.Find("Alpha point")
+
+			reader.Highlight(id)
+			tt.Frame()
+			start := colorDelta(still, tt.Image())
+			if start == 0 || !tt.FramePending() {
+				t.Fatalf("located card did not start its highlight: delta %d, frame pending %v", start, tt.FramePending())
+			}
+			if changedPixelsIn(still, tt.Image(), other) != 0 {
+				t.Fatal("the other card was highlighted")
+			}
+			if after, _ := tt.Find("Beta point"); after != target {
+				t.Fatalf("highlight moved the target from %+v to %+v", target, after)
+			}
+
+			tt.Advance(portrait.Motion.Jump * 35 / 100)
+			peak := colorDelta(still, tt.Image())
+			tt.Advance(portrait.Motion.Jump * 45 / 100)
+			late := colorDelta(still, tt.Image())
+			if late >= peak {
+				t.Fatalf("highlight delta went %d, %d, %d; want a fade", start, peak, late)
+			}
+			tt.Advance(portrait.Motion.Jump)
+			if end := colorDelta(still, tt.Image()); end != 0 || tt.FramePending() {
+				t.Fatalf("highlight did not return to the original card within %v: delta %d, frame pending %v", portrait.Motion.Jump, end, tt.FramePending())
+			}
+			if !tt.HasText("Beta point") {
+				t.Fatal("highlight removed the card content")
+			}
+		})
+	}
+}
+
+func TestLocatingAnotherCardKeepsOnlyTheLatestHighlight(t *testing.T) {
+	var reader nativegenui.Reading
+	reader.Load(threeCards(t))
+	tt := ui.NewTester(reader.View, 520, 600)
+	tt.Advance(time.Second)
+	still := tt.Image()
+	first, _ := tt.Find("Alpha point")
+	second, _ := tt.Find("Beta point")
+
+	reader.Highlight("a")
+	tt.Frame()
+	tt.Advance(200 * time.Millisecond)
+	reader.Highlight("b")
+	tt.Frame()
+	if changedPixelsIn(still, tt.Image(), first) != 0 || changedPixelsIn(still, tt.Image(), second) == 0 {
+		t.Fatal("the previous card stayed highlighted or the latest target did not highlight")
+	}
+
+	// Let the first run reach its old deadline. It must not clear the new run.
+	tt.Advance(portrait.Motion.Jump - 200*time.Millisecond)
+	if changedPixelsIn(still, tt.Image(), second) == 0 {
+		t.Fatal("the old highlight deadline cleared the latest card")
+	}
+	tt.Advance(201 * time.Millisecond)
+	tt.Frame()
+	if delta := colorDelta(still, tt.Image()); delta != 0 || tt.FramePending() {
+		t.Fatalf("the latest highlight did not fade back to the original cards: delta %d, frame pending %v", delta, tt.FramePending())
+	}
+}
+
+func TestLocatedCardDoesNotHighlightWithReducedMotion(t *testing.T) {
+	for _, version := range []int{2, 3} {
+		t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
+			view, id := locatedCards(t, version)
+			var reader nativegenui.Reading
+			reader.Load(view)
+			tt := ui.NewTesterWith(reader.View, 520, 600, ui.TesterOptions{Preferences: ui.Preferences{ReduceMotion: true}})
+			tt.Advance(time.Second)
+			still := tt.Image()
+			reader.Highlight(id)
+			tt.Frame()
+			if colorDelta(still, tt.Image()) != 0 || tt.FramePending() {
+				t.Fatal("locating a card played a highlight with reduced motion")
+			}
+			tt.Advance(portrait.Motion.Jump)
+			if colorDelta(still, tt.Image()) != 0 || tt.FramePending() {
+				t.Fatal("reduced-motion highlight had a delayed transition")
+			}
+		})
+	}
+}
+
+func TestLocatedCardSourceButtonStillWorksDuringHighlight(t *testing.T) {
+	view, err := nativegenui.Open(`{"version":2,"sources":{"s":{"heading":"Report"}},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"v","catalogId":"markgogo.dev:genui/v1","components":[{"id":"root","component":"KeyPoints","title":"Report","items":["Alpha point"],"sources":["s"]}]}}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clicks := 0
+	reader := nativegenui.Reading{Sources: func(c *ui.Context, _ nativegenui.Node) {
+		if ui.Button(c, "Show in source").Clicked() {
+			clicks++
+		}
+	}}
+	reader.Load(view)
+	tt := ui.NewTester(reader.View, 520, 300)
+	tt.Advance(time.Second)
+	reader.Highlight("root")
+	tt.Frame()
+	if err := tt.Click("Show in source"); err != nil {
+		t.Fatal(err)
+	}
+	if clicks != 1 || !tt.HasText("Alpha point") {
+		t.Fatalf("source clicks = %d, texts = %v", clicks, tt.Texts())
 	}
 }
 

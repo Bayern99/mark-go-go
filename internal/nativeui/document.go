@@ -83,16 +83,16 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 			}
 		})
 		if doc.ActionError != "" {
-			banner(c, doc.ActionError)
+			portrait.Alert(c, portrait.Tones.Danger, doc.ActionError, "")
 		}
 		if doc.RestoreError != "" {
-			banner(c, doc.RestoreError)
+			portrait.Alert(c, portrait.Tones.Danger, doc.RestoreError, "")
 		}
 		if doc.Conflict {
-			banner(c, "The file changed on disk. Saving will ask which version to keep.")
+			portrait.Alert(c, portrait.Tones.Warning, "The file changed on disk. Saving will ask which version to keep.", "")
 		}
 		if doc.Deleted {
-			banner(c, "The file was deleted on disk. Edits are still available in this window.")
+			portrait.Alert(c, portrait.Tones.Warning, "The file was deleted on disk. Edits are still available in this window.", "")
 		}
 		if doc.ReadOnly {
 			ui.Text(c, "Read only").TextColor(portrait.Colors.Ink3)

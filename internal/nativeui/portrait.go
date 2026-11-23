@@ -12,7 +12,3 @@ func panel(c *ui.Context, docked bool) ui.Element {
 	}
 	return e
 }
-
-func banner(c *ui.Context, text string) {
-	portrait.Type.UI.Apply(ui.Text(c, text)).Role(ui.RoleAlert).TextColor(portrait.Colors.Danger).Padding(5, 12).Background(portrait.Colors.DangerSoft)
-}

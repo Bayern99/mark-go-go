@@ -177,7 +177,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 				}
 			}
 			if m.Navigation.Error != "" {
-				banner(c, m.Navigation.Error)
+				portrait.Alert(c, portrait.Tones.Danger, m.Navigation.Error, "")
 			} else if m.Navigation.Status == workspace.IndexScanning || m.Navigation.Status == workspace.IndexIndexing {
 				ui.Text(c, fmt.Sprintf("Indexing %d of %d files", m.Navigation.Indexed, m.Navigation.Total)).Role(ui.RoleStatus).TextColor(portrait.Colors.Ink3)
 			} else if len(m.Navigation.Entries) == 0 {

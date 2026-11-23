@@ -168,9 +168,9 @@ func (p *Painter) clipSelf(e *node) {
 // size it is drawn at.
 func (p *Painter) ClipPath(path *Path, fn func()) {
 	saved := p.clip
-	f := &p.rt.paths.flat
-	path.flatten(f, p.scale)
+	f, _, savedTransform := p.flattenPath(path, 0, pathClipMax, true)
 	p.pushPathClip(f)
+	p.transform = savedTransform
 	fn()
 	p.popClip()
 	p.clip = saved
@@ -188,23 +188,22 @@ func (p *Painter) pushPathClip(f *flatPath) {
 		p.add(scene.Op{Kind: scene.OpPushClip})
 		return
 	}
-	minX, minY := float32(math.MaxFloat32), float32(math.MaxFloat32)
-	maxX, maxY := float32(-math.MaxFloat32), float32(-math.MaxFloat32)
-	for _, pt := range f.pts {
-		minX, maxX = min(minX, pt[0]), max(maxX, pt[0])
-		minY, maxY = min(minY, pt[1]), max(maxY, pt[1])
+	b, ok := f.bounds()
+	if !ok {
+		p.clip = Rect{}
+		p.add(scene.Op{Kind: scene.OpPushClip})
+		return
 	}
 	// The points move to quarters of a pixel from the pixel grid, as
 	// drawPath moves them, so that a path filled where it clips meets
 	// its edges.
-	gx, gy := float32(math.Floor(float64(minX))), float32(math.Floor(float64(minY)))
+	gx, gy := float32(math.Floor(float64(b.minX))), float32(math.Floor(float64(b.minY)))
 	for i, pt := range f.pts {
 		f.pts[i] = [2]float32{gx + round((pt[0]-gx)*4)/4, gy + round((pt[1]-gy)*4)/4}
 	}
 	// A pixel of room around the path, transparent, which sampling the
 	// mask between its pixels reaches; within what may show.
-	x0, y0 := float64(gx-1), float64(gy-1)
-	x1, y1 := math.Ceil(float64(maxX))+1, math.Ceil(float64(maxY))+1
+	x0, y0, x1, y1, _ := clipPathMaskBounds(b)
 	s := float64(p.scale)
 	if v, t := p.clip, p.transform; !t.Set {
 		x0, y0 = max(x0, math.Floor(float64(v.X)*s)-1), max(y0, math.Floor(float64(v.Y)*s)-1)

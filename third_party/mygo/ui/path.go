@@ -554,6 +554,82 @@ const pathCrowdedPaints = 120
 // its points move to.
 const pathSpanMax = 1 << 22
 
+// flatPathBounds are the finite device-pixel coordinates of a flattened path.
+type flatPathBounds struct {
+	minX, minY, maxX, maxY float32
+}
+
+func finitePathNumber[T float32 | float64](v T) bool {
+	return !math.IsNaN(float64(v)) && !math.IsInf(float64(v), 0)
+}
+
+// bounds returns the coordinates from which the path's raster bounds are
+// calculated, and whether every point is finite and the path has a polyline.
+func (f *flatPath) bounds() (b flatPathBounds, ok bool) {
+	if f.polys() == 0 {
+		return b, false
+	}
+	b.minX, b.minY = float32(math.MaxFloat32), float32(math.MaxFloat32)
+	b.maxX, b.maxY = float32(-math.MaxFloat32), float32(-math.MaxFloat32)
+	for _, pt := range f.pts {
+		if !finitePathNumber(pt[0]) || !finitePathNumber(pt[1]) {
+			return b, false
+		}
+		b.minX, b.maxX = min(b.minX, pt[0]), max(b.maxX, pt[0])
+		b.minY, b.maxY = min(b.minY, pt[1]), max(b.maxY, pt[1])
+	}
+	return b, true
+}
+
+// drawPathMaskBounds returns the corner and size of the mask of a stroke that
+// reaches reach pixels from its center line. drawPathPaint and the validation
+// after flattening share these exact float32 operations, including the last
+// pixel at the path's far endpoint.
+func drawPathMaskBounds(b flatPathBounds, reach float32, limit int) (x0, y0 float32, w, h int, ok bool) {
+	if !finitePathNumber(reach) {
+		return x0, y0, w, h, false
+	}
+	x0, y0 = float32(math.Floor(float64(b.minX-reach))), float32(math.Floor(float64(b.minY-reach)))
+	wf, hf := math.Ceil(float64(b.maxX+reach-x0))+1, math.Ceil(float64(b.maxY+reach-y0))+1
+	if !finitePathNumber(x0) || !finitePathNumber(y0) || !finitePathNumber(wf) || !finitePathNumber(hf) ||
+		wf <= 0 || hf <= 0 || wf > float64(limit) || hf > float64(limit) {
+		return x0, y0, w, h, false
+	}
+	return x0, y0, int(wf), int(hf), true
+}
+
+// clipPathMaskBounds returns the transparent-padded bounds pushPathClip uses
+// before intersecting them with the current clip.
+func clipPathMaskBounds(b flatPathBounds) (x0, y0, x1, y1 float64, ok bool) {
+	gx, gy := float32(math.Floor(float64(b.minX))), float32(math.Floor(float64(b.minY)))
+	x0, y0 = float64(gx-1), float64(gy-1)
+	x1, y1 = math.Ceil(float64(b.maxX))+1, math.Ceil(float64(b.maxY))+1
+	ok = finitePathNumber(x0) && finitePathNumber(y0) && finitePathNumber(x1) && finitePathNumber(y1) && x1 > x0 && y1 > y0
+	return
+}
+
+func drawPathRasterFits(f *flatPath, width float32, limit int) bool {
+	b, ok := f.bounds()
+	if !ok {
+		return false
+	}
+	hw := max(width, 0) / 2
+	if _, _, _, _, ok := drawPathMaskBounds(b, hw, limit); !ok {
+		return false
+	}
+	_, _, _, _, ok = drawPathMaskBounds(b, f.reach(hw), limit)
+	return ok
+}
+
+func clipPathRasterFits(f *flatPath, limit int) bool {
+	b, ok := f.bounds()
+	if !ok {
+		return false
+	}
+	x0, y0, x1, y1, ok := clipPathMaskBounds(b)
+	return ok && x1-x0 <= float64(limit) && y1-y0 <= float64(limit)
+}
+
 // pathCrossing is where an edge of a filled path crosses a line across a
 // row of tiles, and which way it goes: +1 down, -1 up.
 type pathCrossing struct {
@@ -574,21 +650,12 @@ func (p *Painter) drawPathPaint(f *flatPath, width float32, c Color, g *LinearGr
 		return
 	}
 	hw := max(width, 0) / 2
-	minX, minY := float32(math.MaxFloat32), float32(math.MaxFloat32)
-	maxX, maxY := float32(-math.MaxFloat32), float32(-math.MaxFloat32)
-	for _, pt := range f.pts {
-		minX, maxX = min(minX, pt[0]), max(maxX, pt[0])
-		minY, maxY = min(minY, pt[1]), max(maxY, pt[1])
+	b, ok := f.bounds()
+	if !ok {
+		p.rt.pathLost("its points are not finite float32 coordinates")
+		return
 	}
-	// bounds returns the corner and size of the mask of a stroke that
-	// reaches reach pixels from its center line, and whether float32
-	// holds its points (pathSpanMax).
-	bounds := func(reach float32) (x0, y0 float32, w, h int, ok bool) {
-		x0, y0 = float32(math.Floor(float64(minX-reach))), float32(math.Floor(float64(minY-reach)))
-		wf, hf := math.Ceil(float64(maxX+reach-x0))+1, math.Ceil(float64(maxY+reach-y0))+1
-		return x0, y0, int(wf), int(hf), wf > 0 && hf > 0 && wf <= pathSpanMax && hf <= pathSpanMax
-	}
-	x0, y0, _, _, ok := bounds(hw)
+	x0, y0, _, _, ok := drawPathMaskBounds(b, hw, pathSpanMax)
 	if !ok {
 		p.rt.pathLost("it is wider or taller than float32 can place its points in (pathSpanMax)")
 		return
@@ -607,7 +674,7 @@ func (p *Painter) drawPathPaint(f *flatPath, width float32, c Color, g *LinearGr
 	}
 	// Square caps and miter joins reach farther, as far as the points
 	// show that the mask draws.
-	x0, y0, w, h, ok := bounds(f.reach(hw))
+	x0, y0, w, h, ok := drawPathMaskBounds(b, f.reach(hw), pathSpanMax)
 	if !ok {
 		p.rt.pathLost("it is wider or taller than float32 can place its points in (pathSpanMax)")
 		return
@@ -663,7 +730,7 @@ func (p *Painter) drawPathPaint(f *flatPath, width float32, c Color, g *LinearGr
 		// The gradient spans the path's bounds, and half a stroke's width
 		// beyond: what square caps and miter joins reach past it takes
 		// the color of its edge, so that they do not move the gradient.
-		op.Rect = scene.Rect{X: minX - hw, Y: minY - hw, W: maxX - minX + 2*hw, H: maxY - minY + 2*hw}
+		op.Rect = scene.Rect{X: b.minX - hw, Y: b.minY - hw, W: b.maxX - b.minX + 2*hw, H: b.maxY - b.minY + 2*hw}
 		op.Opacity = p.opacity
 		if g != nil {
 			p.gradient(&op, *g)
@@ -1002,19 +1069,109 @@ func fillMask(z *vec.Rasterizer, f *flatPath, dst []byte, stride int) {
 	}
 }
 
+// pathRasterScale limits q, the extra scale at which path is flattened, to
+// what its mask's span and float32 hold. A stroke's greatest possible reach is
+// included, so drawPathPaint accepts both its center line and its outline.
+// Absolute coordinates get ample headroom too: a narrow path must not overflow
+// merely because one of its coordinates is large. Keeping q at least 1
+// preserves paths that drew at their original scale.
+func pathRasterScale(path *Path, width, scale, q float32, limit int) (float32, float32) {
+	if !(q > 1) || !finitePathNumber(scale) || scale <= 0 {
+		return scale, 1
+	}
+	b := path.Bounds()
+	reach := float64(max(width, 0)) / 2
+	k := 1.0
+	if path.cap == SquareCap {
+		k = math.Sqrt2
+	}
+	if path.join == MiterJoin {
+		miter := path.miter
+		if miter == 0 {
+			miter = 4
+		}
+		k = max(k, float64(miter)*1.002)
+	}
+	reach *= k
+	// Flattening curves and moving their points needs headroom above the
+	// greatest scaled coordinate, not merely a non-infinite final product.
+	const coordinateHeadroom = 16
+	maxCoordinate := float64(math.MaxFloat32) / coordinateHeadroom
+	maxQ := maxCoordinate / float64(scale)
+	for _, coordinate := range []float64{
+		math.Abs(float64(b.X)), math.Abs(float64(b.X + b.W)),
+		math.Abs(float64(b.Y)), math.Abs(float64(b.Y + b.H)),
+	} {
+		if !finitePathNumber(coordinate) {
+			return scale, 1
+		}
+		if coordinate > 0 {
+			maxQ = min(maxQ, maxCoordinate/(float64(scale)*coordinate))
+		}
+	}
+	// Leave room for the mask's endpoint and the floor/ceil around its bounds,
+	// and for rounding the scale and points to float32. The post-flatten check
+	// below is authoritative when float32 rounding exceeds this allowance.
+	const slack = 8
+	for _, span := range []float64{float64(b.W) + 2*reach, float64(b.H) + 2*reach} {
+		if span > 0 {
+			maxQ = min(maxQ, float64(limit-slack)/(float64(scale)*span))
+		}
+	}
+	if maxQ <= 1 {
+		return scale, 1
+	}
+	q = float32(min(float64(q), maxQ))
+	if q <= 1 {
+		return scale, 1
+	}
+	return scale * q, q
+}
+
+// flattenPath flattens path at the scale its transform shows it, as far as
+// limit permits, leaving any remaining scale, turn or skew for the renderer.
+// Its mask therefore covers the path's device pixels instead of being enlarged
+// from its untransformed size whenever its span permits. If rounding or an
+// absolute coordinate still makes the raster bounds invalid, flattening falls
+// back to the original scale and transform, which never drops more than the
+// original renderer did. The returned transform restores the painter.
+func (p *Painter) flattenPath(path *Path, width float32, limit int, clip bool) (f *flatPath, scale float32, saved scene.Affine) {
+	f, scale, saved = &p.rt.paths.flat, p.scale, p.transform
+	if saved.Set {
+		b := path.Bounds()
+		q := transformScale(saved, b.X+b.W/2, b.Y+b.H/2)
+		scale, q = pathRasterScale(path, width, scale, q, limit)
+		if q > 1 {
+			p.transform = saved.Mul(scene.Scaling(1/q, 1/q))
+			path.flatten(f, scale)
+			fits := drawPathRasterFits(f, width*scale, limit)
+			if clip {
+				fits = clipPathRasterFits(f, limit)
+			}
+			if fits {
+				return
+			}
+			scale = p.scale
+			p.transform = saved
+		}
+	}
+	path.flatten(f, scale)
+	return
+}
+
 // FillPath fills a path, by its FillRule.
 func (p *Painter) FillPath(path *Path, c Color) {
-	f := &p.rt.paths.flat
-	path.flatten(f, p.scale)
+	f, _, saved := p.flattenPath(path, 0, pathSpanMax, false)
 	p.drawPath(f, 0, c, nil)
+	p.transform = saved
 }
 
 // FillPathGradient fills a path with a gradient across its bounds, as the
 // area under a chart's line.
 func (p *Painter) FillPathGradient(path *Path, g LinearGradient) {
-	f := &p.rt.paths.flat
-	path.flatten(f, p.scale)
+	f, _, saved := p.flattenPath(path, 0, pathSpanMax, false)
 	p.drawPath(f, 0, g.From, &g)
+	p.transform = saved
 }
 
 // StrokePath draws the outline of a path, width DIPs wide, with the
@@ -1028,9 +1185,9 @@ func (p *Painter) FillPathGradient(path *Path, g LinearGradient) {
 // still draw, on the CPU, more slowly, which is logged once. Opaque lines
 // of StrokePolyline draw without masks on a GPU.
 func (p *Painter) StrokePath(path *Path, width float32, c Color) {
-	f := &p.rt.paths.flat
-	path.flatten(f, p.scale)
-	p.drawPath(f, width*p.scale, c.Alpha(f.capFade(width*p.scale)), nil)
+	f, scale, saved := p.flattenPath(path, width, pathSpanMax, false)
+	p.drawPath(f, width*scale, c.Alpha(f.capFade(width*scale)), nil)
+	p.transform = saved
 }
 
 // capFade returns how opaque a stroke width pixels wide of f shows:
@@ -1142,31 +1299,31 @@ func (f *flatPath) dashAt(at float32) (k int, left float32) {
 // FillPathConicGradient fills a path with a conic gradient around its
 // bounds.
 func (p *Painter) FillPathConicGradient(path *Path, g ConicGradient) {
-	f := &p.rt.paths.flat
-	path.flatten(f, p.scale)
+	f, _, saved := p.flattenPath(path, 0, pathSpanMax, false)
 	p.drawPathPaint(f, 0, Color{R: 255, G: 255, B: 255, A: 255}, nil, &g)
+	p.transform = saved
 }
 
 // StrokePathConicGradient draws the outline of a path as StrokePath does,
 // in a conic gradient around its bounds.
 func (p *Painter) StrokePathConicGradient(path *Path, width float32, g ConicGradient) {
-	f := &p.rt.paths.flat
-	path.flatten(f, p.scale)
+	f, scale, savedTransform := p.flattenPath(path, width, pathSpanMax, false)
 	// Trimmed short, it fades as its caps would (capFade).
 	saved := p.opacity
-	p.opacity *= f.capFade(width * p.scale)
-	p.drawPathPaint(f, width*p.scale, Color{R: 255, G: 255, B: 255, A: 255}, nil, &g)
+	p.opacity *= f.capFade(width * scale)
+	p.drawPathPaint(f, width*scale, Color{R: 255, G: 255, B: 255, A: 255}, nil, &g)
 	p.opacity = saved
+	p.transform = savedTransform
 }
 
 // StrokePathGradient draws the outline of a path as StrokePath does, in a
 // gradient across its bounds.
 func (p *Painter) StrokePathGradient(path *Path, width float32, g LinearGradient) {
-	f := &p.rt.paths.flat
-	path.flatten(f, p.scale)
-	k := f.capFade(width * p.scale)
+	f, scale, saved := p.flattenPath(path, width, pathSpanMax, false)
+	k := f.capFade(width * scale)
 	g.From, g.To = g.From.Alpha(k), g.To.Alpha(k)
-	p.drawPath(f, width*p.scale, g.From, &g)
+	p.drawPath(f, width*scale, g.From, &g)
+	p.transform = saved
 }
 
 func fillInto(z *vec.Rasterizer, f *flatPath, x0, y0 float32) {

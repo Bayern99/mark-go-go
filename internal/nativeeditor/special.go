@@ -248,7 +248,7 @@ func copyButton(c *ui.Context, body string) {
 const copiedFor = 1200 * time.Millisecond
 
 func kicker(c *ui.Context, label string, ink ui.Color) ui.Element {
-	return portrait.Type.Meta.In(portrait.FontDisplay).Apply(ui.Text(c, strings.ToUpper(label))).FontWeight(500).LetterSpacing(0.04 * portrait.Type.Meta.Size).TextColor(ink).MaxLines(1).Ellipsis("…")
+	return portrait.Type.Meta.In(portrait.FontDisplay).Apply(ui.Text(c, label)).FontWeight(500).LetterSpacing(0.04 * portrait.Type.Meta.Size).TextColor(ink).MaxLines(1).Ellipsis("…")
 }
 
 type blockLook struct {

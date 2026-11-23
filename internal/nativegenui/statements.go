@@ -39,6 +39,15 @@ func openStatements(data string) (*Surface, error) {
 	}
 	s.Session.Load(program)
 	s.program = program
+	orphans := map[string]bool{}
+	for _, name := range program.Orphans {
+		orphans[name] = true
+	}
+	for _, use := range openuilang.FirstArgumentStrings(text, "Source") {
+		if use.Literal && !orphans[use.Statement] {
+			s.sourceUses = append(s.sourceUses, use)
+		}
+	}
 	if s.refresh(); s.tree == nil {
 		return nil, errors.New("The view has no root component.")
 	}

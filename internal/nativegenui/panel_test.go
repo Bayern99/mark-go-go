@@ -1,7 +1,9 @@
 package nativegenui
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	"slices"
 	"strconv"
@@ -169,6 +171,61 @@ func TestChangedIDsUsesStoredIDsForRepeatedInstances(t *testing.T) {
 		if id == "row-[/items/0]" || id == "row-[/items/1]" {
 			t.Errorf("changed IDs included a runtime row ID: %q", id)
 		}
+	}
+}
+
+func conditionalSourceView(t *testing.T, qdrantHash string) string {
+	t.Helper()
+	components, err := json.Marshal([]string{
+		`$option = "qdrant"`,
+		`root = Col([option_card])`,
+		`option_card = Card([Title("Options", "md"), option_notes])`,
+		`option_notes = $option == "pgvector" ? pgvector_details : $option == "qdrant" ? qdrant_details : milvus_details`,
+		`pgvector_details = Source(["pgvector"], [Text("pgvector details")])`,
+		`qdrant_details = Source(["qdrant"], [Text("Qdrant details")])`,
+		`milvus_details = Source(["milvus"], [Text("Milvus details")])`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fmt.Sprintf(`{"version":3,"language":"openui-lang/1.0","sources":{"pgvector":{"heading":"pgvector"},"qdrant":{"heading":"Qdrant 1.12","hash":%q},"milvus":{"heading":"Milvus","hash":"old"}},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"view","catalogId":"markgogo.dev:genui/v3","components":%s}}]}`, qdrantHash, components)
+}
+
+func TestChangedConditionalSourcesNameTheirStatementsEvenWhenHidden(t *testing.T) {
+	v := &documentView{}
+	p := &panel{win: &nativeui.Window{}, views: map[string]*documentView{"doc": v}}
+	p.updated(genui.ViewEvent{ID: "doc", Exists: true, Text: conditionalSourceView(t, "old")})
+	document := "# pgvector\n\nCurrent.\n\n# Qdrant 1.12\n\nChanged.\n\n# Milvus\n\nAlso changed.\n"
+	v.index(document)
+	if got, want := v.changedIDs(), []string{"milvus_details", "qdrant_details"}; !slices.Equal(got, want) {
+		t.Fatalf("changed statements = %v, want both visible and hidden branches %v", got, want)
+	}
+
+	d := workspace.DocumentInfo{Path: "doc.md"}
+	settings := ui.NewTester(func(c *ui.Context) { p.drawSettings(c, v, d, false) }, 640, 400)
+	settings.Frame()
+	if !settings.HasText("Regenerate changed (2)") {
+		t.Fatalf("the update action does not count both changed branches: %v", settings.Texts())
+	}
+	v.reading.Sources = func(c *ui.Context, n Node) { p.drawSources(c, v, d, n, false) }
+	app := ui.NewTester(v.reading.View, 640, 600)
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RoleStatus, "Source changed"); !ok {
+		t.Fatal("the visible Qdrant source is not marked changed before its update")
+	}
+
+	current := v.sections[headingKey{name: workspace.NormalizeHeadingText("Qdrant 1.12"), occurrence: 1}].Hash
+	p.updated(genui.ViewEvent{ID: "doc", Exists: true, Text: conditionalSourceView(t, current)})
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RoleStatus, "Source changed"); ok {
+		t.Error("the visible Qdrant source is still marked changed after its statement was updated")
+	}
+	if got, want := v.changedIDs(), []string{"milvus_details"}; !slices.Equal(got, want) {
+		t.Errorf("changed statements after the Qdrant update = %v, want only the hidden stale branch %v", got, want)
+	}
+	settings.Frame()
+	if !settings.HasText("Regenerate changed (1)") || settings.HasText("Regenerate changed (2)") {
+		t.Errorf("the update action did not reduce its changed count: %v", settings.Texts())
 	}
 }
 

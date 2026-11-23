@@ -124,6 +124,28 @@ func TestEvaluateReadsCurrentState(t *testing.T) {
 	}
 }
 
+func TestConditionalReferencesKeepTheirStatementIDs(t *testing.T) {
+	program := fixtureLibrary(t).Parse(`root = Stack([$choice == "a" ? first : second])
+$choice = "a"
+first = Tag("First")
+second = Tag("Second")`)
+	for _, test := range []struct{ choice, want string }{{"a", "first"}, {"b", "second"}} {
+		tree, problems := program.Evaluate(func(name string) (any, bool) {
+			if name == "$choice" {
+				return test.choice, true
+			}
+			return nil, false
+		})
+		if tree == nil || len(problems) > 0 {
+			t.Fatalf("choice %q: tree %v, runtime errors %+v, parse errors %+v", test.choice, tree, problems, program.Errors)
+		}
+		child := tree.Props.Values["children"].([]any)[0].(*Element)
+		if child.StatementID != test.want {
+			t.Errorf("choice %q: rendered statement = %q, want %q", test.choice, child.StatementID, test.want)
+		}
+	}
+}
+
 func TestRepeatedReferencesStayBounded(t *testing.T) {
 	lib := fixtureLibrary(t)
 	source := "root = Stack([Col(\"v\", [@Count(s0)])])\n"

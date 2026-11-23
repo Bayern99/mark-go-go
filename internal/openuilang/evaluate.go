@@ -236,7 +236,7 @@ func (c *evalContext) call(n *node, withSchema bool) any {
 			}
 		}
 	}
-	return &Element{Type: n.name, Props: props, dynamic: true}
+	return &Element{Type: n.name, StatementID: n.statement, Props: props, dynamic: true}
 }
 
 func (c *evalContext) callArgs(n *node, def *callDef) *Object {

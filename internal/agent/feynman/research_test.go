@@ -617,6 +617,55 @@ func TestResearchConnectConcurrencyAndCrashReconnect(t *testing.T) {
 	waitUpdate(t, events, "commands")
 }
 
+func TestResearchConnectWaitsForCrashCleanup(t *testing.T) {
+	home := t.TempDir()
+	root := t.TempDir()
+	h := NewResearchManager(fakeWorkspaceLookup{dataDir: t.TempDir()})
+	defer h.Close()
+	h.command = fixtureCommand(home)
+
+	cleanupStarted := make(chan struct{})
+	releaseCleanup := make(chan struct{})
+	release := sync.OnceFunc(func() { close(releaseCleanup) })
+	defer release()
+	var firstCleanup sync.Once
+	h.SetAfterStop(func(_, _ string) {
+		firstCleanup.Do(func() {
+			close(cleanupStarted)
+			<-releaseCleanup
+		})
+	})
+
+	if err := h.connect(WorkspaceRef{Root: root}, func(ResearchUpdate) {}); err != nil {
+		t.Fatalf("connect failed: %v", err)
+	}
+	if _, err := h.Prompt(context.Background(), root, "crash mid-turn", "", ""); err == nil {
+		t.Fatal("expected crashed turn to return error")
+	}
+	<-cleanupStarted
+
+	reconnected := make(chan error, 1)
+	go func() {
+		reconnected <- h.connect(WorkspaceRef{Root: root}, func(ResearchUpdate) {})
+	}()
+	select {
+	case err := <-reconnected:
+		release()
+		t.Fatalf("reconnect returned before crash cleanup completed: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	release()
+	select {
+	case err := <-reconnected:
+		if err != nil {
+			t.Fatalf("reconnect after crash cleanup failed: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("reconnect did not finish after crash cleanup completed")
+	}
+}
+
 func TestResearchListsSessionsWhileConnecting(t *testing.T) {
 	home := t.TempDir()
 	root := t.TempDir()

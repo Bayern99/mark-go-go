@@ -396,6 +396,20 @@ func (_handle *Context) Instant() bool {
 	return _ctx.Instant()
 }
 
+// KeyboardInput reports whether the last keyboard or pointer input came
+// from the keyboard. It is the input modality behind Element.FocusVisible:
+// a key press without application-shortcut modifiers sets it and a pointer
+// press clears it, including when the control keeps the focus. Widgets can
+// use it for behavior that follows how a change was made rather than which
+// element has the focus.
+func (_handle *Context) KeyboardInput() bool {
+	_ctx := _handle.build()
+	if _ctx == nil {
+		return false
+	}
+	return _ctx.KeyboardInput()
+}
+
 // KeyDown reports whether key is held down in the window, whichever
 // element has the focus and whether or not one took the key, without
 // taking it from them: a cheat sheet of shortcuts lights the keys held

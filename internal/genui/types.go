@@ -39,9 +39,10 @@ type TextRange struct {
 }
 
 type GenerateProgress struct {
-	Phase   string           `json:"phase"`
-	Text    string           `json:"text"`
-	Failure *GenerateFailure `json:"failure,omitempty"`
+	Phase   string            `json:"phase"`
+	Text    string            `json:"text"`
+	Failure *GenerateFailure  `json:"failure,omitempty"`
+	Preview *StatementPreview `json:"preview,omitempty"`
 }
 
 type ViewSnapshot struct {

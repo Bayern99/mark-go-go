@@ -2,12 +2,14 @@ package openuilang
 
 type materializer struct {
 	issueSink
-	syms      map[string]*node
-	unres     []string
-	visited   map[string]bool
-	unreached map[string]bool
-	memo      map[string]any
-	depth     int
+	syms       map[string]*node
+	unres      []string
+	visited    map[string]bool
+	unreached  map[string]bool
+	memo       map[string]any
+	incomplete bool
+	pending    map[string]bool
+	depth      int
 }
 
 const maxMaterializeDepth = 400
@@ -44,10 +46,14 @@ func withStatementID(el *Element, id string) *Element {
 	return &copied
 }
 
+func (m *materializer) partialStatement(id string) bool {
+	return m.incomplete && (m.pending == nil || m.pending[id])
+}
+
 func (m *materializer) withStatement(id string, fn func()) {
-	previous := m.statement
-	m.statement = id
-	defer func() { m.statement = previous }()
+	previous, partial := m.statement, m.partial
+	m.statement, m.partial = id, m.partialStatement(id)
+	defer func() { m.statement, m.partial = previous, partial }()
 	fn()
 }
 

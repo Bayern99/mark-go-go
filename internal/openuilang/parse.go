@@ -258,13 +258,24 @@ func (l *Library) build(statements *statementSet, incomplete bool, partial *part
 			}
 		}
 	}
-	m := &materializer{
-		issueSink: issueSink{lib: l, partial: incomplete, statement: entry},
-		syms:      map[string]*node{},
-		visited:   map[string]bool{},
-		unreached: map[string]bool{},
-		memo:      map[string]any{},
+	var pending map[string]bool
+	if incomplete && partial == nil {
+		pending = nil
+	} else if partial != nil {
+		pending = map[string]bool{}
+		for id, stmt := range statements.byID {
+			pending[id] = partial.pending[stmt]
+		}
 	}
+	m := &materializer{
+		syms:       map[string]*node{},
+		visited:    map[string]bool{},
+		unreached:  map[string]bool{},
+		memo:       map[string]any{},
+		incomplete: incomplete,
+		pending:    pending,
+	}
+	m.issueSink = issueSink{lib: l, partial: m.partialStatement(entry), statement: entry}
 	for _, id := range statements.order {
 		stmt := statements.byID[id]
 		m.syms[id] = stmt.expr
@@ -287,6 +298,7 @@ func (l *Library) build(statements *statementSet, incomplete bool, partial *part
 	}
 	m.extract(statements, program, partial)
 	m.statement = entry
+	m.partial = m.partialStatement(entry)
 	switch {
 	case entry == "":
 		message := "No root statement"

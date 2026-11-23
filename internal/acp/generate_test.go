@@ -66,6 +66,8 @@ type fakeSpec struct {
 	ThoughtCurrent       string                  `json:"thoughtCurrent"`
 	ConfigUpdate         bool                    `json:"configUpdate"`
 	Out                  string                  `json:"out"`
+	OutChunks            []string                `json:"outChunks"`
+	OutChunkDelayMS      int                     `json:"outChunkDelayMs"`
 	OutSize              int64                   `json:"outSize"`
 	OutSymlink           string                  `json:"outSymlink"`
 	Hang                 bool                    `json:"hang"`
@@ -490,6 +492,23 @@ func fakePlayScenario(spec *fakeSpec, cwd, sessionID string, nextID *int64, send
 		}
 	}
 	switch {
+	case len(spec.OutChunks) > 0:
+		file, err := os.Create(filepath.Join(cwd, "out.json"))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "fake agent:", err)
+			return
+		}
+		for i, chunk := range spec.OutChunks {
+			if _, err := file.WriteString(chunk); err != nil {
+				fmt.Fprintln(os.Stderr, "fake agent:", err)
+				break
+			}
+			_ = file.Sync()
+			if i+1 < len(spec.OutChunks) && spec.OutChunkDelayMS > 0 {
+				time.Sleep(time.Duration(spec.OutChunkDelayMS) * time.Millisecond)
+			}
+		}
+		_ = file.Close()
 	case spec.OutSymlink != "":
 		_ = os.Remove(filepath.Join(cwd, "out.json"))
 		_ = os.Symlink(spec.OutSymlink, filepath.Join(cwd, "out.json"))
@@ -616,6 +635,11 @@ func (pc *progressCollector) got() []genui.GenerateProgress {
 
 func driveGeneration(t *testing.T, spec fakeSpec, progress func(genui.GenerateProgress) error, mutate func(*GenerationJob)) (error, GenerationJob, []map[string]any) {
 	t.Helper()
+	return driveGenerationContext(context.Background(), t, spec, progress, mutate)
+}
+
+func driveGenerationContext(ctx context.Context, t *testing.T, spec fakeSpec, progress func(genui.GenerateProgress) error, mutate func(*GenerationJob)) (error, GenerationJob, []map[string]any) {
+	t.Helper()
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "fake.log")
 	specData, err := json.Marshal(spec)
@@ -648,7 +672,7 @@ func driveGeneration(t *testing.T, spec fakeSpec, progress func(genui.GeneratePr
 	if progress == nil {
 		progress = func(genui.GenerateProgress) error { return nil }
 	}
-	err = RunGeneration(context.Background(), job, progress)
+	err = RunGeneration(ctx, job, progress)
 	return err, job, readFakeLog(t, logPath)
 }
 
@@ -656,6 +680,15 @@ type savedView struct {
 	Model  string
 	Hashes map[string]string
 	A2UI   []json.RawMessage
+}
+
+func mustReadFile(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 func writtenView(t *testing.T, viewPath string) savedView {
@@ -1002,6 +1035,111 @@ func TestProgressSaysEachStepInWordsWithoutTheAgentsFolder(t *testing.T) {
 		if strings.Contains(text, folder) {
 			t.Errorf("progress text %q names the agent's temporary folder %s", text, folder)
 		}
+	}
+}
+
+func TestStatementGenerationStreamsItsTemporaryOutputBeforeWritingTheSidecar(t *testing.T) {
+	spec := fakeSpec{
+		OutChunks: []string{
+			`{"sources":{"overview":{"heading":"Overview"}},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"view","catalogId":"markgogo.dev:genui/v3","components":["root = Col([lead])",`,
+			`"lead = Text(\"Hello\", \"xl\")"]}}]}`,
+		},
+		OutChunkDelayMS: 200,
+	}
+	var viewPath string
+	progress := &progressCollector{}
+	err, job, _ := driveGeneration(t, spec, func(step genui.GenerateProgress) error {
+		if step.Preview != nil {
+			if _, err := os.Stat(viewPath); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("sidecar exists while a preview is being sent: %v", err)
+			}
+		}
+		return progress.collect(step)
+	}, func(job *GenerationJob) {
+		job.Req.Language = genui.StatementLanguage
+		job.Validate = nil
+		viewPath = job.ViewPath
+	})
+	if err != nil {
+		t.Fatalf("RunGeneration: %v", err)
+	}
+	var stages [][]string
+	for _, step := range progress.got() {
+		if step.Preview != nil {
+			stages = append(stages, step.Preview.Statements)
+		}
+	}
+	if len(stages) < 2 || len(stages[0]) != 1 || len(stages[len(stages)-1]) != 2 {
+		t.Fatalf("preview stages = %v, want the first statement followed by both", stages)
+	}
+	view, err := genui.ReadStatementView(mustReadFile(t, job.ViewPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := view.Statements[0]; !reflect.DeepEqual(got, stages[len(stages)-1]) {
+		t.Errorf("committed statements = %v, final preview = %v", got, stages[len(stages)-1])
+	}
+}
+
+func TestAStatementPreviewThatLaterFailsLeavesThePreviousSidecarUntouched(t *testing.T) {
+	spec := fakeSpec{
+		OutChunks: []string{
+			`{"sources":{},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"view","catalogId":"markgogo.dev:genui/v3","components":["root = Col([Text(\"Provisional\")])",`,
+			`"later = Text(\"Never committed\")"]}}]} trailing`,
+		},
+		OutChunkDelayMS: 200,
+	}
+	const previous = "previous sidecar\n"
+	progress := &progressCollector{}
+	err, job, _ := driveGeneration(t, spec, progress.collect, func(job *GenerationJob) {
+		job.Req.Language = genui.StatementLanguage
+		if err := os.WriteFile(job.ViewPath, []byte(previous), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if err == nil {
+		t.Fatal("a malformed final output succeeded")
+	}
+	if got := string(mustReadFile(t, job.ViewPath)); got != previous {
+		t.Errorf("sidecar after failure = %q, want the previous bytes %q", got, previous)
+	}
+	found := false
+	for _, step := range progress.got() {
+		found = found || step.Preview != nil && len(step.Preview.Statements) > 0
+	}
+	if !found {
+		t.Fatal("the run never previewed its provisional statement")
+	}
+}
+
+func TestCancellingAStatementPreviewLeavesThePreviousSidecarUntouched(t *testing.T) {
+	spec := fakeSpec{
+		OutChunks: []string{
+			`{"sources":{},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"view","catalogId":"markgogo.dev:genui/v3","components":["root = Col([Text(\"Provisional\")])",`,
+			`"later = Text(\"Never committed\")"]}}]}`,
+		},
+		OutChunkDelayMS: 1000,
+	}
+	const previous = "previous sidecar\n"
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	progress := &progressCollector{}
+	err, job, _ := driveGenerationContext(ctx, t, spec, func(step genui.GenerateProgress) error {
+		if step.Preview != nil {
+			cancel()
+		}
+		return progress.collect(step)
+	}, func(job *GenerationJob) {
+		job.Req.Language = genui.StatementLanguage
+		if err := os.WriteFile(job.ViewPath, []byte(previous), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if err == nil {
+		t.Fatal("the cancelled generation succeeded")
+	}
+	if got := string(mustReadFile(t, job.ViewPath)); got != previous {
+		t.Errorf("sidecar after cancellation = %q, want the previous bytes %q", got, previous)
 	}
 }
 

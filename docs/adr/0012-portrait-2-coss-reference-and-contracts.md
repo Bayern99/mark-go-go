@@ -44,7 +44,7 @@ Portrait 的设计变量不再只以退役 WebUI 为唯一基准。每个导出�
 | `Danger` | 砖红 `#a83a3a`（白字对比度 6.30） | 破坏性操作与错误。 |
 
 - 分类色 `Tags.*` 不进入 Phase 1，且与 `Reader.Charts` 解耦。
-- 文档标签的状态用彩色 Tone 小胶囊 Badge 表达，Badge 内保留文字。
+- 窄文档标签页的状态用 6px Tone 圆点与 Tooltip 表达，完整状态保留在无障碍标签中，避免挤占文件名；面板头部、列表等宽空间使用带文字的 Tone Badge。
 
 ## 材质与交互
 

@@ -52,6 +52,8 @@ func tabLabels(docs []workspace.DocumentInfo) map[string]string {
 	return out
 }
 
+const tabStatusDotSize = 6
+
 type documentState struct {
 	label string
 	tone  portrait.Tone
@@ -167,7 +169,10 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 						}
 					}
 					for _, state := range states {
-						portrait.Badge(c, state.label, state.tone).Shrink(1).ZIndex(1)
+						dot := ui.Box(c.Key("status-"+state.label)).Size(tabStatusDotSize, tabStatusDotSize).
+							Radius(portrait.Radii.Pill).Background(state.tone.Solid).
+							Role(ui.RoleText).Label(state.label).Shrink(0).ZIndex(1)
+						portrait.Tooltip(c, dot, state.label)
 					}
 					closeTab := portrait.QuietIconButton(c, portrait.IconX, "Close "+labels[d.ID]).Size(20, 20).Radius(6).ZIndex(1)
 					if !hovered && !closeTab.Hovered() {

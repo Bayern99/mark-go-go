@@ -235,9 +235,24 @@ type GutterMark struct {
 // LineBackground fills lines First to Last, from 0, with Color. The lines
 // are those of the text when it is set: an edit adding or removing lines
 // above them doesn't move them.
+//
+// Radius rounds the background's corners and Stroke draws a border of that
+// many DIPs in StrokeColor. A decorated background covers consecutive
+// visible lines as one rectangle, rather than rounding every row.
+// ReadingColumn limits its base rectangle to the reading column instead of
+// the editor's full text area. PaddingLeft and PaddingRight extend it
+// horizontally; PaddingTop and PaddingBottom extend its first and last
+// edges, as a block attached above a line may need. Zero values of all
+// these fields retain the original per-row, full-width fill.
 type LineBackground struct {
-	First, Last int
-	Color       ui.Color
+	First, Last               int
+	Color                     ui.Color
+	Radius                    float32
+	Stroke                    float32
+	StrokeColor               ui.Color
+	ReadingColumn             bool
+	PaddingLeft, PaddingRight float32
+	PaddingTop, PaddingBottom float32
 }
 
 // TextBackground fills bytes Start to End of the text with Color. Ranges

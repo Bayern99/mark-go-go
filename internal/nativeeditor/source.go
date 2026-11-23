@@ -39,7 +39,6 @@ type Document struct {
 	folded           map[string]bool
 	returns          map[string]int
 	landing          jumpHighlight
-	page             []pageFill
 }
 
 func New(source string) *Document {
@@ -194,9 +193,9 @@ func (d *Document) View(c *ui.Context, readOnly bool) ui.Element {
 		d.hasPendingScroll = false
 		d.state.SetScrollY(float64(d.pendingScrollY))
 	}
-	d.state.Theme.Background = unpainted
+	d.state.Theme.Background = c.Theme().Background
+	d.decorate(c)
 	field := editor.View(c, &d.state)
-	d.decorate(c, field)
 	if d.hasPendingScroll {
 		c.Invalidate()
 	}

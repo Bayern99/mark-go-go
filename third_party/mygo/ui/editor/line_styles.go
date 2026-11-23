@@ -18,6 +18,11 @@ type LineStyle struct {
 	// LineHeight is the height of the line's rows as a multiple of its
 	// font's size, as State.LineHeight; 0 takes the editor's.
 	LineHeight float32
+	// Left and Right inset the line's text from the editor's text column,
+	// in DIPs. They reduce the width at which the line wraps without
+	// changing its source offsets. Carets, selections and pointer hits use
+	// the inset geometry too.
+	Left, Right float32
 }
 
 // appLineStyle is a style the app gave, with where its line starts, which
@@ -30,8 +35,9 @@ type appLineStyle struct {
 // lineStyleKey tells apart the views that lay out styled lines: one for
 // each font and line height.
 type lineStyleKey struct {
-	font   ui.Font
-	height float32
+	font        ui.Font
+	height      float32
+	left, right float32
 }
 
 // setLineStyles styles the lines of styles, the last given for a line
@@ -120,7 +126,8 @@ func (v *view) styledView(s LineStyle) *view {
 	if height <= 0 {
 		height = v.lineHeight / v.font.Size
 	}
-	key := lineStyleKey{f, height}
+	left, right := max(0, s.Left), max(0, s.Right)
+	key := lineStyleKey{f, height, left, right}
 	if v.styleViews == nil {
 		v.styleViews = map[lineStyleKey]*view{}
 	}
@@ -137,7 +144,8 @@ func (v *view) styledView(s LineStyle) *view {
 	child.repls, child.inlays = v.repls, v.inlays
 	child.setStyle(f, height, v.scale, v.tabSize)
 	child.setTheme(v.theme)
-	child.setWrap(v.wrap, v.wrapWidth)
+	child.leftInset, child.rightInset = left, right
+	child.setWrap(v.wrap, max(0, v.wrapWidth-left-right))
 	return child
 }
 

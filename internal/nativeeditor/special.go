@@ -208,7 +208,7 @@ func codeHeader(label, body string) func(*ui.Context, ui.Element, editor.Block) 
 	return func(c *ui.Context, e ui.Element, _ editor.Block) {
 		e.Height(codeHeaderHeight).Children(func() {
 			ui.Row(c).Height(codeHeaderHeight).AlignItems(ui.Center).Gap(8).Children(func() {
-				kicker(c, label, portrait.Colors.Ink3)
+				codeKicker(c, label, portrait.Colors.Ink3)
 				ui.Spacer(c)
 				copyButton(c, body)
 			})
@@ -248,6 +248,10 @@ func copyButton(c *ui.Context, body string) {
 const copiedFor = 1200 * time.Millisecond
 
 func kicker(c *ui.Context, label string, ink ui.Color) ui.Element {
+	return codeKicker(c, strings.ToUpper(label), ink)
+}
+
+func codeKicker(c *ui.Context, label string, ink ui.Color) ui.Element {
 	return portrait.Type.Meta.In(portrait.FontDisplay).Apply(ui.Text(c, label)).FontWeight(500).LetterSpacing(0.04 * portrait.Type.Meta.Size).TextColor(ink).MaxLines(1).Ellipsis("…")
 }
 
@@ -329,7 +333,11 @@ func (p *previewLayout) specialBlock(snap editor.Snapshot, start, end int, kind,
 							portrait.Glyph(c, look.icon, 14, look.kickerInk)
 						}
 						name := strings.TrimSuffix(label, " alert")
-						k := kicker(c, name, look.kickerInk)
+						kickerForKind := kicker
+						if kind == "code" {
+							kickerForKind = codeKicker
+						}
+						k := kickerForKind(c, name, look.kickerInk)
 						if look.icon.Glyph != "" {
 							k.FontWeight(600).LetterSpacing(0.07 * portrait.Type.Meta.Size)
 						}

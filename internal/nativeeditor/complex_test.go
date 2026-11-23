@@ -377,7 +377,7 @@ func TestKeptBlocksAndInvalidGraphicsHaveVisibleSource(t *testing.T) {
 	d := nativeeditor.New(src)
 	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 890, 1080)
 	tt.Frame()
-	for _, label := range []string{"Frontmatter", "研究", "Edit reference definition", "<div>keep me</div>", "$$\n\\frac{1}{\n$$", "Mermaid could not render: diagram references an external resource"} {
+	for _, label := range []string{"FRONTMATTER", "研究", "Edit reference definition", "<div>keep me</div>", "$$\n\\frac{1}{\n$$", "Mermaid could not render: diagram references an external resource"} {
 		if _, ok := tt.Find(label); !ok {
 			t.Errorf("missing %s", label)
 		}

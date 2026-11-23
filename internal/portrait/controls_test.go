@@ -162,8 +162,13 @@ func (s *segments) view(c *ui.Context) {
 				if b.Clicked() {
 					s.selected = i
 				}
-				if b.Focused() && b.Shortcut(0, ui.KeyRight) {
-					s.selected = (i + 1) % 3
+				if b.Focused() {
+					switch {
+					case b.Shortcut(0, ui.KeyRight):
+						s.selected = (i + 1) % 3
+					case b.Shortcut(0, ui.KeyLeft):
+						s.selected = (i + 2) % 3
+					}
 				}
 			}
 		}).Label("Document views")
@@ -235,6 +240,28 @@ func TestCapsuleLandsAtOnceForKeyboardOrReducedMotion(t *testing.T) {
 		tt.Key(0, ui.KeyRight)
 		if s.selected != 1 {
 			t.Fatalf("selected %d after Right", s.selected)
+		}
+		if got := capsuleLeft(t, tt); got != target {
+			t.Fatalf("capsule at %v on frame 0, want %v", got, target)
+		}
+	})
+	t.Run("pointer then backward keyboard", func(t *testing.T) {
+		s := &segments{}
+		tt := ui.NewTester(s.view, 480, 160)
+		tt.Frame()
+		if err := tt.Click("GenUI"); err != nil {
+			t.Fatal(err)
+		}
+		tt.Advance(time.Second)
+		if !tt.Focused("GenUI") {
+			t.Fatal("pointer click did not focus GenUI")
+		}
+		tt.Key(0, ui.KeyLeft)
+		if s.selected != 1 {
+			t.Fatalf("selected %d after Left", s.selected)
+		}
+		if !tt.Focused("GenUI") {
+			t.Fatal("Left unexpectedly moved focus instead of only the selection")
 		}
 		if got := capsuleLeft(t, tt); got != target {
 			t.Fatalf("capsule at %v on frame 0, want %v", got, target)

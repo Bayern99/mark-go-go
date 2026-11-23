@@ -105,19 +105,14 @@ func iconButton(c *ui.Context, icon Icon, label string, look Look) ui.Element {
 }
 
 type Segments struct {
-	group         string
-	keyboard, saw bool
+	group string
 }
 
 func Track(c *ui.Context, group string, build func(s *Segments)) ui.Element {
 	t := ui.Row(c.Key("track:" + group)).Role(ui.RoleTabList).Padding(2).Gap(2).Radius(9).AlignItems(ui.Center)
 	Surface{Materials.GlassSelected, Materials.GlassSelected, Materials.Track.Shadows}.Apply(t)
-	keyboard := ui.Local(t, "keyboard", func() bool { return false })
-	s := &Segments{group: group, keyboard: keyboard != nil && *keyboard}
+	s := &Segments{group: group}
 	t.Children(func() { build(s) })
-	if keyboard != nil {
-		*keyboard = s.saw
-	}
 	return t
 }
 
@@ -135,24 +130,21 @@ func (s *Segments) Segment(c *ui.Context, title, label string, selected bool) ui
 }
 
 func (s *Segments) Capsule(c *ui.Context, owner ui.Element, selected bool) {
-	if owner.FocusVisible() {
-		s.saw = true
-	}
-	capsule(c, owner, selected, s.group, s.keyboard || s.saw, 7)
+	capsule(c, owner, selected, s.group, 7)
 }
 
 func RowCapsule(c *ui.Context, owner ui.Element, selected bool, group string) {
-	capsule(c, owner, selected, group, owner.FocusVisible(), 8)
+	capsule(c, owner, selected, group, 8)
 }
 
-func capsule(c *ui.Context, owner ui.Element, selected bool, group string, keyboard bool, radius float32) {
+func capsule(c *ui.Context, _ ui.Element, selected bool, group string, radius float32) {
 	if !selected {
 		return
 	}
 	capsule := ui.Row(c.Key("capsule")).Absolute().Top(0).Left(0).Right(0).Bottom(0).Radius(radius).AccessHidden(true).IgnoreInput(true)
 	Materials.Raised.Apply(capsule)
 	if group != "" {
-		capsule.Transition(Transition(c, keyboard, ui.ElementTransition{Match: "capsule:" + group, Duration: Motion.Switch, Ease: Motion.EaseInOut.Easing()}))
+		capsule.Transition(Transition(c, c.KeyboardInput(), ui.ElementTransition{Match: "capsule:" + group, Duration: Motion.Switch, Ease: Motion.EaseInOut.Easing()}))
 	}
 }
 

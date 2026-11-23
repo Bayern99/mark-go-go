@@ -57,8 +57,10 @@ func (rt *engine) event(ev platform.SurfaceEvent) (taken bool) {
 	rt.fromWindow(&ev)
 	x, y := float32(ev.X), float32(ev.Y)
 	if ev.Kind == platform.PointerDown || ev.Kind == platform.WebViewPress {
-		// A press is of no element until countPress finds it one.
+		// A press is of no element until countPress finds it one. It also
+		// switches the input modality even when the focus stays where it is.
 		rt.lastPress.prev, rt.lastPress.id = rt.lastPress.id, 0
+		rt.focusVisible = false
 	}
 	held := rt.buttons
 	switch ev.Kind {
@@ -140,9 +142,13 @@ func (rt *engine) event(ev platform.SurfaceEvent) (taken bool) {
 		rt.pointerMove(x, y)
 		rt.zoom(float32(ev.Scale), float32(ev.Rotation), Modifiers(ev.Mods))
 	case platform.KeyPressed:
-		rt.modsChanged(Modifiers(ev.Mods))
-		rt.holdKey(Modifiers(ev.Mods), Key(ev.Key), Key(ev.PhysicalKey))
-		taken = rt.keyDownPhysical(Modifiers(ev.Mods), Key(ev.Key), Key(ev.PhysicalKey), KeyCode(ev.Code), ev.Repeat)
+		mods := Modifiers(ev.Mods)
+		if mods&(Ctrl|Alt|Super) == 0 {
+			rt.focusVisible = true
+		}
+		rt.modsChanged(mods)
+		rt.holdKey(mods, Key(ev.Key), Key(ev.PhysicalKey))
+		taken = rt.keyDownPhysical(mods, Key(ev.Key), Key(ev.PhysicalKey), KeyCode(ev.Code), ev.Repeat)
 	case platform.ModifiersChanged:
 		rt.modsChanged(Modifiers(ev.Mods))
 	case platform.RawKeyPressed, platform.RawKeyReleased:
@@ -2275,6 +2281,14 @@ func (rt *engine) modsChanged(mods Modifiers) {
 		rt.requestFrame()
 	}
 }
+
+// KeyboardInput reports whether the last keyboard or pointer input came
+// from the keyboard. It is the input modality behind Element.FocusVisible:
+// a key press without application-shortcut modifiers sets it and a pointer
+// press clears it, including when the control keeps the focus. Widgets can
+// use it for behavior that follows how a change was made rather than which
+// element has the focus.
+func (c *context) KeyboardInput() bool { return c.rt.focusVisible }
 
 // Modifiers returns the modifier keys held now, as the last key, pointer
 // or modifier event said: a view showing each row's shortcut while Cmd is

@@ -208,6 +208,34 @@ func TestTheCardBeingUpdatedShowsAPlaceholderInItsPlaceWhileTheOthersStayReadabl
 	}
 }
 
+func TestAConditionalSourceBelongsToItsOwnStatementDuringAnUpdate(t *testing.T) {
+	var reader nativegenui.Reading
+	reader.Load(opened(t, viewFile(t, []string{
+		`$option = "qdrant"`,
+		`root = Col([option_card])`,
+		`option_card = Card([Title("Options", "md"), option_notes])`,
+		`option_notes = $option == "pgvector" ? pgvector_details : $option == "qdrant" ? qdrant_details : milvus_details`,
+		`pgvector_details = Source(["s"], [Text("pgvector details")])`,
+		`qdrant_details = Source(["s"], [Text("Qdrant details")])`,
+		`milvus_details = Source(["s"], [Text("Milvus details")])`,
+	})))
+	reader.Sources = func(c *ui.Context, n nativegenui.Node) { ui.Button(c, "Update "+n.ComponentID) }
+	tt := ui.NewTester(reader.View, 640, 600)
+	before := texts(tt)
+	if !strings.Contains(before, "Update qdrant_details") || strings.Contains(before, "Update option_card") || strings.Contains(before, "Update option_notes") {
+		t.Fatalf("the visible source offers the wrong statement for Update card:\n%s", before)
+	}
+
+	reader.Replacing = []string{"qdrant_details"}
+	during := texts(tt)
+	if !strings.Contains(during, "Updating card…") || strings.Contains(during, "Qdrant details") {
+		t.Errorf("the conditional statement has no update placeholder:\n%s", during)
+	}
+	if !strings.Contains(during, "Options") || len(busy(tt)) != 1 {
+		t.Errorf("the placeholder covers the outer option card instead of only qdrant_details:\n%s", during)
+	}
+}
+
 func TestAPlaceholderInARowLeavesItsNeighboursWhereTheyWere(t *testing.T) {
 	var reader nativegenui.Reading
 	reader.Load(opened(t, viewFile(t, []string{

@@ -28,18 +28,19 @@ type objEntry struct {
 }
 
 type node struct {
-	k       nodeKind
-	name    string
-	str     string
-	num     float64
-	boolean bool
-	args    []*node
-	entries []objEntry
-	mapped  []objEntry
-	hasMap  bool
-	fn      bool
-	refType string
-	a, b, c *node
+	k         nodeKind
+	name      string
+	str       string
+	num       float64
+	boolean   bool
+	args      []*node
+	entries   []objEntry
+	mapped    []objEntry
+	hasMap    bool
+	fn        bool
+	refType   string
+	statement string
+	a, b, c   *node
 }
 
 func isRuntimeExpr(n *node) bool {

@@ -230,24 +230,31 @@ func (v *documentView) changedIDs() []string {
 	var ids []string
 	if v.reading.surface != nil {
 		seen := map[string]bool{}
-		for runtimeID, n := range v.reading.surface.Nodes {
-			for _, source := range n.Sources {
+		add := func(id string, sources []string) {
+			if id == "" || seen[id] {
+				return
+			}
+			for _, source := range sources {
 				r, s, ok := v.source(source)
 				if !ok || (r.Hash != "" && !s.UnchangedSince(r.Hash)) {
-					id := n.ComponentID
-					if id == "" {
-						id = n.ID
-					}
-					if id == "" {
-						id = runtimeID
-					}
-					if id != "" && !seen[id] {
-						ids = append(ids, id)
-						seen[id] = true
-					}
+					ids = append(ids, id)
+					seen[id] = true
 					break
 				}
 			}
+		}
+		for runtimeID, n := range v.reading.surface.Nodes {
+			id := n.ComponentID
+			if id == "" {
+				id = n.ID
+			}
+			if id == "" {
+				id = runtimeID
+			}
+			add(id, n.Sources)
+		}
+		for _, use := range v.reading.surface.sourceUses {
+			add(use.Statement, use.Strings)
 		}
 	}
 	sort.Strings(ids)

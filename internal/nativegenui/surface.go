@@ -19,15 +19,16 @@ type Reference struct {
 }
 
 type Surface struct {
-	Nodes   map[string]Node
-	Sources map[string]Reference
-	Request string
-	Session *openuilang.Session
-	tree    *openuilang.Element
-	notices []string
-	program *openuilang.Program
-	created []string
-	owners  map[*openuilang.Element]string
+	Nodes      map[string]Node
+	Sources    map[string]Reference
+	Request    string
+	Session    *openuilang.Session
+	tree       *openuilang.Element
+	notices    []string
+	program    *openuilang.Program
+	created    []string
+	sourceUses []openuilang.CallStrings
+	owners     map[*openuilang.Element]string
 }
 
 type Node struct {

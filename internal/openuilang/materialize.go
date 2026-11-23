@@ -82,6 +82,11 @@ func (m *materializer) resolveRef(name string, exprMode bool) any {
 		before := len(m.unres)
 		if exprMode {
 			value = m.expr(target, nil)
+			if expression, ok := value.(*node); ok {
+				copied := *expression
+				copied.statement = name
+				value = &copied
+			}
 		} else {
 			value = m.value(target)
 			if el, ok := value.(*Element); ok {

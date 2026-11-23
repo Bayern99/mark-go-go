@@ -73,7 +73,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 			scroll := s.scrollState("outline:" + w.ActiveID)
 			ui.Scroll(c.Key("outline:" + w.ActiveID)).FillWidth().Grow(1).TrackScroll(scroll).Label("Document outline").Children(func() {
 				for _, section := range m.Sections {
-					if navRow(c, fmt.Sprintf("heading-%d", section.Start), section.Heading, "", section.Level-1, false, portrait.IconFileText).Clicked() && a.Reveal != nil {
+					if navRow(c, fmt.Sprintf("heading-%d", section.Start), section.Heading, "", section.Level-1, false, portrait.IconFileText, "").Clicked() && a.Reveal != nil {
 						s.leftOpen = false
 						a.Reveal(section.Start)
 					}
@@ -103,18 +103,19 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 		if strings.TrimSpace(s.query) != "" {
 			scrollKey = "filter:" + w.Root
 		}
+		capsuleGroup := "workspace:" + scrollKey
 		ui.Scroll(c.Key(scrollKey)).Grow(1).FillWidth().Role(ui.RoleTree).FocusGroup(ui.Vertical).Label("Workspace files").TrackScroll(s.scrollState(scrollKey)).Children(func() {
 			if strings.TrimSpace(s.query) != "" {
 				if strings.TrimSpace(s.query) != m.Search.Query {
 					return
 				}
 				for _, hit := range m.Search.Hits {
-					if navRow(c, hit.Path, hit.Name, hit.Excerpt, 0, hit.DocumentID == w.ActiveID, portrait.IconFileText).Clicked() && a.OpenPath != nil {
+					if navRow(c, hit.Path, hit.Name, hit.Excerpt, 0, hit.DocumentID == w.ActiveID, portrait.IconFileText, capsuleGroup).Clicked() && a.OpenPath != nil {
 						s.leftOpen = false
 						a.OpenPath(hit.Path, -1)
 					}
 					for _, heading := range hit.Headings {
-						if navRow(c, fmt.Sprintf("%s-%d", hit.Path, heading.Offset), heading.Text, "", 1, false, portrait.IconFileText).Clicked() && a.OpenPath != nil {
+						if navRow(c, fmt.Sprintf("%s-%d", hit.Path, heading.Offset), heading.Text, "", 1, false, portrait.IconFileText, "").Clicked() && a.OpenPath != nil {
 							s.leftOpen = false
 							a.OpenPath(hit.Path, heading.Offset)
 						}
@@ -130,7 +131,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 					if d.WorkspaceRoot != "" {
 						continue
 					}
-					if navRow(c, d.ID, d.Name, stateLabel(d.Edited, d.Conflict, d.Deleted, d.ReadOnly, d.Generating), 0, d.ID == w.ActiveID, portrait.IconFileText).Clicked() && a.Activate != nil {
+					if navRow(c, d.ID, d.Name, stateLabel(d.Edited, d.Conflict, d.Deleted, d.ReadOnly, d.Generating), 0, d.ID == w.ActiveID, portrait.IconFileText, capsuleGroup).Clicked() && a.Activate != nil {
 						s.leftOpen = false
 						a.Activate(d.ID)
 					}
@@ -155,7 +156,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 				} else if folder {
 					icon = portrait.IconFolder
 				}
-				button := navRow(c, entry.ID, entry.Name, detail, entry.Depth, entry.DocumentID != "" && entry.DocumentID == w.ActiveID, icon)
+				button := navRow(c, entry.ID, entry.Name, detail, entry.Depth, entry.DocumentID != "" && entry.DocumentID == w.ActiveID, icon, capsuleGroup)
 				if folder {
 					button.Expanded(entry.FolderState == workspace.FolderOpen)
 				}
@@ -196,13 +197,14 @@ func (s *Shell) scrollState(key string) *ui.ScrollState {
 	return s.scrolls[key]
 }
 
-func navRow(c *ui.Context, key, title, detail string, depth int, selected bool, icon portrait.Icon) ui.Element {
+func navRow(c *ui.Context, key, title, detail string, depth int, selected bool, icon portrait.Icon, capsuleGroup string) ui.Element {
 	row := ui.ButtonBase(c.Key(key)).FillWidth().Role(ui.RoleTreeItem).Label(title).Description(detail).AccessSelected(selected).Padding(4, 8, 4, float32(8+12*min(depth, 8))).Radius(8)
-	if selected || row.Hovered() {
+	if !selected && row.Hovered() {
 		portrait.Materials.Row.Apply(row)
 	}
 	row.Children(func() {
-		ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Start).Children(func() {
+		portrait.RowCapsule(c, row, selected, capsuleGroup)
+		ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Start).ZIndex(1).Children(func() {
 			portrait.Glyph(c, icon, 14, portrait.Colors.Ink3).Margin(2, 0, 0, 0)
 			ui.Column(c).MinWidth(0).Grow(1).AlignItems(ui.Start).Children(func() {
 				portrait.Type.UI.Apply(ui.Text(c, title)).MaxLines(1).Ellipsis("…").TextColor(portrait.Colors.Ink)

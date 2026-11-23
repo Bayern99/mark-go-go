@@ -3,8 +3,10 @@ package nativeui_test
 import (
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
 )
@@ -66,6 +68,102 @@ func TestWorkspaceMenuKeepsSwitchTargetWhenEarlierRootDisappears(t *testing.T) {
 	if !slices.Equal(activated, []string{firstNotes.ID}) {
 		t.Fatalf("choosing the first Notes workspace activated %v", activated)
 	}
+}
+
+func fileTreeMotionShell(prefs ui.Preferences) (*ui.Tester, *nativeui.Model) {
+	m := &nativeui.Model{Workspace: workspace.WorkspaceSnapshot{
+		Kind: "folder", Root: "/notes", ActiveID: "one",
+		Documents: []workspace.DocumentInfo{
+			{ID: "one", Name: "One.md", Path: "/notes/One.md"},
+			{ID: "two", Name: "Two.md", Path: "/notes/Two.md"},
+		},
+	}, Navigation: workspace.NavSnapshot{Entries: []workspace.NavEntry{
+		{ID: "file:One.md", Kind: "file", Name: "One.md", Path: "/notes/One.md", DocumentID: "one"},
+		{ID: "file:Two.md", Kind: "file", Name: "Two.md", Path: "/notes/Two.md", DocumentID: "two"},
+	}}}
+	var shell nativeui.Shell
+	app := ui.NewTesterWith(func(c *ui.Context) {
+		shell.Draw(c, *m, nativeui.Actions{Activate: func(id string) { m.Workspace.ActiveID = id }}, nativeui.Slots{})
+	}, 1280, 820, ui.TesterOptions{Preferences: prefs})
+	app.Frame()
+	return app, m
+}
+
+func fileTreePixels(t *testing.T, app *ui.Tester) []uint32 {
+	t.Helper()
+	tree, ok := app.AccessByRole(ui.RoleTree, "Workspace files")
+	if !ok {
+		t.Fatal("workspace tree is missing")
+	}
+	return pixels(app.Image(), tree.Bounds)
+}
+
+func checkFileTreeSelection(t *testing.T, app *ui.Tester, name string) {
+	t.Helper()
+	row, ok := app.AccessByRole(ui.RoleTreeItem, name)
+	if !ok || !row.Selected || row.Name != name {
+		t.Fatalf("selected tree row = %+v, %v; want %q selected with its name intact", row, ok, name)
+	}
+}
+
+func TestFileTreeCapsuleMovesVerticallyThenSettles(t *testing.T) {
+	app, m := fileTreeMotionShell(ui.Preferences{})
+	from := fileTreePixels(t, app)
+	if err := app.Click("Two.md"); err != nil {
+		t.Fatal(err)
+	}
+	if m.Workspace.ActiveID != "two" {
+		t.Fatalf("click activated %q, want two", m.Workspace.ActiveID)
+	}
+	app.Advance(portrait.Motion.Switch / 3)
+	mid := fileTreePixels(t, app)
+	app.Advance(time.Second)
+	to := fileTreePixels(t, app)
+	if changed(from, mid) == 0 || changed(mid, to) == 0 {
+		t.Fatal("selection capsule did not pass through an intermediate vertical position")
+	}
+	app.Advance(time.Second)
+	if n := changed(to, fileTreePixels(t, app)); n != 0 {
+		t.Fatalf("selection capsule kept moving after settling: %d pixels changed", n)
+	}
+	checkFileTreeSelection(t, app, "Two.md")
+}
+
+func TestFileTreeCapsuleLandsAtOnceForKeyboardOrReducedMotion(t *testing.T) {
+	t.Run("keyboard", func(t *testing.T) {
+		app, m := fileTreeMotionShell(ui.Preferences{})
+		focus(t, app, "One.md")
+		app.Key(0, ui.KeyDown)
+		if !app.Focused("Two.md") {
+			t.Fatal("Down did not move through the workspace tree")
+		}
+		app.Key(0, ui.KeyEnter)
+		app.Frame()
+		if m.Workspace.ActiveID != "two" {
+			t.Fatalf("Enter activated %q, want two", m.Workspace.ActiveID)
+		}
+		landed := fileTreePixels(t, app)
+		app.Advance(time.Second)
+		if n := changed(landed, fileTreePixels(t, app)); n != 0 {
+			t.Fatalf("keyboard selection capsule still moving: %d pixels changed", n)
+		}
+		checkFileTreeSelection(t, app, "Two.md")
+	})
+	t.Run("reduced motion", func(t *testing.T) {
+		app, m := fileTreeMotionShell(ui.Preferences{ReduceMotion: true})
+		if err := app.Click("Two.md"); err != nil {
+			t.Fatal(err)
+		}
+		if m.Workspace.ActiveID != "two" {
+			t.Fatalf("click activated %q, want two", m.Workspace.ActiveID)
+		}
+		landed := fileTreePixels(t, app)
+		app.Advance(time.Second)
+		if n := changed(landed, fileTreePixels(t, app)); n != 0 {
+			t.Fatalf("reduced-motion selection capsule still moving: %d pixels changed", n)
+		}
+		checkFileTreeSelection(t, app, "Two.md")
+	})
 }
 
 func TestFileTreeReopensPathAfterDocumentCloses(t *testing.T) {

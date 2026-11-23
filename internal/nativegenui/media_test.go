@@ -333,6 +333,169 @@ func TestEveryTickOfAnAxisIsAbbreviatedTheSameWay(t *testing.T) {
 	}
 }
 
+func requireTableRowOrder(t *testing.T, tt *ui.Tester, want ...string) {
+	t.Helper()
+	tt.Frame()
+	lastY := float32(-1)
+	for _, name := range want {
+		cell, ok := tt.Find(name)
+		if !ok || cell.W == 0 {
+			t.Fatalf("%q is not shown", name)
+		}
+		if cell.Y <= lastY {
+			t.Fatalf("rows are not in order %v: %q is at %v after %v", want, name, cell.Y, lastY)
+		}
+		lastY = cell.Y
+	}
+}
+
+func requireSortHeader(t *testing.T, tt *ui.Tester, name string, want ui.SortDirection) {
+	t.Helper()
+	header, ok := tt.AccessByRole(ui.RoleColumnHeader, name)
+	if !ok || header.Sort != want || !header.Focusable || !strings.Contains(header.Description, "Sort by "+name) {
+		t.Fatalf("header %q is %+v, want focusable sort direction %v", name, header, want)
+	}
+}
+
+func TestTableSortsEvaluatedNumbersByPointerAndKeyboardAndRestoresOriginalOrder(t *testing.T) {
+	tt, _ := shown(t, statementView(t, `root = Col([Table(["Item", "Score"], [["ten", 5 + 5], ["two", 1 + 1], ["one", 3 - 2]])])`), 640, nil)
+	requireTableRowOrder(t, tt, "ten", "two", "one")
+	requireSortHeader(t, tt, "Item", ui.SortNone)
+	requireSortHeader(t, tt, "Score", ui.SortNone)
+
+	if err := tt.Click("Score"); err != nil {
+		t.Fatal(err)
+	}
+	requireTableRowOrder(t, tt, "one", "two", "ten")
+	requireSortHeader(t, tt, "Score", ui.SortAscending)
+	requireSortHeader(t, tt, "Item", ui.SortNone)
+
+	tt.Key(0, ui.KeySpace)
+	requireTableRowOrder(t, tt, "ten", "two", "one")
+	requireSortHeader(t, tt, "Score", ui.SortDescending)
+
+	tt.Key(0, ui.KeyEnter)
+	requireTableRowOrder(t, tt, "ten", "two", "one")
+	requireSortHeader(t, tt, "Score", ui.SortNone)
+
+	if err := tt.Click("Item"); err != nil {
+		t.Fatal(err)
+	}
+	requireTableRowOrder(t, tt, "one", "ten", "two")
+	requireSortHeader(t, tt, "Item", ui.SortAscending)
+	if err := tt.Click("Score"); err != nil {
+		t.Fatal(err)
+	}
+	requireTableRowOrder(t, tt, "one", "two", "ten")
+	requireSortHeader(t, tt, "Score", ui.SortAscending)
+	requireSortHeader(t, tt, "Item", ui.SortNone)
+}
+
+func TestTableStringSortingIsNumericCaseInsensitiveAndStable(t *testing.T) {
+	for _, test := range []struct {
+		column, table string
+		want          []string
+	}{
+		{"Latency", `root = Col([Table(["Name", "Latency"], [["slow", "71 ms"], ["fast", "9 ms"], ["middle", "23 ms"], ["last", "10 ms"]])])`, []string{"fast", "last", "middle", "slow"}},
+		{"Cost", `root = Col([Table(["Name", "Cost"], [["slow", "$2,100"], ["fast", "$2,100"], ["middle", "$950"], ["last", "$1,000"]])])`, []string{"middle", "last", "slow", "fast"}},
+		{"Case", `root = Col([Table(["Name", "Case"], [["slow", "beta"], ["fast", "Alpha"], ["middle", "alpha"], ["last", "Beta"]])])`, []string{"fast", "middle", "slow", "last"}},
+	} {
+		t.Run(test.column, func(t *testing.T) {
+			tt, _ := shown(t, statementView(t, test.table), 760, nil)
+			if err := tt.Click(test.column); err != nil {
+				t.Fatal(err)
+			}
+			requireTableRowOrder(t, tt, test.want...)
+		})
+	}
+}
+
+func TestTableComponentColumnsHaveNoSortControl(t *testing.T) {
+	tt, _ := shown(t, statementView(t, `root = Col([Table(["Item", "State", "Score"], [["Alpha", Badge("Open", "success"), 2], ["Beta", Badge("Closed", "danger"), 1]])])`), 640, nil)
+	stateHeader, ok := tt.AccessByRole(ui.RoleColumnHeader, "State")
+	if !ok || stateHeader.Focusable || strings.Contains(stateHeader.Description, "Sort by") {
+		t.Fatalf("a column with component cells is presented as sortable: %+v", stateHeader)
+	}
+	requireSortHeader(t, tt, "Item", ui.SortNone)
+	requireSortHeader(t, tt, "Score", ui.SortNone)
+	if err := tt.Click("Score"); err != nil {
+		t.Fatal(err)
+	}
+	requireTableRowOrder(t, tt, "Beta", "Alpha")
+	stateHeader, _ = tt.AccessByRole(ui.RoleColumnHeader, "State")
+	if stateHeader.Focusable || strings.Contains(stateHeader.Description, "Sort by") {
+		t.Fatal("sorting another column made the component column sortable")
+	}
+}
+
+func TestTableSortingKeepsControlsWithTheirOriginalRows(t *testing.T) {
+	view := statementView(t,
+		`$a = "alpha"`, `$b = "beta"`, `$sa = 20`, `$sb = 80`,
+		`root = Col([Table(["Row", "Rank", "Controls"], [`+
+			`["A", 2, [Input($a, "Input A"), Slider($sa, 0, 100, 1, "Slider A", "%")]],`+
+			`["B", 1, [Input($b, "Input B"), Slider($sb, 0, 100, 1, "Slider B", "%")]]])])`)
+	tt, _ := shown(t, view, 900, nil)
+	inputA, _ := tt.Access("Input A")
+	tt.ClickAtWith(0, inputA.Bounds.X+inputA.Bounds.W/2, inputA.Bounds.Y+inputA.Bounds.H/2)
+	if !tt.Focused("Input A") {
+		t.Fatal("Input A did not receive focus")
+	}
+	tt.Type(" edited")
+	tt.Frame()
+	tt.Frame()
+	if edited, _ := tt.Access("Input A"); edited.Value != "alpha edited" {
+		t.Fatalf("typing did not update Input A: %+v", edited)
+	}
+	slider, ok := tt.Access("Slider A")
+	if !ok {
+		t.Fatal("Slider A is missing")
+	}
+	x, y := slider.Bounds.X+slider.Bounds.W*0.75, slider.Bounds.Y+slider.Bounds.H/2
+	tt.Press(x, y)
+	tt.Release(x, y)
+	tt.Frame()
+	beforeA, _ := tt.Access("Input A")
+	beforeB, _ := tt.Access("Input B")
+	beforeSliderA, _ := tt.Access("Slider A")
+	beforeSliderB, _ := tt.Access("Slider B")
+	if beforeA.Value != "alpha edited" || beforeSliderA.Now == 20 {
+		t.Fatalf("controls did not change before sorting: input %+v, slider %+v", beforeA, beforeSliderA)
+	}
+
+	if err := tt.Click("Rank"); err != nil {
+		t.Fatal(err)
+	}
+	requireTableRowOrder(t, tt, "B", "A")
+	afterA, _ := tt.Access("Input A")
+	afterB, _ := tt.Access("Input B")
+	afterSliderA, _ := tt.Access("Slider A")
+	afterSliderB, _ := tt.Access("Slider B")
+	if afterA.Value != beforeA.Value || afterB.Value != beforeB.Value || afterSliderA.Now != beforeSliderA.Now || afterSliderB.Now != beforeSliderB.Now {
+		t.Fatalf("sorting moved control state: before %+v %+v %+v %+v, after %+v %+v %+v %+v",
+			beforeA, beforeB, beforeSliderA, beforeSliderB, afterA, afterB, afterSliderA, afterSliderB)
+	}
+
+	inputB, _ := tt.Access("Input B")
+	tt.ClickAtWith(0, inputB.Bounds.X+inputB.Bounds.W/2, inputB.Bounds.Y+inputB.Bounds.H/2)
+	tt.Type(" plus")
+	tt.Frame()
+	tt.Frame()
+	focusedB, _ := tt.Access("Input B")
+	focusedA, _ := tt.Access("Input A")
+	if !tt.Focused("Input B") || tt.Focused("Input A") || focusedB.Value != "beta plus" || focusedA.Value != "alpha edited" {
+		t.Fatalf("focus or text moved between sorted rows: A %+v, B %+v", focusedA, focusedB)
+	}
+	if err := tt.Click("Rank"); err != nil {
+		t.Fatal(err)
+	}
+	requireTableRowOrder(t, tt, "A", "B")
+	afterA, _ = tt.Access("Input A")
+	focusedB, _ = tt.Access("Input B")
+	if afterA.Value != "alpha edited" || focusedB.Value != "beta plus" {
+		t.Fatalf("descending sort changed control values: A %+v, B %+v", afterA, focusedB)
+	}
+}
+
 var comparisonColumns = []string{"Option", "p95 latency at 200 QPS", "Recall@10", "Index build time (40M)", "Memory at rest", "Monthly cost (3 nodes)", "New services to operate", "Filtering with metadata"}
 
 const comparisonTable = `Card([Title("Summary table"), Table(["Option", "p95 latency at 200 QPS", "Recall@10", "Index build time (40M)", "Memory at rest", "Monthly cost (3 nodes)", "New services to operate", "Filtering with metadata"], [["pgvector 0.8", "71 ms", "0.94", "6 h 40 min", "148 GB", "$2,100", "0", "SQL WHERE"], ["Qdrant 1.12", "23 ms", "0.97", "2 h 10 min", "96 GB", "$2,850", "1", "Payload filters"], ["Milvus 2.5", "31 ms", "0.96", "1 h 35 min", "121 GB", "$4,300", "4", "Scalar filters"]])])`

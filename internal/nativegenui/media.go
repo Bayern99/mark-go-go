@@ -1,12 +1,14 @@
 package nativegenui
 
 import (
+	"cmp"
 	_ "embed"
 	"errors"
 	"fmt"
 	"math"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +19,8 @@ import (
 	"github.com/egoist/mygo/ui/chart"
 	"github.com/egoist/mygo/ui/markdown"
 	"github.com/egoist/mygo/ui/markdown/parser"
+	"golang.org/x/text/collate"
+	"golang.org/x/text/language"
 )
 
 //go:embed icons.tsv
@@ -319,10 +323,11 @@ func (r *Reading) table(c *ui.Context, p props, path string, depth int, at place
 		return path + "/" + strconv.Itoa(row) + "/" + strconv.Itoa(column)
 	}
 	numeric := make([]bool, len(columns))
+	sortable := make([]bool, len(columns))
 	weights := make([]float32, len(columns))
 	for i, name := range columns {
 		filled, widest := 0, len([]rune(name))
-		numeric[i] = true
+		numeric[i], sortable[i] = true, true
 		for _, row := range rows {
 			switch value := cell(row, i).(type) {
 			case nil:
@@ -338,9 +343,10 @@ func (r *Reading) table(c *ui.Context, p props, path string, depth int, at place
 				numeric[i] = numeric[i] && numericCell.MatchString(strings.TrimSpace(value))
 			case *openuilang.Element, []any:
 				widest = max(widest, 14)
+				sortable[i] = false
 			default:
 				filled++
-				numeric[i] = false
+				numeric[i], sortable[i] = false, false
 			}
 		}
 		numeric[i] = numeric[i] && filled > 0
@@ -374,30 +380,108 @@ func (r *Reading) table(c *ui.Context, p props, path string, depth int, at place
 	line := func(key string) {
 		ui.Column(c.Key(key)).Height(1).Shrink(0).Background(theme.Text.Alpha(0.08)).AccessHidden(true)
 	}
+	state := r.state(path)
 	strip := func(key string, role ui.Role, build func(column int)) {
 		ui.Row(c.Key(key)).AlignItems(ui.Stretch).Role(ui.RoleRow).Children(func() {
 			for i := range columns {
-				slot := ui.Column(c.Key(i)).Grow(weights[i]).Basis(widths[i]).Shrink(0).MinWidth(0).Padding(10, cellInset).Justify(ui.Center).Role(role)
-				if numeric[i] {
+				sortableHeader := role == ui.RoleColumnHeader && sortable[i]
+				var slot ui.Element
+				if sortableHeader {
+					slot = ui.ButtonBase(c.Key(i)).Role(role).Description("Sort by " + columns[i] + ": ascending, descending, then original order.")
+				} else {
+					slot = ui.Column(c.Key(i)).Role(role)
+				}
+				slot.Grow(weights[i]).Basis(widths[i]).Shrink(0).MinWidth(0).Padding(10, cellInset).Justify(ui.Center)
+				if sortableHeader {
+					direction := ui.SortNone
+					if state.column == i {
+						if state.order == 1 {
+							direction = ui.SortAscending
+						} else if state.order == 2 {
+							direction = ui.SortDescending
+						}
+					}
+					slot.Sort(direction).Justify(ui.Start)
+					if numeric[i] {
+						slot.Justify(ui.End)
+					}
+				} else if numeric[i] {
 					slot.AlignItems(ui.End)
 				}
 				slot.Children(func() { build(i) })
+				if sortableHeader && slot.Clicked() {
+					if state.column != i {
+						state.order = 0
+					}
+					state.column = i
+					state.order = (state.order + 1) % 3
+				}
 			}
 		})
 	}
-	state := r.state(path)
+	order := make([]int, len(rows))
+	for i := range order {
+		order[i] = i
+	}
+	if state.order != 0 && state.column >= 0 && state.column < len(columns) && sortable[state.column] {
+		collator := collate.New(language.English, collate.Numeric, collate.IgnoreCase)
+		slices.SortStableFunc(order, func(a, b int) int {
+			x, y := cell(rows[a], state.column), cell(rows[b], state.column)
+			left, leftNumber := x.(float64)
+			right, rightNumber := y.(float64)
+			result := 0
+			if leftNumber && rightNumber {
+				result = cmp.Compare(left, right)
+			} else {
+				xText, yText := (props{}).show(x), (props{}).show(y)
+				left, leftNumber := number(xText)
+				right, rightNumber := number(yText)
+				if leftNumber && rightNumber {
+					result = cmp.Compare(left, right)
+				} else {
+					result = collator.CompareString(xText, yText)
+				}
+			}
+			if state.order == 2 {
+				return -result
+			}
+			return result
+		})
+	}
 	lines := func() {
 		ui.Column(c.Key("head")).Background(theme.Text.Alpha(0.03)).Children(func() {
 			strip("header", ui.RoleColumnHeader, func(i int) {
-				name := head.apply(ui.Text(c, columns[i]), columns[i])
-				if r.fitted(columns[i], head).whole {
-					name.NoWrap()
-				} else {
-					name.Wrap()
+				if !sortable[i] {
+					name := head.apply(ui.Text(c, columns[i]), columns[i])
+					if r.fitted(columns[i], head).whole {
+						name.NoWrap()
+					} else {
+						name.Wrap()
+					}
+					return
 				}
+				mark := "↕"
+				if state.column == i && state.order != 0 {
+					if state.order == 1 {
+						mark = "↑"
+					} else {
+						mark = "↓"
+					}
+				}
+				content := ui.Row(c).Gap(4).MinWidth(0).MaxWidthPercent(100)
+				content.Children(func() {
+					name := head.apply(ui.Text(c, columns[i]), columns[i])
+					if r.fitted(columns[i], head).whole {
+						name.NoWrap()
+					} else {
+						name.Wrap()
+					}
+					head.apply(ui.Text(c, mark), mark).AccessHidden(true)
+				})
 			})
 		})
-		for n, row := range rows {
+		for _, n := range order {
+			row := rows[n]
 			line("line" + strconv.Itoa(n))
 			strip("row"+strconv.Itoa(n), ui.RoleCell, func(i int) {
 				at, value := cellAt(n, i), cell(row, i)

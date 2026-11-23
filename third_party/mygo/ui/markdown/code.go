@@ -101,7 +101,7 @@ func DefaultCodeBlock(c *ui.Context, b *CodeBlockView) ui.Element {
 	return box.Children(func() {
 		head := ui.Row(c).AlignItems(ui.Center).Padding(th.em(0.35), th.em(0.4), 0, th.em(th.CodeBlockPadding))
 		head.Children(func() {
-			ui.Text(c, b.Language).FontSize(th.em(0.8)).TextColor(th.Muted).Unselectable()
+			ui.Text(c, b.Language).FontSize(th.em(th.CodeLabelSize)).TextColor(th.Muted).Unselectable()
 			ui.Spacer(c)
 			b.CopyButton(c)
 		})
@@ -140,7 +140,7 @@ func (b *CodeBlockView) CopyButton(c *ui.Context) ui.Element {
 		}
 		size := th.em(0.95)
 		ui.Icon(c, icon).Size(size, size).TextColor(th.Muted)
-		ui.Text(c, label).FontSize(th.em(0.8)).TextColor(th.Muted)
+		ui.Text(c, label).FontSize(th.em(th.CodeLabelSize)).TextColor(th.Muted)
 	})
 	if btn.Clicked() {
 		c.WriteClipboard(b.Code())

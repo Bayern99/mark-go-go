@@ -34,6 +34,12 @@ type Theme struct {
 	// among prose without lifting strong text down to it: 0 for no floor.
 	LinkWeight int
 
+	// CodeLabelSize is the size of a code block's language and copy label,
+	// ListNumberSize that of an ordered list's numbers, and
+	// ImagePlaceholderSize that of an image's placeholder, in ems: 0.8, 1
+	// and 0.875 respectively.
+	CodeLabelSize, ListNumberSize, ImagePlaceholderSize float32
+
 	// Code colors code spans, with CodeBackground behind them; CodeSize is
 	// their size in ems: 0.875.
 	Code, CodeBackground Color
@@ -106,38 +112,41 @@ type HeadingStyle struct {
 // code editor colors it, and the spacing of the chat apps.
 func DefaultTheme(t *ui.Theme) *Theme {
 	th := &Theme{
-		FontSize:            t.FontSize,
-		Font:                t.Font,
-		CodeFont:            "monospace",
-		LineHeight:          1.5,
-		CodeLineHeight:      1.4,
-		Text:                t.Text,
-		Muted:               t.TextMuted,
-		Link:                t.Accent,
-		Strong:              t.Text,
-		StrongWeight:        600,
-		Code:                t.Text,
-		CodeBackground:      t.Text.Alpha(0.07),
-		CodeSize:            0.875,
-		BlockSpacing:        0.75,
-		ItemSpacing:         0.25,
-		ListIndent:          1.6,
-		QuoteBar:            t.Border,
-		QuoteText:           t.TextMuted,
-		QuoteBarWidth:       3,
-		Alerts:              alertColors(t.Dark),
-		Rule:                t.Border,
-		CodeBlockBackground: t.Text.Alpha(0.04),
-		CodeBlockBorder:     t.Border,
-		CodeBlockRadius:     t.Radius + 2,
-		CodeBlockPadding:    0.85,
-		CodeColors:          editor.DefaultTheme(t),
-		TableBorder:         t.Border,
-		TableHeader:         t.Text.Alpha(0.04),
-		TableCellPadding:    [2]float32{0.6, 0.4},
-		TableMaxColumn:      24,
-		Mark:                ui.RGBA(250, 204, 21, 0.35),
-		Checkbox:            t.Accent,
+		FontSize:             t.FontSize,
+		Font:                 t.Font,
+		CodeFont:             "monospace",
+		LineHeight:           1.5,
+		CodeLineHeight:       1.4,
+		Text:                 t.Text,
+		Muted:                t.TextMuted,
+		Link:                 t.Accent,
+		Strong:               t.Text,
+		StrongWeight:         600,
+		CodeLabelSize:        0.8,
+		ListNumberSize:       1,
+		ImagePlaceholderSize: 0.875,
+		Code:                 t.Text,
+		CodeBackground:       t.Text.Alpha(0.07),
+		CodeSize:             0.875,
+		BlockSpacing:         0.75,
+		ItemSpacing:          0.25,
+		ListIndent:           1.6,
+		QuoteBar:             t.Border,
+		QuoteText:            t.TextMuted,
+		QuoteBarWidth:        3,
+		Alerts:               alertColors(t.Dark),
+		Rule:                 t.Border,
+		CodeBlockBackground:  t.Text.Alpha(0.04),
+		CodeBlockBorder:      t.Border,
+		CodeBlockRadius:      t.Radius + 2,
+		CodeBlockPadding:     0.85,
+		CodeColors:           editor.DefaultTheme(t),
+		TableBorder:          t.Border,
+		TableHeader:          t.Text.Alpha(0.04),
+		TableCellPadding:     [2]float32{0.6, 0.4},
+		TableMaxColumn:       24,
+		Mark:                 ui.RGBA(250, 204, 21, 0.35),
+		Checkbox:             t.Accent,
 	}
 	if t.FontSize == 0 {
 		th.FontSize = 14
@@ -184,6 +193,9 @@ func resolve(th *Theme, def *Theme) Theme {
 	if out.StrongWeight == 0 {
 		out.StrongWeight = def.StrongWeight
 	}
+	f(&out.CodeLabelSize, def.CodeLabelSize)
+	f(&out.ListNumberSize, def.ListNumberSize)
+	f(&out.ImagePlaceholderSize, def.ImagePlaceholderSize)
 	c(&out.Code, out.Text)
 	c(&out.CodeBackground, def.CodeBackground)
 	f(&out.CodeSize, def.CodeSize)

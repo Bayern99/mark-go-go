@@ -30,8 +30,8 @@ func (p *panel) alphaXiv(c *ui.Context) {
 					}
 				}
 			})
-			ui.Row(c).Gap(4).Children(func() {
-				input(c, "alpha-query", "Search papers", &p.alphaQuery, "Search alphaXiv papers…")
+			ui.Row(c).Wrap().Gap(4).Children(func() {
+				input(c, "alpha-query", "Search papers", &p.alphaQuery, "Search alphaXiv papers…").Basis(160).Grow(1)
 				if controlButton(c, "Search", "Search alphaXiv").Disabled(s.cliBusy || strings.TrimSpace(p.alphaQuery) == "").Clicked() {
 					p.alphaSearch()
 				}
@@ -42,18 +42,20 @@ func (p *panel) alphaXiv(c *ui.Context) {
 		}
 		ui.Column(c.Key("alpha-paper-tools")).Gap(5).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
 			sectionTitle(c, "Paper tools")
-			ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-				input(c, "alpha-paper-id", "Paper ID", &p.alphaPaperID, "arXiv ID or alphaXiv ID")
-				ui.Checkbox(c.Key("alpha-full-text"), &p.alphaFullText, "Full text")
-				if controlButton(c, "Inspect", "Get alphaXiv paper details").Disabled(s.cliBusy || strings.TrimSpace(p.alphaPaperID) == "").Clicked() {
-					p.alphaInspect()
-				}
+			ui.Row(c).Wrap().Gap(4).AlignItems(ui.Center).Children(func() {
+				input(c, "alpha-paper-id", "Paper ID", &p.alphaPaperID, "arXiv ID or alphaXiv ID").Basis(200).Grow(1)
+				ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+					ui.Checkbox(c.Key("alpha-full-text"), &p.alphaFullText, "Full text")
+					if controlButton(c, "Inspect", "Get alphaXiv paper details").Disabled(s.cliBusy || strings.TrimSpace(p.alphaPaperID) == "").Clicked() {
+						p.alphaInspect()
+					}
+				})
 			})
 			if s.paperResult != nil {
 				p.alphaPaper(c, *s.paperResult)
 			}
-			ui.Row(c).Gap(4).Children(func() {
-				input(c, "alpha-ask", "Ask about paper", &p.alphaQuestion, "Question about this paper")
+			ui.Row(c).Wrap().Gap(4).Children(func() {
+				input(c, "alpha-ask", "Ask about paper", &p.alphaQuestion, "Question about this paper").Basis(160).Grow(1)
 				if smallButton(c, "Ask", "Ask alphaXiv about this paper").Disabled(s.cliBusy || p.alphaPaperID == "" || p.alphaQuestion == "").Clicked() {
 					p.alphaAskAction()
 				}
@@ -61,9 +63,9 @@ func (p *panel) alphaXiv(c *ui.Context) {
 			if p.alphaAskResult != nil {
 				resultText(c, p.alphaAskResult.Command, p.alphaAskResult.RawOutput, p.alphaAskResult.Error)
 			}
-			ui.Row(c).Gap(4).Children(func() {
-				input(c, "alpha-repo", "Repository URL", &p.alphaRepoURL, "https://github.com/…")
-				input(c, "alpha-file", "Repository file", &p.alphaFilePath, "Optional file path")
+			ui.Row(c).Wrap().Gap(4).Children(func() {
+				input(c, "alpha-repo", "Repository URL", &p.alphaRepoURL, "https://github.com/…").Basis(150).Grow(1)
+				input(c, "alpha-file", "Repository file", &p.alphaFilePath, "Optional file path").Basis(150).Grow(1)
 				if smallButton(c, "Inspect code", "Inspect repository code for this paper").Disabled(s.cliBusy || p.alphaRepoURL == "").Clicked() {
 					p.alphaCodeAction()
 				}

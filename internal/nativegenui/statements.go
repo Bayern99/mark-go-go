@@ -33,8 +33,12 @@ func openStatements(data string) (*Surface, error) {
 		text = openuilang.Overlay(text, strings.Join(batch, "\n"))
 	}
 	program := library.Parse(text)
-	s := &Surface{Nodes: map[string]Node{}, Sources: map[string]Reference{}, Request: view.Request, Session: openuilang.NewSession(), created: view.Statements[0]}
-	for id, source := range view.Sources {
+	return newStatementSurface(program, text, view.Sources, view.Request, view.Statements[0], true)
+}
+
+func newStatementSurface(program *openuilang.Program, text string, sources map[string]genui.StatementSource, request string, created []string, requireRoot bool) (*Surface, error) {
+	s := &Surface{Nodes: map[string]Node{}, Sources: map[string]Reference{}, Request: request, Session: openuilang.NewSession(), created: created}
+	for id, source := range sources {
 		s.Sources[id] = Reference{Heading: source.Heading, Occurrence: source.Occurrence, Hash: source.Hash}
 	}
 	s.Session.Load(program)
@@ -48,7 +52,8 @@ func openStatements(data string) (*Surface, error) {
 			s.sourceUses = append(s.sourceUses, use)
 		}
 	}
-	if s.refresh(); s.tree == nil {
+	s.refresh()
+	if requireRoot && s.tree == nil {
 		return nil, errors.New("The view has no root component.")
 	}
 	return s, nil
@@ -146,9 +151,18 @@ type treatment struct {
 func (r *Reading) statements(c *ui.Context) {
 	ui.Row(c).Justify(ui.Center).MinWidth(0).Children(func() {
 		ui.Column(c).Grow(1).Basis(0).MinWidth(0).MaxWidth(readingWidth).Children(func() {
+			r.drawingProblems = map[string]string{}
 			r.piece(c, r.surface.tree, "root", 0, place{}, treatment{})
 			for i, notice := range r.surface.notices {
 				ui.Text(c.Key("notice"+strconv.Itoa(i)), notice).Role(ui.RoleAlert).Margin(groupGap, 0, 0, 0)
+			}
+			paths := make([]string, 0, len(r.drawingProblems))
+			for path := range r.drawingProblems {
+				paths = append(paths, path)
+			}
+			slices.Sort(paths)
+			for i, path := range paths {
+				ui.Text(c.Key("drawing-notice"+strconv.Itoa(i)), r.drawingProblems[path]).Role(ui.RoleAlert).Margin(groupGap, 0, 0, 0)
 			}
 		})
 	})
@@ -231,7 +245,7 @@ func (spanned *spannedWidth) fitsOnOneLine(c *ui.Context, text textFit) bool {
 func wide(children any) bool {
 	for _, child := range flatten(children, nil) {
 		switch kind(child) {
-		case "Chart", "Table", "Grid", "Card", "Carousel", "Image":
+		case "Chart", "Table", "Grid", "Card", "Carousel", "Image", "Svg":
 			return true
 		}
 	}

@@ -70,6 +70,28 @@ func TestEveryPrefixRenders(t *testing.T) {
 	}
 }
 
+func TestCompletedStatementsKeepTheirFinalDegradationWhileAnotherStatementIsPending(t *testing.T) {
+	lib := fixtureLibrary(t)
+	stream := lib.NewStream()
+	stream.Push("root = Stack([a])\na = Text(\"done\", \"outside-the-catalog\")\n")
+	program := stream.Push("pending = Text(\"half")
+	tree, _ := program.Evaluate(nil)
+	children, _ := tree.Props.Get("children")
+	text := children.([]any)[0].(*Element)
+	if _, present := text.Props.Get("variant"); present {
+		t.Fatal("a completed statement's invalid optional property was not reset to its default")
+	}
+	found := false
+	for _, problem := range program.Errors {
+		if problem.StatementID == "a" && problem.Path == "/variant" && problem.Degraded {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("completed statement has no degraded-property report: %+v", program.Errors)
+	}
+}
+
 func TestMergeKeepsUntouchedStatementsAndState(t *testing.T) {
 	merged := Merge("root = Stack([a, b])\n$n = 1\na = Text(\"A\")\nb = Text(\"B\")\nold = Text(\"unused\")", "b = null\nroot = Stack([a, c])\nc = Text(\"C\")")
 	want := "root = Stack([a, c])\n$n = 1\na = Text(\"A\")\nc = Text(\"C\")"

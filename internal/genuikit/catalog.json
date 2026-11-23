@@ -551,6 +551,166 @@
      "alt"
     ]
    },
+   "Svg": {
+    "type": "object",
+    "description": "A drawing for steps, parts, mechanisms, diagrams and layouts. Scales to its width; its shapes take expressions, so state can move them. label says in a few words what it shows, for screen readers: always give one.",
+    "properties": {
+     "children": {
+      "type": "array",
+      "items": {
+       "anyOf": [
+        {"$ref": "#/$defs/Circle"},
+        {"$ref": "#/$defs/Ellipse"},
+        {"$ref": "#/$defs/Rect"},
+        {"$ref": "#/$defs/Line"},
+        {"$ref": "#/$defs/Path"},
+        {"$ref": "#/$defs/Polyline"},
+        {"$ref": "#/$defs/Polygon"},
+        {"$ref": "#/$defs/SvgText"},
+        {"$ref": "#/$defs/G"}
+       ]
+      }
+     },
+     "viewBox": {"type": "string"},
+     "label": {"type": "string"},
+     "width": {"type": ["number", "string"]},
+     "height": {"type": ["number", "string"]}
+    },
+    "required": ["children", "viewBox"]
+   },
+   "G": {
+    "type": "object",
+    "description": "Group; transform like \"rotate(30 50 50)\" or \"translate(10 0)\"; one with the wrong number of arguments is dropped.",
+    "properties": {
+     "children": {
+      "type": "array",
+      "items": {
+       "anyOf": [
+        {"$ref": "#/$defs/Circle"},
+        {"$ref": "#/$defs/Ellipse"},
+        {"$ref": "#/$defs/Rect"},
+        {"$ref": "#/$defs/Line"},
+        {"$ref": "#/$defs/Path"},
+        {"$ref": "#/$defs/Polyline"},
+        {"$ref": "#/$defs/Polygon"},
+        {"$ref": "#/$defs/SvgText"}
+       ]
+      }
+     },
+     "transform": {"type": "string"},
+     "opacity": {"type": "number"}
+    },
+    "required": ["children"]
+   },
+   "Circle": {
+    "type": "object",
+    "description": "fill defaults to the text color; with only a stroke it stays unfilled.",
+    "properties": {
+     "cx": {"type": "number"},
+     "cy": {"type": "number"},
+     "r": {"type": "number"},
+     "fill": {"type": "string"},
+     "stroke": {"type": "string"},
+     "strokeWidth": {"type": "number"},
+     "opacity": {"type": "number"}
+    },
+    "required": ["cx", "cy", "r"]
+   },
+   "Ellipse": {
+    "type": "object",
+    "description": "fill defaults to the text color; with only a stroke it stays unfilled.",
+    "properties": {
+     "cx": {"type": "number"},
+     "cy": {"type": "number"},
+     "rx": {"type": "number"},
+     "ry": {"type": "number"},
+     "fill": {"type": "string"},
+     "stroke": {"type": "string"},
+     "strokeWidth": {"type": "number"},
+     "opacity": {"type": "number"}
+    },
+    "required": ["cx", "cy", "rx", "ry"]
+   },
+   "Rect": {
+    "type": "object",
+    "description": "rx rounds the corners; fill defaults to the text color, and with only a stroke it stays unfilled.",
+    "properties": {
+     "x": {"type": "number"},
+     "y": {"type": "number"},
+     "width": {"type": "number"},
+     "height": {"type": "number"},
+     "fill": {"type": "string"},
+     "stroke": {"type": "string"},
+     "strokeWidth": {"type": "number"},
+     "opacity": {"type": "number"},
+     "rx": {"type": "number"}
+    },
+    "required": ["x", "y", "width", "height"]
+   },
+   "Line": {
+    "type": "object",
+    "description": "Stroked in the text color, 2 wide, unless stroke and strokeWidth are set.",
+    "properties": {
+     "x1": {"type": "number"},
+     "y1": {"type": "number"},
+     "x2": {"type": "number"},
+     "y2": {"type": "number"},
+     "stroke": {"type": "string"},
+     "strokeWidth": {"type": "number"},
+     "opacity": {"type": "number"}
+    },
+    "required": ["x1", "y1", "x2", "y2"]
+   },
+   "Path": {
+    "type": "object",
+    "description": "d is SVG path data only (M, L, C, A, Z...), else nothing draws; unfilled unless fill is set.",
+    "properties": {
+     "d": {"type": "string"},
+     "fill": {"type": "string"},
+     "stroke": {"type": "string"},
+     "strokeWidth": {"type": "number"},
+     "opacity": {"type": "number"}
+    },
+    "required": ["d"]
+   },
+   "Polyline": {
+    "type": "object",
+    "description": "points like \"0,0 10,5 20,0\".",
+    "properties": {
+     "points": {"type": "string"},
+     "fill": {"type": "string"},
+     "stroke": {"type": "string"},
+     "strokeWidth": {"type": "number"},
+     "opacity": {"type": "number"}
+    },
+    "required": ["points"]
+   },
+   "Polygon": {
+    "type": "object",
+    "description": "Closed shape; points like \"0,0 10,5 20,0\". fill defaults to the text color; with only a stroke it stays unfilled.",
+    "properties": {
+     "points": {"type": "string"},
+     "fill": {"type": "string"},
+     "stroke": {"type": "string"},
+     "strokeWidth": {"type": "number"},
+     "opacity": {"type": "number"}
+    },
+    "required": ["points"]
+   },
+   "SvgText": {
+    "type": "object",
+    "description": "A text label at x, y; anchor sets which end sits on x.",
+    "properties": {
+     "text": {"type": "string"},
+     "x": {"type": "number"},
+     "y": {"type": "number"},
+     "size": {"type": "number"},
+     "fill": {"type": "string"},
+     "anchor": {"type": "string", "enum": ["start", "middle", "end"]},
+     "weight": {"type": "string", "enum": ["normal", "medium", "semibold"]}
+    },
+    "required": ["text", "x", "y"]
+   },
    "Carousel": {
     "type": "object",
     "description": "Children side by side, scrolled sideways",
@@ -2584,6 +2744,46 @@
   "Image": {
    "signature": "Image(src: string, alt: string, aspectRatio?: number, radius?: number | \"sm\" | \"md\" | \"lg\" | \"full\", fit?: \"cover\" | \"contain\")",
    "description": "An image the original document already contains"
+  },
+  "Svg": {
+   "signature": "Svg(children: (Circle | Ellipse | Rect | Line | Path | Polyline | Polygon | SvgText | G)[], viewBox: string, label?: string, width?: Length, height?: Length)",
+   "description": "A drawing for steps, parts, mechanisms, diagrams and layouts. Scales to its width; its shapes take expressions, so state can move them. label says in a few words what it shows, for screen readers: always give one."
+  },
+  "G": {
+   "signature": "G(children: (Circle | Ellipse | Rect | Line | Path | Polyline | Polygon | SvgText)[], transform?: string, opacity?: number)",
+   "description": "Group; transform like \"rotate(30 50 50)\" or \"translate(10 0)\"; one with the wrong number of arguments is dropped."
+  },
+  "Circle": {
+   "signature": "Circle(cx: number, cy: number, r: number, fill?: Color, stroke?: Color, strokeWidth?: number, opacity?: number)",
+   "description": "fill defaults to the text color; with only a stroke it stays unfilled."
+  },
+  "Ellipse": {
+   "signature": "Ellipse(cx: number, cy: number, rx: number, ry: number, fill?: Color, stroke?: Color, strokeWidth?: number, opacity?: number)",
+   "description": "fill defaults to the text color; with only a stroke it stays unfilled."
+  },
+  "Rect": {
+   "signature": "Rect(x: number, y: number, width: number, height: number, fill?: Color, stroke?: Color, strokeWidth?: number, opacity?: number, rx?: number)",
+   "description": "rx rounds the corners; fill defaults to the text color, and with only a stroke it stays unfilled."
+  },
+  "Line": {
+   "signature": "Line(x1: number, y1: number, x2: number, y2: number, stroke?: Color, strokeWidth?: number, opacity?: number)",
+   "description": "Stroked in the text color, 2 wide, unless stroke and strokeWidth are set."
+  },
+  "Path": {
+   "signature": "Path(d: string, fill?: Color, stroke?: Color, strokeWidth?: number, opacity?: number)",
+   "description": "d is SVG path data only (M, L, C, A, Z...), else nothing draws; unfilled unless fill is set."
+  },
+  "Polyline": {
+   "signature": "Polyline(points: string, fill?: Color, stroke?: Color, strokeWidth?: number, opacity?: number)",
+   "description": "points like \"0,0 10,5 20,0\"."
+  },
+  "Polygon": {
+   "signature": "Polygon(points: string, fill?: Color, stroke?: Color, strokeWidth?: number, opacity?: number)",
+   "description": "Closed shape; points like \"0,0 10,5 20,0\". fill defaults to the text color; with only a stroke it stays unfilled."
+  },
+  "SvgText": {
+   "signature": "SvgText(text: string, x: number, y: number, size?: number, fill?: Color, anchor?: \"start\" | \"middle\" | \"end\", weight?: \"normal\" | \"medium\" | \"semibold\")",
+   "description": "A text label at x, y; anchor sets which end sits on x."
   },
   "Carousel": {
    "signature": "Carousel(children: Node[], itemWidth?: number, gap?: number)",

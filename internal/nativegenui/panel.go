@@ -25,6 +25,8 @@ var catalog string
 
 type documentView struct {
 	reading                                        Reading
+	preview                                        *Reading
+	stream                                         *statementStream
 	snapshot                                       genui.ViewEvent
 	loaded, settings, requestEdited, commandEdited bool
 	request, command, message, note, noteTarget    string
@@ -92,6 +94,7 @@ func (p *panel) updated(ev genui.ViewEvent) {
 	}
 	v.loaded = true
 	v.snapshot = ev
+	v.discardPreview()
 	v.reading.Load(nil)
 	if !ev.Exists && !v.requestEdited {
 		v.request = ""
@@ -156,24 +159,25 @@ func (p *panel) draw(c *ui.Context) {
 			loading(c, "Loading the GenUI view", "Reading the view file for this document.")
 		case v.snapshot.Error != "":
 			ui.Text(c, v.snapshot.Error).Role(ui.RoleAlert)
-		case v.cancel != nil && v.reading.surface == nil:
+		case v.cancel != nil && v.reader().surface == nil:
 			loading(c, "Generating view…", "Your agent is laying out this document.")
-		case v.reading.surface == nil:
+		case v.reader().surface == nil:
 			ui.Text(c, "No view yet.")
 			if ui.Button(c, "Set up generation").Clicked() {
 				v.settings = true
 			}
 		default:
-			v.reading.CanSelect = func(n Node) bool { return len(v.matches(n)) > 0 }
-			if v.imagesFor != d.Path || v.reading.LoadImage == nil {
+			reader := v.reader()
+			reader.CanSelect = func(n Node) bool { return len(v.matches(n)) > 0 }
+			if v.imagesFor != d.Path || reader.LoadImage == nil {
 				directory := ""
 				if d.Path != "" {
 					directory = filepath.Dir(d.Path)
 				}
-				v.imagesFor, v.reading.LoadImage = d.Path, DocumentImages(raw, directory)
-				v.reading.images.Clear()
+				v.imagesFor, reader.LoadImage = d.Path, DocumentImages(raw, directory)
+				reader.images.Clear()
 			}
-			v.reading.SelectItem = func(n Node, text string) {
+			reader.SelectItem = func(n Node, text string) {
 				ss := v.matches(n)
 				if len(ss) == 0 {
 					return
@@ -192,8 +196,8 @@ func (p *panel) draw(c *ui.Context) {
 				p.win.Reveal(start)
 				_ = p.win.Source().SelectUTF16(start, end)
 			}
-			v.reading.Sources = func(c *ui.Context, n Node) { p.drawSources(c, v, d, n, busy) }
-			v.reading.View(c)
+			reader.Sources = func(c *ui.Context, n Node) { p.drawSources(c, v, d, n, busy) }
+			reader.View(c)
 		}
 	})
 }
@@ -211,14 +215,51 @@ func (v *documentView) index(raw string) {
 	v.imagesFor = ""
 }
 
+func (v *documentView) reader() *Reading {
+	if v.preview != nil && v.preview.surface != nil {
+		return v.preview
+	}
+	return &v.reading
+}
+
+func (v *documentView) discardPreview() {
+	v.preview, v.stream = nil, nil
+}
+
 func (v *documentView) progressed(step genui.GenerateProgress) {
 	v.message = step.Text
+	if step.Preview == nil || len(v.lastIDs) != 0 {
+		return
+	}
+	if v.stream == nil {
+		stream, err := newStatementStream()
+		if err != nil {
+			return
+		}
+		v.stream = stream
+	}
+	surface, err := v.stream.Push(*step.Preview)
+	if err != nil || surface.tree == nil {
+		return
+	}
+	if v.preview == nil {
+		v.preview = &Reading{}
+	}
+	v.preview.Load(surface)
+}
+
+func statementSource(surface *Surface, sections map[headingKey]workspace.Section, id string) (Reference, workspace.Section, bool) {
+	ref := surface.Sources[id]
+	s, ok := sections[headingKey{workspace.NormalizeHeadingText(ref.Heading), max(1, ref.Occurrence)}]
+	return ref, s, ok
 }
 
 func (v *documentView) source(id string) (Reference, workspace.Section, bool) {
-	ref := v.reading.surface.Sources[id]
-	s, ok := v.sections[headingKey{workspace.NormalizeHeadingText(ref.Heading), max(1, ref.Occurrence)}]
-	return ref, s, ok
+	return statementSource(v.reader().surface, v.sections, id)
+}
+
+func (v *documentView) storedSource(id string) (Reference, workspace.Section, bool) {
+	return statementSource(v.reading.surface, v.sections, id)
 }
 func (v *documentView) matches(n Node) []workspace.Section {
 	var matches []workspace.Section
@@ -238,7 +279,7 @@ func (v *documentView) changedIDs() []string {
 				return
 			}
 			for _, source := range sources {
-				r, s, ok := v.source(source)
+				r, s, ok := v.storedSource(source)
 				if !ok || (r.Hash != "" && !s.UnchangedSince(r.Hash)) {
 					ids = append(ids, id)
 					seen[id] = true
@@ -353,7 +394,7 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 			v.noteTarget = n.ID
 			v.note = ""
 		}
-		if sourceButton(c, "Update card", busy || d.Path == "" || n.ComponentID == "" && v.reading.surface.Session != nil).Clicked() {
+		if sourceButton(c, "Update card", busy || d.Path == "" || n.ComponentID == "" && v.reader().surface.Session != nil).Clicked() {
 			componentID := n.ComponentID
 			if componentID == "" {
 				componentID = n.ID
@@ -511,6 +552,7 @@ func (p *panel) generate(v *documentView, ids []string) {
 	v.cancel = cancel
 	v.failure = nil
 	v.lastIDs = slices.Clone(ids)
+	v.discardPreview()
 	v.reading.Replacing = v.lastIDs
 	v.message = "Starting generation…"
 	req := v.generationRequest(text, ids)
@@ -537,11 +579,12 @@ func (v *documentView) finished(err error) {
 	v.reading.Replacing = nil
 	v.message = ""
 	if err != nil {
+		v.discardPreview()
 		f := genui.FailureOf(err)
 		v.failure = &f
 		return
 	}
 	v.requestEdited = false
 	v.message = "View generated."
-	v.reading.Halo()
+	v.reader().Halo()
 }

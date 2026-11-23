@@ -216,6 +216,43 @@ func TestPreviewTaskCheckboxReadOnlyKeepsStateAndSource(t *testing.T) {
 	}
 }
 
+func TestCodeFenceLanguageLabelsPreserveSourceCase(t *testing.T) {
+	for _, tc := range []struct {
+		name, info, label string
+	}{
+		{name: "lowercase", info: "bash", label: "bash"},
+		{name: "mixed case", info: "Go", label: "Go"},
+		{name: "metadata", info: `TypeScript title="demo.ts"`, label: "TypeScript"},
+		{name: "empty", label: "Code"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src := "```" + tc.info + "\r\nMixedCase()\r\n```\r\n"
+			d := nativeeditor.New(src)
+			tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 680, 300)
+			tt.Frame()
+			if _, ok := tt.Find(tc.label); !ok {
+				t.Fatalf("code fence language %q was not shown", tc.label)
+			}
+			if upper := strings.ToUpper(tc.label); upper != tc.label {
+				if _, ok := tt.Find(upper); ok {
+					t.Fatalf("code fence language was forced to %q", upper)
+				}
+			}
+			if d.Source() != src || d.Modified() {
+				t.Fatal("presenting a code fence changed its source")
+			}
+			if tc.info == "bash" {
+				if err := tt.Click("Copy code"); err != nil {
+					t.Fatal(err)
+				}
+				if got := tt.Clipboard(); got != "MixedCase()" {
+					t.Fatalf("copied code %q; want original body", got)
+				}
+			}
+		})
+	}
+}
+
 func TestOrdinaryCodeFenceKeepsItsSourceCaretInPreview(t *testing.T) {
 	const src = "Before\r\n\r\n```go\r\nfmt.Println(\"iW\")\r\nsecond()\r\n```  \r\nAfter\r\n"
 	d := nativeeditor.New(src)
@@ -316,8 +353,11 @@ func TestCodeFenceWithMetadataKeepsItsEditLayer(t *testing.T) {
 	if _, ok := tt.Find("Edit code"); !ok {
 		t.Fatal("code fence metadata lost its in-place Markdown editor")
 	}
-	if _, ok := tt.Find("PYTHON"); !ok {
-		t.Fatal("code fence language was not shown separately")
+	if _, ok := tt.Find("python"); !ok {
+		t.Fatal("code fence language was not shown separately with its original case")
+	}
+	if _, ok := tt.Find("PYTHON"); ok {
+		t.Fatal("code fence language was forced to uppercase")
 	}
 	if _, ok := tt.Find(`title="demo.py"`); !ok {
 		t.Fatal("code fence metadata was not shown separately")

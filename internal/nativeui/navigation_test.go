@@ -67,3 +67,64 @@ func TestWorkspaceMenuKeepsSwitchTargetWhenEarlierRootDisappears(t *testing.T) {
 		t.Fatalf("choosing the first Notes workspace activated %v", activated)
 	}
 }
+
+func TestFileTreeReopensPathAfterDocumentCloses(t *testing.T) {
+	model := nativeui.Model{Workspace: workspace.WorkspaceSnapshot{
+		Kind:     "folder",
+		Root:     "/notes",
+		ActiveID: "welcome",
+		Documents: []workspace.DocumentInfo{
+			{ID: "welcome", Name: "Welcome.md", Path: "/notes/Welcome.md"},
+		},
+	}, Navigation: workspace.NavSnapshot{Entries: []workspace.NavEntry{
+		{ID: "file:Discussion.md", Kind: "file", Name: "Discussion.md", Path: "/notes/Discussion.md", DocumentID: "closed"},
+		{ID: "file:Welcome.md", Kind: "file", Name: "Welcome.md", Path: "/notes/Welcome.md", DocumentID: "welcome"},
+	}}}
+	var activated, opened string
+	var shell nativeui.Shell
+	app := ui.NewTester(func(c *ui.Context) {
+		shell.Draw(c, model, nativeui.Actions{
+			Activate: func(id string) { activated = id },
+			OpenPath: func(path string, _ int) { opened = path },
+		}, nativeui.Slots{})
+	}, 1280, 820)
+	app.Frame()
+	if err := app.Click("Discussion.md"); err != nil {
+		t.Fatal(err)
+	}
+	if activated != "" {
+		t.Fatalf("activated closed document %q", activated)
+	}
+	if opened != "/notes/Discussion.md" {
+		t.Fatalf("opened path = %q, want Discussion.md", opened)
+	}
+}
+
+func TestFileTreeActivatesOpenDocumentDeletedFromDisk(t *testing.T) {
+	model := nativeui.Model{Workspace: workspace.WorkspaceSnapshot{
+		Kind:     "folder",
+		Root:     "/notes",
+		ActiveID: "welcome",
+		Documents: []workspace.DocumentInfo{
+			{ID: "welcome", Name: "Welcome.md", Path: "/notes/Welcome.md"},
+			{ID: "deleted", Name: "Deleted.md", Path: "/notes/Deleted.md", Deleted: true},
+		},
+	}, Navigation: workspace.NavSnapshot{Entries: []workspace.NavEntry{
+		{ID: "file:Deleted.md", Kind: "file", Name: "Deleted.md", Path: "/notes/Deleted.md", DocumentID: "deleted", Deleted: true},
+	}}}
+	var activated, opened string
+	var shell nativeui.Shell
+	app := ui.NewTester(func(c *ui.Context) {
+		shell.Draw(c, model, nativeui.Actions{
+			Activate: func(id string) { activated = id },
+			OpenPath: func(path string, _ int) { opened = path },
+		}, nativeui.Slots{})
+	}, 1280, 820)
+	app.Frame()
+	if err := app.Click("Deleted.md"); err != nil {
+		t.Fatal(err)
+	}
+	if activated != "deleted" || opened != "" {
+		t.Fatalf("activated = %q, opened = %q; want the existing deleted document", activated, opened)
+	}
+}

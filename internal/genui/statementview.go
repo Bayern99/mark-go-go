@@ -18,9 +18,9 @@ type StatementView struct {
 }
 
 type StatementSource struct {
-	Heading    string
-	Occurrence int
-	Hash       string
+	Heading    string `json:"heading"`
+	Occurrence int    `json:"occurrence,omitempty"`
+	Hash       string `json:"hash,omitempty"`
 }
 
 func viewVersion(raw []byte) float64 {

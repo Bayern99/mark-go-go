@@ -55,7 +55,10 @@ type Service struct {
 
 	agentCache *acp.ProcessCache
 
-	prepareJob func(*acp.GenerationJob)
+	openDocument      func(string) (*docSession, error)
+	navigationChanged func(*mygo.Window, NavSnapshot) error
+	searchReady       func(*mygo.Window, NavSearchResult) error
+	prepareJob        func(*acp.GenerationJob)
 }
 
 type docSession struct {
@@ -460,6 +463,8 @@ func (h *Service) dropSessionState(s *docSession, emit bool) bool {
 		return false
 	}
 	h.emitWorkspace(w)
+	h.emitNav(w)
+	h.emitSearch(w, h.indexOf(w))
 	return true
 }
 

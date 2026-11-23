@@ -816,7 +816,7 @@ func (st *viewState) list(c *ui.Context, i int, base spanStyle) ui.Element {
 	width := th.em(th.ListIndent)
 	if b.Ordered {
 		last := b.Number + max(0, st.countChildren(i)-1)
-		w, _ := c.MeasureText(0, ui.Span{Text: itoa(last) + string(b.Marker), Font: th.Font, Size: th.FontSize})
+		w, _ := c.MeasureText(0, ui.Span{Text: itoa(last) + string(b.Marker), Font: th.Font, Size: th.em(th.ListNumberSize)})
 		width = max(width, w+th.em(0.5))
 	}
 	col := ui.Column(c).Role(ui.RoleList)
@@ -896,7 +896,7 @@ func (st *viewState) marker(c *ui.Context, list *parser.Block, j, n, depth int, 
 				cb.Border(1.5, th.Muted)
 			}
 		case list.Ordered:
-			ui.Text(c, itoa(n)+string(list.Marker)).TextColor(th.Muted).Width(width - th.em(0.4)).TextAlign(ui.End).FontFeatures("tnum")
+			ui.Text(c, itoa(n)+string(list.Marker)).TextColor(th.Muted).FontSize(th.em(th.ListNumberSize)).Width(width - th.em(0.4)).TextAlign(ui.End).FontFeatures("tnum")
 		default:
 			bullets := [...]string{"•", "◦", "▪"}
 			ui.Text(c, bullets[min(depth, 2)]).TextColor(th.Muted).Width(width - th.em(0.5)).TextAlign(ui.Center)

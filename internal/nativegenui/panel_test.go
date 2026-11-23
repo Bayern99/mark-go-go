@@ -485,6 +485,135 @@ func TestDeletingAViewClearsOnlyAnUneditedGenerationRequest(t *testing.T) {
 	}
 }
 
+func statementTestFile(t *testing.T, statements []string) string {
+	t.Helper()
+	components, err := json.Marshal(statements)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return `{"version":3,"language":"openui-lang/1.0","sources":{"overview":{"heading":"Overview"}},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"view","catalogId":"markgogo.dev:genui/v3","components":` + string(components) + `}}]}`
+}
+
+func statementTestPreview(t *testing.T, statements []string) *genui.StatementPreview {
+	t.Helper()
+	preview := genui.ReadStatementPreview([]byte(statementTestFile(t, statements)))
+	if len(preview.Statements) != len(statements) {
+		t.Fatalf("preview statements = %v, want %v", preview.Statements, statements)
+	}
+	return &preview
+}
+
+func TestAFullStatementGenerationAppearsProgressivelyAndMatchesTheReopenedSidecar(t *testing.T) {
+	v := &documentView{cancel: func() {}}
+	p := &panel{views: map[string]*documentView{"doc": v}}
+	app := ui.NewTesterWith(func(c *ui.Context) { v.reader().View(c) }, 640, 600, ui.TesterOptions{Preferences: ui.Preferences{ReduceMotion: true}})
+
+	first := []string{`root = Col([Title("First view", "xl")])`}
+	v.progressed(genui.GenerateProgress{Preview: statementTestPreview(t, first)})
+	app.Frame()
+	if !app.HasText("First view") {
+		t.Fatalf("the first complete statement was not drawn: %v", app.Texts())
+	}
+
+	final := []string{
+		`root = Col([head, body])`,
+		`head = Title("First view", "xl")`,
+		`body = Text("Streamed body", "xl")`,
+	}
+	v.progressed(genui.GenerateProgress{Preview: statementTestPreview(t, final)})
+	app.Frame()
+	if !app.HasText("Streamed body") {
+		t.Fatalf("the next complete statement was not added: %v", app.Texts())
+	}
+	streamed := app.Image()
+
+	p.updated(genui.ViewEvent{ID: "doc", Exists: true, Text: statementTestFile(t, final)})
+	app.Frame()
+	if !app.HasText("First view") || !app.HasText("Streamed body") {
+		t.Fatalf("the reopened sidecar has different content: %v", app.Texts())
+	}
+	if changed := changedPixels(streamed, app.Image()); changed != 0 {
+		t.Errorf("reopening the sidecar changed %d pixels; optional-property degradation differed during streaming", changed)
+	}
+}
+
+func TestAFailedOrCancelledFullStatementPreviewRestoresTheOriginalReader(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		err  error
+	}{
+		{name: "cancelled", err: genui.ErrCancelled},
+		{name: "failed validation", err: errors.New("invalid candidate")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			original := []string{
+				`$months = 2`,
+				`root = Col([plan])`,
+				`plan = Card([Slider($months, 0, 10, 1, "Months", "mo"), Text("Total " + $months * 150)])`,
+			}
+			v := &documentView{}
+			p := &panel{views: map[string]*documentView{"doc": v}}
+			p.updated(genui.ViewEvent{ID: "doc", Exists: true, Text: statementTestFile(t, original)})
+			app := ui.NewTesterWith(func(c *ui.Context) { v.reader().View(c) }, 600, 500, ui.TesterOptions{Preferences: ui.Preferences{ReduceMotion: true}})
+			app.Frame()
+			slider, ok := app.Access("Months")
+			if !ok {
+				t.Fatal("the original view has no Months slider")
+			}
+			box := slider.Bounds
+			app.Press(box.X+box.W*0.2, box.Y+box.H/2)
+			app.Move(box.X+box.W*0.8, box.Y+box.H/2)
+			app.Release(box.X+box.W*0.8, box.Y+box.H/2)
+			app.Frame()
+			if !app.HasText("Total 1200") {
+				t.Fatalf("the original reader did not change to 8 months: %v", app.Texts())
+			}
+
+			v.cancel = func() {}
+			v.lastIDs = nil
+			v.progressed(genui.GenerateProgress{Preview: statementTestPreview(t, []string{`root = Col([Text("Provisional replacement")])`})})
+			app.Frame()
+			if !app.HasText("Provisional replacement") || app.HasText("Total 1200") {
+				t.Fatalf("the provisional view was not shown: %v", app.Texts())
+			}
+
+			v.finished(test.err)
+			app.Frame()
+			if app.HasText("Provisional replacement") || !app.HasText("Total 1200") {
+				t.Errorf("the original reader was not restored: %v", app.Texts())
+			}
+			if slider, _ := app.Access("Months"); slider.Now != 8 {
+				t.Errorf("the original reader's slider = %v, want the preserved value 8", slider.Now)
+			}
+			if v.preview != nil || v.stream != nil {
+				t.Error("the abandoned preview is still retained")
+			}
+		})
+	}
+}
+
+func TestAStatementPreviewDoesNotReplaceTheSingleCardUpdatePlaceholder(t *testing.T) {
+	v := &documentView{lastIDs: []string{"risks"}}
+	p := &panel{views: map[string]*documentView{"doc": v}}
+	p.updated(genui.ViewEvent{ID: "doc", Exists: true, Text: statementTestFile(t, []string{
+		`root = Col([plan, risks])`,
+		`plan = Card([Text("Plan stays readable")])`,
+		`risks = Card([Text("Old risks")])`,
+	})})
+	v.reading.Replacing = v.lastIDs
+	v.progressed(genui.GenerateProgress{Preview: statementTestPreview(t, []string{`root = Col([Text("Wrong full preview")])`})})
+	app := ui.NewTester(v.reading.View, 600, 500)
+	app.Frame()
+	if v.preview != nil || !app.HasText("Updating card…") || !app.HasText("Plan stays readable") || app.HasText("Wrong full preview") {
+		t.Fatalf("single-card update was replaced by a full preview: %v", app.Texts())
+	}
+	v.finished(errors.New("cancelled"))
+	app.Frame()
+	if app.HasText("Updating card…") || !app.HasText("Old risks") {
+		t.Errorf("the updated card was not restored: %v", app.Texts())
+	}
+}
+
 func TestGenerationProgressSaysEachStepOnce(t *testing.T) {
 	v := &documentView{}
 	for _, step := range []genui.GenerateProgress{

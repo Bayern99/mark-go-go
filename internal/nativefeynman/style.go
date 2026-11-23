@@ -114,7 +114,7 @@ func mutedText(c *ui.Context, value string) {
 
 func resultText(c *ui.Context, title, value string, errText string) {
 	if errText != "" {
-		text(c, portrait.Type.Meta, errText).Role(ui.RoleAlert).TextColor(portrait.Colors.Danger)
+		text(c, portrait.Type.Meta, errText).Role(ui.RoleAlert).TextColor(portrait.Colors.Danger).FillWidth().Wrap()
 	}
 	if value == "" {
 		return
@@ -129,6 +129,7 @@ func markdownOptions(o *markdown.Options) *markdown.Options {
 	base := portrait.Type.UI.Size
 	o.Theme = &markdown.Theme{
 		FontSize: base, Font: portrait.FontSans, CodeFont: portrait.FontMono, CodeSize: portrait.Type.Code.Size / base,
+		CodeLabelSize: portrait.Type.Meta.Size / base, ListNumberSize: portrait.Type.Meta.Size / base, ImagePlaceholderSize: portrait.Type.Meta.Size / base,
 		Text: portrait.Colors.Ink, Muted: portrait.Colors.Ink3, Link: portrait.Colors.Accent, Code: portrait.Colors.Ink, CodeBackground: portrait.Colors.Fill,
 		QuoteBar: portrait.Colors.Accent, QuoteText: portrait.Colors.Ink2, Rule: portrait.Colors.Line,
 		CodeBlockBackground: portrait.Colors.Fill, CodeBlockBorder: portrait.Colors.Line, CodeBlockRadius: 7,

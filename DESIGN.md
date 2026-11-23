@@ -12,7 +12,7 @@ Mark Go Go 的正式界面由 MyGo Native UI 绘制。原文居中显示，导�
 [internal/portrait](internal/portrait/) 是设计变量的唯一来源，原生各包只从这里取字体、字号、颜色、材质和动效。 [守护测试](internal/portrait/contract_test.go) 在原生包中发现字号数字、颜色字面量或字体名时失败。
 
 - 字体栈：正文 IBM Plex Sans 与 IBM Plex Sans SC，展示 Barlow Semi Condensed（字号乘以 1.05，对应 WebUI 的 `size-adjust: 105%`），代码 IBM Plex Mono，图标 Phosphor。MyGo 按字形回退，汉字自动落到 IBM Plex Sans SC。字体和许可证随应用打包。 [字号与颜色](internal/portrait/portrait.go) · [字体资源](internal/portrait/fonts/)
-- 字号阶梯是封闭的：display 28/36、title 20/28、reading 16/28（字间距 0.01em）、small 14/22、ui 13/18、control 13/20、meta 12/16、code 13/22；没有小于 12 的字。例外：`ui/markdown` 的代码块语言名与复制按钮、有序列表序号和图片占位按正文固定比例绘制，13 点正文下小于 12 点，框架没有单独设字号的字段，见 issue #95。
+- 字号阶梯是封闭的：display 28/36、title 20/28、reading 16/28（字间距 0.01em）、small 14/22、ui 13/18、control 13/20、meta 12/16、code 13/22；没有小于 12 的字。Feynman 的 Markdown 主题把代码块语言名与复制按钮、有序列表序号和图片占位显式设为 meta 12；未配置这些次要文字字号的 `ui/markdown` 调用方仍保留框架按正文比例计算的默认外观。
 - 颜色沿用 WebUI 的表面、墨色、线条、强调与状态色；MyGo 基础组件的主题按 WebUI 的 `--mgo-*` 桥接变量取值。 [主题](internal/portrait/theme.go)
 - 材质：凸起、按下、行、凹面、轨道、页面与浮层的渐变和多层阴影，以及左右栏和浮层的半透明玻璃。 [材质](internal/portrait/material.go)
 - 动效：按下、切换、展开、进入、菜单和跳转的时长与曲线；键盘操作或减少动态效果偏好下，过渡直接落位。已知例外：分段控件的选中胶囊靠各段的键盘焦点推断触发方式，新选中项排在焦点项之前且上一帧无键盘焦点时仍按指针播放，框架没有公开的输入方式状态，见 issue #94。Preview 的标题折叠与展开直接到位：编辑器把后文的块放在上一帧的高度上，高度过渡会让文字叠画，见 issue #96。 [动效](internal/portrait/motion.go)

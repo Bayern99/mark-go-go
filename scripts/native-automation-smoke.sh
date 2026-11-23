@@ -88,6 +88,10 @@ open -a "$APP" "$SOURCE"
 document_window 'Original bytes.' 'Discussion.md' 'Markdown Preview'
 auto press key=Markdown --settle
 document_window 'Original bytes.' 'Discussion.md' 'Markdown source'
+auto press 'key="Close Discussion.md"' --settle
+auto press key=file:Discussion.md --settle
+document_window 'Original bytes.' 'Discussion.md' 'Markdown source'
+cmp "$WORK/original" "$SOURCE"
 field=$(awk '/\[textField\] "Markdown source"/ {print $1; exit}' "$WORK/tree")
 auto focus "$field"
 auto key CmdOrCtrl+Home
@@ -107,5 +111,33 @@ quit
 launch
 document_window '前🙂# Discussion' 'Discussion.md' 'Markdown source'
 cmp "$WORK/expected" "$SOURCE"
+field=$(awk '/\[textField\] "Markdown source"/ {print $1; exit}' "$WORK/tree")
+auto focus "$field"
+auto key CmdOrCtrl+End
+auto type $'\nDiscard this draft'
+auto wait --text 'Discard this draft'
+auto press 'key="Close Discussion.md"'
+deadline=$((SECONDS+15))
+until osascript - "$APP_NAME" <<'APPLESCRIPT'
+on run argv
+  tell application "System Events"
+    tell process (item 1 of argv)
+      if exists button "Don’t Save" of sheet 1 of window 1 then
+        click button "Don’t Save" of sheet 1 of window 1
+        return true
+      end if
+      error "Don’t Save is not visible" number 64
+    end tell
+  end tell
+end run
+APPLESCRIPT
+  do
+  (( SECONDS < deadline )) || { cat "$WORK/app.log" >&2; exit 1; }
+  sleep 0.1
+done
+auto press key=file:Discussion.md --settle
+document_window '前🙂# Discussion' 'Discussion.md' 'Markdown source'
+if grep -F 'Discard this draft' "$WORK/tree"; then exit 1; fi
+cmp "$WORK/expected" "$SOURCE"
 quit
-echo "PASS  native Content, Finder open, editable source, menu save, undo, redo, and fresh-process restore. Screenshot $REPORT"
+echo "PASS  native Content, Finder open, close/reopen, view restore, discard, editable source, menu save, undo, redo, and fresh-process restore. Screenshot $REPORT"

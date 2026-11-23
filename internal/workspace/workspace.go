@@ -307,16 +307,23 @@ func (h *Service) Open(ctx context.Context, path string) (DocumentInfo, error) {
 			return item.session.info(), nil
 		}
 	}
-	doc, err := h.docs.Open(abs)
-	if err != nil {
-		return DocumentInfo{}, err
-	}
-	s, err := h.docSession(doc.ID())
+	s, err := h.openDocumentSession(abs)
 	if err != nil {
 		return DocumentInfo{}, err
 	}
 	h.activate(s)
 	return s.info(), nil
+}
+
+func (h *Service) openDocumentSession(path string) (*docSession, error) {
+	if h.openDocument != nil {
+		return h.openDocument(path)
+	}
+	doc, err := h.docs.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	return h.docSession(doc.ID())
 }
 
 func (h *Service) OpenWorkspace(ctx context.Context, root string) error {
@@ -405,6 +412,8 @@ func (h *Service) activateWorkspace(w *workspace) {
 		ApplyNativeEditMenu(false, false)
 	}
 	h.emitWorkspace(w)
+	h.emitNav(w)
+	h.emitSearch(w, h.indexOf(w))
 	h.persistSession()
 }
 

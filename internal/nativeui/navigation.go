@@ -3,6 +3,7 @@ package nativeui
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/Bayern99/mark-go-go/internal/portrait"
@@ -163,7 +164,9 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 						if rel, err := filepath.Rel(w.Root, entry.Path); err == nil && a.ToggleFolder != nil {
 							a.ToggleFolder(filepath.ToSlash(rel))
 						}
-					} else if entry.DocumentID != "" && a.Activate != nil {
+					} else if entry.DocumentID != "" && a.Activate != nil && slices.ContainsFunc(w.Documents, func(doc workspace.DocumentInfo) bool {
+						return doc.ID == entry.DocumentID
+					}) {
 						s.leftOpen = false
 						a.Activate(entry.DocumentID)
 					} else if a.OpenPath != nil {

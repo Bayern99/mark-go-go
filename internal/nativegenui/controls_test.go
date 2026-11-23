@@ -77,6 +77,29 @@ func TestAFormChecksItsRulesBeforeAnActionThatSends(t *testing.T) {
 	}
 }
 
+func TestARequiredCheckboxExposesItsInvalidState(t *testing.T) {
+	view := statementView(t,
+		`$agreed = false`,
+		`root = Col([Form([Checkbox($agreed, "I agree", false, {required: true}), Button("Subscribe", @ToAssistant("subscribe"))])])`)
+	tt, _ := shown(t, view, 600, nil)
+	if err := tt.Click("Subscribe"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	box, ok := tt.AccessByRole(ui.RoleCheckBox, "I agree, required")
+	if !ok || !box.Invalid {
+		t.Fatalf("required unchecked checkbox = %+v, %v; want invalid", box, ok)
+	}
+	if err := tt.Click("I agree, required"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	box, _ = tt.AccessByRole(ui.RoleCheckBox, "I agree, required")
+	if !box.Checked || box.Invalid {
+		t.Fatalf("checked checkbox = %+v; want checked and valid", box)
+	}
+}
+
 func TestControlsKeepTheirStateOutOfTheViewFile(t *testing.T) {
 	path := "testdata/trip.report.md.genui.json"
 	saved, err := os.ReadFile(path)

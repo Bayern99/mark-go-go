@@ -488,7 +488,7 @@ func (r *Reading) control(c *ui.Context, e *openuilang.Element, p props, path st
 		state.expanded = checked
 		label := p.text("label")
 		ui.Column(c).MinWidth(0).Gap(4).Children(func() {
-			box := named(ui.Checkbox(c, &state.expanded, ""), label, "", required).MinWidth(0)
+			box := named(portrait.Checkbox(c, &state.expanded, ""), label, "", required).MinWidth(0).Invalid(problem != "")
 			box.Children(func() {
 				text := ui.Text(c, label).FontSize(portrait.Reader.Body).TextColor(theme.Text).MinWidth(0).Wrap().AccessHidden(true)
 				if checked && p.on("lineThrough") {

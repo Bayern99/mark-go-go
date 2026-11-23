@@ -93,6 +93,9 @@ func (p *panel) updated(ev genui.ViewEvent) {
 	v.loaded = true
 	v.snapshot = ev
 	v.reading.Load(nil)
+	if !ev.Exists && !v.requestEdited {
+		v.request = ""
+	}
 	if ev.Exists && ev.Error == "" {
 		s, err := Open(ev.Text)
 		if err != nil {
@@ -479,6 +482,18 @@ func (p *panel) addNote(s workspace.Section, note string) error {
 	}
 	return p.win.Publish()
 }
+func (v *documentView) generationRequest(text string, ids []string) genui.GenerateRequest {
+	mode := "full"
+	if len(ids) > 0 {
+		mode = "update"
+	}
+	req := genui.GenerateRequest{Text: text, Mode: mode, Format: genuikit.Format(), Language: genui.StatementLanguage, Request: v.request, ReplaceIDs: ids, Sections: workspace.GenerationSections(text)}
+	if surface := v.reading.surface; mode == "update" && surface != nil && surface.Session == nil {
+		req.Format, req.Language = catalog, ""
+	}
+	return req
+}
+
 func (p *panel) generate(v *documentView, ids []string) {
 	if v.cancel != nil {
 		return
@@ -491,14 +506,7 @@ func (p *panel) generate(v *documentView, ids []string) {
 	v.lastIDs = slices.Clone(ids)
 	v.reading.Replacing = v.lastIDs
 	v.message = "Starting generation…"
-	mode := "full"
-	if len(ids) > 0 {
-		mode = "update"
-	}
-	req := genui.GenerateRequest{Text: text, Mode: mode, Format: genuikit.Format(), Language: genui.StatementLanguage, Request: v.request, ReplaceIDs: ids, Sections: workspace.GenerationSections(text)}
-	if surface := v.reading.surface; mode == "update" && surface != nil && surface.Session == nil {
-		req.Format, req.Language = catalog, ""
-	}
+	req := v.generationRequest(text, ids)
 	done := p.host.StartGeneration(ctx, d.ID, req, func(progress genui.GenerateProgress) error {
 		p.win.Native().Update(func() {
 			if !p.closed && p.views[d.ID] == v {

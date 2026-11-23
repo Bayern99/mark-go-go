@@ -11,9 +11,6 @@ if [ -n "$unformatted" ]; then
   exit 1
 fi
 
-echo "==> Running go vet ./..."
-go vet ./...
-
 echo "==> Running go tool mygo vet"
 go tool mygo vet
 

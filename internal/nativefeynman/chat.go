@@ -12,6 +12,7 @@ import (
 	"github.com/Bayern99/mark-go-go/internal/review"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
 )
@@ -96,9 +97,10 @@ func (p *panel) message(c *ui.Context, index int, item message, streaming bool) 
 				markdown.View(c.Key(key+"-markdown"), item.text, options).FillWidth()
 			}
 			p.image(c, item.image)
-			if smallButton(c, "Copy", "Copy Feynman response").AlignSelf(ui.Start).Clicked() {
-				mygo.Clipboard.WriteText(item.text)
-				portrait.Notify(c, portrait.ToastSpec{ID: "copy", Tone: portrait.Tones.Success, Title: "Copied"})
+			if item.text != "" && smallButton(c, "Copy", "Copy Feynman response").AlignSelf(ui.Start).Clicked() {
+				if err := mygo.Clipboard.Write(transfer.TextData(item.text)); err == nil {
+					portrait.Notify(c, portrait.ToastSpec{ID: "copy", Tone: portrait.Tones.Success, Title: "Copied"})
+				}
 			}
 		})
 	case "thought":

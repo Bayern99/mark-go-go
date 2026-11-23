@@ -232,10 +232,12 @@ func copyButton(c *ui.Context, body string) {
 	portrait.Tooltip(c, b, "Copy code")
 	ink := portrait.Press(b, portrait.Quiet)
 	copied := ui.Local(b, copiedKey{}, func() time.Time { return time.Time{} })
-	if b.Clicked() {
+	if b.Clicked() && body != "" {
 		c.Services().WriteClipboard(body)
-		portrait.Notify(c, portrait.ToastSpec{ID: "copy", Tone: portrait.Tones.Success, Title: "Copied"})
-		*copied = c.Now()
+		if c.Services().ReadClipboard() == body {
+			portrait.Notify(c, portrait.ToastSpec{ID: "copy", Tone: portrait.Tones.Success, Title: "Copied"})
+			*copied = c.Now()
+		}
 	}
 	icon := portrait.IconCopy
 	morphing := false

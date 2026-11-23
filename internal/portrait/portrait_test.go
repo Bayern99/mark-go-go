@@ -1,6 +1,7 @@
 package portrait_test
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
@@ -48,9 +49,26 @@ func TestTypeScaleMatchesTheWebUIBaseline(t *testing.T) {
 }
 
 func TestNoTextStyleIsSmallerThanTwelve(t *testing.T) {
-	for _, s := range []portrait.TypeStyle{portrait.Type.Display, portrait.Type.Title, portrait.Type.Reading, portrait.Type.Small, portrait.Type.UI, portrait.Type.Control, portrait.Type.Meta, portrait.Type.Code, portrait.Type.H4, portrait.Type.H5, portrait.Type.H6} {
-		if s.Size < 12 {
-			t.Errorf("%+v is smaller than 12px", s)
+	typeStyle := reflect.TypeOf(portrait.TypeStyle{})
+	typeScale := reflect.ValueOf(portrait.Type)
+	for i := 0; i < typeScale.NumField(); i++ {
+		field := typeScale.Field(i)
+		if field.Type() != typeStyle {
+			continue
+		}
+		if size := field.FieldByName("Size").Float(); size < 12 {
+			t.Errorf("Type.%s.Size = %v, want at least 12px", typeScale.Type().Field(i).Name, size)
+		}
+	}
+
+	reader := reflect.ValueOf(portrait.Reader)
+	for i := 0; i < reader.NumField(); i++ {
+		field := reader.Field(i)
+		if field.Kind() != reflect.Float32 && field.Kind() != reflect.Float64 {
+			continue
+		}
+		if size := field.Float(); size < 12 {
+			t.Errorf("Reader.%s = %v, want at least 12px", reader.Type().Field(i).Name, size)
 		}
 	}
 }

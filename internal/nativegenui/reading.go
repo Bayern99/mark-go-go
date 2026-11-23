@@ -168,6 +168,12 @@ func (r *Reading) card(c *ui.Context, e ui.Element, framed bool) ui.Element {
 	return e
 }
 
+const (
+	rowCardBasis   = 260
+	metricMinWidth = 140
+	metricGap      = 12
+)
+
 func cardTitle(c *ui.Context, title string) {
 	portrait.Type.Meta.In(portrait.FontDisplay).Apply(ui.Text(c, strings.ToUpper(title))).
 		FontWeight(600).LetterSpacing(0.07 * portrait.Type.Meta.Size).TextColor(portrait.Colors.Ink3).Role(ui.RoleHeading).Label(title)
@@ -219,7 +225,11 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 		})
 	case "Card":
 		g := portrait.GenUI
-		g.Card.Apply(layout(ui.Column(c).Gap(8).Padding(g.CardPadding).Radius(g.CardRadius), n)).Children(func() {
+		card := layout(ui.Column(c).Gap(8).Padding(g.CardPadding).Radius(g.CardRadius), n)
+		if n.Weight > 0 {
+			card.Basis(rowCardBasis)
+		}
+		g.Card.Apply(card).Children(func() {
 			outer := r.inCard
 			r.inCard = true
 			r.node(c, n.Child, parents)
@@ -279,9 +289,14 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 					}
 				}
 			case "MetricGrid":
-				ui.Row(c).Gap(12).Wrap().AlignItems(ui.Stretch).Children(func() {
+				width := state.spanned.lastDrawn(c)
+				columns := len(n.Metrics)
+				if width > 0 {
+					columns = max(1, min(columns, int((width+metricGap)/(metricMinWidth+metricGap))))
+				}
+				ui.Grid(c).Bind(&state.spanned.frame).Columns(columns).Gap(metricGap).AlignItems(ui.Stretch).Children(func() {
 					for i, m := range n.Metrics {
-						ui.Column(c.Key(i)).Gap(2).Radius(6).Padding(10).Background(portrait.Colors.Code).Grow(1).Basis(140).MinWidth(0).Children(func() {
+						ui.Column(c.Key(i)).Gap(2).MinWidth(0).Children(func() {
 							portrait.Type.Meta.Apply(ui.Text(c, m.Label)).TextColor(portrait.Colors.Ink3)
 							ui.Row(c).Gap(3).AlignItems(ui.Baseline).Children(func() {
 								portrait.Type.Title.In(portrait.FontDisplay).Apply(ui.Text(c, m.Value)).FontWeight(600).FontFeatures("lnum", "tnum")

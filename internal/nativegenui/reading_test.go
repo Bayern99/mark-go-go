@@ -12,6 +12,116 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+func metricGridView(t *testing.T) *nativegenui.Surface {
+	t.Helper()
+	view, err := nativegenui.Open(`{"version":2,"sources":{},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"v","catalogId":"markgogo.dev:genui/v1","components":[{"id":"root","component":"MetricGrid","title":"Key figures","metrics":[{"label":"Verified steps","value":"10","unit":"stages"},{"label":"High-risk ports","value":"2","unit":"ports"},{"label":"Proxy targets","value":"0","unit":"active","change":"Cleared","trend":"down"},{"label":"Release baseline","value":"CLEAN","unit":"all checks"}]}]}}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return view
+}
+
+func TestMetricGridLaysOutWideRowWithPortraitTypeAndFlatMaterial(t *testing.T) {
+	var reader nativegenui.Reading
+	reader.Load(metricGridView(t))
+	tt := ui.NewTesterWith(reader.View, 1280, 820, ui.TesterOptions{Preferences: ui.Preferences{ReduceMotion: true}})
+	tt.Frame()
+
+	values := []string{"10", "2", "0", "CLEAN"}
+	var previous ui.Rect
+	for i, value := range values {
+		box, ok := tt.Find(value)
+		if !ok || box.W == 0 {
+			t.Fatalf("metric value %q is not fully shown: %+v", value, box)
+		}
+		if box.H != portrait.Type.Title.Leading {
+			t.Errorf("metric value %q line height = %v, want Portrait title leading %v", value, box.H, portrait.Type.Title.Leading)
+		}
+		if i > 0 && (box.Y != previous.Y || box.X <= previous.X) {
+			t.Errorf("metric value %q at %+v does not follow %+v on the same row", value, box, previous)
+		}
+		previous = box
+	}
+	for _, unit := range []string{"stages", "ports", "active", "all checks"} {
+		if !tt.HasText(unit) {
+			t.Errorf("metric unit %q is missing", unit)
+		}
+	}
+	heading, ok := tt.Find("Key figures")
+	if !ok || heading.H != portrait.Type.Meta.Leading {
+		t.Errorf("section heading = %+v, want Portrait meta leading %v", heading, portrait.Type.Meta.Leading)
+	}
+	label, ok := tt.Find("Verified steps")
+	if !ok || label.H != portrait.Type.Meta.Leading || label.H >= previous.H {
+		t.Errorf("metric label = %+v, want Portrait meta leading below the title value", label)
+	}
+
+	img := tt.Image()
+	for _, name := range []string{"Verified steps", "High-risk ports", "Proxy targets", "Release baseline"} {
+		box, ok := tt.Find(name)
+		if !ok {
+			t.Fatalf("metric label %q is not shown", name)
+		}
+		x, y := int(box.X-2), int(box.Y+box.H/2)
+		pixel := img.RGBAAt(x, y)
+		if pixel.R != portrait.Colors.Paper.R || pixel.G != portrait.Colors.Paper.G || pixel.B != portrait.Colors.Paper.B {
+			t.Errorf("metric %q has an independent fill at (%d,%d): %v", name, x, y, pixel)
+		}
+	}
+}
+
+func TestMetricGridReducesColumnsWhenItsWidthIsNarrow(t *testing.T) {
+	var reader nativegenui.Reading
+	reader.Load(metricGridView(t))
+	tt := ui.NewTesterWith(reader.View, 480, 820, ui.TesterOptions{Preferences: ui.Preferences{ReduceMotion: true}})
+	tt.Frame()
+	first, firstOK := tt.Find("10")
+	third, thirdOK := tt.Find("0")
+	if !firstOK || !thirdOK || first.X != third.X || third.Y <= first.Y {
+		t.Fatalf("narrow metrics first = %+v (%v), third = %+v (%v), want two rows in reading order", first, firstOK, third, thirdOK)
+	}
+}
+
+func TestWeightedCardsStackInReadingOrderAtNarrowWidth(t *testing.T) {
+	view, err := nativegenui.Open(`{"version":2,"sources":{"a":{"heading":"A"},"b":{"heading":"B"}},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"v","catalogId":"markgogo.dev:genui/v1","components":[{"id":"root","component":"Row","children":["firstCard","secondCard"]},{"id":"firstCard","component":"Card","child":"first","weight":1},{"id":"secondCard","component":"Card","child":"second","weight":1},{"id":"first","component":"KeyPoints","title":"First section","items":["The first card keeps a complete readable paragraph without being squeezed into a narrow column."],"sources":["a"]},{"id":"second","component":"KeyPoints","title":"Second section","items":["The second card follows the first in reading order and keeps all of its content available."],"sources":["b"]}]}}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reader nativegenui.Reading
+	reader.Load(view)
+	reader.Sources = func(c *ui.Context, n nativegenui.Node) {
+		ui.Button(c, "Show "+n.ID)
+	}
+	tt := ui.NewTesterWith(reader.View, 1280, 820, ui.TesterOptions{Preferences: ui.Preferences{ReduceMotion: true}})
+	first, _ := tt.Find("First section")
+	second, _ := tt.Find("Second section")
+	if first.Y != second.Y || first.X >= second.X {
+		t.Fatalf("wide cards first = %+v, second = %+v, want two columns", first, second)
+	}
+
+	tt.SetSize(480, 820)
+	first, _ = tt.Find("First section")
+	second, _ = tt.Find("Second section")
+	if first.X != second.X || second.Y <= first.Y {
+		t.Fatalf("narrow cards first = %+v, second = %+v, want one column", first, second)
+	}
+	var order []string
+	for _, el := range tt.AccessAll() {
+		if el.Name == "First section" || el.Name == "Second section" {
+			order = append(order, el.Name)
+		}
+	}
+	if !slices.Equal(order, []string{"First section", "Second section"}) {
+		t.Errorf("narrow card reading order = %v", order)
+	}
+	for _, name := range []string{"Show first", "Show second"} {
+		control, ok := tt.Access(name)
+		if !ok || control.Bounds.X < 0 || control.Bounds.X+control.Bounds.W > 480 || control.Bounds.Y < 0 || control.Bounds.Y+control.Bounds.H > 820 {
+			t.Errorf("source action %q is clipped: %+v", name, control)
+		}
+	}
+}
+
 func TestReaderSortsNumbersByKeyboardAndRestoresOriginalOrder(t *testing.T) {
 	view, err := nativegenui.Open(`{"version":2,"sources":{},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"v","catalogId":"markgogo.dev:genui/v1","components":[{"id":"root","component":"ComparisonTable","title":"Fees","columns":["Plan","Price"],"rows":[["Basic","$2.15"],["Pro","-$20"],["Small","$2.5"]]}]}}]}`)
 	if err != nil {

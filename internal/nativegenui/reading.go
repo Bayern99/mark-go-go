@@ -21,31 +21,35 @@ import (
 )
 
 type Reading struct {
-	remaining       int
-	surface         *Surface
-	scroll          ui.ScrollState
-	Replacing       []string
-	states          map[string]*componentState
-	Sources         func(*ui.Context, Node)
-	SelectItem      func(Node, string)
-	CanSelect       func(Node) bool
-	LoadImage       func(src string) (ui.ImageSource, error)
-	images          sync.Map
-	form            string
-	fields          map[string][]checkedField
-	problems        map[string]string
-	drawingProblems map[string]string
-	presses         []press
-	changed         bool
-	pressable       int
-	touched         map[string]bool
-	fits            map[measuredText]textFit
-	session         *openuilang.Session
-	created         []string
-	loads, cards    uint64
-	inCard          bool
-	halo, haloShown uint64
-	haloAt          time.Time
+	remaining                    int
+	surface                      *Surface
+	scroll                       ui.ScrollState
+	Replacing                    []string
+	states                       map[string]*componentState
+	Sources                      func(*ui.Context, Node)
+	SelectItem                   func(Node, string)
+	CanSelect                    func(Node) bool
+	LoadImage                    func(src string) (ui.ImageSource, error)
+	images                       sync.Map
+	form                         string
+	fields                       map[string][]checkedField
+	problems                     map[string]string
+	drawingProblems              map[string]string
+	presses                      []press
+	changed                      bool
+	pressable                    int
+	touched                      map[string]bool
+	fits                         map[measuredText]textFit
+	session                      *openuilang.Session
+	created                      []string
+	loads, cards                 uint64
+	inCard                       bool
+	halo, haloShown              uint64
+	haloAt                       time.Time
+	jumpID                       string
+	jumpRun, jumpDrawn, jumpDone uint64
+	jumpAt                       time.Time
+	jumpElement                  *openuilang.Element
 }
 
 type cardIn struct{ load uint64 }
@@ -54,6 +58,19 @@ type haloFade struct{ run uint64 }
 type rimTurn struct{ run uint64 }
 type rimFade struct{ run uint64 }
 type shimmer struct{}
+
+type jumpFill struct {
+	base, tint ui.Color
+}
+
+func (f jumpFill) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
+	if f.base.A > 0 {
+		p.FillRadii(box, radii, f.base)
+	}
+	if f.tint.A > 0 {
+		p.FillRadii(box, radii, f.tint)
+	}
+}
 
 type componentState struct {
 	frame              ui.Handle
@@ -102,11 +119,13 @@ func (r *Reading) View(c *ui.Context) {
 	}
 	r.remaining = max(4096, len(r.surface.Nodes)*2)
 	r.cards = 0
+	r.jumpDrawn = 0
 	ui.Column(c).Grow(1).MinHeight(0).Clip().Children(func() {
 		ui.Scroll(c).TrackScroll(&r.scroll).Grow(1).MinHeight(0).Children(func() {
 			ui.Column(c).Padding(24).Gap(portrait.GenUI.CardGap).Children(func() {
 				if r.surface.Session != nil {
 					r.fields = map[string][]checkedField{}
+					r.jumpElement = r.surface.jumpTarget(r.jumpID)
 					r.statements(c)
 					r.settle(c)
 					return
@@ -119,6 +138,48 @@ func (r *Reading) View(c *ui.Context) {
 }
 
 func (r *Reading) Halo() { r.halo++ }
+
+// Highlight fades the current instance of a component's card once.
+func (r *Reading) Highlight(id string) {
+	r.jumpRun++
+	r.jumpID = id
+	r.jumpAt = time.Time{}
+	r.jumpElement = nil
+}
+
+func (r *Reading) jump(c *ui.Context, e ui.Element, base ui.Color, target bool) ui.Element {
+	if !target || r.jumpID == "" || r.jumpDrawn == r.jumpRun {
+		return e
+	}
+	r.jumpDrawn = r.jumpRun
+	if !portrait.Animates(c, false) {
+		r.jumpDone, r.jumpAt = r.jumpRun, time.Time{}
+		return e
+	}
+	if r.jumpDone == r.jumpRun {
+		return e
+	}
+	if r.jumpAt.IsZero() {
+		r.jumpAt = c.Now()
+	}
+	h := portrait.Highlights.Jump
+	elapsed := c.Now().Sub(r.jumpAt)
+	if elapsed >= h.Duration {
+		r.jumpDone, r.jumpAt = r.jumpRun, time.Time{}
+		return e
+	}
+	c.AnimationFrame()
+	return e.Material(jumpFill{base: base, tint: h.At(elapsed)})
+}
+
+func (r *Reading) jumpNode(c *ui.Context, e ui.Element, n Node, framed bool) ui.Element {
+	target := n.ComponentID == r.jumpID || n.ID == r.jumpID
+	base := ui.Transparent
+	if framed {
+		base = portrait.GenUI.Card.From
+	}
+	return r.jump(c, e, base, target)
+}
 
 func (r *Reading) drawHalo(c *ui.Context) {
 	if r.halo == r.haloShown {
@@ -229,7 +290,8 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 		if n.Weight > 0 {
 			card.Basis(rowCardBasis)
 		}
-		g.Card.Apply(card).Children(func() {
+		g.Card.Apply(card)
+		r.jumpNode(c, card, n, true).Children(func() {
 			outer := r.inCard
 			r.inCard = true
 			r.node(c, n.Child, parents)
@@ -249,6 +311,7 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 			state.height = state.frame.Bounds(c).H
 		}
 		frame := r.card(c, layout(ui.Column(c).Gap(8), n).Bind(&state.frame).Busy(busy), !r.inCard)
+		frame = r.jumpNode(c, frame, n, !r.inCard)
 		if busy {
 			frame.Background(portrait.GenUI.Replacing).MinHeight(max(64, state.height)).Children(func() {
 				if n.Title != "" {

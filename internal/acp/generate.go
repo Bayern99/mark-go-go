@@ -1,6 +1,7 @@
 package acp
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -35,6 +37,8 @@ const defaultGenerationTimeout = 5 * time.Minute
 const acpPromptCancelAckTimeout = time.Second
 
 const acpSessionCloseTimeout = time.Second
+
+const statementPreviewInterval = 25 * time.Millisecond
 
 type ModelUpdater interface {
 	SetModels(models []string) error
@@ -331,6 +335,8 @@ func (r *genRun) execute(ctx context.Context) error {
 	if r.trace != nil {
 		turnedRawPtr = &turnedRaw
 	}
+	r.startStatementPreview(ctx)
+	defer r.stopStatementPreview()
 	if err := r.callAgent(ctx, "session/prompt", map[string]any{
 		"sessionId": r.session(),
 		"prompt":    []map[string]any{{"type": "text", "text": promptText}},
@@ -366,6 +372,7 @@ func (r *genRun) execute(ctx context.Context) error {
 		r.settleSession()
 		return err
 	}
+	r.stopStatementPreview()
 	if err := r.send.step("checking", "Checking the view"); err != nil {
 		r.settleSession()
 		return err
@@ -450,6 +457,10 @@ type genRun struct {
 	abortCh     chan struct{}
 	abortOnce   sync.Once
 	abortReason string
+
+	previewStop chan struct{}
+	previewDone chan struct{}
+	previewData []byte
 
 	replyMu sync.Mutex
 	reply   strings.Builder
@@ -580,6 +591,56 @@ func (r *genRun) abort(msg string) {
 			go r.agent.Kill()
 		}
 	})
+}
+
+func (r *genRun) startStatementPreview(ctx context.Context) {
+	if r.base != nil || r.job.Req.Language != genui.StatementLanguage || r.previewStop != nil {
+		return
+	}
+	r.previewStop = make(chan struct{})
+	r.previewDone = make(chan struct{})
+	stop, done := r.previewStop, r.previewDone
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(statementPreviewInterval)
+		defer ticker.Stop()
+		for {
+			if !r.readStatementPreview() {
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-stop:
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+}
+
+func (r *genRun) stopStatementPreview() {
+	if r.previewStop == nil {
+		return
+	}
+	close(r.previewStop)
+	<-r.previewDone
+	r.readStatementPreview()
+	r.previewStop, r.previewDone = nil, nil
+}
+
+func (r *genRun) readStatementPreview() bool {
+	path := filepath.Join(r.dir, "out.json")
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Size() > genui.MaxViewBytes {
+		return true
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || bytes.Equal(data, r.previewData) {
+		return true
+	}
+	r.previewData = append(r.previewData[:0], data...)
+	return r.send.preview(data) == nil
 }
 
 func (r *genRun) lastReply() string {
@@ -1164,11 +1225,34 @@ func (r *genRun) outputError(what string) error {
 }
 
 type progressSender struct {
-	mu    sync.Mutex
-	send  func(genui.GenerateProgress) error
-	trace *generationTrace
-	phase string
-	text  string
+	mu          sync.Mutex
+	send        func(genui.GenerateProgress) error
+	trace       *generationTrace
+	phase       string
+	text        string
+	lastPreview genui.StatementPreview
+	hasPreview  bool
+}
+
+func (ps *progressSender) preview(data []byte) error {
+	preview := genui.ReadStatementPreview(data)
+	if len(preview.Statements) == 0 {
+		return nil
+	}
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	if ps.hasPreview && reflect.DeepEqual(preview, ps.lastPreview) {
+		return nil
+	}
+	ps.lastPreview, ps.hasPreview = preview, true
+	if ps.phase != "writing" || ps.text != "Writing the view" {
+		ps.phase, ps.text = "writing", "Writing the view"
+		ps.trace.phase(ps.phase, ps.text)
+	}
+	if err := ps.send(genui.GenerateProgress{Phase: "writing", Text: "Writing the view", Preview: &preview}); err != nil {
+		return genui.ErrCancelled
+	}
+	return nil
 }
 
 func (ps *progressSender) step(phase, text string) error {

@@ -178,7 +178,7 @@ func (h *Service) ClosePreflight(ctx context.Context, ids []string) (ClosePlan, 
 			continue
 		}
 		info := h.closeInfo(s)
-		if h.autosavesInPlace(info) && !h.changedOnDisk(s) && info.ActionError == "" {
+		if h.autosavesInPlace(info) && !h.changedOnDisk(s) && !h.hasSaveError(s) {
 			plan.Silent = append(plan.Silent, info)
 			continue
 		}
@@ -204,9 +204,32 @@ func (h *Service) closeInfo(s *docSession) DocumentInfo {
 	return info
 }
 
-// fileState reads the read-only and deleted state from the session's file.
+func (h *Service) noteSaveError(s *docSession, err error) {
+	if s == nil {
+		return
+	}
+	msg := ""
+	if err != nil && !errors.Is(err, mygo.ErrCanceled) {
+		msg = actionMessage(err)
+	}
+	h.mu.Lock()
+	s.saveError = msg
+	h.mu.Unlock()
+}
+
+func (h *Service) hasSaveError(s *docSession) bool {
+	if s == nil {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return s.saveError != ""
+}
+
+// fileState reads the read-only and deleted state from the session's file,
+// including live documents whose file disappeared before the watcher fired.
 func (h *Service) fileState(s *docSession) (readOnly, deleted bool) {
-	if s == nil || s.doc != nil {
+	if s == nil {
 		return false, false
 	}
 	path := s.currentPath()
@@ -216,6 +239,9 @@ func (h *Service) fileState(s *docSession) (readOnly, deleted bool) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return false, true
+	}
+	if s.doc != nil {
+		return s.doc.IsReadOnly(), false
 	}
 	return info.Mode().Perm()&0o200 == 0, false
 }
@@ -240,11 +266,18 @@ func (h *Service) ResolveClose(ctx context.Context, sel CloseSelection) ([]Docum
 	return unsaved, nil
 }
 
-// failedInfo describes a document whose save failed, with the reason.
+// failedInfo describes a document whose save failed, with the reason and the
+// conflict or read-only flag so the window promotes it to the matching sheet.
 func (h *Service) failedInfo(id string, err error) DocumentInfo {
 	info := DocumentInfo{ID: id}
 	if s, docErr := h.docSession(id); docErr == nil {
-		info = s.info()
+		info = h.closeInfo(s)
+	}
+	if errors.Is(err, ErrSaveConflict) {
+		info.Conflict = true
+	}
+	if errors.Is(err, ErrSaveReadOnly) {
+		info.ReadOnly = true
 	}
 	if info.ActionError == "" {
 		info.ActionError = actionMessage(err)
@@ -268,9 +301,28 @@ func (h *Service) CommitClose(ctx context.Context, sel CloseSelection) error {
 			s.edited = false
 			h.mu.Unlock()
 		}
+		h.noteSaveError(s, nil)
 		h.noteAction(s, nil)
 	}
 	return nil
+}
+
+// RestoreDirty re-marks open documents as edited if the close that followed
+// CommitClose was canceled or refused, so an unwritten draft never stays clean.
+func (h *Service) RestoreDirty(ctx context.Context, ids []string) {
+	for _, id := range ids {
+		s, err := h.docSession(id)
+		if err != nil || s.closed {
+			continue
+		}
+		if s.doc != nil {
+			s.doc.SetEdited(true)
+		} else {
+			h.mu.Lock()
+			s.edited = true
+			h.mu.Unlock()
+		}
+	}
 }
 
 // DiscardDocument resolves a close decision without writing to disk.
@@ -288,11 +340,13 @@ func (h *Service) SaveAnyway(ctx context.Context, documentID string) error {
 		return err
 	}
 	if err := s.doc.SaveAnyway(); err != nil {
+		h.noteSaveError(s, err)
 		h.noteAction(s, err)
 		return err
 	}
 	h.recordDisk(s)
 	h.migrateIfNeeded(s)
+	h.noteSaveError(s, nil)
 	h.noteAction(s, nil)
 	return nil
 }
@@ -309,6 +363,7 @@ func (h *Service) SaveForClose(ctx context.Context, documentID string) error {
 	state := h.closeInfo(s)
 	if state.Path == "" {
 		err = h.saveAsDocument(s)
+		h.noteSaveError(s, err)
 		h.noteAction(s, err)
 		return err
 	}
@@ -373,10 +428,7 @@ func MoveTarget(doc DocumentInfo, directory string) string {
 	if name == "" {
 		return ""
 	}
-	if !fsutil.MarkdownName(name) {
-		name += markdownExtension
-	}
-	return filepath.Join(directory, name)
+	return filepath.Join(directory, name+markdownExtension)
 }
 
 // MoveToFolder performs a chosen move. A displaced destination is renamed to
@@ -420,7 +472,9 @@ func (h *Service) MoveToFolder(ctx context.Context, documentID, directory string
 		return statErr
 	}
 	if err := s.doc.MoveTo(directory); err != nil {
-		restoreFile(displaced, target)
+		if restoreErr := restoreFile(displaced, target, info.Path == "" || fsutil.SameFile(s.currentPath(), info.Path)); restoreErr != nil {
+			err = fmt.Errorf("%w (original destination preserved at %s: %v)", err, displaced, restoreErr)
+		}
 		h.noteAction(s, err)
 		return err
 	}
@@ -471,16 +525,24 @@ func displaceFile(path string) (string, error) {
 	return name, nil
 }
 
-// restoreFile puts a displaced destination back, and leaves the move's
-// failure to speak for itself when the restore cannot happen.
-func restoreFile(displaced, target string) {
+// restoreFile puts a displaced destination back after a failed move. When a
+// failed cross-volume copy left a partial file at destination while the
+// source stayed intact, clear the partial copy first so the original returns.
+func restoreFile(displaced, destination string, sourceIntact bool) error {
 	if displaced == "" {
-		return
+		return nil
 	}
-	if _, err := os.Lstat(target); !errors.Is(err, os.ErrNotExist) {
-		return
+	if _, err := os.Lstat(destination); err == nil {
+		if !sourceIntact {
+			return fmt.Errorf("destination %s is occupied", destination)
+		}
+		if err := os.Remove(destination); err != nil {
+			return err
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
-	_ = os.Rename(displaced, target)
+	return os.Rename(displaced, destination)
 }
 
 // dropFile removes a displaced destination once the replacement committed.
@@ -509,13 +571,13 @@ func (h *Service) ChooseFolder(ctx context.Context) (string, error) {
 }
 
 // OpenFiles uses the OS picker but routes all subsequent errors to the caller
-// instead of MyGo's document-error NSAlert.
+// instead of MyGo's document-error NSAlert. It also works with zero windows.
 func (h *Service) OpenFiles(ctx context.Context) error {
-	w, err := h.workspaceOf(ctx)
-	if err != nil {
-		return err
+	var parent *mygo.Window
+	if w, err := h.workspaceOf(ctx); err == nil && w != nil {
+		parent = w.win
 	}
-	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: w.win, Title: "Open Markdown", Filters: []mygo.FileFilter{{Name: "Markdown Document", Extensions: []string{"md", "markdown"}}}, Multiple: true})
+	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: parent, Title: "Open Markdown", Filters: []mygo.FileFilter{{Name: "Markdown Document", Extensions: []string{"md", "markdown"}}}, Multiple: true})
 	if err != nil {
 		return err
 	}

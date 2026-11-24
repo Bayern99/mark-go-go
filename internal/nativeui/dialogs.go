@@ -72,9 +72,6 @@ func (w *Window) showDialog(d *windowDialog) {
 		}
 		return
 	}
-	if w.dialog != nil {
-		w.cancelDialog()
-	}
 	w.dialog = d
 }
 
@@ -144,7 +141,8 @@ func (w *Window) requestClose(kind, root string, ids []string) {
 		return
 	}
 	w.setClosing(targets, true)
-	d := &windowDialog{kind: kind, root: root, id: first(targets), ids: targets, plan: plan, open: true}
+	d := &windowDialog{kind: kind, root: root, id: first(targets), ids: targets, plan: plan, open: true, busy: true, title: "Saving changes…"}
+	w.showDialog(d)
 	go w.commitClose(d, workspace.CloseSelection{Silent: infoIDs(plan.Silent)})
 }
 
@@ -176,7 +174,7 @@ func (w *Window) closeDecision(kind, root string, ids []string, plan workspace.C
 }
 
 func (w *Window) performClose(d *windowDialog) {
-	w.runDialogAction(d, func() error { return w.closeDocumentTargets(d) }, portrait.ToastSpec{})
+	w.runDialogAction(d, func() error { _, err := w.closeDocumentTargets(d); return err }, portrait.ToastSpec{})
 }
 
 // resolveClose answers the sheet. Every fallible save runs before anything is
@@ -192,14 +190,21 @@ func (w *Window) resolveClose(d *windowDialog, save bool) {
 
 func (w *Window) commitClose(d *windowDialog, sel workspace.CloseSelection) {
 	unsaved, err := w.host.ResolveClose(w.ctx, sel)
+	committed := false
 	if err == nil && len(unsaved) == 0 {
 		if cerr := w.host.CommitClose(w.ctx, sel); cerr != nil {
 			err = cerr
+		} else {
+			committed = true
 		}
 	}
+	var closeRes workspace.CloseResult
 	var closeErr error
 	if err == nil && len(unsaved) == 0 {
-		closeErr = w.closeDocumentTargets(d)
+		closeRes, closeErr = w.closeDocumentTargets(d)
+		if committed && (closeRes.Canceled || closeErr != nil) && len(sel.Discard) > 0 {
+			w.host.RestoreDirty(w.ctx, sel.Discard)
+		}
 	}
 	w.win.Update(func() {
 		w.setClosing(closeDialogIDs(d), false)
@@ -213,7 +218,7 @@ func (w *Window) commitClose(d *windowDialog, sel workspace.CloseSelection) {
 			return
 		}
 		switch {
-		case errors.Is(err, mygo.ErrCanceled), errors.Is(closeErr, mygo.ErrCanceled):
+		case closeRes.Canceled, errors.Is(err, mygo.ErrCanceled), errors.Is(closeErr, mygo.ErrCanceled):
 			w.showNextDialog()
 		case err != nil:
 			w.ShowAlert("Could not close", err.Error())
@@ -257,19 +262,16 @@ func (w *Window) promoteClose(unsaved []workspace.DocumentInfo) {
 
 // closeDocumentTargets runs the close itself, now that every edit is either
 // written or explicitly discarded.
-func (w *Window) closeDocumentTargets(d *windowDialog) error {
+func (w *Window) closeDocumentTargets(d *windowDialog) (workspace.CloseResult, error) {
 	switch d.kind {
 	case "closeDocument":
-		_, err := w.host.CloseDocument(w.ctx, d.id)
-		return err
+		return w.host.CloseDocument(w.ctx, d.id)
 	case "closeWorkspace":
-		_, err := w.host.CloseWorkspace(w.ctx)
-		return err
+		return w.host.CloseWorkspace(w.ctx)
 	case "closeRoot":
-		_, err := w.host.CloseWorkspaceRoot(w.ctx, d.root)
-		return err
+		return w.host.CloseWorkspaceRootIDs(w.ctx, d.root, d.ids)
 	}
-	return nil
+	return workspace.CloseResult{}, nil
 }
 
 func (w *Window) runDialogAction(d *windowDialog, run func() error, success portrait.ToastSpec) {
@@ -395,7 +397,7 @@ func (w *Window) moveCurrent(d *windowDialog, directory string) bool {
 // chooseMove commits a chosen destination. A taken name asks first and is
 // only replaced once the user agrees.
 func (w *Window) chooseMove(d *windowDialog, directory string) {
-	if directory == "" {
+	if directory == "" || isCloseDialog(w.dialog) {
 		return
 	}
 	doc := w.documentInfo(d.id)
@@ -404,14 +406,14 @@ func (w *Window) chooseMove(d *windowDialog, directory string) {
 		if _, err := os.Lstat(target); err == nil {
 			d.kind, d.dir, d.open = "moveReplace", directory, true
 			d.title, d.body = "Replace “"+filepath.Base(target)+"”?", "A file with that name already exists in the destination. Replacing it cannot be undone."
-			w.dialog = d
+			w.showDialog(d)
 			return
 		} else if !errors.Is(err, os.ErrNotExist) {
 			w.ShowAlert("Could not move the document", err.Error())
 			return
 		}
 	}
-	w.dialog = nil
+	w.cancelDialog()
 	go w.actionDialog("Could not move the document", func() error { return w.host.MoveToFolder(w.ctx, d.id, directory, false) }, portrait.ToastSpec{})
 }
 

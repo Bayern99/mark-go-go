@@ -87,6 +87,17 @@ func FrontWindow() *Window {
 	return nil
 }
 
+// ResetAllMenuStates invalidates cached Undo/Redo menu enablement across all
+// open Portrait windows after the application menu is rebuilt.
+func ResetAllMenuStates() {
+	for _, w := range windowRegistry {
+		if w != nil {
+			w.menuKnown = false
+			w.updateMenu()
+		}
+	}
+}
+
 func (w *Window) OpenSettings(tab string) {
 	if w == nil {
 		return
@@ -381,22 +392,28 @@ func (w *Window) command(cmd workspace.NativeCommand) {
 	switch cmd.Command {
 	case "undo", "redo":
 		w.updateMenu()
-	case "save":
-		w.requestSave(cmd.ID)
-	case "saveAs":
-		go w.actionToast(func() error { return w.host.SaveAs(w.ctx, cmd.ID) }, portrait.ToastSpec{ID: "save:" + cmd.ID, Tone: portrait.Tones.Success, Title: "Saved"})
-	case "rename":
-		w.openRename(cmd.ID)
-	case "moveTo":
-		w.openMove(cmd.ID)
-	case "revert":
-		w.openRevert(cmd.ID)
-	case "duplicate":
-		go w.action(func() error { _, err := w.host.Duplicate(w.ctx, cmd.ID); return err })
-	case "close":
-		w.requestClose("closeDocument", "", []string{cmd.ID})
-	case "closeWorkspace":
-		w.requestClose("closeWorkspace", "", nil)
+	case "save", "saveAs", "rename", "moveTo", "revert", "duplicate", "close", "closeWorkspace":
+		if isCloseDialog(w.dialog) {
+			return
+		}
+		switch cmd.Command {
+		case "save":
+			w.requestSave(cmd.ID)
+		case "saveAs":
+			go w.actionToast(func() error { return w.host.SaveAs(w.ctx, cmd.ID) }, portrait.ToastSpec{ID: "save:" + cmd.ID, Tone: portrait.Tones.Success, Title: "Saved"})
+		case "rename":
+			w.openRename(cmd.ID)
+		case "moveTo":
+			w.openMove(cmd.ID)
+		case "revert":
+			w.openRevert(cmd.ID)
+		case "duplicate":
+			go w.action(func() error { _, err := w.host.Duplicate(w.ctx, cmd.ID); return err })
+		case "close":
+			w.requestClose("closeDocument", "", []string{cmd.ID})
+		case "closeWorkspace":
+			w.requestClose("closeWorkspace", "", nil)
+		}
 	}
 }
 

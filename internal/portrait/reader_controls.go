@@ -61,7 +61,7 @@ func Radio[T comparable](c *ui.Context, selected *T, value T, label string) ui.E
 // MyGo currently exposes DateInput rather than a DateInputBase; this wrapper
 // keeps that framework detail out of every application surface.
 func DateField(c *ui.Context, date *time.Time, label string) ui.Element {
-	d := ui.DateInput(c, date).Label(label).FocusRing(false).Height(Form.Field).Padding(0, Form.PadX).Radius(Form.Radius)
+	d := ui.DateInput(c, date).Label(label).FocusRing(false).Border(0, ui.Transparent).Height(Form.Field).Padding(0, Form.PadX).Radius(Form.Radius)
 	// The same border as a text field, so a form does not mix weights.
 	applyFieldLook(d, false)
 	return d

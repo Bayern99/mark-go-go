@@ -36,7 +36,7 @@ func Confirm(c *ui.Context, open *bool, spec ConfirmSpec) ui.Element {
 	}
 	var panel ui.Element
 	owner.Children(func() {
-		panel = DialogShell(c, "confirm dialog", open, DialogSpec{Label: spec.Title, Width: Form.DialogWidth, Role: ui.RoleAlertDialog}, func() {
+		panel = DialogShell(c, "confirm dialog", open, DialogSpec{Label: spec.Title, Width: Form.DialogWidth, Role: ui.RoleAlertDialog, Glass: true}, func() {
 			Type.Title.Apply(ui.Text(c, spec.Title)).FontWeight(600).TextColor(Colors.Ink).
 				MinWidth(0).Wrap().AccessHidden(true)
 			if spec.Body != "" {

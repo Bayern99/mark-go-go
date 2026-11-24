@@ -612,12 +612,9 @@ func (d *Document) prepareView() {
 	if p.applied && !p.dirty && p.version == d.Version() && p.space == space.Name && p.dark == dark {
 		return
 	}
-	if p.dirty || p.document == nil || p.version != d.Version() {
-		p.build(st.Buffer)
-	}
-	if p.space != space.Name || p.dark != dark {
+	if p.dirty || p.document == nil || p.version != d.Version() || p.space != space.Name || p.dark != dark {
 		// Quote, code, table and callout backgrounds come from the Space's
-		// tokens, so a Space or appearance change rebuilds the layout.
+		// tokens, so a content, Space or appearance change rebuilds once.
 		p.space, p.dark = space.Name, dark
 		p.build(st.Buffer)
 	}

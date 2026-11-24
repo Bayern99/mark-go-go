@@ -119,8 +119,9 @@ auto wait --text 'Discard this draft'
 auto press 'key="Close Discussion.md"'
 auto wait --text "Don't Save"
 auto press 'key="Don'"'"'t Save"'
-# Closing runs on a goroutine: the tab must be gone before the file is opened
-# again, or the press lands on the tab that is still closing.
+# Closing runs on a goroutine under the modal progress sheet: wait for the
+# sidebar to return (Close Welcome.md visible) and Discussion's tab to be gone.
+auto wait --text 'Close Welcome.md' --timeout 15s
 auto wait --text 'Close Discussion.md' --gone
 auto press key=file:Discussion.md --settle
 document_window '前🙂# Discussion' 'Discussion.md' 'Markdown source'

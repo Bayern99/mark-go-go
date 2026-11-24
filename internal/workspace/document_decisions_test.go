@@ -125,15 +125,19 @@ func TestClosePreflightClassifiesRealDocumentStates(t *testing.T) {
 
 	failed := f.writeFile(t, "failed.md", "# autosave failed\n", 0o600)
 	failedSession := f.session(t, "failed", failed, true)
-	f.host.noteAction(failedSession, errors.New("markgogo: disk full"))
+	f.host.noteSaveError(failedSession, errors.New("markgogo: disk full"))
+
+	renameFailed := f.writeFile(t, "rename-failed.md", "# rename failed\n", 0o600)
+	renameSession := f.session(t, "rename-failed", renameFailed, true)
+	f.host.noteAction(renameSession, errors.New("markgogo: rename failed"))
 
 	f.session(t, "clean", f.writeFile(t, "clean.md", "# clean\n", 0o600), false)
 
-	plan, err := f.host.ClosePreflight(ctx, []string{"writable", "untitled", "readonly", "conflict", "deleted", "failed", "clean"})
+	plan, err := f.host.ClosePreflight(ctx, []string{"writable", "rename-failed", "untitled", "readonly", "conflict", "deleted", "failed", "clean"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := ids(plan.Silent), []string{"writable"}; !sameIDs(got, want) {
+	if got, want := ids(plan.Silent), []string{"writable", "rename-failed"}; !sameIDs(got, want) {
 		t.Fatalf("silent documents = %v, want %v: an autosaving writable draft writes itself", got, want)
 	}
 	if got, want := ids(plan.Prompt), []string{"untitled", "readonly", "conflict", "deleted", "failed"}; !sameIDs(got, want) {
@@ -315,12 +319,29 @@ func TestMoveReplacementDisplacesAndRestoresTheDestination(t *testing.T) {
 		t.Fatalf("displaced copy = %q", got)
 	}
 
-	restoreFile(displaced, target)
+	if err := restoreFile(displaced, target, true); err != nil {
+		t.Fatalf("restoreFile: %v", err)
+	}
 	if got := readDecisionFile(t, target); got != "# destination\n" {
 		t.Fatalf("restored destination = %q, want the original bytes", got)
 	}
 	if _, err := os.Stat(displaced); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("temporary sibling survived the restore: %v", err)
+	}
+
+	// Partial copy at target is cleared when source stays intact.
+	displaced, err = displaceFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("# partial copy\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := restoreFile(displaced, target, true); err != nil {
+		t.Fatalf("restoreFile over partial copy: %v", err)
+	}
+	if got := readDecisionFile(t, target); got != "# destination\n" {
+		t.Fatalf("restored over partial copy = %q, want original", got)
 	}
 
 	// The success path drops the displaced copy instead of restoring it.
@@ -331,6 +352,32 @@ func TestMoveReplacementDisplacesAndRestoresTheDestination(t *testing.T) {
 	dropFile(displaced)
 	if _, err := os.Stat(displaced); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("temporary sibling survived the drop: %v", err)
+	}
+}
+
+func TestFailedInfoPromotesConflictAndRestoreDirtyReMarksDiscarded(t *testing.T) {
+	f := newDecisionFixture(t, mygo.AutosaveOff)
+	path := f.writeFile(t, "note.md", "# note\n", 0o600)
+	f.session(t, "note", path, true)
+
+	info := f.host.failedInfo("note", ErrSaveConflict)
+	if !info.Conflict {
+		t.Fatal("failedInfo(ErrSaveConflict) did not set Conflict")
+	}
+	ro := f.host.failedInfo("note", ErrSaveReadOnly)
+	if !ro.ReadOnly {
+		t.Fatal("failedInfo(ErrSaveReadOnly) did not set ReadOnly")
+	}
+
+	if err := f.host.CommitClose(context.Background(), CloseSelection{Discard: []string{"note"}}); err != nil {
+		t.Fatal(err)
+	}
+	if f.edited("note") {
+		t.Fatal("CommitClose did not clear dirty flag")
+	}
+	f.host.RestoreDirty(context.Background(), []string{"note"})
+	if !f.edited("note") {
+		t.Fatal("RestoreDirty did not restore dirty flag after canceled close")
 	}
 }
 

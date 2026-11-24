@@ -2,6 +2,7 @@ package nativegenui
 
 import (
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
 )
@@ -13,12 +14,18 @@ func SceneSettingsPage(settings workspace.Settings) nativeui.SettingsPage {
 	return p.settingsPage()
 }
 
-// SceneRequest draws the reader's generation-request panel, for the scenes
-// that show the request form on its own.
+// SceneRequest draws the reader's generation-request panel inside the same
+// padded layout column that panel.draw uses.
 func SceneRequest(c *ui.Context, request string) {
-	v := &documentView{request: request}
+	v := &documentView{request: request, settings: true}
 	p := &panel{}
-	p.drawSettings(c, v, workspace.DocumentInfo{Path: "Field Notes.md"}, false)
+	ui.Column(c).Fill().Gap(portrait.Form.Gap).Padding(portrait.Form.AreaPadY, portrait.Form.DialogGap, portrait.Form.DialogGap, portrait.Form.DialogGap).Children(func() {
+		ui.Row(c).Justify(ui.End).Gap(portrait.Form.Gap).Children(func() {
+			portrait.QuietButton(c, "Request", "Generation request").Expanded(true)
+			portrait.QuietIconButton(c, portrait.IconGear, "GenUI settings")
+		})
+		p.drawSettings(c, v, workspace.DocumentInfo{Path: "Field Notes.md"}, false)
+	})
 }
 
 // SceneReading builds a reading view from published statement JSON, so a scene

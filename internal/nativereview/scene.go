@@ -63,5 +63,13 @@ func (s *Scene) Proposals(c *ui.Context) { s.p.drawProposals(c) }
 // Checkpoints draws the checkpoint panel of the active document.
 func (s *Scene) Checkpoints(c *ui.Context) { s.p.drawCheckpoints(c) }
 
+// ShowCheckpointList resets the checkpoint panel to its list state so the
+// checkpoint-list scene is distinct from the comparison diff scene.
+func (s *Scene) ShowCheckpointList() {
+	for _, state := range s.p.checkpointDocs {
+		state.comparing = false
+	}
+}
+
 // Hunks draws a diff with no decisions, as a comparison preview does.
 func Hunks(c *ui.Context, hunks []review.DiffHunk) { drawDiff(c, hunks, nil) }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log"
 	"path/filepath"
@@ -115,6 +116,7 @@ func refreshMenu(host *workspace.Service) {
 		return
 	}
 	mygo.App.SetMenu(buildMenu(host))
+	nativeui.ResetAllMenuStates()
 }
 
 // recentItems lists the recent documents, keeping duplicate file names apart
@@ -162,13 +164,16 @@ func recentItems(host *workspace.Service) []*mygo.MenuItem {
 // command's own window when it is registered, else the front one, so Open
 // still works for a window whose Portrait layer has not registered yet.
 func portraitWindow(win *mygo.Window) *nativeui.Window {
-	return nativeui.WindowFor(win)
+	if w := nativeui.WindowFor(win); w != nil {
+		return w
+	}
+	return nativeui.FrontWindow()
 }
 
 func buildMenu(host *workspace.Service) *mygo.Menu {
 	withWindow := func(run func(*nativeui.Window)) func(*mygo.MenuItem, *mygo.Window) {
 		return func(_ *mygo.MenuItem, win *mygo.Window) {
-			if w := nativeui.FrontWindow(); w != nil {
+			if w := portraitWindow(win); w != nil {
 				run(w)
 			}
 		}
@@ -181,7 +186,17 @@ func buildMenu(host *workspace.Service) *mygo.Menu {
 			mygo.Separator(), {Role: mygo.RoleServices}, mygo.Separator(), {Role: mygo.RoleHide}, {Role: mygo.RoleHideOthers}, {Role: mygo.RoleUnhide}, mygo.Separator(), {Role: mygo.RoleQuit},
 		}},
 		{Role: mygo.RoleFileMenu, Submenu: []*mygo.MenuItem{
-			{Role: mygo.RoleNew}, {Label: "Open…", Accelerator: "CmdOrCtrl+O", Click: withWindow(func(w *nativeui.Window) { w.OpenFiles() })},
+			{Role: mygo.RoleNew}, {Label: "Open…", Accelerator: "CmdOrCtrl+O", Click: func(_ *mygo.MenuItem, win *mygo.Window) {
+				if w := portraitWindow(win); w != nil {
+					w.OpenFiles()
+					return
+				}
+				go func() {
+					if err := host.OpenFiles(desktop.WithWindow(context.Background(), win)); err != nil && !errors.Is(err, mygo.ErrCanceled) {
+						log.Printf("markgogo: open files: %v", err)
+					}
+				}()
+			}},
 			{Label: "Open Folder…", Accelerator: "CmdOrCtrl+Shift+O", Click: func(_ *mygo.MenuItem, win *mygo.Window) {
 				go func() { _, _ = host.PickFolder(desktop.WithWindow(context.Background(), win)) }()
 			}},

@@ -182,9 +182,9 @@ func Select(c *ui.Context, selected *string, options []Option, spec SelectSpec) 
 				title, chosen = option.Label, true
 			}
 		}
-		if !chosen {
+		if !chosen && spec.Placeholder != "" {
 			// An empty select shows what it wants rather than a blank track.
-			title, chosen = spec.Placeholder, spec.Placeholder != ""
+			title = spec.Placeholder
 		}
 		trigger = Menu(c.Key("menu"), open, func(menu *MenuBuilder) {
 			for _, option := range options {

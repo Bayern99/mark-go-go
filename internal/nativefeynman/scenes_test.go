@@ -166,7 +166,10 @@ func TestShellScenes(t *testing.T) {
 			case strings.HasPrefix(sc.name, "proposals_"):
 				reviewScene.OpenProposals()
 				slots.Review = reviewScene.Proposals
-			case strings.HasPrefix(sc.name, "checkpoints_"), strings.HasPrefix(sc.name, "diff_"):
+			case strings.HasPrefix(sc.name, "checkpoints_"):
+				reviewScene.ShowCheckpointList()
+				slots.Checkpoints = reviewScene.Checkpoints
+			case strings.HasPrefix(sc.name, "diff_"):
 				slots.Checkpoints = reviewScene.Checkpoints
 			case strings.HasPrefix(sc.name, "genui_controls_"):
 				reading, err := nativegenui.SceneReading(sceneStatements)

@@ -88,6 +88,7 @@ type docSession struct {
 	scrollRestore   uint64
 	restoreError    string
 	actionError     string
+	saveError       string
 	disk            diskStamp
 
 	view *genui.ViewFollower
@@ -188,7 +189,7 @@ func (h *Service) changedOnDisk(s *docSession) bool {
 	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return false
+		return true
 	}
 	return info.ModTime().UnixNano() != known.modTime || info.Size() != known.size
 }
@@ -402,10 +403,11 @@ func (h *Service) adopt(doc *mygo.Document[string], win *mygo.Window) {
 	})
 	h.recordDisk(s)
 	offState := doc.OnStateChange(func(state mygo.DocumentState) {
-		if !state.Edited {
+		if !state.Edited && !state.Conflict && !state.Deleted {
 			// A write — ours or autosave's — made the file the document's
 			// baseline again.
 			h.recordDisk(s)
+			h.noteSaveError(s, nil)
 		}
 		h.mu.Lock()
 		currentWin := s.win
@@ -810,6 +812,7 @@ func (h *Service) Save(ctx context.Context, documentID string) error {
 		return err
 	}
 	err = h.saveDocument(s)
+	h.noteSaveError(s, err)
 	h.noteAction(s, err)
 	return err
 }
@@ -850,6 +853,7 @@ func (h *Service) SaveAs(ctx context.Context, documentID string) error {
 		return err
 	}
 	err = h.saveAsDocument(s)
+	h.noteSaveError(s, err)
 	h.noteAction(s, err)
 	return err
 }

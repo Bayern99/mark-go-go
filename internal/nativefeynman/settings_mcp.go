@@ -11,12 +11,13 @@ import (
 func (p *panel) mcpSettings(c *ui.Context) {
 	s := p.state
 	settingsSection(c, "MCP Servers", "Configured servers", "Manage MCP servers and their tool exposure.", func() {
-		ui.Row(c).Gap(portrait.Form.Gap).AlignItems(ui.Center).Justify(ui.End).Children(func() {
-			addLabel := "Add server"
-			if toolButton(c, addLabel, "Toggle add MCP server form", true, p.mcpAddOpen).Clicked() {
-				p.mcpAddOpen = true
-			}
-		})
+		if !p.mcpAddOpen {
+			ui.Row(c).AlignItems(ui.Center).Justify(ui.End).Children(func() {
+				if portrait.Button(c, "Add server…", "Open the add MCP server form").Clicked() {
+					p.mcpAddOpen = true
+				}
+			})
+		}
 		if s.mcpServers != nil {
 			if !s.mcpServers.Parsed {
 				resultText(c, s.mcpServers.Command, s.mcpServers.RawOutput, s.mcpServers.Error)
@@ -29,7 +30,7 @@ func (p *panel) mcpSettings(c *ui.Context) {
 							text(c, portrait.Type.UI, server.Name).FontWeight(600).TextColor(portrait.Colors.Ink)
 							mutedText(c, strings.Join([]string{server.Scope, server.Transport, server.Status}, " · "))
 						})
-						trigger := portrait.ButtonWith(c, "Remove", "Remove MCP server "+server.Name, portrait.ButtonSpec{Look: portrait.DangerOutline, Size: portrait.Sizes.Compact}).Disabled(s.cliBusy)
+						trigger := portrait.ButtonWith(c, "Remove", "Remove MCP server "+server.Name, portrait.ButtonSpec{Look: portrait.DangerOutline, Size: portrait.Sizes.Regular}).Disabled(s.cliBusy)
 						p.confirmOnClick("remove-mcp:"+server.Scope+":"+server.Name, trigger, portrait.ConfirmSpec{
 							Title:        "Remove MCP server?",
 							Body:         "Remove “" + server.Name + "” from Feynman? This action cannot be undone.",
@@ -82,8 +83,7 @@ func (p *panel) mcpSettings(c *ui.Context) {
 						input(c, "feynman-mcp-bearer-env", "Bearer token environment variable", &p.serverBearerEnv, "Optional environment variable name")
 					})
 				}
-				ui.Row(c).AlignItems(ui.Center).Children(func() {
-					portrait.Label(c, "Project-local").Grow(1)
+				portrait.FormRow(c, "Project-local", "Save this server to the project instead of your user configuration.", func() {
 					portrait.Switch(c.Key("feynman-mcp-local"), &p.serverLocal).Label("Project-local configuration")
 				})
 				ui.Row(c).Justify(ui.End).Gap(portrait.Form.Gap).Children(func() {

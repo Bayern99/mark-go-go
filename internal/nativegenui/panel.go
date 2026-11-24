@@ -139,89 +139,124 @@ func (p *panel) draw(c *ui.Context) {
 	// The left edge matches the page bar's breadcrumb, so the request form
 	// lines up with the document it belongs to.
 	ui.Column(c).Fill().MinHeight(0).Gap(8).Padding(8, 12, 12, 12).Children(func() {
-		ui.Row(c).Justify(ui.End).Gap(portrait.Form.Gap).Children(func() {
-			if portrait.QuietButton(c, "Request", "Generation request").Expanded(v.settings).Clicked() {
-				v.settings = !v.settings
-			}
-			if portrait.QuietIconButton(c, portrait.IconGear, "GenUI settings").Clicked() {
-				p.win.OpenSettings("genui")
-			}
-		})
+		p.drawRequestToggle(c, v)
 		if v.settings {
 			p.drawSettings(c, v, d, busy)
 		}
-		if v.failure != nil {
-			portrait.Alert(c, portrait.Tones.Danger, "Generation failed", strings.TrimSpace(v.failure.Message+" "+v.failure.Hint))
-			if v.failure.Detail != "" {
-				portrait.OutputBlock(c, "Generation details", v.failure.Detail)
-			}
-			if portrait.Button(c, "Retry generation", "Retry generation").Disabled(busy || d.Path == "").Clicked() {
-				p.generate(v, v.lastIDs)
-			}
+		p.drawGenerationStatus(c, v, d, busy)
+		p.drawView(c, v, d, raw, busy)
+	})
+}
+
+// drawRequestToggle is the panel's one control row. The caret and the
+// selected look say that the button opens the request form.
+func (p *panel) drawRequestToggle(c *ui.Context, v *documentView) {
+	caret := portrait.IconCaretDown
+	if v.settings {
+		caret = portrait.IconCaretUp
+	}
+	ui.Row(c).Justify(ui.End).Gap(portrait.Form.Gap).Children(func() {
+		toggle := portrait.ButtonWith(c, "Request", "Generation request", portrait.ButtonSpec{
+			Look: portrait.Quiet, Selected: v.settings, Trailing: caret,
+		}).Checked(v.settings).Expanded(v.settings)
+		if toggle.Clicked() {
+			v.settings = !v.settings
 		}
-		if v.message != "" {
-			portrait.Type.UI.Apply(ui.Text(c, v.message)).TextColor(portrait.Colors.Ink2).Role(ui.RoleStatus)
-		}
-		if v.cancel != nil && portrait.Button(c, "Cancel generation", "Cancel generation").Clicked() {
-			v.cancel()
-		}
-		switch {
-		case !v.loaded:
-			loading(c, "Loading the GenUI view", "Reading the view file for this document.")
-		case v.snapshot.Error != "":
-			portrait.Alert(c, portrait.Tones.Danger, "GenUI view", v.snapshot.Error)
-		case v.cancel != nil && v.reader().surface == nil:
-			loading(c, "Generating view…", "Your agent is laying out this document.")
-		case v.reader().surface == nil:
-			ui.Column(c).FillWidth().Grow(1).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
-				portrait.Empty(c, portrait.EmptySpec{
-					Icon:        portrait.IconSparkle,
-					Title:       "No view yet",
-					Description: "Generate a reading view from this document. The Markdown stays the source.",
-					Action: func(c *ui.Context) ui.Element {
-						b := portrait.AccentButton(c, "Set up generation", "Set up generation").Margin(6, 0, 0, 0)
-						if b.Clicked() {
-							p.win.OpenSettings("genui")
-						}
-						return b
-					},
-				}).MaxWidth(portrait.Shell.SidebarWidth + portrait.Shell.Documents/4)
-			})
-		default:
-			reader := v.reader()
-			reader.CanSelect = func(n Node) bool { return len(v.matches(n)) > 0 }
-			if v.imagesFor != d.Path || reader.LoadImage == nil {
-				directory := ""
-				if d.Path != "" {
-					directory = filepath.Dir(d.Path)
-				}
-				v.imagesFor, reader.LoadImage = d.Path, DocumentImages(raw, directory)
-				reader.images.Clear()
-			}
-			reader.SelectItem = func(n Node, text string) {
-				ss := v.matches(n)
-				if len(ss) == 0 {
-					return
-				}
-				start, end := ss[0].Start, ss[0].End
-				if needle := strings.TrimSpace(text); needle != "" {
-					for _, s := range ss {
-						a, b := byteAt(raw, s.Start), byteAt(raw, s.End)
-						if i := strings.Index(raw[a:b], needle); i >= 0 {
-							start = s.Start + utf16Length(raw[a:a+i])
-							end = start + utf16Length(needle)
-							break
-						}
-					}
-				}
-				highlightCard(reader, n)
-				p.win.Reveal(start)
-				_ = p.win.Source().SelectUTF16(start, end)
-			}
-			reader.Sources = func(c *ui.Context, n Node) { p.drawSources(c, v, d, n, busy) }
-			reader.View(c)
+		if portrait.QuietIconButton(c, portrait.IconGear, "GenUI settings").Clicked() {
+			p.win.OpenSettings("genui")
 		}
 	})
+}
+
+// drawGenerationStatus reports the running or failed generation above the
+// view, so the reader never has to look for what happened.
+func (p *panel) drawGenerationStatus(c *ui.Context, v *documentView, d workspace.DocumentInfo, busy bool) {
+	if v.failure != nil {
+		var retry []portrait.AlertAction
+		if !busy && d.Path != "" {
+			retry = append(retry, portrait.AlertAction{Label: "Retry", OnAction: func() { p.generate(v, v.lastIDs) }})
+		}
+		portrait.Alert(c, portrait.Tones.Danger, "Generation failed", strings.TrimSpace(v.failure.Message+" "+v.failure.Hint), retry...)
+		if v.failure.Detail != "" {
+			portrait.OutputBlock(c, "Generation details", v.failure.Detail)
+		}
+	}
+	if v.message != "" {
+		portrait.Type.UI.Apply(ui.Text(c, v.message)).TextColor(portrait.Colors.Ink2).Role(ui.RoleStatus)
+	}
+	if v.cancel != nil {
+		cancel := portrait.Button(c, "Cancel generation", "Cancel generation").AlignSelf(ui.Start)
+		if cancel.Clicked() {
+			v.cancel()
+		}
+	}
+}
+
+// drawView draws the reader, or what stands in for it before one exists. A
+// failure is already drawn above, so it never shares the page with the empty
+// state, whose next step would contradict it.
+func (p *panel) drawView(c *ui.Context, v *documentView, d workspace.DocumentInfo, raw string, busy bool) {
+	switch {
+	case !v.loaded:
+		loading(c, "Loading the GenUI view", "Reading the view file for this document.")
+	case v.snapshot.Error != "":
+		portrait.Alert(c, portrait.Tones.Danger, "GenUI view", v.snapshot.Error)
+	case v.cancel != nil && v.reader().surface == nil:
+		loading(c, "Generating view…", "Your agent is laying out this document.")
+	case v.failure != nil && v.reader().surface == nil:
+		return
+	case v.reader().surface == nil:
+		ui.Column(c).FillWidth().Grow(1).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
+			spec := portrait.EmptySpec{
+				Icon:        portrait.IconSparkle,
+				Title:       "No view yet",
+				Description: "Generate a reading view from this document. The Markdown stays the source.",
+			}
+			if !v.settings {
+				spec.Action = func(c *ui.Context) ui.Element {
+					b := portrait.AccentButton(c, "Write a request", "Write a request").Margin(6, 0, 0, 0)
+					if b.Clicked() {
+						v.settings = true
+					}
+					return b
+				}
+			}
+			portrait.Empty(c, spec).MaxWidth(portrait.Shell.SidebarWidth + portrait.Shell.Documents/4)
+		})
+	default:
+		reader := v.reader()
+		reader.CanSelect = func(n Node) bool { return len(v.matches(n)) > 0 }
+		if v.imagesFor != d.Path || reader.LoadImage == nil {
+			directory := ""
+			if d.Path != "" {
+				directory = filepath.Dir(d.Path)
+			}
+			v.imagesFor, reader.LoadImage = d.Path, DocumentImages(raw, directory)
+			reader.images.Clear()
+		}
+		reader.SelectItem = func(n Node, text string) {
+			ss := v.matches(n)
+			if len(ss) == 0 {
+				return
+			}
+			start, end := ss[0].Start, ss[0].End
+			if needle := strings.TrimSpace(text); needle != "" {
+				for _, s := range ss {
+					a, b := byteAt(raw, s.Start), byteAt(raw, s.End)
+					if i := strings.Index(raw[a:b], needle); i >= 0 {
+						start = s.Start + utf16Length(raw[a:a+i])
+						end = start + utf16Length(needle)
+						break
+					}
+				}
+			}
+			highlightCard(reader, n)
+			p.win.Reveal(start)
+			_ = p.win.Source().SelectUTF16(start, end)
+		}
+		reader.Sources = func(c *ui.Context, n Node) { p.drawSources(c, v, d, n, busy) }
+		reader.View(c)
+	}
 }
 
 func (v *documentView) index(raw string) {
@@ -421,8 +456,8 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 	if len(notes) > 0 {
 		ui.Column(c).Gap(6).Margin(2, 0, 0, 0).Role(ui.RoleList).Label("Notes").Children(func() {
 			for i, note := range notes {
-				portrait.Type.Meta.Apply(ui.Text(c.Key(i), note)).Padding(4, 8, 4, 11).Radius(portrait.Radii.S).Background(portrait.Colors.WarningSoft).
-					InsetShadow(3, 0, 0, 0, portrait.Colors.Warning).Selectable()
+				portrait.Type.Meta.Apply(ui.Text(c.Key(i), note)).Padding(4, 8).Radius(portrait.Radii.S).Background(portrait.Colors.WarningSoft).
+					Border(0.5, portrait.Colors.Line).Selectable()
 			}
 		})
 	}
@@ -474,17 +509,19 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 	saveShortcut := note.Shortcut(ui.Cmd, ui.KeyEnter) && !composing
 	cancelShortcut := note.Shortcut(0, ui.KeyEscape) && !composing
 	enabled := len(ss) > 0 && !d.ReadOnly && strings.TrimSpace(v.note) != ""
-	if (portrait.AccentButton(c, "Save note", "Save note").Disabled(!enabled).Clicked() || saveShortcut) && enabled {
-		v.message = message(p.addNote(ss[0], v.note))
-		if v.message == "" {
+	ui.Row(c).FillWidth().Justify(ui.End).Gap(portrait.Form.Gap).Children(func() {
+		if portrait.QuietButton(c, "Cancel note", "Cancel note").Clicked() || cancelShortcut {
 			v.noteTarget = ""
 			v.note = ""
 		}
-	}
-	if portrait.QuietButton(c, "Cancel note", "Cancel note").Clicked() || cancelShortcut {
-		v.noteTarget = ""
-		v.note = ""
-	}
+		if (portrait.AccentButton(c, "Save note", "Save note").Disabled(!enabled).Clicked() || saveShortcut) && enabled {
+			v.message = message(p.addNote(ss[0], v.note))
+			if v.message == "" {
+				v.noteTarget = ""
+				v.note = ""
+			}
+		}
+	})
 }
 
 func highlightCard(reader *Reading, n Node) {

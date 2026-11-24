@@ -289,16 +289,10 @@ func (p *panel) configPicker(c *ui.Context, picker researchPicker) {
 	width, height := c.Size()
 	currentLabel := currentResearchPickerLabel(picker)
 	description := picker.label + ": " + currentLabel
-	button := ui.ButtonBase(c.Key("research-config-"+picker.key)).Label(picker.label).Value(currentLabel).
-		Gap(portrait.Form.HelpGap).AlignItems(ui.Center).Height(portrait.Sizes.Compact).Padding(0, portrait.Form.Gap).Radius(portrait.Radii.S).MinWidth(0).
-		MaxWidth(max(float32(96), width*0.62)).Expanded(*open).Disabled(picker.disabled)
+	button := portrait.ButtonWith(c.Key("research-config-"+picker.key), currentLabel, currentLabel, portrait.ButtonSpec{
+		Look: portrait.Quiet, Size: portrait.Sizes.Regular, Leading: picker.icon, Trailing: portrait.IconCaretDown,
+	}).Label(picker.label).Value(currentLabel).MinWidth(0).MaxWidth(max(float32(96), width*0.62)).Expanded(*open).Disabled(picker.disabled)
 	button = portrait.Tooltip(c, button, description)
-	ink := portrait.Press(button, portrait.Quiet)
-	button.Children(func() {
-		portrait.Glyph(c, picker.icon, portrait.IconSizes.S, portrait.Colors.Ink3).Shrink(0)
-		text(c, portrait.Type.Meta, currentLabel).FontWeight(500).TextColor(ink).MaxLines(1).Ellipsis("…").MinWidth(0)
-		portrait.Glyph(c, portrait.IconCaretDown, portrait.IconSizes.XS, portrait.Colors.Ink3).Shrink(0)
-	})
 	if button.Clicked() {
 		shouldOpen := !*open
 		p.closeResearchPickers()

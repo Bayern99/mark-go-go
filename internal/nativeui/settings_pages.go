@@ -19,7 +19,35 @@ type SettingsPage struct {
 	Dirty              func() bool
 }
 
-type settingsSearchState struct{ matches int }
+type settingsSearchState struct {
+	matches int
+	page    string
+	pages   map[string]int
+}
+
+// counting records a setting row that matched, so the pane knows whether a
+// page it draws has anything to show under its heading.
+func (s *settingsSearchState) counting() {
+	if s == nil {
+		return
+	}
+	s.matches++
+	if s.page == "" {
+		return
+	}
+	if s.pages == nil {
+		s.pages = map[string]int{}
+	}
+	s.pages[s.page]++
+}
+
+// hits is how many of a page's settings matched the search.
+func (s *settingsSearchState) hits(id string) int {
+	if s == nil {
+		return 0
+	}
+	return s.pages[id]
+}
 
 type SettingsQuery struct {
 	Text  string
@@ -39,9 +67,7 @@ func (q SettingsQuery) Match(title, description string, keywords ...string) bool
 			if !strings.Contains(strings.ToLower(field), word) {
 				continue
 			}
-			if q.state != nil {
-				q.state.matches++
-			}
+			q.state.counting()
 			return true
 		}
 	}

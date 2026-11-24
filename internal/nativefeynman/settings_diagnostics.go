@@ -9,22 +9,22 @@ func (p *panel) statusSettings(c *ui.Context) {
 	s := p.state
 	settingsSection(c, "Feynman CLI", "Status & diagnostics", "Feynman CLI status, doctor and setup output.", func() {
 		ui.Row(c).Wrap().Gap(4).Children(func() {
-			if smallButton(c, "Run Doctor", "Run feynman doctor").Disabled(s.cliBusy).Clicked() {
+			if controlButton(c, "Run Doctor", "Run feynman doctor").Disabled(s.cliBusy).Clicked() {
 				p.runUpdate(func() (func(), error) {
 					result, err := p.host.CLIDoctor(p.window.Context(), s.root)
 					return func() { s.doctorResult = &result }, err
 				})
 			}
-			if smallButton(c, "Verify Preview", "Run feynman setup preview").Disabled(s.cliBusy).Clicked() {
+			if controlButton(c, "Verify Preview", "Run feynman setup preview").Disabled(s.cliBusy).Clicked() {
 				p.runUpdate(func() (func(), error) {
 					result, err := p.host.CLISetupPreview(p.window.Context(), s.root)
 					return func() { s.setupPreview = &result }, err
 				})
 			}
-			if smallButton(c, "Run Setup in Terminal", "Launch the Feynman setup wizard in Terminal").Disabled(s.cliBusy).Clicked() {
+			if controlButton(c, "Run Setup in Terminal", "Launch the Feynman setup wizard in Terminal").Disabled(s.cliBusy).Clicked() {
 				p.launchWizard("setup", "")
 			}
-			if smallButton(c, "Refresh", "Refresh Feynman CLI settings").Disabled(s.cliBusy).Clicked() {
+			if controlButton(c, "Refresh", "Refresh Feynman CLI settings").Disabled(s.cliBusy).Clicked() {
 				p.settingsRoot = ""
 				p.loadSettings(s.root)
 			}

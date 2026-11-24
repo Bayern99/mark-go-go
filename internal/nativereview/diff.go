@@ -27,7 +27,7 @@ func drawHunk(c *ui.Context, h review.DiffHunk, decisions map[string]review.Hunk
 	if h.Conflict {
 		border = portrait.Colors.Danger
 	}
-	ui.Column(c).Border(1, border).Radius(portrait.Diff.Radius).Clip().Background(portrait.Colors.Paper).Children(func() {
+	ui.Column(c).Border(0.5, border).Radius(portrait.Diff.Radius).Clip().Background(portrait.Colors.Paper).Children(func() {
 		ui.Row(c).Wrap().Gap(6).Padding(5, 8).AlignItems(ui.Center).Justify(ui.SpaceBetween).
 			BorderWidth(0, 0, 1, 0).BorderColor(portrait.Colors.Line).Children(func() {
 			portrait.Diff.Range.Apply(ui.Text(c, h.Header)).TextColor(portrait.Colors.Ink3).FontFeatures("tnum")
@@ -79,7 +79,7 @@ func diffLine(c *ui.Context, line review.DiffLine) {
 		number(line.OldLine)
 		number(line.NewLine)
 		text(sigil).Width(portrait.Diff.SigilWidth).TextAlign(ui.Center).TextColor(sigilInk).AccessHidden(true)
-		content := text(line.Text).Wrap().Grow(1).Shrink(1).TextColor(portrait.Colors.Ink)
+		content := text(line.Text).Wrap().Grow(1).Shrink(1).MinWidth(0).TextColor(portrait.Colors.Ink)
 		if line.Text == "" {
 			content.Role(ui.RoleText).Label(desc)
 		} else {

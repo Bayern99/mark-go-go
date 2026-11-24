@@ -32,6 +32,9 @@ func (s *Shell) settingsDialog(c *ui.Context, width, height float32, m Model, a 
 	}
 	searchState := &settingsSearchState{}
 	query := SettingsQuery{Text: s.settingsQuery, state: searchState}
+	// The rail decides which pages a search can reach without counting their
+	// rows: only the pane's own settings say whether a page has any.
+	filter := SettingsQuery{Text: s.settingsQuery}
 	current := settingsPageByID(visible, s.settingsTab)
 	portrait.DialogShell(c, "settings dialog", &s.settingsOpen, portrait.DialogSpec{
 		Label: "Settings", Width: portrait.Settings.Width, Height: portrait.Settings.Height,
@@ -41,7 +44,7 @@ func (s *Shell) settingsDialog(c *ui.Context, width, height float32, m Model, a 
 		root := ui.Row(c).Fill().MinWidth(0)
 		root.Children(func() {
 			if sheetWidth >= portrait.Settings.Collapse {
-				s.settingsRail(c, visible, query)
+				s.settingsRail(c, visible, filter)
 				s.settingsPane(c, current, visible, query, searchState, true)
 			} else {
 				ui.Column(c).Fill().MinWidth(0).Children(func() {
@@ -287,18 +290,37 @@ func (s *Shell) settingsPane(c *ui.Context, current SettingsPage, pages []Settin
 						current.Draw(c, query)
 						return
 					}
+					match := SettingsQuery{Text: query.Text}
 					for _, page := range pages {
-						if !query.PageMatch(page) {
+						if !match.PageMatch(page) {
 							continue
 						}
-						ui.Column(c.Key("search-page-" + page.ID)).FillWidth().Gap(portrait.Settings.HeadingGap).Children(func() {
-							// A link's text starts at the group headings' x, not
-							// its button padding's.
-							link := portrait.ButtonWith(c, page.Label, "Open "+page.Label, portrait.ButtonSpec{Look: portrait.Link, Size: portrait.Sizes.Regular}).AlignSelf(ui.Start).Justify(ui.Start).Padding(0)
-							if link.Clicked() {
-								s.settingsTab, s.settingsQuery = page.ID, ""
-							}
+						// A page's link is drawn above its rows, but a keyword can
+						// match the page's own name while none of its settings do.
+						// The link is therefore filled in only once the page drew a
+						// row, so a search never leaves an orphan heading.
+						block := ui.Column(c.Key("search-page-" + page.ID)).FillWidth()
+						var heading ui.Element
+						block.Children(func() {
+							heading = ui.Column(c.Key("search-page-heading-" + page.ID)).FillWidth()
+						})
+						block.Children(func() {
+							searchState.page = page.ID
 							page.Draw(c, query)
+							searchState.page = ""
+						})
+						if searchState.hits(page.ID) == 0 {
+							continue
+						}
+						heading.Children(func() {
+							ui.Column(c).FillWidth().Padding(0, 0, portrait.Settings.HeadingGap, 0).Children(func() {
+								// A link's text starts at the group headings' x, not
+								// its button padding's.
+								link := portrait.ButtonWith(c, page.Label, "Open "+page.Label, portrait.ButtonSpec{Look: portrait.Link, Size: portrait.Sizes.Regular}).AlignSelf(ui.Start).Justify(ui.Start).Padding(0)
+								if link.Clicked() {
+									s.settingsTab, s.settingsQuery = page.ID, ""
+								}
+							})
 						})
 					}
 					if searchState.matches == 0 {

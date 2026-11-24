@@ -14,10 +14,10 @@ func (p *panel) files(c *ui.Context) {
 	ui.Row(c.Key("research-files-heading")).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
 		sectionTitle(c, "Research files")
 		ui.Row(c).Grow(1)
-		if smallButton(c, "Refresh", "Refresh research artifacts").Disabled(s.filesLoading || s.status == statusWorking).Clicked() {
+		if controlButton(c, "Refresh", "Refresh research artifacts").Disabled(s.filesLoading || s.status == statusWorking).Clicked() {
 			p.refreshFiles(s.root)
 		}
-		if smallButton(c, "Open folder", "Reveal the research output folder").Clicked() {
+		if controlButton(c, "Open folder", "Reveal the research output folder").Clicked() {
 			p.run(func() error { return p.host.RevealOutputs(p.window.Context(), s.root) })
 		}
 	})
@@ -30,6 +30,9 @@ func (p *panel) files(c *ui.Context) {
 		}
 		if len(s.artifacts) == 0 && !s.filesLoading {
 			portrait.Empty(c, portrait.EmptySpec{Icon: portrait.IconFileText, Title: "No research files yet", Description: "Completed research files appear here."})
+		}
+		if len(s.artifacts) == 0 {
+			return
 		}
 		list := portrait.Card(c).FillWidth().Padding(0).Radius(portrait.Radii.L).Clip()
 		list.Children(func() {

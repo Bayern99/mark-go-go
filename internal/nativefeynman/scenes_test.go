@@ -102,6 +102,55 @@ func scenePanel() *panel {
 	return p
 }
 
+func denseSidebarSceneModel() nativeui.Model {
+	root := "/Users/ada/sections"
+	names := []string{
+		"ch04-s05-trade-shells.md", "ch04-s06-lapidary-technology.md", "ch04-s07-highland-longshan-taosi.md",
+		"ch04-s08-taosi-culinary.md", "ch04-s09-taosi-music.md", "ch04-s10-dress-body.md",
+		"ch04-s11-aura-kingship.md", "ch04-s12-jinnan-crisis.md", "ch04-s13-ordos-shimao.md",
+		"ch04-s14-ordos-exchange.md", "ch04-s15a-sichuan-and-huai.md", "ch04-s15b-yuhui-and-coast.md",
+		"ch04-s16-yangzi-transition.md", "ch04-s17-landscape-conclusion.md", "ch05-s01-longshan-collapse-erlitou.md",
+		"ch05-s02-luoyang-intensification.md", "ch05-s03-erlitou-rise-palaces.md", "ch05-s04-stockbreeding-sound-color.md",
+		"ch05-s05-jade-hybrid-ceramics.md", "ch05-s06-erlitou-bronze-industry.md", "ch05-s07-consumption-apparatus.md",
+		"ch05-s08-magical-aura-metal.md", "ch05-s09-erlitou-political-network.md", "ch05-s10-erlitou-peers-conclusion.md",
+		"ch05-s11-becoming-central-plains.md", "ch06-s01-shang-material-henei.md", "ch06-s02-luoyang-infiltration.md",
+		"ch06-s03-forging-new-identity.md", "ch06-s04-zhengzhou-urbanism.md", "ch07-s07-reconfiguring-shang-landscape.md",
+		"ch08-s02-ritual-bronzes-craft.md", "ch09-s01-emergence-transformation.md", "ch09-s02-epilogue-notes.md",
+	}
+	docs := []workspace.DocumentInfo{
+		{WorkspaceRoot: root, ID: "t1", Name: "ch07-s07-reconfiguring-shang-landscape.md", Path: root + "/ch07-s07-reconfiguring-shang-landscape.md", ViewMode: "preview"},
+		{WorkspaceRoot: root, ID: "t2", Name: "ch09-s01-emergence-transformation.md", Path: root + "/ch09-s01-emergence-transformation.md", ViewMode: "preview"},
+		{WorkspaceRoot: root, ID: "active", Name: "ch05-s05-jade-hybrid-ceramics.md", Path: root + "/ch05-s05-jade-hybrid-ceramics.md", ViewMode: "genui"},
+	}
+	entries := make([]workspace.NavEntry, 0, len(names))
+	for i, name := range names {
+		docID := ""
+		switch name {
+		case "ch07-s07-reconfiguring-shang-landscape.md":
+			docID = "t1"
+		case "ch09-s01-emergence-transformation.md":
+			docID = "t2"
+		case "ch05-s05-jade-hybrid-ceramics.md":
+			docID = "active"
+		}
+		entries = append(entries, workspace.NavEntry{
+			ID: "f" + strings.Repeat("0", 2-len(name)%2) + name, Kind: "file", Name: name, Path: root + "/" + name,
+			Parent: "sections", Depth: 0, DocumentID: docID,
+		})
+		_ = i
+	}
+	return nativeui.Model{
+		Feynman: true, Git: true,
+		Crumbs: workspace.Breadcrumbs(root, root+"/ch05-s05-jade-hybrid-ceramics.md"),
+		Workspace: workspace.WorkspaceSnapshot{
+			ID: "w-dense", Root: root, Name: "sections", Kind: "folder", ActiveID: "active", Documents: docs,
+			Workspaces: []workspace.WorkspaceSummary{{ID: "w-dense", Root: root, Name: "sections"}},
+		},
+		Navigation: workspace.NavSnapshot{Root: root, Total: len(entries), Indexed: len(entries), Entries: entries},
+		Sections:   workspace.ExtractSections(sceneDocument),
+	}
+}
+
 func TestShellScenes(t *testing.T) {
 	dir := os.Getenv("MGG_SCENES_DIR")
 	if dir == "" {
@@ -117,6 +166,9 @@ func TestShellScenes(t *testing.T) {
 		t.Run(sc.name, func(t *testing.T) {
 			var shell nativeui.Shell
 			model := sceneModel(sc.feynman, sc.mode)
+			if sc.name == "dense_sidebar_genui_failure_light" {
+				model = denseSidebarSceneModel()
+			}
 			if sc.space != "" {
 				model.Spaces = map[string]string{model.Workspace.Root: sc.space}
 			}
@@ -145,6 +197,9 @@ func TestShellScenes(t *testing.T) {
 			// Window.drawDialog, the review panels from nativereview's own
 			// draw code, and the reading controls from nativegenui's.
 			sceneWindow := nativeui.SceneWindow(model.Workspace, model.Navigation, sceneFolders(), sourceText, space, sc.dark)
+			if sc.name == "dense_sidebar_genui_failure_light" || sc.name == "feynman_working_light" {
+				p.window = sceneWindow
+			}
 			reviewScene := nativereview.NewScene(sceneWindow, sceneReview())
 			slots := nativeui.Slots{
 				Document: func(c *ui.Context) {
@@ -182,6 +237,10 @@ func TestShellScenes(t *testing.T) {
 			case sc.name == "genui_request_light":
 				request := "Create a calm reading view with a summary and key principles."
 				slots.GenUI = func(c *ui.Context) { nativegenui.SceneRequest(c, request) }
+			case sc.name == "dense_sidebar_genui_failure_light":
+				slots.GenUI = func(c *ui.Context) {
+					nativegenui.SceneFailure(c, "The agent is not signed in.", "Run `agy acp --login` in Terminal, then retry.", "Authentication required")
+				}
 			case strings.HasPrefix(sc.name, "settings_genui_"):
 				settings := workspace.DefaultSettings()
 				settings.Models = []string{"claude-sonnet-4-5", "gpt-5.4", "gemini-3-pro"}
@@ -293,6 +352,16 @@ func sceneWitnesses(sc shellScene) []string {
 		return []string{"Reading width", "Choose…"}
 	case sc.name == "genui_request_light":
 		return []string{"Generate"}
+	case sc.name == "dense_sidebar_genui_failure_light":
+		return []string{"Retry", "Generation details", "Include doc"}
+	case sc.name == "feynman_working_light":
+		return []string{"Steer", "Follow up", "Stop", "Include doc"}
+	case sc.name == "feynman_files_empty_light":
+		return []string{"No research files yet"}
+	case sc.name == "settings_mcp_add_light":
+		return []string{"Project-local"}
+	case sc.name == "settings_search_dark":
+		return []string{"Search & Papers", "Web search"}
 	case strings.HasPrefix(sc.name, "settings_genui_"):
 		return []string{"Agent command"}
 	}

@@ -158,3 +158,49 @@ func TestSettingsResetAndNarrowNavigation(t *testing.T) {
 		t.Fatal("narrow Settings did not collapse its rail to a Select")
 	}
 }
+
+// TestSettingsSearchDropsAHeadingWithNoMatchingRows keeps a page's link with
+// its rows: a keyword that names a page whose settings no longer match leaves
+// no heading over nothing, only the empty state.
+func TestSettingsSearchDropsAHeadingWithNoMatchingRows(t *testing.T) {
+	var shell nativeui.Shell
+	model := libraryModel()
+	model.Preferences = map[string]string{}
+	slots := nativeui.Slots{Settings: []nativeui.SettingsPage{{
+		ID: "zephyr", Section: "System", Label: "Zephyr Deck", Icon: portrait.IconKeyboard, Order: 900,
+		Keywords: []string{"deck", "motion"},
+		Draw: func(c *ui.Context, q nativeui.SettingsQuery) {
+			if !q.Match("Motion speed", "How fast the panel moves") {
+				return
+			}
+			portrait.SettingsGroup(c, "Deck", func(rows *portrait.Rows) {
+				rows.Row(portrait.RowSpec{Title: "Motion speed", Description: "How fast the panel moves"}, func() {})
+			})
+		},
+	}}}
+	app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, model, nativeui.Actions{}, slots) }, 1280, 820)
+	app.Frame()
+	app.Key(ui.Cmd, ui.KeyComma)
+	app.Frame()
+	app.Key(0, ui.KeySlash)
+	app.Frame()
+	app.Type("deck")
+	app.Frame()
+	if _, ok := app.Access("Open Zephyr Deck"); ok {
+		t.Fatal("search left a page heading over a page with no matching settings")
+	}
+	if !app.HasText("No settings match “deck”") {
+		t.Fatal("search with no matching settings did not say so")
+	}
+	// A row that does match keeps its page's heading, above the row.
+	app.Key(0, ui.KeyEscape)
+	app.Frame()
+	app.Type("motion")
+	app.Frame()
+	if _, ok := app.Access("Open Zephyr Deck"); !ok {
+		t.Fatal("search hid the heading of a page whose row matched")
+	}
+	if !app.HasText("How fast the panel moves") {
+		t.Fatal("search did not draw the matching setting")
+	}
+}

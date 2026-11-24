@@ -120,7 +120,13 @@ func (s *Shell) documents(c *ui.Context, m Model, a Actions) {
 						iconColor = portrait.Colors.Accent
 					}
 					portrait.Glyph(c, portrait.IconFileText, portrait.Type.Small.Size, iconColor)
-					portrait.Type.UI.Apply(ui.Text(c, labels[d.ID])).FontWeight(500).TextColor(ink).MaxLines(1).Ellipsis("…").MinWidth(0)
+					// Only the open document's tab is a step heavier, so the tab
+					// strip reads as one selected tab rather than five of them.
+					title := portrait.Type.UI.Apply(ui.Text(c, labels[d.ID]))
+					if selected {
+						title.FontWeight(500)
+					}
+					title.TextColor(ink).MaxLines(1).Ellipsis("…").MinWidth(0)
 				})
 				if s.tabFocus == d.ID && selected {
 					tab.Focus()

@@ -103,13 +103,18 @@ func (p *panel) drawProposals(c *ui.Context) {
 		p.open = false
 		return
 	}
+	width, height := c.Size()
 	ui.Row(c).Padding(3, 12).Children(func() {
 		button := portrait.ButtonWith(c, fmt.Sprintf("Change proposals · %d", len(p.latest.Proposals)), "Change proposals", portrait.ButtonSpec{Look: portrait.Quiet, Leading: portrait.IconSparkle, Selected: p.open})
-		button.Background(portrait.Colors.AccentSoft)
 		if button.Clicked() {
 			p.open = !p.open
 		}
-		portrait.PopoverWithSpec(c, button, &p.open, portrait.PopoverSpec{Width: min(portrait.Form.PopoverWide, max(portrait.Form.MenuMin, float32(280))), Title: "Change proposals", Opaque: true}, func() { p.proposalPopover(c) }).Background(portrait.Colors.Paper)
+		popoverWidth := min(portrait.Form.PopoverWide, max(portrait.Form.MenuMin, width-2*portrait.Form.DialogPad))
+		maxHeight := max(portrait.Form.MenuMin, height-2*portrait.Form.DialogPad)
+		popover := portrait.PopoverWithSpec(c, button, &p.open, portrait.PopoverSpec{
+			Width: popoverWidth, MaxHeight: maxHeight, Placement: ui.AnchorBottomEnd, Opaque: true,
+		}, func() { p.proposalPopover(c) })
+		popover.AttachTo(button, ui.AnchorBottomEnd, ui.AnchorTopEnd)
 	})
 }
 
@@ -121,7 +126,7 @@ func (p *panel) proposalPopover(c *ui.Context) {
 				if p.selected == "" {
 					p.selected = item.ID
 				}
-				if track.Segment(c.Key(item.ID), proposalLabel(item), proposalLabel(item), p.selected == item.ID).Clicked() {
+				if track.Segment(c.Key(item.ID), proposalLabel(item), proposalLabel(item), p.selected == item.ID).Grow(1).MinWidth(0).Clicked() {
 					p.selected = item.ID
 					p.clearComparison()
 				}
@@ -145,7 +150,7 @@ func (p *panel) proposalPopover(c *ui.Context) {
 			portrait.Type.Meta.Apply(ui.Text(c, active.Source)).TextColor(portrait.Colors.Ink3)
 		}
 		if !proposalTargets(p.win.Active(), active) {
-			if portrait.Button(c, "Open "+proposalLabel(active), "Open "+proposalLabel(active)).Clicked() {
+			if portrait.Button(c, "Open "+proposalLabel(active), "Open "+proposalLabel(active)).AlignSelf(ui.Start).Clicked() {
 				p.openTarget(active)
 			}
 		} else {
@@ -200,7 +205,7 @@ func (p *panel) drawComparison(c *ui.Context, active review.ChangeProposal) {
 		if p.compared.ID != "" {
 			portrait.Alert(c, portrait.Tones.Warning, "Stale comparison", review.ErrStaleComparison.Error())
 		}
-		if portrait.Button(c, "Compare current text", "Compare current text").Clicked() {
+		if portrait.Button(c, "Compare current text", "Compare current text").AlignSelf(ui.Start).Clicked() {
 			base := read(p.win)
 			compared, err := p.proposals.SyncProposal(p.root, active.ID, base.text)
 			p.clearComparison()
@@ -215,7 +220,17 @@ func (p *panel) drawComparison(c *ui.Context, active review.ChangeProposal) {
 		if p.compared.HasConflict {
 			portrait.Alert(c, portrait.Tones.Warning, "Conflicting hunks", "Some hunks conflict with concurrent edits.")
 		}
-		ui.Row(c).Gap(6).Wrap().Children(func() {
+	}
+	ui.Row(c).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
+		if portrait.ButtonWith(c, "Dismiss proposal", "Dismiss proposal", portrait.ButtonSpec{Look: portrait.DangerOutline}).Clicked() {
+			if _, err := p.proposals.DismissProposal(p.root, active.ID); err != nil {
+				p.proposalError = err.Error()
+			} else {
+				p.clearComparison()
+			}
+		}
+		ui.Spacer(c)
+		if available {
 			if portrait.Button(c, "Accept all clean hunks", "Accept all clean hunks").Clicked() {
 				for _, h := range p.compared.Hunks {
 					if !h.Conflict && p.decisions[h.ID] != review.HunkRejected {
@@ -234,15 +249,6 @@ func (p *panel) drawComparison(c *ui.Context, active review.ChangeProposal) {
 				if err != nil {
 					p.proposalError = err.Error()
 				}
-			}
-		})
-	}
-	ui.Row(c).Justify(ui.End).Children(func() {
-		if portrait.ButtonWith(c, "Dismiss proposal", "Dismiss proposal", portrait.ButtonSpec{Look: portrait.DangerOutline}).Clicked() {
-			if _, err := p.proposals.DismissProposal(p.root, active.ID); err != nil {
-				p.proposalError = err.Error()
-			} else {
-				p.clearComparison()
 			}
 		}
 	})

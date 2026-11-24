@@ -469,13 +469,14 @@ func (w *Window) drawDialog(c *ui.Context) {
 			// The saves are running. Escape cannot dismiss this one: the
 			// documents stay protected until the close resolves.
 			open := true
-			portrait.DialogShell(c, "close progress", &open, portrait.DialogSpec{Label: d.title, Width: portrait.Form.DialogWidth, Role: ui.RoleAlertDialog, Glass: true}, func() {
+			progress := portrait.DialogShell(c, "close progress", &open, portrait.DialogSpec{Label: d.title, Width: portrait.Form.DialogWidth, Role: ui.RoleAlertDialog, Glass: true}, func() {
 				portrait.Type.Title.Apply(ui.Text(c, d.title)).FontWeight(600).TextColor(portrait.Colors.Ink).Wrap()
 				ui.Row(c).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
 					portrait.Spinner(c, "Saving changes")
 					portrait.Type.Small.Apply(ui.Text(c, "Saving your changes…")).TextColor(portrait.Colors.Ink2).Wrap()
 				})
 			}).Padding(portrait.Form.DialogPad).Gap(portrait.Form.DialogGap)
+			portrait.Materials.Sheet.Apply(progress)
 			return
 		}
 		docs := make([]portrait.DecisionDocument, len(d.docs))
@@ -527,7 +528,7 @@ func (w *Window) drawDialog(c *ui.Context) {
 	case "move":
 		w.drawMove(c, d)
 	case "alert":
-		portrait.DialogShell(c, "portrait alert", &d.open, portrait.DialogSpec{Label: d.title, Width: portrait.Form.DialogWidth, Role: ui.RoleAlertDialog, Glass: true}, func() {
+		alert := portrait.DialogShell(c, "portrait alert", &d.open, portrait.DialogSpec{Label: d.title, Width: portrait.Form.DialogWidth, Role: ui.RoleAlertDialog, Glass: true}, func() {
 			portrait.Type.Title.Apply(ui.Text(c, d.title)).FontWeight(600).TextColor(portrait.Colors.Ink).Wrap()
 			portrait.Type.Small.Apply(ui.Text(c, d.body)).TextColor(portrait.Colors.Ink2).Wrap()
 			ui.Row(c).Justify(ui.End).Children(func() {
@@ -536,6 +537,7 @@ func (w *Window) drawDialog(c *ui.Context) {
 				}
 			})
 		}).Padding(portrait.Form.DialogPad).Gap(portrait.Form.DialogGap)
+		portrait.Materials.Sheet.Apply(alert)
 	}
 	if w.dialog == d && !d.open {
 		w.cancelDialog()
@@ -543,20 +545,23 @@ func (w *Window) drawDialog(c *ui.Context) {
 }
 
 // drawMove is the Portrait folder picker: every folder of the workspace, with
-// the document's own folder marked and one primary Move action.
+// the document's own folder checked at the trailing edge and one primary Move
+// action. It paints with the sheet every other modal uses.
 func (w *Window) drawMove(c *ui.Context, d *windowDialog) {
 	current := filepath.Dir(w.documentInfo(d.id).Path)
-	portrait.DialogShell(c, "move document", &d.open, portrait.DialogSpec{Label: d.title, Width: portrait.Form.DialogWidth, Glass: true}, func() {
+	panel := portrait.DialogShell(c, "move document", &d.open, portrait.DialogSpec{Label: d.title, Width: portrait.Form.DialogWidth, Glass: true}, func() {
 		portrait.Type.Title.Apply(ui.Text(c, d.title)).FontWeight(600).TextColor(portrait.Colors.Ink).Wrap()
 		portrait.Type.Small.Apply(ui.Text(c, d.body)).TextColor(portrait.Colors.Ink2).Wrap()
 		ui.Scroll(c).MaxHeight(portrait.Form.ListMax).FillWidth().Children(func() {
 			ui.Column(c).FillWidth().Gap(portrait.Form.PopoverGap).Children(func() {
 				row := func(key, path, name string, depth int) {
-					spec := portrait.ButtonSpec{Look: portrait.Quiet, Leading: portrait.IconFolder, Selected: d.dir == path}
+					spec := portrait.ListRowSpec{Icon: portrait.IconFolder, Title: name, Label: "Move to " + path, Selected: d.dir == path, Group: "move destination"}
 					if moveSameFile(path, current) {
-						spec.Trailing = portrait.IconCheck
+						spec.Trailing = func() {
+							portrait.Glyph(c, portrait.IconCheck, portrait.IconSizes.S, portrait.Colors.Accent).Shrink(0).AccessHidden(true)
+						}
 					}
-					b := portrait.ButtonWith(c.Key(key), name, "Move to "+path, spec).FillWidth().Justify(ui.Start)
+					b := portrait.ListRow(c.Key(key), spec)
 					if depth > 0 {
 						b.Margin(0, 0, 0, float32(depth)*portrait.Form.PadX)
 					}
@@ -572,10 +577,9 @@ func (w *Window) drawMove(c *ui.Context, d *windowDialog) {
 				}
 			})
 		})
-		ui.Row(c).Justify(ui.End).Gap(portrait.Form.DialogGap).Children(func() {
-			if portrait.QuietButton(c, "Cancel", "Cancel move").Clicked() {
-				d.open = false
-			}
+		ui.Row(c).AlignItems(ui.Center).Gap(portrait.Form.DialogGap).Children(func() {
+			// Choosing another folder sits at the leading edge, as Decision's
+			// discard action does; Cancel and Move stay together on the right.
 			if portrait.QuietButton(c, "Choose another folder…", "Choose another folder").Clicked() {
 				go func() {
 					directory, err := w.host.ChooseFolder(w.ctx)
@@ -588,11 +592,16 @@ func (w *Window) drawMove(c *ui.Context, d *windowDialog) {
 					})
 				}()
 			}
+			ui.Spacer(c)
+			if portrait.QuietButton(c, "Cancel", "Cancel move").Clicked() {
+				d.open = false
+			}
 			if portrait.AccentButton(c, "Move", "Move to the chosen folder").Disabled(d.dir == "" || moveSameFile(d.dir, current)).Clicked() {
 				w.chooseMove(d, d.dir)
 			}
 		})
 	}).Padding(portrait.Form.DialogPad).Gap(portrait.Form.DialogGap)
+	portrait.Materials.Sheet.Apply(panel)
 }
 
 func infoIDs(docs []workspace.DocumentInfo) []string {

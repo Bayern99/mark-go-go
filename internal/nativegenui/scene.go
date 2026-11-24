@@ -1,6 +1,7 @@
 package nativegenui
 
 import (
+	"github.com/Bayern99/mark-go-go/internal/genui"
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
@@ -20,11 +21,27 @@ func SceneRequest(c *ui.Context, request string) {
 	v := &documentView{request: request, settings: true}
 	p := &panel{}
 	ui.Column(c).Fill().Gap(portrait.Form.Gap).Padding(portrait.Form.AreaPadY, portrait.Form.DialogGap, portrait.Form.DialogGap, portrait.Form.DialogGap).Children(func() {
-		ui.Row(c).Justify(ui.End).Gap(portrait.Form.Gap).Children(func() {
-			portrait.QuietButton(c, "Request", "Generation request").Expanded(true)
-			portrait.QuietIconButton(c, portrait.IconGear, "GenUI settings")
-		})
+		p.drawRequestToggle(c, v)
 		p.drawSettings(c, v, workspace.DocumentInfo{Path: "Field Notes.md"}, false)
+	})
+}
+
+// SceneFailure draws the reader's real production failure state (request form,
+// failure alert with inline Retry action, details block, and suppressed empty
+// state) for acceptance scenes.
+func SceneFailure(c *ui.Context, message, hint, detail string) {
+	v := &documentView{
+		loaded:   true,
+		settings: true,
+		failure:  &genui.GenerateFailure{Message: message, Hint: hint, Detail: detail},
+	}
+	p := &panel{}
+	d := workspace.DocumentInfo{Path: "ch05-s05-jade-hybrid-ceramics.md"}
+	ui.Column(c).Fill().Gap(portrait.Form.Gap).Padding(portrait.Form.AreaPadY, portrait.Form.DialogGap, portrait.Form.DialogGap, portrait.Form.DialogGap).Children(func() {
+		p.drawRequestToggle(c, v)
+		p.drawSettings(c, v, d, false)
+		p.drawGenerationStatus(c, v, d, false)
+		p.drawView(c, v, d, "", false)
 	})
 }
 

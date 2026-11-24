@@ -17,7 +17,6 @@ func documentTheme(t *ui.Theme, mode Mode) *editor.Theme {
 	colorTokens(&th, t.Accent, editor.TokenKeyword, editor.TokenString, editor.TokenCode, editor.TokenTag)
 	colorTokens(&th, t.Warning, editor.TokenNumber, editor.TokenConstant)
 	th.Tokens[editor.TokenDeleted].Color = t.TextMuted
-	th.Tokens[editor.TokenType].Color = portrait.Colors.Ink2
 	if mode == Preview {
 		th.Tokens[editor.TokenCode].Family = portrait.FontMono
 	}

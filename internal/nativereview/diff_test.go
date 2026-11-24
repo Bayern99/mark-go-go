@@ -2,6 +2,7 @@ package nativereview
 
 import (
 	"image"
+	"strings"
 	"testing"
 
 	"github.com/Bayern99/mark-go-go/internal/portrait"
@@ -148,6 +149,22 @@ func TestBlankDiffChangesHaveAccessibleNames(t *testing.T) {
 				t.Fatalf("blank change %q is missing from the visible access tree: %+v", tc.want, info)
 			}
 		})
+	}
+}
+
+func TestDiffLineContentShrinksAndWrapsInsideThePanel(t *testing.T) {
+	line := strings.Repeat("wrapped diff text ", 30)
+	hunks := []review.DiffHunk{{ID: "long", Header: "@@ -1 +1 @@", Lines: []review.DiffLine{{
+		Kind: review.DiffLineInsert, Text: line, NewLine: 1,
+	}}}}
+	tt := ui.NewTester(func(c *ui.Context) { drawDiff(c, hunks, nil) }, 320, 240)
+	tt.Frame()
+	content := find(t, tt, line)
+	if content.X < 0 || content.X+content.W > 320 {
+		t.Fatalf("wrapped diff content overflows the window: %v", content)
+	}
+	if content.H <= portrait.Diff.Lines.Leading+2 {
+		t.Fatalf("long diff content did not wrap: %v", content)
 	}
 }
 

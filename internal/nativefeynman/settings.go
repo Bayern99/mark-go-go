@@ -96,16 +96,28 @@ func (p *panel) drawSettingsPage(c *ui.Context, tab string, q nativeui.SettingsQ
 	}
 	switch tab {
 	case "search":
-		p.searchSettings(c)
-		p.alphaSettings(c)
+		if q.Match("Web search", "Provider & API key routing and saved authentication.", "web search provider api key exa brave tavily") {
+			p.searchSettings(c)
+		}
+		if q.Match("alphaXiv", "Paper search and annotation account.", "alphaxiv account papers") {
+			p.alphaSettings(c)
+		}
 	case "mcp":
-		p.mcpSettings(c)
+		if q.Match("MCP Servers", "Configured servers and tool exposure.", "mcp servers transport http stdio headers bearer command arguments environment exposure project local add remove") {
+			p.mcpSettings(c)
+		}
 	case "packages":
-		p.packageSettings(c)
+		if q.Match("Packages", "Workflows, skills, and extensions.", "packages workflows skills extensions install remove update target") {
+			p.packageSettings(c)
+		}
 	case "diagnostics":
-		p.statusSettings(c)
+		if q.Match("Diagnostics", "Feynman CLI doctor, setup, and preview status.", "diagnostics feynman cli doctor setup preview status refresh") {
+			p.statusSettings(c)
+		}
 	default:
-		p.modelSettings(c)
+		if q.Match("Models & Providers", "Authentication, service tier, default model, and picker visibility.", "models providers authentication service tier default pin show picker sign in log out") {
+			p.modelSettings(c)
+		}
 	}
 	p.drawConfirmation(c)
 }

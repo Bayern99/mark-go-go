@@ -158,10 +158,11 @@ type diskStamp struct {
 }
 
 // recordDisk remembers the file a session's document now has, so a close can
-// see an external change even when MyGo's watch has not looked yet.
-func (h *Service) recordDisk(s *docSession) {
+// see an external change even when MyGo's watch has not looked yet. It reports
+// whether the file is a different one than the session last saw.
+func (h *Service) recordDisk(s *docSession) bool {
 	if s == nil {
-		return
+		return false
 	}
 	stamp := diskStamp{}
 	if path := s.currentPath(); path != "" {
@@ -170,8 +171,25 @@ func (h *Service) recordDisk(s *docSession) {
 		}
 	}
 	h.mu.Lock()
+	changed := s.disk != stamp
 	s.disk = stamp
 	h.mu.Unlock()
+	return changed
+}
+
+// syncDisk keeps a session's disk stamp level with its own saves. MyGo calls
+// OnStateChange after every write, and the notification that follows an
+// autosave still reports the document as edited when the user typed while it
+// ran; a stamp recorded only for a clean state would stay behind, and the next
+// Save or Close would report the document's own autosave as a change made on
+// disk. A notification that reports no conflict and no deletion cannot be
+// another app's edit over unsaved changes, because MyGo flags that itself, so
+// the file it names is this session's own.
+func (h *Service) syncDisk(s *docSession, state mygo.DocumentState) bool {
+	if s == nil || state.Conflict || state.Deleted {
+		return false
+	}
+	return h.recordDisk(s)
 }
 
 // changedOnDisk reports whether the file at the session's path differs from
@@ -403,10 +421,9 @@ func (h *Service) adopt(doc *mygo.Document[string], win *mygo.Window) {
 	})
 	h.recordDisk(s)
 	offState := doc.OnStateChange(func(state mygo.DocumentState) {
-		if !state.Edited && !state.Conflict && !state.Deleted {
-			// A write — ours or autosave's — made the file the document's
-			// baseline again.
-			h.recordDisk(s)
+		if h.syncDisk(s, state) && !state.Edited {
+			// A write landed and nothing was typed over it: any save that
+			// failed before it is settled.
 			h.noteSaveError(s, nil)
 		}
 		h.mu.Lock()

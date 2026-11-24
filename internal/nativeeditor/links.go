@@ -45,7 +45,7 @@ func (d *Document) previewHover(req editor.HoverRequest) {
 					return
 				}
 				ui.Column(c).Gap(portrait.Form.PopoverGap).Children(func() {
-					portrait.Type.CodeSmall.Apply(ui.Text(c, destination)).TextColor(portrait.Colors.Ink3).MaxLines(1).Ellipsis("…")
+					portrait.Type.CodeSmall.Apply(ui.Text(c, destination)).TextColor(portrait.Colors.Ink3).MaxLines(1).Ellipsis("…").Padding(0, portrait.Form.PadX)
 					if canOpen {
 						open := portrait.ListRow(c, portrait.ListRowSpec{Icon: portrait.IconArrowUpRight, Title: "Open link", Label: "Open link"})
 						open.Description(destination)
@@ -59,7 +59,7 @@ func (d *Document) previewHover(req editor.HoverRequest) {
 					if d.state.ReadOnly {
 						return
 					}
-					if canEdit && portrait.ListRow(c, portrait.ListRowSpec{Icon: portrait.IconNote, Title: "Edit link", Label: "Edit link"}).Clicked() && d.Version() == req.Version {
+					if canEdit && portrait.ListRow(c, portrait.ListRowSpec{Icon: portrait.IconPencil, Title: "Edit link", Label: "Edit link"}).Clicked() && d.Version() == req.Version {
 						d.openDraft(destinationStart, destinationEnd, "link")
 						d.draft.anchor = in.Start
 						c.Invalidate()
@@ -266,7 +266,7 @@ func (d *Document) removeLink(revision uint64, link parser.Inline, labelStart, l
 func linkMarker(destination string) func(*ui.Context, ui.Element, editor.Replacement) {
 	return func(c *ui.Context, e ui.Element, _ editor.Replacement) {
 		e.AlignItems(ui.Center).Justify(ui.Center).Children(func() {
-			portrait.Tooltip(c, portrait.IconArrowUpRight.Apply(ui.Link(c, portrait.IconArrowUpRight.Glyph, destination), 13).Label("Open "+destination), destination)
+			portrait.Tooltip(c, portrait.IconArrowUpRight.Apply(ui.Link(c, portrait.IconArrowUpRight.Glyph, destination), portrait.IconSizes.S).Label("Open "+destination), destination)
 		})
 	}
 }

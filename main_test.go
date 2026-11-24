@@ -34,6 +34,52 @@ func TestCompositionRootServicesRequireWindowContext(t *testing.T) {
 	}
 }
 
+func TestRecentLabelsTellSameNamedFilesApart(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		paths []string
+		want  []string
+	}{
+		{
+			name:  "distinct names keep their file name",
+			paths: []string{"/work/notes/draft.md", "/work/notes/plan.md"},
+			want:  []string{"draft.md", "plan.md"},
+		},
+		{
+			name:  "one shared folder is not enough",
+			paths: []string{"/work/notes/draft.md", "/personal/notes/draft.md"},
+			want:  []string{"work/notes/draft.md", "personal/notes/draft.md"},
+		},
+		{
+			name:  "only the colliding names grow",
+			paths: []string{"/a/b/draft.md", "/a/b/plan.md", "/c/d/draft.md"},
+			want:  []string{"b/draft.md", "plan.md", "d/draft.md"},
+		},
+		{
+			name:  "three files with one name",
+			paths: []string{"/one/draft.md", "/two/draft.md", "/three/draft.md"},
+			want:  []string{"one/draft.md", "two/draft.md", "three/draft.md"},
+		},
+		{
+			name:  "a name no folder can tell apart keeps its path",
+			paths: []string{"/draft.md", "draft.md"},
+			want:  []string{"/draft.md", "draft.md"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := recentLabels(tc.paths)
+			if len(got) != len(tc.want) {
+				t.Fatalf("labels = %v, want %v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("labels = %v, want %v", got, tc.want)
+				}
+			}
+		})
+	}
+}
+
 func TestBuildMenuUsesSettingsCenterDeepLinks(t *testing.T) {
 	menu := buildMenu(workspace.NewService())
 	labels := map[string]bool{}

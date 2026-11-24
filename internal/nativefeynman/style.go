@@ -93,12 +93,20 @@ func sizedInput(c *ui.Context, key, label string, value *string, placeholder str
 }
 
 func area(c *ui.Context, key, label string, value *string, placeholder string, rows float32, configure ...func(ui.Element)) ui.Element {
+	return framedArea(c, key, label, value, placeholder, rows, false, configure...)
+}
+
+func bareArea(c *ui.Context, key, label string, value *string, placeholder string, rows float32, configure ...func(ui.Element)) ui.Element {
+	return framedArea(c, key, label, value, placeholder, rows, true, configure...)
+}
+
+func framedArea(c *ui.Context, key, label string, value *string, placeholder string, rows float32, bare bool, configure ...func(ui.Element)) ui.Element {
 	lineCount := max(1, int(rows/portrait.Type.UI.Leading))
 	minHeight := portrait.Form.AreaMin
 	if rows <= portrait.Form.AreaCompact {
 		lineCount, minHeight = 1, rows
 	}
-	entry := portrait.TextArea(c.Key(key), value, portrait.AreaSpec{Label: label, Placeholder: placeholder, Rows: lineCount, MinHeight: minHeight})
+	entry := portrait.TextArea(c.Key(key), value, portrait.AreaSpec{Label: label, Placeholder: placeholder, Rows: lineCount, MinHeight: minHeight, Bare: bare})
 	for _, fn := range configure {
 		fn(entry)
 	}

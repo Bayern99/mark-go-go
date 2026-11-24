@@ -347,7 +347,8 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 					if state.expanded {
 						label = "Show fewer"
 					}
-					if portrait.ButtonWith(c, label, label, portrait.ButtonSpec{Look: portrait.Quiet}).Clicked() {
+					toggle := portrait.ButtonWith(c, label, label, portrait.ButtonSpec{Look: portrait.Quiet}).AlignSelf(ui.Start)
+					if toggle.Clicked() {
 						state.expanded = !state.expanded
 					}
 				}

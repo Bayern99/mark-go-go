@@ -659,6 +659,38 @@ func TestLinkDestinationCanBeEditedWithExactBytesAndSharedUndo(t *testing.T) {
 	}
 }
 
+func TestLinkHoverAndEditorUsePortraitActionLayout(t *testing.T) {
+	const src = "Before [label](https://example.com/docs) after."
+	d := nativeeditor.New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill().AutoFocus() }, 700, 360)
+	tt.Frame()
+	position := utf8.RuneCountInString(src[:strings.Index(src, "label")])
+	r, ok := d.RectUTF16(position)
+	if !ok {
+		t.Fatal("missing link label")
+	}
+	tt.Move(r.X+0.1, r.Y+r.H/2)
+	tt.Advance(time.Second)
+	tt.Frame()
+
+	if _, ok := tt.Find("https://example.com/docs"); !ok {
+		t.Fatal("link destination caption missing")
+	}
+	if _, ok := tt.Find(portrait.IconPencil.Glyph); !ok {
+		t.Fatal("Edit link does not use the Portrait pencil icon")
+	}
+	if err := tt.Click("Edit link"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	hover, _ := tt.AccessByRole(ui.RoleTooltip, "")
+	cancel, _ := tt.Find("Cancel")
+	save, _ := tt.Find("Save")
+	if save.X+save.W < hover.Bounds.X+hover.Bounds.W-2*portrait.Form.PadX || save.X+save.W <= cancel.X+cancel.W {
+		t.Fatalf("link editor actions are not right-aligned: hover %v, Cancel %v, Save %v", hover.Bounds, cancel, save)
+	}
+}
+
 func TestLinkCanBeRemovedWithoutChangingItsLabelOrSurroundingBytes(t *testing.T) {
 	const src = "Before [**bold**](https://example.com/path \"title\") after.\r\n"
 	d := nativeeditor.New(src)

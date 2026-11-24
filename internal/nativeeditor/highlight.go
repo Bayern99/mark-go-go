@@ -65,11 +65,11 @@ func (h *markdownHighlighter) Tokens(line int, text string, dst []editor.Token) 
 		cursorAt(h.quotes, offset),
 		cursorAt(h.completed, offset),
 	}
-	// A line no range reaches keeps the tokenizer's tokens as they are.
+	// A line no range reaches only needs ATX heading-marker separation.
 	if !reaches(h.code, cursors[0], offset, len(text)) &&
 		!reaches(h.quotes, cursors[1], offset, len(text)) &&
 		!reaches(h.completed, cursors[2], offset, len(text)) {
-		return dst, final
+		return splitATXHeadingMarker(text, dst, start), final
 	}
 	base := slices.Clone(dst[start:])
 	dst = dst[:start]
@@ -100,7 +100,62 @@ func (h *markdownHighlighter) Tokens(line int, text string, dst []editor.Token) 
 			pos = max(pos+1, end)
 		}
 	}
-	return dst, final
+	return splitATXHeadingMarker(text, dst, start), final
+}
+
+// splitATXHeadingMarker keeps the bold title apart from its leading hashes.
+// In particular, adjacent hashes in IBM Plex Mono stay distinct in regular
+// weight instead of fusing into the bold heading's ink.
+func splitATXHeadingMarker(text string, dst []editor.Token, start int) []editor.Token {
+	marker := atxHeadingMarkerEnd(text)
+	if marker == 0 {
+		return dst
+	}
+	tokenStart := 0
+	for i := start; i < len(dst); i++ {
+		token := dst[i]
+		if token.End < marker {
+			tokenStart = token.End
+			continue
+		}
+		if token.Kind != editor.TokenHeading || tokenStart >= marker {
+			return dst
+		}
+		if token.End == marker {
+			dst[i].Kind = editor.TokenPunctuation
+			return dst
+		}
+		out := make([]editor.Token, 0, len(dst)+1)
+		out = append(out, dst[:i]...)
+		out = append(out,
+			editor.Token{End: marker, Kind: editor.TokenPunctuation},
+			editor.Token{End: token.End, Kind: editor.TokenHeading},
+		)
+		out = append(out, dst[i+1:]...)
+		return out
+	}
+	return dst
+}
+
+func atxHeadingMarkerEnd(text string) int {
+	indent := 0
+	for indent < len(text) && text[indent] == ' ' {
+		indent++
+	}
+	if indent > 3 {
+		return 0
+	}
+	end := indent
+	for end < len(text) && text[end] == '#' {
+		end++
+	}
+	if end == indent || end-indent > 6 {
+		return 0
+	}
+	if end < len(text) && text[end] != ' ' && text[end] != '\t' {
+		return 0
+	}
+	return end
 }
 
 // cursorAt is the first range that can still reach offset. The ranges are

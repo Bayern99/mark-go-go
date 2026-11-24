@@ -162,7 +162,7 @@ func (s *Shell) space(c *ui.Context, m Model, a Actions) {
 func (s *Shell) outlineList(c *ui.Context, m Model, a Actions) {
 	w := m.Workspace
 	scroll := s.scrollState("outline:" + w.ActiveID)
-	ui.Scroll(c.Key("outline:" + w.ActiveID)).FillWidth().Grow(1).MinHeight(collapsible).TrackScroll(scroll).Label("Document outline").MaskLinearGradient(scrollEdgeMask(180)).Children(func() {
+	ui.Scroll(c.Key("outline:" + w.ActiveID)).FillWidth().Grow(1).MinHeight(collapsible).TrackScroll(scroll).Label("Document outline").MaskLinearGradient(scrollEdgeMask(180, scroll)).Children(func() {
 		for _, section := range m.Sections {
 			weight := 400
 			ink := portrait.Colors.Ink2
@@ -302,7 +302,8 @@ func (s *Shell) files(c *ui.Context, m Model, a Actions) {
 		scrollKey = "filter:" + w.Root
 	}
 	capsuleGroup := "workspace:" + scrollKey
-	ui.Scroll(c.Key(scrollKey)).Grow(1).MinHeight(collapsible).FillWidth().Role(ui.RoleTree).FocusGroup(ui.Vertical).Label("Workspace files").TrackScroll(s.scrollState(scrollKey)).MaskLinearGradient(scrollEdgeMask(180)).Children(func() {
+	scroll := s.scrollState(scrollKey)
+	ui.Scroll(c.Key(scrollKey)).Grow(1).MinHeight(collapsible).FillWidth().Role(ui.RoleTree).FocusGroup(ui.Vertical).Label("Workspace files").TrackScroll(scroll).MaskLinearGradient(scrollEdgeMask(180, scroll)).Children(func() {
 		if strings.TrimSpace(s.query) != "" {
 			if strings.TrimSpace(s.query) != m.Search.Query {
 				return
@@ -531,6 +532,9 @@ type navItem struct {
 	ink                                   ui.Color
 }
 
+// navRow is one row of the file tree or the outline: a 28pt row whose 12pt
+// title sits under the workspace name's 14pt and the open tabs' 13pt, so a
+// folder reads as a hierarchy rather than a list of the same weight.
 func navRow(c *ui.Context, item navItem) ui.Element {
 	row := ui.ButtonBase(c.Key(item.key)).FillWidth().Role(ui.RoleTreeItem).Label(item.title).Description(item.detail).AccessSelected(item.selected).MinHeight(portrait.Sizes.Regular).Padding(4, 8).Radius(portrait.Radii.M).AlignItems(ui.Center)
 	if !item.selected && row.Hovered() {
@@ -543,7 +547,16 @@ func navRow(c *ui.Context, item navItem) ui.Element {
 	if item.selected || row.Hovered() {
 		ink = portrait.Colors.Ink
 	}
-	iconColor := portrait.Colors.Ink2
+	weight := item.weight
+	if weight == 0 && item.selected {
+		weight = 500
+	}
+	// Folders keep the stronger ink: a column of identical file icons in Ink2
+	// reads as one heavy stripe down the tree.
+	iconColor := portrait.Colors.Ink3
+	if item.icon == portrait.IconFolder {
+		iconColor = portrait.Colors.Ink2
+	}
 	if item.selected {
 		iconColor = portrait.Colors.Accent
 	}
@@ -552,10 +565,7 @@ func navRow(c *ui.Context, item navItem) ui.Element {
 		ui.Row(c).FillWidth().Gap(7).AlignItems(ui.Center).ZIndex(1).Children(func() {
 			portrait.Glyph(c, item.icon, portrait.Type.Small.Size, iconColor).Shrink(0)
 			ui.Column(c).MinWidth(0).Grow(1).AlignItems(ui.Start).Children(func() {
-				title := portrait.Type.UI.Apply(ui.Text(c, item.title)).MaxLines(1).Ellipsis("…").TextColor(ink)
-				if item.weight != 0 {
-					title.FontWeight(item.weight)
-				}
+				navTitle(c, item.title, ink, weight)
 				if item.excerpt != "" {
 					portrait.Type.Meta.Apply(ui.Text(c, item.excerpt)).MaxLines(2).Ellipsis("…").TextColor(portrait.Colors.Ink2)
 				}
@@ -573,4 +583,27 @@ func navRow(c *ui.Context, item navItem) ui.Element {
 		})
 	})
 	return row
+}
+
+// navTitle draws a row's name as one truncating line, with a Markdown
+// extension in the secondary ink: a column of `.md` suffixes then recedes.
+func navTitle(c *ui.Context, title string, ink ui.Color, weight int) {
+	stem, suffix := strings.TrimSuffix(title, ".md"), ""
+	if stem == "" {
+		stem = title
+	} else if stem != title {
+		suffix = ".md"
+	}
+	text := portrait.Type.Meta.Apply(ui.Text(c, stem)).MaxLines(1).Ellipsis("…").TextColor(ink)
+	if weight != 0 {
+		text.FontWeight(weight)
+	}
+	if suffix == "" {
+		return
+	}
+	// The extension continues the title's paragraph as a span, so the line
+	// still truncates as a whole and a long name never wraps.
+	text.Children(func() {
+		portrait.Type.Meta.Apply(ui.Text(c, suffix)).TextColor(portrait.Colors.Ink3)
+	})
 }

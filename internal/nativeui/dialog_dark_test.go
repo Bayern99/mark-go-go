@@ -129,3 +129,132 @@ func TestDarkRenamePromptTitleIsReadable(t *testing.T) {
 		t.Fatalf("title contrast %.2f is below 4.5 in dark mode", best)
 	}
 }
+
+// darkMoveWindow is the production move picker in a dark Space, with a saved
+// document and the workspace's folders to move it to.
+func darkMoveWindow(t *testing.T) *Window {
+	t.Helper()
+	root := "/Users/ada/Field Notes"
+	snapshot := workspace.WorkspaceSnapshot{
+		ID: "w1", Root: root, Name: "Field Notes", Kind: "folder", ActiveID: "a",
+		Documents: []workspace.DocumentInfo{{WorkspaceRoot: root, ID: "a", Name: "Quiet Software.md", Path: root + "/Quiet Software.md"}},
+	}
+	folders := []workspace.NavEntry{
+		{Path: root + "/Drafts", Name: "Drafts", Kind: "folder"},
+		{Path: root + "/Research", Name: "Research", Kind: "folder"},
+	}
+	space, ok := portrait.SpaceNamed("MetalWater")
+	if !ok {
+		t.Fatal("MetalWater is not a Space")
+	}
+	w := SceneWindow(snapshot, workspace.NavSnapshot{}, folders, "# Quiet Software\n", space, true)
+	if !w.SceneDialog("move_picker") {
+		t.Fatal("move_picker is not a production dialog")
+	}
+	return w
+}
+
+// labelContrast is the strongest contrast the pixels of a label reach against
+// paper, the color a sheet paints behind its text.
+func labelContrast(t *testing.T, app *ui.Tester, label string) float64 {
+	t.Helper()
+	node, ok := app.Find(label)
+	if !ok || node.W < 20 || node.H < 8 {
+		t.Fatalf("%q bounds = %+v, %v", label, node, ok)
+	}
+	best := 0.0
+	img := app.Image()
+	for y := int(node.Y * 2); y < int((node.Y+node.H)*2); y++ {
+		for x := int(node.X * 2); x < int((node.X+node.W)*2); x++ {
+			best = max(best, contrastRatio(img.RGBAAt(x, y), rgba(portrait.Colors.Paper)))
+		}
+	}
+	return best
+}
+
+func darkDialog(t *testing.T, kind string) *ui.Tester {
+	t.Helper()
+	w := darkMoveWindow(t)
+	if kind != "move_picker" && !w.SceneDialog(kind) {
+		t.Fatalf("%s is not a production dialog", kind)
+	}
+	app := ui.NewTester(func(c *ui.Context) { w.DrawDialog(c) }, 620, 480)
+	app.SetScale(2)
+	app.Frame()
+	app.Frame()
+	return app
+}
+
+// TestDarkMovePickerTextIsReadable draws the production move picker in a dark
+// Space: its title, its explanation and the folders it offers must all stay
+// readable on the sheet it now paints with.
+func TestDarkMovePickerTextIsReadable(t *testing.T) {
+	app := darkDialog(t, "move_picker")
+	for _, label := range []string{"Move “Quiet Software.md”", "Drafts", "Research"} {
+		if got := labelContrast(t, app, label); got < 4.5 {
+			t.Errorf("%q contrast %.2f is below 4.5 in dark mode", label, got)
+		}
+	}
+}
+
+// TestDarkAlertTextIsReadable checks an alert raised while closing: the same
+// sheet material, with text that has to survive the dark Space.
+func TestDarkAlertTextIsReadable(t *testing.T) {
+	app := darkDialog(t, "quit_failed")
+	for _, label := range []string{"Could not quit Mark Go Go"} {
+		if got := labelContrast(t, app, label); got < 4.5 {
+			t.Errorf("%q contrast %.2f is below 4.5 in dark mode", label, got)
+		}
+	}
+}
+
+// dialogPanel is the box the production dialog's sheet paints, as assistive
+// technology sees it.
+func dialogPanel(t *testing.T, app *ui.Tester, role ui.Role, label string) ui.Rect {
+	t.Helper()
+	info, ok := app.AccessByRole(role, label)
+	if !ok || info.Bounds.W < 200 || info.Bounds.H < 40 {
+		t.Fatalf("%q panel bounds = %+v, %v", label, info.Bounds, ok)
+	}
+	return info.Bounds
+}
+
+// TestDialogsPaintTheSharedSheetMaterial draws every modal dialog in a dark
+// Space and checks the sheet behind its text: paper, as Confirm, Decision and
+// Prompt paint, rather than the lighter pop surface a dialog used to keep.
+func TestDialogsPaintTheSharedSheetMaterial(t *testing.T) {
+	for _, tc := range []struct {
+		name, kind      string
+		role            ui.Role
+		label, progress string
+	}{
+		{name: "move", kind: "move_picker", role: ui.RoleDialog, label: "Move “Quiet Software.md”"},
+		{name: "alert", kind: "quit_failed", role: ui.RoleAlertDialog, label: "Could not quit Mark Go Go"},
+		{name: "unsaved", kind: "unsaved_single", role: ui.RoleAlertDialog, label: "Save changes to “Quiet Software.md”?"},
+		{name: "revert", kind: "revert_confirm", role: ui.RoleAlertDialog, label: "Revert to saved?"},
+		{name: "close progress", kind: "close_progress", role: ui.RoleAlertDialog, label: "Saving changes…"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := darkMoveWindow(t)
+			if tc.kind == "close_progress" {
+				w.dialog = &windowDialog{kind: "closeDocument", ids: []string{"a"}, open: true, busy: true, title: tc.label}
+			} else if !w.SceneDialog(tc.kind) {
+				t.Fatalf("%s is not a production dialog", tc.kind)
+			}
+			app := ui.NewTester(func(c *ui.Context) { w.DrawDialog(c) }, 620, 520)
+			app.SetScale(2)
+			app.Frame()
+			app.Frame()
+			panel := dialogPanel(t, app, tc.role, tc.label)
+			// The Space settles its palette when the window is made, so the
+			// sheet's paper is read here.
+			paper := rgba(portrait.Colors.Paper)
+			// A point inside the panel's own padding, past its rounded corner.
+			img := app.Image()
+			px := img.RGBAAt(int((panel.X+8)*2), int((panel.Y+8)*2))
+			if !near(ui.Color{R: px.R, G: px.G, B: px.B}, ui.Color{R: paper.R, G: paper.G, B: paper.B}, 4) {
+				t.Fatalf("the sheet behind the dialog is %v, want the sheet's paper %v", px, paper)
+			}
+		})
+	}
+}

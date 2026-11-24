@@ -118,6 +118,14 @@ auto type $'\nDiscard this draft'
 auto wait --text 'Discard this draft'
 auto press 'key="Close Discussion.md"'
 auto wait --text "Don't Save"
+# Cancel dismisses the sheet and keeps the dirty document open, edits and all.
+auto press 'key="Cancel"' --settle
+auto wait --text "Don't Save" --gone
+auto wait --text 'Discard this draft'
+auto wait --text 'Close Discussion.md'
+# It is still unsaved, so closing again asks again.
+auto press 'key="Close Discussion.md"'
+auto wait --text "Don't Save"
 auto press 'key="Don'"'"'t Save"'
 # Closing runs on a goroutine under the modal progress sheet: wait for the
 # sidebar to return (Close Welcome.md visible) and Discussion's tab to be gone.
@@ -128,4 +136,4 @@ document_window '前🙂# Discussion' 'Discussion.md' 'Markdown source'
 if grep -F 'Discard this draft' "$WORK/tree"; then exit 1; fi
 cmp "$WORK/expected" "$SOURCE"
 quit
-echo "PASS  native Content, Finder open, close/reopen, view restore, discard, editable source, menu save, undo, redo, and fresh-process restore. Screenshot $REPORT"
+echo "PASS  native Content, Finder open, close/reopen, view restore, cancel and discard, editable source, menu save, undo, redo, and fresh-process restore. Screenshot $REPORT"

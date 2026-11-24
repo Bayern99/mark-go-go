@@ -46,6 +46,31 @@ func TestMarkdownHighlighterUsesParsedCodeSpans(t *testing.T) {
 	}
 }
 
+func TestMarkdownHighlighterSeparatesATXMarkersFromBoldTitles(t *testing.T) {
+	for _, source := range []string{"# Heading", "## Heading", "### Heading", "###### Heading"} {
+		t.Run(source, func(t *testing.T) {
+			buffer := editor.NewBuffer(source)
+			h := newMarkdownHighlighter(buffer.Snapshot(), nil)
+			h.Highlight(0, time.Second)
+			tokens, _ := h.Tokens(0, source, nil)
+			if len(tokens) != 2 {
+				t.Fatalf("heading tokens = %+v, want separate marker and title", tokens)
+			}
+			marker := source[:strings.Index(source, " ")]
+			if tokens[0].End != len(marker) || tokens[0].Kind != editor.TokenPunctuation {
+				t.Errorf("marker token = %+v, want %q as punctuation", tokens[0], marker)
+			}
+			if tokens[1].End != len(source) || tokens[1].Kind != editor.TokenHeading || source[tokens[0].End:] != " Heading" {
+				t.Errorf("title token = %+v, want bold heading text", tokens[1])
+			}
+		})
+	}
+	theme := documentTheme(&ui.Theme{}, Markdown)
+	if !theme.Tokens[editor.TokenHeading].Bold || theme.Tokens[editor.TokenPunctuation].Bold {
+		t.Fatal("heading title and marker do not have distinct font weights")
+	}
+}
+
 func TestPreviewInlineCodeUsesPortraitFontAndPreservesBytes(t *testing.T) {
 	font, err := os.ReadFile(filepath.Join("..", "portrait", "fonts", "ibm-plex-mono-400-normal.ttf"))
 	if err != nil {

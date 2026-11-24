@@ -19,11 +19,30 @@ func sheet(c *ui.Context) ui.Element {
 	return portrait.Materials.Page.Apply(ui.Column(c).Fill().MinWidth(0).Radius(portrait.Shell.PageRadius).Clip())
 }
 
-func scrollEdgeMask(angle float32) ui.LinearGradient {
+// scrollEdgeFade is how much of a scroll viewport fades at an edge the content
+// slides under: a narrow stop, so the rows at rest keep their full ink.
+const scrollEdgeFade float32 = 0.02
+
+// scrollEdgeMask fades a scrolling list at the edge its content goes under.
+// The top fades only once the list has scrolled past its first row, and the
+// bottom only while rows wait to be scrolled into view, so the first and the
+// last row are whole at rest. ScrollState reports how far the container
+// scrolled and how far it can, as the last frame laid it out; the frame after
+// a resize or a first fill therefore shows the list without a fade.
+func scrollEdgeMask(angle float32, scroll *ui.ScrollState) ui.LinearGradient {
+	top, bottom := float32(0), float32(1)
+	if scroll != nil {
+		if scroll.Y > 1 {
+			top = scrollEdgeFade
+		}
+		if scroll.MaxY-scroll.Y > 1 {
+			bottom = 1 - scrollEdgeFade
+		}
+	}
 	return ui.LinearGradient{Angle: angle, Stops: []ui.GradientStop{
 		{Color: ui.Transparent, At: 0},
-		{Color: portrait.Colors.Paper, At: 0.035},
-		{Color: portrait.Colors.Paper, At: 0.965},
+		{Color: portrait.Colors.Paper, At: top},
+		{Color: portrait.Colors.Paper, At: bottom},
 		{Color: ui.Transparent, At: 1},
 	}}
 }

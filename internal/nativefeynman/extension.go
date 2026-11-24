@@ -368,7 +368,7 @@ func (p *panel) openSettings(tab string) {
 
 func (p *panel) heading(c *ui.Context) {
 	s := p.state
-	portrait.Glyph(c, portrait.IconAtom, portrait.Type.Reading.Size, portrait.Colors.Accent).Shrink(0)
+	portrait.Glyph(c, portrait.IconAtom, portrait.IconSizes.M, portrait.Colors.Accent).Shrink(0)
 	name := s.root
 	if i := strings.LastIndex(name, "/"); i >= 0 && i+1 < len(name) {
 		name = name[i+1:]
@@ -398,7 +398,8 @@ func (p *panel) heading(c *ui.Context) {
 
 func (p *panel) header(c *ui.Context) {
 	s := p.state
-	width, height := c.Size()
+	_, height := c.Size()
+	var heading ui.Element
 	connect := func() {
 		if p.connected == "" && s.root != "" && s.status == statusOffline && toolButton(c, "Connect", "Connect Feynman to this workspace", true, false).Clicked() {
 			p.syncConnection()
@@ -417,14 +418,16 @@ func (p *panel) header(c *ui.Context) {
 				p.loadSessions(s.root)
 			}
 		}
-		// The popover stays inside the research panel, so its rows never
-		// reach past the panel's own left edge.
-		popoverWidth := min(float32(320), max(float32(220), width-28))
-		maxHeight := max(float32(140), min(float32(360), height-160))
+		// Leave room for Settings at the popover's end and begin below the tabs.
+		popoverWidth := portrait.Form.MenuMin
+		if panelWidth := heading.Bounds().W; panelWidth > 0 {
+			popoverWidth = min(portrait.Form.MenuMax, panelWidth-portrait.Sizes.Regular-portrait.Form.Gap-2*portrait.Shell.PageInset)
+		}
+		maxHeight := max(portrait.Form.AreaCompact, min(portrait.Form.ListMax, height-2*portrait.Shell.PageBar-2*portrait.Form.PopoverPad))
 		popover := portrait.PopoverWithSpec(c, button, &s.sessionsOpen, portrait.PopoverSpec{Width: popoverWidth, MaxHeight: maxHeight}, func() {
 			p.sessions(c)
 		})
-		popover.Label("Workspace conversation history").AttachTo(button, ui.AnchorTopEnd, ui.AnchorBottomEnd)
+		popover.Label("Workspace conversation history").Margin(portrait.Shell.PageBar, 0, 0, 0).AttachTo(button, ui.AnchorBottomEnd, ui.AnchorTopEnd)
 		return button
 	}
 	settingsBtn := func() {
@@ -432,7 +435,8 @@ func (p *panel) header(c *ui.Context) {
 			p.openSettings("models")
 		}
 	}
-	ui.Row(c.Key("feynman-heading")).Height(portrait.Shell.PageBar).Gap(6).AlignItems(ui.Center).Padding(0, 4).Children(func() {
+	heading = ui.Row(c.Key("feynman-heading")).Height(portrait.Shell.PageBar).Gap(6).AlignItems(ui.Center).Padding(0, 4)
+	heading.Children(func() {
 		p.heading(c)
 		connect()
 		history()

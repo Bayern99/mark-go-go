@@ -122,7 +122,7 @@ func (s *Shell) pageBar(c *ui.Context, doc workspace.DocumentInfo, m Model, a Ac
 				}
 			}).Label("Document views").Shrink(0)
 			if m.Git && slots.Checkpoints != nil {
-				b := portrait.ButtonWith(c, "", "Checkpoints", portrait.ButtonSpec{Look: portrait.Quiet, Leading: portrait.IconClockCounterClockwise}).Expanded(s.checkpoints)
+				b := portrait.QuietIconButton(c, portrait.IconClockCounterClockwise, "Checkpoints").Expanded(s.checkpoints)
 				if b.Clicked() {
 					s.checkpoints = !s.checkpoints
 				}

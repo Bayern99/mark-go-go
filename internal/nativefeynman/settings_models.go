@@ -54,7 +54,7 @@ func (p *panel) modelSettings(c *ui.Context) {
 		rows.Row(portrait.RowSpec{Title: "Service tier", Description: "The service tier used for research requests."}, func() {
 			ui.Row(c).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
 				input(c, "feynman-service-tier", "Service tier", &p.tierValue, "Tier value").Width(portrait.Form.SelectMin)
-				if portrait.ButtonWith(c, "Apply", "Set the Feynman service tier", portrait.ButtonSpec{Look: portrait.Raised, Size: portrait.Sizes.Compact}).Disabled(s.cliBusy || strings.TrimSpace(p.tierValue) == "" || p.tierValue == firstNonEmpty(tierOf(s.cliModels), serviceTierOf(s.cliStatus))).Clicked() {
+				if portrait.Button(c, "Apply", "Set the Feynman service tier").Disabled(s.cliBusy || strings.TrimSpace(p.tierValue) == "" || p.tierValue == firstNonEmpty(tierOf(s.cliModels), serviceTierOf(s.cliStatus))).Clicked() {
 					p.modelAction("tier", strings.TrimSpace(p.tierValue))
 				}
 			})
@@ -131,7 +131,8 @@ func (p *panel) cliModelRow(c *ui.Context, rows *portrait.Rows, model feynman.CL
 			if pinned {
 				verb = "Unpin "
 			}
-			if portrait.ButtonWith(c.Key("pin"), "", verb+label, portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Compact, Leading: portrait.IconStar, Selected: pinned}).Checked(pinned).Clicked() {
+			pin := portrait.ButtonWith(c.Key("pin"), "", verb+label, portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Regular, Leading: portrait.IconPushPin, Selected: pinned}).Checked(pinned)
+			if pin.Clicked() {
 				p.toggleModelPinned(key)
 			}
 			if model.Current {
@@ -139,10 +140,13 @@ func (p *panel) cliModelRow(c *ui.Context, rows *portrait.Rows, model feynman.CL
 			} else if portrait.QuietButton(c, "Set default", "Set "+label+" as the default model").Disabled(p.state.cliBusy).Clicked() {
 				p.modelAction("set", firstNonEmpty(model.Name, model.ID))
 			}
-			shown := p.modelShown(key)
-			if portrait.Switch(c.Key("shown"), &shown).Label("Show " + label + " in Picker").Changed() {
-				p.setModelShown(key, shown)
-			}
+			ui.Row(c).Gap(portrait.Form.HelpGap).AlignItems(ui.Center).Children(func() {
+				portrait.Caption(c, "In picker")
+				shown := p.modelShown(key)
+				if portrait.Switch(c.Key("shown"), &shown).Label("Show " + label + " in Picker").Changed() {
+					p.setModelShown(key, shown)
+				}
+			})
 		})
 	})
 }

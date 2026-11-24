@@ -101,7 +101,7 @@ func wuxingScenes() []shellScene {
 		shellScene{name: "settings_mcp_add_light", width: 1440, height: 900, feynman: true, mode: "preview", space: "Wood", research: sceneSettingsModal, act: func(app *ui.Tester) {
 			openSettingsScene("MCP Servers")(app)
 			app.Frame()
-			_ = app.Click("Toggle add MCP server form")
+			_ = app.Click("Open the add MCP server form")
 		}},
 		shellScene{name: "settings_search_dark", width: 1440, height: 900, feynman: true, mode: "preview", space: "MetalWater", dark: true, research: sceneSettingsModal, act: func(app *ui.Tester) { openSettingsScene("general")(app); app.Key(0, ui.KeySlash); app.Type("key") }},
 		shellScene{name: "settings_narrow_light", width: 640, height: 720, feynman: true, mode: "preview", space: "WoodFire", act: openSettingsScene("general")},
@@ -117,6 +117,9 @@ func wuxingScenes() []shellScene {
 		shellScene{name: "find_bar_dark", width: 1280, height: 820, mode: "markdown", space: "MetalWater", dark: true, act: func(app *ui.Tester) { _ = app.Click("Markdown source"); app.Key(ui.Cmd, ui.KeyF); app.Type("Markdown") }},
 		shellScene{name: "genui_request_light", width: 1280, height: 820, mode: "genui", space: "WoodFire"},
 		shellScene{name: "sidebar_drilled_light", width: 1440, height: 900, feynman: true, mode: "preview", space: "FiveElements", act: func(app *ui.Tester) { _ = app.Click("Essays") }},
+		shellScene{name: "dense_sidebar_genui_failure_light", width: 1680, height: 1127, feynman: true, mode: "genui", space: "Metal", research: sceneNoticeAndIncludeDoc},
+		shellScene{name: "feynman_working_light", width: 1440, height: 900, feynman: true, mode: "preview", space: "Wood", research: sceneWorkingComposer},
+		shellScene{name: "feynman_files_empty_light", width: 1440, height: 900, feynman: true, mode: "preview", space: "MetalWater", research: sceneFilesEmpty},
 	)
 	return append(scenes, pass2Scenes()...)
 }
@@ -309,6 +312,23 @@ func sceneQuestion(p *panel) {
 func sceneFiles(p *panel) {
 	p.state.selectedTab = "files"
 	p.state.artifacts = []review.ResearchArtifact{{Path: "research/summary.md", Target: "Summary.md", Proposal: true}, {Path: "research/notes.md", Target: "Notes.md"}}
+}
+func sceneFilesEmpty(p *panel) {
+	p.state.selectedTab = "files"
+	p.state.artifacts = nil
+}
+func sceneNoticeAndIncludeDoc(p *panel) {
+	p.state.commands = []feynman.ResearchCommand{{Name: "summarize", Description: "Summarize the active document", Source: "workflow"}}
+	p.state.includeDoc = true
+	p.state.messages = []message{
+		{kind: "notice", messageID: "n1", text: "The previous Feynman session is no longer available. Starting a new conversation."},
+	}
+}
+func sceneWorkingComposer(p *panel) {
+	p.state.commands = []feynman.ResearchCommand{{Name: "summarize", Description: "Summarize the active document", Source: "workflow"}}
+	p.state.status = statusWorking
+	p.state.includeDoc = true
+	p.state.draft = "Compare the two ceramic styles in section 5."
 }
 func sceneAlpha(p *panel) {
 	p.state.selectedTab = "alpha"

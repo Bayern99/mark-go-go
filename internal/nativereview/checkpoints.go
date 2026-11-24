@@ -44,7 +44,7 @@ func (p *panel) drawCheckpoints(c *ui.Context) {
 			field.Frame().Grow(1)
 			label := field.Input()
 			canCreate := !s.busy && !active.Edited && !active.Conflict && !active.Deleted
-			if portrait.Button(c, "Create checkpoint", "Create checkpoint").Disabled(!canCreate).Clicked() || label.Submitted() && canCreate {
+			if portrait.ButtonWith(c, "Create checkpoint", "Create checkpoint", portrait.ButtonSpec{Look: portrait.Raised, Size: portrait.Form.FieldCompact}).Disabled(!canCreate).Clicked() || label.Submitted() && canCreate {
 				if err := p.win.Publish(); err != nil {
 					s.errorText = err.Error()
 				} else {
@@ -70,13 +70,13 @@ func (p *panel) drawCheckpoints(c *ui.Context) {
 			if !valid {
 				portrait.Alert(c, portrait.Tones.Warning, "Document changed", "The document changed. Compare again before restoring.")
 			}
-			if portrait.AccentButton(c, "Restore shown version", "Restore shown version").Disabled(s.busy || !valid || active.ReadOnly || s.base.text == s.original).Bind(&s.restoreReturn).Clicked() {
+			if portrait.AccentButton(c, "Restore shown version", "Restore shown version").AlignSelf(ui.Start).Disabled(s.busy || !valid || active.ReadOnly || s.base.text == s.original).Bind(&s.restoreReturn).Clicked() {
 				s.confirmOpen = true
 			}
 		}
 		if s.errorText != "" {
 			portrait.Alert(c, portrait.Tones.Danger, "Checkpoints", s.errorText)
-			if portrait.QuietButton(c, "Refresh checkpoints", "Refresh checkpoints").Disabled(s.busy).Clicked() {
+			if portrait.QuietButton(c, "Refresh checkpoints", "Refresh checkpoints").AlignSelf(ui.Start).Disabled(s.busy).Clicked() {
 				p.loadCheckpoints(s)
 			}
 		}
@@ -125,7 +125,7 @@ func (p *panel) drawCheckpointList(c *ui.Context, s *checkpointState) {
 			}
 		})
 	})
-	if portrait.Button(c, "Compare", "Compare the selected checkpoint").Disabled(s.busy || s.selected == "").Clicked() {
+	if portrait.Button(c, "Compare", "Compare the selected checkpoint").AlignSelf(ui.Start).Disabled(s.busy || s.selected == "").Clicked() {
 		p.compareCheckpoint(s)
 	}
 }

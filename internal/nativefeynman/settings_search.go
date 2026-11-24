@@ -25,17 +25,17 @@ func (p *panel) alphaSettings(c *ui.Context) {
 			resultText(c, s.alphaStatus.Command, s.alphaStatus.RawOutput, s.alphaStatus.Error)
 		}
 		ui.Row(c).Wrap().Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
-			if smallButton(c, "Sign in to alphaXiv in Terminal", "Sign in to alphaXiv using Terminal").Disabled(s.cliBusy).Clicked() {
+			if controlButton(c, "Sign in to alphaXiv in Terminal", "Sign in to alphaXiv using Terminal").Disabled(s.cliBusy).Clicked() {
 				p.launchWizard("alpha_login", "")
 			}
-			if s.alphaStatus != nil && s.alphaStatus.LoggedIn && portrait.ButtonWith(c, "Log out", "Log out from alphaXiv", portrait.ButtonSpec{Look: portrait.DangerOutline, Size: portrait.Sizes.Compact}).Disabled(s.cliBusy).Clicked() {
+			if s.alphaStatus != nil && s.alphaStatus.LoggedIn && portrait.ButtonWith(c, "Log out", "Log out from alphaXiv", portrait.ButtonSpec{Look: portrait.DangerOutline, Size: portrait.Sizes.Regular}).Disabled(s.cliBusy).Clicked() {
 				p.runUpdate(func() (func(), error) {
 					result, err := p.host.CLIAlphaLogout(p.window.Context(), s.root)
 					return func() { s.cliResult = firstNonEmpty(result.Summary, result.RawOutput) }, err
 				})
 				p.loadSettings(s.root)
 			}
-			if portrait.ButtonWith(c, "Open alphaXiv research", "Open alphaXiv search and paper tools", portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Compact}).Clicked() {
+			if portrait.ButtonWith(c, "Open alphaXiv research", "Open alphaXiv search and paper tools", portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Regular}).Clicked() {
 				s.selectedTab = "alpha"
 			}
 		})
@@ -59,7 +59,7 @@ func (p *panel) searchSettings(c *ui.Context) {
 						continue
 					}
 					provider := provider
-					trigger := portrait.ButtonWith(c, "Clear "+provider+" API key", "Remove the saved "+provider+" API key", portrait.ButtonSpec{Look: portrait.DangerOutline, Size: portrait.Sizes.Compact}).Disabled(s.cliBusy)
+					trigger := portrait.ButtonWith(c, "Clear "+provider+" API key", "Remove the saved "+provider+" API key", portrait.ButtonSpec{Look: portrait.DangerOutline, Size: portrait.Sizes.Regular}).Disabled(s.cliBusy)
 					p.confirmOnClick("clear-search-key:"+provider, trigger, portrait.ConfirmSpec{
 						Title:        "Clear API key?",
 						Body:         "Remove the saved " + provider + " API key? This action cannot be undone.",
@@ -80,10 +80,10 @@ func (p *panel) searchSettings(c *ui.Context) {
 			})
 		})
 		ui.Row(c).FillWidth().Justify(ui.End).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
-			if portrait.ButtonWith(c, "Reset to Auto", "Reset search routing to automatic", portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Compact}).Disabled(s.cliBusy).Clicked() {
+			if portrait.ButtonWith(c, "Reset to Auto", "Reset search routing to automatic", portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Regular}).Disabled(s.cliBusy).Clicked() {
 				p.resetSearchSettings()
 			}
-			if portrait.ButtonWith(c, "Save", "Set the selected web search provider and API key", portrait.ButtonSpec{Look: portrait.Accent, Size: portrait.Sizes.Compact}).Disabled(s.cliBusy || strings.TrimSpace(p.searchProvider) == "").Clicked() {
+			if portrait.ButtonWith(c, "Save", "Set the selected web search provider and API key", portrait.ButtonSpec{Look: portrait.Accent, Size: portrait.Sizes.Regular}).Disabled(s.cliBusy || strings.TrimSpace(p.searchProvider) == "").Clicked() {
 				p.runUpdate(func() (func(), error) {
 					result, err := p.host.CLISearchAction(p.window.Context(), s.root, "set", strings.TrimSpace(p.searchProvider), strings.TrimSpace(p.searchKey))
 					status, statusErr := p.host.CLISearchStatus(p.window.Context(), s.root)

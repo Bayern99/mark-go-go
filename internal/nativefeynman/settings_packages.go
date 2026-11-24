@@ -26,10 +26,10 @@ func (p *panel) packageSettings(c *ui.Context) {
 						if item.Installed {
 							action, label, look = "remove", "Remove", portrait.DangerOutline
 						}
-						if portrait.ButtonWith(c, label, label+" "+item.Name, portrait.ButtonSpec{Look: look, Size: portrait.Sizes.Compact}).Disabled(s.cliBusy).Clicked() {
+						if portrait.ButtonWith(c, label, label+" "+item.Name, portrait.ButtonSpec{Look: look, Size: portrait.Sizes.Regular}).Disabled(s.cliBusy).Clicked() {
 							p.packageAction(action, item.Name)
 						}
-						if item.Installed && smallButton(c, "Update", "Update "+item.Name).Disabled(s.cliBusy).Clicked() {
+						if item.Installed && controlButton(c, "Update", "Update "+item.Name).Disabled(s.cliBusy).Clicked() {
 							p.packageAction("update", item.Name)
 						}
 					})
@@ -38,7 +38,7 @@ func (p *panel) packageSettings(c *ui.Context) {
 		}
 		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
 			input(c, "feynman-package-name", "Package name", &p.packageTarget, "Optional target")
-			if smallButton(c, "Update all", "Update all installed Feynman packages").Disabled(s.cliBusy).Clicked() {
+			if controlButton(c, "Update all", "Update all installed Feynman packages").Disabled(s.cliBusy).Clicked() {
 				p.packageAction("update", strings.TrimSpace(p.packageTarget))
 			}
 		})

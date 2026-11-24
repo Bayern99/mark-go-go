@@ -64,7 +64,7 @@ func (p *panel) alphaXiv(c *ui.Context) {
 			ui.Row(c).Wrap().Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
 				input(c, "alpha-paper-id", "Paper ID", &p.alphaPaperID, "arXiv ID or alphaXiv ID").Basis(200).Grow(1)
 				ui.Row(c).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
-					portrait.Checkbox(c.Key("alpha-full-text"), &p.alphaFullText, "Full text")
+					portrait.CompactCheckbox(c.Key("alpha-full-text"), &p.alphaFullText, "Full text")
 					if controlButton(c, "Inspect", "Get alphaXiv paper details").Disabled(s.cliBusy || strings.TrimSpace(p.alphaPaperID) == "").Clicked() {
 						p.alphaInspect()
 					}
@@ -75,7 +75,7 @@ func (p *panel) alphaXiv(c *ui.Context) {
 			}
 			ui.Row(c).Wrap().Gap(portrait.Form.Gap).Children(func() {
 				input(c, "alpha-ask", "Ask about paper", &p.alphaQuestion, "Question about this paper").Basis(160).Grow(1)
-				if smallButton(c, "Ask", "Ask alphaXiv about this paper").Disabled(s.cliBusy || p.alphaPaperID == "" || p.alphaQuestion == "").Clicked() {
+				if controlButton(c, "Ask", "Ask alphaXiv about this paper").Disabled(s.cliBusy || p.alphaPaperID == "" || p.alphaQuestion == "").Clicked() {
 					p.alphaAskAction()
 				}
 			})
@@ -85,7 +85,7 @@ func (p *panel) alphaXiv(c *ui.Context) {
 			ui.Row(c).Wrap().Gap(portrait.Form.Gap).Children(func() {
 				input(c, "alpha-repo", "Repository URL", &p.alphaRepoURL, "https://github.com/…").Basis(150).Grow(1)
 				input(c, "alpha-file", "Repository file", &p.alphaFilePath, "Optional file path").Basis(150).Grow(1)
-				if smallButton(c, "Inspect code", "Inspect repository code for this paper").Disabled(s.cliBusy || p.alphaRepoURL == "").Clicked() {
+				if controlButton(c, "Inspect code", "Inspect repository code for this paper").Disabled(s.cliBusy || p.alphaRepoURL == "").Clicked() {
 					p.alphaCodeAction()
 				}
 			})
@@ -97,7 +97,7 @@ func (p *panel) alphaXiv(c *ui.Context) {
 			input(c, "alpha-note", "Paper note", &p.alphaNoteInput, "Private paper annotation")
 			ui.Row(c).Wrap().Gap(portrait.Form.Gap).Children(func() {
 				for _, action := range []string{"list", "get", "set", "clear"} {
-					if smallButton(c, titleWord(action), "alphaXiv annotation "+action).Disabled(s.cliBusy || (action != "list" && p.alphaPaperID == "")).Clicked() {
+					if controlButton(c, titleWord(action), "alphaXiv annotation "+action).Disabled(s.cliBusy || (action != "list" && p.alphaPaperID == "")).Clicked() {
 						p.alphaAnnotate(action)
 					}
 				}
@@ -166,7 +166,7 @@ func (p *panel) alphaResults(c *ui.Context, result feynman.CLIAlphaSearchResult)
 		groups = []feynman.CLIAlphaSearchGroup{{Mode: result.Mode, Papers: result.Papers}}
 	}
 	for i, group := range groups {
-		ui.Column(c.Key(fmt.Sprintf("alpha-group-%d", i))).Gap(4).Padding(6, 7).Children(func() {
+		ui.Column(c.Key(fmt.Sprintf("alpha-group-%d", i))).Gap(4).Padding(6, 0).Children(func() {
 			if group.Mode != "" && len(groups) > 1 {
 				text(c, portrait.Type.Meta, group.Mode).FontWeight(600).TextColor(portrait.Colors.Accent)
 			}
@@ -231,7 +231,8 @@ func (p *panel) alphaPaper(c *ui.Context, result feynman.CLIAlphaPaperResult) {
 		if result.Content != "" {
 			markdown.View(c.Key("alpha-paper-content"), result.Content, markdownOptions(c, &markdown.Options{WrapCode: true})).FillWidth()
 		}
-		if smallButton(c, "Cite in Chat", "Insert paper details into the Feynman prompt").Clicked() {
+		cite := controlButton(c, "Cite in Chat", "Insert paper details into the Feynman prompt").AlignSelf(ui.Start)
+		if cite.Clicked() {
 			p.state.draft = strings.TrimSpace(p.state.draft + "\n\nalphaXiv paper " + result.PaperID + ": " + result.Title + "\n" + result.Content)
 			p.state.selectedTab = "chat"
 		}

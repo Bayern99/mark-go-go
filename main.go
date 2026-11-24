@@ -7,6 +7,7 @@ import (
 	"log"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -120,23 +121,16 @@ func refreshMenu(host *workspace.Service) {
 }
 
 // recentItems lists the recent documents, keeping duplicate file names apart
-// by their folder, and ends with Clear Recent as AppKit's menu does.
+// by their folders, and ends with Clear Recent as AppKit's menu does.
 func recentItems(host *workspace.Service) []*mygo.MenuItem {
 	paths := mygo.App.RecentDocuments()
 	menuRecents.Lock()
 	menuRecents.paths, menuRecents.built = slices.Clone(paths), true
 	menuRecents.Unlock()
-	count := map[string]int{}
-	for _, path := range paths {
-		count[filepath.Base(path)]++
-	}
+	labels := recentLabels(paths)
 	items := make([]*mygo.MenuItem, 0, len(paths)+2)
-	for _, path := range paths {
-		path := path
-		label := filepath.Base(path)
-		if count[label] > 1 {
-			label = filepath.Base(filepath.Dir(path)) + "/" + label
-		}
+	for i, path := range paths {
+		path, label := path, labels[i]
 		items = append(items, &mygo.MenuItem{Label: label, ToolTip: path, Click: func(_ *mygo.MenuItem, win *mygo.Window) {
 			if w := portraitWindow(win); w != nil {
 				w.OpenRecentDocument(path)
@@ -158,6 +152,50 @@ func recentItems(host *workspace.Service) []*mygo.MenuItem {
 		}
 		go refreshMenu(host)
 	}})
+}
+
+// recentLabels names the recent documents in a menu: each by its file name,
+// and one whose name another shares by the folders above it, one folder at a
+// time, until the names differ. work/notes/draft.md and personal/notes/draft.md
+// are therefore "notes/draft.md" no more: the first is told apart by the folder
+// above the one they share. A document no folder can tell apart keeps its whole
+// path.
+func recentLabels(paths []string) []string {
+	parts := make([][]string, len(paths))
+	depth := make([]int, len(paths))
+	for i, path := range paths {
+		trimmed := strings.TrimPrefix(filepath.ToSlash(filepath.Clean(path)), "/")
+		parts[i] = strings.Split(trimmed, "/")
+		depth[i] = 1
+	}
+	labels := make([]string, len(paths))
+	for {
+		shared := map[string]int{}
+		for i := range paths {
+			labels[i] = strings.Join(parts[i][len(parts[i])-depth[i]:], "/")
+			shared[labels[i]]++
+		}
+		grew := false
+		for i := range paths {
+			if shared[labels[i]] > 1 && depth[i] < len(parts[i]) {
+				depth[i]++
+				grew = true
+			}
+		}
+		if !grew {
+			break
+		}
+	}
+	shared := map[string]int{}
+	for _, label := range labels {
+		shared[label]++
+	}
+	for i, label := range labels {
+		if shared[label] > 1 {
+			labels[i] = paths[i]
+		}
+	}
+	return labels
 }
 
 // portraitWindow is the Portrait window a menu command belongs to: the

@@ -118,7 +118,7 @@ func (p *panel) message(c *ui.Context, index int, item message, streaming bool) 
 		} else if item.notify == "warning" {
 			tone = portrait.Tones.Warning
 		}
-		portrait.Alert(c.Key(key), tone, item.text, "")
+		portrait.Alert(c.Key(key), tone, "", item.text)
 	case "plan":
 		card(c.Key(key)).Gap(4).Padding(7, 9).Children(func() {
 			text(c, portrait.Type.Meta, "Research plan").FontWeight(600).TextColor(portrait.Colors.Ink2)
@@ -183,7 +183,7 @@ func (p *panel) toolBody(c *ui.Context, tool feynman.ResearchTool) {
 			}
 			matched := findArtifact(p.state.artifacts, path, location.Path)
 			if matched != nil {
-				if smallButton(c, path, "Open research file "+path).Clicked() {
+				if smallButton(c, path, "Open research file "+path).AlignSelf(ui.Start).Clicked() {
 					p.openArtifact(*matched)
 				}
 			} else {
@@ -266,7 +266,7 @@ func (p *panel) composer(c *ui.Context) {
 				for _, item := range s.queue.FollowUp {
 					text(c, portrait.Type.Meta, "Follow-up · "+item).MaxLines(2).Ellipsis("…").TextColor(portrait.Colors.Ink2).FillWidth()
 				}
-				if smallButton(c, "Clear queue", "Clear queued research messages").Clicked() {
+				if smallButton(c, "Clear queue", "Clear queued research messages").AlignSelf(ui.Start).Clicked() {
 					p.runUpdate(func() (func(), error) {
 						queue, err := p.host.ClearQueue(p.window.Context(), s.root)
 						return func() { s.queue = queue }, err
@@ -325,7 +325,7 @@ func (p *panel) composer(c *ui.Context) {
 				promptHeight = portrait.Form.AreaCompact
 			}
 			var draftEditor ui.Element
-			area(c, "research-draft", "Research prompt", &s.draft, promptPlaceholder(s.status), promptHeight, func(editor ui.Element) {
+			bareArea(c, "research-draft", "Research prompt", &s.draft, promptPlaceholder(s.status), promptHeight, func(editor ui.Element) {
 				draftEditor = editor
 				editor.OnTextKey(func(key ui.TextKey) bool {
 					if key.Key != ui.KeyEnter || key.Mods != 0 {
@@ -347,7 +347,7 @@ func (p *panel) composer(c *ui.Context) {
 					key.SetText("")
 					return true
 				})
-			}).Background(ui.Transparent).NoShadow()
+			})
 			if draftEditor.Changed() && strings.HasPrefix(s.draft, "/") {
 				s.actionsOpen = true
 			}
@@ -355,7 +355,7 @@ func (p *panel) composer(c *ui.Context) {
 				if portrait.ButtonWith(c, "", "Attach source files", portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Regular, Leading: portrait.IconPaperclip}).Disabled(s.status == statusOffline || s.status == statusConnecting).Clicked() {
 					p.attachSources()
 				}
-				actionsBtn := portrait.ButtonWith(c, "Actions", "Browse workflows, skills and extensions", portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Regular, Leading: portrait.IconDotsThree, Selected: s.actionsOpen}).Disabled(len(s.commands) == 0).Expanded(s.actionsOpen)
+				actionsBtn := portrait.ButtonWith(c, "Actions", "Browse workflows, skills and extensions", researchActionsButtonSpec(s.actionsOpen)).Disabled(len(s.commands) == 0).Expanded(s.actionsOpen)
 				if actionsBtn.Clicked() {
 					s.actionsOpen = !s.actionsOpen
 				}
@@ -364,17 +364,17 @@ func (p *panel) composer(c *ui.Context) {
 				})
 				actionsPopover.AttachTo(actionsBtn, ui.AnchorTopStart, ui.AnchorBottomStart).Label("Research actions")
 				if doc := p.window.Active(); doc.ID != "" && doc.Path != "" && !doc.ReadOnly {
-					portrait.Checkbox(c.Key("research-include-document"), &s.includeDoc, "Include doc")
+					includeDocumentButton(c, &s.includeDoc)
 				}
 				ui.Row(c).Grow(1).Justify(ui.End).Gap(4).Children(func() {
 					if s.status == statusWorking {
-						if toolButton(c, "Steer", "Send a steering message", true, false).Disabled(strings.TrimSpace(s.draft) == "").Clicked() {
+						if toolButton(c, "Steer", "Send a steering message", false, false).Disabled(strings.TrimSpace(s.draft) == "").Clicked() {
 							p.steer()
 						}
-						if toolButton(c, "Follow up", "Queue a follow-up message", true, false).Disabled(strings.TrimSpace(s.draft) == "").Clicked() {
+						if toolButton(c, "Follow up", "Queue a follow-up message", false, false).Disabled(strings.TrimSpace(s.draft) == "").Clicked() {
 							p.followUp()
 						}
-						if portrait.ButtonWith(c, "Stop", "Stop the current research action", portrait.ButtonSpec{Look: portrait.DangerOutline, Leading: portrait.IconStop}).Clicked() {
+						if portrait.ButtonWith(c, "Stop", "Stop the current research action", portrait.ButtonSpec{Look: portrait.DangerOutline, Size: portrait.Sizes.Regular, Leading: portrait.IconStop}).Clicked() {
 							p.run(func() error { return p.host.Abort(p.window.Context(), s.root) })
 						}
 					} else {
@@ -387,6 +387,20 @@ func (p *panel) composer(c *ui.Context) {
 			p.configControls(c)
 		})
 	})
+}
+
+func researchActionsButtonSpec(open bool) portrait.ButtonSpec {
+	return portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Regular, Trailing: portrait.IconCaretUp, Selected: open}
+}
+
+func includeDocumentButton(c *ui.Context, include *bool) ui.Element {
+	button := portrait.ButtonWith(c.Key("research-include-document"), "Include doc", "Include doc", portrait.ButtonSpec{
+		Look: portrait.Quiet, Size: portrait.Sizes.Regular, Leading: portrait.IconFileText, Selected: *include,
+	}).Checked(*include)
+	if button.Clicked() {
+		*include = !*include
+	}
+	return button
 }
 
 func promptPlaceholder(status connectionStatus) string {
@@ -507,13 +521,16 @@ func (p *panel) question(c *ui.Context, question feynman.ResearchUpdate) {
 	for _, option := range question.Options {
 		toolList = toolList && strings.Contains(option.Name, " — ")
 	}
-	tone := portrait.Colors.Accent
+	tone, icon := portrait.Tones.Accent, portrait.IconInfo
 	if confirm {
-		tone = portrait.Colors.Warn
+		tone, icon = portrait.Tones.Warning, portrait.IconWarning
 	}
 	portrait.Card(c.Key("research-question")).Role(ui.RoleGroup).Label("Feynman confirmation").Padding(portrait.Form.AreaPadY, portrait.Form.PadX).Gap(portrait.Form.Gap).Radius(portrait.Radii.L).
-		Border(0.5, portrait.Colors.Line).InsetShadow(3, 0, 0, 0, tone).Children(func() {
-		text(c, portrait.Type.UI, title).FontWeight(600).TextColor(portrait.Colors.Ink).FillWidth().Wrap()
+		Border(0.5, tone.Border).Children(func() {
+		ui.Row(c).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
+			portrait.Glyph(c, icon, portrait.IconSizes.M, tone.Ink).Shrink(0)
+			text(c, portrait.Type.UI, title).FontWeight(600).TextColor(portrait.Colors.Ink).FillWidth().Wrap()
+		})
 		if question.Message != "" && question.Message != title {
 			text(c, portrait.Type.Meta, question.Message).TextColor(portrait.Colors.Ink2).FillWidth().Wrap()
 		}
@@ -523,12 +540,12 @@ func (p *panel) question(c *ui.Context, question feynman.ResearchUpdate) {
 			} else {
 				input(c, "research-question-answer", title, &p.questionText, question.Placeholder)
 			}
-			ui.Row(c).Gap(4).Children(func() {
-				if portrait.AccentButton(c, "Submit", "Submit answer to Feynman").Disabled(p.questionPending).Clicked() {
-					p.answerQuestion(p.questionText, false)
-				}
-				if portrait.QuietButton(c, "Cancel", "Cancel this Feynman request").Disabled(p.questionPending).Clicked() {
+			ui.Row(c).Justify(ui.End).Gap(4).Children(func() {
+				if portrait.ButtonWith(c, "Cancel", "Cancel this Feynman request", portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Regular}).Disabled(p.questionPending).Clicked() {
 					p.answerQuestion("", true)
+				}
+				if portrait.ButtonWith(c, "Submit", "Submit answer to Feynman", portrait.ButtonSpec{Look: portrait.Accent, Size: portrait.Sizes.Regular}).Disabled(p.questionPending).Clicked() {
+					p.answerQuestion(p.questionText, false)
 				}
 			})
 			return
@@ -539,14 +556,18 @@ func (p *panel) question(c *ui.Context, question feynman.ResearchUpdate) {
 			filterInput(c, "research-question-filter", "Filter choices", &p.questionFind, "Find a choice…")
 		}
 		if confirm {
-			ui.Row(c).Gap(4).Children(func() {
-				for _, option := range options {
-					if smallButton(c, option.Name, "Answer "+option.Name).Disabled(p.questionPending).Clicked() {
+			ui.Row(c).Justify(ui.End).Gap(4).Children(func() {
+				if portrait.ButtonWith(c, "Cancel", "Cancel confirmation", portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Regular}).Disabled(p.questionPending).Clicked() {
+					p.answerQuestion("", true)
+				}
+				for i, option := range options {
+					look := portrait.Raised
+					if i == len(options)-1 {
+						look = portrait.Accent
+					}
+					if portrait.ButtonWith(c, option.Name, "Answer "+option.Name, portrait.ButtonSpec{Look: look, Size: portrait.Sizes.Regular}).Disabled(p.questionPending).Clicked() {
 						p.answerQuestion(option.ID, false)
 					}
-				}
-				if portrait.QuietButton(c, "Cancel", "Cancel confirmation").Clicked() {
-					p.answerQuestion("", true)
 				}
 			})
 			return
@@ -556,18 +577,18 @@ func (p *panel) question(c *ui.Context, question feynman.ResearchUpdate) {
 				if filterable && !strings.Contains(strings.ToLower(option.Name), strings.ToLower(strings.TrimSpace(p.questionFind))) {
 					continue
 				}
-				portrait.Radio(c.Key("research-question-"+option.ID), &p.questionPick, option.ID, option.Name).Disabled(p.questionPending).FillWidth()
+				portrait.CompactRadio(c.Key("research-question-"+option.ID), &p.questionPick, option.ID, option.Name).Disabled(p.questionPending).FillWidth()
 			}
 		})
-		ui.Row(c).Gap(4).Children(func() {
-			if portrait.AccentButton(c, "Confirm", "Confirm selected choice").Disabled(p.questionPick == "" || p.questionPending).Clicked() {
-				p.answerQuestion(p.questionPick, false)
+		ui.Row(c).Justify(ui.End).Gap(4).Children(func() {
+			if portrait.ButtonWith(c, "Cancel", "Cancel this Feynman request", portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Regular}).Disabled(p.questionPending).Clicked() {
+				p.answerQuestion("", true)
 			}
-			if toolList && smallButton(c, "Use in question", "Insert the selected tool into the Feynman prompt").Disabled(p.questionPick == "" || p.questionPending).Clicked() {
+			if toolList && portrait.ButtonWith(c, "Use in question", "Insert the selected tool into the Feynman prompt", portrait.ButtonSpec{Look: portrait.Raised, Size: portrait.Sizes.Regular}).Disabled(p.questionPick == "" || p.questionPending).Clicked() {
 				p.answerQuestion(p.questionPick, false, true)
 			}
-			if portrait.QuietButton(c, "Cancel", "Cancel this Feynman request").Disabled(p.questionPending).Clicked() {
-				p.answerQuestion("", true)
+			if portrait.ButtonWith(c, "Confirm", "Confirm selected choice", portrait.ButtonSpec{Look: portrait.Accent, Size: portrait.Sizes.Regular}).Disabled(p.questionPick == "" || p.questionPending).Clicked() {
+				p.answerQuestion(p.questionPick, false)
 			}
 		})
 	})
@@ -589,32 +610,37 @@ func (p *panel) sessions(c *ui.Context) {
 				p.sessionView = ""
 			}
 			sectionTitle(c, title).Grow(1).MinWidth(0).MaxLines(1).Ellipsis("…")
-			trigger := portrait.Menu(c.Key("conversation-actions"), &p.sessionMenu, func(menu *portrait.MenuBuilder) {
-				if menu.Item(portrait.MenuItemSpec{Label: "New", Icon: portrait.IconPlus, Disabled: s.status != statusReady}).Clicked() {
+			trigger := portrait.QuietIconButton(c.Key("conversation-actions"), portrait.IconDotsThree, "Conversation actions").Expanded(p.sessionMenu)
+			trigger.PopoverMenuButton(func(menu *ui.Menu) {
+				menu.MaxWidth(portrait.Form.MenuMax)
+				if conversationActionItem(menu, portrait.MenuItemSpec{Label: "New", Icon: portrait.IconPlus, Disabled: s.status != statusReady}).Chosen() {
 					p.newSession()
 				}
-				if menu.Item(portrait.MenuItemSpec{Label: "Rename", Icon: portrait.IconPencil}).Clicked() {
+				if conversationActionItem(menu, portrait.MenuItemSpec{Label: "Rename", Icon: portrait.IconPencil}).Chosen() {
 					p.sessionView = "rename"
 				}
-				if menu.Item(portrait.MenuItemSpec{Label: "Clone", Disabled: s.status != statusReady || s.draft != ""}).Clicked() {
+				if conversationActionItem(menu, portrait.MenuItemSpec{Label: "Clone", Disabled: s.status != statusReady || s.draft != ""}).Chosen() {
 					p.cloneSession()
 				}
-				if menu.Item(portrait.MenuItemSpec{Label: "Compact", Disabled: s.status != statusReady}).Clicked() {
+				if conversationActionItem(menu, portrait.MenuItemSpec{Label: "Compact", Disabled: s.status != statusReady}).Chosen() {
 					p.compactSession("")
 				}
-				if menu.Item(portrait.MenuItemSpec{Label: "Fork", Disabled: s.status != statusReady || s.draft != ""}).Clicked() {
+				if conversationActionItem(menu, portrait.MenuItemSpec{Label: "Fork", Disabled: s.status != statusReady || s.draft != ""}).Chosen() {
 					p.loadForkMessages()
 				}
-				if menu.Item(portrait.MenuItemSpec{Label: "Tree"}).Clicked() {
+				if conversationActionItem(menu, portrait.MenuItemSpec{Label: "Tree"}).Chosen() {
 					p.loadConversationTree()
 				}
+			}, ui.PopoverMenuButtonOptions{
+				At: ui.AnchorBottomEnd, Self: ui.AnchorTopEnd, Open: &p.sessionMenu,
+				Panel: func(panel ui.Element) {
+					panel.MinWidth(portrait.Form.MenuMin).MaxWidth(portrait.Form.MenuMax).Padding(portrait.Form.MenuPad).Gap(portrait.Form.PopoverGap).Radius(portrait.Radii.L)
+					portrait.Materials.GlassOverlay.Apply(panel)
+				},
+				Item: func(item ui.Element) {
+					item.Height(portrait.Form.MenuRow).Padding(0, portrait.Form.PadX-portrait.Form.PopoverGap).Gap(portrait.Form.Gap).Radius(portrait.Form.MenuRadius).AlignItems(ui.Center)
+				},
 			})
-			trigger.Label("Conversation actions").Size(portrait.Sizes.Regular, portrait.Sizes.Regular).Radius(portrait.Radii.M).AlignItems(ui.Center).Justify(ui.Center)
-			ink := portrait.Press(trigger, portrait.Quiet)
-			trigger.Children(func() { portrait.Glyph(c, portrait.IconDotsThree, portrait.IconSizes.M, ink) })
-			if portrait.QuietIconButton(c, portrait.IconX, "Close conversation history").Clicked() {
-				s.sessionsOpen = false
-			}
 		})
 		if p.sessionView == "" || p.sessionView == "rename" {
 			if p.sessionView == "rename" {
@@ -627,7 +653,7 @@ func (p *panel) sessions(c *ui.Context) {
 				})
 			}
 			filterInput(c, "feynman-session-filter", "Filter conversations", &s.sessionFilter, "Find a conversation…")
-			ui.Scroll(c.Key("feynman-sessions-list")).MaxHeight(portrait.Form.ListMax).FillWidth().Label("Workspace conversations").Children(func() {
+			ui.Column(c.Key("feynman-sessions-list")).FillWidth().Label("Workspace conversations").Children(func() {
 				for _, row := range s.sessionRows {
 					row := row
 					title := row.Title
@@ -665,7 +691,7 @@ func (p *panel) sessions(c *ui.Context) {
 				}
 			})
 		} else if p.sessionView == "fork" {
-			ui.Scroll(c.Key("feynman-fork-messages")).MaxHeight(portrait.Form.ListMax).FillWidth().Label("Messages available for a conversation fork").Children(func() {
+			ui.Column(c.Key("feynman-fork-messages")).FillWidth().Label("Messages available for a conversation fork").Children(func() {
 				for _, item := range p.forkMessages {
 					label := item.Text
 					if len(label) > 180 {
@@ -680,7 +706,7 @@ func (p *panel) sessions(c *ui.Context) {
 				}
 			})
 		} else {
-			ui.Scroll(c.Key("feynman-session-tree")).MaxHeight(portrait.Form.ListMax).FillWidth().Label("Conversation tree").Children(func() {
+			ui.Column(c.Key("feynman-session-tree")).FillWidth().Label("Conversation tree").Children(func() {
 				if p.researchTree == nil {
 					mutedText(c, "Loading conversation tree…")
 				} else {
@@ -691,6 +717,27 @@ func (p *panel) sessions(c *ui.Context) {
 			})
 		}
 	})
+}
+
+func conversationActionItem(menu *ui.Menu, spec portrait.MenuItemSpec) *ui.MenuItem {
+	item := menu.Item(spec.Label).Disabled(spec.Disabled)
+	if spec.Danger {
+		item.Danger()
+	}
+	item.Content(func(content ui.MenuItemContent) {
+		ui.Row(content.Context).FillWidth().Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
+			if spec.Icon.Glyph != "" {
+				portrait.Glyph(content.Context, spec.Icon, portrait.IconSizes.M, content.Text).Shrink(0)
+			}
+			ui.Column(content.Context).Grow(1).MinWidth(0).Children(func() {
+				text(content.Context, portrait.Type.UI, spec.Label).TextColor(content.Text).MaxLines(1).Ellipsis("…")
+				if spec.Detail != "" {
+					text(content.Context, portrait.Type.Meta, spec.Detail).TextColor(content.Muted).MaxLines(1).Ellipsis("…")
+				}
+			})
+		})
+	})
+	return item
 }
 
 func (p *panel) loadForkMessages() {

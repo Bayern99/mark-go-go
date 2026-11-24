@@ -158,12 +158,15 @@ func TestResearchHistoryPopoverFitsNarrowWindowWithoutDisplacingComposer(t *test
 	app := ui.NewTester(func(c *ui.Context) { drawFixturePane(c, p, 376, 272) }, 480, 360)
 	app.Frame()
 
-	close, ok := app.AccessByRole(ui.RoleButton, "Close conversation history")
+	actions, ok := app.AccessByRole(ui.RoleMenuButton, "Conversation actions")
 	if !ok {
-		t.Fatal("history popover has no reachable Close action")
+		t.Fatal("history popover has no reachable Conversation actions trigger")
 	}
-	if close.Offscreen || close.Bounds.X < 0 || close.Bounds.Y < 0 || close.Bounds.X+close.Bounds.W > 480 || close.Bounds.Y+close.Bounds.H > 360 {
-		t.Fatalf("history Close bounds %+v offscreen=%t, want inside the window", close.Bounds, close.Offscreen)
+	if actions.Offscreen || actions.Bounds.X < 0 || actions.Bounds.Y < 0 || actions.Bounds.X+actions.Bounds.W > 480 || actions.Bounds.Y+actions.Bounds.H > 360 {
+		t.Fatalf("history actions bounds %+v offscreen=%t, want inside the window", actions.Bounds, actions.Offscreen)
+	}
+	if _, ok := app.AccessByRole(ui.RoleButton, "Close conversation history"); ok {
+		t.Fatal("history popover should not render a redundant Close button")
 	}
 	if bounds, ok := app.Find("Feynman conversation"); !ok || bounds.H < 40 {
 		t.Fatalf("history removed the conversation scroll: bounds=%+v, present=%t", bounds, ok)
@@ -171,12 +174,12 @@ func TestResearchHistoryPopoverFitsNarrowWindowWithoutDisplacingComposer(t *test
 	if info, ok := app.AccessByRole(ui.RoleButton, "Send research prompt"); !ok || info.Offscreen || info.Bounds.Y+info.Bounds.H > 320 {
 		t.Fatalf("history obscured the composer Send action: info=%+v, present=%t", info, ok)
 	}
-	if err := app.Click("Close conversation history"); err != nil {
-		t.Fatalf("close History: %v", err)
+	if err := app.Click("Workspace conversation history"); err != nil {
+		t.Fatalf("toggle History closed: %v", err)
 	}
 	app.Frame()
-	if _, ok := app.AccessByRole(ui.RoleButton, "Close conversation history"); ok {
-		t.Fatal("History popover stayed open after Close")
+	if _, ok := app.AccessByRole(ui.RoleMenuButton, "Conversation actions"); ok {
+		t.Fatal("History popover stayed open after toggling history")
 	}
 }
 

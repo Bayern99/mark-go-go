@@ -54,6 +54,7 @@ type panel struct {
 	collapsed           map[string]*bool
 	pickerStates        map[string]*researchPickerState
 	pickerFocus         string
+	localPrefs          map[string]string
 	cliPassword         string
 	searchKey           string
 	serverLocal         bool
@@ -73,6 +74,7 @@ type panel struct {
 	researchTree        *feynman.ResearchTree
 	loginProvider       string
 	tierValue           string
+	tierLoaded          bool
 	searchProvider      string
 	packageTarget       string
 	modelTarget         string
@@ -398,7 +400,7 @@ func (p *panel) header(c *ui.Context) {
 		}
 	}
 	history := func() ui.Element {
-		button := controlButton(c, "History", "Workspace conversation history").Expanded(s.sessionsOpen)
+		button := toolButton(c, "History", "Workspace conversation history", false, s.sessionsOpen).Expanded(s.sessionsOpen)
 		if button.Clicked() {
 			s.sessionsOpen = !s.sessionsOpen
 			if s.sessionsOpen {

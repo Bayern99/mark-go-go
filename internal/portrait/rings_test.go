@@ -19,15 +19,15 @@ func TestRingsMatchTheirBaseline(t *testing.T) {
 			got:  portrait.Rings.Field,
 			want: portrait.Shadows{
 				{Inset: false, X: 0, Y: 0, Blur: 0, Spread: 0.5, Color: ui.RGBA(0, 0, 0, 0.16)},
-				{Inset: false, X: 0, Y: 0, Blur: 0, Spread: 3, Color: ui.Hex("#3139fb").Alpha(0.28)},
+				{Inset: false, X: 0, Y: 0, Blur: 0, Spread: 3, Color: ui.Hex("#2E5D8C").Alpha(0.28)},
 			},
 		},
 		{
 			name: "editing",
 			got:  portrait.Rings.Editing,
 			want: portrait.Shadows{
-				{Inset: false, X: 0, Y: 0, Blur: 0, Spread: 1, Color: ui.Hex("#3139fb")},
-				{Inset: false, X: 0, Y: 0, Blur: 0, Spread: 3, Color: ui.Hex("#3139fb").Alpha(0.28)},
+				{Inset: false, X: 0, Y: 0, Blur: 0, Spread: 1, Color: ui.Hex("#2E5D8C")},
+				{Inset: false, X: 0, Y: 0, Blur: 0, Spread: 3, Color: ui.Hex("#2E5D8C").Alpha(0.28)},
 			},
 		},
 	} {

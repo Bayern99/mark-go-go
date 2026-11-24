@@ -56,22 +56,28 @@ func TestDerivedTokenInvariants(t *testing.T) {
 	if got, want := portrait.FrameOuterRadius, portrait.FrameInnerRadius+portrait.FrameInset; got != want {
 		t.Errorf("Frame outer radius = %v, want inner radius + inset = %v", got, want)
 	}
-	if alpha := float32(portrait.Colors.ModalScrim.A) / 255; alpha > 0.16 {
-		t.Errorf("ModalScrim alpha = %v, want at most 0.16", alpha)
-	}
-	if distance := tokenHueDistance(portrait.Tones.Success.Solid, portrait.Tones.Accent.Solid); distance < 60 {
-		t.Errorf("Success and Accent hue distance = %.3f degrees, want at least 60", distance)
-	}
+	eachLook(t, func(t *testing.T, _ portrait.Space, dark bool) {
+		limit := float32(0.16)
+		if dark {
+			limit = 0.5
+		}
+		if alpha := float32(portrait.Colors.ModalScrim.A) / 255; alpha > limit {
+			t.Errorf("ModalScrim alpha = %v, want at most %v", alpha, limit)
+		}
+		if portrait.Tones.Info != portrait.Tones.Accent || portrait.Colors.Note != portrait.Colors.Accent {
+			t.Error("Info and Note must follow the Space's accent")
+		}
+	})
 	if portrait.Shell.PageRadius != portrait.Radii.L || portrait.Shell.Row != portrait.Sizes.Large {
 		t.Errorf("Shell page radius %v and row %v, want Radii.L and Sizes.Large", portrait.Shell.PageRadius, portrait.Shell.Row)
 	}
-	if portrait.DefaultSpace != portrait.Spaces[1] || portrait.SpaceFor("") != portrait.DefaultSpace {
+	if portrait.DefaultSpace != portrait.Spaces[0] || portrait.SpaceFor("") != portrait.DefaultSpace {
 		t.Error("a window without a folder takes the default scenery")
 	}
 	for _, root := range []string{"/a", "/Users/ada/Field Notes", "C:\\notes"} {
 		space := portrait.SpaceFor(root)
-		if space != portrait.SpaceFor(root) || space == portrait.Spaces[0] {
-			t.Errorf("SpaceFor(%q) = %s, want one stable coloured scenery", root, space.Name)
+		if space != portrait.SpaceFor(root) {
+			t.Errorf("SpaceFor(%q) = %s, want one stable Space", root, space.Name)
 		}
 		if named, ok := portrait.SpaceNamed(space.Name); !ok || named != space {
 			t.Errorf("SpaceNamed(%q) does not return the scenery it names", space.Name)

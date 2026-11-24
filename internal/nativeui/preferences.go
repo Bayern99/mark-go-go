@@ -67,8 +67,14 @@ func (p *preferenceStore) save() error {
 	return fsutil.WriteFileAtomic(p.path(), append(data, '\n'))
 }
 func (w *Window) SetPreference(key, value string) { w.setPreference(key, value) }
+func (w *Window) store() *preferenceStore {
+	if w.preferences == nil {
+		w.preferences = &preferenceStore{values: map[string]string{}, windows: map[*Window]bool{}}
+	}
+	return w.preferences
+}
 func (w *Window) setPreference(key, value string) {
-	p := w.preferences
+	p := w.store()
 	if p.values[key] == value {
 		return
 	}
@@ -77,7 +83,9 @@ func (w *Window) setPreference(key, value string) {
 		w.failure = err.Error()
 	}
 	for window := range p.windows {
-		window.win.Invalidate()
+		if window.win != nil {
+			window.win.Invalidate()
+		}
 	}
 }
 func (w *Window) setPlugin(name string, value bool) {

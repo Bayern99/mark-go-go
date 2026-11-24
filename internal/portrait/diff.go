@@ -10,12 +10,20 @@ type DiffTokens struct {
 
 const MonoAdvance = 0.6
 
-var Diff = DiffTokens{
-	Range:       TypeStyle{FontMono, Type.Meta.Size, Type.Meta.Size * 1.3, 0},
-	Lines:       TypeStyle{FontMono, Type.Meta.Size, Type.Meta.Size * 1.45, 0},
-	Conflict:    Type.Meta,
-	Insert:      Colors.Success.Alpha(0.12),
-	Delete:      Colors.Danger.Alpha(0.10),
-	NumberWidth: 3 * MonoAdvance * Type.Meta.Size,
-	SigilWidth:  1.5 * MonoAdvance * Type.Meta.Size,
+var Diff DiffTokens
+
+func diffFor(p Palette, dark bool) DiffTokens {
+	insert, remove := float32(0.12), float32(0.10)
+	if dark {
+		insert, remove = 0.16, 0.14
+	}
+	return DiffTokens{
+		Range:       TypeStyle{FontMono, Type.Meta.Size, Type.Meta.Size * 1.3, 0},
+		Lines:       TypeStyle{FontMono, Type.Meta.Size, Type.Meta.Size * 1.45, 0},
+		Conflict:    Type.Meta,
+		Insert:      p.Success.Alpha(insert),
+		Delete:      p.Danger.Alpha(remove),
+		NumberWidth: 3 * MonoAdvance * Type.Meta.Size,
+		SigilWidth:  1.5 * MonoAdvance * Type.Meta.Size,
+	}
 }

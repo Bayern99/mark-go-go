@@ -113,10 +113,17 @@ func (s *Shell) space(c *ui.Context, m Model, a Actions) {
 			a.CloseWorkspace(current)
 		}
 		menu.Separator()
-		menu.Submenu("Scenery", func(sub *ui.Menu) {
+		menu.Submenu("Space", func(sub *ui.Menu) {
 			for _, option := range portrait.Spaces {
-				if sub.Item(option.Name).ID("scenery:"+option.Name).Radio(option.Name == space.Name).Chosen() && a.SetSpace != nil {
+				if sub.Item(option.Label).ID("space:"+option.Name).Radio(option.Name == space.Name).Chosen() && a.SetSpace != nil {
 					a.SetSpace(option.Name)
+				}
+			}
+		})
+		menu.Submenu("Appearance", func(sub *ui.Menu) {
+			for _, option := range portrait.Appearances {
+				if sub.Item(string(option)).ID("appearance:"+string(option)).Radio(option == m.Appearance || option == portrait.System && m.Appearance == "").Chosen() && a.SetAppearance != nil {
+					a.SetAppearance(option)
 				}
 			}
 		})

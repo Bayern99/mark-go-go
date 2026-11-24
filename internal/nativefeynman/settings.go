@@ -1,6 +1,7 @@
 package nativefeynman
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
@@ -66,19 +67,19 @@ func (p *panel) settings(c *ui.Context) {
 		resultText(c, "Command result", s.cliResult, "")
 	}
 	ui.Scroll(c.Key("feynman-settings-scroll")).Grow(1).MinHeight(0).FillWidth().TrackScroll(&p.settingsScr).Label("Feynman settings and CLI controls").Children(func() {
-		p.statusSettings(c)
 		p.modelSettings(c)
 		p.alphaSettings(c)
 		p.searchSettings(c)
 		p.mcpSettings(c)
 		p.packageSettings(c)
+		ui.Collapsible(c.Key("feynman-diagnostics"), "Diagnostics", p.collapsibleState("feynman-diagnostics"), func() { p.statusSettings(c) }).FillWidth()
 	})
 }
 
 func (p *panel) statusSettings(c *ui.Context) {
 	s := p.state
 	ui.Column(c.Key("feynman-status-settings")).Gap(4).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
-		sectionTitle(c, "Status and diagnostics")
+		mutedText(c, "Feynman CLI status, doctor and setup output.")
 		ui.Row(c).Wrap().Gap(4).Children(func() {
 			if smallButton(c, "Run Doctor", "Run feynman doctor").Disabled(s.cliBusy).Clicked() {
 				p.runUpdate(func() (func(), error) {
@@ -135,61 +136,139 @@ func (p *panel) statusSettings(c *ui.Context) {
 	})
 }
 
+type providerModels struct {
+	name     string
+	signedIn bool
+	models   []feynman.CLIModelEntry
+}
+
+func (p *panel) providerGroups() []providerModels {
+	s := p.state
+	var groups []providerModels
+	group := func(name string) *providerModels {
+		for i := range groups {
+			if groups[i].name == name {
+				return &groups[i]
+			}
+		}
+		groups = append(groups, providerModels{name: name})
+		return &groups[len(groups)-1]
+	}
+	if s.cliModels != nil {
+		for _, model := range s.cliModels.Models {
+			g := group(model.Provider)
+			g.signedIn = true
+			g.models = append(g.models, model)
+		}
+	}
+	for _, model := range s.models {
+		g := group(model.Provider)
+		if !slices.ContainsFunc(g.models, func(m feynman.CLIModelEntry) bool { return m.ID == model.ID }) {
+			g.models = append(g.models, feynman.CLIModelEntry{ID: model.ID, Provider: model.Provider, Name: researchModelLabel(model)})
+		}
+	}
+	return groups
+}
+
 func (p *panel) modelSettings(c *ui.Context) {
 	s := p.state
-	ui.Column(c.Key("feynman-model-settings")).Gap(4).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
-		sectionTitle(c, "Models and service tier")
+	if !p.tierLoaded {
+		if tier := firstNonEmpty(tierOf(s.cliModels), serviceTierOf(s.cliStatus)); tier != "" {
+			p.tierValue, p.tierLoaded = tier, true
+		}
+	}
+	ui.Column(c.Key("feynman-model-settings")).Gap(6).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
+		sectionTitle(c, "Models")
 		ui.Row(c).Wrap().Gap(4).AlignItems(ui.Center).Children(func() {
-			input(c, "feynman-provider-login", "Model provider", &p.loginProvider, "Optional provider, such as anthropic")
-			if smallButton(c, "Sign in in Terminal", "Sign in to a model provider in Terminal").Disabled(s.cliBusy).Clicked() {
-				p.launchWizard("model_login", strings.TrimSpace(p.loginProvider))
-			}
-		})
-		ui.Row(c).Wrap().Gap(4).AlignItems(ui.Center).Children(func() {
+			text(c, portrait.Type.Meta, "Service tier").FontWeight(600).TextColor(portrait.Colors.Ink2).Shrink(0)
 			input(c, "feynman-service-tier", "Service tier", &p.tierValue, "Tier value")
-			if smallButton(c, "Apply tier", "Set the Feynman service tier").Disabled(s.cliBusy || strings.TrimSpace(p.tierValue) == "").Clicked() {
+			if smallButton(c, "Apply tier", "Set the Feynman service tier").Disabled(s.cliBusy || strings.TrimSpace(p.tierValue) == "" || p.tierValue == firstNonEmpty(tierOf(s.cliModels), serviceTierOf(s.cliStatus))).Clicked() {
 				p.modelAction("tier", strings.TrimSpace(p.tierValue))
 			}
 		})
-		if s.cliModels == nil {
-			mutedText(c, "No authenticated models loaded.")
-		} else if !s.cliModels.Parsed {
+		groups := p.providerGroups()
+		switch {
+		case s.cliModels != nil && !s.cliModels.Parsed:
 			resultText(c, s.cliModels.Command, s.cliModels.RawOutput, s.cliModels.Error)
-		} else if len(s.cliModels.Models) == 0 {
-			mutedText(c, "No authenticated models. Use Sign in in Terminal.")
-		} else {
-			for _, model := range s.cliModels.Models {
-				p.cliModelRow(c, model)
-			}
+		case len(groups) == 0:
+			mutedText(c, "No models yet. Sign in to a provider in Terminal.")
 		}
-		if s.session.Model != nil {
-			mutedText(c, "Active research model · "+s.session.Model.Provider+"/"+s.session.Model.ID)
+		for _, g := range groups {
+			p.providerGroup(c, g)
+		}
+		ui.Row(c).Wrap().Gap(4).AlignItems(ui.Center).Children(func() {
+			input(c, "feynman-provider-login", "Model provider", &p.loginProvider, "Another provider, such as anthropic")
+			if toolButton(c, "Sign in in Terminal", "Sign in to another model provider in Terminal", true, false).Disabled(s.cliBusy).Clicked() {
+				p.launchWizard("model_login", strings.TrimSpace(p.loginProvider))
+			}
+		})
+	})
+}
+
+func tierOf(r *feynman.CLIModelListResult) string {
+	if r == nil {
+		return ""
+	}
+	return r.Tier
+}
+
+func serviceTierOf(r *feynman.CLIStatusResult) string {
+	if r == nil {
+		return ""
+	}
+	return r.ServiceTier
+}
+
+func (p *panel) providerGroup(c *ui.Context, g providerModels) {
+	name := providerLabel(g.name)
+	ui.Column(c.Key("feynman-provider-" + g.name)).Gap(2).Role(ui.RoleGroup).Label(name + " models").Children(func() {
+		ui.Row(c).Gap(6).AlignItems(ui.Center).Padding(4, 2).Children(func() {
+			text(c, portrait.Type.UI, name).FontWeight(600).TextColor(portrait.Colors.Ink).Role(ui.RoleHeading)
+			status, tone := "Not signed in", portrait.Tones.Neutral
+			if g.signedIn {
+				status, tone = "Signed in", portrait.Tones.Success
+			}
+			portrait.Badge(c, status, tone)
+			ui.Row(c).Grow(1)
+			if g.signedIn {
+				if toolButton(c, "Log out", "Log out of "+name, true, false).Disabled(p.state.cliBusy).Clicked() {
+					p.modelAction("logout", g.name)
+				}
+			} else if toolButton(c, "Sign in in Terminal", "Sign in to "+name+" in Terminal", true, false).Disabled(p.state.cliBusy).Clicked() {
+				p.launchWizard("model_login", g.name)
+			}
+		})
+		for _, model := range g.models {
+			p.cliModelRow(c, model)
 		}
 	})
 }
 
 func (p *panel) cliModelRow(c *ui.Context, model feynman.CLIModelEntry) {
-	label := model.Name
-	if label == "" {
-		label = model.ID
-	}
-	ui.Row(c.Key("feynman-model-"+model.ID)).Wrap().Gap(4).AlignItems(ui.Center).Padding(3, 0).Children(func() {
-		ui.Column(c).Grow(1).Children(func() {
-			text(c, portrait.Type.UI, label).FontWeight(600).TextColor(portrait.Colors.Ink)
-			meta := model.Provider
-			if model.Current {
-				meta += " · current"
-			}
-			if model.Recommended {
-				meta += " · recommended"
-			}
-			mutedText(c, meta)
-		})
-		if smallButton(c, "Set default", "Set "+label+" as the default model").Disabled(model.Current || p.state.cliBusy).Clicked() {
-			p.modelAction("set", model.Name)
+	label := firstNonEmpty(model.Name, model.ID)
+	key := model.Provider + "/" + model.ID
+	row := ui.Row(c.Key("feynman-model-"+key)).Gap(6).AlignItems(ui.Center).Padding(2, 4, 2, 2).Radius(portrait.Radii.M)
+	portrait.RowHover(row, row.Hovered())
+	row.Children(func() {
+		pinned := p.modelPinned(key)
+		verb := "Pin "
+		if pinned {
+			verb = "Unpin "
 		}
-		if smallButton(c, "Log out", "Log out of "+model.Provider).Disabled(p.state.cliBusy).Clicked() {
-			p.modelAction("logout", model.Provider)
+		pin := portrait.ButtonWith(c.Key("pin"), "", verb+label, portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Compact, Leading: portrait.IconStar, Selected: pinned}).Checked(pinned)
+		if pin.Clicked() {
+			p.toggleModelPinned(key)
+		}
+		text(c, portrait.Type.UI, label).TextColor(portrait.Colors.Ink).Grow(1).MinWidth(0).MaxLines(1).Ellipsis("…")
+		if model.Current {
+			text(c, portrait.Type.Meta, "Default").FontWeight(600).TextColor(portrait.Colors.Accent).Role(ui.RoleStatus)
+		} else if toolButton(c, "Set default", "Set "+label+" as the default model", true, false).Disabled(p.state.cliBusy).Clicked() {
+			p.modelAction("set", firstNonEmpty(model.Name, model.ID))
+		}
+		shown := p.modelShown(key)
+		toggle := portrait.Switch(c.Key("shown"), &shown).Label("Show " + label + " in Picker")
+		if toggle.Changed() {
+			p.setModelShown(key, shown)
 		}
 	})
 }

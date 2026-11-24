@@ -184,6 +184,13 @@ func (s *Shell) commandItems(m Model, a Actions, slots Slots, width float32) []c
 		}
 		add(commandItem{icon: portrait.IconPlugs, title: title, detail: "Plugin", run: func() { plugin.set(!plugin.on) }})
 	}
+	if a.SetAppearance != nil {
+		next, icon := portrait.Dark, portrait.IconMoon
+		if s.dark {
+			next, icon = portrait.Light, portrait.IconSun
+		}
+		add(commandItem{icon: icon, title: "Toggle Dark Mode", detail: "Appearance", run: func() { a.SetAppearance(next) }})
+	}
 	if doc.ID != "" && a.CloseDocument != nil {
 		add(commandItem{icon: portrait.IconX, title: "Close Document", detail: labels[doc.ID], keys: []string{"⌘", "W"}, run: func() { a.CloseDocument(doc.ID) }})
 	}
@@ -200,9 +207,14 @@ func (s *Shell) commandItems(m Model, a Actions, slots Slots, width float32) []c
 				add(commandItem{icon: portrait.IconFolder, title: "Open " + recent.Name, detail: recent.Root, run: func() { a.OpenRecent(recent.Root) }})
 			}
 		}
+		if a.SetAppearance != nil {
+			for _, appearance := range portrait.Appearances {
+				add(commandItem{icon: portrait.IconMoon, title: "Appearance: " + string(appearance), detail: "Light, dark or follow the system", run: func() { a.SetAppearance(appearance) }})
+			}
+		}
 		if a.SetSpace != nil {
 			for _, space := range portrait.Spaces {
-				add(commandItem{icon: portrait.IconPalette, title: "Scenery: " + space.Name, detail: "Colour of this workspace", run: func() { a.SetSpace(space.Name) }})
+				add(commandItem{icon: portrait.IconPalette, title: "Space: " + space.Label, detail: "Colours of this workspace", run: func() { a.SetSpace(space.Name) }})
 			}
 		}
 	}

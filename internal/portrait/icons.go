@@ -67,4 +67,9 @@ var (
 	IconArrowRight            = Icon{Glyph: "\ue06c"}
 	IconFolderPlus            = Icon{Glyph: "\ue258"}
 	IconFunnel                = Icon{Glyph: "\ue266"}
+	IconMoon                  = Icon{Glyph: "\ue330"}
+	IconSun                   = Icon{Glyph: "\ue472"}
+	IconStar                  = Icon{Glyph: "\ue46a"}
+	IconPushPin               = Icon{Glyph: "\ue3e2"}
+	IconCaretLeft             = Icon{Glyph: "\ue138"}
 )

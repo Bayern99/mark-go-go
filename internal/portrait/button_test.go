@@ -124,7 +124,7 @@ func TestDangerButtonUsesTheDangerTone(t *testing.T) {
 	tt.Frame()
 	info, _ := tt.AccessByRole(ui.RoleButton, "Delete")
 	r, g, b, _ := tt.Image().At(int(info.Bounds.X+info.Bounds.W)-6, int(info.Bounds.Y+info.Bounds.H/2)).RGBA()
-	if r>>8 != 168 || g>>8 != 58 || b>>8 != 58 {
-		t.Fatalf("danger fill rgb(%d, %d, %d), want rgb(168, 58, 58)", r>>8, g>>8, b>>8)
+	if r>>8 != 171 || g>>8 != 55 || b>>8 != 47 {
+		t.Fatalf("danger fill rgb(%d, %d, %d), want 鹅血石红 rgb(171, 55, 47)", r>>8, g>>8, b>>8)
 	}
 }

@@ -171,7 +171,6 @@ func TestCommandBarSearchesTheWorkspaceAndGivesTheSidebarItsFilterBack(t *testin
 func TestPageBarCarriesPathStateAndViewsInOneRow(t *testing.T) {
 	var shell nativeui.Shell
 	model := libraryModel()
-	model.Version = 4
 	model.Workspace.Documents[0].Edited = true
 	model.Crumbs = []workspace.Crumb{{Name: "Library", Path: "/library"}, {Name: "One.md", Path: "/library/One.md", IsFile: true}}
 	var revealed []string
@@ -191,10 +190,7 @@ func TestPageBarCarriesPathStateAndViewsInOneRow(t *testing.T) {
 			t.Errorf("%s at %v is outside the page bar at the top of %v", target.name, info.Bounds, page)
 		}
 	}
-	if !app.HasText("v4") {
-		t.Error("the page bar does not show the document version")
-	}
-	if app.HasText("/library/One.md") || app.HasText("Saved") {
+	if app.HasText("/library/One.md") || app.HasText("Saved") || slices.ContainsFunc(app.Texts(), func(text string) bool { return len(text) > 1 && text[0] == 'v' && text[1] >= '0' && text[1] <= '9' }) {
 		t.Errorf("the page still draws a status bar: %v", app.Texts())
 	}
 	if err := app.Click("Reveal Library"); err != nil {

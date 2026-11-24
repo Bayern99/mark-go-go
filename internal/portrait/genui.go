@@ -58,28 +58,32 @@ type GenUITokens struct {
 
 func turn(deg float32) float32 { return deg / 360 }
 
-var GenUI = GenUITokens{
-	Card:           Materials.Sheet,
-	CardRadius:     Radii.L,
-	CardPadding:    12,
-	CardGap:        14,
-	SkeletonRadius: 8,
-	Replacing:      Colors.Code,
-	Enter:          CardMotion{Duration: 220 * time.Millisecond, Stagger: 36 * time.Millisecond, MaxStagger: 6, Rise: 5, Blur: 2, Ease: Motion.EaseOut},
-	Shimmer:        DefaultSkeleton,
-	Halo: Halo{Duration: 950 * time.Millisecond, Ease: CubicBezier{0.16, 1, 0.3, 1}, From: 0.32, To: 2.15, Center: ui.Point{X: 0.86, Y: 0.24}, Inset: 24,
-		Fill: ui.RadialGradient{Center: ui.Point{X: 0.86, Y: 0.24}, Stops: []ui.GradientStop{
-			{Color: ui.Transparent, At: 0}, {Color: ui.Transparent, At: 0.24},
-			{Color: Colors.Accent.Alpha(0.11), At: 0.38},
-			{Color: Colors.Accent.Mix(Colors.Paper, 0.45).Alpha(0.19), At: 0.50},
-			{Color: ui.Transparent, At: 0.68}}}},
-	Rim: Rim{Duration: 900 * time.Millisecond, Ease: CubicBezier{0.22, 1, 0.36, 1}, From: -60, To: 300, Width: 1.5,
-		Stops: []ui.GradientStop{
-			{Color: ui.Transparent, At: 0}, {Color: ui.Transparent, At: turn(250)},
-			{Color: Colors.Accent.Mix(Colors.Paper, 0.35), At: turn(312)},
-			{Color: white(0.96), At: turn(338)},
-			{Color: ui.Transparent, At: 1}}},
-	Source:      Surface{Colors.Paper, Colors.Paper, Shadows{out(0, 0, 0, 0.5, Colors.LineStrong)}},
-	SourceHover: Surface{Colors.Code, Colors.Code, Shadows{out(0, 0, 0, 0.5, Colors.LineStrong)}},
-	SourcePress: Surface{Materials.RaisedPress.From, Materials.RaisedPress.To, Shadows{out(0, 0, 0, 0.5, Colors.LineStrong)}},
+var GenUI GenUITokens
+
+func genUIFor(p Palette) GenUITokens {
+	return GenUITokens{
+		Card:           Materials.Sheet,
+		CardRadius:     Radii.L,
+		CardPadding:    12,
+		CardGap:        14,
+		SkeletonRadius: 8,
+		Replacing:      p.Code,
+		Enter:          CardMotion{Duration: 220 * time.Millisecond, Stagger: 36 * time.Millisecond, MaxStagger: 6, Rise: 5, Blur: 2, Ease: Motion.EaseOut},
+		Shimmer:        DefaultSkeleton,
+		Halo: Halo{Duration: 950 * time.Millisecond, Ease: CubicBezier{0.16, 1, 0.3, 1}, From: 0.32, To: 2.15, Center: ui.Point{X: 0.86, Y: 0.24}, Inset: 24,
+			Fill: ui.RadialGradient{Center: ui.Point{X: 0.86, Y: 0.24}, Stops: []ui.GradientStop{
+				{Color: ui.Transparent, At: 0}, {Color: ui.Transparent, At: 0.24},
+				{Color: p.Accent.Alpha(0.11), At: 0.38},
+				{Color: p.Accent.Mix(p.Paper, 0.45).Alpha(0.19), At: 0.50},
+				{Color: ui.Transparent, At: 0.68}}}},
+		Rim: Rim{Duration: 900 * time.Millisecond, Ease: CubicBezier{0.22, 1, 0.36, 1}, From: -60, To: 300, Width: 1.5,
+			Stops: []ui.GradientStop{
+				{Color: ui.Transparent, At: 0}, {Color: ui.Transparent, At: turn(250)},
+				{Color: p.Accent.Mix(p.Paper, 0.35), At: turn(312)},
+				{Color: white(0.96), At: turn(338)},
+				{Color: ui.Transparent, At: 1}}},
+		Source:      Surface{p.Paper, p.Paper, Shadows{out(0, 0, 0, 0.5, p.LineStrong)}},
+		SourceHover: Surface{p.Code, p.Code, Shadows{out(0, 0, 0, 0.5, p.LineStrong)}},
+		SourcePress: Surface{Materials.RaisedPress.From, Materials.RaisedPress.To, Shadows{out(0, 0, 0, 0.5, p.LineStrong)}},
+	}
 }

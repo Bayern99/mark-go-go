@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- 五行 Space（在 Arc 实验之上，未合并）：八个 Space（Five Elements、Metal–Water、Wood–Fire、Earth、Metal、Wood、Water、Fire）各有自己的强调色、纸页与元素色，并新增完整的深色外观（System / Light / Dark，命令栏与工作区菜单可切换）；16 套配色逐套通过 WCAG AA。纸页顶行去掉版本号；Feynman 的模型选择器按 Pinned、Recent、Providers 组织，设置页按提供方分组并把诊断收进折叠区；中文多行表格不再被裁切。见 [ADR 0014](docs/adr/0014-wuxing-spaces-per-space-accent-and-dark-mode.md)。 Wu Xing Spaces with per-Space accents and a complete dark appearance; calmer Feynman model picker and settings; CJK table rows grow to their wrapped lines.
+
 - Arc 实验（分支 `t3/arc-inspired-editor-redesign`，未合并）：窗口改为彩色布景上的一张纸页，文档标签移到侧栏竖排，三行文档界面合为一行；新增命令栏（`⌘K` / `⌘T`）、侧栏开关（`⌘0`）和按工作区选择的布景；字体换为 Inter，强调色换为蓝 `#3139fb`，成功色独立为绿；macOS 隐藏系统标题栏。见 [DESIGN.md](DESIGN.md) 与 [ADR 0013](docs/adr/0013-arc-experiment-scenery-page-command-bar.md)。 Arc experiment: a coloured scenery with one paper page, vertical document tabs in the sidebar, a Command Bar, per-workspace sceneries, Inter, and a hidden title bar on macOS.
 
 - 修复 Preview 标题折叠时被折叠段的残影叠在后文上、展开时后文先跳位再被遮罩盖住的问题：折叠与展开改为直接到位，与 WebUI 一致（#96）。 Heading folds and expansions in Preview now land at once, with no ghost drawn over the following content and no veil over content that already moved.

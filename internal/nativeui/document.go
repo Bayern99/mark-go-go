@@ -1,7 +1,6 @@
 package nativeui
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/Bayern99/mark-go-go/internal/portrait"
@@ -101,9 +100,6 @@ func (s *Shell) pageBar(c *ui.Context, doc workspace.DocumentInfo, m Model, a Ac
 		if doc.ID != "" {
 			if state := documentStateText(doc); state != "" {
 				portrait.Type.Meta.Apply(ui.Text(c, state)).TextColor(portrait.Colors.Ink3).Role(ui.RoleStatus).MaxLines(1).Shrink(0)
-			}
-			if m.Version > 0 {
-				portrait.Type.Meta.Apply(ui.Text(c, fmt.Sprintf("v%d", m.Version))).TextColor(portrait.Colors.Ink3).Padding(1, 6).Radius(portrait.Radii.Pill).Background(portrait.Colors.Fill).Shrink(0)
 			}
 			portrait.Track(c, "view modes", func(t *portrait.Segments) {
 				for i, title := range []string{"Preview", "Markdown", "GenUI"} {

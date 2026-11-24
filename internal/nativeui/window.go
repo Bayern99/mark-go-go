@@ -53,7 +53,10 @@ type Window struct {
 	menuKnown, menuUndo, menuRedo bool
 }
 
-const spacePreference = "mgo.space:"
+const (
+	spacePreference      = "mgo.space:"
+	appearancePreference = "mgo.appearance"
+)
 
 func NewWindow(host *workspace.Service, opts mygo.WindowOptions, extensions ...func(*Window) Panels) *mygo.Window {
 	w := &Window{host: host, documents: make(map[string]*openDocument)}
@@ -340,7 +343,7 @@ func (w *Window) View(c *ui.Context) {
 		w.refresh()
 	}
 	d := w.documents[w.snapshot.ActiveID]
-	model := Model{Workspace: w.snapshot, Navigation: w.navigation, Recents: w.recents, Search: w.search, Message: w.failure, Feynman: w.PluginEnabled("feynman"), Git: w.PluginEnabled("git"), Spaces: map[string]string{}}
+	model := Model{Workspace: w.snapshot, Navigation: w.navigation, Recents: w.recents, Search: w.search, Message: w.failure, Feynman: w.PluginEnabled("feynman"), Git: w.PluginEnabled("git"), Spaces: map[string]string{}, Appearance: portrait.AppearanceNamed(w.Preference(appearancePreference))}
 	for _, root := range w.snapshot.Workspaces {
 		model.Spaces[root.Root] = w.Preference(spacePreference + root.Root)
 	}
@@ -353,7 +356,6 @@ func (w *Window) View(c *ui.Context) {
 		}
 		model.ReturnToGenUI = d.returnToGenUI
 		model.Crumbs = d.crumbs
-		model.Version = d.reloadVersion
 	}
 	if d != nil && w.shell.wantsSections() {
 		if d.sections == nil || d.outlineVersion != d.source.Version() {
@@ -412,9 +414,10 @@ func (w *Window) View(c *ui.Context) {
 				w.failure = err.Error()
 			}
 		},
-		Filter:     func(query string) { w.search, _ = w.host.SetFilter(w.ctx, query) },
-		SetSpace:   func(name string) { w.setPreference(spacePreference+w.snapshot.Root, name) },
-		SetFeynman: func(value bool) { w.setPlugin("feynman", value) }, SetGit: func(value bool) { w.setPlugin("git", value) },
+		Filter:        func(query string) { w.search, _ = w.host.SetFilter(w.ctx, query) },
+		SetSpace:      func(name string) { w.setPreference(spacePreference+w.snapshot.Root, name) },
+		SetAppearance: func(a portrait.Appearance) { w.setPreference(appearancePreference, string(a)) },
+		SetFeynman:    func(value bool) { w.setPlugin("feynman", value) }, SetGit: func(value bool) { w.setPlugin("git", value) },
 	}
 	if !w.shell.ready {
 		if v, err := strconv.ParseFloat(w.Preference("mgo.researchWidth"), 32); err == nil && v >= 310 && v <= 800 {

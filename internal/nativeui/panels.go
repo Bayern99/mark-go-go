@@ -65,7 +65,7 @@ func (w *Window) SetMode(mode string) {
 	}
 }
 func (w *Window) PluginEnabled(name string) bool { return w.Preference("mgo.plugin."+name) == "on" }
-func (w *Window) Preference(key string) string   { return w.preferences.values[key] }
+func (w *Window) Preference(key string) string   { return w.store().values[key] }
 
 func (w *Window) install(p Panels) {
 	if p.GenUI != nil {

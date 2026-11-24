@@ -11,7 +11,6 @@ import (
 type Model struct {
 	ReturnToGenUI bool
 	Crumbs        []workspace.Crumb
-	Version       int
 	Workspace     workspace.WorkspaceSnapshot
 	Navigation    workspace.NavSnapshot
 	Sections      []workspace.Section
@@ -20,6 +19,7 @@ type Model struct {
 	Feynman, Git  bool
 	Message       string
 	Spaces        map[string]string
+	Appearance    portrait.Appearance
 }
 
 type Actions struct {
@@ -31,6 +31,7 @@ type Actions struct {
 	Reveal                                                     func(int)
 	NewDocument, OpenFolder                                    func()
 	SetFeynman, SetGit                                         func(bool)
+	SetAppearance                                              func(portrait.Appearance)
 }
 
 type Slots struct {
@@ -40,7 +41,7 @@ type Slots struct {
 type Shell struct {
 	ready, outline, navFocus                       bool
 	leftOpen, rightOpen, hideResearch, hideSidebar bool
-	focusedTab                                     bool
+	focusedTab, dark                               bool
 	checkpoints                                    bool
 	command                                        commandBar
 	workspaceID, activeID, query, tabFocus         string
@@ -130,8 +131,11 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 		s.settle--
 		c.Invalidate()
 	}
+	systemDark := c.Theme().Dark
+	s.dark = m.Appearance.IsDark(systemDark)
+	portrait.Use(spaceOf(m), s.dark)
 	t := portrait.Theme()
-	translucent := c.Vibrancy() && !portrait.Opaque(c)
+	translucent := c.Vibrancy() && !portrait.Opaque(c) && s.dark == systemDark
 	if translucent {
 		c.Root().Background(ui.Transparent)
 	}

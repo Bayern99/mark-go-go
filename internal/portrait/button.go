@@ -2,7 +2,9 @@ package portrait
 
 import "github.com/egoist/mygo/ui"
 
-var (
+var dangerRest, dangerHover, dangerPress, dangerOutlineRest, dangerOutlineHover, dangerOutlinePress Surface
+
+func dangerSurfaces() {
 	dangerRest = Surface{Tones.Danger.Solid, Tones.Danger.Solid, Shadows{
 		in(0, 1, 0, 0, white(0.16)),
 		in(0, -1, 0, 0, black(0.12)),
@@ -26,7 +28,7 @@ var (
 	dangerOutlinePress = Surface{Tones.Danger.Soft, Tones.Danger.Soft, Shadows{
 		in(0, 0, 0, 1, Tones.Danger.Ring),
 	}}
-)
+}
 
 // ButtonSpec describes the independent axes of a button. Size is one of
 // Sizes.Compact, Sizes.Regular, or Sizes.Large; its zero value is Regular.

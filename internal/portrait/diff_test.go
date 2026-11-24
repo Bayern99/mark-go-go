@@ -23,7 +23,7 @@ func TestDiffTokensMatchTheirLockedValues(t *testing.T) {
 			t.Errorf("%s = %+v, want %v/%v in %q", tc.name, tc.got, tc.size, tc.leading, tc.family)
 		}
 	}
-	if !sameColor(d.Delete, ui.RGBA(168, 58, 58, 0.10)) {
+	if !sameColor(d.Delete, ui.RGBA(171, 55, 47, 0.10)) {
 		t.Errorf("delete %+v", d.Delete)
 	}
 	if !sameColor(d.Insert, portrait.Colors.Success.Alpha(0.12)) {

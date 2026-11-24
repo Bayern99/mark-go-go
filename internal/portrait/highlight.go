@@ -23,12 +23,16 @@ type HighlightSet struct {
 	Jump Highlight
 }
 
-var Highlights = HighlightSet{
-	Jump: Highlight{Duration: Motion.Jump, Ease: Motion.EaseOut, Radius: 6, Frames: []TintFrame{
-		{At: 0, Color: Colors.Accent.Alpha(0.16), Opacity: 0.65},
-		{At: 0.35, Color: Colors.Accent.Alpha(0.12), Opacity: 1},
-		{At: 1, Color: ui.Transparent, Opacity: 1},
-	}},
+var Highlights HighlightSet
+
+func highlightsFor(p Palette) HighlightSet {
+	return HighlightSet{
+		Jump: Highlight{Duration: Motion.Jump, Ease: Motion.EaseOut, Radius: 6, Frames: []TintFrame{
+			{At: 0, Color: p.Accent.Alpha(0.16), Opacity: 0.65},
+			{At: 0.35, Color: p.Accent.Alpha(0.12), Opacity: 1},
+			{At: 1, Color: ui.Transparent, Opacity: 1},
+		}},
+	}
 }
 
 func (h Highlight) At(elapsed time.Duration) ui.Color {

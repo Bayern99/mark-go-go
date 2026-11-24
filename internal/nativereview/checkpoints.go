@@ -36,11 +36,11 @@ func (p *panel) drawCheckpoints(c *ui.Context) {
 		p.loadCheckpoints(s)
 	}
 	ui.Column(c).Width(min(470, max(260, width-40))).Padding(8).Gap(8).Children(func() {
-		ui.Text(c, "Checkpoints").Bold()
+		portrait.Type.UI.Apply(ui.Text(c, "Checkpoints")).FontWeight(600).TextColor(portrait.Colors.Ink)
 		ui.Row(c).Gap(6).Children(func() {
 			label := ui.TextInput(c, &s.label).Label("Checkpoint label").Placeholder("Optional label").Grow(1)
 			canCreate := !s.busy && !active.Edited && !active.Conflict && !active.Deleted
-			if ui.Button(c, "Create checkpoint").Disabled(!canCreate).Clicked() || label.Submitted() && canCreate {
+			if portrait.Button(c, "Create checkpoint", "Create checkpoint").Disabled(!canCreate).Clicked() || label.Submitted() && canCreate {
 				if err := p.win.Publish(); err != nil {
 					s.errorText = err.Error()
 				} else {
@@ -99,14 +99,23 @@ func (p *panel) drawCheckpointList(c *ui.Context, s *checkpointState) {
 				if name == "" {
 					name = "Snapshot"
 				}
-				if ui.Button(c.Key(item.ID), name+" · "+backend+" · "+when).Selected(s.selected == item.ID).Disabled(s.busy).Tooltip(item.Source).Clicked() {
+				selected := s.selected == item.ID
+				row := ui.ButtonBase(c.Key(item.ID)).Label(name+" · "+backend+" · "+when).FillWidth().Height(portrait.Sizes.Regular).Padding(0, 8).Gap(6).Radius(portrait.Radii.M).AlignItems(ui.Center).Selected(selected).Disabled(s.busy)
+				portrait.Tooltip(c, row, item.Source)
+				portrait.RowHover(row, row.Hovered() && !selected)
+				row.Children(func() {
+					portrait.RowCapsule(c, row, selected, "checkpoints:"+s.id)
+					portrait.Type.UI.Apply(ui.Text(c, name)).FontWeight(500).TextColor(portrait.Colors.Ink).ZIndex(1).MaxLines(1).Ellipsis("…").Grow(1).MinWidth(0)
+					portrait.Type.Meta.Apply(ui.Text(c, backend+" · "+when)).TextColor(portrait.Colors.Ink3).ZIndex(1).MaxLines(1).Shrink(0)
+				})
+				if row.Clicked() {
 					s.selected = item.ID
 					s.comparing = false
 				}
 			}
 		})
 	})
-	if ui.Button(c, "Compare").Disabled(s.busy || s.selected == "").Clicked() {
+	if portrait.Button(c, "Compare", "Compare the selected checkpoint").Disabled(s.busy || s.selected == "").Clicked() {
 		p.compareCheckpoint(s)
 	}
 }

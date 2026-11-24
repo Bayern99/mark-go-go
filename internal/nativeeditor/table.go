@@ -94,10 +94,10 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 	if model == nil || len(model.widths) != ncols {
 		model = &readingTable{bounds: map[cellPosition]ui.Rect{}, widths: make([]float32, ncols), minimum: make([]float32, ncols), dragCol: -1, hoverCol: -1}
 		for i := range model.widths {
-			model.minimum[i] = 112
-			for _, cells := range rows {
-				if i < len(cells) {
-					model.minimum[i] = max(model.minimum[i], min(340, 24+float32(utf8.RuneCountInString(cells[i].raw))*8))
+			model.minimum[i] = tableColumnMin
+			for _, text := range labels {
+				if i < len(text) {
+					model.minimum[i] = max(model.minimum[i], min(tableColumnMax, tableCellInset+textAdvance(text[i], portrait.Type.Small.Size)))
 				}
 			}
 		}
@@ -130,7 +130,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 		width += w
 	}
 	version := p.version
-	p.standIn(snap, b.Start, snap.LineEnd(snap.LineOf(b.End)), strings.Join(visible, "\n"), editor.Block{Label: "Markdown table", Width: width, Height: float32(len(rows)) * 36, Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
+	p.standIn(snap, b.Start, snap.LineEnd(snap.LineOf(b.End)), strings.Join(visible, "\n"), editor.Block{Label: "Markdown table", Width: width, Height: model.height(labels), Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
 		if !model.manual && model.dragCol < 0 && e.LayoutBounds().W > 0 {
 			model.fit(e.LayoutBounds().W)
 		}
@@ -142,7 +142,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 			ui.ScrollHorizontal(c).FillWidth().Children(func() {
 				ui.Column(c).Width(gridWidth).Shrink(0).Role(ui.RoleTable).Children(func() {
 					for r, cells := range rows {
-						ui.Row(c.Key(r)).Height(36).Role(ui.RoleRow).Children(func() {
+						ui.Row(c.Key(r)).MinHeight(tableRowMin).AlignItems(ui.Stretch).Role(ui.RoleRow).Children(func() {
 							for k, cell := range cells {
 								if k >= ncols {
 									break
@@ -171,8 +171,9 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 									}
 									child.state.LineHeight = portrait.Type.Small.LineHeight()
 									child.state.Theme.Background = portrait.Clear
+									child.state.FitContent = true
 									child.state.OnInput = model.cellInput(pos, doc, c.Services())
-									field := editor.View(c, &child.state).Width(model.widths[k] - 10).Height(31)
+									field := editor.View(c, &child.state).Width(model.widths[k] - tableFieldInset)
 									model.bounds[pos] = field.Bounds()
 									field.ObserveInput(func(ev ui.InputEvent) {
 										if ev.Kind == ui.InputPointerDown {

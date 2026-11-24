@@ -24,8 +24,10 @@
 | 变更提案 · Change proposal | 由任意 Agent 提交、尚未写入原文、等待在编辑器中审阅后接受或拒绝的改动草稿。 |
 | 检查点 · Checkpoint | 原文在某一时刻的本地版本快照（可附带标签与来源），可与编辑中的文字比较或恢复。 |
 | Portrait | Mark Go Go 的界面设计语言，统一规定字体、颜色、材质与动效。 |
-| 布景 · Scenery | 窗口的彩色底面，侧栏直接坐在上面；每个工作区一种，又称 Space。 |
-| 纸页 · Page | 浮在布景上的不透明白色圆角面，承载当前原文及其顶行。 |
+| 布景 · Scenery | 窗口的彩色底面，侧栏直接坐在上面；取自所在 Space 当前外观的两端颜色。 |
+| Space | 一个工作区的颜色身份：八个五行 Space 之一，浅色与深色下各有布景、纸页、强调色和元素色。 |
+| 外观 · Appearance | System、Light 或 Dark；System 跟随系统的浅色或深色外观。 |
+| 纸页 · Page | 浮在布景上的不透明圆角纸面，承载当前原文及其顶行；颜色随 Space 与外观。 |
 | 侧栏 · Sidebar | 布景左侧的导航：命令入口、文档标签、工作区、文件或大纲。 |
 | 命令栏 · Command Bar | `⌘K` 打开的浮层，搜索原文、文件、标题并执行命令。 |
 | 色调 · Tone | Portrait 的一组语义配色：Neutral、Accent（即 Success）、Info、Warning 或 Danger。 |

@@ -98,39 +98,40 @@ func TestDisplayFamilyKeepsItsSizeAndTightensTracking(t *testing.T) {
 
 func TestColorsMatchTheirLockedValues(t *testing.T) {
 	c := portrait.Colors
+	accent, warn, danger := ui.Hex("#2E5D8C"), ui.Hex("#815F25"), ui.Hex("#AB372F")
 	for _, tc := range []struct {
 		name string
 		got  ui.Color
 		want ui.Color
 	}{
-		{"chrome", c.Chrome, ui.Hex("#f2f2f4")},
-		{"paper", c.Paper, ui.Hex("#ffffff")},
-		{"code", c.Code, ui.Hex("#f6f6f8")},
-		{"ink", c.Ink, ui.Hex("#1d1d1f")},
-		{"ink-2", c.Ink2, ui.Hex("#48484d")},
-		{"ink-3", c.Ink3, ui.Hex("#6e6e73")},
-		{"ink-4", c.Ink4, ui.Hex("#a1a1a6")},
+		{"chrome", c.Chrome, ui.Hex("#FFFFFF").Mix(ui.Hex("#1D1B1C"), 0.05)},
+		{"paper", c.Paper, ui.Hex("#FFFFFF")},
+		{"code", c.Code, ui.Hex("#FBF7EE")},
+		{"ink", c.Ink, ui.Hex("#1D1B1C")},
+		{"ink-2", c.Ink2, ui.Hex("#48484D")},
+		{"ink-3", c.Ink3, ui.Hex("#6E6E73")},
+		{"ink-4", c.Ink4, ui.Hex("#A1A1A6")},
 		{"line", c.Line, ui.RGBA(0, 0, 0, 0.08)},
 		{"line-strong", c.LineStrong, ui.RGBA(0, 0, 0, 0.16)},
 		{"fill", c.Fill, ui.RGBA(0, 0, 0, 0.045)},
 		{"fill-hover", c.FillHover, ui.RGBA(0, 0, 0, 0.07)},
 		{"fill-strong", c.FillStrong, ui.RGBA(0, 0, 0, 0.11)},
-		{"accent", c.Accent, ui.Hex("#3139fb")},
-		{"on-accent", c.OnAccent, ui.Hex("#ffffff")},
-		{"accent-soft", c.AccentSoft, ui.RGBA(49, 57, 251, 0.1)},
-		{"success", c.Success, ui.Hex("#197a49")},
-		{"warn", c.Warn, ui.Hex("#9a4d12")},
-		{"warn-soft", c.WarnSoft, ui.RGBA(154, 77, 18, 0.09)},
-		{"danger", c.Danger, ui.Hex("#a83a3a")},
-		{"danger-soft", c.DangerSoft, ui.RGBA(168, 58, 58, 0.08)},
-		{"content-note", c.Note, ui.Hex("#3139fb")},
-		{"content-note-soft", c.NoteSoft, ui.RGBA(49, 57, 251, 0.1)},
-		{"content-warning", c.Warning, ui.Hex("#9a4d12")},
-		{"content-warning-soft", c.WarningSoft, ui.RGBA(154, 77, 18, 0.09)},
-		{"content-caution", c.Caution, ui.Hex("#a83a3a")},
-		{"content-caution-soft", c.CautionSoft, ui.RGBA(168, 58, 58, 0.08)},
-		{"focus", c.Focus, ui.RGBA(49, 57, 251, 0.28)},
-		{"scrim", c.Scrim, ui.RGBA(29, 29, 31, 0.08)},
+		{"accent", c.Accent, accent},
+		{"on-accent", c.OnAccent, ui.Hex("#FFFFFF")},
+		{"accent-soft", c.AccentSoft, accent.Alpha(0.1)},
+		{"success", c.Success, ui.Hex("#1A6840")},
+		{"warn", c.Warn, warn},
+		{"warn-soft", c.WarnSoft, warn.Alpha(0.09)},
+		{"danger", c.Danger, danger},
+		{"danger-soft", c.DangerSoft, danger.Alpha(0.08)},
+		{"content-note", c.Note, accent},
+		{"content-note-soft", c.NoteSoft, accent.Alpha(0.1)},
+		{"content-warning", c.Warning, warn},
+		{"content-warning-soft", c.WarningSoft, warn.Alpha(0.09)},
+		{"content-caution", c.Caution, danger},
+		{"content-caution-soft", c.CautionSoft, danger.Alpha(0.08)},
+		{"focus", c.Focus, accent.Alpha(0.28)},
+		{"scrim", c.Scrim, ui.RGBA(29, 27, 28, 0.08)},
 	} {
 		if !sameColor(tc.got, tc.want) {
 			t.Errorf("%s = %+v, want %+v", tc.name, tc.got, tc.want)
@@ -138,10 +139,44 @@ func TestColorsMatchTheirLockedValues(t *testing.T) {
 	}
 }
 
+func TestDarkColorsMatchTheirLockedValues(t *testing.T) {
+	t.Cleanup(func() { portrait.Use(portrait.DefaultSpace, false) })
+	portrait.Use(portrait.DefaultSpace, true)
+	c := portrait.Colors
+	accent := ui.Hex("#B0D8E8")
+	for _, tc := range []struct {
+		name string
+		got  ui.Color
+		want ui.Color
+	}{
+		{"paper", c.Paper, ui.Hex("#1A1A1A")},
+		{"code", c.Code, ui.Hex("#25211C")},
+		{"ink", c.Ink, ui.Hex("#F2F3F4")},
+		{"ink-2", c.Ink2, ui.Hex("#CDD1D3")},
+		{"ink-3", c.Ink3, ui.Hex("#959DA2")},
+		{"line", c.Line, ui.RGBA(255, 255, 255, 0.1)},
+		{"line-strong", c.LineStrong, ui.RGBA(255, 255, 255, 0.2)},
+		{"accent", c.Accent, accent},
+		{"on-accent", c.OnAccent, ui.Hex("#0E100F")},
+		{"accent-soft", c.AccentSoft, accent.Alpha(0.16)},
+		{"success", c.Success, ui.Hex("#A4C2A8")},
+		{"warn", c.Warn, ui.Hex("#D8C37C")},
+		{"danger", c.Danger, ui.Hex("#F6AD8F")},
+		{"focus", c.Focus, accent.Alpha(0.4)},
+	} {
+		if !sameColor(tc.got, tc.want) {
+			t.Errorf("%s = %+v, want %+v", tc.name, tc.got, tc.want)
+		}
+	}
+	if g := portrait.Materials.GlassSelected; !sameColor(g, ui.Hex("#1A1A1A").Alpha(0.85)) {
+		t.Errorf("dark glass-selected %+v", g)
+	}
+}
+
 func TestMaterialsMatchTheirLockedValues(t *testing.T) {
 	black := func(a float32) ui.Color { return ui.RGBA(0, 0, 0, a) }
 	white := func(a float32) ui.Color { return ui.RGBA(255, 255, 255, a) }
-	accent := ui.Hex("#3139fb")
+	accent := ui.Hex("#2E5D8C")
 	glow := func(a float32) ui.Color { return accent.Alpha(a) }
 	edge := func(a float32) ui.Color { return accent.Mix(ui.RGB(0, 0, 0), 0.35).Alpha(a) }
 	in := func(x, y, blur, spread float32, c ui.Color) portrait.Shadow {
@@ -162,7 +197,7 @@ func TestMaterialsMatchTheirLockedValues(t *testing.T) {
 			out(0, 0, 0, 0.5, black(0.12)), out(0, 1, 2, 0, black(0.05)), out(0, 2, 6, -2, black(0.04))}},
 		{"raised-hover", m.RaisedHover, paper, []portrait.Shadow{
 			out(0, 0, 0, 0.5, black(0.16)), out(0, 1, 3, 0, black(0.07)), out(0, 4, 10, -3, black(0.07))}},
-		{"raised-press", m.RaisedPress, ui.Hex("#ededf1"), []portrait.Shadow{
+		{"raised-press", m.RaisedPress, paper.Mix(ui.Hex("#1D1B1C"), 0.07), []portrait.Shadow{
 			out(0, 0, 0, 0.5, black(0.18)), out(0, 0.5, 1, 0, black(0.03)), out(0, 0, 0, 0, ui.Transparent)}},
 		{"accent-raised", m.AccentRaised, accent, []portrait.Shadow{
 			in(0, 1, 0, 0, white(0.18)), out(0, 0, 0, 0.5, edge(0.5)), out(0, 1, 2, 0, glow(0.25)), out(0, 4, 12, -4, glow(0.35))}},

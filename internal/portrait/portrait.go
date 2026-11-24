@@ -73,22 +73,38 @@ type Palette struct {
 	Focus, Scrim, ModalScrim             ui.Color
 }
 
-var accent = ui.Hex("#3139fb")
+var Colors Palette
 
-var Colors = Palette{
-	Chrome: ui.Hex("#f2f2f4"), Paper: ui.Hex("#ffffff"), Code: ui.Hex("#f6f6f8"),
-	Ink: ui.Hex("#1d1d1f"), Ink2: ui.Hex("#48484d"), Ink3: ui.Hex("#6e6e73"), Ink4: ui.Hex("#a1a1a6"),
-	Line: black(0.08), LineStrong: black(0.16),
-	Fill: black(0.045), FillHover: black(0.07), FillStrong: black(0.11),
-	Accent: accent, OnAccent: ui.Hex("#ffffff"), AccentSoft: accent.Alpha(0.1),
-	Success: ui.Hex("#197a49"),
-	Warn:    ui.Hex("#9a4d12"), WarnSoft: ui.RGBA(154, 77, 18, 0.09),
-	Danger: ui.Hex("#a83a3a"), DangerSoft: ui.RGBA(168, 58, 58, 0.08),
-	Note: accent, NoteSoft: accent.Alpha(0.1),
-	Warning: ui.Hex("#9a4d12"), WarningSoft: ui.RGBA(154, 77, 18, 0.09),
-	Caution: ui.Hex("#a83a3a"), CautionSoft: ui.RGBA(168, 58, 58, 0.08),
-	Focus: accent.Alpha(0.28), Scrim: ui.RGBA(29, 29, 31, 0.08),
-	ModalScrim: ui.RGBA(29, 29, 31, 0.12),
+var (
+	lightInk = [4]ui.Color{ui.Hex("#1D1B1C"), ui.Hex("#48484D"), ui.Hex("#6E6E73"), ui.Hex("#A1A1A6")}
+	darkInk  = [4]ui.Color{ui.Hex("#F2F3F4"), ui.Hex("#CDD1D3"), ui.Hex("#959DA2"), ui.Hex("#6E6E73")}
+	onLight  = ui.Hex("#FFFFFF")
+	onDark   = ui.Hex("#0E100F")
+)
+
+func paletteFor(s Scheme, dark bool) Palette {
+	ink, on, veil, soft, focus := lightInk, onLight, black, float32(0.1), float32(0.28)
+	scrim, modal := ui.RGBA(29, 27, 28, 0.08), ui.RGBA(29, 27, 28, 0.12)
+	lines := [5]float32{0.08, 0.16, 0.045, 0.07, 0.11}
+	if dark {
+		ink, on, veil, soft, focus = darkInk, onDark, white, 0.16, 0.4
+		scrim, modal = black(0.32), black(0.48)
+		lines = [5]float32{0.10, 0.20, 0.055, 0.09, 0.14}
+	}
+	return Palette{
+		Chrome: s.Paper.Mix(ink[0], 0.05), Paper: s.Paper, Code: s.Code,
+		Ink: ink[0], Ink2: ink[1], Ink3: ink[2], Ink4: ink[3],
+		Line: veil(lines[0]), LineStrong: veil(lines[1]),
+		Fill: veil(lines[2]), FillHover: veil(lines[3]), FillStrong: veil(lines[4]),
+		Accent: s.Accent, OnAccent: on, AccentSoft: s.Accent.Alpha(soft),
+		Success: s.Success,
+		Warn:    s.Warn, WarnSoft: s.Warn.Alpha(soft - 0.01),
+		Danger: s.Danger, DangerSoft: s.Danger.Alpha(soft - 0.02),
+		Note: s.Accent, NoteSoft: s.Accent.Alpha(soft),
+		Warning: s.Warn, WarningSoft: s.Warn.Alpha(soft - 0.01),
+		Caution: s.Danger, CautionSoft: s.Danger.Alpha(soft - 0.02),
+		Focus: s.Accent.Alpha(focus), Scrim: scrim, ModalScrim: modal,
+	}
 }
 
 func black(a float32) ui.Color { return ui.RGBA(0, 0, 0, a) }

@@ -9,62 +9,65 @@ import (
 )
 
 func TestTonesMeetWCAGAA(t *testing.T) {
-	paper := wcagColor(portrait.Colors.Paper)
-	black := ui.RGB(0, 0, 0)
-	for _, tc := range []struct {
-		name string
-		tone portrait.Tone
-	}{
-		{"Neutral", portrait.Tones.Neutral},
-		{"Accent", portrait.Tones.Accent},
-		{"Success", portrait.Tones.Success},
-		{"Info", portrait.Tones.Info},
-		{"Warning", portrait.Tones.Warning},
-		{"Danger", portrait.Tones.Danger},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			tone := tc.tone
-			wash := wcagOver(wcagColor(tone.Wash), paper)
-			inkPaper := wcagContrast(wcagColor(tone.Ink), paper)
-			inkWash := wcagContrast(wcagColor(tone.Ink), wash)
-			assertWCAGContrast(t, "Ink on Paper", inkPaper, 4.5)
-			assertWCAGContrast(t, "Ink on Wash", inkWash, 4.5)
+	eachLook(t, func(t *testing.T, _ portrait.Space, _ bool) {
+		paper := wcagColor(portrait.Colors.Paper)
+		black := ui.RGB(0, 0, 0)
+		for _, tc := range []struct {
+			name string
+			tone portrait.Tone
+		}{
+			{"Neutral", portrait.Tones.Neutral},
+			{"Accent", portrait.Tones.Accent},
+			{"Success", portrait.Tones.Success},
+			{"Info", portrait.Tones.Info},
+			{"Warning", portrait.Tones.Warning},
+			{"Danger", portrait.Tones.Danger},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				tone := tc.tone
+				wash := wcagOver(wcagColor(tone.Wash), paper)
+				inkPaper := wcagContrast(wcagColor(tone.Ink), paper)
+				inkWash := wcagContrast(wcagColor(tone.Ink), wash)
+				assertWCAGContrast(t, "Ink on Paper", inkPaper, 4.5)
+				assertWCAGContrast(t, "Ink on Wash", inkWash, 4.5)
 
-			border := wcagContrast(wcagColor(tone.Border), paper)
-			ring := wcagContrast(wcagColor(tone.Ring), paper)
-			assertWCAGContrast(t, "Border on Paper", border, 3)
-			assertWCAGContrast(t, "Ring on Paper", ring, 3)
+				border := wcagContrast(wcagColor(tone.Border), paper)
+				ring := wcagContrast(wcagColor(tone.Ring), paper)
+				assertWCAGContrast(t, "Border on Paper", border, 3)
+				assertWCAGContrast(t, "Ring on Paper", ring, 3)
 
-			states := []struct {
-				name  string
-				solid ui.Color
-			}{
-				{"rest", tone.Solid},
-				{"hover", tone.Solid.Mix(portrait.Colors.Paper, 0.08)},
-				{"press", tone.Solid.Mix(black, 0.08)},
-			}
-			onSolid := make([]float64, len(states))
-			for i, state := range states {
-				onSolid[i] = wcagContrast(wcagColor(tone.OnSolid), wcagColor(state.solid))
-				assertWCAGContrast(t, "OnSolid on "+state.name, onSolid[i], 4.5)
-			}
-			t.Logf("Ink/Paper %.3f; Ink/Wash %.3f; Border/Paper %.3f; Ring/Paper %.3f; OnSolid rest/hover/press %.3f/%.3f/%.3f",
-				inkPaper, inkWash, border, ring, onSolid[0], onSolid[1], onSolid[2])
-		})
-	}
+				states := []struct {
+					name  string
+					solid ui.Color
+				}{
+					{"rest", tone.Solid},
+					{"hover", tone.Solid.Mix(portrait.Colors.Paper, 0.08)},
+					{"press", tone.Solid.Mix(black, 0.08)},
+				}
+				onSolid := make([]float64, len(states))
+				for i, state := range states {
+					onSolid[i] = wcagContrast(wcagColor(tone.OnSolid), wcagColor(state.solid))
+					assertWCAGContrast(t, "OnSolid on "+state.name, onSolid[i], 4.5)
+				}
+				t.Logf("Ink/Paper %.3f; Ink/Wash %.3f; Border/Paper %.3f; Ring/Paper %.3f; OnSolid rest/hover/press %.3f/%.3f/%.3f",
+					inkPaper, inkWash, border, ring, onSolid[0], onSolid[1], onSolid[2])
+			})
+		}
+	})
 }
 
 func TestSceneryKeepsSidebarInkReadable(t *testing.T) {
-	for _, space := range portrait.Spaces {
-		for end, scenery := range map[string]ui.Color{"from": space.From, "to": space.To} {
+	eachLook(t, func(t *testing.T, space portrait.Space, dark bool) {
+		scheme := space.In(dark)
+		for end, scenery := range map[string]ui.Color{"from": scheme.From, "to": scheme.To} {
 			ground := wcagColor(scenery)
 			assertWCAGContrast(t, space.Name+" "+end+": Ink", wcagContrast(wcagColor(portrait.Colors.Ink), ground), 7)
 			assertWCAGContrast(t, space.Name+" "+end+": Ink2", wcagContrast(wcagColor(portrait.Colors.Ink2), ground), 4.5)
 			selected := wcagOver(wcagColor(portrait.Materials.GlassSelected), ground)
 			assertWCAGContrast(t, space.Name+" "+end+": Ink3 on a selected row", wcagContrast(wcagColor(portrait.Colors.Ink3), selected), 4.5)
 		}
-		assertWCAGContrast(t, space.Name+": Mark on its scenery", wcagContrast(wcagColor(space.Mark), wcagColor(space.From)), 1.8)
-	}
+		assertWCAGContrast(t, space.Name+": Mark on its scenery", wcagContrast(wcagColor(scheme.Mark), wcagColor(scheme.From)), 1.8)
+	})
 }
 
 func assertWCAGContrast(t *testing.T, name string, got, want float64) {

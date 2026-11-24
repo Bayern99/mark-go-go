@@ -23,18 +23,24 @@ type feedback struct {
 	sink               float32
 }
 
-var looks = [...]feedback{
-	Raised:        {Materials.Raised, Materials.RaisedHover, Materials.RaisedPress, Colors.Ink, Colors.Ink, 0.98},
-	Accent:        {Materials.AccentRaised, Materials.AccentRaisedHover, Materials.AccentRaisedPress, Colors.OnAccent, Colors.OnAccent, 0.985},
-	Quiet:         {Surface{ui.Transparent, ui.Transparent, nil}, Materials.Row, Materials.RaisedPress, Colors.Ink2, Colors.Ink, 0.97},
-	Danger:        {dangerRest, dangerHover, dangerPress, Tones.Danger.OnSolid, Tones.Danger.OnSolid, 0.985},
-	DangerOutline: {dangerOutlineRest, dangerOutlineHover, dangerOutlinePress, Tones.Danger.Ink, Tones.Danger.Ink, 0.98},
-	Link:          {Surface{ui.Transparent, ui.Transparent, nil}, Surface{ui.Transparent, ui.Transparent, nil}, Surface{Colors.AccentSoft, Colors.AccentSoft, nil}, Colors.Accent, Colors.Accent, 0.98},
-}
+var (
+	looks [Link + 1]feedback
+	Rings struct{ Field, Editing Shadows }
+)
 
-var Rings = struct{ Field, Editing Shadows }{
-	Field:   Shadows{out(0, 0, 0, 0.5, Colors.LineStrong), out(0, 0, 0, 3, Colors.Focus)},
-	Editing: Shadows{out(0, 0, 0, 1, Colors.Accent), out(0, 0, 0, 3, Colors.Focus)},
+func controlLooks() {
+	looks = [...]feedback{
+		Raised:        {Materials.Raised, Materials.RaisedHover, Materials.RaisedPress, Colors.Ink, Colors.Ink, 0.98},
+		Accent:        {Materials.AccentRaised, Materials.AccentRaisedHover, Materials.AccentRaisedPress, Colors.OnAccent, Colors.OnAccent, 0.985},
+		Quiet:         {Surface{ui.Transparent, ui.Transparent, nil}, Materials.Row, Materials.RaisedPress, Colors.Ink2, Colors.Ink, 0.97},
+		Danger:        {dangerRest, dangerHover, dangerPress, Tones.Danger.OnSolid, Tones.Danger.OnSolid, 0.985},
+		DangerOutline: {dangerOutlineRest, dangerOutlineHover, dangerOutlinePress, Tones.Danger.Ink, Tones.Danger.Ink, 0.98},
+		Link:          {Surface{ui.Transparent, ui.Transparent, nil}, Surface{ui.Transparent, ui.Transparent, nil}, Surface{Colors.AccentSoft, Colors.AccentSoft, nil}, Colors.Accent, Colors.Accent, 0.98},
+	}
+	Rings = struct{ Field, Editing Shadows }{
+		Field:   Shadows{out(0, 0, 0, 0.5, Colors.LineStrong), out(0, 0, 0, 3, Colors.Focus)},
+		Editing: Shadows{out(0, 0, 0, 1, Colors.Accent), out(0, 0, 0, 3, Colors.Focus)},
+	}
 }
 
 const hoverShadow = 140 * time.Millisecond
@@ -56,6 +62,21 @@ func Press(b ui.Element, look Look) ui.Color {
 	}
 	return f.ink
 }
+
+func RowHover(row ui.Element, on bool) {
+	h := row.AnimateTo(hoverKey{}, flag(on), ui.Animation{Duration: hoverShadow, Ease: Motion.EaseOut.Easing()})
+	if h > 0 {
+		Surface{ui.Transparent, ui.Transparent, nil}.Mix(Materials.Row, h).Apply(row)
+	}
+}
+
+// Reveal eases e in while on, as a row's secondary action shows on hover or
+// focus; ReduceMotion shows it at once.
+func Reveal(e ui.Element, on bool) ui.Element {
+	return e.Opacity(e.AnimateTo(revealKey{}, flag(on), ui.Animation{Duration: hoverShadow, Ease: Motion.EaseOut.Easing()}))
+}
+
+type revealKey struct{}
 
 func flag(b bool) float32 {
 	if b {

@@ -3,7 +3,12 @@ package portrait
 import "github.com/egoist/mygo/ui"
 
 func Theme() ui.Theme {
-	t := *ui.LightTheme()
+	base, selection, scrollbar := ui.LightTheme(), Colors.Accent.Alpha(0.24), black(0.32)
+	if active.dark {
+		base, selection, scrollbar = ui.DarkTheme(), Colors.Accent.Alpha(0.32), white(0.30)
+	}
+	t := *base
+	t.Selection, t.Scrollbar, t.Success = selection, scrollbar, Colors.Success
 	t.Font, t.FontSize = FontSans, Type.UI.Size
 	t.Background, t.Surface, t.SurfaceHover, t.SurfacePressed = Colors.Paper, Colors.Paper, Colors.Code, Colors.Chrome
 	t.Text, t.TextMuted, t.Border = Colors.Ink, Colors.Ink3, Colors.LineStrong

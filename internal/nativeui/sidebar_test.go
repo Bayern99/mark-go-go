@@ -173,11 +173,11 @@ func TestSceneryMenuStoresTheChosenSpace(t *testing.T) {
 	if err := app.Click("Switch workspace"); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.ChooseMenuItem("Scenery", "Dawn"); err != nil {
+	if err := app.ChooseMenuItem("Space", "Wood–Fire"); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(chosen, []string{"Dawn"}) {
-		t.Fatalf("scenery menu stored %v, want Dawn", chosen)
+	if !slices.Equal(chosen, []string{"WoodFire"}) {
+		t.Fatalf("space menu stored %v, want WoodFire", chosen)
 	}
 }
 
@@ -187,7 +187,8 @@ func sceneryAt(app *ui.Tester, x, y int) [3]int {
 }
 
 func within(pixel [3]int, space portrait.Space) bool {
-	from, to := [3]int{int(space.From.R), int(space.From.G), int(space.From.B)}, [3]int{int(space.To.R), int(space.To.G), int(space.To.B)}
+	s := space.Light
+	from, to := [3]int{int(s.From.R), int(s.From.G), int(s.From.B)}, [3]int{int(s.To.R), int(s.To.G), int(s.To.B)}
 	for i := range pixel {
 		if pixel[i] < min(from[i], to[i])-2 || pixel[i] > max(from[i], to[i])+2 {
 			return false
@@ -205,7 +206,7 @@ func TestWindowFieldIsTheWorkspaceSceneryAndThePageIsPaper(t *testing.T) {
 	side := mustAccess(t, app, ui.RoleNavigation, "Workspace navigation").Bounds
 	field := [2]int{int(side.X + 3), int(side.Y + side.H - 2)}
 	if pixel := sceneryAt(app, field[0], field[1]); !within(pixel, space) {
-		t.Fatalf("sidebar field is %v, want the %s scenery between %+v and %+v", pixel, space.Name, space.From, space.To)
+		t.Fatalf("sidebar field is %v, want the %s scenery between %+v and %+v", pixel, space.Name, space.Light.From, space.Light.To)
 	}
 	page := mustAccess(t, app, ui.RoleMain, "Document").Bounds
 	if pixel := sceneryAt(app, int(page.X+page.W/2), int(page.Y+page.H/2)); pixel != [3]int{255, 255, 255} {
@@ -221,7 +222,7 @@ func TestWindowFieldIsTheWorkspaceSceneryAndThePageIsPaper(t *testing.T) {
 		model.Spaces = map[string]string{"/library": other.Name}
 		app.Frame()
 		if pixel := sceneryAt(app, field[0], field[1]); !within(pixel, other) {
-			t.Fatalf("with %s chosen the field is %v, want between %+v and %+v", other.Name, pixel, other.From, other.To)
+			t.Fatalf("with %s chosen the field is %v, want between %+v and %+v", other.Name, pixel, other.Light.From, other.Light.To)
 		}
 		break
 	}

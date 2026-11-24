@@ -76,7 +76,9 @@ func (p *panel) message(c *ui.Context, index int, item message, streaming bool) 
 			p.image(c, item.image)
 		})
 	case "assistant":
-		ui.Column(c.Key(key)).Gap(3).Padding(4, 8).Children(func() {
+		reply := ui.Column(c.Key(key)).Gap(3).Padding(4, 8)
+		reveal := reply.Hovered() || reply.FocusWithin()
+		reply.Children(func() {
 			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 				portrait.Glyph(c, portrait.IconAtom, 15, portrait.Colors.Accent)
 				text(c, portrait.Type.Meta, "Feynman").FontWeight(600).TextColor(portrait.Colors.Ink3)
@@ -97,7 +99,7 @@ func (p *panel) message(c *ui.Context, index int, item message, streaming bool) 
 				markdown.View(c.Key(key+"-markdown"), item.text, options).FillWidth()
 			}
 			p.image(c, item.image)
-			if item.text != "" && smallButton(c, "Copy", "Copy Feynman response").AlignSelf(ui.Start).Clicked() {
+			if item.text != "" && portrait.Reveal(toolButton(c, "Copy", "Copy Feynman response", true, false).AlignSelf(ui.Start), reveal).Clicked() {
 				if err := mygo.Clipboard.Write(transfer.TextData(item.text)); err == nil {
 					portrait.Notify(c, portrait.ToastSpec{ID: "copy", Tone: portrait.Tones.Success, Title: "Copied"})
 				}
@@ -344,10 +346,10 @@ func (p *panel) composer(c *ui.Context) {
 				s.actionsOpen = true
 			}
 			ui.Row(c).Wrap().Gap(4).AlignItems(ui.Center).Children(func() {
-				if smallButton(c, "Attach", "Attach source files").Disabled(s.status == statusOffline || s.status == statusConnecting).Clicked() {
+				if toolButton(c, "Attach", "Attach source files", true, false).Disabled(s.status == statusOffline || s.status == statusConnecting).Clicked() {
 					p.attachSources()
 				}
-				if smallButton(c, "Actions", "Browse workflows, skills and extensions").Disabled(len(s.commands) == 0).Clicked() {
+				if toolButton(c, "Actions", "Browse workflows, skills and extensions", true, s.actionsOpen).Disabled(len(s.commands) == 0).Clicked() {
 					s.actionsOpen = !s.actionsOpen
 					if s.actionsOpen {
 						s.actionsOpen = true
@@ -573,29 +575,29 @@ func (p *panel) sessions(c *ui.Context) {
 			title = "Conversation tree"
 		}
 		back := func() {
-			if p.sessionView != "" && smallButton(c, "Back", "Return to conversation history").Clicked() {
+			if p.sessionView != "" && toolButton(c, "Back", "Return to conversation history", true, false).Clicked() {
 				p.sessionView = ""
 			}
 		}
 		close := func() {
-			if smallButton(c, "Close", "Close conversation history").Clicked() {
+			if toolButton(c, "Close", "Close conversation history", true, false).Clicked() {
 				s.sessionsOpen = false
 			}
 		}
 		actions := func() {
-			if smallButton(c, "New", "Start a new conversation").Disabled(s.status != statusReady).Clicked() {
+			if toolButton(c, "New", "Start a new conversation", true, false).Disabled(s.status != statusReady).Clicked() {
 				p.newSession()
 			}
-			if smallButton(c, "Clone", "Clone this conversation").Disabled(s.status != statusReady || s.draft != "").Clicked() {
+			if toolButton(c, "Clone", "Clone this conversation", true, false).Disabled(s.status != statusReady || s.draft != "").Clicked() {
 				p.cloneSession()
 			}
-			if smallButton(c, "Compact", "Compact conversation context").Disabled(s.status != statusReady).Clicked() {
+			if toolButton(c, "Compact", "Compact conversation context", true, false).Disabled(s.status != statusReady).Clicked() {
 				p.compactSession("")
 			}
-			if smallButton(c, "Fork", "Fork from a message in this conversation").Disabled(s.status != statusReady || s.draft != "").Clicked() {
+			if toolButton(c, "Fork", "Fork from a message in this conversation", true, false).Disabled(s.status != statusReady || s.draft != "").Clicked() {
 				p.loadForkMessages()
 			}
-			if smallButton(c, "Tree", "Show conversation tree").Clicked() {
+			if toolButton(c, "Tree", "Show conversation tree", true, false).Clicked() {
 				p.loadConversationTree()
 			}
 		}
@@ -618,7 +620,7 @@ func (p *panel) sessions(c *ui.Context) {
 		if p.sessionView == "" {
 			ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
 				input(c, "feynman-session-name", "Conversation name", &s.renameDraft, "Rename conversation")
-				if smallButton(c, "Save name", "Rename this conversation").Disabled(strings.TrimSpace(s.renameDraft) == "").Clicked() {
+				if toolButton(c, "Save name", "Rename this conversation", true, false).Disabled(strings.TrimSpace(s.renameDraft) == "").Clicked() {
 					p.renameSession()
 				}
 			})
@@ -640,7 +642,7 @@ func (p *panel) sessions(c *ui.Context) {
 						p.selectSession(row.ID)
 					}
 					if !row.Current {
-						trigger := smallButton(c, "Delete", "Delete conversation "+title)
+						trigger := toolButton(c, "Delete", "Delete conversation "+title, true, false)
 						p.confirmOnClick("delete-conversation:"+row.ID, trigger, portrait.ConfirmSpec{
 							Title:        "Delete conversation?",
 							Body:         "Delete “" + title + "”? This action cannot be undone.",

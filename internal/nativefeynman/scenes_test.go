@@ -10,6 +10,7 @@ import (
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
 	"github.com/Bayern99/mark-go-go/internal/nativeeditor"
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
 )
@@ -38,6 +39,12 @@ write waits at the edge of the window until you reach for it.
 | Scenery | Window field, sidebar | Tinted, translucent |
 | Page | The document | Opaque paper |
 
+| 五行 | 方位与时令 | 说明 |
+| --- | --- | --- |
+| 金 | 西 · 秋 | 素白与霜华，适合长篇阅读时保持冷静、克制的界面气质。 |
+| 木 | 东 · 春 | 月白与松花绿，正文与表格中的中文长句应自动换行而不被裁切。 |
+| 火 | 南 · 夏 | 鹅血石红作为强调色 |
+
 ` + "```go\nfunc main() {\n\tfmt.Println(\"hello, page\")\n}\n```\n"
 
 func sceneModel(feynmanOn bool, mode string) nativeui.Model {
@@ -56,7 +63,7 @@ func sceneModel(feynmanOn bool, mode string) nativeui.Model {
 		return workspace.NavEntry{ID: id, Kind: kind, Name: name, Path: root + "/" + path, Parent: parent, Depth: depth, MarkdownCount: count, FolderState: state, DocumentID: doc}
 	}
 	return nativeui.Model{
-		Feynman: feynmanOn, Git: true, Version: 3,
+		Feynman: feynmanOn, Git: true,
 		Crumbs: workspace.Breadcrumbs(root, root+"/Essays/Quiet Software.md"),
 		Workspace: workspace.WorkspaceSnapshot{
 			ID: "w1", Root: root, Name: "Field Notes", Kind: "folder", ActiveID: "a", Documents: docs,
@@ -96,24 +103,33 @@ func TestShellScenes(t *testing.T) {
 		t.Skip("set MGG_SCENES_DIR to export shell scenes as PNG")
 	}
 	prefix := os.Getenv("MGG_SCENES_PREFIX")
-	for _, sc := range sceneList() {
+	scenes := sceneList()
+	if os.Getenv("MGG_SCENES_SET") == "wuxing" {
+		scenes = wuxingScenes()
+	}
+	for _, sc := range scenes {
 		t.Run(sc.name, func(t *testing.T) {
 			var shell nativeui.Shell
 			model := sceneModel(sc.feynman, sc.mode)
+			if sc.space != "" {
+				model.Spaces = map[string]string{model.Workspace.Root: sc.space}
+			}
+			if sc.dark {
+				model.Appearance = portrait.Dark
+			}
 			if sc.empty {
 				model = nativeui.Model{Recents: []workspace.RecentWorkspace{{Name: "Field Notes", Root: "/Users/ada/Field Notes"}, {Name: "Lab", Root: "/Users/ada/Lab"}}}
 			}
 			source := nativeeditor.New(sceneDocument)
 			source.SetMode(nativeeditor.Mode(sc.mode))
 			p := scenePanel()
+			if sc.research != nil {
+				sc.research(p)
+			}
 			slots := nativeui.Slots{
 				Document: func(c *ui.Context) { source.View(c.Key("scene-doc"), false).Grow(1).MinHeight(0).FillWidth() },
 				Research: func(c *ui.Context) {
-					ui.Column(c.Key("scene-research")).Fill().MinWidth(0).Children(func() {
-						p.header(c)
-						p.tabs(c)
-						p.chat(c)
-					})
+					ui.Column(c.Key("scene-research")).Fill().MinWidth(0).Children(func() { p.draw(c) })
 				},
 				Checkpoints: func(c *ui.Context) {},
 			}

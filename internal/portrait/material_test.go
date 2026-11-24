@@ -31,7 +31,7 @@ func TestRaisedSurfaceIsFlatPaperAndCastsAShadow(t *testing.T) {
 }
 
 func TestPageIsPaperFloatingOverEveryScenery(t *testing.T) {
-	for _, space := range portrait.Spaces {
+	eachLook(t, func(t *testing.T, space portrait.Space, _ bool) {
 		tt := ui.NewTester(func(c *ui.Context) {
 			space.Paint(ui.Column(c).Fill().Padding(40), false).Children(func() {
 				portrait.Materials.Page.Apply(ui.Row(c).Size(120, 60).Radius(portrait.Shell.PageRadius))
@@ -39,11 +39,11 @@ func TestPageIsPaperFloatingOverEveryScenery(t *testing.T) {
 		}, 200, 160)
 		tt.Frame()
 		r, g, b, _ := tt.Image().At(100, 70).RGBA()
-		if r>>8 != 255 || g>>8 != 255 || b>>8 != 255 {
-			t.Errorf("%s: page face is %d,%d,%d, want opaque paper", space.Name, r>>8, g>>8, b>>8)
+		if p := portrait.Colors.Paper; r>>8 != uint32(p.R) || g>>8 != uint32(p.G) || b>>8 != uint32(p.B) {
+			t.Errorf("%s: page face is %d,%d,%d, want opaque paper %+v", space.Name, r>>8, g>>8, b>>8, p)
 		}
 		if below, scenery := luma(tt, 100, 102), luma(tt, 100, 150); below >= scenery {
 			t.Errorf("%s: no shadow under the page: %d vs scenery %d", space.Name, below, scenery)
 		}
-	}
+	})
 }

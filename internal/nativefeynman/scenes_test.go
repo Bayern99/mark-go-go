@@ -199,6 +199,7 @@ func TestShellScenes(t *testing.T) {
 			sceneWindow := nativeui.SceneWindow(model.Workspace, model.Navigation, sceneFolders(), sourceText, space, sc.dark)
 			if sc.name == "dense_sidebar_genui_failure_light" || sc.name == "feynman_working_light" {
 				p.window = sceneWindow
+				p.state.root = model.Workspace.Root
 			}
 			reviewScene := nativereview.NewScene(sceneWindow, sceneReview())
 			slots := nativeui.Slots{

@@ -105,7 +105,11 @@ func TestResearchPanelTextIsNeverSmallerThanMeta(t *testing.T) {
 				t.Errorf("text %q is %v DIP tall, smaller than the 12px meta step", a.Name, a.Bounds.H)
 			}
 		}
-		if texts < 5 {
+		minimum := 5
+		if app.HasText("alphaXiv research") {
+			minimum = 4
+		}
+		if texts < minimum {
 			t.Fatalf("only %d texts drawn; the fixture did not render", texts)
 		}
 	})

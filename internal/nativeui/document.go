@@ -23,7 +23,15 @@ func (s *Shell) page(c *ui.Context, doc workspace.DocumentInfo, m Model, a Actio
 				portrait.Alert(c, portrait.Tones.Danger, doc.RestoreError, "")
 			}
 			if doc.Conflict {
-				portrait.Alert(c, portrait.Tones.Warning, "The file changed on disk. Saving will ask which version to keep.", "")
+				portrait.Alert(c, portrait.Tones.Warning, "The file changed on disk.", "Choose which version to keep before saving.")
+				ui.Row(c).Gap(portrait.Form.Gap).Children(func() {
+					if portrait.AccentButton(c, "Save Anyway", "Save over the disk version").Clicked() && a.SaveConflict != nil {
+						a.SaveConflict(doc.ID)
+					}
+					if portrait.ButtonWith(c, "Revert to Disk", "Revert to the disk version", portrait.ButtonSpec{Look: portrait.DangerOutline}).Clicked() && a.RevertConflict != nil {
+						a.RevertConflict(doc.ID)
+					}
+				})
 			}
 			if doc.Deleted {
 				portrait.Alert(c, portrait.Tones.Warning, "The file was deleted on disk. Edits are still available in this window.", "")

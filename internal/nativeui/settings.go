@@ -33,7 +33,7 @@ func (s *Shell) settingsDialog(c *ui.Context, width, height float32, m Model, a 
 	searchState := &settingsSearchState{}
 	query := SettingsQuery{Text: s.settingsQuery, state: searchState}
 	current := settingsPageByID(visible, s.settingsTab)
-	panel := portrait.DialogShell(c, "settings dialog", &s.settingsOpen, portrait.DialogSpec{
+	portrait.DialogShell(c, "settings dialog", &s.settingsOpen, portrait.DialogSpec{
 		Label: "Settings", Width: portrait.Settings.Width, Height: portrait.Settings.Height,
 		Margin: portrait.Settings.Margin, Radius: portrait.Settings.Radius, Glass: true,
 	}, func() {
@@ -58,13 +58,21 @@ func (s *Shell) settingsDialog(c *ui.Context, width, height float32, m Model, a 
 							s.settingsTab, s.settingsQuery = selected, ""
 						}
 						s.settingsSearch(c, visible).Frame().Grow(1).MinWidth(0)
+						if !query.Active() && current.Reset != nil && current.Dirty != nil && current.Dirty() {
+							reset := portrait.QuietIconButton(c, portrait.IconArrowCounterClockwise, "Reset "+current.Label+" to defaults").Bind(&s.settingsReset)
+							if reset.Clicked() {
+								s.settingsResetID, s.settingsResetOpen = current.ID, true
+							}
+						}
+						if portrait.QuietIconButton(c, portrait.IconX, "Close settings").Clicked() {
+							s.settingsOpen = false
+						}
 					})
 					s.settingsPane(c, current, visible, query, searchState, false)
 				})
 			}
 		})
 	})
-	_ = panel
 	if s.settingsResetOpen {
 		page := settingsPageByID(visible, s.settingsResetID)
 		label := page.Label
@@ -104,7 +112,7 @@ func settingsPageByID(pages []SettingsPage, id string) SettingsPage {
 }
 
 func (s *Shell) settingsSearch(c *ui.Context, pages []SettingsPage) portrait.Field {
-	field := portrait.SearchField(c, &s.settingsQuery, portrait.SearchSpec{Label: "Search settings", Placeholder: "Search", Shortcut: []string{"/"}, Size: portrait.Sizes.Regular})
+	field := portrait.SearchField(c, &s.settingsQuery, portrait.SearchSpec{Label: "Search settings", Placeholder: "Search", Shortcut: []string{"/"}, Size: portrait.Sizes.Regular, SingleFocusRing: true})
 	field.Frame().Margin(portrait.Form.MenuPad, portrait.Form.PadX)
 	if s.settingsFocus {
 		field.Input().Focus()
@@ -149,7 +157,7 @@ func (s *Shell) settingsRail(c *ui.Context, pages []SettingsPage, query Settings
 	rail.Children(func() {
 		ui.Row(c).FillWidth().Height(portrait.Settings.Header).AlignItems(ui.Center).Children(func() { s.settingsSearch(c, pages) })
 		nav := ui.Column(c).FillWidth().Grow(1).Padding(0, portrait.Form.PadX, portrait.Form.PadX, portrait.Form.PadX).Gap(portrait.Form.PopoverGap).
-			Role(ui.RoleTabList).Label("Settings categories").FocusGroup(ui.Vertical)
+			Role(ui.RoleTabList).Label("Settings categories")
 		nav.Children(func() {
 			lastSection := ""
 			for i, page := range pages {
@@ -160,24 +168,26 @@ func (s *Shell) settingsRail(c *ui.Context, pages []SettingsPage, query Settings
 					portrait.SectionLabel(c, strings.ToUpper(page.Section)).Padding(portrait.Settings.NavSectionGap, portrait.Form.PadX, portrait.Form.HelpGap, portrait.Form.PadX)
 				}
 				lastSection = page.Section
-				s.settingsNavItem(c, pages, i, page)
+				s.settingsNavItem(c, pages, i, page, query)
 			}
 			ui.Spacer(c)
 			for i, page := range pages {
 				if page.Section == "Footer" {
-					s.settingsNavItem(c, pages, i, page)
+					s.settingsNavItem(c, pages, i, page, query)
 				}
 			}
 		})
 	})
-	_ = query
 }
 
-func (s *Shell) settingsNavItem(c *ui.Context, pages []SettingsPage, index int, page SettingsPage) {
+func (s *Shell) settingsNavItem(c *ui.Context, pages []SettingsPage, index int, page SettingsPage, query SettingsQuery) {
 	selected := s.settingsTab == page.ID && s.settingsQuery == ""
 	button := ui.ButtonBase(c.Key("settings-page-"+page.ID)).Role(ui.RoleTab).Label(page.Label).AccessSelected(selected).
 		FillWidth().Height(portrait.Settings.NavRow).Padding(0, portrait.Form.PadX).Gap(portrait.Form.Gap).Radius(portrait.Radii.M).AlignItems(ui.Center).Justify(ui.Start).
 		Bind(settingsHandle(s.settingsNav, page.ID))
+	if query.Active() && !query.PageMatch(page) {
+		button.Opacity(0.42)
+	}
 	ink := portrait.Colors.Ink2
 	if selected {
 		button.Background(portrait.Colors.AccentSoft)
@@ -240,28 +250,34 @@ func (s *Shell) settingsPane(c *ui.Context, current SettingsPage, pages []Settin
 	}
 	pane.Children(func() {
 		scroll := s.scrollState("settings:" + s.settingsTab)
-		header := ui.Row(c).FillWidth().Height(portrait.Settings.Header).Padding(0, portrait.Settings.ColumnPadX/2).Gap(portrait.Form.Gap).AlignItems(ui.Center)
-		if scroll.Y > 0 {
-			header.BorderWidth(0, 0, portrait.Editor.Hairline, 0).BorderColor(portrait.Colors.Line)
-		}
-		header.Children(func() {
-			portrait.Type.UI.Apply(ui.Text(c, "Settings")).TextColor(portrait.Colors.Ink3)
-			portrait.Type.UI.Apply(ui.Text(c, "/")).TextColor(portrait.Colors.Ink4)
-			label := current.Label
-			if query.Active() {
-				label = "Search"
+		if withRail {
+			header := ui.Row(c).FillWidth().Height(portrait.Settings.Header).Padding(0, portrait.Settings.ColumnPadX/2).Gap(portrait.Form.Gap).AlignItems(ui.Center)
+			if scroll.Y > 0 {
+				header.BorderWidth(0, 0, portrait.Editor.Hairline, 0).BorderColor(portrait.Colors.Line)
 			}
-			portrait.Type.UI.Apply(ui.Text(c, label)).FontWeight(600).TextColor(portrait.Colors.Ink).Role(ui.RoleHeading).Grow(1)
-			if !query.Active() && current.Reset != nil && current.Dirty != nil && current.Dirty() {
-				reset := portrait.ButtonWith(c, "Reset to defaults", "Reset "+current.Label+" to defaults", portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Regular, Leading: portrait.IconArrowCounterClockwise}).Bind(&s.settingsReset)
-				if reset.Clicked() {
-					s.settingsResetID, s.settingsResetOpen = current.ID, true
+			header.Children(func() {
+				if !withRail {
+					ui.Spacer(c)
+				} else {
+					portrait.Type.UI.Apply(ui.Text(c, "Settings")).TextColor(portrait.Colors.Ink3)
+					portrait.Type.UI.Apply(ui.Text(c, "/")).TextColor(portrait.Colors.Ink4)
+					label := current.Label
+					if query.Active() {
+						label = "Search"
+					}
+					portrait.Type.UI.Apply(ui.Text(c, label)).FontWeight(600).TextColor(portrait.Colors.Ink).Role(ui.RoleHeading).Grow(1)
 				}
-			}
-			if portrait.QuietIconButton(c, portrait.IconX, "Close settings").Clicked() {
-				s.settingsOpen = false
-			}
-		})
+				if !query.Active() && current.Reset != nil && current.Dirty != nil && current.Dirty() {
+					reset := portrait.ButtonWith(c, "Reset to defaults", "Reset "+current.Label+" to defaults", portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Regular, Leading: portrait.IconArrowCounterClockwise}).Bind(&s.settingsReset)
+					if reset.Clicked() {
+						s.settingsResetID, s.settingsResetOpen = current.ID, true
+					}
+				}
+				if portrait.QuietIconButton(c, portrait.IconX, "Close settings").Clicked() {
+					s.settingsOpen = false
+				}
+			})
+		}
 		ui.Scroll(c.Key("settings-body-" + s.settingsTab)).Grow(1).MinHeight(collapsible).FillWidth().TrackScroll(scroll).
 			Label("Settings content").Bind(&s.settingsResults).Focusable().Children(func() {
 			ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() {

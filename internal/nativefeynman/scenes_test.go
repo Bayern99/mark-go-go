@@ -4,6 +4,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -109,6 +110,7 @@ func TestShellScenes(t *testing.T) {
 	if os.Getenv("MGG_SCENES_SET") == "wuxing" {
 		scenes = wuxingScenes()
 	}
+	t.Logf("exporting %d scenes", len(scenes))
 	for _, sc := range scenes {
 		t.Run(sc.name, func(t *testing.T) {
 			var shell nativeui.Shell
@@ -122,14 +124,24 @@ func TestShellScenes(t *testing.T) {
 			if sc.empty {
 				model = nativeui.Model{Recents: []workspace.RecentWorkspace{{Name: "Field Notes", Root: "/Users/ada/Field Notes"}, {Name: "Lab", Root: "/Users/ada/Lab"}}}
 			}
-			source := nativeeditor.New(sceneDocument)
+			sourceText := sceneDocument
+			if sc.document != "" {
+				sourceText = sc.document
+				model.Sections = workspace.ExtractSections(sourceText)
+			}
+			source := nativeeditor.New(sourceText)
 			source.SetMode(nativeeditor.Mode(sc.mode))
 			p := scenePanel()
 			if sc.research != nil {
 				sc.research(p)
 			}
 			slots := nativeui.Slots{
-				Document: func(c *ui.Context) { source.View(c.Key("scene-doc"), false).Grow(1).MinHeight(0).FillWidth() },
+				Document: func(c *ui.Context) {
+					field := source.View(c.Key("scene-doc"), false).Grow(1).MinHeight(0).FillWidth()
+					if strings.HasPrefix(sc.name, "link_") {
+						field.AutoFocus()
+					}
+				},
 				Research: func(c *ui.Context) {
 					ui.Column(c.Key("scene-research")).Fill().MinWidth(0).Children(func() { p.draw(c) })
 				},
@@ -144,44 +156,150 @@ func TestShellScenes(t *testing.T) {
 					})
 				}
 			}
-			if sc.name == "proposals_dark" {
+			if strings.HasPrefix(sc.name, "proposals_") {
 				open := false
 				slots.Review = func(c *ui.Context) {
 					button := portrait.ButtonWith(c, "Change proposals · 1", "Change proposals", portrait.ButtonSpec{Look: portrait.Quiet, Leading: portrait.IconSparkle, Selected: open})
 					if button.Clicked() {
 						open = !open
 					}
-					portrait.PopoverWithSpec(c, button, &open, portrait.PopoverSpec{Width: portrait.Form.PopoverWide, Title: "Change proposals"}, func() {
-						portrait.SettingsGroup(c, "Quiet Software.md", func(rows *portrait.Rows) {
-							rows.Row(portrait.RowSpec{Title: "Tighten the introduction", Description: "Feynman Research · 2 clean hunks"}, func() { portrait.AccentButton(c, "Apply decisions", "Apply decisions") })
+					portrait.PopoverWithSpec(c, button, &open, portrait.PopoverSpec{Width: portrait.Form.PopoverWide, Title: "Change proposals", Opaque: true}, func() {
+						ui.Column(c).Padding(0, portrait.Form.PadX).Children(func() {
+							portrait.SettingsGroup(c, "Quiet Software.md", func(rows *portrait.Rows) {
+								rows.Row(portrait.RowSpec{Title: "Tighten the introduction", Description: "Feynman Research · 2 clean hunks"}, func() { portrait.AccentButton(c, "Apply decisions", "Apply decisions") })
+							})
+						})
+					}).Background(portrait.Colors.Paper)
+				}
+			}
+			if strings.HasPrefix(sc.name, "diff_") {
+				slots.Checkpoints = func(c *ui.Context) {
+					portrait.SettingsGroup(c, "Quiet Software.md", func(rows *portrait.Rows) {
+						rows.Row(portrait.RowSpec{Title: "@@ -1,3 +1,3 @@", Description: "2 additions · 1 deletion", Stacked: true}, func() {
+							ui.Column(c).FillWidth().Radius(portrait.Radii.M).Clip().Children(func() {
+								for _, line := range []struct {
+									text string
+									back ui.Color
+								}{{"  Good tools recede.", portrait.Clear}, {"- The window stays in front.", portrait.Diff.Delete}, {"+ The page stays in front.", portrait.Diff.Insert}, {"+ Everything else waits at the edge.", portrait.Diff.Insert}} {
+									portrait.Diff.Lines.Apply(ui.Text(c, line.text)).TextColor(portrait.Colors.Ink).FillWidth().Padding(portrait.Form.HelpGap, portrait.Form.PadX).Background(line.back)
+								}
+							})
 						})
 					})
 				}
 			}
+			if strings.HasPrefix(sc.name, "genui_controls_") {
+				textValue, areaValue := "Calm reader", "A multiline request with Portrait field chrome."
+				selectedValue, radioValue, dateValue := "preview", "paper", time.Now()
+				sliderValue := 64.0
+				checked, tab := true, 0
+				slots.GenUI = func(c *ui.Context) {
+					ui.Scroll(c).Fill().Children(func() {
+						ui.Column(c).FillWidth().MaxWidth(portrait.Settings.Column).Padding(portrait.Settings.ColumnPadTop).Gap(portrait.Form.Gap).Children(func() {
+							portrait.PanelTitle(c, "GenUI Reader Controls")
+							portrait.TextField(c, &textValue, portrait.FieldSpec{Label: "Title"}).Frame().FillWidth()
+							portrait.TextArea(c, &areaValue, portrait.AreaSpec{Label: "Request", Rows: 3})
+							portrait.Select(c, &selectedValue, []portrait.Option{{Value: "preview", Label: "Preview"}, {Value: "markdown", Label: "Markdown"}}, portrait.SelectSpec{Label: "View"})
+							portrait.Slider(c, &sliderValue, 0, 100).Label("Reading width")
+							portrait.Checkbox(c, &checked, "Show sources")
+							ui.RadioGroup(c, func() {
+								portrait.Radio(c.Key("paper"), &radioValue, "paper", "Published paper")
+								portrait.Radio(c.Key("notes"), &radioValue, "notes", "Local notes")
+							})
+							portrait.DateField(c, &dateValue, "Publication date")
+							portrait.Segmented(c, &tab, []string{"Summary", "Evidence", "Sources"}, "Reading sections")
+							ui.Row(c).Gap(portrait.Form.Gap).Children(func() {
+								portrait.AccentButton(c, "Generate", "Generate view")
+								portrait.ButtonWith(c, "Delete", "Delete view", portrait.ButtonSpec{Look: portrait.DangerOutline})
+							})
+						})
+					})
+				}
+			}
+			if strings.HasPrefix(sc.name, "settings_genui_") {
+				slots.Settings = append(slots.Settings, nativeui.SettingsPage{ID: "genui", Section: "Workspace", Label: "GenUI", Icon: portrait.IconSparkle, Order: 210, Draw: func(c *ui.Context, _ nativeui.SettingsQuery) {
+					portrait.SettingsGroup(c, "Generated views", func(rows *portrait.Rows) {
+						rows.Row(portrait.RowSpec{Title: "Default view", Description: "Choose how generated documents first open."}, func() {
+							value := "preview"
+							portrait.Select(c, &value, []portrait.Option{{Value: "preview", Label: "Preview"}, {Value: "genui", Label: "GenUI"}}, portrait.SelectSpec{Label: "Default view"})
+						})
+					})
+				}})
+			}
 			if sc.name == "genui_request_light" {
 				request := "Create a calm reading view with a summary and key principles."
 				slots.GenUI = func(c *ui.Context) {
-					ui.Column(c).Fill().Padding(portrait.Settings.ColumnPadTop).Gap(portrait.Form.Gap).Children(func() {
+					ui.Column(c).Fill().Padding(0, 12, 12, 12).Gap(portrait.Form.Gap).Children(func() {
 						portrait.PanelTitle(c, "Request")
 						portrait.TextArea(c, &request, portrait.AreaSpec{Label: "Generation request", Rows: 3})
 						portrait.AccentButton(c, "Generate", "Generate").AlignSelf(ui.Start)
 					})
 				}
 			}
-			app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, model, sceneActions(&model), slots) }, sc.width, sc.height)
+			app := ui.NewTester(func(c *ui.Context) {
+				c.SetMenuPresentation(ui.PopoverMenus)
+				shell.Draw(c, model, sceneActions(&model), slots)
+				if sc.draw != nil {
+					sc.draw(c)
+				}
+			}, sc.width, sc.height)
 			app.SetScale(2)
 			app.Frame()
 			if sc.act != nil {
 				sc.act(app)
 			}
+			if sc.actSource != nil {
+				sc.actSource(app, source)
+			}
 			app.Advance(2 * time.Second)
 			app.Frame()
-			file, err := os.Create(filepath.Join(dir, prefix+sc.name+".png"))
+			app.Frame()
+			if strings.HasPrefix(sc.name, "feynman_picker_") {
+				row, ok := app.AccessByRole(ui.RoleButton, "Show Anthropic models")
+				if !ok {
+					t.Fatal("model picker has no Anthropic provider row")
+				}
+				ink := 0
+				img := app.Image()
+				for y := int(row.Bounds.Y * 2); y < int((row.Bounds.Y+row.Bounds.H)*2); y++ {
+					for x := int(row.Bounds.X * 2); x < int((row.Bounds.X+row.Bounds.W)*2); x++ {
+						px := img.RGBAAt(x, y)
+						sum := int(px.R) + int(px.G) + int(px.B)
+						if !sc.dark && sum < 450 || sc.dark && sum > 450 {
+							ink++
+						}
+					}
+				}
+				if ink < 10 {
+					t.Fatalf("model provider row is blank: bounds=%+v contrasting pixels=%d", row.Bounds, ink)
+				}
+			}
+			if strings.HasPrefix(sc.name, "link_hover_") {
+				if _, ok := app.Find("Open link"); !ok {
+					t.Fatal("link hover scene has no visible hover-card actions")
+				}
+			}
+			path := filepath.Join(dir, prefix+sc.name+".png")
+			file, err := os.Create(path)
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer file.Close()
 			if err := png.Encode(file, app.Image()); err != nil {
+				_ = file.Close()
+				t.Fatal(err)
+			}
+			if err := file.Close(); err != nil {
+				t.Fatal(err)
+			}
+			exported, err := os.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := png.Decode(exported); err != nil {
+				_ = exported.Close()
+				t.Fatalf("exported scene %s is not a complete PNG: %v", path, err)
+			}
+			if err := exported.Close(); err != nil {
 				t.Fatal(err)
 			}
 		})

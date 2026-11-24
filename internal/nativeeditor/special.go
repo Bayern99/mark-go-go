@@ -184,7 +184,7 @@ func (p *previewLayout) codeBlock(snap editor.Snapshot, i int) {
 		_, last := p.document.Line(i, n-1)
 		p.backgrounds = append(p.backgrounds, editor.LineBackground{
 			First: headerLine, Last: snap.LineOf(last),
-			Color: portrait.Colors.Code, Radius: 8,
+			Color: portrait.Colors.Code, Radius: portrait.Radii.M,
 			Stroke: 0.5, StrokeColor: portrait.Colors.Line,
 			ReadingColumn: true,
 			PaddingTop:    codeHeaderHeight, PaddingBottom: 12,
@@ -219,7 +219,7 @@ func codeHeader(label, body string) func(*ui.Context, ui.Element, editor.Block) 
 			ui.Row(c).Height(codeHeaderHeight).AlignItems(ui.Center).Gap(8).Children(func() {
 				codeKicker(c, label, portrait.Colors.Ink3)
 				ui.Spacer(c)
-				copyButton(c, body)
+				copyButton(c, body, e)
 			})
 		})
 	}
@@ -232,8 +232,12 @@ type copiedState struct {
 	notify bool
 }
 
-func copyButton(c *ui.Context, body string) {
+func copyButton(c *ui.Context, body string, owners ...ui.Element) {
 	b := ui.ButtonBase(c.Key("copy")).Label("Copy code").KeepFocus().Size(portrait.Sizes.Compact, portrait.Sizes.Compact).Radius(portrait.Radii.S).AlignItems(ui.Center).Justify(ui.Center)
+	if len(owners) > 0 {
+		owner := owners[0]
+		portrait.Reveal(b, owner.Hovered() || owner.FocusWithin() || b.FocusVisible() || !c.Preferences().Hover())
+	}
 	portrait.Tooltip(c, b, "Copy code")
 	ink := portrait.Press(b, portrait.Quiet)
 	copied := ui.Local(b, copiedKey{}, func() copiedState { return copiedState{} })
@@ -295,9 +299,9 @@ func lookOf(kind string) blockLook {
 		case "note alert":
 			l.icon = portrait.IconNote
 		case "tip alert":
-			l.icon = portrait.IconLightbulb
+			l.icon, l.fill, l.kickerInk = portrait.IconLightbulb, portrait.Colors.TipSoft, portrait.Colors.Tip
 		case "important alert":
-			l.icon = portrait.IconInfo
+			l.icon, l.fill, l.kickerInk = portrait.IconInfo, portrait.Colors.ImportantSoft, portrait.Colors.Important
 		case "warning alert":
 			l.icon, l.fill, l.kickerInk = portrait.IconWarning, portrait.Colors.WarningSoft, portrait.Colors.Warning
 		case "caution alert":

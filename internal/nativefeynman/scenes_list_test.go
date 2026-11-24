@@ -2,9 +2,13 @@ package nativefeynman
 
 import (
 	"os"
+	"strings"
+	"testing"
+	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
 
+	"github.com/Bayern99/mark-go-go/internal/nativeeditor"
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/review"
@@ -20,7 +24,10 @@ type shellScene struct {
 	space         string
 	dark          bool
 	act           func(*ui.Tester)
+	actSource     func(*ui.Tester, *nativeeditor.Document)
 	research      func(*panel)
+	document      string
+	draw          func(*ui.Context)
 }
 
 func sceneActions(model *nativeui.Model) nativeui.Actions {
@@ -78,7 +85,7 @@ func wuxingScenes() []shellScene {
 			scenes = append(scenes, shellScene{name: name, width: 1440, height: 1100, feynman: true, mode: "preview", space: space, dark: dark})
 		}
 	}
-	return append(scenes,
+	scenes = append(scenes,
 		shellScene{name: "command_bar_dark", width: 1280, height: 820, mode: "preview", space: "WoodFire", dark: true, act: func(app *ui.Tester) { app.Key(ui.Cmd, ui.KeyK); app.Type("space") }},
 		shellScene{name: "markdown_dark", width: 1280, height: 820, mode: "markdown", space: "FiveElements", dark: true},
 		shellScene{name: "feynman_picker_light", width: 1440, height: 900, feynman: true, mode: "preview", space: "Wood", research: sceneModels, act: openModelPicker},
@@ -105,11 +112,145 @@ func wuxingScenes() []shellScene {
 		shellScene{name: "alpha_light", width: 1440, height: 900, feynman: true, mode: "preview", space: "Wood", research: sceneAlpha},
 		shellScene{name: "checkpoints_light", width: 1280, height: 820, mode: "preview", space: "Wood", act: func(app *ui.Tester) { _ = app.Click("Checkpoints") }},
 		shellScene{name: "proposals_dark", width: 1280, height: 820, mode: "preview", space: "MetalWater", dark: true, act: func(app *ui.Tester) { _ = app.Click("Change proposals") }},
-		shellScene{name: "link_hover_light", width: 1280, height: 820, mode: "preview", space: "Wood", act: sceneLinkHover},
 		shellScene{name: "find_bar_dark", width: 1280, height: 820, mode: "markdown", space: "MetalWater", dark: true, act: func(app *ui.Tester) { _ = app.Click("Markdown source"); app.Key(ui.Cmd, ui.KeyF); app.Type("Markdown") }},
 		shellScene{name: "genui_request_light", width: 1280, height: 820, mode: "genui", space: "WoodFire"},
 		shellScene{name: "sidebar_drilled_light", width: 1440, height: 900, feynman: true, mode: "preview", space: "FiveElements", act: func(app *ui.Tester) { _ = app.Click("Essays") }},
 	)
+	return append(scenes, pass2Scenes()...)
+}
+
+func pass2Scenes() []shellScene {
+	var scenes []shellScene
+	for _, dark := range []bool{false, true} {
+		suffix, space := "_light", "Wood"
+		if dark {
+			suffix, space = "_dark", "MetalWater"
+		}
+		for _, name := range []string{"unsaved_single", "unsaved_multi", "conflict_decision", "readonly_decision", "rename_prompt", "move_picker", "revert_confirm", "quit_failed"} {
+			scenes = append(scenes, shellScene{name: name + suffix, width: 1280, height: 820, mode: "preview", space: space, dark: dark, draw: scenePortraitDialog(name)})
+		}
+		for _, tc := range []struct {
+			name string
+			act  func(*ui.Tester)
+		}{{"context_menu_editor", func(app *ui.Tester) { _ = app.RightClick("Markdown Preview") }}, {"context_menu_sidebar", func(app *ui.Tester) { _ = app.RightClick("Reading List.md") }}, {"text_field_edit_menu", func(app *ui.Tester) {
+			openSettingsScene("general")(app)
+			app.Frame()
+			_ = app.RightClick("Search settings")
+		}}} {
+			scenes = append(scenes, shellScene{name: tc.name + suffix, width: 1280, height: 820, mode: "preview", space: space, dark: dark, act: tc.act})
+		}
+		scenes = append(scenes,
+			shellScene{name: "link_hover" + suffix, width: 1280, height: 820, mode: "preview", space: space, dark: dark, actSource: sceneLinkHover},
+			shellScene{name: "link_edit" + suffix, width: 1280, height: 820, mode: "preview", space: space, dark: dark, actSource: func(app *ui.Tester, source *nativeeditor.Document) {
+				sceneLinkHover(app, source)
+				_ = app.Click("Edit link")
+			}},
+			shellScene{name: "preview_organs" + suffix, width: 1440, height: 1800, mode: "preview", space: space, dark: dark, document: previewOrgansDocument},
+			shellScene{name: "chat_markdown_organs" + suffix, width: 1440, height: 1600, feynman: true, mode: "preview", space: space, dark: dark, research: sceneChatOrgans},
+			shellScene{name: "genui_controls" + suffix, width: 1280, height: 900, mode: "genui", space: space, dark: dark},
+			shellScene{name: "diff" + suffix, width: 1280, height: 820, mode: "preview", space: space, dark: dark, act: func(app *ui.Tester) { _ = app.Click("Checkpoints") }},
+		)
+		for _, page := range []string{"Shortcuts", "Search & Papers", "Packages", "Plugins", "GenUI", "Diagnostics"} {
+			name := strings.ToLower(strings.ReplaceAll(page, " & ", "_"))
+			name = strings.ReplaceAll(name, " ", "_")
+			scenes = append(scenes, shellScene{name: "settings_" + name + suffix, width: 1440, height: 900, feynman: true, mode: "preview", space: space, dark: dark, research: sceneSettingsModal, act: openSettingsScene(page)})
+		}
+	}
+	return scenes
+}
+
+const previewOrgansDocument = `# Preview Organs
+
+- [x] Completed task uses accent and muted text
+- [ ] Open task has a centered box
+- Ordinary bullet shares the marker column
+
+> A three-pixel accent bar and a soft wash hold the quote together.
+
+![Framed image](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABACAYAAADlNHIOAAAAoklEQVR42u3bsQkAIAwEQCdyIzdySXsLN9AhAhHxitQPf+WTUlvfkRtrhu73/AIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAkACjwbj4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACQAaBAixgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPAfoECLGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeD7/AI0y3AxAAZkoAAAAAElFTkSuQmCC)
+
+| Organ | Treatment |
+| --- | --- |
+| Header | Tinted and semibold |
+| Cells | Token padding |
+
+> [!NOTE]
+> Note uses the Space accent.
+
+> [!TIP]
+> Tip uses the Wu Xing success tone.
+
+> [!IMPORTANT]
+> Important has its own mixed tone.
+
+> [!WARNING]
+> Warning is amber.
+
+> [!CAUTION]
+> Caution is the danger tone.
+
+---
+
+` + "```go\nfunc calm() string {\n\treturn \"shared syntax\"\n}\n```" + `
+`
+
+func scenePortraitDialog(kind string) func(*ui.Context) {
+	open := true
+	title := "Save changes to “Quiet Software.md”?"
+	body := "Your changes will be lost if you don't save them."
+	docs := []portrait.DecisionDocument{{ID: "a", Name: "Quiet Software.md"}}
+	selected := []bool{true}
+	value := "Quiet Software.md"
+	return func(c *ui.Context) {
+		switch kind {
+		case "unsaved_multi":
+			title = "Save changes to 3 documents?"
+			docs = []portrait.DecisionDocument{{ID: "a", Name: "Quiet Software.md"}, {ID: "b", Name: "Reading List.md"}, {ID: "c", Name: "排版笔记.md"}}
+			if len(selected) != len(docs) {
+				selected = []bool{true, true, false}
+			}
+			portrait.Decision(c, &open, portrait.DecisionSpec{Title: title, Body: body, Documents: docs, Selected: &selected, SaveLabel: "Save Selected", DiscardLabel: "Discard All"})
+		case "conflict_decision":
+			portrait.Decision(c, &open, portrait.DecisionSpec{Title: "“Quiet Software.md” changed on disk", Body: "Save your version over the disk file, or revert to the disk version.", SaveLabel: "Save Anyway", DiscardLabel: "Revert to Disk"})
+		case "readonly_decision":
+			portrait.Decision(c, &open, portrait.DecisionSpec{Title: "“Quiet Software.md” is read only", Body: "Choose Save As to save your changes to a new file.", SaveLabel: "Save As…", HideDiscard: true})
+		case "rename_prompt":
+			portrait.Prompt(c, &open, portrait.PromptSpec{Title: "Rename “Quiet Software.md”", Label: "File name", Value: &value, SelectTo: 14, SubmitLabel: "Rename"})
+		case "move_picker":
+			portrait.DialogShell(c, "scene move", &open, portrait.DialogSpec{Label: "Move document", Width: portrait.Form.DialogWidth}, func() {
+				portrait.Type.Title.Apply(ui.Text(c, "Move “Quiet Software.md”")).FontWeight(600)
+				portrait.Type.Small.Apply(ui.Text(c, "Choose a folder in this workspace, or choose another folder.")).TextColor(portrait.Colors.Ink2).Wrap()
+				for _, folder := range []string{"Field Notes", "Essays", "Plans", "Archive"} {
+					portrait.ButtonWith(c.Key(folder), folder, "Move to "+folder, portrait.ButtonSpec{Look: portrait.Quiet, Leading: portrait.IconFolder}).FillWidth().Justify(ui.Start)
+				}
+				ui.Row(c).Justify(ui.End).Gap(portrait.Form.Gap).Children(func() {
+					portrait.QuietButton(c, "Cancel", "Cancel move")
+					portrait.Button(c, "Choose another folder…", "Choose another folder")
+				})
+			}).Padding(portrait.Form.DialogPad).Gap(portrait.Form.DialogGap)
+		case "revert_confirm":
+			portrait.Confirm(c, &open, portrait.ConfirmSpec{Title: "Revert to saved?", Body: "Revert “Quiet Software.md” to the bytes on disk? Unsaved changes will be lost.", ConfirmLabel: "Revert"})
+		case "quit_failed":
+			portrait.DialogShell(c, "scene quit failure", &open, portrait.DialogSpec{Label: "Could not quit Mark Go Go", Width: portrait.Form.DialogWidth, Role: ui.RoleAlertDialog}, func() {
+				portrait.Type.Title.Apply(ui.Text(c, "Could not quit Mark Go Go")).FontWeight(600)
+				portrait.Type.Small.Apply(ui.Text(c, "Your documents are still open. Resolve the issue, then choose Quit again.")).TextColor(portrait.Colors.Ink2).Wrap()
+				portrait.AccentButton(c, "OK", "Dismiss alert").AlignSelf(ui.End)
+			}).Padding(portrait.Form.DialogPad).Gap(portrait.Form.DialogGap)
+		default:
+			portrait.Decision(c, &open, portrait.DecisionSpec{Title: title, Body: body, Documents: docs, Selected: &selected})
+		}
+	}
+}
+
+func sceneChatOrgans(p *panel) {
+	p.state.messages = []message{{kind: "assistant", messageID: "organs", text: previewOrgansDocument}}
+}
+
+func TestPass2SceneCoverage(t *testing.T) {
+	scenes := pass2Scenes()
+	if len(scenes) < 40 {
+		t.Fatalf("Pass 2 has %d scenes, want at least 40", len(scenes))
+	}
 }
 
 func sceneHistory(p *panel) {
@@ -131,9 +272,16 @@ func sceneAlpha(p *panel) {
 	p.alphaQuery = "quiet software"
 	p.state.searchResult = &feynman.CLIAlphaSearchResult{Parsed: true, Mode: "semantic", Papers: []feynman.CLIAlphaPaper{{ID: "2401.00001", Title: "Calm Interfaces for Focused Work", Authors: "Ada Lovelace", Summary: "A study of readable, receding tool surfaces."}}}
 }
-func sceneLinkHover(app *ui.Tester) {
-	if bounds, ok := app.Find("Project"); ok {
-		app.Move(bounds.X+bounds.W/2, bounds.Y+bounds.H/2)
+func sceneLinkHover(app *ui.Tester, source *nativeeditor.Document) {
+	position := strings.Index(sceneDocument, "Project") + 1
+	if bounds, ok := source.RectUTF16(position); ok {
+		if editor, found := app.AccessByRole(ui.RoleTextField, "Markdown Preview"); found {
+			bounds.X += editor.Bounds.X
+			bounds.Y += editor.Bounds.Y
+		}
+		app.Move(bounds.X+0.1, bounds.Y+bounds.H/2)
+		app.Advance(time.Second)
+		app.Frame()
 	}
 }
 

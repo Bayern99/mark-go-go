@@ -49,7 +49,7 @@ func TestToastActionIsAboveDrawerAndPopover(t *testing.T) {
 }
 
 func TestAllSevenAlertsUseWarningForDiskState(t *testing.T) {
-	const conflict = "The file changed on disk. Saving will ask which version to keep."
+	const conflict = "The file changed on disk."
 	const deleted = "The file was deleted on disk. Edits are still available in this window."
 	var shell Shell
 	model := Model{

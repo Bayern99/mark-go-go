@@ -422,7 +422,7 @@ func (p *panel) header(c *ui.Context) {
 		popover := portrait.PopoverWithSpec(c, button, &s.sessionsOpen, portrait.PopoverSpec{Width: popoverWidth, MaxHeight: maxHeight}, func() {
 			p.sessions(c)
 		})
-		popover.Label("Workspace conversation history")
+		popover.Label("Workspace conversation history").AttachTo(button, ui.AnchorTopEnd, ui.AnchorBottomEnd)
 		return button
 	}
 	settingsBtn := func() {

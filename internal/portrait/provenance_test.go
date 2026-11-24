@@ -34,7 +34,7 @@ var tokenProvenance = func() map[string]string {
 		"Line", "LineStrong",
 		"Fill", "FillHover", "FillStrong",
 		"AccentSoft", "WarnSoft", "DangerSoft",
-		"Note", "NoteSoft", "Warning", "WarningSoft",
+		"Note", "NoteSoft", "Tip", "TipSoft", "Important", "ImportantSoft", "Warning", "WarningSoft",
 		"Caution", "CautionSoft",
 		"Focus", "Scrim", "ModalScrim",
 	)
@@ -53,7 +53,7 @@ var tokenProvenance = func() map[string]string {
 	register(sourceDerived, "Frame", "Inset", "InnerRadius", "OuterRadius")
 	register(sourceDerived, "Form", "Field", "FieldCompact", "Radius", "PadX", "Gap", "AreaMin", "AreaCompact", "AreaPadY", "LabelGap", "HelpGap", "SelectMin", "SelectMax", "MenuRow", "MenuRadius", "MenuPad", "MenuMin", "MenuMax", "PopoverPad", "PopoverGap", "PopoverHeader", "PopoverWide", "DialogWidth", "DialogPad", "DialogGap", "ListMax", "BubbleRatio", "BubbleMax")
 	register(sourceDerived, "Settings", "Width", "Height", "Margin", "Radius", "Rail", "Header", "Column", "ColumnPadX", "ColumnPadTop", "ColumnPadBottom", "GroupGap", "HeadingGap", "NavRow", "NavSectionGap", "Collapse", "Row", "RowCompact", "RowPadX", "RowPadY", "RowGap", "DescriptionMax", "SpacePreview")
-	register(sourceDerived, "Editor", "Body", "Code", "Column", "GutterLeft", "GutterRight", "BlockRadius", "BlockPadX", "BlockPadY", "Hairline")
+	register(sourceDerived, "Editor", "Body", "Code", "Column", "GutterLeft", "GutterRight", "BlockRadius", "BlockPadX", "BlockPadY", "TableCellPadX", "TableCellPadY", "Hairline")
 	register(sourceDerived, "IconSizes", "XS", "S", "M", "L")
 	return provenance
 }()

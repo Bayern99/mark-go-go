@@ -38,6 +38,7 @@ type Actions struct {
 	ResetPreferences                                           func(keys ...string)
 	ResetPreferencePrefixes                                    func(prefixes ...string)
 	RevealPreferences                                          func()
+	SaveConflict, RevertConflict                               func(string)
 }
 
 type Slots struct {

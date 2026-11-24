@@ -152,6 +152,7 @@ type PopoverSpec struct {
 	Width, MaxHeight float32
 	Title            string
 	Placement        ui.Anchor
+	Opaque           bool
 }
 
 func PopoverWithSpec(c *ui.Context, anchor ui.Element, open *bool, spec PopoverSpec, build func()) ui.Element {
@@ -199,7 +200,12 @@ func popover(c *ui.Context, anchor ui.Element, open *bool, spec PopoverSpec, bui
 		if spec.Width > 0 {
 			panel.Width(spec.Width)
 		}
-		Materials.GlassOverlay.Apply(panel).AttachedOrigin().Transition(Overlays.Popup.Transition(c, keyboard))
+		if spec.Opaque {
+			Materials.Pop.Apply(panel)
+		} else {
+			Materials.GlassOverlay.Apply(panel)
+		}
+		panel.AttachedOrigin().Transition(Overlays.Popup.Transition(c, keyboard))
 		build()
 	})
 }

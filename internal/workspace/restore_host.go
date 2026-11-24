@@ -240,6 +240,11 @@ func (h *Service) showQuitFailure(win *mygo.Window, err error) {
 	if err != nil {
 		detail = err.Error() + "\n\n" + detail
 	}
+	if win != nil {
+		if err := QuitFailed.Emit(win, QuitFailure{Title: "Could not quit Mark Go Go", Body: "Mark Go Go could not safely prepare all open documents for quitting.\n\n" + detail}); err == nil {
+			return
+		}
+	}
 	go func() {
 		_, _ = mygo.Dialog.Message(mygo.MessageOptions{
 			Parent:  win,

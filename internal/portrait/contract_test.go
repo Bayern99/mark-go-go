@@ -162,8 +162,8 @@ func TestNativeDimensionLiteralsOnlyRatchetDown(t *testing.T) {
 }
 
 func TestNativeWidgetsUsePortrait(t *testing.T) {
-	raw := regexp.MustCompile(`ui\.(Button|TextInput|TextArea|Select|Popover|Collapsible)\(`)
-	allowed := map[string]bool{"../nativegenui/controls.go": true, "../nativegenui/reading.go": true}
+	raw := regexp.MustCompile(`ui\.(Button|TextInput|TextArea|Select|Slider|Radio|DateInput|Tabs|Popover|Collapsible)\(`)
+	allowed := map[string]bool{}
 	for _, file := range nativeSourceFiles(t) {
 		if strings.HasSuffix(file, "_test.go") || allowed[file] {
 			continue

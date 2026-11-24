@@ -7,7 +7,8 @@ import (
 )
 
 func documentTheme(t *ui.Theme, mode Mode) *editor.Theme {
-	th := editor.Theme{Background: t.Background, Text: t.Text, Cursor: t.Accent, Selection: t.Selection}
+	th := *portrait.CodeTheme(t)
+	th.Background, th.Text, th.Cursor, th.Selection = t.Background, t.Text, t.Accent, t.Selection
 	for i := range th.Tokens {
 		th.Tokens[i].Color = t.Text
 	}
@@ -16,6 +17,7 @@ func documentTheme(t *ui.Theme, mode Mode) *editor.Theme {
 	th.Tokens[editor.TokenEmphasis].Italic = true
 	th.Tokens[editor.TokenLink].Color = t.Accent
 	th.Tokens[editor.TokenDeleted].Color = t.TextMuted
+	th.Tokens[editor.TokenType].Color = portrait.Colors.Ink2
 	if mode == Preview {
 		th.Tokens[editor.TokenCode].Family = portrait.FontMono
 	}

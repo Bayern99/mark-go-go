@@ -63,16 +63,16 @@ var Type = func() TypeScale {
 }()
 
 type Palette struct {
-	Chrome, Paper, Code                  ui.Color
-	Ink, Ink2, Ink3, Ink4                ui.Color
-	Line, LineStrong                     ui.Color
-	Fill, FillHover, FillStrong          ui.Color
-	Accent, OnAccent, AccentSoft         ui.Color
-	Success                              ui.Color
-	Warn, WarnSoft, Danger, DangerSoft   ui.Color
-	Note, NoteSoft, Warning, WarningSoft ui.Color
-	Caution, CautionSoft                 ui.Color
-	Focus, Scrim, ModalScrim             ui.Color
+	Chrome, Paper, Code                                    ui.Color
+	Ink, Ink2, Ink3, Ink4                                  ui.Color
+	Line, LineStrong                                       ui.Color
+	Fill, FillHover, FillStrong                            ui.Color
+	Accent, OnAccent, AccentSoft                           ui.Color
+	Success                                                ui.Color
+	Warn, WarnSoft, Danger, DangerSoft                     ui.Color
+	Note, NoteSoft, Tip, TipSoft, Important, ImportantSoft ui.Color
+	Warning, WarningSoft, Caution, CautionSoft             ui.Color
+	Focus, Scrim, ModalScrim                               ui.Color
 }
 
 var Colors Palette
@@ -103,6 +103,8 @@ func paletteFor(s Scheme, dark bool) Palette {
 		Warn:    s.Warn, WarnSoft: s.Warn.Alpha(soft - 0.01),
 		Danger: s.Danger, DangerSoft: s.Danger.Alpha(soft - 0.02),
 		Note: s.Accent, NoteSoft: s.Accent.Alpha(soft),
+		Tip: s.Success, TipSoft: s.Success.Alpha(soft),
+		Important: s.Accent.Mix(s.Warn, 0.35), ImportantSoft: s.Accent.Mix(s.Warn, 0.35).Alpha(soft),
 		Warning: s.Warn, WarningSoft: s.Warn.Alpha(soft - 0.01),
 		Caution: s.Danger, CautionSoft: s.Danger.Alpha(soft - 0.02),
 		Focus: s.Accent.Alpha(focus), Scrim: scrim, ModalScrim: modal,

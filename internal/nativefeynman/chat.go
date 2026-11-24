@@ -84,7 +84,7 @@ func (p *panel) message(c *ui.Context, index int, item message, streaming bool) 
 				portrait.Glyph(c, portrait.IconAtom, portrait.IconSizes.M, portrait.Colors.Accent)
 				text(c, portrait.Type.Meta, "Feynman").FontWeight(600).TextColor(portrait.Colors.Ink3)
 			})
-			options := markdownOptions(&markdown.Options{
+			options := markdownOptions(c, &markdown.Options{
 				WrapCode: true,
 				LoadImage: func(address string) (ui.ImageSource, error) {
 					if strings.HasPrefix(strings.ToLower(address), "data:image/") {
@@ -109,7 +109,7 @@ func (p *panel) message(c *ui.Context, index int, item message, streaming bool) 
 	case "thought":
 		open := p.collapsibleState(key + "-thought")
 		portrait.Disclosure(c.Key(key+"-thought"), "Thinking", open, portrait.DisclosureSpec{}, func() {
-			markdown.View(c.Key(key+"-body"), item.text, markdownOptions(&markdown.Options{WrapCode: true})).FillWidth()
+			markdown.View(c.Key(key+"-body"), item.text, markdownOptions(c, &markdown.Options{WrapCode: true})).FillWidth()
 		})
 	case "notice":
 		tone := portrait.Tones.Neutral
@@ -145,7 +145,14 @@ func (p *panel) message(c *ui.Context, index int, item message, streaming bool) 
 		if len(item.tool.Locations) > 0 {
 			title += " · " + filepath.Base(item.tool.Locations[0].Path)
 		}
-		portrait.Disclosure(c.Key(key+"-tool"), title, open, portrait.DisclosureSpec{Status: strings.ReplaceAll(item.tool.Status, "_", " "), Label: title + " · " + strings.ReplaceAll(item.tool.Status, "_", " "), Tone: statusTone(statusWorking)}, func() {
+		tone := portrait.Tones.Warning
+		switch item.tool.Status {
+		case "completed":
+			tone = portrait.Tones.Success
+		case "failed", "error":
+			tone = portrait.Tones.Danger
+		}
+		portrait.Disclosure(c.Key(key+"-tool"), title, open, portrait.DisclosureSpec{Status: strings.ReplaceAll(item.tool.Status, "_", " "), Label: title + " · " + strings.ReplaceAll(item.tool.Status, "_", " "), Tone: tone}, func() {
 			p.toolBody(c, item.tool)
 		})
 	}
@@ -542,17 +549,7 @@ func (p *panel) question(c *ui.Context, question feynman.ResearchUpdate) {
 				if filterable && !strings.Contains(strings.ToLower(option.Name), strings.ToLower(strings.TrimSpace(p.questionFind))) {
 					continue
 				}
-				var mark portrait.Icon
-				if p.questionPick == option.ID {
-					mark = portrait.IconCheck
-				}
-				button := discreteButton(c, option.Name, "Choose "+option.Name, mark).Checked(p.questionPick == option.ID)
-				if p.questionPick == option.ID {
-					button.Background(portrait.Colors.AccentSoft).NoShadow()
-				}
-				if button.Clicked() {
-					p.questionPick = option.ID
-				}
+				portrait.Radio(c.Key("research-question-"+option.ID), &p.questionPick, option.ID, option.Name).Disabled(p.questionPending).FillWidth()
 			}
 		})
 		ui.Row(c).Gap(4).Children(func() {
@@ -577,6 +574,8 @@ func (p *panel) sessions(c *ui.Context) {
 			title = "Fork from a message"
 		} else if p.sessionView == "tree" {
 			title = "Conversation tree"
+		} else if p.sessionView == "rename" {
+			title = "Rename conversation"
 		}
 		ui.Row(c).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
 			if p.sessionView != "" && portrait.ButtonWith(c, "Back", "Return to conversation history", portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Compact, Leading: portrait.IconCaretLeft}).Clicked() {
@@ -586,6 +585,9 @@ func (p *panel) sessions(c *ui.Context) {
 			trigger := portrait.Menu(c.Key("conversation-actions"), &p.sessionMenu, func(menu *portrait.MenuBuilder) {
 				if menu.Item(portrait.MenuItemSpec{Label: "New", Icon: portrait.IconPlus, Disabled: s.status != statusReady}).Clicked() {
 					p.newSession()
+				}
+				if menu.Item(portrait.MenuItemSpec{Label: "Rename", Icon: portrait.IconPencil}).Clicked() {
+					p.sessionView = "rename"
 				}
 				if menu.Item(portrait.MenuItemSpec{Label: "Clone", Disabled: s.status != statusReady || s.draft != ""}).Clicked() {
 					p.cloneSession()
@@ -607,13 +609,16 @@ func (p *panel) sessions(c *ui.Context) {
 				s.sessionsOpen = false
 			}
 		})
-		if p.sessionView == "" {
-			ui.Row(c).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
-				input(c, "feynman-session-name", "Conversation name", &s.renameDraft, "Rename conversation").Grow(1)
-				if portrait.Button(c, "Save name", "Rename this conversation").Disabled(strings.TrimSpace(s.renameDraft) == "").Clicked() {
-					p.renameSession()
-				}
-			})
+		if p.sessionView == "" || p.sessionView == "rename" {
+			if p.sessionView == "rename" {
+				ui.Row(c).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
+					input(c, "feynman-session-name", "Conversation name", &s.renameDraft, "Rename conversation").Grow(1)
+					if portrait.Button(c, "Save name", "Rename this conversation").Disabled(strings.TrimSpace(s.renameDraft) == "").Clicked() {
+						p.renameSession()
+						p.sessionView = ""
+					}
+				})
+			}
 			filterInput(c, "feynman-session-filter", "Filter conversations", &s.sessionFilter, "Find a conversation…")
 			ui.Scroll(c.Key("feynman-sessions-list")).MaxHeight(portrait.Form.ListMax).FillWidth().Label("Workspace conversations").Children(func() {
 				for _, row := range s.sessionRows {
@@ -631,7 +636,10 @@ func (p *panel) sessions(c *ui.Context) {
 					}
 					container := ui.Row(c).FillWidth().Gap(portrait.Form.PopoverGap).AlignItems(ui.Center)
 					container.Children(func() {
-						choice := discreteButton(c, title, row.Preview, mark).Grow(1).Disabled(row.Current || s.status != statusReady || s.draft != "" || len(s.sources) > 0)
+						choice := discreteButton(c, title, row.Preview, mark).Grow(1).Disabled(s.status != statusReady || s.draft != "" || len(s.sources) > 0)
+						if row.Current {
+							choice.Background(portrait.Colors.AccentSoft).Checked(true)
+						}
 						if choice.Clicked() {
 							p.selectSession(row.ID)
 						}

@@ -768,6 +768,12 @@ func (h *Service) saveDocument(s *docSession) error {
 			return err
 		}
 	}
+	if readOnly {
+		return ErrSaveReadOnly
+	}
+	if s.doc != nil && s.doc.HasConflict() {
+		return ErrSaveConflict
+	}
 	if path == "" {
 		return h.saveAsDocument(s)
 	}

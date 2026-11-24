@@ -48,12 +48,15 @@ func choiceButton(c *ui.Context, key, label, description string, selected, small
 }
 
 func discreteButton(c *ui.Context, label, description string, mark portrait.Icon) ui.Element {
-	return portrait.Tooltip(c, portrait.ListRow(c.Key("research-option-"+label), portrait.ListRowSpec{Icon: mark, Title: label, Detail: description, Label: description}), description)
+	return portrait.Tooltip(c, portrait.ListRow(c.Key("research-option-"+label), portrait.ListRowSpec{Icon: mark, Title: label, Label: description}), description)
 }
 
 func chip(c *ui.Context, key string, icon portrait.Icon, label, description string, compact bool) ui.Element {
-	_ = compact
-	return portrait.Tooltip(c, portrait.Chip(c.Key(key), icon, label, nil).Label(description), description)
+	chip := portrait.Chip(c.Key(key), icon, label, nil).Label(description)
+	if compact {
+		chip.Height(portrait.Sizes.Compact)
+	}
+	return portrait.Tooltip(c, chip, description)
 }
 
 func field(c *ui.Context, key string, size float32, build func() ui.Element, configure ...func(ui.Element)) ui.Element {
@@ -131,14 +134,20 @@ func resultText(c *ui.Context, title, value string, errText string) {
 	}
 }
 
-func markdownOptions(o *markdown.Options) *markdown.Options {
+func markdownOptions(c *ui.Context, o *markdown.Options) *markdown.Options {
 	base := portrait.Type.UI.Size
+	theme := ui.LightTheme()
+	if c != nil {
+		theme = c.Theme()
+	}
 	o.Theme = &markdown.Theme{
 		FontSize: base, Font: portrait.FontSans, CodeFont: portrait.FontMono, CodeSize: portrait.Type.Code.Size / base,
 		CodeLabelSize: portrait.Type.Meta.Size / base, ListNumberSize: portrait.Type.Meta.Size / base, ImagePlaceholderSize: portrait.Type.Meta.Size / base,
 		Text: portrait.Colors.Ink, Muted: portrait.Colors.Ink3, Link: portrait.Colors.Accent, Code: portrait.Colors.Ink, CodeBackground: portrait.Colors.Fill,
 		QuoteBar: portrait.Colors.Accent, QuoteText: portrait.Colors.Ink2, Rule: portrait.Colors.Line,
+		Alerts:              [5]markdown.Color{portrait.Colors.Note, portrait.Colors.Tip, portrait.Colors.Important, portrait.Colors.Warning, portrait.Colors.Caution},
 		CodeBlockBackground: portrait.Colors.Fill, CodeBlockBorder: portrait.Colors.Line, CodeBlockRadius: portrait.Radii.M,
+		CodeColors:  portrait.CodeTheme(theme),
 		TableBorder: portrait.Colors.Line, TableHeader: portrait.Colors.Fill, Checkbox: portrait.Colors.Accent,
 		Headings: [6]markdown.HeadingStyle{
 			{Size: portrait.Type.Reading.Size / base}, {Size: portrait.Type.Small.Size / base}, {Size: portrait.Type.UI.Size / base}, {Size: portrait.Type.UI.Size / base}, {Size: portrait.Type.UI.Size / base}, {Size: portrait.Type.UI.Size / base, Color: portrait.Colors.Ink2},

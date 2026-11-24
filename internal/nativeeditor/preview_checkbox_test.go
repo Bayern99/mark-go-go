@@ -4,6 +4,7 @@ import (
 	"image/color"
 	"testing"
 
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -42,6 +43,31 @@ func TestPreviewTaskCheckboxKeyboardToggleAndFocusRing(t *testing.T) {
 	}
 	if node, _ := tt.AccessByRole(ui.RoleCheckBox, "Task"); node.Checked {
 		t.Fatal("assistive technology still sees the task checked after Space")
+	}
+}
+
+func TestPreviewAndPortraitCheckboxPixelsMatch(t *testing.T) {
+	previewChecked, portraitChecked := true, true
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Row(c).Gap(20).Children(func() {
+			previewTaskCheckbox(c.Key("preview"), &previewChecked).Label("Preview task")
+			portrait.Checkbox(c.Key("portrait"), &portraitChecked, "").Label("Portrait task")
+		})
+	}, 120, 60)
+	tt.Frame()
+	preview, previewOK := tt.Access("Preview task")
+	standard, standardOK := tt.Access("Portrait task")
+	if !previewOK || !standardOK || preview.Bounds.W != standard.Bounds.W || preview.Bounds.H != standard.Bounds.H {
+		t.Fatalf("checkbox bounds differ: preview=%+v portrait=%+v", preview.Bounds, standard.Bounds)
+	}
+	for y := 0; y < int(preview.Bounds.H); y++ {
+		for x := 0; x < int(preview.Bounds.W); x++ {
+			a := tt.Image().RGBAAt(int(preview.Bounds.X)+x, int(preview.Bounds.Y)+y)
+			b := tt.Image().RGBAAt(int(standard.Bounds.X)+x, int(standard.Bounds.Y)+y)
+			if a != b {
+				t.Fatalf("checkbox pixel (%d,%d) differs: preview=%v portrait=%v", x, y, a, b)
+			}
+		}
 	}
 }
 

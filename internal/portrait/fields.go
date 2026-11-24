@@ -70,6 +70,7 @@ type SearchSpec struct {
 	ClearLabel         string
 	Shortcut           []string
 	Size               float32
+	SingleFocusRing    bool
 	OnClear            func()
 }
 
@@ -106,7 +107,11 @@ func SearchField(c *ui.Context, value *string, spec SearchSpec) Field {
 			}
 		}
 	})
-	applyFieldLook(frame, false)
+	if spec.SingleFocusRing && frame.FocusWithin() {
+		Surface{Colors.Paper, Colors.Paper, Shadows{out(0, 0, 0, 3, Colors.Focus)}}.Apply(frame)
+	} else {
+		applyFieldLook(frame, false)
+	}
 	return Field{frame: func() ui.Element { return frame }, input: func() ui.Element { return input }}
 }
 

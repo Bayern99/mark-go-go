@@ -51,6 +51,8 @@ type Window struct {
 	preferences                   *preferenceStore
 	pendingReveal                 *workspace.DocReveal
 	menuKnown, menuUndo, menuRedo bool
+	dialog                        *windowDialog
+	closing                       map[string]bool
 }
 
 var windowRegistry = map[*mygo.Window]*Window{}
@@ -164,6 +166,7 @@ func NewWindow(host *workspace.Service, opts mygo.WindowOptions, extensions ...f
 		workspace.WorkspaceChanged.Listen(w.win, func(_ workspace.WorkspaceSnapshot) { w.refresh() })
 		workspace.DocumentReloaded.Listen(w.win, w.reload)
 		workspace.CommandRequested.Listen(w.win, w.command)
+		workspace.QuitFailed.Listen(w.win, func(f workspace.QuitFailure) { w.ShowAlert(f.Title, f.Body) })
 		w.win.OnFocus(func() { w.menuKnown = false; w.updateMenu() })
 		w.win.OnShow(w.refresh)
 		workspace.NavigationChanged.Listen(w.win, func(n workspace.NavSnapshot) {
@@ -293,6 +296,9 @@ func (w *Window) publish(id string, attempt int) error {
 	if d == nil {
 		return nil
 	}
+	if w.closing[id] {
+		return nil
+	}
 	// Keep the session's scroll position current without writing it to disk
 	// here: every frame would then write the session. The tab, view and quit
 	// persistence paths save whichever value is latest.
@@ -337,27 +343,29 @@ func (w *Window) command(cmd workspace.NativeCommand) {
 	case "undo", "redo":
 		w.updateMenu()
 	case "save":
-		go w.actionToast(func() error { return w.host.Save(w.ctx, cmd.ID) }, portrait.ToastSpec{ID: "save:" + cmd.ID, Tone: portrait.Tones.Success, Title: "Saved"})
+		w.requestSave(cmd.ID)
 	case "saveAs":
 		go w.actionToast(func() error { return w.host.SaveAs(w.ctx, cmd.ID) }, portrait.ToastSpec{ID: "save:" + cmd.ID, Tone: portrait.Tones.Success, Title: "Saved"})
 	case "rename":
-		go w.action(func() error { return w.host.Rename(w.ctx, cmd.ID) })
+		w.openRename(cmd.ID)
 	case "moveTo":
-		go w.action(func() error { return w.host.MoveTo(w.ctx, cmd.ID) })
+		w.openMove(cmd.ID)
 	case "revert":
-		go w.actionToast(func() error { return w.host.Revert(w.ctx, cmd.ID) }, portrait.ToastSpec{ID: "restore:" + cmd.ID, Tone: portrait.Tones.Success, Title: "Restored"})
+		w.openRevert(cmd.ID)
 	case "duplicate":
 		go w.action(func() error { _, err := w.host.Duplicate(w.ctx, cmd.ID); return err })
 	case "close":
-		go w.action(func() error { _, err := w.host.CloseDocument(w.ctx, cmd.ID); return err })
+		w.requestClose("closeDocument", "", []string{cmd.ID})
 	case "closeWorkspace":
+		ids := make([]string, 0, len(w.documents))
 		for id := range w.documents {
+			ids = append(ids, id)
 			if err := w.publish(id, 0); err != nil {
 				w.failure = err.Error()
 				return
 			}
 		}
-		go w.action(func() error { _, err := w.host.CloseWorkspace(w.ctx); return err })
+		w.requestClose("closeWorkspace", "", ids)
 	}
 }
 
@@ -431,6 +439,7 @@ func (w *Window) View(c *ui.Context) {
 	if w.ctx == nil {
 		return
 	}
+	c.SetMenuPresentation(ui.PopoverMenus)
 	if w.snapshot.ID == "" {
 		w.refresh()
 	}
@@ -490,16 +499,18 @@ func (w *Window) View(c *ui.Context) {
 		ActivateWorkspace: func(id string) { go w.action(func() error { return w.host.ActivateWorkspace(w.ctx, id) }) },
 		CloseDocument:     func(id string) { w.command(workspace.NativeCommand{Command: "close", ID: id}) },
 		CloseWorkspace: func(id string) {
+			ids := make([]string, 0, len(w.snapshot.Documents))
 			for _, doc := range w.snapshot.Documents {
 				if doc.WorkspaceRoot != w.snapshot.Root {
 					continue
 				}
+				ids = append(ids, doc.ID)
 				if err := w.publish(doc.ID, 0); err != nil {
 					w.failure = err.Error()
 					return
 				}
 			}
-			go w.action(func() error { _, err := w.host.CloseWorkspaceRoot(w.ctx, id); return err })
+			w.requestClose("closeRoot", id, ids)
 		},
 		OpenPath: w.openPath, Reveal: w.Reveal, SetMode: w.SetMode,
 		OpenFolder:  func() { go w.action(func() error { _, err := w.host.PickFolder(w.ctx); return err }) },
@@ -520,6 +531,7 @@ func (w *Window) View(c *ui.Context) {
 			}
 		},
 		SetFeynman: func(value bool) { w.setPlugin("feynman", value) }, SetGit: func(value bool) { w.setPlugin("git", value) },
+		SaveConflict: w.openConflict, RevertConflict: w.openConflict,
 	}
 	if !w.shell.ready {
 		w.shell.hideSidebar = w.Preference(sidebarHiddenPreference) == "on"
@@ -548,6 +560,7 @@ func (w *Window) View(c *ui.Context) {
 	}
 	w.toasts = nil
 	w.shell.Draw(c, model, actions, slots)
+	w.drawDialog(c)
 	w.updateMenu()
 	if oldWidth != 0 && oldWidth != w.shell.rightWidth {
 		w.setPreference("mgo.researchWidth", strconv.Itoa(int(w.shell.rightWidth)))

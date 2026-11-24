@@ -161,6 +161,15 @@ func (s *Shell) documents(c *ui.Context, m Model, a Actions) {
 					a.CloseDocument(d.ID)
 				}
 			})
+			contextOpen := ui.Local(row, "Portrait tab menu", func() bool { return false })
+			portrait.ContextMenu(c, row, contextOpen, func(menu *portrait.MenuBuilder) {
+				if menu.Item(portrait.MenuItemSpec{Label: "Activate", Icon: portrait.IconFileText}).Clicked() && a.Activate != nil {
+					a.Activate(d.ID)
+				}
+				if menu.Item(portrait.MenuItemSpec{Label: "Close Document", Icon: portrait.IconX}).Clicked() && a.CloseDocument != nil {
+					a.CloseDocument(d.ID)
+				}
+			})
 		}
 	})
 }

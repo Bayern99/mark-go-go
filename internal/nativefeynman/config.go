@@ -343,20 +343,22 @@ func (p *panel) configPicker(c *ui.Context, picker researchPicker) {
 			activate(rows[state.cursor])
 		}
 		ui.Scroll(c.Key("research-picker-options-" + picker.key)).MaxHeight(portrait.Form.ListMax).FillWidth().Label(picker.label + " choices").Children(func() {
-			if len(rows) == 0 {
-				portrait.Caption(c, "No matching options.").Padding(portrait.Form.Gap, portrait.Form.PadX)
-				return
-			}
-			for i, row := range rows {
-				choice := p.pickerRowView(c, picker, row)
-				if p.pickerFocus == picker.key && state.focus == i {
-					choice.Focus().ScrollIntoView()
-					p.pickerFocus = ""
+			ui.Column(c).FillWidth().Children(func() {
+				if len(rows) == 0 {
+					portrait.Empty(c, portrait.EmptySpec{Title: "No matching " + strings.ToLower(picker.label), Description: "Try a different search or provider."}).Padding(portrait.Form.DialogPad)
+					return
 				}
-				if choice.Clicked() {
-					activate(row)
+				for i, row := range rows {
+					choice := p.pickerRowView(c, picker, row)
+					if p.pickerFocus == picker.key && state.focus == i {
+						choice.Focus().ScrollIntoView()
+						p.pickerFocus = ""
+					}
+					if choice.Clicked() {
+						activate(row)
+					}
 				}
-			}
+			})
 		})
 		if picker.key == "model" {
 			manage := portrait.ButtonWith(c.Key("manage-models"), "Manage models & providers…", "Manage models and providers", portrait.ButtonSpec{Look: portrait.Quiet, Trailing: portrait.IconCaretRight}).FillWidth()
@@ -411,7 +413,7 @@ func (p *panel) pickerRowView(c *ui.Context, picker researchPicker, row pickerRo
 	if row.kind != pickerChoice {
 		key = "research-picker-provider-" + picker.key + "-" + row.provider + "-" + strconv.Itoa(int(row.kind))
 	}
-	spec := portrait.ListRowSpec{Title: row.item.label, Detail: row.item.detail, Label: row.label(), Selected: row.item.current, Group: "research-picker-" + picker.key}
+	spec := portrait.ListRowSpec{Title: row.item.label, Detail: row.item.detail, Label: row.label(), Selected: row.item.current}
 	switch row.kind {
 	case pickerBack:
 		spec.Icon, spec.Title, spec.Detail = portrait.IconCaretLeft, "Back", providerLabel(row.provider)
@@ -427,6 +429,9 @@ func (p *panel) pickerRowView(c *ui.Context, picker researchPicker, row pickerRo
 		}
 	}
 	b := portrait.ListRow(c.Key(key), spec)
+	if row.item.current {
+		b.Background(portrait.Colors.AccentSoft)
+	}
 	if row.kind == pickerChoice {
 		b.Checked(row.item.current)
 	}

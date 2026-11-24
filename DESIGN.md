@@ -20,7 +20,7 @@
 
 ## 命令栏
 
-命令栏是居中偏上的玻璃浮层：一行输入，下面是结果。空白时先列其他打开的原文（按最近使用排序，当前原文排在最后），再列命令。输入后同时匹配打开的原文、当前原文的标题、工作区里的文件与标题，以及命令：新建原文、打开文件夹、切换视图、检查点、显示或收起侧栏、显示 Outline 或 Files、研究面板、启停插件、关闭原文、切换工作区、打开最近的工作区、更换 Space 和外观（`Toggle Dark Mode` 总在列表里，`Appearance: …` 与 `Space: …` 在输入后出现）。↑↓ 移动选中项，回车执行，Esc 关闭；选中项用强调色整行填充。命令栏借用工作区搜索，关闭时把侧栏自己的过滤词还回去。 [命令栏](internal/nativeui/command.go) · [命令栏用例](internal/nativeui/command_test.go)
+命令栏是居中偏上的玻璃浮层：一行输入，下面是结果。空白时先列其他打开的原文（按最近使用排序，当前原文排在最后），再列命令。输入后同时匹配打开的原文、当前原文的标题、工作区里的文件与标题，以及命令：新建原文、打开文件夹、切换视图、检查点、显示或收起侧栏、显示 Outline 或 Files、研究面板、启停插件、关闭原文、切换工作区、打开最近的工作区、更换 Space 和外观（`Toggle Dark Mode` 总在列表里，`Appearance: …` 与 `Space: …` 在输入后出现）。↑↓ 移动选中项，回车执行，Esc 关闭；选中项用当前 Space 的柔和强调色整行标记，文字保持墨色与辅助色的层级。命令栏借用工作区搜索，关闭时把侧栏自己的过滤词还回去。 [命令栏](internal/nativeui/command.go) · [命令栏用例](internal/nativeui/command_test.go)
 
 ## 设置中心
 
@@ -38,7 +38,7 @@
 - **材质**是平的：没有渐变面和多层内阴影。凸起是白纸加发丝线和一层浅投影，悬停与按下只改变投影和底色；强调按钮是纯色加同色光晕；行悬停、凹面和分段控件的轨道是 5% 左右的黑色薄层；`Sheet`、`Pop`、`Page` 是白纸加由浅到深的三档投影。 [材质](internal/portrait/material.go) · [控件](internal/portrait/controls.go)
 - **圆角**只有 4、6、8、12、16 与胶囊形，外加嵌套的轨道 10 与分段 8。行与按钮 8，纸页、卡片与弹层 12，抽屉与命令栏 16。控件高度仍是 22、28、32；侧栏的行高 32。 [阶梯](internal/portrait/scale.go) · [外壳尺寸](internal/portrait/theme.go)
 - **动效**沿用原有时长与曲线：按下、切换、展开、进入、菜单和跳转；键盘操作或减少动态效果偏好下，过渡直接落位。选中的标签是一张在行间滑动的白色胶囊。Preview 的标题折叠与展开直接到位，见 issue #96。 [动效](internal/portrait/motion.go)
-- **共用控件**：六种按钮、图标按钮、分段控件、TextField、SearchField、TextArea、Select、Stepper、Menu、ContextMenu、Popover、DialogShell、SettingsGroup/Row、Disclosure、OutputBlock、Chip、ListRow、Tooltip、Alert、Badge、Toast、Confirm、Card、Frame、Skeleton 与 Phosphor 图标。图标尺寸只取 XS 12、S 14、M 16、L 20；除 GenUI 文档内容阅读器外，原生表面不直接调用框架的 Button/TextInput/TextArea/Select/Popover/Collapsible。 [控件](internal/portrait/controls.go) · [表单](internal/portrait/fields.go) · [设置行](internal/portrait/settings_controls.go)
+- **共用控件**：六种按钮、图标按钮、分段控件、TextField、SearchField、TextArea、Select、Stepper、Slider、Radio、DateField、Menu、ContextMenu、Popover、DialogShell、SettingsGroup/Row、Disclosure、OutputBlock、Chip、ListRow、Tooltip、Alert、Badge、Toast、Decision、Prompt、Confirm、Card、Frame、Skeleton 与 Phosphor 图标。图标尺寸只取 XS 12、S 14、M 16、L 20；除 GenUI 文档内容阅读器外，原生表面不直接调用框架的 Button/TextInput/TextArea/Select/Popover/Collapsible。 [控件](internal/portrait/controls.go) · [表单](internal/portrait/fields.go) · [设置行](internal/portrait/settings_controls.go)
 
 ## 玻璃材质
 
@@ -68,6 +68,6 @@
 
 - 没有 Arc 的悬停滑出侧栏、两篇原文并排的分屏和标签自动归档。
 - macOS 的系统侧栏材质跟随系统外观；所选外观与系统不同时布景改为不透明，桌面不再透出。
-- 原生菜单和系统对话框跟随系统外观，不跟随应用内选择的外观。
+- macOS 菜单栏、窗口 chrome 与任意路径的文件打开/保存面板仍由系统绘制；应用内菜单、关闭决策、重命名、移动确认、恢复确认和可定位到窗口的错误提示使用 Portrait，并跟随 Space 与深浅外观。
 - Inter 的五个字重文件比原来的 IBM Plex Sans 与 Barlow 多约 1.5 MB。
 - 隐藏标题栏与系统材质只在 macOS 上启用，Windows 与 Linux 的原生窗口尚未实测。

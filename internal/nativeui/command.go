@@ -281,8 +281,8 @@ func (s *Shell) commandBar(c *ui.Context, width, height float32, m Model, a Acti
 				ink, muted := portrait.Colors.Ink, portrait.Colors.Ink3
 				switch {
 				case selected:
-					row.Background(portrait.Colors.Accent)
-					ink, muted = portrait.Colors.OnAccent, portrait.Colors.OnAccent.Alpha(0.78)
+					row.Background(portrait.Colors.AccentSoft)
+					ink, muted = portrait.Colors.Accent, portrait.Colors.Ink2
 				case row.Hovered():
 					row.Background(portrait.Colors.Fill)
 				}

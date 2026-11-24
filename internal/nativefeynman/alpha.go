@@ -28,7 +28,7 @@ func (p *panel) alphaXiv(c *ui.Context) {
 	ui.Row(c.Key("alpha-header")).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
 		sectionTitle(c, "alphaXiv research")
 		ui.Row(c).Grow(1)
-		if portrait.QuietButton(c, "Account…", "alphaXiv account settings").Clicked() {
+		if portrait.ButtonWith(c, "Account…", "alphaXiv account settings", portrait.ButtonSpec{Look: portrait.Raised, Size: portrait.Sizes.Compact, Leading: portrait.IconGear}).Clicked() {
 			p.openSettings("search")
 		}
 	})
@@ -166,7 +166,7 @@ func (p *panel) alphaResults(c *ui.Context, result feynman.CLIAlphaSearchResult)
 	}
 	for i, group := range groups {
 		ui.Column(c.Key(fmt.Sprintf("alpha-group-%d", i))).Gap(4).Padding(6, 7).Children(func() {
-			if group.Mode != "" {
+			if group.Mode != "" && len(groups) > 1 {
 				text(c, portrait.Type.Meta, group.Mode).FontWeight(600).TextColor(portrait.Colors.Accent)
 			}
 			if len(group.Papers) == 0 {
@@ -175,17 +175,17 @@ func (p *panel) alphaResults(c *ui.Context, result feynman.CLIAlphaSearchResult)
 			for _, paper := range group.Papers {
 				portrait.Card(c.Key("alpha-paper-"+paper.ID)).Gap(3).Padding(portrait.Form.Gap).Radius(portrait.Radii.L).Background(portrait.Colors.Paper).Border(0.5, portrait.Colors.Line).Children(func() {
 					text(c, portrait.Type.UI, paper.Title).FontWeight(600).TextColor(portrait.Colors.Ink).FillWidth().Wrap()
-					meta := strings.Join([]string{paper.Authors, paper.Published, paper.ID}, " · ")
+					meta := strings.Join(nonEmpty(paper.Authors, paper.Published, paper.ID), " · ")
 					mutedText(c, meta)
 					if paper.Summary != "" {
-						markdown.View(c.Key("alpha-summary-"+paper.ID), paper.Summary, markdownOptions(&markdown.Options{})).FillWidth()
+						markdown.View(c.Key("alpha-summary-"+paper.ID), paper.Summary, markdownOptions(c, &markdown.Options{})).FillWidth()
 					}
 					ui.Row(c).Wrap().Gap(4).Children(func() {
-						if smallButton(c, "Inspect", "Inspect paper "+paper.ID).Disabled(paper.ID == "" || p.state.cliBusy).Clicked() {
+						if portrait.Button(c, "Inspect", "Inspect paper "+paper.ID).Disabled(paper.ID == "" || p.state.cliBusy).Clicked() {
 							p.alphaPaperID = paper.ID
 							p.alphaInspect()
 						}
-						if smallButton(c, "Cite in Chat", "Insert paper citation into Feynman chat").Clicked() {
+						if portrait.Button(c, "Cite in Chat", "Insert paper citation into Feynman chat").Clicked() {
 							p.state.draft = strings.TrimSpace(p.state.draft + "\n\n" + paperCitation(paper))
 							p.state.selectedTab = "chat"
 						}
@@ -194,6 +194,16 @@ func (p *panel) alphaResults(c *ui.Context, result feynman.CLIAlphaSearchResult)
 			}
 		})
 	}
+}
+
+func nonEmpty(values ...string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func (p *panel) alphaInspect() {
@@ -218,7 +228,7 @@ func (p *panel) alphaPaper(c *ui.Context, result feynman.CLIAlphaPaperResult) {
 		text(c, portrait.Type.UI, result.Title).FontWeight(600).TextColor(portrait.Colors.Ink).FillWidth().Wrap()
 		mutedText(c, result.PaperID+map[bool]string{true: " · full text", false: " · abstract"}[result.FullText])
 		if result.Content != "" {
-			markdown.View(c.Key("alpha-paper-content"), result.Content, markdownOptions(&markdown.Options{WrapCode: true})).FillWidth()
+			markdown.View(c.Key("alpha-paper-content"), result.Content, markdownOptions(c, &markdown.Options{WrapCode: true})).FillWidth()
 		}
 		if smallButton(c, "Cite in Chat", "Insert paper details into the Feynman prompt").Clicked() {
 			p.state.draft = strings.TrimSpace(p.state.draft + "\n\nalphaXiv paper " + result.PaperID + ": " + result.Title + "\n" + result.Content)

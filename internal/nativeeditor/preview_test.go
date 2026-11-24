@@ -133,7 +133,7 @@ func TestPreviewTaskCheckboxEditsSourceAndSharesUndo(t *testing.T) {
 	}
 }
 
-func TestPreviewTaskCheckboxUsesMutedCheckedColors(t *testing.T) {
+func TestPreviewTaskCheckboxUsesAccentCheckedColors(t *testing.T) {
 	d := nativeeditor.New("- [X] Done\r\n- [ ] Next\r\n")
 	theme := portrait.Theme()
 	tt := ui.NewTester(func(c *ui.Context) {
@@ -160,20 +160,17 @@ func TestPreviewTaskCheckboxUsesMutedCheckedColors(t *testing.T) {
 	pixel := func(r ui.Rect, x, y float32) color.RGBA {
 		return tt.Image().RGBAAt(int(r.X+x), int(r.Y+y))
 	}
-	if got, want := pixel(checked.Bounds, checked.Bounds.W/2, 3), rgba(portrait.Colors.Ink3); got != want {
-		t.Errorf("checked task fill = %v; want muted outline color %v", got, want)
+	if got, want := pixel(checked.Bounds, checked.Bounds.W/2, 3), rgba(portrait.Tones.Accent.Solid); got != want {
+		t.Errorf("checked task fill = %v; want accent color %v", got, want)
 	}
-	if got, want := pixel(checked.Bounds, 0, checked.Bounds.H/2), rgba(portrait.Colors.Ink3); got != want {
-		t.Errorf("checked task border = %v; want muted outline color %v", got, want)
+	if got, want := pixel(checked.Bounds, 0, checked.Bounds.H/2), rgba(portrait.Tones.Accent.Solid); got != want {
+		t.Errorf("checked task border = %v; want accent color %v", got, want)
 	}
-	accent, mark := rgba(portrait.Colors.Accent), rgba(portrait.Colors.Paper)
+	mark := rgba(portrait.Tones.Accent.OnSolid)
 	foundMark := false
 	for y := int(checked.Bounds.Y); y < int(checked.Bounds.Y+checked.Bounds.H); y++ {
 		for x := int(checked.Bounds.X); x < int(checked.Bounds.X+checked.Bounds.W); x++ {
 			px := tt.Image().RGBAAt(x, y)
-			if px == accent {
-				t.Fatalf("checked task still uses green accent at (%d, %d)", x, y)
-			}
 			if x < int(checked.Bounds.X+ui.LightTheme().Space(4)) {
 				foundMark = foundMark || px == mark
 			}
@@ -186,13 +183,21 @@ func TestPreviewTaskCheckboxUsesMutedCheckedColors(t *testing.T) {
 	if got, want := pixel(unchecked.Bounds, unchecked.Bounds.W/2, unchecked.Bounds.H/2), rgba(theme.Background); got != want {
 		t.Errorf("unchecked task fill = %v; want %v", got, want)
 	}
-	if got, want := pixel(unchecked.Bounds, 0, unchecked.Bounds.H/2), over(theme.Border.Mix(theme.Text, 0.25), theme.Background); got != want {
+	if got, want := pixel(unchecked.Bounds, 0, unchecked.Bounds.H/2), over(portrait.Colors.LineStrong, portrait.Colors.Paper); got != want {
 		t.Errorf("unchecked task border = %v; want %v", got, want)
 	}
 	tt.Move(unchecked.Bounds.X+unchecked.Bounds.W/2, unchecked.Bounds.Y+unchecked.Bounds.H/2)
 	tt.Frame()
 	if got, want := pixel(unchecked.Bounds, 0, unchecked.Bounds.H/2), rgba(theme.Accent); got != want {
 		t.Errorf("hovered unchecked task border = %v; want %v", got, want)
+	}
+
+	if glyph, ok := d.RectUTF16(6); ok {
+		boxCenter := checked.Bounds.Y + checked.Bounds.H/2
+		textCenter := glyph.Y + glyph.H/2
+		if delta := float32(math.Abs(float64(boxCenter - textCenter))); delta > 4 {
+			t.Errorf("checkbox center %.1f is %.1f points from text center %.1f", boxCenter, delta, textCenter)
+		}
 	}
 
 	if d.Source() != "- [X] Done\r\n- [ ] Next\r\n" || d.Modified() {

@@ -3,6 +3,7 @@ package nativefeynman
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
 	"github.com/Bayern99/mark-go-go/internal/portrait"
@@ -112,6 +113,36 @@ func TestResearchPickerOpensAboveAndFiltersThenSelects(t *testing.T) {
 	}
 	if !app.Focused("Model") {
 		t.Fatal("selecting a model did not restore focus to its trigger")
+	}
+}
+
+func TestResearchPickerPaintsProviderRows(t *testing.T) {
+	selected := ""
+	p := &panel{collapsed: make(map[string]*bool)}
+	app := newResearchPickerTester(p, fixtureResearchPicker(&selected))
+	app.SetScale(2)
+	app.Frame()
+	if err := app.Click("Model"); err != nil {
+		t.Fatal(err)
+	}
+	app.Advance(time.Second)
+	app.Frame()
+	row, ok := app.AccessByRole(ui.RoleButton, "Show Anthropic models")
+	if !ok {
+		t.Fatal("provider row is missing")
+	}
+	ink := 0
+	img := app.Image()
+	for y := int(row.Bounds.Y * 2); y < int((row.Bounds.Y+row.Bounds.H)*2); y++ {
+		for x := int(row.Bounds.X * 2); x < int((row.Bounds.X+row.Bounds.W)*2); x++ {
+			px := img.RGBAAt(x, y)
+			if int(px.R)+int(px.G)+int(px.B) < 450 {
+				ink++
+			}
+		}
+	}
+	if ink < 10 {
+		t.Fatalf("provider row has only %d dark pixels; bounds=%+v", ink, row.Bounds)
 	}
 }
 

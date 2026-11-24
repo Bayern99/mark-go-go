@@ -45,29 +45,12 @@ func (p *previewLayout) replace(start, end int, text string) {
 }
 
 func previewTaskCheckbox(c *ui.Context, checked *bool) ui.Element {
-	t := c.Theme()
-	control := ui.CheckboxBase(c, checked).FocusRing(false)
-	control.Children(func() {
-		fill, border := t.Background, t.Border.Mix(t.Text, 0.25)
-		if *checked {
-			fill, border = portrait.Colors.Ink3, portrait.Colors.Ink3
-		}
-		radius := t.Space(1)
-		box := ui.Box(c).Size(t.Space(4), t.Space(4)).Radius(radius).Shrink(0).Background(fill).Border(1, border)
-		box.DrawOver(func(p *ui.Painter, r ui.Rect) {
-			if !*checked && control.Hovered() {
-				p.Stroke(r, t.Accent, radius, 1)
-			}
-			if *checked {
-				var mark ui.Path
-				mark.MoveTo(r.X+r.W*0.22, r.Y+r.H*0.52).LineTo(r.X+r.W*0.42, r.Y+r.H*0.71).LineTo(r.X+r.W*0.78, r.Y+r.H*0.31)
-				p.StrokePath(&mark, t.Space(0.5), portrait.Colors.Paper)
-			}
-			if control.FocusVisible() {
-				p.FocusRing(r, [4]float32{radius, radius, radius, radius})
-			}
-		})
-	})
+	control := ui.CheckboxBase(c, checked).FocusRing(false).AlignItems(ui.Center)
+	state := ui.CheckOff
+	if *checked {
+		state = ui.CheckOn
+	}
+	portrait.CheckboxFace(c, control, state, "")
 	return control
 }
 
@@ -112,6 +95,8 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 		switch b.Kind {
 		case parser.CodeBlock:
 			p.codeBlock(snap, i)
+		case parser.ThematicBreak:
+			p.thematicBreak(snap, b.Start, b.End)
 		case parser.Heading:
 			line := snap.LineOf(b.Start)
 			p.styles = append(p.styles, headingStyle(line, b.Level))
@@ -165,6 +150,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 						Width:       20,
 						Interactive: true,
 						Content: func(c *ui.Context, e ui.Element, _ editor.Replacement) {
+							e.AlignItems(ui.Center).Justify(ui.Center)
 							e.Children(func() {
 								value := checked
 								control := previewTaskCheckbox(c, &value).Label(description).Disabled(p.owner.state.ReadOnly)
@@ -204,6 +190,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 			}
 			if quoteDepth > 0 {
 				p.addIndent(line, float32(quoteDepth*quoteBarInset), 0)
+				p.backgrounds = append(p.backgrounds, editor.LineBackground{First: line, Last: line, Color: portrait.Colors.AccentSoft, ReadingColumn: true})
 			}
 		}
 		inlines := p.document.Inlines(i)
@@ -331,8 +318,17 @@ func (p *previewLayout) addIndent(line int, left, right float32) {
 
 func quoteBar(c *ui.Context, e ui.Element, _ editor.Replacement) {
 	e.Children(func() {
-		ui.Box(c).Absolute().Left(0).Top(0).Bottom(0).Width(2).Background(portrait.Colors.LineStrong)
+		ui.Box(c).Absolute().Left(0).Top(0).Bottom(0).Width(3).Background(portrait.Colors.Accent)
 	})
+}
+
+func (p *previewLayout) thematicBreak(snap editor.Snapshot, start, end int) {
+	p.replace(start, end, "")
+	p.blocks = append(p.blocks, editor.Block{Line: snap.LineOf(start), Above: true, Height: portrait.Type.Reading.Leading, Label: "Thematic break", Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
+		e.Children(func() {
+			ui.Box(c).FillWidth().Height(portrait.Editor.Hairline).AlignSelf(ui.Center).Background(portrait.Colors.Line).AccessHidden(true)
+		})
+	}})
 }
 
 func previewImageURLs(doc *parser.Document) map[string]struct{} {
@@ -419,7 +415,8 @@ func (p *previewLayout) standaloneImages(snap editor.Snapshot, blockIndex int, i
 						}
 						w, h := ui.ImageSize(src)
 						scale := min(float32(1), maxWidth/max(1, w), float32(420)/max(1, h))
-						img := ui.Image(c, src).Size(max(1, w*scale), max(1, h*scale)).Label(figure.label).AlignSelf(ui.Center)
+						img := ui.Image(c, src).Size(max(1, w*scale), max(1, h*scale)).Label(figure.label).AlignSelf(ui.Center).
+							Radius(portrait.Radii.M).Clip().Border(portrait.Editor.Hairline, portrait.Colors.Line)
 						if figure.title != "" {
 							img.Tooltip(figure.title)
 						}
@@ -546,7 +543,7 @@ func (d *Document) prepareView() {
 	st.RenderGoToLine = renderGoToLine
 	st.RenderHover = renderHover
 	if d.mode == Markdown {
-		st.ContextMenu = func(m *ui.Menu) { m.EditItems() }
+		st.ContextMenu = nil
 		st.OnInput = nil
 		st.OnHover = nil
 		st.Label = "Markdown source"
@@ -568,9 +565,7 @@ func (d *Document) prepareView() {
 		return
 	}
 	st.ContextMenu = func(m *ui.Menu) {
-		m.EditItems()
 		if !d.state.ReadOnly {
-			m.Separator()
 			if m.Item("Add note").Chosen() {
 				d.beginNote()
 			}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log"
+	"path/filepath"
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
@@ -94,6 +95,14 @@ func buildMenu(host *workspace.Service) *mygo.Menu {
 			}
 		}
 	}
+	recent := make([]*mygo.MenuItem, 0, 10)
+	for _, path := range mygo.App.RecentDocuments() {
+		path := path
+		recent = append(recent, &mygo.MenuItem{Label: filepath.Base(path), Click: withWindow(func(w *nativeui.Window) { w.OpenRecentDocument(path) })})
+	}
+	if len(recent) == 0 {
+		recent = append(recent, &mygo.MenuItem{Label: "No Recent Documents", Disabled: true})
+	}
 	return mygo.NewMenu([]*mygo.MenuItem{
 		{Role: mygo.RoleAppMenu, Submenu: []*mygo.MenuItem{
 			{Role: mygo.RoleAbout}, mygo.Separator(),
@@ -101,11 +110,11 @@ func buildMenu(host *workspace.Service) *mygo.Menu {
 			mygo.Separator(), {Role: mygo.RoleServices}, mygo.Separator(), {Role: mygo.RoleHide}, {Role: mygo.RoleHideOthers}, {Role: mygo.RoleUnhide}, mygo.Separator(), {Role: mygo.RoleQuit},
 		}},
 		{Role: mygo.RoleFileMenu, Submenu: []*mygo.MenuItem{
-			{Role: mygo.RoleNew}, {Role: mygo.RoleOpen},
+			{Role: mygo.RoleNew}, {Label: "Open…", Accelerator: "CmdOrCtrl+O", Click: withWindow(func(w *nativeui.Window) { w.OpenFiles() })},
 			{Label: "Open Folder…", Accelerator: "CmdOrCtrl+Shift+O", Click: func(_ *mygo.MenuItem, win *mygo.Window) {
 				go func() { _, _ = host.PickFolder(desktop.WithWindow(context.Background(), win)) }()
 			}},
-			{Role: mygo.RoleOpenRecent}, mygo.Separator(), {Role: mygo.RoleClose}, {Role: mygo.RoleSave}, {Role: mygo.RoleSaveAs}, {Role: mygo.RoleDuplicate}, {Role: mygo.RoleRename}, {Role: mygo.RoleMoveTo}, {Role: mygo.RoleRevert},
+			{Label: "Open Recent", Submenu: recent}, mygo.Separator(), {Role: mygo.RoleClose}, {Role: mygo.RoleSave}, {Role: mygo.RoleSaveAs}, {Role: mygo.RoleDuplicate}, {Role: mygo.RoleRename}, {Role: mygo.RoleMoveTo}, {Role: mygo.RoleRevert},
 		}},
 		{Role: mygo.RoleEditMenu},
 		{Role: mygo.RoleViewMenu, Submenu: []*mygo.MenuItem{

@@ -16,7 +16,7 @@ func Checkbox(c *ui.Context, checked *bool, label string) ui.Element {
 	if *checked {
 		state = ui.CheckOn
 	}
-	checkboxFace(c, control, state, label)
+	CheckboxFace(c, control, state, label)
 	return control
 }
 
@@ -24,17 +24,20 @@ func Checkbox(c *ui.Context, checked *bool, label string) ui.Element {
 // state, as a select-all control over a partially selected group does.
 func CheckboxState(c *ui.Context, state *ui.CheckState, label string) ui.Element {
 	control := ui.CheckboxStateBase(c, state).Gap(checkboxGap).AlignItems(ui.Center).FocusRing(false)
-	checkboxFace(c, control, *state, label)
+	CheckboxFace(c, control, *state, label)
 	return control
 }
 
-func checkboxFace(c *ui.Context, control ui.Element, state ui.CheckState, label string) {
+// CheckboxFace paints the one checkbox organ shared by settings, GenUI and
+// Markdown Preview. The control supplies interaction state; the face owns all
+// geometry and color so every surface stays pixel-identical.
+func CheckboxFace(c *ui.Context, control ui.Element, state ui.CheckState, label string) {
 	control.Children(func() {
 		fill, border := Colors.Paper, Colors.LineStrong
 		if state != ui.CheckOff {
 			fill, border = Tones.Accent.Solid, Tones.Accent.Solid
 		} else if control.Hovered() {
-			border = Tones.Accent.Solid
+			fill, border = Colors.AccentSoft, Tones.Accent.Solid
 		}
 		if c.Preferences().HighContrast && state == ui.CheckOff {
 			border = Colors.Ink2

@@ -61,9 +61,14 @@ type NativeCommand struct {
 	Attempt int    `json:"attempt,omitempty"`
 }
 
+type QuitFailure struct {
+	Title, Body string
+}
+
 var (
 	WorkspaceChanged = desktop.Event[WorkspaceSnapshot]{}
 	CommandRequested = desktop.Event[NativeCommand]{}
+	QuitFailed       = desktop.Event[QuitFailure]{}
 )
 
 const (

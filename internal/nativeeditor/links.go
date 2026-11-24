@@ -63,7 +63,7 @@ func (d *Document) previewHover(req editor.HoverRequest) {
 						c.Invalidate()
 					}
 					if canRemove {
-						remove := portrait.ButtonWith(c, "Remove link", "Remove link", portrait.ButtonSpec{Look: portrait.DangerOutline, Size: portrait.Sizes.Compact}).FillWidth()
+						remove := portrait.ListRow(c, portrait.ListRowSpec{Icon: portrait.IconTrash, Title: "Remove link", Label: "Remove link"})
 						if remove.Clicked() && d.Version() == req.Version && d.removeLink(req.Version, in, labelStart, labelEnd) == nil {
 							d.refocus = true
 							c.Invalidate()

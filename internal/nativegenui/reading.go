@@ -281,7 +281,7 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 		}
 		state.tab = min(state.tab, len(names)-1)
 		layout(ui.Column(c).Gap(8), n).Children(func() {
-			ui.Tabs(c, &state.tab, names...).Label("Reading sections")
+			portrait.Segmented(c, &state.tab, names, "Reading sections")
 			r.node(c, n.Tabs[state.tab].Child, parents)
 		})
 	case "Card":
@@ -347,7 +347,7 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 					if state.expanded {
 						label = "Show fewer"
 					}
-					if ui.Button(c, label).Clicked() {
+					if portrait.ButtonWith(c, label, label, portrait.ButtonSpec{Look: portrait.Quiet}).Clicked() {
 						state.expanded = !state.expanded
 					}
 				}
@@ -555,7 +555,7 @@ func comparison(c *ui.Context, n Node, st *componentState) {
 						}
 					}
 					ui.Column(c.Key(i)).Width(128).Shrink(0).Role(ui.RoleColumnHeader).Label(label).Sort(order).Children(func() {
-						if ui.Button(c, label+mark).Label("Sort by " + label).Clicked() {
+						if portrait.ButtonWith(c, label+mark, "Sort by "+label, portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Compact}).Clicked() {
 							if st.column != i {
 								st.order = 0
 							}

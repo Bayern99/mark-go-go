@@ -121,7 +121,7 @@ func (s *Shell) space(c *ui.Context, m Model, a Actions) {
 		meta = fmt.Sprintf("%s · %d files", w.Root, m.Navigation.Total)
 	}
 	space := spaceOf(m)
-	switcher := portrait.Menu(c, &s.workspaceMenu, func(menu *portrait.MenuBuilder) {
+	switcher := portrait.MenuWithSpec(c, &s.workspaceMenu, portrait.MenuSpec{TopOffset: portrait.Shell.Row + portrait.Sizes.Regular + portrait.Form.Gap}, func(menu *portrait.MenuBuilder) {
 		var current string
 		menu.Section("Workspaces")
 		for _, root := range w.Workspaces {
@@ -138,7 +138,7 @@ func (s *Shell) space(c *ui.Context, m Model, a Actions) {
 		if menu.Item(portrait.MenuItemSpec{Label: "Open Folder…", Icon: portrait.IconFolderOpen}).Clicked() && a.OpenFolder != nil {
 			a.OpenFolder()
 		}
-		if w.Kind == "folder" && current != "" && menu.Item(portrait.MenuItemSpec{Label: "Close Workspace"}).Clicked() && a.CloseWorkspace != nil {
+		if w.Kind == "folder" && current != "" && menu.Item(portrait.MenuItemSpec{Label: "Close Workspace", Icon: portrait.IconFolderMinus}).Clicked() && a.CloseWorkspace != nil {
 			a.CloseWorkspace(current)
 		}
 		menu.Separator()
@@ -383,6 +383,21 @@ func (s *Shell) files(c *ui.Context, m Model, a Actions) {
 			if folder {
 				button.Expanded(entry.FolderState == workspace.FolderOpen)
 			}
+			contextOpen := ui.Local(button, "Portrait context menu", func() bool { return false })
+			portrait.ContextMenu(c, button, contextOpen, func(menu *portrait.MenuBuilder) {
+				if menu.Item(portrait.MenuItemSpec{Label: "Open", Icon: icon}).Clicked() {
+					if folder {
+						s.drillTo(w.Root, entry.Path)
+					} else if entry.DocumentID != "" && a.Activate != nil {
+						a.Activate(entry.DocumentID)
+					} else if a.OpenPath != nil {
+						a.OpenPath(entry.Path, -1)
+					}
+				}
+				if entry.DocumentID != "" && menu.Item(portrait.MenuItemSpec{Label: "Close Document", Icon: portrait.IconX}).Clicked() && a.CloseDocument != nil {
+					a.CloseDocument(entry.DocumentID)
+				}
+			})
 			if button.Clicked() {
 				if folder {
 					s.drillTo(w.Root, entry.Path)

@@ -13,11 +13,8 @@ func (p *panel) mcpSettings(c *ui.Context) {
 	settingsSection(c, "MCP Servers", "Configured servers", "Manage MCP servers and their tool exposure.", func() {
 		ui.Row(c).Gap(portrait.Form.Gap).AlignItems(ui.Center).Justify(ui.End).Children(func() {
 			addLabel := "Add server"
-			if p.mcpAddOpen {
-				addLabel = "Hide form"
-			}
 			if toolButton(c, addLabel, "Toggle add MCP server form", true, p.mcpAddOpen).Clicked() {
-				p.mcpAddOpen = !p.mcpAddOpen
+				p.mcpAddOpen = true
 			}
 		})
 		if s.mcpServers != nil {
@@ -73,7 +70,9 @@ func (p *panel) mcpSettings(c *ui.Context) {
 					})
 				}
 				ui.Row(c).Wrap().Gap(portrait.Form.Gap).Children(func() {
-					portrait.FormRow(c, "Exposure", "", func() { input(c, "feynman-mcp-exposure", "Exposure", &p.serverExposure, "direct") })
+					portrait.FormRow(c, "Exposure", "How server tools appear to the model.", func() {
+						portrait.Select(c, &p.serverExposure, []portrait.Option{{Value: "", Label: "Default"}, {Value: "direct", Label: "Direct"}}, portrait.SelectSpec{Label: "Exposure", Width: portrait.Form.SelectMin})
+					})
 					portrait.FormRow(c, "Description", "", func() {
 						input(c, "feynman-mcp-description", "Description", &p.serverDescription, "Optional description")
 					})

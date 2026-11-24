@@ -20,6 +20,8 @@ var (
 	IconSlidersHorizontal = Icon{Glyph: "\ue434"}
 	IconFileText          = Icon{Glyph: "\ue23a"}
 	IconFolder            = Icon{Glyph: "\ue24a"}
+	IconFolderMinus       = Icon{Glyph: "\ue254"}
+	IconPencil            = Icon{Glyph: "\ue3ae"}
 	IconFolderOpen        = Icon{Glyph: "\ue256"}
 	IconMagnifyingGlass   = Icon{Glyph: "\ue30c"}
 	IconDotsThree         = Icon{Glyph: "\ue1fe"}

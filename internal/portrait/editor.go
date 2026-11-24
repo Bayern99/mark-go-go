@@ -8,6 +8,7 @@ type EditorTokens struct {
 	Body, Code                        TypeStyle
 	Column, GutterLeft, GutterRight   float32
 	BlockRadius, BlockPadX, BlockPadY float32
+	TableCellPadX, TableCellPadY      float32
 	Hairline                          float32
 }
 
@@ -30,6 +31,7 @@ func EditorFor(readingSize, codeSize, width float32) EditorTokens {
 		Code:   TypeStyle{Family: FontMono, Size: codeSize, Leading: codeSize + 9},
 		Column: width, GutterLeft: 56, GutterRight: 40,
 		BlockRadius: Radii.M, BlockPadX: 14, BlockPadY: 10,
+		TableCellPadX: 4, TableCellPadY: 2,
 		Hairline: 1,
 	}
 }

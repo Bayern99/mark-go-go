@@ -15,12 +15,25 @@ type MenuBuilder struct {
 	parts   func() ui.MenuParts
 }
 
+type MenuSpec struct {
+	TopOffset float32
+}
+
 // Menu creates an unstyled framework menu trigger and paints its popup with
 // Portrait materials. The caller styles and fills the returned trigger.
 func Menu(c *ui.Context, open *bool, build func(*MenuBuilder)) ui.Element {
+	return MenuWithSpec(c, open, MenuSpec{}, build)
+}
+
+// MenuWithSpec also permits a trigger to reserve space between itself and its
+// popup, as the workspace switcher does for the search row beneath it.
+func MenuWithSpec(c *ui.Context, open *bool, spec MenuSpec, build func(*MenuBuilder)) ui.Element {
 	parts := ui.MenuBase(c, open)
 	builder := &MenuBuilder{context: func() *ui.Context { return c }, parts: func() ui.MenuParts { return parts }}
 	parts.Popup(func(panel ui.Element) {
+		if spec.TopOffset != 0 {
+			panel.Margin(spec.TopOffset, 0, 0, 0)
+		}
 		panel.MinWidth(Form.MenuMin).MaxWidth(Form.MenuMax).Padding(Form.MenuPad).Gap(Form.PopoverGap).Radius(Radii.L)
 		Materials.GlassOverlay.Apply(panel)
 		build(builder)

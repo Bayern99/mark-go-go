@@ -149,9 +149,9 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 								}
 								child := model.cells[r][k]
 								pos := cellPosition{r, k}
-								box := ui.Column(c.Key(k)).Width(model.widths[k]).Shrink(0).Padding(2, 4).Justify(ui.Center)
+								box := ui.Column(c.Key(k)).Width(model.widths[k]).Shrink(0).Padding(portrait.Editor.TableCellPadY, portrait.Editor.TableCellPadX).Justify(ui.Center)
 								if r == 0 {
-									box.InsetShadow(0, -0.5, 0, 0, portrait.Colors.LineStrong).Role(ui.RoleColumnHeader)
+									box.Background(portrait.Colors.Fill).InsetShadow(0, -0.5, 0, 0, portrait.Colors.LineStrong).Role(ui.RoleColumnHeader)
 								} else {
 									box.InsetShadow(0, -0.5, 0, 0, portrait.Colors.Line).Role(ui.RoleCell)
 								}

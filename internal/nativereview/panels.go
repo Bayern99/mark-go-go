@@ -109,12 +109,12 @@ func (p *panel) drawProposals(c *ui.Context) {
 		if button.Clicked() {
 			p.open = !p.open
 		}
-		portrait.PopoverWithSpec(c, button, &p.open, portrait.PopoverSpec{Width: min(portrait.Form.PopoverWide, max(portrait.Form.MenuMin, float32(280))), Title: "Change proposals"}, func() { p.proposalPopover(c) })
+		portrait.PopoverWithSpec(c, button, &p.open, portrait.PopoverSpec{Width: min(portrait.Form.PopoverWide, max(portrait.Form.MenuMin, float32(280))), Title: "Change proposals", Opaque: true}, func() { p.proposalPopover(c) }).Background(portrait.Colors.Paper)
 	})
 }
 
 func (p *panel) proposalPopover(c *ui.Context) {
-	ui.Column(c).Gap(portrait.Form.Gap).Children(func() {
+	ui.Column(c).Gap(portrait.Form.Gap).Padding(0, portrait.Form.PadX).Children(func() {
 		var active review.ChangeProposal
 		portrait.Track(c, "change proposals", func(track *portrait.Segments) {
 			for _, item := range p.latest.Proposals {

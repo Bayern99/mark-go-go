@@ -199,6 +199,9 @@ func (d *Document) View(c *ui.Context, readOnly bool) ui.Element {
 	d.state.Theme.Background = c.Theme().Background
 	d.decorate(c)
 	field := editor.View(c, &d.state)
+	if d.mode == Markdown {
+		field.FontFeatures("liga=0", "clig=0", "calt=0")
+	}
 	if d.hasPendingScroll {
 		c.Invalidate()
 	}

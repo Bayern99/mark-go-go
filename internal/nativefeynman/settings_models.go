@@ -106,7 +106,7 @@ func (p *panel) providerGroup(c *ui.Context, g providerModels) {
 			ui.Row(c).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
 				portrait.Badge(c, status, tone)
 				if g.signedIn {
-					if portrait.ButtonWith(c, "Log out", "Log out of "+name, portrait.ButtonSpec{Look: portrait.DangerOutline, Size: portrait.Sizes.Compact}).Disabled(p.state.cliBusy).Clicked() {
+					if portrait.ButtonWith(c, "Log out", "Log out of "+name, portrait.ButtonSpec{Look: portrait.DangerOutline, Size: portrait.Sizes.Regular}).Disabled(p.state.cliBusy).Clicked() {
 						p.modelAction("logout", g.name)
 					}
 				} else if portrait.Button(c, "Sign in in Terminal", "Sign in to "+name+" in Terminal").Disabled(p.state.cliBusy).Clicked() {

@@ -186,7 +186,7 @@ func controlState(e ui.Element, cell Cell) ui.Element {
 
 const (
 	cellWidth    = 144
-	cellHeight   = 104
+	cellHeight   = 140
 	headerHeight = 28
 )
 

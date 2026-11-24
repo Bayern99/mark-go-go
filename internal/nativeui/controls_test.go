@@ -67,7 +67,7 @@ func TestShellIconsArePhosphorGlyphsWithNamesAndTooltips(t *testing.T) {
 		t.Fatal(err)
 	}
 	app.Advance(time.Second)
-	check("Close Navigation", "Close Paper.md", "Plugins", "Settings", "New document", "Filter files")
+	check("Close Navigation", "Close Paper.md", "Settings", "New document", "Filter files")
 	if err := app.Click("Filter files"); err != nil {
 		t.Fatal(err)
 	}

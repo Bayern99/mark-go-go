@@ -27,8 +27,10 @@ func Tooltip(c *ui.Context, anchor ui.Element, text string, keys ...string) ui.E
 	}
 	keyboard := anchor.FocusVisible()
 	ui.TooltipBase(c, anchor, func(tip ui.Element) {
-		tip.MaxWidth(t.Space(80)).Padding(t.Space(1.25), t.Space(2)).Radius(t.Space(1.25)).
-			Background(fill).TextColor(ink).FontSize(t.FontSize-1).Shadow(0, 2, 8, 0, ui.RGBA(0, 0, 0, 0.2))
+		tip.MaxWidth(Form.MenuMax).Padding(Form.LabelGap, Form.PadX).Radius(Radii.S).
+			Background(fill).TextColor(ink)
+		Type.Meta.Apply(tip)
+		Shadows{out(0, 2, 8, 0, black(0.2))}.Apply(tip)
 		tip.Children(func() {
 			if len(keys) == 0 {
 				ui.Text(c, text)
@@ -39,7 +41,7 @@ func Tooltip(c *ui.Context, anchor ui.Element, text string, keys ...string) ui.E
 				Kbd(c, keys...).Shrink(0)
 			})
 		})
-		tip.AttachTo(anchor, ui.AnchorTop, ui.AnchorBottom).Margin(0, 0, t.Space(1.5), 0).
+		tip.AttachTo(anchor, ui.AnchorTop, ui.AnchorBottom).Margin(0, 0, Form.Gap, 0).
 			AttachedOrigin().Transition(Overlays.Tooltip.Transition(c, keyboard))
 	})
 	return anchor

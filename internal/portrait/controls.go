@@ -25,7 +25,7 @@ type feedback struct {
 
 var (
 	looks [Link + 1]feedback
-	Rings struct{ Field, Editing Shadows }
+	Rings struct{ Field, Editing, Invalid Shadows }
 )
 
 func controlLooks() {
@@ -37,9 +37,10 @@ func controlLooks() {
 		DangerOutline: {dangerOutlineRest, dangerOutlineHover, dangerOutlinePress, Tones.Danger.Ink, Tones.Danger.Ink, 0.98},
 		Link:          {Surface{ui.Transparent, ui.Transparent, nil}, Surface{ui.Transparent, ui.Transparent, nil}, Surface{Colors.AccentSoft, Colors.AccentSoft, nil}, Colors.Accent, Colors.Accent, 0.98},
 	}
-	Rings = struct{ Field, Editing Shadows }{
+	Rings = struct{ Field, Editing, Invalid Shadows }{
 		Field:   Shadows{out(0, 0, 0, 0.5, Colors.LineStrong), out(0, 0, 0, 3, Colors.Focus)},
 		Editing: Shadows{out(0, 0, 0, 1, Colors.Accent), out(0, 0, 0, 3, Colors.Focus)},
+		Invalid: Shadows{out(0, 0, 0, 1, Colors.Danger), out(0, 0, 0, 3, Tones.Danger.Soft)},
 	}
 }
 
@@ -138,7 +139,7 @@ func capsule(c *ui.Context, _ ui.Element, selected bool, group string, radius fl
 }
 
 func InputFrame(c *ui.Context) ui.Element {
-	f := ui.Row(c).Height(30).Padding(0, 4, 0, 8).Gap(6).Radius(Radii.M).AlignItems(ui.Center)
+	f := ui.Row(c).Height(Form.Field).Padding(0, Form.PopoverPad, 0, Form.PadX).Gap(Form.Gap).Radius(Radii.M).AlignItems(ui.Center)
 	if f.FocusWithin() {
 		Surface{Colors.Paper, Colors.Paper, Rings.Field}.Apply(f)
 	} else {
@@ -147,7 +148,35 @@ func InputFrame(c *ui.Context) ui.Element {
 	return f
 }
 
+type PopoverSpec struct {
+	Width, MaxHeight float32
+	Title            string
+	Placement        ui.Anchor
+}
+
+func PopoverWithSpec(c *ui.Context, anchor ui.Element, open *bool, spec PopoverSpec, build func()) ui.Element {
+	return popover(c, anchor, open, spec, func() {
+		body := func() {
+			if spec.Title != "" {
+				ui.Row(c).FillWidth().Height(Form.PopoverHeader).Padding(0, Form.PadX).AlignItems(ui.Center).Children(func() {
+					PanelTitle(c, spec.Title)
+				})
+			}
+			build()
+		}
+		if spec.MaxHeight > 0 {
+			ui.Scroll(c).MaxHeight(spec.MaxHeight).Children(body)
+		} else {
+			body()
+		}
+	})
+}
+
 func Popover(c *ui.Context, anchor ui.Element, open *bool, build func()) ui.Element {
+	return popover(c, anchor, open, PopoverSpec{}, build)
+}
+
+func popover(c *ui.Context, anchor ui.Element, open *bool, spec PopoverSpec, build func()) ui.Element {
 	keys := ui.Local(anchor, "popover keys", func() KeyTrigger { return KeyTrigger{} })
 	keyboard := keys != nil && keys.Live(c) || anchor.FocusVisible()
 	return ui.PopoverBase(c, anchor, open, func(panel ui.Element) {
@@ -161,7 +190,15 @@ func Popover(c *ui.Context, anchor ui.Element, open *bool, build func()) ui.Elem
 				keys.dismiss = true
 			}
 		})
-		panel.MinWidth(anchor.Bounds().W).Margin(6, 0, 0, 0).Padding(6).Radius(Radii.L).Gap(2)
+		panel.MinWidth(anchor.Bounds().W).Padding(Form.PopoverPad).Radius(Radii.L).Gap(Form.PopoverGap)
+		if spec.Placement == ui.AnchorTopStart {
+			panel.Margin(0, 0, Form.PopoverPad, 0).AttachTo(anchor, ui.AnchorTopStart, ui.AnchorBottomStart)
+		} else {
+			panel.Margin(Form.PopoverPad, 0, 0, 0)
+		}
+		if spec.Width > 0 {
+			panel.Width(spec.Width)
+		}
 		Materials.GlassOverlay.Apply(panel).AttachedOrigin().Transition(Overlays.Popup.Transition(c, keyboard))
 		build()
 	})

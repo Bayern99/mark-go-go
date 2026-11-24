@@ -276,7 +276,7 @@ func (p *panel) configControls(c *ui.Context) {
 	if len(pickers) == 0 {
 		return
 	}
-	ui.Row(c.Key("research-configs")).Wrap().Gap(2).Padding(4, 0, 0, 0).BorderWidth(1, 0, 0, 0).BorderColor(portrait.Colors.Line).AlignItems(ui.Center).Children(func() {
+	ui.Row(c.Key("research-configs")).Wrap().Gap(portrait.Form.PopoverGap).AlignItems(ui.Center).Children(func() {
 		for _, picker := range pickers {
 			p.configPicker(c, picker)
 		}
@@ -290,14 +290,14 @@ func (p *panel) configPicker(c *ui.Context, picker researchPicker) {
 	currentLabel := currentResearchPickerLabel(picker)
 	description := picker.label + ": " + currentLabel
 	button := ui.ButtonBase(c.Key("research-config-"+picker.key)).Label(picker.label).Value(currentLabel).
-		Gap(4).AlignItems(ui.Center).Height(24).Padding(0, 6).Radius(6).MinWidth(0).
+		Gap(portrait.Form.HelpGap).AlignItems(ui.Center).Height(portrait.Sizes.Compact).Padding(0, portrait.Form.Gap).Radius(portrait.Radii.S).MinWidth(0).
 		MaxWidth(max(float32(96), width*0.62)).Expanded(*open).Disabled(picker.disabled)
 	button = portrait.Tooltip(c, button, description)
 	ink := portrait.Press(button, portrait.Quiet)
 	button.Children(func() {
-		portrait.Glyph(c, picker.icon, 13, portrait.Colors.Ink3).Shrink(0)
+		portrait.Glyph(c, picker.icon, portrait.IconSizes.S, portrait.Colors.Ink3).Shrink(0)
 		text(c, portrait.Type.Meta, currentLabel).FontWeight(500).TextColor(ink).MaxLines(1).Ellipsis("…").MinWidth(0)
-		portrait.Glyph(c, portrait.IconCaretDown, 11, portrait.Colors.Ink3).Shrink(0)
+		portrait.Glyph(c, portrait.IconCaretDown, portrait.IconSizes.XS, portrait.Colors.Ink3).Shrink(0)
 	})
 	if button.Clicked() {
 		shouldOpen := !*open
@@ -310,12 +310,9 @@ func (p *panel) configPicker(c *ui.Context, picker researchPicker) {
 		}
 	}
 
-	popover := ui.PopoverBase(c, button, open, func(panel ui.Element) {
-		panel.AttachTo(button, ui.AnchorTopStart, ui.AnchorBottomStart).
-			MinWidth(button.Bounds().W).MaxHeight(max(float32(120), height-16)).
-			Margin(0, 0, 6, 0).Padding(5).Radius(12).Gap(2).Label(picker.label + " options")
-		portrait.Materials.GlassOverlay.Apply(panel)
-
+	popover := portrait.PopoverWithSpec(c, button, open, portrait.PopoverSpec{
+		Width: min(portrait.Form.MenuMax, max(portrait.Form.MenuMin, width-2*portrait.Shell.PageInset)), Title: picker.label, Placement: ui.AnchorTopStart,
+	}, func() {
 		rows := p.pickerRows(picker, state)
 		if state.reset {
 			state.reset = false
@@ -334,73 +331,59 @@ func (p *panel) configPicker(c *ui.Context, picker researchPicker) {
 				chooseResearchPickerValue(picker, row.item.value, open, state, button, p)
 			}
 		}
-		panel.ObserveInput(func(event ui.InputEvent) {
-			if event.Kind != ui.InputKeyDown || event.Mods != 0 || len(rows) == 0 {
+		filter := portrait.SearchField(c, &state.query, portrait.SearchSpec{Label: "Find " + picker.label, Placeholder: "Find " + strings.ToLower(picker.label) + "…", Size: portrait.Form.FieldCompact})
+		if filter.Input().Changed() {
+			state.cursor = 0
+		}
+		if p.pickerFocus == picker.key && state.focus == -1 {
+			filter.Input().Focus()
+			p.pickerFocus = ""
+		}
+		if filter.Input().Submitted() && len(rows) > 0 {
+			activate(rows[state.cursor])
+		}
+		ui.Scroll(c.Key("research-picker-options-" + picker.key)).MaxHeight(portrait.Form.ListMax).FillWidth().Label(picker.label + " choices").Children(func() {
+			if len(rows) == 0 {
+				portrait.Caption(c, "No matching options.").Padding(portrait.Form.Gap, portrait.Form.PadX)
 				return
 			}
-			switch event.Key {
-			case ui.KeyDown:
-				state.cursor = (state.cursor + 1) % len(rows)
-			case ui.KeyUp:
-				state.cursor = (state.cursor + len(rows) - 1) % len(rows)
-			default:
-				return
-			}
-			state.focus = state.cursor
-			p.pickerFocus = picker.key
-		})
-
-		ui.Column(c).Width(min(float32(302), max(float32(120), width-16))).Children(func() {
-			portrait.InputFrame(c).Height(portrait.Sizes.Regular).Children(func() {
-				portrait.Glyph(c, portrait.IconMagnifyingGlass, 13, portrait.Colors.Ink3)
-				filter := portrait.Type.UI.Apply(ui.TextInputBase(c, &state.query)).
-					FocusRing(false).Label("Find " + picker.label).
-					Placeholder("Find " + strings.ToLower(picker.label) + "…").Grow(1).MinWidth(0)
-				if filter.Changed() {
-					state.cursor = 0
-				}
-				if p.pickerFocus == picker.key && state.focus == -1 {
-					filter.Focus()
+			for i, row := range rows {
+				choice := p.pickerRowView(c, picker, row)
+				if p.pickerFocus == picker.key && state.focus == i {
+					choice.Focus().ScrollIntoView()
 					p.pickerFocus = ""
 				}
-				if filter.Submitted() && len(rows) > 0 {
-					activate(rows[state.cursor])
+				if choice.Clicked() {
+					activate(row)
 				}
-			})
-			ui.Scroll(c.Key("research-picker-options-" + picker.key)).
-				MaxHeight(min(float32(250), max(float32(80), height-64))).FillWidth().
-				Label(picker.label + " choices").Children(func() {
-				if len(rows) == 0 {
-					text(c, portrait.Type.Meta, "No matching options.").TextColor(portrait.Colors.Ink3).Padding(6, 8)
-					return
-				}
-				for i, row := range rows {
-					choice := p.pickerRowView(c, picker, row)
-					if p.pickerFocus == picker.key && state.focus == i {
-						choice.Focus().ScrollIntoView()
-						p.pickerFocus = ""
-					}
-					if choice.Clicked() {
-						activate(row)
-					}
-				}
-			})
-			if picker.key == "model" {
-				ui.Row(c.Key("research-picker-manage")).FillWidth().Padding(4, 0, 0, 0).BorderWidth(1, 0, 0, 0).BorderColor(portrait.Colors.Line).Children(func() {
-					manage := ui.ButtonBase(c.Key("manage-models")).Label("Manage models and providers").FillWidth().Height(portrait.Sizes.Regular).Padding(0, 8).Radius(portrait.Radii.S).AlignItems(ui.Center)
-					ink := portrait.Press(manage, portrait.Quiet)
-					manage.Children(func() {
-						text(c, portrait.Type.Meta, "Manage models & providers…").TextColor(ink).Grow(1)
-						portrait.Glyph(c, portrait.IconCaretRight, 11, portrait.Colors.Ink3).Shrink(0)
-					})
-					if manage.Clicked() {
-						*open = false
-						state.query, state.provider = "", ""
-						p.openSettings("models")
-					}
-				})
 			}
 		})
+		if picker.key == "model" {
+			manage := portrait.ButtonWith(c.Key("manage-models"), "Manage models & providers…", "Manage models and providers", portrait.ButtonSpec{Look: portrait.Quiet, Trailing: portrait.IconCaretRight}).FillWidth()
+			if manage.Clicked() {
+				*open = false
+				state.query, state.provider = "", ""
+				p.openSettings("models")
+			}
+		}
+	})
+	popoverHeight := max(portrait.Form.ListMax, height-2*portrait.Shell.PageInset)
+	popover.AttachTo(button, ui.AnchorTopStart, ui.AnchorBottomStart).MaxHeight(popoverHeight).Label(picker.label + " options")
+	popover.ObserveInput(func(event ui.InputEvent) {
+		rows := p.pickerRows(picker, state)
+		if event.Kind != ui.InputKeyDown || event.Mods != 0 || len(rows) == 0 {
+			return
+		}
+		switch event.Key {
+		case ui.KeyDown:
+			state.cursor = (state.cursor + 1) % len(rows)
+		case ui.KeyUp:
+			state.cursor = (state.cursor + len(rows) - 1) % len(rows)
+		default:
+			return
+		}
+		state.focus = state.cursor
+		p.pickerFocus = picker.key
 	})
 	if popover.Dismissed() {
 		state.query, state.provider = "", ""
@@ -422,40 +405,30 @@ func chooseResearchPickerValue(picker researchPicker, value string, open *bool, 
 
 func (p *panel) pickerRowView(c *ui.Context, picker researchPicker, row pickerRow) ui.Element {
 	if row.section != "" {
-		text(c, portrait.Type.Meta, row.section).FontWeight(600).TextColor(portrait.Colors.Ink3).Padding(6, 8, 2, 8).Role(ui.RoleHeading)
+		portrait.SectionLabel(c, row.section).Padding(portrait.Form.Gap, portrait.Form.PadX, portrait.Form.PopoverGap, portrait.Form.PadX).Role(ui.RoleHeading)
 	}
 	key := "research-picker-option-" + picker.key + "-" + row.item.value
 	if row.kind != pickerChoice {
 		key = "research-picker-provider-" + picker.key + "-" + row.provider + "-" + strconv.Itoa(int(row.kind))
 	}
-	b := ui.ButtonBase(c.Key(key)).Label(row.label()).FillWidth().MinHeight(30).Padding(4, 8).Radius(7).Gap(6).AlignItems(ui.Center)
+	spec := portrait.ListRowSpec{Title: row.item.label, Detail: row.item.detail, Label: row.label(), Selected: row.item.current, Group: "research-picker-" + picker.key}
+	switch row.kind {
+	case pickerBack:
+		spec.Icon, spec.Title, spec.Detail = portrait.IconCaretLeft, "Back", providerLabel(row.provider)
+	case pickerProvider:
+		spec.Title, spec.Detail = providerLabel(row.provider), strconv.Itoa(row.count)+" models"
+		spec.Trailing = func() { portrait.Glyph(c, portrait.IconCaretRight, portrait.IconSizes.XS, portrait.Colors.Ink3) }
+	default:
+		if row.showProvider {
+			spec.Detail = providerLabel(row.item.detail)
+		}
+		if row.item.current {
+			spec.Trailing = func() { portrait.Glyph(c, portrait.IconCheck, portrait.IconSizes.S, portrait.Colors.Accent) }
+		}
+	}
+	b := portrait.ListRow(c.Key(key), spec)
 	if row.kind == pickerChoice {
 		b.Checked(row.item.current)
 	}
-	ink := portrait.Press(b, portrait.Quiet)
-	if row.item.current {
-		b.Background(portrait.Colors.AccentSoft).NoShadow()
-	}
-	b.Children(func() {
-		switch row.kind {
-		case pickerBack:
-			text(c, portrait.Type.UI, "‹ Back").TextColor(ink).Grow(1)
-			text(c, portrait.Type.Meta, providerLabel(row.provider)).TextColor(portrait.Colors.Ink3).MaxLines(1)
-		case pickerProvider:
-			text(c, portrait.Type.UI, providerLabel(row.provider)).TextColor(ink).Grow(1).MinWidth(0).MaxLines(1).Ellipsis("…")
-			text(c, portrait.Type.Meta, strconv.Itoa(row.count)).TextColor(portrait.Colors.Ink3)
-			portrait.Glyph(c, portrait.IconCaretRight, 11, portrait.Colors.Ink3).Shrink(0)
-		default:
-			text(c, portrait.Type.UI, row.item.label).TextColor(ink).Grow(1).MinWidth(0).MaxLines(1).Ellipsis("…")
-			if row.showProvider {
-				text(c, portrait.Type.Meta, providerLabel(row.item.detail)).TextColor(portrait.Colors.Ink3).MaxLines(1).Shrink(0)
-			} else if row.item.detail != "" && picker.key != "model" {
-				text(c, portrait.Type.Meta, row.item.detail).TextColor(portrait.Colors.Ink3).MaxLines(1).Ellipsis("…").MinWidth(0)
-			}
-			if row.item.current {
-				portrait.Glyph(c, portrait.IconCheck, 13, portrait.Colors.Accent).Shrink(0)
-			}
-		}
-	})
 	return b
 }

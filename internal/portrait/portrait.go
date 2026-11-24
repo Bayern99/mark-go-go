@@ -39,22 +39,24 @@ func (s TypeStyle) Apply(e ui.Element) ui.Element {
 
 type TypeScale struct {
 	Display, Heading, Title, Reading, Small, UI, Control, Meta, Code TypeStyle
-	H4, H5, H6                                                       TypeStyle
+	H3, H4, H5, H6, CodeSmall                                        TypeStyle
 }
 
 var Type = func() TypeScale {
 	scale := TypeScale{
-		Display: TypeStyle{FontSans, 28, 36, displayTracking * 28},
-		Title:   TypeStyle{FontSans, 20, 28, titleTracking * 20},
-		Reading: TypeStyle{FontSans, 16, 28, 0},
-		Small:   TypeStyle{FontSans, 14, 22, 0},
-		UI:      TypeStyle{FontSans, 13, 18, 0},
-		Control: TypeStyle{FontSans, 13, 20, 0},
-		Meta:    TypeStyle{FontSans, 12, 16, 0},
-		Code:    TypeStyle{FontMono, 13, 22, 0},
-		H4:      TypeStyle{FontSans, 15, 28, 0},
-		H5:      TypeStyle{FontSans, 14, 28, 0},
-		H6:      TypeStyle{FontSans, 13, 28, 0},
+		Display:   TypeStyle{FontSans, 28, 36, displayTracking * 28},
+		Title:     TypeStyle{FontSans, 20, 28, titleTracking * 20},
+		Reading:   TypeStyle{FontSans, 16, 28, 0},
+		Small:     TypeStyle{FontSans, 14, 22, 0},
+		UI:        TypeStyle{FontSans, 13, 18, 0},
+		Control:   TypeStyle{FontSans, 13, 20, 0},
+		Meta:      TypeStyle{FontSans, 12, 16, 0},
+		Code:      TypeStyle{FontMono, 13, 22, 0},
+		H3:        TypeStyle{FontDisplay, 18, 28, 0},
+		H4:        TypeStyle{FontSans, 15, 28, 0},
+		H5:        TypeStyle{FontSans, 14, 28, 0},
+		H6:        TypeStyle{FontSans, 13, 28, 0},
+		CodeSmall: TypeStyle{FontMono, 12, 18, 0},
 	}
 	scale.Heading = scale.Reading.In(FontDisplay)
 	return scale

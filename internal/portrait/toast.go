@@ -67,7 +67,7 @@ func toast(c *ui.Context, t ui.Toast) ui.Element {
 		Exit:     &enter,
 	}))
 	root.Children(func() {
-		Glyph(c, toneIcon(tone), 16, tone.Ink).Shrink(0)
+		Glyph(c, toneIcon(tone), IconSizes.M, tone.Ink).Shrink(0)
 		ui.Column(c).Grow(1).MinWidth(0).Children(func() {
 			Type.UI.Apply(ui.Text(c, t.Title)).FontWeight(600).TextColor(tone.Ink).MaxLines(2).Ellipsis("…")
 			if t.Description != "" {
@@ -81,7 +81,7 @@ func toast(c *ui.Context, t ui.Toast) ui.Element {
 		}
 		close := parts.CloseButton().Label("Close").Size(Sizes.Regular, Sizes.Regular).Radius(Radii.M).AlignItems(ui.Center).Justify(ui.Center).Shrink(0)
 		ink := Press(close, Quiet)
-		close.Children(func() { Glyph(c, IconX, 14, ink) })
+		close.Children(func() { Glyph(c, IconX, IconSizes.S, ink) })
 	})
 	return root
 }

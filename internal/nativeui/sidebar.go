@@ -11,11 +11,7 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-const (
-	hairlineHeight float32 = 1
-	spaceDotButton float32 = 18
-	spaceDotCircle float32 = 10
-)
+const hairlineHeight = float32(1)
 
 func (s *Shell) sidebar(c *ui.Context, m Model, a Actions, docked bool) {
 	side := ui.Column(c).Fill().MinWidth(0).Role(ui.RoleNavigation).Label("Workspace navigation").Gap(6)
@@ -31,6 +27,7 @@ func (s *Shell) sidebar(c *ui.Context, m Model, a Actions, docked bool) {
 				ui.Row(c).Grow(1)
 				if portrait.QuietIconButton(c, portrait.IconSidebar, "Hide sidebar").Clicked() {
 					s.hideSidebar = true
+					s.persistSidebar(a)
 				}
 			})
 		}
@@ -104,9 +101,9 @@ func (s *Shell) commandField(c *ui.Context, a Actions) {
 		field.Background(portrait.Materials.GlassHover)
 	}
 	field.Children(func() {
-		portrait.Glyph(c, portrait.IconMagnifyingGlass, portrait.Type.Small.Size, portrait.Colors.Ink2)
+		portrait.Glyph(c, portrait.IconMagnifyingGlass, portrait.IconSizes.S, portrait.Colors.Ink2)
 		portrait.Type.UI.Apply(ui.Text(c, "Search or jump to…")).TextColor(portrait.Colors.Ink2).Grow(1).MinWidth(0).MaxLines(1).Ellipsis("…")
-		portrait.Type.Meta.Apply(ui.Text(c, "⌘K")).TextColor(portrait.Colors.Ink2).AccessHidden(true)
+		portrait.Kbd(c, "⌘K").AccessHidden(true)
 	})
 	if field.Clicked() {
 		s.toggleCommand(a)
@@ -124,7 +121,32 @@ func (s *Shell) space(c *ui.Context, m Model, a Actions) {
 		meta = fmt.Sprintf("%s · %d files", w.Root, m.Navigation.Total)
 	}
 	space := spaceOf(m)
-	switcher := portrait.Tooltip(c, ui.ButtonBase(c.Key("Switch workspace")).Label("Switch workspace").Value(name), meta).FillWidth().Height(portrait.Shell.Row).Padding(0, 8).Gap(8).Radius(portrait.Radii.M).AlignItems(ui.Center)
+	switcher := portrait.Menu(c, &s.workspaceMenu, func(menu *portrait.MenuBuilder) {
+		var current string
+		menu.Section("Workspaces")
+		for _, root := range w.Workspaces {
+			root := root
+			selected := root.Root == w.Root
+			if selected {
+				current = root.ID
+			}
+			if menu.Check(portrait.MenuItemSpec{Label: root.Name, Icon: portrait.IconFolder}, selected).Clicked() && a.ActivateWorkspace != nil {
+				a.ActivateWorkspace(root.ID)
+			}
+		}
+		menu.Separator()
+		if menu.Item(portrait.MenuItemSpec{Label: "Open Folder…", Icon: portrait.IconFolderOpen}).Clicked() && a.OpenFolder != nil {
+			a.OpenFolder()
+		}
+		if w.Kind == "folder" && current != "" && menu.Item(portrait.MenuItemSpec{Label: "Close Workspace"}).Clicked() && a.CloseWorkspace != nil {
+			a.CloseWorkspace(current)
+		}
+		menu.Separator()
+		if menu.Item(portrait.MenuItemSpec{Label: "Settings…", Icon: portrait.IconGear}).Clicked() {
+			s.OpenSettings("")
+		}
+	})
+	switcher = portrait.Tooltip(c, switcher.Label("Switch workspace").Value(name), meta).FillWidth().Height(portrait.Shell.Row).Padding(0, 8).Gap(8).Radius(portrait.Radii.M).AlignItems(ui.Center)
 	if switcher.Hovered() {
 		switcher.Background(portrait.Materials.GlassHover)
 	}
@@ -132,45 +154,7 @@ func (s *Shell) space(c *ui.Context, m Model, a Actions) {
 		space.Swatch(ui.Box(c).Size(portrait.Shell.Swatch, portrait.Shell.Swatch).Radius(portrait.Radii.XS).Shrink(0).AccessHidden(true))
 		portrait.Shell.WorkspaceName.Apply(ui.Text(c, name)).FontWeight(600).TextColor(portrait.Colors.Ink).MaxLines(1).Ellipsis("…").MinWidth(0).Shrink(1)
 		ui.Row(c).Grow(1)
-		portrait.Glyph(c, portrait.IconCaretDown, portrait.Type.Meta.Size, portrait.Colors.Ink2)
-	})
-	switcher.Menu(func(menu *ui.Menu) {
-		var current string
-		for _, root := range w.Workspaces {
-			selected := root.Root == w.Root
-			if selected {
-				current = root.ID
-			}
-			if menu.Item(root.Name).ID("switch-workspace:"+root.ID).Checked(selected).Chosen() && a.ActivateWorkspace != nil {
-				a.ActivateWorkspace(root.ID)
-			}
-		}
-		menu.Separator()
-		if menu.Item("Open Folder…").Chosen() && a.OpenFolder != nil {
-			a.OpenFolder()
-		}
-		if w.Kind == "folder" && current != "" && menu.Item("Close Workspace").ID("close-workspace:"+current).Chosen() && a.CloseWorkspace != nil {
-			a.CloseWorkspace(current)
-		}
-		menu.Separator()
-		menu.Submenu("Space", func(sub *ui.Menu) {
-			for _, option := range portrait.Spaces {
-				if sub.Item(option.Label).ID("space:"+option.Name).Radio(option.Name == space.Name).Chosen() && a.SetSpace != nil {
-					a.SetSpace(option.Name)
-				}
-			}
-		})
-		menu.Submenu("Appearance", func(sub *ui.Menu) {
-			for _, option := range portrait.Appearances {
-				if sub.Item(string(option)).ID("appearance:"+string(option)).Radio(option == m.Appearance || option == portrait.System && m.Appearance == "").Chosen() && a.SetAppearance != nil {
-					a.SetAppearance(option)
-				}
-			}
-		})
-		menu.Separator()
-		if menu.Item("Settings…").ID("open-settings").Chosen() {
-			s.OpenSettings("appearance")
-		}
+		portrait.Glyph(c, portrait.IconCaretDown, portrait.IconSizes.XS, portrait.Colors.Ink2)
 	})
 }
 
@@ -282,34 +266,34 @@ func (s *Shell) drillAncestors(c *ui.Context, root, name, dir string) {
 func (s *Shell) files(c *ui.Context, m Model, a Actions) {
 	w := m.Workspace
 	if w.Kind == "folder" && (s.filterOpen || strings.TrimSpace(s.query) != "") {
-		portrait.InputFrame(c).Children(func() {
-			portrait.Glyph(c, portrait.IconFunnel, portrait.Type.UI.Size, portrait.Colors.Ink2)
-			filter := portrait.Type.UI.Apply(ui.TextInputBase(c.Key("filter:"+w.Root), &s.query)).FocusRing(false).Grow(1).MinWidth(0).Placeholder("Filter files and headings").Label("Filter files and headings")
-			if s.filterFocus {
-				filter.Focus()
-				s.filterFocus = false
+		field := portrait.SearchField(c.Key("filter-field:"+w.Root), &s.query, portrait.SearchSpec{Label: "Filter files and headings", Placeholder: "Filter files and headings", ClearLabel: "Clear filter", Size: portrait.Sizes.Regular, OnClear: func() {
+			delete(s.queries, w.Root)
+			if a.Filter != nil {
+				a.Filter("")
 			}
-			if filter.Changed() && a.Filter != nil {
-				s.queries[w.Root] = s.query
-				a.Filter(s.query)
+		}})
+		filter := field.Input()
+		if s.filterFocus {
+			filter.Focus()
+			s.filterFocus = false
+		}
+		if filter.Changed() && a.Filter != nil {
+			s.queries[w.Root] = s.query
+			a.Filter(s.query)
+		}
+		filter.OnTextKey(func(key ui.TextKey) bool {
+			if key.Key != ui.KeyEscape {
+				return false
 			}
-			if filter.Shortcut(0, ui.KeyEscape) {
-				s.filterOpen = false
-				if s.query != "" {
-					s.query = ""
-					delete(s.queries, w.Root)
-					if a.Filter != nil {
-						a.Filter("")
-					}
-				}
-			}
-			if s.query != "" && portrait.QuietIconButton(c, portrait.IconX, "Clear filter").Size(portrait.Sizes.Compact, portrait.Sizes.Compact).Radius(portrait.Radii.Pill).Clicked() {
-				s.query = ""
+			s.filterOpen = false
+			if key.Text() != "" {
+				key.SetText("")
 				delete(s.queries, w.Root)
 				if a.Filter != nil {
 					a.Filter("")
 				}
 			}
+			return true
 		})
 	}
 	scrollKey := "workspace:" + w.Root
@@ -438,14 +422,14 @@ func (s *Shell) sidebarFooter(c *ui.Context, m Model, a Actions) {
 					selected := opt.Name == activeSpace.Name
 					tip := opt.Label + " · " + opt.Element
 					btn := portrait.Tooltip(c, ui.ButtonBase(c.Key("palette:"+opt.Name)).Label("Space: "+opt.Label).AccessSelected(selected), tip).
-						Size(spaceDotButton, spaceDotButton).Radius(portrait.Radii.Pill).AlignItems(ui.Center).Justify(ui.Center).Shrink(0)
+						Size(portrait.Shell.SpaceDotButton, portrait.Shell.SpaceDotButton).Radius(portrait.Radii.Pill).AlignItems(ui.Center).Justify(ui.Center).Shrink(0)
 					if selected {
 						btn.Border(1.5, portrait.Colors.Accent)
 					} else if btn.Hovered() {
 						btn.Background(portrait.Materials.GlassHover)
 					}
 					btn.Children(func() {
-						dot := opt.Dot(ui.Box(c).Size(spaceDotCircle, spaceDotCircle).Radius(portrait.Radii.Pill).AccessHidden(true))
+						dot := opt.Dot(ui.Box(c).Size(portrait.Shell.SpaceDotCircle, portrait.Shell.SpaceDotCircle).Radius(portrait.Radii.Pill).AccessHidden(true))
 						if !selected && !btn.Hovered() {
 							dot.Opacity(0.84)
 						}
@@ -489,16 +473,8 @@ func (s *Shell) sidebarFooter(c *ui.Context, m Model, a Actions) {
 				})
 			}
 			ui.Row(c).Grow(1)
-			portrait.QuietIconButton(c, portrait.IconPlugs, "Plugins").Menu(func(menu *ui.Menu) {
-				if menu.Item("Feynman").Checked(m.Feynman).Chosen() && a.SetFeynman != nil {
-					a.SetFeynman(!m.Feynman)
-				}
-				if menu.Item("Git").Checked(m.Git).Chosen() && a.SetGit != nil {
-					a.SetGit(!m.Git)
-				}
-			})
 			if portrait.QuietIconButton(c, portrait.IconGear, "Settings").Clicked() {
-				s.OpenSettings("appearance")
+				s.OpenSettings("")
 			}
 			if portrait.QuietIconButton(c, portrait.IconPlus, "New document").Clicked() && a.NewDocument != nil {
 				a.NewDocument()
@@ -576,7 +552,7 @@ func navRow(c *ui.Context, item navItem) ui.Element {
 				portrait.Type.Meta.Apply(ui.Text(c, item.trailing)).TextColor(tColor).Shrink(0).AccessHidden(true)
 			}
 			if item.chevron {
-				portrait.Glyph(c, portrait.IconCaretRight, portrait.Type.Meta.Size-2, portrait.Colors.Ink3).Shrink(0)
+				portrait.Glyph(c, portrait.IconCaretRight, portrait.IconSizes.XS, portrait.Colors.Ink3).Shrink(0)
 			}
 		})
 	})

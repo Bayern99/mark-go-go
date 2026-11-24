@@ -6,6 +6,8 @@ type DiffTokens struct {
 	Range, Lines, Conflict  TypeStyle
 	Insert, Delete          ui.Color
 	NumberWidth, SigilWidth float32
+	PanelMax, PanelMin      float32
+	Radius                  float32
 }
 
 const MonoAdvance = 0.6
@@ -25,5 +27,6 @@ func diffFor(p Palette, dark bool) DiffTokens {
 		Delete:      p.Danger.Alpha(remove),
 		NumberWidth: 3 * MonoAdvance * Type.Meta.Size,
 		SigilWidth:  1.5 * MonoAdvance * Type.Meta.Size,
+		PanelMax:    250, PanelMin: 76, Radius: Radii.M,
 	}
 }

@@ -104,32 +104,29 @@ func (p *panel) drawProposals(c *ui.Context) {
 		return
 	}
 	ui.Row(c).Padding(3, 12).Children(func() {
-		button := ui.Button(c, fmt.Sprintf("Change proposals (%d)", len(p.latest.Proposals))).Label("Change proposals")
+		button := portrait.ButtonWith(c, fmt.Sprintf("Change proposals · %d", len(p.latest.Proposals)), "Change proposals", portrait.ButtonSpec{Look: portrait.Quiet, Leading: portrait.IconSparkle, Selected: p.open})
+		button.Background(portrait.Colors.AccentSoft)
 		if button.Clicked() {
 			p.open = !p.open
 		}
-		ui.Popover(c, button, &p.open, func() { p.proposalPopover(c) })
+		portrait.PopoverWithSpec(c, button, &p.open, portrait.PopoverSpec{Width: min(portrait.Form.PopoverWide, max(portrait.Form.MenuMin, float32(280))), Title: "Change proposals"}, func() { p.proposalPopover(c) })
 	})
 }
 
 func (p *panel) proposalPopover(c *ui.Context) {
-	width, _ := c.Size()
-	ui.Column(c).Width(min(520, max(280, width-40))).Gap(8).Padding(8).Children(func() {
-		ui.Text(c, "Change proposals").Bold()
+	ui.Column(c).Gap(portrait.Form.Gap).Children(func() {
 		var active review.ChangeProposal
-		ui.ScrollHorizontal(c).Children(func() {
-			ui.Row(c).Gap(6).Children(func() {
-				for _, item := range p.latest.Proposals {
-					if p.selected == "" {
-						p.selected = item.ID
-					}
-					if ui.Button(c.Key(item.ID), proposalLabel(item)).Selected(p.selected == item.ID).Clicked() {
-						p.selected = item.ID
-						p.clearComparison()
-					}
+		portrait.Track(c, "change proposals", func(track *portrait.Segments) {
+			for _, item := range p.latest.Proposals {
+				if p.selected == "" {
+					p.selected = item.ID
 				}
-			})
-		})
+				if track.Segment(c.Key(item.ID), proposalLabel(item), proposalLabel(item), p.selected == item.ID).Clicked() {
+					p.selected = item.ID
+					p.clearComparison()
+				}
+			}
+		}).Label("Change proposal documents")
 		for _, item := range p.latest.Proposals {
 			if item.ID == p.selected {
 				active = item
@@ -142,20 +139,20 @@ func (p *panel) proposalPopover(c *ui.Context) {
 			p.clearComparison()
 		}
 		if active.Summary != "" {
-			ui.Text(c, active.Summary).Wrap()
+			portrait.Type.UI.Apply(ui.Text(c, active.Summary)).TextColor(portrait.Colors.Ink).Wrap()
 		}
 		if active.Source != "" {
 			portrait.Type.Meta.Apply(ui.Text(c, active.Source)).TextColor(portrait.Colors.Ink3)
 		}
 		if !proposalTargets(p.win.Active(), active) {
-			if ui.Button(c, "Open "+proposalLabel(active)).Clicked() {
+			if portrait.Button(c, "Open "+proposalLabel(active), "Open "+proposalLabel(active)).Clicked() {
 				p.openTarget(active)
 			}
 		} else {
 			p.drawComparison(c, active)
 		}
 		if p.proposalError != "" {
-			ui.Text(c, p.proposalError).Role(ui.RoleAlert).Wrap()
+			portrait.Alert(c, portrait.Tones.Danger, "Change proposal", p.proposalError)
 		}
 	})
 }
@@ -201,9 +198,9 @@ func (p *panel) drawComparison(c *ui.Context, active review.ChangeProposal) {
 	available := p.compared.ID == active.ID && p.compared.Revision == active.Revision && p.base.current(p.win)
 	if !available {
 		if p.compared.ID != "" {
-			ui.Text(c, review.ErrStaleComparison.Error()).Role(ui.RoleStatus).Wrap()
+			portrait.Alert(c, portrait.Tones.Warning, "Stale comparison", review.ErrStaleComparison.Error())
 		}
-		if ui.Button(c, "Compare current text").Clicked() {
+		if portrait.Button(c, "Compare current text", "Compare current text").Clicked() {
 			base := read(p.win)
 			compared, err := p.proposals.SyncProposal(p.root, active.ID, base.text)
 			p.clearComparison()
@@ -216,17 +213,17 @@ func (p *panel) drawComparison(c *ui.Context, active review.ChangeProposal) {
 	} else {
 		drawDiff(c, p.compared.Hunks, p.decisions)
 		if p.compared.HasConflict {
-			ui.Text(c, "Some hunks conflict with concurrent edits.").Role(ui.RoleStatus).Wrap()
+			portrait.Alert(c, portrait.Tones.Warning, "Conflicting hunks", "Some hunks conflict with concurrent edits.")
 		}
 		ui.Row(c).Gap(6).Wrap().Children(func() {
-			if ui.Button(c, "Accept all clean hunks").Clicked() {
+			if portrait.Button(c, "Accept all clean hunks", "Accept all clean hunks").Clicked() {
 				for _, h := range p.compared.Hunks {
 					if !h.Conflict && p.decisions[h.ID] != review.HunkRejected {
 						p.decisions[h.ID] = review.HunkAccepted
 					}
 				}
 			}
-			if ui.Button(c, "Apply decisions").Disabled(len(p.decisions) == 0 || p.win.Active().ReadOnly).Clicked() {
+			if portrait.AccentButton(c, "Apply decisions", "Apply decisions").Disabled(len(p.decisions) == 0 || p.win.Active().ReadOnly).Clicked() {
 				err := p.proposals.ApplyReviewed(p.root, p.compared.ID, p.compared.Revision, p.base.text, p.decisions, func(next string) error {
 					return p.base.apply(p.win, next)
 				})
@@ -240,11 +237,13 @@ func (p *panel) drawComparison(c *ui.Context, active review.ChangeProposal) {
 			}
 		})
 	}
-	if ui.Button(c, "Dismiss proposal").Clicked() {
-		if _, err := p.proposals.DismissProposal(p.root, active.ID); err != nil {
-			p.proposalError = err.Error()
-		} else {
-			p.clearComparison()
+	ui.Row(c).Justify(ui.End).Children(func() {
+		if portrait.ButtonWith(c, "Dismiss proposal", "Dismiss proposal", portrait.ButtonSpec{Look: portrait.DangerOutline}).Clicked() {
+			if _, err := p.proposals.DismissProposal(p.root, active.ID); err != nil {
+				p.proposalError = err.Error()
+			} else {
+				p.clearComparison()
+			}
 		}
-	}
+	})
 }

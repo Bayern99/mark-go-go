@@ -61,7 +61,7 @@ func ButtonWith(c *ui.Context, title, label string, spec ButtonSpec) ui.Element 
 		if spec.Loading {
 			Spinner(c, "Loading "+label)
 		} else if spec.Leading.Glyph != "" {
-			Glyph(c, spec.Leading, Type.UI.Size, ink).Shrink(0)
+			Glyph(c, spec.Leading, IconSizes.S, ink).Shrink(0)
 		}
 		if title != "" {
 			text := textStyle.Apply(ui.Text(c, title)).FontWeight(500).TextColor(ink).MaxLines(1).Ellipsis("…")
@@ -70,7 +70,7 @@ func ButtonWith(c *ui.Context, title, label string, spec ButtonSpec) ui.Element 
 			}
 		}
 		if spec.Trailing.Glyph != "" {
-			Glyph(c, spec.Trailing, Type.UI.Size, ink).Shrink(0)
+			Glyph(c, spec.Trailing, IconSizes.S, ink).Shrink(0)
 		}
 	})
 	return b

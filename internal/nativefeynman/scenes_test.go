@@ -29,6 +29,8 @@ write waits at the edge of the window until you reach for it.
 
 > A window should feel like a room, not a dashboard.
 
+[Project](https://example.com/project) keeps link actions close to the text.
+
 ## 中文排版
 
 界面以英文为主，正文同样照顾中文段落：汉字自动落到中文字体，行高与字间距保持
@@ -131,8 +133,40 @@ func TestShellScenes(t *testing.T) {
 				Research: func(c *ui.Context) {
 					ui.Column(c.Key("scene-research")).Fill().MinWidth(0).Children(func() { p.draw(c) })
 				},
-				FeynmanSettings: p.drawSettingsTab,
-				Checkpoints:     func(c *ui.Context) {},
+				Settings:    p.settingsPages(),
+				Checkpoints: func(c *ui.Context) {},
+			}
+			if sc.name == "checkpoints_light" {
+				slots.Checkpoints = func(c *ui.Context) {
+					portrait.SettingsGroup(c, "Checkpoints", func(rows *portrait.Rows) {
+						rows.Row(portrait.RowSpec{Title: "Quiet beginning", Description: "Git ref · 2026-01-14 09:30"}, func() { portrait.Button(c, "Compare", "Compare the selected checkpoint") })
+						rows.Row(portrait.RowSpec{Title: "Before review", Description: "Local snapshot · 2026-01-14 10:15"}, func() {})
+					})
+				}
+			}
+			if sc.name == "proposals_dark" {
+				open := false
+				slots.Review = func(c *ui.Context) {
+					button := portrait.ButtonWith(c, "Change proposals · 1", "Change proposals", portrait.ButtonSpec{Look: portrait.Quiet, Leading: portrait.IconSparkle, Selected: open})
+					if button.Clicked() {
+						open = !open
+					}
+					portrait.PopoverWithSpec(c, button, &open, portrait.PopoverSpec{Width: portrait.Form.PopoverWide, Title: "Change proposals"}, func() {
+						portrait.SettingsGroup(c, "Quiet Software.md", func(rows *portrait.Rows) {
+							rows.Row(portrait.RowSpec{Title: "Tighten the introduction", Description: "Feynman Research · 2 clean hunks"}, func() { portrait.AccentButton(c, "Apply decisions", "Apply decisions") })
+						})
+					})
+				}
+			}
+			if sc.name == "genui_request_light" {
+				request := "Create a calm reading view with a summary and key principles."
+				slots.GenUI = func(c *ui.Context) {
+					ui.Column(c).Fill().Padding(portrait.Settings.ColumnPadTop).Gap(portrait.Form.Gap).Children(func() {
+						portrait.PanelTitle(c, "Request")
+						portrait.TextArea(c, &request, portrait.AreaSpec{Label: "Generation request", Rows: 3})
+						portrait.AccentButton(c, "Generate", "Generate").AlignSelf(ui.Start)
+					})
+				}
 			}
 			app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, model, sceneActions(&model), slots) }, sc.width, sc.height)
 			app.SetScale(2)

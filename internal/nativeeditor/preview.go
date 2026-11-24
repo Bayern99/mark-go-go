@@ -402,12 +402,12 @@ func (p *previewLayout) standaloneImages(snap editor.Snapshot, blockIndex int, i
 		Line:   snap.LineOf(block.Start),
 		Above:  true,
 		Height: 180,
-		Width:  624,
+		Width:  portrait.Editor.Column,
 		Label:  "Markdown image",
 		Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
 			maxWidth := e.LayoutBounds().W
-			if maxWidth <= 0 || maxWidth > 624 {
-				maxWidth = 624
+			if maxWidth <= 0 || maxWidth > portrait.Editor.Column {
+				maxWidth = portrait.Editor.Column
 			}
 			e.Children(func() {
 				ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Justify(ui.Center).Gap(8).Children(func() {
@@ -444,12 +444,12 @@ func headingStyle(line, level int) editor.LineStyle {
 	style := [6]portrait.TypeStyle{
 		portrait.Type.Display.In(portrait.FontDisplay),
 		portrait.Type.Title.In(portrait.FontDisplay),
-		portrait.Type.Reading,
-		portrait.Type.H4,
-		portrait.Type.H5,
-		portrait.Type.H6,
+		portrait.Type.H3,
+		portrait.Editor.Body,
+		portrait.Type.Small,
+		portrait.Type.UI,
 	}[level-1]
-	style.Leading = max(style.Leading, portrait.Type.Reading.Leading)
+	style.Leading = max(style.Leading, portrait.Editor.Body.Leading)
 	return editor.LineStyle{Line: line, Font: style.Font(600), LineHeight: style.LineHeight()}
 }
 
@@ -542,16 +542,22 @@ func (d *Document) prepareView() {
 	st, p := &d.state, &d.preview
 	p.owner = d
 	st.NoActiveLine = d.mode == Preview
+	st.RenderFindBar = renderFindBar
+	st.RenderGoToLine = renderGoToLine
+	st.RenderHover = renderHover
 	if d.mode == Markdown {
-		st.ContextMenu = nil
+		st.ContextMenu = func(m *ui.Menu) { m.EditItems() }
 		st.OnInput = nil
 		st.OnHover = nil
 		st.Label = "Markdown source"
-		st.Font = portrait.Type.Code.Font(400)
+		st.Font = portrait.Editor.Code.Font(400)
 		st.ReadingColumn = editor.ReadingColumn{}
 		st.LineBackgrounds = nil
 		st.LineNumbers = editor.LineNumbersOn
-		st.LineHeight = portrait.Type.Code.LineHeight()
+		if !d.lineNumbers {
+			st.LineNumbers = editor.LineNumbersOff
+		}
+		st.LineHeight = portrait.Editor.Code.LineHeight()
 		if st.Projection != nil {
 			st.SetReplacements(nil)
 			st.SetBlocks(nil)
@@ -562,17 +568,21 @@ func (d *Document) prepareView() {
 		return
 	}
 	st.ContextMenu = func(m *ui.Menu) {
-		if !d.state.ReadOnly && m.Item("Add note").Chosen() {
-			d.beginNote()
+		m.EditItems()
+		if !d.state.ReadOnly {
+			m.Separator()
+			if m.Item("Add note").Chosen() {
+				d.beginNote()
+			}
 		}
 	}
 	st.OnInput = d.previewInput
 	st.OnHover = d.previewHover
 	st.Label = "Markdown Preview"
-	st.Font = portrait.Type.Reading.Font(400)
-	st.LineHeight = portrait.Type.Reading.LineHeight()
+	st.Font = portrait.Editor.Body.Font(400)
+	st.LineHeight = portrait.Editor.Body.LineHeight()
 	st.LineNumbers = editor.LineNumbersOff
-	st.ReadingColumn = editor.ReadingColumn{Width: 624, Left: 56, Right: 40}
+	st.ReadingColumn = editor.ReadingColumn{Width: portrait.Editor.Column, Left: portrait.Editor.GutterLeft, Right: portrait.Editor.GutterRight}
 	if p.applied && !p.dirty && p.version == d.Version() {
 		return
 	}

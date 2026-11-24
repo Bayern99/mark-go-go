@@ -94,7 +94,7 @@ func (s *Shell) pageBar(c *ui.Context, doc workspace.DocumentInfo, m Model, a Ac
 				if b.Clicked() && a.RevealPath != nil {
 					a.RevealPath(crumb.Path)
 				}
-				portrait.Glyph(c, portrait.IconCaretRight, portrait.Type.Meta.Size-2, portrait.Colors.Ink4).Shrink(0)
+				portrait.Glyph(c, portrait.IconCaretRight, portrait.IconSizes.XS, portrait.Colors.Ink4).Shrink(0)
 			}
 		})
 		if doc.ID != "" {

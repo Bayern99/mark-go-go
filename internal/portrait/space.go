@@ -124,6 +124,20 @@ func (s Space) Paint(e ui.Element, translucent bool) ui.Element {
 	})
 }
 
+// Preview paints the compact scenery preview used by Space cards.
+func (s Space) Preview(e ui.Element, dark bool) ui.Element {
+	sc := s.In(dark)
+	return e.LinearGradient(ui.LinearGradient{
+		Angle: sceneryAngle,
+		Oklab: true,
+		Stops: []ui.GradientStop{
+			{Color: sc.From.Mix(sc.To, 0.22), At: 0},
+			{Color: sc.From.Mix(sc.To, 0.64), At: 0.56},
+			{Color: sc.To, At: 1},
+		},
+	})
+}
+
 // Swatch fills a small mark with the Space's colour at full strength.
 func (s Space) Swatch(e ui.Element) ui.Element {
 	sc := s.Scheme()

@@ -9,17 +9,19 @@ import (
 )
 
 type Model struct {
-	ReturnToGenUI bool
-	Crumbs        []workspace.Crumb
-	Workspace     workspace.WorkspaceSnapshot
-	Navigation    workspace.NavSnapshot
-	Sections      []workspace.Section
-	Recents       []workspace.RecentWorkspace
-	Search        workspace.NavSearchResult
-	Feynman, Git  bool
-	Message       string
-	Spaces        map[string]string
-	Appearance    portrait.Appearance
+	ReturnToGenUI  bool
+	Crumbs         []workspace.Crumb
+	Workspace      workspace.WorkspaceSnapshot
+	Navigation     workspace.NavSnapshot
+	Sections       []workspace.Section
+	Recents        []workspace.RecentWorkspace
+	Search         workspace.NavSearchResult
+	Feynman, Git   bool
+	Message        string
+	Spaces         map[string]string
+	Appearance     portrait.Appearance
+	Preferences    map[string]string
+	PreferenceFile string
 }
 
 type Actions struct {
@@ -32,11 +34,15 @@ type Actions struct {
 	NewDocument, OpenFolder                                    func()
 	SetFeynman, SetGit                                         func(bool)
 	SetAppearance                                              func(portrait.Appearance)
+	SetPreference                                              func(key, value string)
+	ResetPreferences                                           func(keys ...string)
+	ResetPreferencePrefixes                                    func(prefixes ...string)
+	RevealPreferences                                          func()
 }
 
 type Slots struct {
 	Document, GenUI, Research, Checkpoints, Review func(*ui.Context)
-	FeynmanSettings                                func(*ui.Context, string)
+	Settings                                       []SettingsPage
 }
 
 type Shell struct {
@@ -45,8 +51,13 @@ type Shell struct {
 	filterOpen, filterFocus                        bool
 	focusedTab, dark                               bool
 	checkpoints                                    bool
-	settingsOpen                                   bool
-	settingsTab                                    string
+	settingsOpen, workspaceMenu                    bool
+	settingsTab, settingsQuery                     string
+	settingsFocus, settingsEditing                 bool
+	settingsResetOpen                              bool
+	settingsResetID                                string
+	settingsReset, settingsResults                 ui.Handle
+	settingsNav                                    map[string]*ui.Handle
 	command                                        commandBar
 	workspaceID, activeID, query, tabFocus         string
 	history                                        []string
@@ -73,7 +84,7 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 		s.openCheckpoints = map[string]bool{}
 		s.leftWidth, s.ready = portrait.Shell.SidebarWidth, true
 		if s.rightWidth == 0 {
-			s.rightWidth = 376
+			s.rightWidth = portrait.Shell.ResearchWidth
 		}
 	}
 	if s.workspaceID != m.Workspace.Root {
@@ -118,11 +129,17 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 	}
 	if c.Shortcut(ui.Cmd|ui.Alt, ui.Key0) && m.Feynman {
 		s.toggleResearch(width)
+		if width >= researchDocksAt {
+			s.persistResearch(a)
+		}
 		s.leftKeys.Flip()
 		s.rightKeys.Flip()
 	}
 	if c.Shortcut(ui.Cmd, ui.Key0) {
 		s.toggleSidebar(width)
+		if width >= sidebarDocksAt {
+			s.persistSidebar(a)
+		}
 		s.leftKeys.Flip()
 		s.rightKeys.Flip()
 	}
@@ -133,7 +150,7 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 		if s.settingsOpen {
 			s.settingsOpen = false
 		} else {
-			s.OpenSettings("appearance")
+			s.OpenSettings("")
 		}
 	}
 	sidebarDocked, researchDocked := width >= sidebarDocksAt && !s.hideSidebar, m.Feynman && !s.hideResearch && width >= researchDocksAt
@@ -162,11 +179,11 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 		spaceOf(m).Paint(scenery, translucent)
 		scenery.Children(func() {
 			room := width - 2*portrait.Shell.PageInset
-			left := clamp(s.leftWidth, 180, min(420, room-412))
-			right := clamp(s.rightWidth, 310, min(800, width*0.56))
+			left := clamp(s.leftWidth, portrait.Shell.SidebarMin, min(portrait.Shell.SidebarMax, room-portrait.Shell.PageMin))
+			right := clamp(s.rightWidth, portrait.Shell.ResearchMin, min(portrait.Shell.ResearchMax, width*0.56))
 			if s.sidebarDocked && s.researchDocked {
-				left = min(left, max(180, room-412-right-16))
-				right = min(right, max(310, room-412-left-16))
+				left = min(left, max(portrait.Shell.SidebarMin, room-portrait.Shell.PageMin-right-16))
+				right = min(right, max(portrait.Shell.ResearchMin, room-portrait.Shell.PageMin-left-16))
 			}
 			inset, edge := portrait.Shell.PageInset, s.stageEdge()
 			stage := func() {
@@ -196,8 +213,8 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 							func() { themed(c, &t).Fill().Padding(inset, inset/2, inset, edge).Children(page) },
 							func() {
 								themed(c, &t).Fill().Padding(inset, inset, inset, inset/2).Children(func() { s.research(c, slots, true) })
-							}).Fill().SplitReset(remaining - 377).Changed() {
-							s.rightWidth = clamp(remaining-first-1, 310, min(800, width*0.56))
+							}).Fill().SplitReset(remaining - portrait.Shell.ResearchWidth - 1).Changed() {
+							s.rightWidth = clamp(remaining-first-1, portrait.Shell.ResearchMin, min(portrait.Shell.ResearchMax, width*0.56))
 						}
 					})
 				})
@@ -209,7 +226,7 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 			actual := left
 			quietSplit(c, &t).Fill().Children(func() {
 				if ui.Split(c.Key("library-split"), &actual, func() { themed(c, &t).Fill().Children(func() { s.sidebar(c, m, a, true) }) }, stage).Fill().SplitReset(portrait.Shell.SidebarWidth).Changed() {
-					s.leftWidth = clamp(actual, 190, 420)
+					s.leftWidth = clamp(actual, portrait.Shell.SidebarMin, portrait.Shell.SidebarMax)
 				}
 			})
 		})
@@ -222,10 +239,17 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 }
 
 func (s *Shell) OpenSettings(tab string) {
+	if tab == "tools" {
+		tab = "mcp"
+	}
 	if tab == "" {
-		tab = "appearance"
+		tab = s.settingsTab
+		if tab == "" || tab == "tools" {
+			tab = "general"
+		}
 	}
 	s.settingsTab = tab
+	s.settingsQuery = ""
 	s.settingsOpen = true
 }
 
@@ -270,6 +294,22 @@ func activeDocument(w workspace.WorkspaceSnapshot) workspace.DocumentInfo {
 	return workspace.DocumentInfo{}
 }
 
+func (s *Shell) persistSidebar(a Actions) {
+	value := ""
+	if s.hideSidebar {
+		value = "on"
+	}
+	setPreference(a, sidebarHiddenPreference, value)
+}
+
+func (s *Shell) persistResearch(a Actions) {
+	value := ""
+	if s.hideResearch {
+		value = "on"
+	}
+	setPreference(a, researchHiddenPreference, value)
+}
+
 func (s *Shell) toggleResearch(width float32) {
 	if width < researchDocksAt {
 		s.rightOpen = !s.rightOpen
@@ -298,29 +338,18 @@ func (s *Shell) drawer(c *ui.Context, left bool, width, height float32, m Model,
 	if left {
 		slide, origin = portrait.Overlays.DrawerLeft, 0
 	}
-	if *open {
-		ui.Overlay(c, func() {
-			ui.Box(c.Key(name + " scrim")).Absolute().Left(0).Top(0).Right(0).Bottom(0).IgnoreInput(true).
-				Background(portrait.Colors.Scrim).Transition(portrait.Overlays.Scrim.Transition(c, keyboard))
-		})
-	}
 	edge := portrait.Shell.DrawerEdge
-	panel := ui.DialogBase(c.Key(name+" drawer"), open, func(back, panel ui.Element) {
-		panel.ObserveInput(keys.Observe)
-		back.AlignItems(ui.Start).Justify(ui.Start).TransformOrigin(origin, 0.5).Transition(slide.Transition(c, keyboard))
-		w := min(width-3*edge, s.rightWidth)
-		if left {
-			w = min(width-3*edge, s.leftWidth)
-		}
-		tall := max(10*edge, height-2*edge)
-		portrait.Materials.GlassOverlay.Apply(panel.Absolute().Top(edge).Height(tall).Width(w).Radius(portrait.Radii.XL)).Label(name)
-		if left {
-			panel.Left(edge)
-		} else {
-			panel.Right(edge)
-		}
-		ui.Row(c).Padding(8, 10, 2, 14).AlignItems(ui.Center).Children(func() {
-			portrait.Type.UI.Apply(ui.Text(c, name)).FontWeight(600).Grow(1)
+	w := min(width-3*edge, s.rightWidth)
+	if left {
+		w = min(width-3*edge, s.leftWidth)
+	}
+	tall := max(10*edge, height-2*edge)
+	panel := portrait.DialogShell(c, name+" drawer", open, portrait.DialogSpec{
+		Label: name, Width: w, Height: tall, Margin: edge, Top: edge, Radius: portrait.Radii.XL,
+		PlainScrim: true, Drawer: true, DrawerRight: !left, DrawerMotion: slide, Keyboard: keyboard, OriginX: origin,
+	}, func() {
+		ui.Row(c).Padding(edge, portrait.Form.PadX, portrait.Form.PopoverGap, portrait.Form.PadX+portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
+			portrait.PanelTitle(c, name).Grow(1)
 			close := portrait.QuietIconButton(c, portrait.IconX, "Close "+name)
 			close.AutoFocus()
 			if close.Clicked() {
@@ -334,6 +363,10 @@ func (s *Shell) drawer(c *ui.Context, left bool, width, height float32, m Model,
 			s.research(c, slots, false)
 		}
 	})
+	if panel.Valid() {
+		panel.ObserveInput(keys.Observe)
+		portrait.Materials.GlassOverlay.Apply(panel)
+	}
 	if panel.Dismissed() {
 		anchor.Focus(c)
 	}

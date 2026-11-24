@@ -92,7 +92,7 @@ func TestWeightedCardsStackInReadingOrderAtNarrowWidth(t *testing.T) {
 	var reader nativegenui.Reading
 	reader.Load(view)
 	reader.Sources = func(c *ui.Context, n nativegenui.Node) {
-		ui.Button(c, "Show "+n.ID)
+		ui.ButtonBase(c).Label("Show " + n.ID)
 	}
 	tt := ui.NewTesterWith(reader.View, 1280, 820, ui.TesterOptions{Preferences: ui.Preferences{ReduceMotion: true}})
 	first, _ := tt.Find("First section")
@@ -430,7 +430,7 @@ func TestLocatedCardSourceButtonStillWorksDuringHighlight(t *testing.T) {
 	}
 	clicks := 0
 	reader := nativegenui.Reading{Sources: func(c *ui.Context, _ nativegenui.Node) {
-		if ui.Button(c, "Show in source").Clicked() {
+		if portrait.Button(c, "Show in source", "Show in source").Clicked() {
 			clicks++
 		}
 	}}

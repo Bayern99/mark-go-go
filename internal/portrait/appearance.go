@@ -48,7 +48,7 @@ type tokens struct {
 	tray       ui.Color
 	danger     [6]Surface
 	looks      [Link + 1]feedback
-	rings      struct{ Field, Editing Shadows }
+	rings      struct{ Field, Editing, Invalid Shadows }
 }
 
 var (

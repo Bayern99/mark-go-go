@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
 )
@@ -180,7 +181,7 @@ func checkpointsShell(prefs ui.Preferences, restore func()) *ui.Tester {
 	slots := nativeui.Slots{Checkpoints: func(c *ui.Context) {
 		ui.Column(c).Width(240).Gap(6).Children(func() {
 			ui.TextInputBase(c, &label).Label("Checkpoint label")
-			if ui.Button(c, "Restore checkpoint").Clicked() && restore != nil {
+			if portrait.Button(c, "Restore checkpoint", "Restore checkpoint").Clicked() && restore != nil {
 				restore()
 			}
 		})

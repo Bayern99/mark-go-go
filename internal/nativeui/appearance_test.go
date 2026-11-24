@@ -68,17 +68,20 @@ func TestEverySpaceTakesItsOwnAccent(t *testing.T) {
 	}
 }
 
-func TestAppearanceMenuAndCommandBarStoreTheChoice(t *testing.T) {
+func TestAppearanceSettingsAndCommandBarStoreTheChoice(t *testing.T) {
 	t.Cleanup(func() { portrait.Use(portrait.DefaultSpace, false) })
 	var shell nativeui.Shell
 	model := libraryModel()
 	var chosen []portrait.Appearance
 	actions := nativeui.Actions{SetAppearance: func(a portrait.Appearance) { chosen = append(chosen, a); model.Appearance = a }}
 	app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, model, actions, nativeui.Slots{}) }, 1280, 820)
-	if err := app.Click("Switch workspace"); err != nil {
+	app.Frame()
+	shell.OpenSettings("appearance")
+	app.Frame()
+	if err := app.Click("Appearance Dark"); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.ChooseMenuItem("Appearance", "Dark"); err != nil {
+	if err := app.Click("Close settings"); err != nil {
 		t.Fatal(err)
 	}
 	app.Frame()

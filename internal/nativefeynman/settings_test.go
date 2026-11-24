@@ -11,7 +11,7 @@ import (
 func fixtureSettingsPanel() *panel {
 	p := fixtureReadyPanel()
 	s := p.state
-	s.selectedTab = "settings"
+	s.selectedTab = "chat"
 	s.cliModels = &feynman.CLIModelListResult{Parsed: true, Tier: "priority", Models: []feynman.CLIModelEntry{
 		{ID: "claude-sonnet-4-5", Provider: "anthropic", Name: "Claude Sonnet 4.5", Current: true},
 		{ID: "claude-opus-4-1", Provider: "anthropic", Name: "Claude Opus 4.1"},
@@ -23,7 +23,9 @@ func fixtureSettingsPanel() *panel {
 
 func TestSettingsGroupModelsByProviderWithOneSignOut(t *testing.T) {
 	p := fixtureSettingsPanel()
-	app := ui.NewTester(func(c *ui.Context) { drawWidePane(c, p) }, 1280, 1600)
+	app := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Padding(12).Children(func() { p.modelSettings(c) })
+	}, 1280, 1600)
 	app.Frame()
 	for _, group := range []string{"Anthropic models", "OpenAI models", "Local models"} {
 		if _, ok := app.AccessByRole(ui.RoleGroup, group); !ok {
@@ -68,27 +70,32 @@ func TestSettingsGroupModelsByProviderWithOneSignOut(t *testing.T) {
 	}
 }
 
-func TestSettingsPrefillTheServiceTierAndCollapseDiagnostics(t *testing.T) {
+func TestSettingsPrefillServiceTierAndCollapseStatusSections(t *testing.T) {
 	p := fixtureSettingsPanel()
-	app := ui.NewTester(func(c *ui.Context) { drawWidePane(c, p) }, 1280, 1600)
-	app.Frame()
-	if tier, ok := app.AccessByRole(ui.RoleTextField, "Service tier"); !ok || tier.Value != "priority" {
+	models := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Padding(12).Children(func() { p.modelSettings(c) })
+	}, 1280, 1600)
+	models.Frame()
+	if tier, ok := models.AccessByRole(ui.RoleTextField, "Service tier"); !ok || tier.Value != "priority" {
 		t.Fatalf("service tier field = %+v, want the CLI's priority", tier)
 	}
-	if app.HasText("Pi runtime") || app.HasText("Run Doctor") {
-		t.Fatal("diagnostics are open by default")
+	p = fixtureSettingsPanel()
+	app := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Padding(12).Children(func() { p.statusSettings(c) })
+	}, 1280, 1600)
+	app.Frame()
+	if app.HasText("Pi runtime") {
+		t.Fatal("status section is expanded by default")
 	}
-	if err := app.Click("Diagnostics"); err != nil {
+	if !app.HasText("Run Doctor") {
+		t.Fatal("diagnostics actions are missing")
+	}
+	if err := app.Click("Runtime"); err != nil {
 		t.Fatal(err)
 	}
 	app.Advance(1e9)
 	app.Frame()
-	if !app.HasText("Run Doctor") {
-		t.Fatal("opening Diagnostics did not show the CLI tools")
-	}
-	models, _ := app.AccessByRole(ui.RoleGroup, "Anthropic models")
-	diagnostics, _ := app.Access("Diagnostics")
-	if diagnostics.Bounds.Y < models.Bounds.Y {
-		t.Error("Diagnostics is not below the model settings")
+	if !app.HasText("Pi runtime") {
+		t.Fatal("opening Runtime did not reveal its status entries")
 	}
 }

@@ -29,6 +29,7 @@ var outsideTokens = []*regexp.Regexp{
 	regexp.MustCompile(`unicode\.Han`),
 	regexp.MustCompile(`\b(Font)?Size:\s*[0-9.]`),
 	regexp.MustCompile(`\bSize\s*=\s*(\[\d*\]float(32|64)\{)?[0-9.]`),
+	regexp.MustCompile(`Glyph\([^)]*,\s*[0-9]`),
 }
 
 func nativeSourceFiles(t *testing.T) []string {
@@ -156,6 +157,23 @@ func TestNativeDimensionLiteralsOnlyRatchetDown(t *testing.T) {
 			case got < want:
 				t.Errorf("%s %s count decreased from %d to %d; lower the allowlist to %d (把 allowlist 下调到 %d) and remove zero-count entries", file, literal, want, got, got, got)
 			}
+		}
+	}
+}
+
+func TestNativeWidgetsUsePortrait(t *testing.T) {
+	raw := regexp.MustCompile(`ui\.(Button|TextInput|TextArea|Select|Popover|Collapsible)\(`)
+	allowed := map[string]bool{"../nativegenui/controls.go": true, "../nativegenui/reading.go": true}
+	for _, file := range nativeSourceFiles(t) {
+		if strings.HasSuffix(file, "_test.go") || allowed[file] {
+			continue
+		}
+		src, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if match := raw.Find(src); match != nil {
+			t.Errorf("%s uses raw framework control %s instead of Portrait", file, match)
 		}
 	}
 }

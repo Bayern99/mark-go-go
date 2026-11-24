@@ -154,7 +154,7 @@ func (s *Shell) commandItems(m Model, a Actions, slots Slots, width float32) []c
 	if !s.sidebarDocked && !s.leftOpen {
 		sidebar = "Show Sidebar"
 	}
-	add(commandItem{icon: portrait.IconSidebar, title: sidebar, detail: "Navigation", keys: []string{"⌘", "0"}, run: func() { s.toggleSidebar(width) }})
+	add(commandItem{icon: portrait.IconSidebar, title: sidebar, detail: "Navigation", keys: []string{"⌘", "0"}, run: func() { s.toggleSidebar(width); s.persistSidebar(a) }})
 	show := func(outline bool) func() {
 		return func() {
 			s.outline = outline
@@ -168,7 +168,7 @@ func (s *Shell) commandItems(m Model, a Actions, slots Slots, width float32) []c
 	add(commandItem{icon: portrait.IconHash, title: "Show Outline", detail: "Navigation", run: show(true)})
 	add(commandItem{icon: portrait.IconFolder, title: "Show Files", detail: "Navigation", run: show(false)})
 	if m.Feynman {
-		add(commandItem{icon: portrait.IconAtom, title: "Toggle Research Panel", detail: "Feynman", keys: []string{"⌥", "⌘", "0"}, run: func() { s.toggleResearch(width) }})
+		add(commandItem{icon: portrait.IconAtom, title: "Toggle Research Panel", detail: "Feynman", keys: []string{"⌥", "⌘", "0"}, run: func() { s.toggleResearch(width); s.persistResearch(a) }})
 	}
 	for _, plugin := range []struct {
 		name string
@@ -191,7 +191,7 @@ func (s *Shell) commandItems(m Model, a Actions, slots Slots, width float32) []c
 		}
 		add(commandItem{icon: icon, title: "Toggle Dark Mode", detail: "Appearance", run: func() { a.SetAppearance(next) }})
 	}
-	add(commandItem{icon: portrait.IconGear, title: "Open Settings…", detail: "Appearance, Spaces, Models & MCP", keys: []string{"⌘", ","}, run: func() { s.OpenSettings("appearance") }})
+	add(commandItem{icon: portrait.IconGear, title: "Open Settings…", detail: "General, Appearance, Editor, Research", keys: []string{"⌘", ","}, run: func() { s.OpenSettings("") }})
 	if doc.ID != "" && a.CloseDocument != nil {
 		add(commandItem{icon: portrait.IconX, title: "Close Document", detail: labels[doc.ID], keys: []string{"⌘", "W"}, run: func() { a.CloseDocument(doc.ID) }})
 	}
@@ -203,6 +203,13 @@ func (s *Shell) commandItems(m Model, a Actions, slots Slots, width float32) []c
 		}
 	}
 	if needle != "" {
+		pages := mergeSettingsPages(append(s.nativeSettingsPages(m, a), settingsPages(slots)...))
+		for _, page := range pages {
+			page := page
+			if page.Visible == nil || page.Visible() {
+				add(commandItem{icon: page.Icon, title: "Settings: " + page.Label, detail: "Settings Center", run: func() { s.OpenSettings(page.ID) }})
+			}
+		}
 		if a.OpenRecent != nil {
 			for _, recent := range m.Recents {
 				add(commandItem{icon: portrait.IconFolder, title: "Open " + recent.Name, detail: recent.Root, run: func() { a.OpenRecent(recent.Root) }})
@@ -228,19 +235,14 @@ func (s *Shell) commandBar(c *ui.Context, width, height float32, m Model, a Acti
 	if bar.open {
 		items = s.commandItems(m, a, slots, width)
 		bar.index = max(0, min(bar.index, len(items)-1))
-		ui.Overlay(c, func() {
-			ui.Box(c.Key("command scrim")).Absolute().Left(0).Top(0).Right(0).Bottom(0).IgnoreInput(true).
-				Background(portrait.Colors.Scrim).Transition(portrait.Overlays.Scrim.Transition(c, c.KeyboardInput()))
-		})
 	}
 	var run func()
-	panel := ui.DialogBase(c.Key("command bar"), &bar.open, func(back, panel ui.Element) {
-		back.AlignItems(ui.Start).Justify(ui.Start)
-		w := min(portrait.Shell.CommandWidth, width-4*portrait.Shell.PageInset)
-		panel.Absolute().Top(min(portrait.Shell.CommandTop, height/8)).Left((width - w) / 2).Width(w).Radius(portrait.Radii.XL).Clip().Label("Command Bar")
-		portrait.Materials.GlassOverlay.Apply(panel).TransformOrigin(0.5, 0).Transition(portrait.Overlays.Popup.Transition(c, c.KeyboardInput()))
+	panel := portrait.DialogShell(c, "command bar", &bar.open, portrait.DialogSpec{
+		Label: "Command Bar", Width: portrait.Shell.CommandWidth, Margin: 2 * portrait.Shell.PageInset,
+		Radius: portrait.Radii.XL, Glass: true, Top: min(portrait.Shell.CommandTop, height/8),
+	}, func() {
 		ui.Row(c).Height(portrait.Shell.CommandInput).Padding(0, 14, 0, 18).Gap(10).AlignItems(ui.Center).Children(func() {
-			portrait.Glyph(c, portrait.IconMagnifyingGlass, portrait.Type.Reading.Size, portrait.Colors.Ink3)
+			portrait.Glyph(c, portrait.IconMagnifyingGlass, portrait.IconSizes.L, portrait.Colors.Ink3)
 			input := portrait.Type.Reading.Apply(ui.TextInputBase(c.Key("command query"), &bar.query)).FocusRing(false).Grow(1).MinWidth(0).
 				Placeholder("Search documents, headings and commands").Label("Search documents, headings and commands")
 			if bar.focus {
@@ -288,13 +290,13 @@ func (s *Shell) commandBar(c *ui.Context, width, height float32, m Model, a Acti
 					row.ScrollIntoView()
 				}
 				row.Children(func() {
-					portrait.Glyph(c, item.icon, portrait.Type.Reading.Size, muted).Shrink(0)
+					portrait.Glyph(c, item.icon, portrait.IconSizes.M, muted).Shrink(0)
 					portrait.Type.UI.Apply(ui.Text(c, item.title)).FontWeight(500).TextColor(ink).MaxLines(1).Ellipsis("…").MinWidth(0).Shrink(1)
 					portrait.Type.Meta.Apply(ui.Text(c, item.detail)).TextColor(muted).MaxLines(1).Ellipsis("…").Grow(1).MinWidth(0).AccessHidden(true)
 					if selected {
-						portrait.Glyph(c, portrait.IconArrowElbowDownLeft, portrait.Type.Small.Size, muted).Shrink(0)
+						portrait.Glyph(c, portrait.IconArrowElbowDownLeft, portrait.IconSizes.S, muted).Shrink(0)
 					} else if len(item.keys) > 0 {
-						portrait.Type.Meta.Apply(ui.Text(c, strings.Join(item.keys, " "))).TextColor(muted).Shrink(0).AccessHidden(true)
+						portrait.KbdTint(c, muted, portrait.Clear, item.keys...).Shrink(0).AccessHidden(true)
 					}
 				})
 				if row.Clicked() {
@@ -307,6 +309,9 @@ func (s *Shell) commandBar(c *ui.Context, width, height float32, m Model, a Acti
 			}
 		})
 	})
+	if panel.Valid() {
+		portrait.Materials.GlassOverlay.Apply(panel).TransformOrigin(0.5, 0)
+	}
 	switch {
 	case run != nil:
 		s.closeCommand(a)

@@ -1,196 +1,293 @@
 package nativeui
 
 import (
+	"sort"
+	"strings"
+
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 )
 
-const (
-	settingsToolbarHeight float32 = 54
-	settingsSwatchHeight  float32 = 32
-)
-
-type settingsTabSpec struct {
-	id, label string
-	icon      portrait.Icon
-}
-
 func (s *Shell) settingsDialog(c *ui.Context, width, height float32, m Model, a Actions, slots Slots) {
-	if s.settingsOpen {
-		ui.Overlay(c, func() {
-			ui.Box(c.Key("settings scrim")).Absolute().Left(0).Top(0).Right(0).Bottom(0).IgnoreInput(true).
-				Background(portrait.Colors.ModalScrim).Transition(portrait.Overlays.Scrim.Transition(c, c.KeyboardInput()))
-		})
+	pages := mergeSettingsPages(append(s.nativeSettingsPages(m, a), settingsPages(slots)...))
+	visible := make([]SettingsPage, 0, len(pages))
+	for _, page := range pages {
+		if page.Visible == nil || page.Visible() {
+			visible = append(visible, page)
+		}
 	}
-	tabs := []settingsTabSpec{
-		{id: "appearance", label: "Appearance", icon: portrait.IconPalette},
+	sort.SliceStable(visible, func(i, j int) bool { return visible[i].Order < visible[j].Order })
+	if len(visible) == 0 {
+		s.settingsOpen = false
+		return
 	}
-	if slots.FeynmanSettings != nil {
-		tabs = append(tabs,
-			settingsTabSpec{id: "models", label: "Models & Auth", icon: portrait.IconCube},
-			settingsTabSpec{id: "tools", label: "Tools & MCP", icon: portrait.IconPlugs},
-			settingsTabSpec{id: "diagnostics", label: "Diagnostics", icon: portrait.IconSlidersHorizontal},
-		)
+	if !settingsPageVisible(visible, s.settingsTab) {
+		s.settingsTab = visible[0].ID
 	}
-	if s.settingsTab == "" || (s.settingsTab != "appearance" && slots.FeynmanSettings == nil) {
-		s.settingsTab = "appearance"
+	if s.settingsNav == nil {
+		s.settingsNav = map[string]*ui.Handle{}
 	}
-	panel := ui.DialogBase(c.Key("settings dialog"), &s.settingsOpen, func(back, panel ui.Element) {
-		back.AlignItems(ui.Center).Justify(ui.Center)
-		w := min(portrait.Shell.SettingsWidth, max(float32(340), width-4*portrait.Shell.PageInset))
-		h := min(portrait.Shell.SettingsHeight, max(float32(300), height-4*portrait.Shell.PageInset))
-		panel.Width(w).Height(h).Radius(portrait.Radii.XL).Clip().Label("Settings")
-		portrait.Materials.Pop.Apply(panel).TransformOrigin(0.5, 0.5).Transition(portrait.Overlays.Popup.Transition(c, c.KeyboardInput()))
-
-		ui.Column(c).Fill().Children(func() {
-			ui.Row(c.Key("settings-header")).FillWidth().Height(portrait.Shell.PageBar).Padding(0, 12, 0, 18).AlignItems(ui.Center).Children(func() {
-				portrait.Type.Small.Apply(ui.Text(c, "Settings")).FontWeight(600).TextColor(portrait.Colors.Ink).Grow(1)
-				if portrait.QuietIconButton(c, portrait.IconX, "Close settings").Clicked() {
-					s.settingsOpen = false
-				}
-			})
-			ui.Row(c.Key("settings-toolbar")).FillWidth().Height(settingsToolbarHeight).Padding(0, 16, 8, 16).Gap(6).
-				AlignItems(ui.Center).Justify(ui.Center).BorderWidth(0, 0, 1, 0).BorderColor(portrait.Colors.Line).
-				Role(ui.RoleTabList).Label("Settings sections").Children(func() {
-				for _, tab := range tabs {
-					selected := s.settingsTab == tab.id
-					btn := ui.ButtonBase(c.Key("settings-tab-"+tab.id)).Role(ui.RoleTab).Label(tab.label).AccessSelected(selected).
-						Padding(6, 12).Radius(portrait.Radii.M).AlignItems(ui.Center).Justify(ui.Center)
-					if selected {
-						btn.Background(portrait.Colors.AccentSoft)
-					} else if btn.Hovered() {
-						btn.Background(portrait.Colors.Fill)
-					}
-					ink := portrait.Colors.Ink2
-					if selected {
-						ink = portrait.Colors.Accent
-					} else if btn.Hovered() {
-						ink = portrait.Colors.Ink
-					}
-					btn.Children(func() {
-						ui.Column(c).AlignItems(ui.Center).Gap(3).Children(func() {
-							portrait.Glyph(c, tab.icon, portrait.Type.Reading.Size, ink)
-							portrait.Type.Meta.Apply(ui.Text(c, tab.label)).FontWeight(500).TextColor(ink)
-						})
+	if s.settingsOpen && !s.settingsEditing && (c.Shortcut(0, ui.KeySlash) || c.Shortcut(ui.Cmd, ui.KeyF)) {
+		s.settingsFocus = true
+	}
+	searchState := &settingsSearchState{}
+	query := SettingsQuery{Text: s.settingsQuery, state: searchState}
+	current := settingsPageByID(visible, s.settingsTab)
+	panel := portrait.DialogShell(c, "settings dialog", &s.settingsOpen, portrait.DialogSpec{
+		Label: "Settings", Width: portrait.Settings.Width, Height: portrait.Settings.Height,
+		Margin: portrait.Settings.Margin, Radius: portrait.Settings.Radius, Glass: true,
+	}, func() {
+		sheetWidth := min(portrait.Settings.Width, max(0, width-2*portrait.Settings.Margin))
+		root := ui.Row(c).Fill().MinWidth(0)
+		root.Children(func() {
+			if sheetWidth >= portrait.Settings.Collapse {
+				s.settingsRail(c, visible, query)
+				s.settingsPane(c, current, visible, query, searchState, true)
+			} else {
+				ui.Column(c).Fill().MinWidth(0).Children(func() {
+					ui.Row(c).FillWidth().Height(portrait.Settings.Header).Padding(0, portrait.Form.PadX).Gap(portrait.Form.Gap).
+						BorderWidth(0, 0, portrait.Editor.Hairline, 0).BorderColor(portrait.Colors.Line).AlignItems(ui.Center).Children(func() {
+						selected := s.settingsTab
+						options := make([]portrait.Option, 0, len(visible))
+						for _, page := range visible {
+							options = append(options, portrait.Option{Value: page.ID, Label: page.Label})
+						}
+						before := selected
+						portrait.Select(c, &selected, options, portrait.SelectSpec{Label: "Settings category", Width: portrait.Form.MenuMin})
+						if selected != before {
+							s.settingsTab, s.settingsQuery = selected, ""
+						}
+						s.settingsSearch(c, visible).Frame().Grow(1).MinWidth(0)
 					})
-					if btn.Clicked() {
-						s.settingsTab = tab.id
-					}
-				}
-			})
-			ui.Scroll(c.Key("settings-body-" + s.settingsTab)).Grow(1).MinHeight(collapsible).FillWidth().
-				TrackScroll(s.scrollState("settings:" + s.settingsTab)).Label("Settings content").Children(func() {
-				ui.Column(c).FillWidth().Padding(16, 20, 20, 20).Gap(14).Children(func() {
-					if s.settingsTab == "appearance" || slots.FeynmanSettings == nil {
-						s.appearanceSettings(c, m, a)
-						return
-					}
-					slots.FeynmanSettings(c, s.settingsTab)
+					s.settingsPane(c, current, visible, query, searchState, false)
 				})
-			})
+			}
 		})
 	})
 	_ = panel
+	if s.settingsResetOpen {
+		page := settingsPageByID(visible, s.settingsResetID)
+		label := page.Label
+		if s.settingsResetID == "all" {
+			label = "all settings"
+		}
+		portrait.Confirm(c, &s.settingsResetOpen, portrait.ConfirmSpec{
+			Title: "Reset " + label + "?", Body: "Restore the defaults for " + label + ".",
+			ConfirmLabel: "Reset to defaults", Return: &s.settingsReset,
+			OnConfirm: func() {
+				if s.settingsResetID == "all" && a.ResetPreferencePrefixes != nil {
+					a.ResetPreferencePrefixes("mgo.", "feynman.")
+				} else if page.Reset != nil {
+					page.Reset()
+				}
+			},
+		})
+	}
 }
 
-func (s *Shell) appearanceSettings(c *ui.Context, m Model, a Actions) {
-	activeSpace := spaceOf(m)
-	ui.Column(c.Key("settings-appearance-mode")).FillWidth().Gap(8).Children(func() {
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
-			ui.Column(c).Grow(1).Gap(2).Children(func() {
-				portrait.Type.UI.Apply(ui.Text(c, "Appearance")).FontWeight(600).TextColor(portrait.Colors.Ink)
-				portrait.Type.Meta.Apply(ui.Text(c, "Choose Light, Dark, or follow macOS automatically.")).TextColor(portrait.Colors.Ink3)
-			})
-			portrait.Track(c, "settings-appearance", func(t *portrait.Segments) {
-				for _, opt := range portrait.Appearances {
-					selected := opt == m.Appearance || (opt == portrait.System && m.Appearance == "")
-					if t.Segment(c, string(opt), "Appearance "+string(opt), selected).Role(ui.RoleTab).AccessSelected(selected).Clicked() && a.SetAppearance != nil {
-						a.SetAppearance(opt)
-					}
+func settingsPageVisible(pages []SettingsPage, id string) bool {
+	for _, page := range pages {
+		if page.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func settingsPageByID(pages []SettingsPage, id string) SettingsPage {
+	for _, page := range pages {
+		if page.ID == id {
+			return page
+		}
+	}
+	return SettingsPage{}
+}
+
+func (s *Shell) settingsSearch(c *ui.Context, pages []SettingsPage) portrait.Field {
+	field := portrait.SearchField(c, &s.settingsQuery, portrait.SearchSpec{Label: "Search settings", Placeholder: "Search", Shortcut: []string{"/"}, Size: portrait.Sizes.Regular})
+	field.Frame().Margin(portrait.Form.MenuPad, portrait.Form.PadX)
+	if s.settingsFocus {
+		field.Input().Focus()
+		s.settingsFocus = false
+	}
+	field.Input().OnTextKey(func(key ui.TextKey) bool {
+		switch key.Key {
+		case ui.KeyEscape:
+			if key.Text() != "" {
+				key.SetText("")
+				return true
+			}
+		case ui.KeyDown:
+			s.settingsResults.Focus(c)
+			return true
+		case ui.KeyEnter:
+			for _, page := range pages {
+				if settingsPageMatchesText(page, key.Text()) {
+					s.settingsTab = page.ID
+					key.SetText("")
+					return true
 				}
-			}).Label("Appearance mode")
+			}
+		}
+		return false
+	})
+	s.settingsEditing = field.Frame().FocusWithin()
+	return field
+}
+
+func settingsPageMatchesText(page SettingsPage, text string) bool {
+	if strings.TrimSpace(text) == "" {
+		return true
+	}
+	q := SettingsQuery{Text: text}
+	return q.PageMatch(page)
+}
+
+func (s *Shell) settingsRail(c *ui.Context, pages []SettingsPage, query SettingsQuery) {
+	rail := ui.Column(c).Width(portrait.Settings.Rail).FillHeight().Background(portrait.Colors.Fill).
+		BorderWidth(0, 1, 0, 0).BorderColor(portrait.Colors.Line)
+	rail.Children(func() {
+		ui.Row(c).FillWidth().Height(portrait.Settings.Header).AlignItems(ui.Center).Children(func() { s.settingsSearch(c, pages) })
+		nav := ui.Column(c).FillWidth().Grow(1).Padding(0, portrait.Form.PadX, portrait.Form.PadX, portrait.Form.PadX).Gap(portrait.Form.PopoverGap).
+			Role(ui.RoleTabList).Label("Settings categories").FocusGroup(ui.Vertical)
+		nav.Children(func() {
+			lastSection := ""
+			for i, page := range pages {
+				if page.Section == "Footer" {
+					continue
+				}
+				if page.Section != "" && page.Section != lastSection {
+					portrait.SectionLabel(c, strings.ToUpper(page.Section)).Padding(portrait.Settings.NavSectionGap, portrait.Form.PadX, portrait.Form.HelpGap, portrait.Form.PadX)
+				}
+				lastSection = page.Section
+				s.settingsNavItem(c, pages, i, page)
+			}
+			ui.Spacer(c)
+			for i, page := range pages {
+				if page.Section == "Footer" {
+					s.settingsNavItem(c, pages, i, page)
+				}
+			}
 		})
 	})
+	_ = query
+}
 
-	ui.Column(c.Key("settings-wuxing-spaces")).FillWidth().Gap(8).Children(func() {
-		ui.Column(c).Gap(2).Children(func() {
-			portrait.Type.UI.Apply(ui.Text(c, "Wu Xing Space")).FontWeight(600).TextColor(portrait.Colors.Ink)
-			portrait.Type.Meta.Apply(ui.Text(c, "Each workspace carries its own traditional pigment scenery and accent.")).TextColor(portrait.Colors.Ink3)
-		})
-		for row := 0; row < len(portrait.Spaces); row += 2 {
-			ui.Row(c.Key("space-row-" + portrait.Spaces[row].Name)).FillWidth().Gap(10).Children(func() {
-				for col := 0; col < 2 && row+col < len(portrait.Spaces); col++ {
-					sp := portrait.Spaces[row+col]
-					selected := sp.Name == activeSpace.Name
-					sc := sp.In(s.dark)
-					card := ui.ButtonBase(c.Key("settings-space-" + sp.Name)).Label("Space: " + sp.Label).AccessSelected(selected).
-						Grow(1).MinWidth(0).Padding(8).Radius(portrait.Radii.L).Background(portrait.Colors.Paper)
-					if selected {
-						card.Border(1.5, portrait.Colors.Accent)
-					} else {
-						card.Border(1, portrait.Colors.Line)
-						if card.Hovered() {
-							card.Background(portrait.Colors.Fill)
-						}
-					}
-					card.Children(func() {
-						ui.Column(c).FillWidth().Gap(7).Children(func() {
-							preview := ui.Row(c).FillWidth().Height(settingsSwatchHeight).Padding(6).Gap(6).Radius(portrait.Radii.M).AlignItems(ui.Center)
-							preview.LinearGradient(ui.LinearGradient{
-								Angle: 160,
-								Oklab: true,
-								Stops: []ui.GradientStop{
-									{Color: sc.From.Mix(sc.To, 0.22), At: 0},
-									{Color: sc.From.Mix(sc.To, 0.64), At: 0.56},
-									{Color: sc.To, At: 1},
-								},
-							})
-							preview.Children(func() {
-								ui.Box(c).Size(12, 12).Radius(portrait.Radii.Pill).Background(sc.Mark).Shrink(0)
-								ui.Row(c).Grow(1).FillHeight().Radius(portrait.Radii.S).Background(sc.Paper).Padding(0, 8).AlignItems(ui.Center).Children(func() {
-									ui.Box(c).Size(24, 5).Radius(portrait.Radii.Pill).Background(sc.Accent)
-								})
-							})
-							ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
-								ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-									portrait.Type.UI.Apply(ui.Text(c, sp.Label)).FontWeight(600).TextColor(portrait.Colors.Ink).MaxLines(1).Ellipsis("…")
-									portrait.Type.Meta.Apply(ui.Text(c, sp.Element)).TextColor(portrait.Colors.Ink3).MaxLines(1)
-								})
-								if selected {
-									portrait.Glyph(c, portrait.IconCheckCircle, portrait.Type.Reading.Size, portrait.Colors.Accent).Shrink(0)
-								}
-							})
-						})
-					})
-					if card.Clicked() && a.SetSpace != nil {
-						a.SetSpace(sp.Name)
-					}
-				}
-			})
+func (s *Shell) settingsNavItem(c *ui.Context, pages []SettingsPage, index int, page SettingsPage) {
+	selected := s.settingsTab == page.ID && s.settingsQuery == ""
+	button := ui.ButtonBase(c.Key("settings-page-"+page.ID)).Role(ui.RoleTab).Label(page.Label).AccessSelected(selected).
+		FillWidth().Height(portrait.Settings.NavRow).Padding(0, portrait.Form.PadX).Gap(portrait.Form.Gap).Radius(portrait.Radii.M).AlignItems(ui.Center).
+		Bind(settingsHandle(s.settingsNav, page.ID))
+	ink := portrait.Colors.Ink2
+	if selected {
+		button.Background(portrait.Colors.AccentSoft)
+		ink = portrait.Colors.Accent
+	} else if button.Hovered() {
+		button.Background(portrait.Colors.FillHover)
+		ink = portrait.Colors.Ink
+	}
+	button.Children(func() {
+		portrait.Glyph(c, page.Icon, portrait.IconSizes.M, ink).Shrink(0)
+		text := portrait.Type.UI.Apply(ui.Text(c, page.Label)).TextColor(ink).MaxLines(1).Ellipsis("…")
+		if selected {
+			text.FontWeight(500)
 		}
 	})
+	if button.Clicked() {
+		s.settingsTab, s.settingsQuery = page.ID, ""
+	}
+	if button.Focused() {
+		next := -1
+		switch {
+		case button.Shortcut(0, ui.KeyDown):
+			next = s.nextSettingsNav(pages, index, 1)
+		case button.Shortcut(0, ui.KeyUp):
+			next = s.nextSettingsNav(pages, index, -1)
+		case button.Shortcut(0, ui.KeyHome):
+			next = 0
+		case button.Shortcut(0, ui.KeyEnd):
+			next = len(pages) - 1
+		}
+		if next >= 0 && next < len(pages) {
+			handle := s.settingsNav[pages[next].ID]
+			if handle != nil {
+				handle.Focus(c)
+			}
+		}
+	}
+}
 
-	ui.Column(c.Key("settings-plugins")).FillWidth().Gap(8).Padding(10, 12).Radius(portrait.Radii.L).Background(portrait.Colors.Fill).Children(func() {
-		portrait.Type.UI.Apply(ui.Text(c, "Optional Plugins")).FontWeight(600).TextColor(portrait.Colors.Ink)
-		feynmanOn := m.Feynman
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
-			ui.Column(c).Grow(1).Children(func() {
-				portrait.Type.UI.Apply(ui.Text(c, "Feynman Research")).FontWeight(500).TextColor(portrait.Colors.Ink)
-				portrait.Type.Meta.Apply(ui.Text(c, "Side-by-side AI research assistant, models, and MCP tools.")).TextColor(portrait.Colors.Ink3)
-			})
-			if portrait.Switch(c.Key("settings-plugin-feynman"), &feynmanOn).Label("Enable Feynman").Changed() && a.SetFeynman != nil {
-				a.SetFeynman(feynmanOn)
+func settingsHandle(handles map[string]*ui.Handle, id string) *ui.Handle {
+	if handles[id] == nil {
+		handles[id] = new(ui.Handle)
+	}
+	return handles[id]
+}
+
+func (s *Shell) nextSettingsNav(pages []SettingsPage, index, delta int) int {
+	for next := index + delta; next >= 0 && next < len(pages); next += delta {
+		if pages[next].Section != "Footer" || delta > 0 {
+			return next
+		}
+	}
+	return -1
+}
+
+func (s *Shell) settingsPane(c *ui.Context, current SettingsPage, pages []SettingsPage, query SettingsQuery, searchState *settingsSearchState, withRail bool) {
+	pane := ui.Column(c).Grow(1).MinWidth(0).FillHeight()
+	if !withRail {
+		pane.FillWidth()
+	}
+	pane.Children(func() {
+		scroll := s.scrollState("settings:" + s.settingsTab)
+		header := ui.Row(c).FillWidth().Height(portrait.Settings.Header).Padding(0, portrait.Settings.ColumnPadX/2).Gap(portrait.Form.Gap).AlignItems(ui.Center)
+		if scroll.Y > 0 {
+			header.BorderWidth(0, 0, portrait.Editor.Hairline, 0).BorderColor(portrait.Colors.Line)
+		}
+		header.Children(func() {
+			portrait.Type.UI.Apply(ui.Text(c, "Settings")).TextColor(portrait.Colors.Ink3)
+			portrait.Type.UI.Apply(ui.Text(c, "/")).TextColor(portrait.Colors.Ink4)
+			label := current.Label
+			if query.Active() {
+				label = "Search"
+			}
+			portrait.Type.UI.Apply(ui.Text(c, label)).FontWeight(600).TextColor(portrait.Colors.Ink).Role(ui.RoleHeading).Grow(1)
+			if !query.Active() && current.Reset != nil && current.Dirty != nil && current.Dirty() {
+				reset := portrait.ButtonWith(c, "Reset to defaults", "Reset "+current.Label+" to defaults", portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Regular, Leading: portrait.IconArrowCounterClockwise}).Bind(&s.settingsReset)
+				if reset.Clicked() {
+					s.settingsResetID, s.settingsResetOpen = current.ID, true
+				}
+			}
+			if portrait.QuietIconButton(c, portrait.IconX, "Close settings").Clicked() {
+				s.settingsOpen = false
 			}
 		})
-		gitOn := m.Git
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
-			ui.Column(c).Grow(1).Children(func() {
-				portrait.Type.UI.Apply(ui.Text(c, "Git Checkpoints")).FontWeight(500).TextColor(portrait.Colors.Ink)
-				portrait.Type.Meta.Apply(ui.Text(c, "Save, diff, and restore local document snapshots.")).TextColor(portrait.Colors.Ink3)
+		ui.Scroll(c.Key("settings-body-" + s.settingsTab)).Grow(1).MinHeight(collapsible).FillWidth().TrackScroll(scroll).
+			Label("Settings content").Bind(&s.settingsResults).Focusable().Children(func() {
+			ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() {
+				ui.Column(c).FillWidth().MaxWidth(portrait.Settings.Column).Padding(portrait.Settings.ColumnPadTop, portrait.Settings.ColumnPadX, portrait.Settings.ColumnPadBottom, portrait.Settings.ColumnPadX).
+					Gap(portrait.Settings.GroupGap).Children(func() {
+					if !query.Active() {
+						current.Draw(c, query)
+						return
+					}
+					for _, page := range pages {
+						if !query.PageMatch(page) {
+							continue
+						}
+						ui.Column(c.Key("search-page-" + page.ID)).FillWidth().Gap(portrait.Settings.HeadingGap).Children(func() {
+							link := portrait.ButtonWith(c, page.Label, "Open "+page.Label, portrait.ButtonSpec{Look: portrait.Link, Size: portrait.Sizes.Regular})
+							if link.Clicked() {
+								s.settingsTab, s.settingsQuery = page.ID, ""
+							}
+							page.Draw(c, query)
+						})
+					}
+					if searchState.matches == 0 {
+						portrait.Empty(c, portrait.EmptySpec{Icon: portrait.IconMagnifyingGlass, Title: "No settings match “" + query.Text + "”", Description: "Try a different setting name or keyword."})
+					}
+				})
 			})
-			if portrait.Switch(c.Key("settings-plugin-git"), &gitOn).Label("Enable Git").Changed() && a.SetGit != nil {
-				a.SetGit(gitOn)
-			}
 		})
 	})
 }

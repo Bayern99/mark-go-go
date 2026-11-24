@@ -36,7 +36,7 @@ func controlButton(c *ui.Context, label, description string) ui.Element {
 }
 
 func smallButton(c *ui.Context, label, description string) ui.Element {
-	return option(c, "research-small-"+label, label, description, portrait.Quiet, true, false)
+	return option(c, "research-small-"+label, label, description, portrait.Raised, true, false)
 }
 
 func toolButton(c *ui.Context, label, description string, small, selected bool) ui.Element {
@@ -48,34 +48,12 @@ func choiceButton(c *ui.Context, key, label, description string, selected, small
 }
 
 func discreteButton(c *ui.Context, label, description string, mark portrait.Icon) ui.Element {
-	b := portrait.Tooltip(c, ui.ButtonBase(c.Key("research-option-"+label)).Label(description), description).FillWidth().MinHeight(28).Padding(5, 8).Radius(8).Gap(6).AlignItems(ui.Center)
-	ink := portrait.Press(b, portrait.Quiet)
-	b.Children(func() {
-		if mark.Glyph != "" {
-			portrait.Glyph(c, mark, 13, portrait.Colors.Accent).Shrink(0)
-		}
-		text(c, portrait.Type.UI, label).TextColor(ink).Grow(1).MinWidth(0).Wrap()
-	})
-	return b
+	return portrait.Tooltip(c, portrait.ListRow(c.Key("research-option-"+label), portrait.ListRowSpec{Icon: mark, Title: label, Detail: description, Label: description}), description)
 }
 
 func chip(c *ui.Context, key string, icon portrait.Icon, label, description string, compact bool) ui.Element {
-	b := portrait.Tooltip(c, ui.ButtonBase(c.Key(key)).Label(description), description).Gap(4).AlignItems(ui.Center).Radius(5).MinWidth(0)
-	if compact {
-		b.Height(20).Padding(0, 5)
-	} else {
-		b.Height(22).Padding(0, 6)
-	}
-	portrait.Press(b, portrait.Quiet)
-	portrait.Surface{From: portrait.Colors.AccentSoft, To: portrait.Colors.AccentSoft}.Apply(b)
-	b.Children(func() {
-		if icon.Glyph != "" {
-			portrait.Glyph(c, icon, 12, portrait.Colors.Accent)
-		}
-		text(c, portrait.Type.Meta, label).TextColor(portrait.Colors.Accent).MaxLines(1).Ellipsis("…").MinWidth(0)
-		portrait.Glyph(c, portrait.IconX, 12, portrait.Colors.Accent)
-	})
-	return b
+	_ = compact
+	return portrait.Tooltip(c, portrait.Chip(c.Key(key), icon, label, nil).Label(description), description)
 }
 
 func field(c *ui.Context, key string, size float32, build func() ui.Element, configure ...func(ui.Element)) ui.Element {
@@ -90,24 +68,46 @@ func field(c *ui.Context, key string, size float32, build func() ui.Element, con
 }
 
 func input(c *ui.Context, key, label string, value *string, placeholder string, configure ...func(ui.Element)) ui.Element {
-	return sizedInput(c, key, label, value, placeholder, portrait.Sizes.Large, configure...)
+	return sizedInput(c, key, label, value, placeholder, portrait.Form.Field, configure...)
 }
 
 func filterInput(c *ui.Context, key, label string, value *string, placeholder string, configure ...func(ui.Element)) ui.Element {
-	return sizedInput(c, key, label, value, placeholder, portrait.Sizes.Regular, configure...)
+	field := portrait.SearchField(c.Key(key), value, portrait.SearchSpec{Label: label, Placeholder: placeholder, Size: portrait.Form.FieldCompact})
+	field.Frame().FillWidth().MinWidth(0)
+	for _, fn := range configure {
+		fn(field.Input())
+	}
+	return field.Frame()
 }
 
 func sizedInput(c *ui.Context, key, label string, value *string, placeholder string, size float32, configure ...func(ui.Element)) ui.Element {
-	return field(c, key, size, func() ui.Element {
-		return ui.TextInputBase(c, value).Label(label).Placeholder(placeholder)
-	}, configure...)
+	field := portrait.TextField(c.Key(key), value, portrait.FieldSpec{Label: label, Placeholder: placeholder, Size: size})
+	field.Frame().FillWidth().MinWidth(0)
+	for _, fn := range configure {
+		fn(field.Input())
+	}
+	return field.Frame()
 }
 
 func area(c *ui.Context, key, label string, value *string, placeholder string, rows float32, configure ...func(ui.Element)) ui.Element {
-	frame := field(c, key, rows, func() ui.Element {
-		return ui.TextAreaBase(c, value).Label(label).Placeholder(placeholder).Height(rows)
-	}, configure...)
-	return frame.AlignItems(ui.Start)
+	lineCount := max(1, int(rows/portrait.Type.UI.Leading))
+	minHeight := portrait.Form.AreaMin
+	if rows <= portrait.Form.AreaCompact {
+		lineCount, minHeight = 1, rows
+	}
+	entry := portrait.TextArea(c.Key(key), value, portrait.AreaSpec{Label: label, Placeholder: placeholder, Rows: lineCount, MinHeight: minHeight})
+	for _, fn := range configure {
+		fn(entry)
+	}
+	return entry
+}
+
+func settingsSection(c *ui.Context, title, description string, build func()) {
+	portrait.SettingsGroup(c, title, func(rows *portrait.Rows) {
+		rows.Row(portrait.RowSpec{Title: title, Description: description, Stacked: true}, func() {
+			ui.Column(c).FillWidth().Gap(portrait.Form.Gap).Children(build)
+		})
+	})
 }
 
 func card(c *ui.Context) ui.Element {
@@ -115,7 +115,7 @@ func card(c *ui.Context) ui.Element {
 }
 
 func sectionTitle(c *ui.Context, title string) ui.Element {
-	return text(c, portrait.Type.Heading, title).FontWeight(600).TextColor(portrait.Colors.Ink)
+	return portrait.PanelTitle(c, title)
 }
 
 func mutedText(c *ui.Context, value string) {
@@ -126,13 +126,9 @@ func resultText(c *ui.Context, title, value string, errText string) {
 	if errText != "" {
 		portrait.Alert(c, portrait.Tones.Danger, errText, "")
 	}
-	if value == "" {
-		return
+	if value != "" {
+		portrait.OutputBlock(c.Key("result-"+title), title, value)
 	}
-	card(c.Key("result-"+title)).Padding(7, 8).Gap(3).Background(portrait.Colors.Code).Children(func() {
-		text(c, portrait.Type.Meta, title).FontWeight(600).TextColor(portrait.Colors.Ink2)
-		text(c, portrait.Type.Meta.In(portrait.FontMono), value).TextColor(portrait.Colors.Ink).Wrap().FillWidth()
-	})
 }
 
 func markdownOptions(o *markdown.Options) *markdown.Options {

@@ -42,19 +42,25 @@ type headingKey struct {
 	occurrence int
 }
 type panel struct {
-	win      *nativeui.Window
-	host     *workspace.Service
-	views    map[string]*documentView
-	closed   bool
-	settings workspace.Settings
+	win                              *nativeui.Window
+	host                             *workspace.Service
+	views                            map[string]*documentView
+	closed                           bool
+	settings                         workspace.Settings
+	settingsCommand, settingsMessage string
+	settingsCommandEdited            bool
 }
 
 func Install(host *workspace.Service) func(*nativeui.Window) nativeui.Panels {
 	return func(win *nativeui.Window) nativeui.Panels {
 		p := &panel{win: win, host: host, views: make(map[string]*documentView)}
 		p.settings, _ = host.GetSettings()
+		p.settingsCommand = p.settings.AgentCommand
 		workspace.SettingsChanged.Listen(win.Native(), func(next workspace.Settings) {
 			p.settings = next
+			if !p.settingsCommandEdited {
+				p.settingsCommand = next.AgentCommand
+			}
 			for _, v := range p.views {
 				if !v.commandEdited {
 					v.command = next.AgentCommand
@@ -62,7 +68,7 @@ func Install(host *workspace.Service) func(*nativeui.Window) nativeui.Panels {
 			}
 		})
 		genui.ViewChanged.Listen(win.Native(), p.updated)
-		return nativeui.Panels{GenUI: p.draw, Changed: p.changed, Closed: p.close}
+		return nativeui.Panels{GenUI: p.draw, Settings: []nativeui.SettingsPage{p.settingsPage()}, Changed: p.changed, Closed: p.close}
 	}
 }
 func (p *panel) close() {
@@ -123,7 +129,7 @@ func (p *panel) draw(c *ui.Context) {
 		}
 	}
 	if p.win.Source() == nil {
-		ui.Text(c, "Loading document…")
+		portrait.Empty(c, portrait.EmptySpec{Title: "Loading document…"})
 		return
 	}
 	c = c.Key(d.ID)
@@ -131,18 +137,21 @@ func (p *panel) draw(c *ui.Context) {
 	v.index(raw)
 	busy := v.cancel != nil || d.Generating
 	ui.Column(c).Fill().MinHeight(0).Gap(8).Padding(12).Children(func() {
-		ui.Row(c).Justify(ui.End).Children(func() {
-			if portrait.QuietButton(c, "Generation settings", "Generation settings").Expanded(v.settings).Clicked() {
+		ui.Row(c).Justify(ui.End).Gap(portrait.Form.Gap).Children(func() {
+			if portrait.QuietButton(c, "Request", "Generation request").Expanded(v.settings).Clicked() {
 				v.settings = !v.settings
+			}
+			if portrait.QuietIconButton(c, portrait.IconGear, "GenUI settings").Clicked() {
+				p.win.OpenSettings("genui")
 			}
 		})
 		if v.settings {
 			p.drawSettings(c, v, d, busy)
 		}
 		if v.failure != nil {
-			ui.Text(c, strings.TrimSpace(v.failure.Message+" "+v.failure.Hint)).Role(ui.RoleAlert)
+			portrait.Alert(c, portrait.Tones.Danger, "Generation failed", strings.TrimSpace(v.failure.Message+" "+v.failure.Hint))
 			if v.failure.Detail != "" {
-				ui.Text(c, v.failure.Detail).Selectable()
+				portrait.OutputBlock(c, "Generation details", v.failure.Detail)
 			}
 			if portrait.Button(c, "Retry generation", "Retry generation").Disabled(busy || d.Path == "").Clicked() {
 				p.generate(v, v.lastIDs)
@@ -158,7 +167,7 @@ func (p *panel) draw(c *ui.Context) {
 		case !v.loaded:
 			loading(c, "Loading the GenUI view", "Reading the view file for this document.")
 		case v.snapshot.Error != "":
-			ui.Text(c, v.snapshot.Error).Role(ui.RoleAlert)
+			portrait.Alert(c, portrait.Tones.Danger, "GenUI view", v.snapshot.Error)
 		case v.cancel != nil && v.reader().surface == nil:
 			loading(c, "Generating view…", "Your agent is laying out this document.")
 		case v.reader().surface == nil:
@@ -170,7 +179,7 @@ func (p *panel) draw(c *ui.Context) {
 					Action: func(c *ui.Context) ui.Element {
 						b := portrait.AccentButton(c, "Set up generation", "Set up generation").Margin(6, 0, 0, 0)
 						if b.Clicked() {
-							v.settings = true
+							p.win.OpenSettings("genui")
 						}
 						return b
 					},
@@ -316,40 +325,81 @@ func (v *documentView) changedIDs() []string {
 	return ids
 }
 
-func (p *panel) drawSettings(c *ui.Context, v *documentView, d workspace.DocumentInfo, busy bool) {
-	ui.TextArea(c, &v.request).Height(52).Label("Generation request").Placeholder("Generation request").Disabled(busy).OnChange(func() { v.requestEdited = true })
-	model := p.settings.Model
-	models := p.settings.Models
-	if !slices.Contains(models, model) {
-		models = append(slices.Clone(models), model)
-	}
-	ui.Row(c).Gap(8).Wrap().Children(func() {
-		ui.Text(c, "Model")
-		ui.Select(c, &model, models).Label("Model").Disabled(busy).OnChange(func() {
-			_, err := p.host.SetSettings(workspace.SettingsPatch{Model: &model})
-			v.message = message(err)
-		})
-		ui.TextInput(c, &v.command).Label("Agent command").Placeholder("Agent command").Disabled(busy).OnChange(func() { v.commandEdited = true })
-		if ui.Button(c, "Save command").Disabled(busy || !v.commandEdited).Clicked() {
-			s, err := p.host.SetSettings(workspace.SettingsPatch{AgentCommand: &v.command})
-			v.message = message(err)
-			if err == nil {
-				v.commandEdited = false
-				v.command = s.AgentCommand
+func (p *panel) settingsPage() nativeui.SettingsPage {
+	return nativeui.SettingsPage{
+		ID: "genui", Section: "Workspace", Label: "GenUI", Icon: portrait.IconSparkle, Order: 210,
+		Keywords: []string{"genui generation model agent command save"},
+		Dirty: func() bool {
+			defaults := workspace.DefaultSettings()
+			return p.settings.Model != defaults.Model || p.settings.AgentCommand != defaults.AgentCommand
+		},
+		Reset: func() {
+			defaults := workspace.DefaultSettings()
+			_, err := p.host.SetSettings(workspace.SettingsPatch{Model: &defaults.Model, AgentCommand: &defaults.AgentCommand})
+			p.settingsMessage = message(err)
+			p.settingsCommand = defaults.AgentCommand
+			p.settingsCommandEdited = false
+		},
+		Draw: func(c *ui.Context, q nativeui.SettingsQuery) {
+			if p.settingsMessage != "" {
+				portrait.Alert(c, portrait.Tones.Danger, "GenUI settings", p.settingsMessage)
 			}
-		}
-	})
-	if d.Path == "" {
-		ui.Text(c, "Save the document first to generate a view.")
+			if q.Active() && !q.Match("Generation", "Model and agent command", "genui generation") {
+				return
+			}
+			portrait.SettingsGroup(c, "Generation", func(rows *portrait.Rows) {
+				if q.Match("Model", "The model used to generate reading views.", "generation model") {
+					rows.Row(portrait.RowSpec{Title: "Model", Description: "The model used to generate reading views."}, func() {
+						model := p.settings.Model
+						options := make([]portrait.Option, 0, len(p.settings.Models))
+						for _, value := range p.settings.Models {
+							options = append(options, portrait.Option{Value: value, Label: value})
+						}
+						before := model
+						portrait.Select(c, &model, options, portrait.SelectSpec{Label: "Model"})
+						if model != before {
+							_, err := p.host.SetSettings(workspace.SettingsPatch{Model: &model})
+							p.settingsMessage = message(err)
+						}
+					})
+				}
+				if q.Match("Agent command", "The command that runs the generation agent.", "agent command") {
+					rows.Row(portrait.RowSpec{Title: "Agent command", Description: "The command that runs the generation agent."}, func() {
+						ui.Row(c).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
+							field := portrait.TextField(c, &p.settingsCommand, portrait.FieldSpec{Label: "Agent command", Placeholder: "Agent command", Size: portrait.Form.FieldCompact})
+							field.Frame().Width(portrait.Form.SelectMax)
+							field.Input().OnChange(func() { p.settingsCommandEdited = true })
+							save := portrait.AccentButton(c, "Save", "Save agent command")
+							save.Disabled(!p.settingsCommandEdited || strings.TrimSpace(p.settingsCommand) == "")
+							if save.Clicked() {
+								command := strings.TrimSpace(p.settingsCommand)
+								_, err := p.host.SetSettings(workspace.SettingsPatch{AgentCommand: &command})
+								p.settingsMessage = message(err)
+								if err == nil {
+									p.settingsCommandEdited = false
+								}
+							}
+						})
+					})
+				}
+			})
+		},
 	}
-	ui.Row(c).Gap(6).Wrap().Children(func() {
-		if ui.Button(c, "Generate").Disabled(busy || d.Path == "").Clicked() {
+}
+
+func (p *panel) drawSettings(c *ui.Context, v *documentView, d workspace.DocumentInfo, busy bool) {
+	portrait.TextArea(c, &v.request, portrait.AreaSpec{Label: "Generation request", Placeholder: "Generation request", Rows: 2, Disabled: busy}).OnChange(func() { v.requestEdited = true })
+	if d.Path == "" {
+		portrait.Caption(c, "Save the document first to generate a view.")
+	}
+	ui.Row(c).Gap(portrait.Form.Gap).Wrap().Children(func() {
+		if portrait.AccentButton(c, "Generate", "Generate").Disabled(busy || d.Path == "").Clicked() {
 			p.generate(v, nil)
 		}
-		if ids := v.changedIDs(); len(ids) > 0 && ui.Button(c, fmt.Sprintf("Regenerate changed (%d)", len(ids))).Disabled(busy || d.Path == "").Clicked() {
+		if ids := v.changedIDs(); len(ids) > 0 && portrait.Button(c, fmt.Sprintf("Regenerate changed (%d)", len(ids)), fmt.Sprintf("Regenerate changed (%d)", len(ids))).Disabled(busy || d.Path == "").Clicked() {
 			p.generate(v, ids)
 		}
-		if v.snapshot.CanUndo && ui.Button(c, "Restore previous view").Disabled(busy).Clicked() {
+		if v.snapshot.CanUndo && portrait.QuietButton(c, "Restore previous view", "Restore previous view").Disabled(busy).Clicked() {
 			v.message = message(p.host.UndoView(p.win.Context(), d.ID))
 			if v.message == "" {
 				v.requestEdited = false
@@ -369,7 +419,7 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 	if len(notes) > 0 {
 		ui.Column(c).Gap(6).Margin(2, 0, 0, 0).Role(ui.RoleList).Label("Notes").Children(func() {
 			for i, note := range notes {
-				portrait.Type.Meta.Apply(ui.Text(c.Key(i), note)).Padding(4, 8, 4, 11).Radius(4).Background(portrait.Colors.WarningSoft).
+				portrait.Type.Meta.Apply(ui.Text(c.Key(i), note)).Padding(4, 8, 4, 11).Radius(portrait.Radii.S).Background(portrait.Colors.WarningSoft).
 					InsetShadow(3, 0, 0, 0, portrait.Colors.Warning).Selectable()
 			}
 		})
@@ -417,7 +467,7 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 	if v.noteTarget != n.ID {
 		return
 	}
-	note := ui.TextArea(c, &v.note).Label("Reader note").Height(52).AutoFocus()
+	note := portrait.TextArea(c, &v.note, portrait.AreaSpec{Label: "Reader note", Placeholder: "Reader note", Rows: 2}).AutoFocus()
 	composing := note.Composing()
 	saveShortcut := note.Shortcut(ui.Cmd, ui.KeyEnter) && !composing
 	cancelShortcut := note.Shortcut(0, ui.KeyEscape) && !composing
@@ -444,7 +494,7 @@ func highlightCard(reader *Reading, n Node) {
 }
 
 func sourceHeading(c *ui.Context, label string, disabled bool) ui.Element {
-	b := ui.ButtonBase(c).Label(label).Disabled(disabled).DimDisabled(false).Radius(3)
+	b := ui.ButtonBase(c.Key(label)).Label(label).Disabled(disabled).DimDisabled(false).Radius(portrait.Radii.S)
 	ink, line := portrait.Colors.Accent, portrait.Colors.LineStrong
 	if disabled {
 		ink = portrait.Colors.Ink3
@@ -459,14 +509,11 @@ func sourceHeading(c *ui.Context, label string, disabled bool) ui.Element {
 }
 
 func sourceStatus(c *ui.Context, text string, missing bool) {
-	fill, ink, icon := portrait.Colors.WarnSoft, portrait.Colors.Warn, portrait.IconWarning
+	tone := portrait.Tones.Warning
 	if missing {
-		fill, ink, icon = portrait.Colors.DangerSoft, portrait.Colors.Danger, portrait.IconWarningCircle
+		tone = portrait.Tones.Danger
 	}
-	ui.Row(c.Key("status")).Gap(4).AlignItems(ui.Center).Radius(999).Padding(1, 8).Background(fill).Role(ui.RoleStatus).Label(text).Children(func() {
-		portrait.Glyph(c, icon, 12, ink)
-		portrait.Type.Meta.Apply(ui.Text(c, text)).TextColor(ink)
-	})
+	portrait.Badge(c, text, tone).Role(ui.RoleStatus)
 }
 
 type sourceHover struct{}
@@ -474,7 +521,7 @@ type sourcePress struct{}
 
 func sourceButton(c *ui.Context, label string, disabled bool) ui.Element {
 	g := portrait.GenUI
-	b := ui.ButtonBase(c.Key(label)).Label(label).Disabled(disabled).DimDisabled(false).Padding(2, 8).Radius(6).AlignItems(ui.Center)
+	b := ui.ButtonBase(c.Key(label)).Label(label).Disabled(disabled).DimDisabled(false).Padding(2, 8).Radius(portrait.Radii.M).AlignItems(ui.Center)
 	ease := portrait.Motion.EaseOut.Easing()
 	hovered, pressed := b.Hovered() && !disabled, b.Pressed() && !disabled
 	h := b.AnimateTo(sourceHover{}, flag(hovered && !pressed), ui.Animation{Duration: portrait.Motion.Press, Ease: ease, NonMotion: true})

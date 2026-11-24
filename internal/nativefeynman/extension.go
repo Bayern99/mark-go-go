@@ -27,10 +27,10 @@ func (e Extension) Attach(window *nativeui.Window) nativeui.Panels {
 	feynman.FocusRequested.Listen(window.Native(), p.focusRequested)
 	review.ResearchFilePublished.Listen(window.Native(), p.filePublished)
 	return nativeui.Panels{
-		Research:        p.draw,
-		FeynmanSettings: p.drawSettingsTab,
-		Changed:         p.syncConnection,
-		Closed:          p.close,
+		Research: p.draw,
+		Settings: p.settingsPages(),
+		Changed:  p.syncConnection,
+		Closed:   p.close,
 	}
 }
 
@@ -44,7 +44,6 @@ type panel struct {
 	closed              bool
 	chatScroll          ui.ScrollState
 	filesScroll         ui.ScrollState
-	settingsScr         ui.ScrollState
 	alphaScroll         ui.ScrollState
 	commandQuery        string
 	questionText        string
@@ -59,6 +58,7 @@ type panel struct {
 	cliPassword         string
 	searchKey           string
 	mcpAddOpen          bool
+	sessionMenu         bool
 	serverLocal         bool
 	serverArgs          string
 	serverEnv           string
@@ -286,9 +286,6 @@ func (p *panel) focusRequested(event feynman.ResearchFocusEvent) {
 	if p.state.status == statusReady || p.state.status == statusWorking {
 		go func() { _, _ = p.host.RefreshModels(p.window.Context(), root) }()
 	}
-	if p.state.selectedTab == "settings" {
-		p.loadSettings(root)
-	}
 }
 
 func (p *panel) refreshFiles(root string) {
@@ -341,24 +338,16 @@ func (p *panel) draw(c *ui.Context) {
 	ui.Column(c.Key("feynman-pane")).Fill().MinWidth(0).Children(func() {
 		p.header(c)
 		if s.root == "" {
-			text(c, portrait.Type.UI, "Open a workspace folder to start research.").TextColor(portrait.Colors.Ink3).Padding(8, 10)
+			portrait.Empty(c, portrait.EmptySpec{Icon: portrait.IconFolderOpen, Title: "Open a workspace folder", Description: "Open a workspace folder to start research."})
 			return
 		}
 		p.tabs(c)
 		if s.error != "" {
-			ui.Row(c).Role(ui.RoleAlert).Margin(0, 0, 6, 0).Padding(6, 9).Gap(6).Radius(8).Background(portrait.Colors.DangerSoft).AlignItems(ui.Center).Children(func() {
-				portrait.Glyph(c, portrait.IconWarningCircle, 15, portrait.Colors.Danger)
-				text(c, portrait.Type.Meta, s.error).Grow(1).MinWidth(0).Wrap().TextColor(portrait.Colors.Danger)
-				if portrait.QuietIconButton(c, portrait.IconX, "Dismiss research error").Clicked() {
-					s.error = ""
-				}
-			})
+			portrait.Alert(c, portrait.Tones.Danger, "Research error", s.error, portrait.AlertAction{Label: "Dismiss", OnAction: func() { s.error = "" }})
 		}
 		switch s.selectedTab {
 		case "files":
 			p.files(c)
-		case "settings":
-			p.settings(c)
 		case "alpha":
 			p.alphaXiv(c)
 		default:
@@ -428,15 +417,12 @@ func (p *panel) header(c *ui.Context) {
 				p.loadSessions(s.root)
 			}
 		}
-		portrait.Popover(c, button, &s.sessionsOpen, func() {
-			popoverWidth := min(float32(340), max(float32(260), width-32))
-			maxHeight := max(float32(140), min(float32(360), height-160))
-			ui.Column(c).Width(popoverWidth).Children(func() {
-				ui.Scroll(c.Key("feynman-history-popover-scroll")).MaxHeight(maxHeight).FillWidth().Label("Workspace conversation history").Children(func() {
-					p.sessions(c)
-				})
-			})
+		popoverWidth := min(float32(340), max(float32(260), width-32))
+		maxHeight := max(float32(140), min(float32(360), height-160))
+		popover := portrait.PopoverWithSpec(c, button, &s.sessionsOpen, portrait.PopoverSpec{Width: popoverWidth, MaxHeight: maxHeight}, func() {
+			p.sessions(c)
 		})
+		popover.Label("Workspace conversation history")
 		return button
 	}
 	settingsBtn := func() {
@@ -456,7 +442,7 @@ func (p *panel) tabs(c *ui.Context) {
 	s := p.state
 	portrait.Track(c, "feynman tabs", func(t *portrait.Segments) {
 		for _, tab := range []struct{ id, label string }{{"chat", "Chat"}, {"files", "Files"}, {"alpha", "alphaXiv"}} {
-			selected := s.selectedTab == tab.id || (tab.id == "chat" && s.selectedTab != "files" && s.selectedTab != "alpha" && s.selectedTab != "settings")
+			selected := s.selectedTab == tab.id || (tab.id == "chat" && s.selectedTab != "files" && s.selectedTab != "alpha")
 			button := t.Segment(c, tab.label, tab.label, selected).Grow(1).Role(ui.RoleTab).AccessSelected(selected)
 			if button.Clicked() {
 				s.selectedTab = tab.id

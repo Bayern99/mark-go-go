@@ -13,6 +13,7 @@ import (
 
 	"github.com/Bayern99/mark-go-go/internal/genui"
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
 )
@@ -27,7 +28,7 @@ func TestReaderNoteShortcutsFollowNoteFocus(t *testing.T) {
 	p := &panel{win: &nativeui.Window{}}
 	app := ui.NewTester(func(c *ui.Context) {
 		ui.Column(c).Fill().Children(func() {
-			ui.Button(c, "Elsewhere")
+			portrait.Button(c, "Elsewhere", "Elsewhere")
 			p.drawSources(c, v, workspace.DocumentInfo{Path: "doc.md"}, card, false)
 		})
 	}, 620, 420)

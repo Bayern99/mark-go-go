@@ -53,7 +53,7 @@ func drawWidePane(c *ui.Context, p *panel) {
 	})
 }
 
-var researchTabs = []string{"chat", "files", "settings", "alpha"}
+var researchTabs = []string{"chat", "files", "alpha"}
 
 func forEachTab(t *testing.T, prefs ui.Preferences, check func(t *testing.T, app *ui.Tester)) {
 	for _, tab := range researchTabs {
@@ -65,6 +65,30 @@ func forEachTab(t *testing.T, prefs ui.Preferences, check func(t *testing.T, app
 			app.Frame()
 			app.Advance(time.Second)
 			check(t, app)
+		})
+	}
+}
+
+func TestSettingsPagesUsePortraitTextAndIcons(t *testing.T) {
+	draws := map[string]func(*panel, *ui.Context){
+		"models":      func(p *panel, c *ui.Context) { p.modelSettings(c) },
+		"search":      func(p *panel, c *ui.Context) { p.searchSettings(c); p.alphaSettings(c) },
+		"mcp":         func(p *panel, c *ui.Context) { p.mcpSettings(c) },
+		"packages":    func(p *panel, c *ui.Context) { p.packageSettings(c) },
+		"diagnostics": func(p *panel, c *ui.Context) { p.statusSettings(c) },
+	}
+	for name, draw := range draws {
+		t.Run(name, func(t *testing.T) {
+			p := fixtureBusyPanel()
+			app := ui.NewTester(func(c *ui.Context) {
+				ui.Column(c).Fill().Padding(12).Children(func() { draw(p, c) })
+			}, 1280, 2400)
+			app.Frame()
+			for _, info := range app.AccessAll() {
+				if info.Role == ui.RoleText && !info.Offscreen && info.Name != "" && info.Bounds.H < 14 {
+					t.Errorf("text %q is only %v tall", info.Name, info.Bounds.H)
+				}
+			}
 		})
 	}
 }

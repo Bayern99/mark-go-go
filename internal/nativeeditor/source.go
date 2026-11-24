@@ -39,6 +39,7 @@ type Document struct {
 	folded           map[string]bool
 	returns          map[string]int
 	landing          jumpHighlight
+	lineNumbers      bool
 }
 
 func New(source string) *Document {
@@ -46,11 +47,13 @@ func New(source string) *Document {
 	language := *editor.LanguageNamed("Markdown")
 	language.Highlighter = newMarkdownHighlighter
 	buffer.SetLanguage(&language)
-	return &Document{mode: Preview, images: &inlineImages{}, state: editor.State{
+	return &Document{mode: Preview, images: &inlineImages{}, lineNumbers: true, state: editor.State{
 		Buffer: buffer, Label: "Markdown Preview", SoftWrap: true,
 		NoAutoClose: true, NoIndentGuides: true, NoScrollPastEnd: true,
 	}}
 }
+
+func (d *Document) SetLineNumbers(on bool) { d.lineNumbers = on }
 
 func (d *Document) sourceIndex() *sourceIndex {
 	snap := d.state.Buffer.Snapshot()

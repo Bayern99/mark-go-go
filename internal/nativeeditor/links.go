@@ -39,26 +39,32 @@ func (d *Document) previewHover(req editor.HoverRequest) {
 					return
 				}
 				if d.Version() != req.Version {
-					ui.Text(c, "Link changed")
+					portrait.Alert(c, portrait.Tones.Warning, "Link changed", "Reopen the link after the document settles.")
 					return
 				}
-				ui.Column(c).Gap(6).Children(func() {
+				ui.Column(c).Gap(portrait.Form.PopoverGap).Children(func() {
+					portrait.Type.CodeSmall.Apply(ui.Text(c, destination)).TextColor(portrait.Colors.Ink3).MaxLines(1).Ellipsis("…")
 					if canOpen {
-						ui.Link(c, "Open link", destination).Description(destination)
+						open := portrait.ListRow(c, portrait.ListRowSpec{Icon: portrait.IconArrowUpRight, Title: "Open link", Label: "Open link"})
+						open.Description(destination)
+						if open.Clicked() {
+							c.Services().OpenURL(destination)
+						}
 					}
-					if ui.Button(c, "Copy link").Clicked() {
+					if portrait.ListRow(c, portrait.ListRowSpec{Icon: portrait.IconCopy, Title: "Copy link", Label: "Copy link"}).Clicked() {
 						c.Services().WriteClipboard(destination)
 					}
 					if d.state.ReadOnly {
 						return
 					}
-					if canEdit && ui.Button(c, "Edit link").Clicked() && d.Version() == req.Version {
+					if canEdit && portrait.ListRow(c, portrait.ListRowSpec{Icon: portrait.IconNote, Title: "Edit link", Label: "Edit link"}).Clicked() && d.Version() == req.Version {
 						d.openDraft(destinationStart, destinationEnd, "link")
 						d.draft.anchor = in.Start
 						c.Invalidate()
 					}
-					if canRemove && ui.Button(c, "Remove link").Clicked() && d.Version() == req.Version {
-						if d.removeLink(req.Version, in, labelStart, labelEnd) == nil {
+					if canRemove {
+						remove := portrait.ButtonWith(c, "Remove link", "Remove link", portrait.ButtonSpec{Look: portrait.DangerOutline, Size: portrait.Sizes.Compact}).FillWidth()
+						if remove.Clicked() && d.Version() == req.Version && d.removeLink(req.Version, in, labelStart, labelEnd) == nil {
 							d.refocus = true
 							c.Invalidate()
 						}

@@ -19,13 +19,15 @@ func Theme() ui.Theme {
 }
 
 type ShellTokens struct {
-	WorkspaceName, Section               TypeStyle
-	PageInset, PageRadius, PageBar       float32
-	Strip, Row, SidebarWidth, DrawerEdge float32
-	CommandWidth, CommandTop, CommandRow float32
-	Documents, Results, Swatch           float32
-	CommandInput                         float32
-	SettingsWidth, SettingsHeight        float32
+	WorkspaceName, Section                  TypeStyle
+	PageInset, PageRadius, PageBar          float32
+	Strip, Row, SidebarWidth, DrawerEdge    float32
+	CommandWidth, CommandTop, CommandRow    float32
+	Documents, Results, Swatch              float32
+	CommandInput                            float32
+	SpaceDotButton, SpaceDotCircle          float32
+	ResearchWidth, ResearchMin, ResearchMax float32
+	SidebarMin, SidebarMax, PageMin         float32
 }
 
 var Shell = ShellTokens{
@@ -45,8 +47,9 @@ var Shell = ShellTokens{
 	Results:        10 * 36,
 	Swatch:         16,
 	CommandInput:   52,
-	SettingsWidth:  740,
-	SettingsHeight: 560,
+	SpaceDotButton: 18, SpaceDotCircle: 10,
+	ResearchWidth: 376, ResearchMin: 310, ResearchMax: 800,
+	SidebarMin: 180, SidebarMax: 420, PageMin: 412,
 }
 
 var Clear = white(0)

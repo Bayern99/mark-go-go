@@ -69,6 +69,16 @@ func (w *Window) OpenSettings(tab string) {
 	}
 }
 
+func (w *Window) OpenCheckpoints() {
+	if w == nil || !w.PluginEnabled("git") {
+		return
+	}
+	w.shell.checkpoints = true
+	if w.win != nil {
+		w.win.Invalidate()
+	}
+}
+
 func (w *Window) OpenCommandBar() {
 	if w == nil {
 		return
@@ -83,7 +93,15 @@ func (w *Window) ToggleSidebar() {
 	if w == nil {
 		return
 	}
-	w.shell.hideSidebar = !w.shell.hideSidebar
+	width, _ := w.win.ContentSize()
+	w.shell.toggleSidebar(float32(width))
+	if float32(width) >= sidebarDocksAt {
+		if w.shell.hideSidebar {
+			w.setPreference(sidebarHiddenPreference, "on")
+		} else {
+			w.setPreference(sidebarHiddenPreference, "")
+		}
+	}
 	if w.win != nil {
 		w.win.Invalidate()
 	}
@@ -93,7 +111,15 @@ func (w *Window) ToggleResearch() {
 	if w == nil || !w.PluginEnabled("feynman") {
 		return
 	}
-	w.shell.hideResearch = !w.shell.hideResearch
+	width, _ := w.win.ContentSize()
+	w.shell.toggleResearch(float32(width))
+	if float32(width) >= researchDocksAt {
+		if w.shell.hideResearch {
+			w.setPreference(researchHiddenPreference, "on")
+		} else {
+			w.setPreference(researchHiddenPreference, "")
+		}
+	}
 	if w.win != nil {
 		w.win.Invalidate()
 	}
@@ -190,7 +216,10 @@ func (w *Window) refresh() {
 		if doc.ViewMode == "" && doc.Path != "" {
 			doc.ViewMode = w.Preference("mgo.viewMode:" + doc.Path)
 		}
-		if doc.ViewMode == "richtext" || doc.ViewMode == "" {
+		if doc.ViewMode == "" {
+			doc.ViewMode = w.Preference(defaultViewPreference)
+		}
+		if doc.ViewMode != "markdown" && doc.ViewMode != "genui" {
 			doc.ViewMode = "preview"
 		}
 	}
@@ -406,7 +435,10 @@ func (w *Window) View(c *ui.Context) {
 		w.refresh()
 	}
 	d := w.documents[w.snapshot.ActiveID]
-	model := Model{Workspace: w.snapshot, Navigation: w.navigation, Recents: w.recents, Search: w.search, Message: w.failure, Feynman: w.PluginEnabled("feynman"), Git: w.PluginEnabled("git"), Spaces: map[string]string{}, Appearance: portrait.AppearanceNamed(w.Preference(appearancePreference))}
+	if d != nil {
+		d.source.SetLineNumbers(w.Preference(lineNumbersPreference) != "off")
+	}
+	model := Model{Workspace: w.snapshot, Navigation: w.navigation, Recents: w.recents, Search: w.search, Message: w.failure, Feynman: w.PluginEnabled("feynman"), Git: w.PluginEnabled("git"), Spaces: map[string]string{}, Appearance: portrait.AppearanceNamed(w.Preference(appearancePreference)), Preferences: w.store().values, PreferenceFile: w.store().path()}
 	for _, root := range w.snapshot.Workspaces {
 		model.Spaces[root.Root] = w.Preference(spacePreference + root.Root)
 	}
@@ -481,14 +513,36 @@ func (w *Window) View(c *ui.Context) {
 		Filter:        func(query string) { w.search, _ = w.host.SetFilter(w.ctx, query) },
 		SetSpace:      func(name string) { w.setPreference(spacePreference+w.snapshot.Root, name) },
 		SetAppearance: func(a portrait.Appearance) { w.setPreference(appearancePreference, string(a)) },
-		SetFeynman:    func(value bool) { w.setPlugin("feynman", value) }, SetGit: func(value bool) { w.setPlugin("git", value) },
+		SetPreference: w.setPreference, ResetPreferences: w.ResetPreferences, ResetPreferencePrefixes: w.ResetPreferencePrefixes,
+		RevealPreferences: func() {
+			if err := w.host.RevealPath(w.ctx, w.store().path()); err != nil {
+				w.failure = err.Error()
+			}
+		},
+		SetFeynman: func(value bool) { w.setPlugin("feynman", value) }, SetGit: func(value bool) { w.setPlugin("git", value) },
 	}
 	if !w.shell.ready {
-		if v, err := strconv.ParseFloat(w.Preference("mgo.researchWidth"), 32); err == nil && v >= 310 && v <= 800 {
+		w.shell.hideSidebar = w.Preference(sidebarHiddenPreference) == "on"
+		w.shell.hideResearch = w.Preference(researchHiddenPreference) == "on"
+		w.shell.outline = w.Preference(sidebarViewPreference) == "outline"
+		if v, err := strconv.ParseFloat(w.Preference("mgo.researchWidth"), 32); err == nil && v >= float64(portrait.Shell.ResearchMin) && v <= float64(portrait.Shell.ResearchMax) {
 			w.shell.rightWidth = float32(v)
 		}
 	}
 	oldWidth := w.shell.rightWidth
+	readingSize, _ := strconv.ParseFloat(w.Preference(readingSizePreference), 32)
+	codeSize, _ := strconv.ParseFloat(w.Preference(codeSizePreference), 32)
+	readingWidth, _ := strconv.ParseFloat(w.Preference(readingWidthPreference), 32)
+	if readingSize == 0 {
+		readingSize = 16
+	}
+	if codeSize == 0 {
+		codeSize = 13
+	}
+	if readingWidth == 0 {
+		readingWidth = float64(portrait.Editor.Column)
+	}
+	portrait.UseEditor(float32(readingSize), float32(codeSize), float32(readingWidth))
 	for _, spec := range w.toasts {
 		portrait.Notify(c, spec)
 	}

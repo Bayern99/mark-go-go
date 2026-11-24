@@ -208,7 +208,7 @@ func TestModelPickerGroupsByProviderWithPinnedAndRecent(t *testing.T) {
 		t.Fatal(err)
 	}
 	app.Frame()
-	if _, ok := app.AccessByRole(ui.RoleButton, "Back to providers"); !ok || !app.HasText("‹ Back") {
+	if _, ok := app.AccessByRole(ui.RoleButton, "Back to providers"); !ok || !app.HasText("Back") {
 		t.Fatal("drilling into a provider has no Back row")
 	}
 	if _, ok := app.AccessByRole(ui.RoleButton, "Use openai model gpt"); ok {

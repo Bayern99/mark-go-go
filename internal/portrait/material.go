@@ -42,6 +42,7 @@ func (s Surface) Apply(e ui.Element) ui.Element {
 
 type Glass struct {
 	Tint                       ui.Color
+	Fallback                   ui.Color
 	Blur, Saturate, Brightness float32
 	Highlight                  ui.RadialGradient
 	Rim                        Shadows
@@ -54,7 +55,11 @@ func (g Glass) Apply(e ui.Element) ui.Element {
 
 func (g Glass) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
 	if prefs := p.Preferences(); prefs.ReduceTransparency || prefs.HighContrast {
-		p.FillRadii(box, radii, Colors.Paper)
+		fill := g.Fallback
+		if fill == ui.Transparent {
+			fill = Colors.Paper
+		}
+		p.FillRadii(box, radii, fill)
 		return
 	}
 	glass.Blur{Radius: g.Blur}.PaintMaterial(p, box, radii)
@@ -68,7 +73,7 @@ type MaterialSet struct {
 	Raised, RaisedHover, RaisedPress                   Surface
 	AccentRaised, AccentRaisedHover, AccentRaisedPress Surface
 	Row, Sunken, Track, Sheet, Pop, Page               Surface
-	Glass, GlassOverlay                                Glass
+	Glass, GlassOverlay, Backdrop                      Glass
 	GlassSelected, GlassHover                          ui.Color
 }
 
@@ -115,6 +120,7 @@ func materialsFor(p Palette, dark bool) MaterialSet {
 				in(0, 0, 0, 0.5, white(0.60)), out(0, 0, 0, 0.5, black(0.10)), out(0, 4, 12, 0, black(0.06)), out(0, 24, 60, -12, black(0.22))}},
 			GlassSelected: white(0.85),
 			GlassHover:    white(0.50),
+			Backdrop:      Glass{Tint: p.ModalScrim, Fallback: p.ModalScrim, Blur: 12},
 		}
 	}
 	lift := func(t float32) ui.Color { return p.Paper.Mix(p.Ink, t) }
@@ -146,6 +152,7 @@ func materialsFor(p Palette, dark bool) MaterialSet {
 			in(0, 0, 0, 0.5, white(0.12)), out(0, 0, 0, 0.5, black(0.50)), out(0, 4, 12, 0, black(0.24)), out(0, 24, 60, -12, black(0.55))}},
 		GlassSelected: p.Paper.Alpha(0.85),
 		GlassHover:    white(0.06),
+		Backdrop:      Glass{Tint: p.ModalScrim, Fallback: p.ModalScrim, Blur: 12},
 	}
 }
 

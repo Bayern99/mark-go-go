@@ -18,7 +18,7 @@ func Alert(c *ui.Context, tone Tone, title, body string, actions ...AlertAction)
 	e := ui.Row(c).FillWidth().Gap(8).Padding(10, 12).Radius(Radii.M).Border(0.5, tone.Border).Background(tone.Wash).
 		AlignItems(ui.Start).Role(ui.RoleAlert).Label(label)
 	e.Children(func() {
-		Glyph(c, toneIcon(tone), 16, tone.Ink).Margin(1, 0, 0, 0).Shrink(0)
+		Glyph(c, toneIcon(tone), IconSizes.M, tone.Ink).Margin(1, 0, 0, 0).Shrink(0)
 		ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
 			if title != "" {
 				Type.UI.Apply(ui.Text(c, title)).FontWeight(600).TextColor(tone.Ink)

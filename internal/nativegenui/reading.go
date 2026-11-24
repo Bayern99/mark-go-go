@@ -422,7 +422,7 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 						if item.Done {
 							ink = portrait.Colors.Ink3
 							box.Background(portrait.Colors.Accent).Border(1, portrait.Colors.Accent).Children(func() {
-								portrait.Glyph(c, portrait.IconCheck, 11, portrait.Colors.OnAccent)
+								portrait.Glyph(c, portrait.IconCheck, portrait.IconSizes.XS, portrait.Colors.OnAccent)
 							})
 						}
 						portrait.Type.Reading.Apply(ui.Text(c, item.Text)).TextColor(ink).Grow(1).MinWidth(0)

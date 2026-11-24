@@ -9,12 +9,11 @@ import (
 )
 
 func drawDiff(c *ui.Context, hunks []review.DiffHunk, decisions map[string]review.HunkDecision) {
-	_, height := c.Size()
 	if len(hunks) == 0 {
 		portrait.Type.UI.Apply(ui.Text(c, "No changes.")).TextColor(portrait.Colors.Ink)
 		return
 	}
-	ui.Scroll(c).Height(min(250, height-160)).MinHeight(76).Label("Document diff").Children(func() {
+	ui.Scroll(c).MaxHeight(portrait.Diff.PanelMax).MinHeight(portrait.Diff.PanelMin).Label("Document diff").Children(func() {
 		ui.Column(c).Gap(8).Children(func() {
 			for _, h := range hunks {
 				drawHunk(c.Key(h.ID), h, decisions)
@@ -28,7 +27,7 @@ func drawHunk(c *ui.Context, h review.DiffHunk, decisions map[string]review.Hunk
 	if h.Conflict {
 		border = portrait.Colors.Danger
 	}
-	ui.Column(c).Border(1, border).Radius(8).Clip().Background(portrait.Colors.Paper).Children(func() {
+	ui.Column(c).Border(1, border).Radius(portrait.Diff.Radius).Clip().Background(portrait.Colors.Paper).Children(func() {
 		ui.Row(c).Wrap().Gap(6).Padding(5, 8).AlignItems(ui.Center).Justify(ui.SpaceBetween).
 			BorderWidth(0, 0, 1, 0).BorderColor(portrait.Colors.Line).Children(func() {
 			portrait.Diff.Range.Apply(ui.Text(c, h.Header)).TextColor(portrait.Colors.Ink3).FontFeatures("tnum")

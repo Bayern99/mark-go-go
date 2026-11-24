@@ -45,11 +45,16 @@ var tokenProvenance = func() map[string]string {
 	// Sizes reference coss's three desktop control tiers, tuned to Portrait's 22/28/32 density.
 	register(sourceDerived, "Sizes", "Compact", "Regular", "Large")
 	register(sourceWebUI, "Type", "Small", "UI", "Control", "Meta", "Code", "H4", "H5", "H6")
+	register(sourceDerived, "Type", "H3", "CodeSmall")
 	// Display, Title and Reading keep the WebUI sizes and take Arc's tracking rule.
 	register(sourceDerived, "Type", "Display", "Title", "Reading", "Heading")
 	register(sourceWuxing, "Spaces", "FiveElements", "MetalWater", "WoodFire", "Earth", "Metal", "Wood", "Water", "Fire")
 	register(sourceDerived, "DefaultSkeleton", "Period", "Base", "Glint")
 	register(sourceDerived, "Frame", "Inset", "InnerRadius", "OuterRadius")
+	register(sourceDerived, "Form", "Field", "FieldCompact", "Radius", "PadX", "Gap", "AreaMin", "AreaCompact", "AreaPadY", "LabelGap", "HelpGap", "SelectMin", "SelectMax", "MenuRow", "MenuRadius", "MenuPad", "MenuMin", "MenuMax", "PopoverPad", "PopoverGap", "PopoverHeader", "PopoverWide", "DialogWidth", "DialogPad", "DialogGap", "ListMax", "BubbleRatio", "BubbleMax")
+	register(sourceDerived, "Settings", "Width", "Height", "Margin", "Radius", "Rail", "Header", "Column", "ColumnPadX", "ColumnPadTop", "ColumnPadBottom", "GroupGap", "HeadingGap", "NavRow", "NavSectionGap", "Collapse", "Row", "RowCompact", "RowPadX", "RowPadY", "RowGap", "DescriptionMax", "SpacePreview")
+	register(sourceDerived, "Editor", "Body", "Code", "Column", "GutterLeft", "GutterRight", "BlockRadius", "BlockPadX", "BlockPadY", "Hairline")
+	register(sourceDerived, "IconSizes", "XS", "S", "M", "L")
 	return provenance
 }()
 
@@ -68,6 +73,10 @@ func TestEveryTokenDeclaresProvenance(t *testing.T) {
 		{"Frame", struct {
 			Inset, InnerRadius, OuterRadius float32
 		}{portrait.FrameInset, portrait.FrameInnerRadius, portrait.FrameOuterRadius}},
+		{"Form", portrait.Form},
+		{"Settings", portrait.Settings},
+		{"Editor", portrait.Editor},
+		{"IconSizes", portrait.IconSizes},
 	} {
 		collectTokenPaths(root.name, reflect.ValueOf(root.value), actual)
 	}

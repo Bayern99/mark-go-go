@@ -107,7 +107,7 @@ func TestGenerationAndCopyFeedback(t *testing.T) {
 			pending = nil
 		}
 		shell.Draw(c, model, Actions{}, Slots{Document: func(c *ui.Context) {
-			ui.TextInput(c, &text).Label("Document source").AutoFocus()
+			ui.TextInputBase(c, &text).Label("Document source").AutoFocus()
 		}})
 	}, 1280, 820)
 	pending = &portrait.ToastSpec{ID: "generation:a", Tone: portrait.Tones.Info, Title: "Generating…", Timeout: -1}

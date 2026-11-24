@@ -163,21 +163,26 @@ func TestWorkspaceMarksSwitchWorkspaces(t *testing.T) {
 	}
 }
 
-func TestSceneryMenuStoresTheChosenSpace(t *testing.T) {
+func TestScenerySettingsStoreTheChosenSpace(t *testing.T) {
 	var shell nativeui.Shell
 	model := libraryModel()
 	var chosen []string
 	app := ui.NewTester(func(c *ui.Context) {
 		shell.Draw(c, model, nativeui.Actions{SetSpace: func(name string) { chosen = append(chosen, name) }}, nativeui.Slots{})
 	}, 1280, 820)
-	if err := app.Click("Switch workspace"); err != nil {
-		t.Fatal(err)
-	}
-	if err := app.ChooseMenuItem("Space", "Wood–Fire"); err != nil {
+	app.Frame()
+	shell.OpenSettings("appearance")
+	app.Frame()
+	if err := app.Click("Space: Wood–Fire"); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(chosen, []string{"WoodFire"}) {
-		t.Fatalf("space menu stored %v, want WoodFire", chosen)
+		t.Fatalf("space settings stored %v, want WoodFire", chosen)
+	}
+	if err := app.Click("Switch workspace"); err == nil {
+		if err := app.ChooseMenuItem("Space", "Wood–Fire"); err == nil {
+			t.Fatal("workspace switcher still contains a Space editor")
+		}
 	}
 }
 
@@ -321,47 +326,41 @@ func TestSidebarFooterSwitchesWuXingSpaceAndAppearance(t *testing.T) {
 	}
 }
 
-func TestSettingsDialogSwitchesSpaceAppearanceAndFeynmanTabs(t *testing.T) {
+func TestSettingsCenterNavigatesCategories(t *testing.T) {
 	t.Cleanup(func() { portrait.Use(portrait.DefaultSpace, false) })
 	var shell nativeui.Shell
 	model := libraryModel()
-	var seenTabs []string
-	actions := nativeui.Actions{
-		SetSpace:      func(name string) { model.Spaces = map[string]string{model.Workspace.Root: name} },
-		SetAppearance: func(a portrait.Appearance) { model.Appearance = a },
-	}
-	slots := nativeui.Slots{
-		FeynmanSettings: func(c *ui.Context, tab string) {
-			seenTabs = append(seenTabs, tab)
-			portrait.Type.UI.Apply(ui.Text(c, "Feynman tab: "+tab))
+	slots := nativeui.Slots{Settings: []nativeui.SettingsPage{{
+		ID: "fake", Section: "Research", Label: "Registered Page", Icon: portrait.IconCube, Order: 100,
+		Draw: func(c *ui.Context, q nativeui.SettingsQuery) {
+			portrait.Type.UI.Apply(ui.Text(c, "Registered page body"))
 		},
-	}
-	app := ui.NewTester(func(c *ui.Context) {
-		shell.Draw(c, model, actions, slots)
-	}, 1280, 820)
+	}}}
+	app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, model, nativeui.Actions{}, slots) }, 1280, 820)
 	app.Frame()
 	app.Key(ui.Cmd, ui.KeyComma)
 	app.Frame()
 	if _, ok := app.AccessByRole(ui.RoleDialog, "Settings"); !ok {
-		t.Fatal("Command-, did not open the dedicated Settings modal")
+		t.Fatal("Command-, did not open Settings")
 	}
-	if err := app.Click("Models & Auth"); err != nil {
+	for _, category := range []string{"General", "Appearance", "Editor", "Shortcuts", "Plugins", "Registered Page"} {
+		if _, ok := app.AccessByRole(ui.RoleTab, category); !ok {
+			t.Errorf("missing rail category %q", category)
+		}
+	}
+	if err := app.Click("Registered Page"); err != nil {
 		t.Fatal(err)
 	}
 	app.Frame()
-	if !app.HasText("Feynman tab: models") {
-		t.Fatal("Models & Auth did not render Feynman settings slot")
+	if !app.HasText("Registered page body") {
+		t.Fatal("registered page did not draw")
 	}
-	if err := app.Click("Tools & MCP"); err != nil {
-		t.Fatal(err)
-	}
-	app.Frame()
-	if !app.HasText("Feynman tab: tools") {
-		t.Fatal("Tools & MCP did not render Feynman settings slot")
+	if heading, ok := app.AccessByRole(ui.RoleHeading, "Registered Page"); !ok || heading.Name != "Registered Page" {
+		t.Fatalf("breadcrumb did not change: %+v", heading)
 	}
 	app.Key(0, ui.KeyEscape)
 	app.Frame()
 	if _, ok := app.AccessByRole(ui.RoleDialog, "Settings"); ok {
-		t.Fatal("Escape left Settings modal open")
+		t.Fatal("Escape left Settings open")
 	}
 }

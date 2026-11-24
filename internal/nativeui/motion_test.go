@@ -173,12 +173,19 @@ func TestReducedMotionDrawersLandAtOnce(t *testing.T) {
 	}
 }
 
-func overflowModel() nativeui.Model {
-	return nativeui.Model{Workspace: workspace.WorkspaceSnapshot{ActiveID: "a", Documents: []workspace.DocumentInfo{{ID: "a", Name: "One.md"}, {ID: "b", Name: "Two.md"}, {ID: "c", Name: "Three.md"}, {ID: "d", Name: "Four.md"}, {ID: "e", Name: "Five.md"}}}}
-}
-
-func overflowShell(prefs ui.Preferences) *ui.Tester {
-	return narrowShell(prefs, overflowModel())
+func checkpointsShell(prefs ui.Preferences, restore func()) *ui.Tester {
+	var shell nativeui.Shell
+	var label string
+	model := nativeui.Model{Git: true, Workspace: workspace.WorkspaceSnapshot{ActiveID: "a", Documents: []workspace.DocumentInfo{{ID: "a", Name: "One.md", ViewMode: "preview"}}}}
+	slots := nativeui.Slots{Checkpoints: func(c *ui.Context) {
+		ui.Column(c).Width(240).Gap(6).Children(func() {
+			ui.TextInputBase(c, &label).Label("Checkpoint label")
+			if ui.Button(c, "Restore checkpoint").Clicked() && restore != nil {
+				restore()
+			}
+		})
+	}}
+	return ui.NewTesterWith(func(c *ui.Context) { shell.Draw(c, model, nativeui.Actions{}, slots) }, 480, 360, ui.TesterOptions{Preferences: prefs})
 }
 
 func changingFramesIn(frames []*image.RGBA, r ui.Rect) int {
@@ -210,14 +217,14 @@ func changedPixelsIn(a, b *image.RGBA, r ui.Rect) int {
 }
 
 func TestPopoverEntersThroughIntermediateStatesThenSettles(t *testing.T) {
-	app := overflowShell(ui.Preferences{})
-	if err := app.Click("More documents"); err != nil {
+	app := checkpointsShell(ui.Preferences{}, nil)
+	if err := app.Click("Checkpoints"); err != nil {
 		t.Fatal(err)
 	}
 	popup := func() ui.Rect {
 		p, ok := app.AccessByRole(ui.RolePopup, "")
 		if !ok {
-			t.Fatal("overflow popover is not open")
+			t.Fatal("checkpoints popover is not open")
 		}
 		return p.Bounds
 	}
@@ -253,19 +260,18 @@ func TestPopoverEntersThroughIntermediateStatesThenSettles(t *testing.T) {
 
 func TestPopoverPointerCloseLeavesThroughAnExitThenTakesNoInput(t *testing.T) {
 	var activated []string
-	actions := nativeui.Actions{Activate: func(id string) { activated = append(activated, id) }}
-	app := narrowShellActions(ui.Preferences{}, overflowModel(), actions)
-	if err := app.Click("More documents"); err != nil {
+	app := checkpointsShell(ui.Preferences{}, func() { activated = append(activated, "restore") })
+	if err := app.Click("Checkpoints"); err != nil {
 		t.Fatal(err)
 	}
 	app.Advance(time.Second)
 	pop, ok := app.AccessByRole(ui.RolePopup, "")
 	if !ok {
-		t.Fatal("overflow popover is not open")
+		t.Fatal("checkpoints popover is not open")
 	}
-	item, ok := app.Access("Five.md")
+	item, ok := app.Access("Restore checkpoint")
 	if !ok {
-		t.Fatal("Five.md is not in the overflow popover")
+		t.Fatal("Restore checkpoint is not in the popover")
 	}
 	cx, cy := item.Bounds.X+item.Bounds.W/2, item.Bounds.Y+item.Bounds.H/2
 	app.ClickAt(240, 300)
@@ -289,50 +295,50 @@ func TestPopoverPointerCloseLeavesThroughAnExitThenTakesNoInput(t *testing.T) {
 	activated = nil
 	app.ClickAt(cx, cy)
 	if len(activated) != 0 {
-		t.Fatalf("clicking where Five.md was activated %v", activated)
+		t.Fatalf("clicking where Restore checkpoint was activated %v", activated)
 	}
 	if _, ok := app.AccessByRole(ui.RolePopup, ""); ok {
 		t.Fatal("clicking where the popover was reopened it")
 	}
 	t.Run("during the exit", func(t *testing.T) {
 		var hits []string
-		fresh := narrowShellActions(ui.Preferences{}, overflowModel(), nativeui.Actions{Activate: func(id string) { hits = append(hits, id) }})
-		if err := fresh.Click("More documents"); err != nil {
+		fresh := checkpointsShell(ui.Preferences{}, func() { hits = append(hits, "restore") })
+		if err := fresh.Click("Checkpoints"); err != nil {
 			t.Fatal(err)
 		}
 		fresh.Advance(time.Second)
-		item, ok := fresh.Access("Five.md")
+		item, ok := fresh.Access("Restore checkpoint")
 		if !ok {
-			t.Fatal("Five.md is not in the overflow popover")
+			t.Fatal("Restore checkpoint is not in the popover")
 		}
 		fresh.ClickAt(240, 300)
 		fresh.Advance(16 * time.Millisecond)
 		fresh.ClickAt(item.Bounds.X+item.Bounds.W/2, item.Bounds.Y+item.Bounds.H/2)
 		if len(hits) != 0 {
-			t.Fatalf("clicking where Five.md was during its exit activated %v", hits)
+			t.Fatalf("clicking where Restore checkpoint was during its exit activated %v", hits)
 		}
 	})
 }
 
 func TestPopoverLandsAtOnceForKeyboard(t *testing.T) {
-	app := overflowShell(ui.Preferences{})
-	focus(t, app, "More documents")
+	app := checkpointsShell(ui.Preferences{}, nil)
+	focus(t, app, "Checkpoints")
 	app.Key(0, ui.KeyEnter)
-	f, ok := app.Access("Filter open tabs")
+	f, ok := app.Access("Checkpoint label")
 	if !ok {
-		t.Fatal("overflow popover is not open")
+		t.Fatal("checkpoints popover is not open")
 	}
 	start := f.Bounds
 	app.Advance(time.Second)
-	g, ok := app.Access("Filter open tabs")
+	g, ok := app.Access("Checkpoint label")
 	if !ok {
-		t.Fatal("overflow popover closed")
+		t.Fatal("checkpoints popover closed")
 	}
 	if start != g.Bounds {
 		t.Fatalf("keyboard-opened popover animated in: %v then %v", start, g.Bounds)
 	}
 	app.Key(0, ui.KeyEscape)
-	if !app.Focused("More documents") {
+	if !app.Focused("Checkpoints") {
 		t.Fatal("closing the popover should return focus to its opener")
 	}
 	app.Advance(50 * time.Millisecond)
@@ -344,15 +350,15 @@ func TestPopoverLandsAtOnceForKeyboard(t *testing.T) {
 }
 
 func TestReducedMotionPopoverLandsAtOnce(t *testing.T) {
-	app := overflowShell(ui.Preferences{ReduceMotion: true})
-	if err := app.Click("More documents"); err != nil {
+	app := checkpointsShell(ui.Preferences{ReduceMotion: true}, nil)
+	if err := app.Click("Checkpoints"); err != nil {
 		t.Fatal(err)
 	}
-	f, opened := app.Access("Filter open tabs")
+	f, opened := app.Access("Checkpoint label")
 	app.Advance(time.Second)
-	g, stayed := app.Access("Filter open tabs")
+	g, stayed := app.Access("Checkpoint label")
 	if !opened || !stayed {
-		t.Fatal("overflow popover is not open")
+		t.Fatal("checkpoints popover is not open")
 	}
 	if f.Bounds != g.Bounds {
 		t.Fatalf("popover moved with reduced motion: %v then %v", f.Bounds, g.Bounds)

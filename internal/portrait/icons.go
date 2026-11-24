@@ -53,3 +53,18 @@ var (
 	IconWarningOctagon = Icon{Glyph: "\ue4e4"}
 	IconCopy           = Icon{Glyph: "\ue1ca"}
 )
+
+var (
+	IconPlus                  = Icon{Glyph: "\ue3d4"}
+	IconCommand               = Icon{Glyph: "\ue1c4"}
+	IconHash                  = Icon{Glyph: "\ue2a2"}
+	IconClockCounterClockwise = Icon{Glyph: "\ue1a0"}
+	IconArrowElbowDownLeft    = Icon{Glyph: "\ue044"}
+	IconPalette               = Icon{Glyph: "\ue6c8"}
+	IconEye                   = Icon{Glyph: "\ue220"}
+	IconCode                  = Icon{Glyph: "\ue1bc"}
+	IconSparkle               = Icon{Glyph: "\ue6a2"}
+	IconArrowRight            = Icon{Glyph: "\ue06c"}
+	IconFolderPlus            = Icon{Glyph: "\ue258"}
+	IconFunnel                = Icon{Glyph: "\ue266"}
+)

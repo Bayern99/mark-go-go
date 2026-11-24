@@ -17,6 +17,7 @@ func TestTonesMeetWCAGAA(t *testing.T) {
 	}{
 		{"Neutral", portrait.Tones.Neutral},
 		{"Accent", portrait.Tones.Accent},
+		{"Success", portrait.Tones.Success},
 		{"Info", portrait.Tones.Info},
 		{"Warning", portrait.Tones.Warning},
 		{"Danger", portrait.Tones.Danger},
@@ -50,6 +51,19 @@ func TestTonesMeetWCAGAA(t *testing.T) {
 			t.Logf("Ink/Paper %.3f; Ink/Wash %.3f; Border/Paper %.3f; Ring/Paper %.3f; OnSolid rest/hover/press %.3f/%.3f/%.3f",
 				inkPaper, inkWash, border, ring, onSolid[0], onSolid[1], onSolid[2])
 		})
+	}
+}
+
+func TestSceneryKeepsSidebarInkReadable(t *testing.T) {
+	for _, space := range portrait.Spaces {
+		for end, scenery := range map[string]ui.Color{"from": space.From, "to": space.To} {
+			ground := wcagColor(scenery)
+			assertWCAGContrast(t, space.Name+" "+end+": Ink", wcagContrast(wcagColor(portrait.Colors.Ink), ground), 7)
+			assertWCAGContrast(t, space.Name+" "+end+": Ink2", wcagContrast(wcagColor(portrait.Colors.Ink2), ground), 4.5)
+			selected := wcagOver(wcagColor(portrait.Materials.GlassSelected), ground)
+			assertWCAGContrast(t, space.Name+" "+end+": Ink3 on a selected row", wcagContrast(wcagColor(portrait.Colors.Ink3), selected), 4.5)
+		}
+		assertWCAGContrast(t, space.Name+": Mark on its scenery", wcagContrast(wcagColor(space.Mark), wcagColor(space.From)), 1.8)
 	}
 }
 

@@ -27,12 +27,12 @@ var RegisterFonts = sync.OnceValue(func() error {
 		switch {
 		case strings.Contains(path, "IBMPlexSansSC"):
 			name = "IBM Plex Sans SC"
-		case strings.Contains(path, "ibm-plex-sans"):
-			name = "IBM Plex Sans"
+		case strings.Contains(path, "inter-display"):
+			name = "Inter Display"
+		case strings.Contains(path, "inter-"):
+			name = "Inter"
 		case strings.Contains(path, "ibm-plex-mono"):
 			name = "IBM Plex Mono"
-		case strings.Contains(path, "barlow-semi-condensed"):
-			name = "Barlow Semi Condensed"
 		case strings.Contains(path, "Phosphor"):
 			name = "Phosphor"
 		}

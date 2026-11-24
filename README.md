@@ -2,11 +2,11 @@
 
 [English](README.en.md) · [致谢与许可](ACKNOWLEDGMENTS.md)
 
-Mark Go Go 是 macOS 本地 Markdown 编辑器。多个文件夹工作区共享窗口和文档标签，`Ctrl+Tab` 在最近的文档间往返。按 `⌘/` 在可编辑的预览和 Markdown 间切换。切到中央的 **GenUI**，在视图右上角打开 **Generation settings**，即可选择模型、生成或更新阅读视图。
+Mark Go Go 是 macOS 本地 Markdown 编辑器。多个文件夹工作区共享窗口和侧栏里的文档标签，`Ctrl+Tab` 在最近的文档间往返。按 `⌘K` 打开命令栏搜索原文、文件、标题和命令，`⌘0` 收起或显示侧栏，`⌘/` 在可编辑的预览和 Markdown 间切换。切到中央的 **GenUI**，在视图右上角打开 **Generation settings**，即可选择模型、生成或更新阅读视图。
 
 ## 可选插件
 
-左栏的 **Workspace / Outline** 可切换工作区文件和当前文档大纲。桌面端在文档标签栏的 **Plugins** 菜单中分别启用 Feynman 和 Git。两项初始均关闭。
+侧栏的 **Files / Outline** 可切换工作区文件和当前文档大纲。在侧栏底部的 **Plugins** 菜单或命令栏中分别启用 Feynman 和 Git。两项初始均关闭。
 
 **Feynman** 直接使用本机 Feynman CLI 的 RPC 模式。安装 Feynman 并启用插件，如需登录可在应用的 Feynman 设置中操作。右侧为英文 Portrait 面板，同一工作区切换文档时对话和输入草稿会保留。拖动分隔线可调整宽度，窄窗使用抽屉。[Feynman 设置指南](https://feynman.is/docs/getting-started/setup)
 

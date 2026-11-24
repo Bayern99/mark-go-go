@@ -988,7 +988,7 @@ func typeface(text string) string {
 			return "IBM Plex Sans SC"
 		}
 	}
-	return "IBM Plex Sans"
+	return "Inter"
 }
 
 type textStyle struct {

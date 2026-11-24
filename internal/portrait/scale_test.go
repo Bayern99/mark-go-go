@@ -11,7 +11,7 @@ import (
 
 func TestScalesAreClosed(t *testing.T) {
 	assertClosedScale(t, "Sizes", reflect.ValueOf(portrait.Sizes), []float32{22, 28, 32})
-	assertClosedScale(t, "Radii", reflect.ValueOf(portrait.Radii), []float32{4, 6, 8, 12, 14, 999, 9, 7})
+	assertClosedScale(t, "Radii", reflect.ValueOf(portrait.Radii), []float32{4, 6, 8, 12, 16, 999, 10, 8})
 
 	typography := reflect.ValueOf(portrait.Type)
 	for i := 0; i < typography.NumField(); i++ {
@@ -23,8 +23,8 @@ func TestScalesAreClosed(t *testing.T) {
 }
 
 func TestDerivedTokenInvariants(t *testing.T) {
-	if portrait.Tones.Success != portrait.Tones.Accent {
-		t.Error("Success must have exactly the Accent token values")
+	if portrait.Tones.Info != portrait.Tones.Accent {
+		t.Error("Info must have exactly the Accent token values")
 	}
 	for _, tc := range []struct {
 		name string
@@ -59,8 +59,26 @@ func TestDerivedTokenInvariants(t *testing.T) {
 	if alpha := float32(portrait.Colors.ModalScrim.A) / 255; alpha > 0.16 {
 		t.Errorf("ModalScrim alpha = %v, want at most 0.16", alpha)
 	}
-	if distance := tokenHueDistance(portrait.Tones.Info.Solid, portrait.Tones.Accent.Solid); distance < 30 {
-		t.Errorf("Info and Accent hue distance = %.3f degrees, want at least 30", distance)
+	if distance := tokenHueDistance(portrait.Tones.Success.Solid, portrait.Tones.Accent.Solid); distance < 60 {
+		t.Errorf("Success and Accent hue distance = %.3f degrees, want at least 60", distance)
+	}
+	if portrait.Shell.PageRadius != portrait.Radii.L || portrait.Shell.Row != portrait.Sizes.Large {
+		t.Errorf("Shell page radius %v and row %v, want Radii.L and Sizes.Large", portrait.Shell.PageRadius, portrait.Shell.Row)
+	}
+	if portrait.DefaultSpace != portrait.Spaces[1] || portrait.SpaceFor("") != portrait.DefaultSpace {
+		t.Error("a window without a folder takes the default scenery")
+	}
+	for _, root := range []string{"/a", "/Users/ada/Field Notes", "C:\\notes"} {
+		space := portrait.SpaceFor(root)
+		if space != portrait.SpaceFor(root) || space == portrait.Spaces[0] {
+			t.Errorf("SpaceFor(%q) = %s, want one stable coloured scenery", root, space.Name)
+		}
+		if named, ok := portrait.SpaceNamed(space.Name); !ok || named != space {
+			t.Errorf("SpaceNamed(%q) does not return the scenery it names", space.Name)
+		}
+	}
+	if _, ok := portrait.SpaceNamed("Nowhere"); ok {
+		t.Error("SpaceNamed accepted a name outside the closed set")
 	}
 }
 

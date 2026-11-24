@@ -25,8 +25,8 @@ type HighlightSet struct {
 
 var Highlights = HighlightSet{
 	Jump: Highlight{Duration: Motion.Jump, Ease: Motion.EaseOut, Radius: 6, Frames: []TintFrame{
-		{At: 0, Color: ui.RGBA(47, 111, 98, 0.16), Opacity: 0.65},
-		{At: 0.35, Color: ui.RGBA(47, 111, 98, 0.12), Opacity: 1},
+		{At: 0, Color: Colors.Accent.Alpha(0.16), Opacity: 0.65},
+		{At: 0.35, Color: Colors.Accent.Alpha(0.12), Opacity: 1},
 		{At: 1, Color: ui.Transparent, Opacity: 1},
 	}},
 }

@@ -236,7 +236,7 @@ const (
 )
 
 func cardTitle(c *ui.Context, title string) {
-	portrait.Type.Meta.In(portrait.FontDisplay).Apply(ui.Text(c, strings.ToUpper(title))).
+	portrait.Type.Meta.Apply(ui.Text(c, strings.ToUpper(title))).
 		FontWeight(600).LetterSpacing(0.07 * portrait.Type.Meta.Size).TextColor(portrait.Colors.Ink3).Role(ui.RoleHeading).Label(title)
 }
 func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
@@ -336,7 +336,7 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 					var s string
 					if json.Unmarshal(raw, &s) == nil {
 						ui.Row(c.Key(i)).Gap(8).AlignItems(ui.Start).Children(func() {
-							portrait.Type.Meta.In(portrait.FontDisplay).Apply(ui.Text(c, fmt.Sprintf("%02d", i+1))).FontWeight(600).FontFeatures("tnum").
+							portrait.Type.Meta.Apply(ui.Text(c, fmt.Sprintf("%02d", i+1))).FontWeight(600).FontFeatures("tnum").
 								TextColor(portrait.Colors.Ink3).Width(24).Shrink(0).Padding(4, 0, 0, 0).AccessHidden(true)
 							portrait.Type.Reading.Apply(ui.Text(c, s)).Grow(1).MinWidth(0).Selectable()
 						})
@@ -371,7 +371,7 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 								change := portrait.Colors.Ink3
 								switch m.Trend {
 								case "up":
-									change = portrait.Colors.Accent
+									change = portrait.Colors.Success
 								case "down":
 									change = portrait.Colors.Danger
 								}

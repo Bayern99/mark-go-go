@@ -55,7 +55,7 @@ func diffLine(c *ui.Context, line review.DiffLine) {
 	sigil, sigilInk, tint := " ", portrait.Colors.Ink3, ui.Transparent
 	switch line.Kind {
 	case review.DiffLineInsert:
-		sigil, sigilInk, tint = "+", portrait.Colors.Accent, portrait.Diff.Insert
+		sigil, sigilInk, tint = "+", portrait.Colors.Success, portrait.Diff.Insert
 	case review.DiffLineDelete:
 		sigil, sigilInk, tint = "−", portrait.Colors.Danger, portrait.Diff.Delete
 	}

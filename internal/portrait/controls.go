@@ -70,14 +70,14 @@ type Segments struct {
 
 func Track(c *ui.Context, group string, build func(s *Segments)) ui.Element {
 	t := ui.Row(c.Key("track:" + group)).Role(ui.RoleTabList).Padding(2).Gap(2).Radius(Radii.Track).AlignItems(ui.Center)
-	Surface{Materials.GlassSelected, Materials.GlassSelected, Materials.Track.Shadows}.Apply(t)
+	Materials.Track.Apply(t)
 	s := &Segments{group: group}
 	t.Children(func() { build(s) })
 	return t
 }
 
 func (s *Segments) Segment(c *ui.Context, title, label string, selected bool) ui.Element {
-	b := ui.ButtonBase(c.Key(label)).Label(label).Height(24).Padding(0, 10).Radius(Radii.Segment).AlignItems(ui.Center).Justify(ui.Center).MinWidth(0)
+	b := ui.ButtonBase(c.Key(label)).Label(label).Height(Sizes.Regular-4).Padding(0, 10).Radius(Radii.Segment).AlignItems(ui.Center).Justify(ui.Center).MinWidth(0)
 	ink := Colors.Ink3
 	if selected || b.Hovered() {
 		ink = Colors.Ink
@@ -90,19 +90,27 @@ func (s *Segments) Segment(c *ui.Context, title, label string, selected bool) ui
 }
 
 func (s *Segments) Capsule(c *ui.Context, owner ui.Element, selected bool) {
-	capsule(c, owner, selected, s.group, Radii.Segment)
+	capsule(c, owner, selected, s.group, Radii.Segment, Materials.Raised)
 }
 
+// RowCapsule marks the selected row of a list with a raised sheet that
+// slides between rows of the same group.
 func RowCapsule(c *ui.Context, owner ui.Element, selected bool, group string) {
-	capsule(c, owner, selected, group, Radii.M)
+	capsule(c, owner, selected, group, Radii.M, Materials.Raised)
 }
 
-func capsule(c *ui.Context, _ ui.Element, selected bool, group string, radius float32) {
+// RowWash marks a selected row that echoes a selection made elsewhere, as a
+// file whose document already has the raised capsule among the open ones.
+func RowWash(c *ui.Context, owner ui.Element, selected bool, group string) {
+	capsule(c, owner, selected, group, Radii.M, flat(Materials.GlassHover))
+}
+
+func capsule(c *ui.Context, _ ui.Element, selected bool, group string, radius float32, surface Surface) {
 	if !selected {
 		return
 	}
 	capsule := ui.Row(c.Key("capsule")).Absolute().Top(0).Left(0).Right(0).Bottom(0).Radius(radius).AccessHidden(true).IgnoreInput(true)
-	Materials.Raised.Apply(capsule)
+	surface.Apply(capsule)
 	if group != "" {
 		capsule.Transition(Transition(c, c.KeyboardInput(), ui.ElementTransition{Match: "capsule:" + group, Duration: Motion.Switch, Ease: Motion.EaseInOut.Easing()}))
 	}
@@ -132,7 +140,7 @@ func Popover(c *ui.Context, anchor ui.Element, open *bool, build func()) ui.Elem
 				keys.dismiss = true
 			}
 		})
-		panel.MinWidth(anchor.Bounds().W).Margin(6, 0, 0, 0).Padding(5).Radius(Radii.L).Gap(2)
+		panel.MinWidth(anchor.Bounds().W).Margin(6, 0, 0, 0).Padding(6).Radius(Radii.L).Gap(2)
 		Materials.GlassOverlay.Apply(panel).AttachedOrigin().Transition(Overlays.Popup.Transition(c, keyboard))
 		build()
 	})

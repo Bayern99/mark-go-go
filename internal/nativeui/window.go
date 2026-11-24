@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -52,9 +53,16 @@ type Window struct {
 	menuKnown, menuUndo, menuRedo bool
 }
 
+const spacePreference = "mgo.space:"
+
 func NewWindow(host *workspace.Service, opts mygo.WindowOptions, extensions ...func(*Window) Panels) *mygo.Window {
 	w := &Window{host: host, documents: make(map[string]*openDocument)}
 	opts.Content = ui.View(w.View)
+	if runtime.GOOS == "darwin" {
+		opts.TitleBarStyle = mygo.TitleBarHidden
+		opts.TrafficLightPosition = &mygo.Point{X: 16, Y: 21}
+		opts.Vibrancy = mygo.VibrancySidebar
+	}
 	mygo.RunOnMain(func() {
 		if err := portrait.RegisterFonts(); err != nil {
 			w.failure = err.Error()
@@ -76,7 +84,7 @@ func NewWindow(host *workspace.Service, opts mygo.WindowOptions, extensions ...f
 			}
 		})
 		workspace.SearchReady.Listen(w.win, func(r workspace.NavSearchResult) {
-			if r.Root == w.snapshot.Root && r.Query == strings.TrimSpace(w.shell.queries[r.Root]) {
+			if r.Root == w.snapshot.Root && r.Query == strings.TrimSpace(w.shell.searchQuery(r.Root)) {
 				w.search = r
 			}
 		})
@@ -332,7 +340,11 @@ func (w *Window) View(c *ui.Context) {
 		w.refresh()
 	}
 	d := w.documents[w.snapshot.ActiveID]
-	model := Model{Workspace: w.snapshot, Navigation: w.navigation, Recents: w.recents, Search: w.search, Message: w.failure, Feynman: w.PluginEnabled("feynman"), Git: w.PluginEnabled("git")}
+	model := Model{Workspace: w.snapshot, Navigation: w.navigation, Recents: w.recents, Search: w.search, Message: w.failure, Feynman: w.PluginEnabled("feynman"), Git: w.PluginEnabled("git"), Spaces: map[string]string{}}
+	for _, root := range w.snapshot.Workspaces {
+		model.Spaces[root.Root] = w.Preference(spacePreference + root.Root)
+	}
+	model.Spaces[w.snapshot.Root] = w.Preference(spacePreference + w.snapshot.Root)
 	if d != nil {
 		doc := w.Active()
 		if d.crumbPath != doc.Path || d.crumbRoot != doc.WorkspaceRoot {
@@ -343,7 +355,7 @@ func (w *Window) View(c *ui.Context) {
 		model.Crumbs = d.crumbs
 		model.Version = d.reloadVersion
 	}
-	if d != nil && w.shell.outline {
+	if d != nil && w.shell.wantsSections() {
 		if d.sections == nil || d.outlineVersion != d.source.Version() {
 			d.sections = workspace.ExtractSections(d.source.Source())
 			d.outlineVersion = d.source.Version()
@@ -401,6 +413,7 @@ func (w *Window) View(c *ui.Context) {
 			}
 		},
 		Filter:     func(query string) { w.search, _ = w.host.SetFilter(w.ctx, query) },
+		SetSpace:   func(name string) { w.setPreference(spacePreference+w.snapshot.Root, name) },
 		SetFeynman: func(value bool) { w.setPlugin("feynman", value) }, SetGit: func(value bool) { w.setPlugin("git", value) },
 	}
 	if !w.shell.ready {

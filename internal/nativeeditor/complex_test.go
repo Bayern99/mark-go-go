@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/nativeeditor"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -126,7 +127,8 @@ func TestTableColumnResizeFromBodyCellBoundary(t *testing.T) {
 	tt.Move(x, y)
 	img := tt.Image()
 	r, g, b, _ := img.At(int(x), int(y)).RGBA()
-	if dr, dg, db := int(r>>8)-47, int(g>>8)-111, int(b>>8)-98; dr*dr+dg*dg+db*db > 3*8*8 {
+	accentInk := portrait.Colors.Accent
+	if dr, dg, db := int(r>>8)-int(accentInk.R), int(g>>8)-int(accentInk.G), int(b>>8)-int(accentInk.B); dr*dr+dg*dg+db*db > 3*8*8 {
 		t.Fatalf("no accent guide at the boundary: pixel %x %x %x", r, g, b)
 	}
 
@@ -211,7 +213,8 @@ func TestTableColumnResizeCoversWrappedRows(t *testing.T) {
 	img := tt.Image()
 	accent := func(x, y float32) bool {
 		r, g, b, _ := img.At(int(x), int(y)).RGBA()
-		dr, dg, db := int(r>>8)-47, int(g>>8)-111, int(b>>8)-98
+		ink := portrait.Colors.Accent
+		dr, dg, db := int(r>>8)-int(ink.R), int(g>>8)-int(ink.G), int(b>>8)-int(ink.B)
 		return dr*dr+dg*dg+db*db <= 3*8*8
 	}
 	if !accent(x, y) {

@@ -9,10 +9,10 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-func TestFontStacksMatchTheWebUIBaseline(t *testing.T) {
+func TestFontStacksMatchTheirLockedValues(t *testing.T) {
 	for _, tc := range []struct{ name, got, want string }{
-		{"sans", portrait.FontSans, "IBM Plex Sans, IBM Plex Sans SC"},
-		{"display", portrait.FontDisplay, "Barlow Semi Condensed, IBM Plex Sans, IBM Plex Sans SC"},
+		{"sans", portrait.FontSans, "Inter, IBM Plex Sans SC"},
+		{"display", portrait.FontDisplay, "Inter Display, Inter, IBM Plex Sans SC"},
 		{"mono", portrait.FontMono, "IBM Plex Mono, IBM Plex Sans SC"},
 		{"icons", portrait.FontIcons, "Phosphor"},
 	} {
@@ -22,16 +22,16 @@ func TestFontStacksMatchTheWebUIBaseline(t *testing.T) {
 	}
 }
 
-func TestTypeScaleMatchesTheWebUIBaseline(t *testing.T) {
+func TestTypeScaleMatchesItsLockedValues(t *testing.T) {
 	for _, tc := range []struct {
 		name                    string
 		got                     portrait.TypeStyle
 		size, leading, tracking float32
 		family                  string
 	}{
-		{"display", portrait.Type.Display, 28, 36, 0, portrait.FontSans},
-		{"title", portrait.Type.Title, 20, 28, 0, portrait.FontSans},
-		{"reading", portrait.Type.Reading, 16, 28, 0.16, portrait.FontSans},
+		{"display", portrait.Type.Display, 28, 36, -0.56, portrait.FontSans},
+		{"title", portrait.Type.Title, 20, 28, -0.24, portrait.FontSans},
+		{"reading", portrait.Type.Reading, 16, 28, 0, portrait.FontSans},
 		{"small", portrait.Type.Small, 14, 22, 0, portrait.FontSans},
 		{"ui", portrait.Type.UI, 13, 18, 0, portrait.FontSans},
 		{"control", portrait.Type.Control, 13, 20, 0, portrait.FontSans},
@@ -73,30 +73,30 @@ func TestNoTextStyleIsSmallerThanTwelve(t *testing.T) {
 	}
 }
 
-func TestDisplayFamilyIsSizeAdjustedLikeMGGCondensed(t *testing.T) {
-	h1 := portrait.Type.Display.In(portrait.FontDisplay).Font(600)
-	if h1.Family != portrait.FontDisplay || !near(h1.Size, 29.4) || h1.Weight != 600 {
-		t.Fatalf("display h1 font %+v, want 29.4px Barlow stack", h1)
+func TestDisplayFamilyKeepsItsSizeAndTightensTracking(t *testing.T) {
+	h1 := portrait.Type.Display.In(portrait.FontDisplay)
+	if font := h1.Font(600); font.Family != portrait.FontDisplay || font.Size != 28 || font.Weight != 600 {
+		t.Fatalf("display h1 font %+v, want 28px Inter Display stack", font)
 	}
-	if got := portrait.Type.Display.In(portrait.FontDisplay).Leading; got != 36 {
-		t.Fatalf("display leading %v, want 36", got)
+	if h1.RenderedSize() != h1.Size || h1.Leading != 36 || !near(h1.LineHeight(), 36.0/28) {
+		t.Fatalf("display h1 %+v renders at %v with line height %v, want 28/36 unadjusted", h1, h1.RenderedSize(), h1.LineHeight())
 	}
-	if got := portrait.Type.Display.In(portrait.FontDisplay).LineHeight(); !near(got, 36/29.4) {
-		t.Fatalf("display line height multiple %v, want %v", got, 36/29.4)
+	h2 := portrait.Type.Title.In(portrait.FontDisplay)
+	if h2.RenderedSize() != 20 || h2.Leading != 28 {
+		t.Fatalf("display h2 %+v, want 20/28", h2)
 	}
-	h2 := portrait.Type.Title.In(portrait.FontDisplay).Font(600)
-	if !near(h2.Size, 21) {
-		t.Fatalf("display h2 size %v, want 21", h2.Size)
+	if !(h1.Tracking < h2.Tracking && h2.Tracking < 0) || !near(h1.Tracking/h1.Size, -0.02) || !near(h2.Tracking/h2.Size, -0.012) {
+		t.Fatalf("tracking h1 %v h2 %v, want -0.02em then -0.012em: tighter as the size grows", h1.Tracking, h2.Tracking)
 	}
-	if body := portrait.Type.Reading.Font(400); body.Size != 16 || body.Family != portrait.FontSans {
-		t.Fatalf("reading font %+v", body)
+	if body := portrait.Type.Reading; body.Font(400).Size != 16 || body.Family != portrait.FontSans || body.Tracking != 0 {
+		t.Fatalf("reading style %+v, want untracked 16px Inter", body)
 	}
 	if code := portrait.Type.Code.LineHeight(); !near(code, 22.0/13) {
 		t.Fatalf("code line height %v, want 22/13", code)
 	}
 }
 
-func TestColorsMatchTheWebUIBaseline(t *testing.T) {
+func TestColorsMatchTheirLockedValues(t *testing.T) {
 	c := portrait.Colors
 	for _, tc := range []struct {
 		name string
@@ -115,20 +115,21 @@ func TestColorsMatchTheWebUIBaseline(t *testing.T) {
 		{"fill", c.Fill, ui.RGBA(0, 0, 0, 0.045)},
 		{"fill-hover", c.FillHover, ui.RGBA(0, 0, 0, 0.07)},
 		{"fill-strong", c.FillStrong, ui.RGBA(0, 0, 0, 0.11)},
-		{"accent", c.Accent, ui.Hex("#2f6f62")},
+		{"accent", c.Accent, ui.Hex("#3139fb")},
 		{"on-accent", c.OnAccent, ui.Hex("#ffffff")},
-		{"accent-soft", c.AccentSoft, ui.RGBA(47, 111, 98, 0.1)},
+		{"accent-soft", c.AccentSoft, ui.RGBA(49, 57, 251, 0.1)},
+		{"success", c.Success, ui.Hex("#197a49")},
 		{"warn", c.Warn, ui.Hex("#9a4d12")},
 		{"warn-soft", c.WarnSoft, ui.RGBA(154, 77, 18, 0.09)},
 		{"danger", c.Danger, ui.Hex("#a83a3a")},
 		{"danger-soft", c.DangerSoft, ui.RGBA(168, 58, 58, 0.08)},
-		{"content-note", c.Note, ui.Hex("#2f6f62")},
-		{"content-note-soft", c.NoteSoft, ui.RGBA(47, 111, 98, 0.1)},
+		{"content-note", c.Note, ui.Hex("#3139fb")},
+		{"content-note-soft", c.NoteSoft, ui.RGBA(49, 57, 251, 0.1)},
 		{"content-warning", c.Warning, ui.Hex("#9a4d12")},
 		{"content-warning-soft", c.WarningSoft, ui.RGBA(154, 77, 18, 0.09)},
 		{"content-caution", c.Caution, ui.Hex("#a83a3a")},
 		{"content-caution-soft", c.CautionSoft, ui.RGBA(168, 58, 58, 0.08)},
-		{"focus", c.Focus, ui.RGBA(47, 111, 98, 0.34)},
+		{"focus", c.Focus, ui.RGBA(49, 57, 251, 0.28)},
 		{"scrim", c.Scrim, ui.RGBA(29, 29, 31, 0.08)},
 	} {
 		if !sameColor(tc.got, tc.want) {
@@ -137,48 +138,51 @@ func TestColorsMatchTheWebUIBaseline(t *testing.T) {
 	}
 }
 
-func TestMaterialsMatchTheWebUIBaseline(t *testing.T) {
+func TestMaterialsMatchTheirLockedValues(t *testing.T) {
 	black := func(a float32) ui.Color { return ui.RGBA(0, 0, 0, a) }
 	white := func(a float32) ui.Color { return ui.RGBA(255, 255, 255, a) }
+	accent := ui.Hex("#3139fb")
+	glow := func(a float32) ui.Color { return accent.Alpha(a) }
+	edge := func(a float32) ui.Color { return accent.Mix(ui.RGB(0, 0, 0), 0.35).Alpha(a) }
 	in := func(x, y, blur, spread float32, c ui.Color) portrait.Shadow {
 		return portrait.Shadow{Inset: true, X: x, Y: y, Blur: blur, Spread: spread, Color: c}
 	}
 	out := func(x, y, blur, spread float32, c ui.Color) portrait.Shadow {
 		return portrait.Shadow{X: x, Y: y, Blur: blur, Spread: spread, Color: c}
 	}
+	paper := ui.Hex("#ffffff")
 	m := portrait.Materials
 	for _, tc := range []struct {
-		name     string
-		got      portrait.Surface
-		from, to ui.Color
-		shadows  []portrait.Shadow
+		name    string
+		got     portrait.Surface
+		fill    ui.Color
+		shadows []portrait.Shadow
 	}{
-		{"raised", m.Raised, ui.Hex("#ffffff"), ui.Hex("#f6f6f8"), []portrait.Shadow{
-			in(0, 1, 0, 0, white(0.94)), in(0, -0.5, 0, 0, black(0.05)), out(0, 0, 0, 0.5, black(0.13)), out(0, 1, 2, 0, black(0.055)), out(0, 3, 8, -3, black(0.075))}},
-		{"raised-hover", m.RaisedHover, ui.Hex("#ffffff"), ui.Hex("#f6f6f8"), []portrait.Shadow{
-			in(0, 1, 0, 0, ui.Hex("#ffffff")), in(0, -0.5, 0, 0, black(0.06)), out(0, 0, 0, 0.5, black(0.15)), out(0, 2, 4, 0, black(0.065)), out(0, 6, 14, -4, black(0.095))}},
-		{"raised-press", m.RaisedPress, ui.Hex("#ededf0"), ui.Hex("#f4f4f6"), []portrait.Shadow{
-			in(0, 1, 2, 0, black(0.1)), in(0, -0.5, 0, 0, white(0.85)), out(0, 0, 0, 0.5, black(0.15)), out(0, 0.5, 1, 0, black(0.04)), out(0, 0, 0, 0, ui.Transparent)}},
-		{"accent-raised", m.AccentRaised, ui.Hex("#37796b"), ui.Hex("#2c6a5d"), []portrait.Shadow{
-			in(0, 1, 0, 0, white(0.24)), in(0, -1, 0, 0, black(0.18)), out(0, 0, 0, 0.5, ui.RGBA(18, 52, 45, 0.42)), out(0, 1, 2, 0, ui.RGBA(18, 52, 45, 0.16)), out(0, 4, 10, -3, ui.RGBA(47, 111, 98, 0.34))}},
-		{"accent-raised-hover", m.AccentRaisedHover, ui.Hex("#3c8273"), ui.Hex("#2e6e60"), []portrait.Shadow{
-			in(0, 1, 0, 0, white(0.28)), in(0, -1, 0, 0, black(0.2)), out(0, 0, 0, 0.5, ui.RGBA(18, 52, 45, 0.48)), out(0, 2, 4, 0, ui.RGBA(18, 52, 45, 0.18)), out(0, 7, 16, -4, ui.RGBA(47, 111, 98, 0.38))}},
-		{"accent-raised-press", m.AccentRaisedPress, ui.Hex("#2a6357"), ui.Hex("#317063"), []portrait.Shadow{
-			in(0, 1, 2, 0, black(0.28)), in(0, -0.5, 0, 0, white(0.14)), out(0, 0, 0, 0.5, ui.RGBA(18, 52, 45, 0.48)), out(0, 0.5, 1, 0, ui.RGBA(18, 52, 45, 0.14)), out(0, 0, 0, 0, ui.Transparent)}},
-		{"row", m.Row, ui.Hex("#ffffff"), ui.Hex("#f6f6f8"), []portrait.Shadow{
-			in(0, 1, 0, 0, white(0.92)), out(0, 0, 0, 0.5, black(0.095)), out(0, 1, 2, 0, black(0.06))}},
-		{"sunken", m.Sunken, black(0.045), black(0.045), []portrait.Shadow{
-			in(0, 1, 2, 0, black(0.085)), in(0, 0, 0, 0.5, black(0.055)), out(0, 1, 0, 0, white(0.72))}},
-		{"track", m.Track, black(0.045), black(0.045), []portrait.Shadow{
-			in(0, 1, 1.5, 0, black(0.045)), in(0, 0, 0, 0.5, black(0.055))}},
-		{"sheet", m.Sheet, ui.Hex("#ffffff"), ui.Hex("#ffffff"), []portrait.Shadow{
-			out(0, 0, 0, 0.5, black(0.09)), out(0, 1, 3, 0, black(0.05))}},
-		{"pop", m.Pop, ui.Hex("#ffffff"), ui.Hex("#ffffff"), []portrait.Shadow{
-			out(0, 0, 0, 0.5, black(0.13)), out(0, 4, 12, 0, black(0.08)), out(0, 16, 36, -8, black(0.14))}},
+		{"raised", m.Raised, paper, []portrait.Shadow{
+			out(0, 0, 0, 0.5, black(0.12)), out(0, 1, 2, 0, black(0.05)), out(0, 2, 6, -2, black(0.04))}},
+		{"raised-hover", m.RaisedHover, paper, []portrait.Shadow{
+			out(0, 0, 0, 0.5, black(0.16)), out(0, 1, 3, 0, black(0.07)), out(0, 4, 10, -3, black(0.07))}},
+		{"raised-press", m.RaisedPress, ui.Hex("#ededf1"), []portrait.Shadow{
+			out(0, 0, 0, 0.5, black(0.18)), out(0, 0.5, 1, 0, black(0.03)), out(0, 0, 0, 0, ui.Transparent)}},
+		{"accent-raised", m.AccentRaised, accent, []portrait.Shadow{
+			in(0, 1, 0, 0, white(0.18)), out(0, 0, 0, 0.5, edge(0.5)), out(0, 1, 2, 0, glow(0.25)), out(0, 4, 12, -4, glow(0.35))}},
+		{"accent-raised-hover", m.AccentRaisedHover, accent.Mix(paper, 0.08), []portrait.Shadow{
+			in(0, 1, 0, 0, white(0.22)), out(0, 0, 0, 0.5, edge(0.5)), out(0, 2, 4, 0, glow(0.28)), out(0, 6, 16, -4, glow(0.42))}},
+		{"accent-raised-press", m.AccentRaisedPress, accent.Mix(ui.RGB(0, 0, 0), 0.1), []portrait.Shadow{
+			in(0, 1, 2, 0, black(0.22)), out(0, 0, 0, 0.5, edge(0.55)), out(0, 0.5, 1, 0, glow(0.2)), out(0, 0, 0, 0, ui.Transparent)}},
+		{"row", m.Row, black(0.055), nil},
+		{"sunken", m.Sunken, black(0.05), []portrait.Shadow{in(0, 0, 0, 0.5, black(0.05))}},
+		{"track", m.Track, black(0.055), nil},
+		{"sheet", m.Sheet, paper, []portrait.Shadow{
+			out(0, 0, 0, 0.5, black(0.08)), out(0, 1, 2, 0, black(0.04))}},
+		{"pop", m.Pop, paper, []portrait.Shadow{
+			out(0, 0, 0, 0.5, black(0.10)), out(0, 4, 14, 0, black(0.08)), out(0, 18, 44, -10, black(0.16))}},
+		{"page", m.Page, paper, []portrait.Shadow{
+			out(0, 0, 0, 0.5, black(0.10)), out(0, 1, 2, 0, black(0.05)), out(0, 6, 20, -6, black(0.10))}},
 	} {
 		g := tc.got
-		if !sameColor(g.From, tc.from) || !sameColor(g.To, tc.to) {
-			t.Errorf("%s fill %+v → %+v, want %+v → %+v", tc.name, g.From, g.To, tc.from, tc.to)
+		if !sameColor(g.From, tc.fill) || !sameColor(g.To, tc.fill) {
+			t.Errorf("%s fill %+v → %+v, want one flat %+v", tc.name, g.From, g.To, tc.fill)
 		}
 		if len(g.Shadows) != len(tc.shadows) {
 			t.Errorf("%s has %d shadow layers, want %d", tc.name, len(g.Shadows), len(tc.shadows))
@@ -190,9 +194,17 @@ func TestMaterialsMatchTheWebUIBaseline(t *testing.T) {
 			}
 		}
 	}
+	for name, states := range map[string][3]portrait.Surface{
+		"raised": {m.Raised, m.RaisedHover, m.RaisedPress},
+		"accent": {m.AccentRaised, m.AccentRaisedHover, m.AccentRaisedPress},
+	} {
+		if len(states[0].Shadows) != len(states[1].Shadows) || len(states[1].Shadows) != len(states[2].Shadows) {
+			t.Errorf("%s rest, hover and press have different shadow layers, so they cannot blend layer by layer", name)
+		}
+	}
 }
 
-func TestGlassMatchesTheWebUIBaseline(t *testing.T) {
+func TestGlassMatchesItsLockedValues(t *testing.T) {
 	black := func(a float32) ui.Color { return ui.RGBA(0, 0, 0, a) }
 	white := func(a float32) ui.Color { return ui.RGBA(255, 255, 255, a) }
 	in := func(x, y, blur, spread float32, c ui.Color) portrait.Shadow {
@@ -208,10 +220,10 @@ func TestGlassMatchesTheWebUIBaseline(t *testing.T) {
 		blur, saturate, brightness float32
 		rim                        []portrait.Shadow
 	}{
-		{"glass", portrait.Materials.Glass, white(0.72), 14, 1.6, 1.02, []portrait.Shadow{
-			in(0, 1, 0, 0, white(0.96)), in(1, 0, 0, 0, white(0.68)), in(0, -0.5, 0, 0, black(0.03)), out(0, 0, 0, 0.5, black(0.075)), out(0, 2, 6, 0, black(0.035)), out(0, 12, 28, -8, black(0.07))}},
-		{"glass-overlay", portrait.Materials.GlassOverlay, white(0.86), 22, 1.85, 1.03, []portrait.Shadow{
-			in(0, 1, 0, 0, white(0.98)), in(1, 0, 0, 0, white(0.76)), in(0, -0.5, 0, 0, black(0.045)), out(0, 0, 0, 0.5, black(0.10)), out(0, 4, 12, 0, black(0.07)), out(0, 18, 40, -10, black(0.13))}},
+		{"glass", portrait.Materials.Glass, white(0.70), 20, 1.8, 1, []portrait.Shadow{
+			in(0, 0, 0, 0.5, white(0.55)), out(0, 0, 0, 0.5, black(0.08)), out(0, 8, 32, -8, black(0.12))}},
+		{"glass-overlay", portrait.Materials.GlassOverlay, white(0.85), 32, 1.8, 1, []portrait.Shadow{
+			in(0, 0, 0, 0.5, white(0.60)), out(0, 0, 0, 0.5, black(0.10)), out(0, 4, 12, 0, black(0.06)), out(0, 24, 60, -12, black(0.22))}},
 	} {
 		g := tc.got
 		if !sameColor(g.Tint, tc.tint) || g.Blur != tc.blur || !near(g.Saturate, tc.saturate) || !near(g.Brightness, tc.brightness) {
@@ -226,15 +238,14 @@ func TestGlassMatchesTheWebUIBaseline(t *testing.T) {
 				t.Errorf("%s rim layer %d = %+v, want %+v", tc.name, i+1, g.Rim[i], s)
 			}
 		}
-		h := g.Highlight
-		if h.Center != (ui.Point{X: 0.12, Y: 0}) || len(h.Stops) != 2 || !sameColor(h.Stops[0].Color, white(0.42)) || h.Stops[0].At != 0 || !sameColor(h.Stops[1].Color, ui.Transparent) || !near(h.Stops[1].At, 0.56) {
-			t.Errorf("%s highlight %+v", tc.name, h)
+		if len(g.Highlight.Stops) != 0 {
+			t.Errorf("%s highlight %+v, want plain frosted glass without a sheen", tc.name, g.Highlight)
 		}
 	}
-	if s := portrait.Materials.GlassSelected; !sameColor(s, white(0.92)) {
+	if s := portrait.Materials.GlassSelected; !sameColor(s, white(0.85)) {
 		t.Errorf("glass-selected %+v", s)
 	}
-	if s := portrait.Materials.GlassHover; !sameColor(s, white(0.84)) {
+	if s := portrait.Materials.GlassHover; !sameColor(s, white(0.50)) {
 		t.Errorf("glass-hover %+v", s)
 	}
 }

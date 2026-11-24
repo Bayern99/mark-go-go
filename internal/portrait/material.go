@@ -67,7 +67,7 @@ func (g Glass) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
 type MaterialSet struct {
 	Raised, RaisedHover, RaisedPress                   Surface
 	AccentRaised, AccentRaisedHover, AccentRaisedPress Surface
-	Row, Sunken, Track, Sheet, Pop                     Surface
+	Row, Sunken, Track, Sheet, Pop, Page               Surface
 	Glass, GlassOverlay                                Glass
 	GlassSelected, GlassHover                          ui.Color
 }
@@ -79,42 +79,42 @@ func out(x, y, blur, spread float32, c ui.Color) Shadow {
 	return Shadow{X: x, Y: y, Blur: blur, Spread: spread, Color: c}
 }
 
+func flat(c ui.Color, shadows ...Shadow) Surface { return Surface{c, c, shadows} }
+
 var (
-	raised     = [2]ui.Color{ui.Hex("#ffffff"), ui.Hex("#f6f6f8")}
-	deepGreen  = func(a float32) ui.Color { return ui.RGBA(18, 52, 45, a) }
-	accentGlow = func(a float32) ui.Color { return ui.RGBA(47, 111, 98, a) }
-	glassShine = ui.RadialGradient{Center: ui.Point{X: 0.12, Y: 0}, Stops: []ui.GradientStop{{Color: white(0.42), At: 0}, {Color: ui.Transparent, At: 0.56}}}
+	pressed    = ui.Hex("#ededf1")
+	accentGlow = func(a float32) ui.Color { return Colors.Accent.Alpha(a) }
+	accentEdge = func(a float32) ui.Color { return Colors.Accent.Mix(black(1), 0.35).Alpha(a) }
 )
 
 var Materials = MaterialSet{
-	Raised: Surface{raised[0], raised[1], Shadows{
-		in(0, 1, 0, 0, white(0.94)), in(0, -0.5, 0, 0, black(0.05)), out(0, 0, 0, 0.5, black(0.13)), out(0, 1, 2, 0, black(0.055)), out(0, 3, 8, -3, black(0.075))}},
-	RaisedHover: Surface{raised[0], raised[1], Shadows{
-		in(0, 1, 0, 0, white(1)), in(0, -0.5, 0, 0, black(0.06)), out(0, 0, 0, 0.5, black(0.15)), out(0, 2, 4, 0, black(0.065)), out(0, 6, 14, -4, black(0.095))}},
-	RaisedPress: Surface{ui.Hex("#ededf0"), ui.Hex("#f4f4f6"), Shadows{
-		in(0, 1, 2, 0, black(0.1)), in(0, -0.5, 0, 0, white(0.85)), out(0, 0, 0, 0.5, black(0.15)), out(0, 0.5, 1, 0, black(0.04)), out(0, 0, 0, 0, ui.Transparent)}},
-	AccentRaised: Surface{ui.Hex("#37796b"), ui.Hex("#2c6a5d"), Shadows{
-		in(0, 1, 0, 0, white(0.24)), in(0, -1, 0, 0, black(0.18)), out(0, 0, 0, 0.5, deepGreen(0.42)), out(0, 1, 2, 0, deepGreen(0.16)), out(0, 4, 10, -3, accentGlow(0.34))}},
-	AccentRaisedHover: Surface{ui.Hex("#3c8273"), ui.Hex("#2e6e60"), Shadows{
-		in(0, 1, 0, 0, white(0.28)), in(0, -1, 0, 0, black(0.2)), out(0, 0, 0, 0.5, deepGreen(0.48)), out(0, 2, 4, 0, deepGreen(0.18)), out(0, 7, 16, -4, accentGlow(0.38))}},
-	AccentRaisedPress: Surface{ui.Hex("#2a6357"), ui.Hex("#317063"), Shadows{
-		in(0, 1, 2, 0, black(0.28)), in(0, -0.5, 0, 0, white(0.14)), out(0, 0, 0, 0.5, deepGreen(0.48)), out(0, 0.5, 1, 0, deepGreen(0.14)), out(0, 0, 0, 0, ui.Transparent)}},
-	Row: Surface{raised[0], raised[1], Shadows{
-		in(0, 1, 0, 0, white(0.92)), out(0, 0, 0, 0.5, black(0.095)), out(0, 1, 2, 0, black(0.06))}},
-	Sunken: Surface{black(0.045), black(0.045), Shadows{
-		in(0, 1, 2, 0, black(0.085)), in(0, 0, 0, 0.5, black(0.055)), out(0, 1, 0, 0, white(0.72))}},
-	Track: Surface{black(0.045), black(0.045), Shadows{
-		in(0, 1, 1.5, 0, black(0.045)), in(0, 0, 0, 0.5, black(0.055))}},
-	Sheet: Surface{white(1), white(1), Shadows{
-		out(0, 0, 0, 0.5, black(0.09)), out(0, 1, 3, 0, black(0.05))}},
-	Pop: Surface{white(1), white(1), Shadows{
-		out(0, 0, 0, 0.5, black(0.13)), out(0, 4, 12, 0, black(0.08)), out(0, 16, 36, -8, black(0.14))}},
-	Glass: Glass{Tint: white(0.72), Blur: 14, Saturate: 1.6, Brightness: 1.02, Highlight: glassShine, Rim: Shadows{
-		in(0, 1, 0, 0, white(0.96)), in(1, 0, 0, 0, white(0.68)), in(0, -0.5, 0, 0, black(0.03)), out(0, 0, 0, 0.5, black(0.075)), out(0, 2, 6, 0, black(0.035)), out(0, 12, 28, -8, black(0.07))}},
-	GlassOverlay: Glass{Tint: white(0.86), Blur: 22, Saturate: 1.85, Brightness: 1.03, Highlight: glassShine, Rim: Shadows{
-		in(0, 1, 0, 0, white(0.98)), in(1, 0, 0, 0, white(0.76)), in(0, -0.5, 0, 0, black(0.045)), out(0, 0, 0, 0.5, black(0.10)), out(0, 4, 12, 0, black(0.07)), out(0, 18, 40, -10, black(0.13))}},
-	GlassSelected: white(0.92),
-	GlassHover:    white(0.84),
+	Raised: flat(Colors.Paper,
+		out(0, 0, 0, 0.5, black(0.12)), out(0, 1, 2, 0, black(0.05)), out(0, 2, 6, -2, black(0.04))),
+	RaisedHover: flat(Colors.Paper,
+		out(0, 0, 0, 0.5, black(0.16)), out(0, 1, 3, 0, black(0.07)), out(0, 4, 10, -3, black(0.07))),
+	RaisedPress: flat(pressed,
+		out(0, 0, 0, 0.5, black(0.18)), out(0, 0.5, 1, 0, black(0.03)), out(0, 0, 0, 0, ui.Transparent)),
+	AccentRaised: flat(Colors.Accent,
+		in(0, 1, 0, 0, white(0.18)), out(0, 0, 0, 0.5, accentEdge(0.5)), out(0, 1, 2, 0, accentGlow(0.25)), out(0, 4, 12, -4, accentGlow(0.35))),
+	AccentRaisedHover: flat(Colors.Accent.Mix(Colors.OnAccent, 0.08),
+		in(0, 1, 0, 0, white(0.22)), out(0, 0, 0, 0.5, accentEdge(0.5)), out(0, 2, 4, 0, accentGlow(0.28)), out(0, 6, 16, -4, accentGlow(0.42))),
+	AccentRaisedPress: flat(Colors.Accent.Mix(black(1), 0.1),
+		in(0, 1, 2, 0, black(0.22)), out(0, 0, 0, 0.5, accentEdge(0.55)), out(0, 0.5, 1, 0, accentGlow(0.2)), out(0, 0, 0, 0, ui.Transparent)),
+	Row:    flat(black(0.055)),
+	Sunken: flat(black(0.05), in(0, 0, 0, 0.5, black(0.05))),
+	Track:  flat(black(0.055)),
+	Sheet: flat(Colors.Paper,
+		out(0, 0, 0, 0.5, black(0.08)), out(0, 1, 2, 0, black(0.04))),
+	Pop: flat(Colors.Paper,
+		out(0, 0, 0, 0.5, black(0.10)), out(0, 4, 14, 0, black(0.08)), out(0, 18, 44, -10, black(0.16))),
+	Page: flat(Colors.Paper,
+		out(0, 0, 0, 0.5, black(0.10)), out(0, 1, 2, 0, black(0.05)), out(0, 6, 20, -6, black(0.10))),
+	Glass: Glass{Tint: white(0.70), Blur: 20, Saturate: 1.8, Brightness: 1, Rim: Shadows{
+		in(0, 0, 0, 0.5, white(0.55)), out(0, 0, 0, 0.5, black(0.08)), out(0, 8, 32, -8, black(0.12))}},
+	GlassOverlay: Glass{Tint: white(0.85), Blur: 32, Saturate: 1.8, Brightness: 1, Rim: Shadows{
+		in(0, 0, 0, 0.5, white(0.60)), out(0, 0, 0, 0.5, black(0.10)), out(0, 4, 12, 0, black(0.06)), out(0, 24, 60, -12, black(0.22))}},
+	GlassSelected: white(0.85),
+	GlassHover:    white(0.50),
 }
 
 func Opaque(c *ui.Context) bool {

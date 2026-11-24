@@ -8,16 +8,16 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-func TestGenUICardMaterialMatchesTheWebUIBlock(t *testing.T) {
+func TestGenUICardIsASheetOnTheCardRadius(t *testing.T) {
 	g := portrait.GenUI
 	if g.Card.From != portrait.Colors.Paper || g.Card.To != portrait.Colors.Paper {
 		t.Fatalf("card fill %+v, want paper", g.Card)
 	}
-	want := portrait.Shadows{{Spread: 0.5, Color: portrait.Colors.LineStrong}}
-	if len(g.Card.Shadows) != 1 || g.Card.Shadows[0] != want[0] {
-		t.Fatalf("card shadows %+v, want a 0.5px line-strong ring", g.Card.Shadows)
+	want := portrait.Materials.Sheet.Shadows
+	if len(g.Card.Shadows) != len(want) || g.Card.Shadows[0] != want[0] || g.Card.Shadows[1] != want[1] {
+		t.Fatalf("card shadows %+v, want the sheet's hairline and drop", g.Card.Shadows)
 	}
-	if g.CardRadius != 10 || g.CardPadding != 12 || g.CardGap != 14 || g.Replacing != portrait.Colors.Code {
+	if g.CardRadius != portrait.Radii.L || g.CardPadding != 12 || g.CardGap != 14 || g.Replacing != portrait.Colors.Code {
 		t.Fatalf("card radius %v padding %v gap %v replacing %v", g.CardRadius, g.CardPadding, g.CardGap, g.Replacing)
 	}
 	if g.SkeletonRadius != 8 {
@@ -94,13 +94,13 @@ func TestShimmerGlintSweepsAcrossOnceAPeriod(t *testing.T) {
 	}
 }
 
-func TestGenUISourceButtonsRestOnPaperAndRiseAsARow(t *testing.T) {
+func TestGenUISourceButtonsRestOnPaperAndWashOnHover(t *testing.T) {
 	g := portrait.GenUI
 	if g.Source.From != portrait.Colors.Paper || len(g.Source.Shadows) != 1 || g.Source.Shadows[0].Spread != 0.5 || g.Source.Shadows[0].Color != portrait.Colors.LineStrong {
 		t.Fatalf("source button %+v, want paper with a 0.5px line-strong ring", g.Source)
 	}
-	if g.SourceHover.From != portrait.Materials.Raised.From || g.SourceHover.To != portrait.Materials.Raised.To || len(g.SourceHover.Shadows) != len(portrait.Materials.Row.Shadows) {
-		t.Fatalf("hovered source button %+v, want raised with the row shadow", g.SourceHover)
+	if g.SourceHover.From != portrait.Colors.Code || g.SourceHover.To != portrait.Colors.Code || len(g.SourceHover.Shadows) != 1 || g.SourceHover.Shadows[0] != g.Source.Shadows[0] {
+		t.Fatalf("hovered source button %+v, want the code wash inside the same ring", g.SourceHover)
 	}
 	if g.SourcePress.From != portrait.Materials.RaisedPress.From || g.SourcePress.To != portrait.Materials.RaisedPress.To {
 		t.Fatalf("pressed source button %+v, want raised-press", g.SourcePress)

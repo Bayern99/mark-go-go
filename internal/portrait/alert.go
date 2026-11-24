@@ -42,10 +42,8 @@ func Alert(c *ui.Context, tone Tone, title, body string, actions ...AlertAction)
 
 func toneIcon(tone Tone) Icon {
 	switch tone {
-	case Tones.Accent:
+	case Tones.Success:
 		return IconCheckCircle
-	case Tones.Info:
-		return IconInfo
 	case Tones.Warning:
 		return IconWarning
 	case Tones.Danger:

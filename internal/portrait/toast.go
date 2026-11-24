@@ -88,9 +88,9 @@ func toast(c *ui.Context, t ui.Toast) ui.Element {
 
 func toneType(tone Tone) string {
 	switch tone {
+	case Tones.Success:
+		return "success"
 	case Tones.Accent:
-		return "accent"
-	case Tones.Info:
 		return "info"
 	case Tones.Warning:
 		return "warning"
@@ -103,10 +103,10 @@ func toneType(tone Tone) string {
 
 func toneFromType(kind string) Tone {
 	switch kind {
-	case "accent", "success":
+	case "success":
+		return Tones.Success
+	case "accent", "info":
 		return Tones.Accent
-	case "info":
-		return Tones.Info
 	case "warning":
 		return Tones.Warning
 	case "danger", "error":

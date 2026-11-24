@@ -144,14 +144,14 @@ func (p *panel) draw(c *ui.Context) {
 			if v.failure.Detail != "" {
 				ui.Text(c, v.failure.Detail).Selectable()
 			}
-			if ui.Button(c, "Retry generation").Disabled(busy || d.Path == "").Clicked() {
+			if portrait.Button(c, "Retry generation", "Retry generation").Disabled(busy || d.Path == "").Clicked() {
 				p.generate(v, v.lastIDs)
 			}
 		}
 		if v.message != "" {
 			portrait.Type.UI.Apply(ui.Text(c, v.message)).TextColor(portrait.Colors.Ink2).Role(ui.RoleStatus)
 		}
-		if v.cancel != nil && ui.Button(c, "Cancel generation").Clicked() {
+		if v.cancel != nil && portrait.Button(c, "Cancel generation", "Cancel generation").Clicked() {
 			v.cancel()
 		}
 		switch {
@@ -162,10 +162,20 @@ func (p *panel) draw(c *ui.Context) {
 		case v.cancel != nil && v.reader().surface == nil:
 			loading(c, "Generating view…", "Your agent is laying out this document.")
 		case v.reader().surface == nil:
-			ui.Text(c, "No view yet.")
-			if ui.Button(c, "Set up generation").Clicked() {
-				v.settings = true
-			}
+			ui.Column(c).FillWidth().Grow(1).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
+				portrait.Empty(c, portrait.EmptySpec{
+					Icon:        portrait.IconSparkle,
+					Title:       "No view yet",
+					Description: "Generate a reading view from this document. The Markdown stays the source.",
+					Action: func(c *ui.Context) ui.Element {
+						b := portrait.AccentButton(c, "Set up generation", "Set up generation").Margin(6, 0, 0, 0)
+						if b.Clicked() {
+							v.settings = true
+						}
+						return b
+					},
+				}).MaxWidth(portrait.Shell.SidebarWidth + portrait.Shell.Documents/4)
+			})
 		default:
 			reader := v.reader()
 			reader.CanSelect = func(n Node) bool { return len(v.matches(n)) > 0 }

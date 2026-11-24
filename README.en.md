@@ -2,11 +2,11 @@
 
 [中文](README.md) · [Credits and licenses](ACKNOWLEDGMENTS.en.md)
 
-Mark Go Go is a local Markdown editor for macOS. Folder workspaces share a window and its document tabs. `Ctrl+Tab` switches between recent documents, and `⌘/` switches between the editable Preview and Markdown views. Select **GenUI** in the centre, then open **Generation settings** at the top right of the view to choose a model, generate a reading view or update it.
+Mark Go Go is a local Markdown editor for macOS. Folder workspaces share a window and the document tabs in its sidebar. `Ctrl+Tab` switches between recent documents, `⌘K` opens the Command Bar to search documents, files, headings and commands, `⌘0` hides or shows the sidebar, and `⌘/` switches between the editable Preview and Markdown views. Select **GenUI** in the centre, then open **Generation settings** at the top right of the view to choose a model, generate a reading view or update it.
 
 ## Optional plugins
 
-Use **Workspace / Outline** in the left sidebar to switch between workspace files and headings in the active document. Use **Plugins** in the desktop tab bar to enable Feynman and Git independently. Both start disabled.
+Use **Files / Outline** in the sidebar to switch between workspace files and headings in the active document. Use **Plugins** at the bottom of the sidebar, or the Command Bar, to enable Feynman and Git independently. Both start disabled.
 
 **Feynman** connects directly to your installed Feynman CLI in RPC mode. Install Feynman, enable the plugin, and use Feynman settings to sign in if needed. The English Portrait panel occupies the right sidebar. Switching documents in the same workspace preserves the conversation and unsent draft. Drag its left edge to resize it. Narrow windows use a drawer. [Feynman setup guide](https://feynman.is/docs/getting-started/setup)
 

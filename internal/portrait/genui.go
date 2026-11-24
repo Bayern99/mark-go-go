@@ -59,8 +59,8 @@ type GenUITokens struct {
 func turn(deg float32) float32 { return deg / 360 }
 
 var GenUI = GenUITokens{
-	Card:           Surface{Colors.Paper, Colors.Paper, Shadows{out(0, 0, 0, 0.5, Colors.LineStrong)}},
-	CardRadius:     10,
+	Card:           Materials.Sheet,
+	CardRadius:     Radii.L,
 	CardPadding:    12,
 	CardGap:        14,
 	SkeletonRadius: 8,
@@ -70,16 +70,16 @@ var GenUI = GenUITokens{
 	Halo: Halo{Duration: 950 * time.Millisecond, Ease: CubicBezier{0.16, 1, 0.3, 1}, From: 0.32, To: 2.15, Center: ui.Point{X: 0.86, Y: 0.24}, Inset: 24,
 		Fill: ui.RadialGradient{Center: ui.Point{X: 0.86, Y: 0.24}, Stops: []ui.GradientStop{
 			{Color: ui.Transparent, At: 0}, {Color: ui.Transparent, At: 0.24},
-			{Color: ui.RGBA(47, 111, 98, 0.11), At: 0.38},
-			{Color: ui.RGBA(130, 182, 169, 0.19), At: 0.50},
+			{Color: Colors.Accent.Alpha(0.11), At: 0.38},
+			{Color: Colors.Accent.Mix(Colors.Paper, 0.45).Alpha(0.19), At: 0.50},
 			{Color: ui.Transparent, At: 0.68}}}},
 	Rim: Rim{Duration: 900 * time.Millisecond, Ease: CubicBezier{0.22, 1, 0.36, 1}, From: -60, To: 300, Width: 1.5,
 		Stops: []ui.GradientStop{
 			{Color: ui.Transparent, At: 0}, {Color: ui.Transparent, At: turn(250)},
-			{Color: ui.RGBA(109, 154, 145, 1), At: turn(312)},
+			{Color: Colors.Accent.Mix(Colors.Paper, 0.35), At: turn(312)},
 			{Color: white(0.96), At: turn(338)},
 			{Color: ui.Transparent, At: 1}}},
 	Source:      Surface{Colors.Paper, Colors.Paper, Shadows{out(0, 0, 0, 0.5, Colors.LineStrong)}},
-	SourceHover: Surface{raised[0], raised[1], Materials.Row.Shadows},
-	SourcePress: Surface{Materials.RaisedPress.From, Materials.RaisedPress.To, Materials.Row.Shadows},
+	SourceHover: Surface{Colors.Code, Colors.Code, Shadows{out(0, 0, 0, 0.5, Colors.LineStrong)}},
+	SourcePress: Surface{Materials.RaisedPress.From, Materials.RaisedPress.To, Shadows{out(0, 0, 0, 0.5, Colors.LineStrong)}},
 }

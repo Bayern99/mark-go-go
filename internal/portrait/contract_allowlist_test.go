@@ -122,30 +122,10 @@ var nativeLiteralAllowlist = map[string]map[string]int{
 		"Radius(8)":                    1,
 	},
 	"../nativeui/document.go": {
-		"Height(22)":   1,
-		"Height(40)":   1,
 		"MinHeight(0)": 1,
-		"Radius(8)":    1,
-	},
-	"../nativeui/navigation.go": {
-		"MinHeight(26)": 1,
-		"Radius(10)":    1,
-		"Radius(6)":     1,
-		"Radius(8)":     1,
 	},
 	"../nativeui/shell.go": {
-		"Height(max(80, height-16))": 1,
-		"MinHeight(0)":               2,
-		"Radius(14)":                 1,
-	},
-	"../nativeui/tabs.go": {
-		"Height(26)":     1,
-		"Height(28)":     2,
-		"Height(32)":     1,
-		"Height(42)":     1,
-		"MaxHeight(300)": 1,
-		"Radius(6)":      1,
-		"Radius(7)":      1,
+		"MinHeight(0)": 2,
 	},
 	"../nativeui/window.go": {
 		"MinHeight(0)": 1,

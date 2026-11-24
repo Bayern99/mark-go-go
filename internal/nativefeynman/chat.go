@@ -122,7 +122,7 @@ func (p *panel) message(c *ui.Context, index int, item message, streaming bool) 
 			for _, step := range item.steps {
 				icon, ink := portrait.IconCircle, portrait.Colors.Ink3
 				if step.Status == "completed" {
-					icon, ink = portrait.IconCheckCircle, portrait.Colors.Accent
+					icon, ink = portrait.IconCheckCircle, portrait.Colors.Success
 				}
 				ui.Row(c).Gap(6).AlignItems(ui.Start).Children(func() {
 					portrait.Glyph(c, icon, 13, ink).Margin(1, 0, 0, 0)

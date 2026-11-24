@@ -253,7 +253,7 @@ func copyButton(c *ui.Context, body string) {
 	icon := portrait.IconCopy
 	morphing := false
 	if !copied.at.IsZero() && c.Now().Sub(copied.at) < copiedFor {
-		icon, ink, morphing = portrait.IconCheck, portrait.Colors.Accent, true
+		icon, ink, morphing = portrait.IconCheck, portrait.Colors.Success, true
 		c.After(copiedFor - c.Now().Sub(copied.at))
 	}
 	b.Children(func() {
@@ -275,7 +275,7 @@ func kicker(c *ui.Context, label string, ink ui.Color) ui.Element {
 }
 
 func codeKicker(c *ui.Context, label string, ink ui.Color) ui.Element {
-	return portrait.Type.Meta.In(portrait.FontDisplay).Apply(ui.Text(c, label)).FontWeight(500).LetterSpacing(0.04 * portrait.Type.Meta.Size).TextColor(ink).MaxLines(1).Ellipsis("…")
+	return portrait.Type.Meta.Apply(ui.Text(c, label)).FontWeight(500).LetterSpacing(0.04 * portrait.Type.Meta.Size).TextColor(ink).MaxLines(1).Ellipsis("…")
 }
 
 type blockLook struct {
@@ -398,7 +398,7 @@ func (p *previewLayout) specialBlock(snap editor.Snapshot, start, end int, kind,
 						if kind == "note" {
 							portrait.Glyph(c, look.icon, 15, look.kickerInk).Margin(3, 0, 0, 0)
 						} else {
-							portrait.Type.Meta.In(portrait.FontDisplay).Apply(ui.Text(c, label)).FontFeatures("tnum").TextColor(look.kickerInk).Margin(3, 0, 0, 0)
+							portrait.Type.Meta.Apply(ui.Text(c, label)).FontFeatures("tnum").TextColor(look.kickerInk).Margin(3, 0, 0, 0)
 						}
 						look.text.Apply(ui.Text(c, body)).TextColor(look.ink).Wrap().Selectable().Grow(1).Shrink(1).MinWidth(0)
 						d.blockActions(c, e, snap, start, end, kind, label)

@@ -50,20 +50,24 @@ func TestResearchDrawerReturnsKeyboardFocusAfterResize(t *testing.T) {
 	}
 }
 
-func TestHiddenTabCanBeChosenBySearchAndReturnedToByKeyboard(t *testing.T) {
+func TestCommandBarOpensADocumentBySearchAndControlTabReturns(t *testing.T) {
 	var shell nativeui.Shell
 	model := nativeui.Model{Workspace: workspace.WorkspaceSnapshot{ActiveID: "a", Documents: []workspace.DocumentInfo{{ID: "a", Name: "One.md"}, {ID: "b", Name: "Two.md"}, {ID: "c", Name: "Three.md"}, {ID: "d", Name: "Four.md"}, {ID: "e", Name: "Five.md"}}}}
 	app := ui.NewTester(func(c *ui.Context) {
 		shell.Draw(c, model, nativeui.Actions{Activate: func(id string) { model.Workspace.ActiveID = id }}, nativeui.Slots{})
 	}, 480, 360)
-	if err := app.Click("More documents"); err != nil {
-		t.Fatal(err)
+	app.Key(ui.Cmd, ui.KeyK)
+	if _, ok := app.AccessByRole(ui.RoleDialog, "Command Bar"); !ok {
+		t.Fatal("Command K did not open the command bar")
 	}
 	app.Type("Four")
 	app.Key(0, ui.KeyEnter)
 	app.Frame()
 	if model.Workspace.ActiveID != "d" {
 		t.Fatal("Enter did not open the filtered document")
+	}
+	if _, ok := app.AccessByRole(ui.RoleDialog, "Command Bar"); ok {
+		t.Fatal("the command bar stayed open after running its first result")
 	}
 	app.Key(ui.Ctrl, ui.KeyTab)
 	app.Frame()

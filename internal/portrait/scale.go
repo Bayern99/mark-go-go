@@ -6,8 +6,8 @@ type RadiusScale struct {
 }
 
 var Radii = RadiusScale{
-	XS: 4, S: 6, M: 8, L: 12, XL: 14, Pill: 999,
-	Track: 9, Segment: 7,
+	XS: 4, S: 6, M: 8, L: 12, XL: 16, Pill: 999,
+	Track: 10, Segment: 8,
 }
 
 type SizeScale struct {

@@ -19,13 +19,14 @@ type Model struct {
 	Search        workspace.NavSearchResult
 	Feynman, Git  bool
 	Message       string
+	Spaces        map[string]string
 }
 
 type Actions struct {
 	Drop                                                       func([]string)
 	RevealPath                                                 func(string)
 	Activate, CloseDocument, ActivateWorkspace, CloseWorkspace func(string)
-	OpenRecent, ToggleFolder, Filter, SetMode                  func(string)
+	OpenRecent, ToggleFolder, Filter, SetMode, SetSpace        func(string)
 	OpenPath                                                   func(path string, offset int)
 	Reveal                                                     func(int)
 	NewDocument, OpenFolder                                    func()
@@ -37,25 +38,33 @@ type Slots struct {
 }
 
 type Shell struct {
-	ready, outline, navFocus                         bool
-	leftOpen, rightOpen, hideResearch                bool
-	overflow, focusFilter, focusedTab                bool
-	checkpoints                                      bool
-	workspaceID, activeID, query, tabQuery, tabFocus string
-	history                                          []string
-	leftWidth, rightWidth                            float32
-	leftToggle, rightToggle                          ui.Handle
-	leftKeys, rightKeys                              portrait.KeyTrigger
-	queries                                          map[string]string
-	scrolls                                          map[string]*ui.ScrollState
-	openCheckpoints                                  map[string]bool
+	ready, outline, navFocus                       bool
+	leftOpen, rightOpen, hideResearch, hideSidebar bool
+	focusedTab                                     bool
+	checkpoints                                    bool
+	command                                        commandBar
+	workspaceID, activeID, query, tabFocus         string
+	history                                        []string
+	leftWidth, rightWidth                          float32
+	leftToggle, rightToggle                        ui.Handle
+	leftKeys, rightKeys                            portrait.KeyTrigger
+	queries                                        map[string]string
+	scrolls                                        map[string]*ui.ScrollState
+	openCheckpoints                                map[string]bool
+	sidebarDocked, researchDocked                  bool
+	settle                                         int
 }
+
+const (
+	sidebarDocksAt  = 641
+	researchDocksAt = 1180
+)
 
 func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 	if !s.ready {
 		s.queries = map[string]string{}
 		s.openCheckpoints = map[string]bool{}
-		s.leftWidth, s.ready = 248, true
+		s.leftWidth, s.ready = portrait.Shell.SidebarWidth, true
 		if s.rightWidth == 0 {
 			s.rightWidth = 376
 		}
@@ -77,10 +86,10 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 		s.history = append([]string{s.activeID}, slices.DeleteFunc(s.history, func(id string) bool { return id == s.activeID })...)
 	}
 	width, height := c.Size()
-	if width >= 641 {
+	if width >= sidebarDocksAt {
 		s.leftOpen = false
 	}
-	if width >= 1180 || !m.Feynman {
+	if width >= researchDocksAt || !m.Feynman {
 		s.rightOpen = false
 	}
 	if !m.Git {
@@ -104,72 +113,113 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 		s.leftKeys.Flip()
 		s.rightKeys.Flip()
 	}
+	if c.Shortcut(ui.Cmd, ui.Key0) {
+		s.toggleSidebar(width)
+		s.leftKeys.Flip()
+		s.rightKeys.Flip()
+	}
+	if c.Shortcut(ui.Cmd, ui.KeyK) || c.Shortcut(ui.Cmd, ui.KeyT) {
+		s.toggleCommand(a)
+	}
+	sidebarDocked, researchDocked := width >= sidebarDocksAt && !s.hideSidebar, m.Feynman && !s.hideResearch && width >= researchDocksAt
+	if sidebarDocked != s.sidebarDocked || researchDocked != s.researchDocked {
+		s.settle = 2
+	}
+	s.sidebarDocked, s.researchDocked = sidebarDocked, researchDocked
+	if s.settle > 0 {
+		s.settle--
+		c.Invalidate()
+	}
 	t := portrait.Theme()
-	root := ui.Themed(c, &t).Fill()
+	translucent := c.Vibrancy() && !portrait.Opaque(c)
+	if translucent {
+		c.Root().Background(ui.Transparent)
+	}
+	root := themed(c, &t).Fill()
 	if paths := root.DroppedFiles(); len(paths) > 0 && a.Drop != nil {
 		a.Drop(slices.Clone(paths))
 	}
 	root.Children(func() {
-		ui.Column(c).Fill().Background(portrait.Colors.Paper).TextColor(portrait.Colors.Ink).Font(portrait.FontSans).Children(func() {
-
-			if m.Message != "" {
-				portrait.Alert(c, portrait.Tones.Danger, m.Message, "")
+		scenery := ui.Column(c).Fill().TextColor(portrait.Colors.Ink).Font(portrait.FontSans)
+		spaceOf(m).Paint(scenery, translucent)
+		scenery.Children(func() {
+			room := width - 2*portrait.Shell.PageInset
+			left := clamp(s.leftWidth, 180, min(420, room-412))
+			right := clamp(s.rightWidth, 310, min(800, width*0.56))
+			if s.sidebarDocked && s.researchDocked {
+				left = min(left, max(180, room-412-right-16))
+				right = min(right, max(310, room-412-left-16))
 			}
-			if m.Workspace.RestoreError != "" {
-				portrait.Alert(c, portrait.Tones.Danger, m.Workspace.RestoreError, "")
-			}
-			ui.Row(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Padding(8).Gap(0).Children(func() {
-				leftDocked := width >= 641
-				rightDocked := m.Feynman && !s.hideResearch && width >= 1180
-				room := width - 16
-				left := clamp(s.leftWidth, 140, min(420, room-412))
-				right := clamp(s.rightWidth, 310, min(800, width*0.56))
-				if leftDocked && rightDocked {
-					left = min(left, max(140, room-412-right-16))
-					right = min(right, max(310, room-412-left-16))
-				}
-				centerWidth := room
-				if leftDocked {
-					centerWidth -= left + 1
-				}
-				if rightDocked {
-					centerWidth -= right + 1
-				}
-				center := func() {
-					ui.Column(c).Fill().MinWidth(0).Children(func() {
-						s.tabs(c, width, centerWidth, m, a)
-						ui.Column(c).Grow(1).MinHeight(0).Children(func() { s.document(c, doc, m, a, slots) })
-					})
-				}
-				inside := func() {
-					if !rightDocked {
-						center()
+			inset, edge := portrait.Shell.PageInset, s.stageEdge()
+			stage := func() {
+				themed(c, &t).Fill().MinWidth(0).Children(func() {
+					if m.Message != "" || m.Workspace.RestoreError != "" {
+						ui.Column(c).FillWidth().Padding(inset, inset, 0, edge).Gap(inset).Children(func() {
+							if m.Message != "" {
+								portrait.Alert(c, portrait.Tones.Danger, m.Message, "")
+							}
+							if m.Workspace.RestoreError != "" {
+								portrait.Alert(c, portrait.Tones.Danger, m.Workspace.RestoreError, "")
+							}
+						})
+					}
+					page := func() { s.page(c, doc, m, a, slots) }
+					if !s.researchDocked {
+						ui.Column(c).Grow(1).MinHeight(0).FillWidth().Padding(inset, inset, inset, edge).Children(page)
 						return
 					}
-					remaining := room
-					if leftDocked {
-						remaining -= left + 1
+					remaining := width
+					if s.sidebarDocked {
+						remaining = width - left - 1
 					}
 					first := remaining - right - 1
-					if ui.Split(c.Key("research-split"), &first, center, func() { s.research(c, slots, true) }).Fill().SplitReset(remaining - 377).Changed() {
-						s.rightWidth = clamp(remaining-first-1, 310, min(800, width*0.56))
-					}
-				}
-				if leftDocked {
-					actual := left
-					if ui.Split(c.Key("library-split"), &actual, func() { s.navigation(c, m, a, true) }, inside).Fill().SplitReset(248).Changed() {
-						s.leftWidth = clamp(actual, 190, 420)
-					}
-				} else {
-					inside()
+					quietSplit(c, &t).Grow(1).MinHeight(0).FillWidth().Children(func() {
+						if ui.Split(c.Key("research-split"), &first,
+							func() { themed(c, &t).Fill().Padding(inset, inset/2, inset, edge).Children(page) },
+							func() {
+								themed(c, &t).Fill().Padding(inset, inset, inset, inset/2).Children(func() { s.research(c, slots, true) })
+							}).Fill().SplitReset(remaining - 377).Changed() {
+							s.rightWidth = clamp(remaining-first-1, 310, min(800, width*0.56))
+						}
+					})
+				})
+			}
+			if !s.sidebarDocked {
+				stage()
+				return
+			}
+			actual := left
+			quietSplit(c, &t).Fill().Children(func() {
+				if ui.Split(c.Key("library-split"), &actual, func() { themed(c, &t).Fill().Children(func() { s.sidebar(c, m, a, true) }) }, stage).Fill().SplitReset(portrait.Shell.SidebarWidth).Changed() {
+					s.leftWidth = clamp(actual, 190, 420)
 				}
 			})
 		})
 		s.drawer(c, true, width, height, m, a, slots)
 		s.drawer(c, false, width, height, m, a, slots)
+		s.commandBar(c, width, height, m, a, slots)
 		portrait.Toasts(c)
 	})
 }
+
+func themed(c *ui.Context, t *ui.Theme) ui.Element {
+	return ui.Themed(c, t).Background(portrait.Clear)
+}
+
+func quietSplit(c *ui.Context, t *ui.Theme) ui.Element {
+	quiet := *t
+	quiet.Border = portrait.Clear
+	return themed(c, &quiet)
+}
+
+func (s *Shell) stageEdge() float32 {
+	if s.sidebarDocked {
+		return portrait.Shell.PageInset / 2
+	}
+	return portrait.Shell.PageInset
+}
+
+func spaceOf(m Model) portrait.Space { return spaceNamed(m, m.Workspace.Root) }
 
 func clamp(value, low, high float32) float32 { return max(low, min(value, high)) }
 
@@ -183,11 +233,20 @@ func activeDocument(w workspace.WorkspaceSnapshot) workspace.DocumentInfo {
 }
 
 func (s *Shell) toggleResearch(width float32) {
-	if width < 1180 {
+	if width < researchDocksAt {
 		s.rightOpen = !s.rightOpen
 		s.leftOpen = false
 	} else {
 		s.hideResearch = !s.hideResearch
+	}
+}
+
+func (s *Shell) toggleSidebar(width float32) {
+	if width < sidebarDocksAt {
+		s.leftOpen = !s.leftOpen
+		s.rightOpen = false
+	} else {
+		s.hideSidebar = !s.hideSidebar
 	}
 }
 
@@ -207,21 +266,23 @@ func (s *Shell) drawer(c *ui.Context, left bool, width, height float32, m Model,
 				Background(portrait.Colors.Scrim).Transition(portrait.Overlays.Scrim.Transition(c, keyboard))
 		})
 	}
+	edge := portrait.Shell.DrawerEdge
 	panel := ui.DialogBase(c.Key(name+" drawer"), open, func(back, panel ui.Element) {
 		panel.ObserveInput(keys.Observe)
 		back.AlignItems(ui.Start).Justify(ui.Start).TransformOrigin(origin, 0.5).Transition(slide.Transition(c, keyboard))
-		w := min(width-24, s.rightWidth)
+		w := min(width-3*edge, s.rightWidth)
 		if left {
-			w = min(width-24, s.leftWidth)
+			w = min(width-3*edge, s.leftWidth)
 		}
-		portrait.Materials.GlassOverlay.Apply(panel.Absolute().Top(8).Height(max(80, height-16)).Width(w).Radius(14)).Label(name)
+		tall := max(10*edge, height-2*edge)
+		portrait.Materials.GlassOverlay.Apply(panel.Absolute().Top(edge).Height(tall).Width(w).Radius(portrait.Radii.XL)).Label(name)
 		if left {
-			panel.Left(8)
+			panel.Left(edge)
 		} else {
-			panel.Right(8)
+			panel.Right(edge)
 		}
-		ui.Row(c).Padding(6, 10).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, name).Bold().Grow(1)
+		ui.Row(c).Padding(8, 10, 2, 14).AlignItems(ui.Center).Children(func() {
+			portrait.Type.UI.Apply(ui.Text(c, name)).FontWeight(600).Grow(1)
 			close := portrait.QuietIconButton(c, portrait.IconX, "Close "+name)
 			close.AutoFocus()
 			if close.Clicked() {
@@ -230,7 +291,7 @@ func (s *Shell) drawer(c *ui.Context, left bool, width, height float32, m Model,
 			}
 		})
 		if left {
-			s.navigation(c, m, a, false)
+			s.sidebar(c, m, a, false)
 		} else {
 			s.research(c, slots, false)
 		}

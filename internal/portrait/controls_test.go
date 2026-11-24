@@ -269,7 +269,7 @@ func TestCapsuleLandsAtOnceForKeyboardOrReducedMotion(t *testing.T) {
 	})
 }
 
-func TestTrackIsSunken(t *testing.T) {
+func TestTrackIsARecessedWashUnderItsRaisedSegment(t *testing.T) {
 	tt := ui.NewTester(func(c *ui.Context) {
 		ui.Column(c).Fill().Background(portrait.Colors.Paper).Padding(40).AlignItems(ui.Start).Children(func() {
 			portrait.Track(c, "", func(t *portrait.Segments) {
@@ -281,9 +281,13 @@ func TestTrackIsSunken(t *testing.T) {
 	tt.Frame()
 	track, _ := tt.Access("Views")
 	b := track.Bounds
-	x := int(b.X + b.W - 20)
-	if edge, inside := luma(tt, x, int(b.Y)), luma(tt, x, int(b.Y+b.H/2)); edge >= inside {
-		t.Fatalf("track top edge %d not darker than its middle %d", edge, inside)
+	y := int(b.Y + b.H/2)
+	paper, wash, segment := luma(tt, 10, 10), luma(tt, int(b.X+b.W-6), y), luma(tt, int(b.X+8), y)
+	if wash >= paper {
+		t.Fatalf("track wash %d is not darker than the paper %d around it", wash, paper)
+	}
+	if segment <= wash {
+		t.Fatalf("selected segment %d is not lighter than the track %d", segment, wash)
 	}
 }
 

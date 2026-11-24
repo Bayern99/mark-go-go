@@ -138,7 +138,7 @@ func (p *previewLayout) footnote(in parser.Inline) {
 		e.Children(func() {
 			ref := ui.ButtonBase(c).Label(label).KeepFocus().Padding(0, 2).AlignItems(ui.Center)
 			ref.Children(func() {
-				portrait.Type.Meta.In(portrait.FontDisplay).Apply(ui.Text(c, shown)).FontFeatures("tnum").TextColor(portrait.Colors.Accent)
+				portrait.Type.Meta.Apply(ui.Text(c, shown)).FontFeatures("tnum").TextColor(portrait.Colors.Accent)
 			})
 			if ref.Clicked() {
 				d := p.owner

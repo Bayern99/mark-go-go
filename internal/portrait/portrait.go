@@ -3,13 +3,16 @@ package portrait
 import "github.com/egoist/mygo/ui"
 
 const (
-	FontSans    = "IBM Plex Sans, IBM Plex Sans SC"
-	FontDisplay = "Barlow Semi Condensed, IBM Plex Sans, IBM Plex Sans SC"
+	FontSans    = "Inter, IBM Plex Sans SC"
+	FontDisplay = "Inter Display, Inter, IBM Plex Sans SC"
 	FontMono    = "IBM Plex Mono, IBM Plex Sans SC"
 	FontIcons   = "Phosphor"
 )
 
-const DisplaySizeAdjust = 1.05
+const (
+	displayTracking = -0.02
+	titleTracking   = -0.012
+)
 
 type TypeStyle struct {
 	Family                  string
@@ -18,12 +21,7 @@ type TypeStyle struct {
 
 func (s TypeStyle) In(family string) TypeStyle { s.Family = family; return s }
 
-func (s TypeStyle) RenderedSize() float32 {
-	if s.Family == FontDisplay {
-		return s.Size * DisplaySizeAdjust
-	}
-	return s.Size
-}
+func (s TypeStyle) RenderedSize() float32 { return s.Size }
 
 func (s TypeStyle) LineHeight() float32 { return s.Leading / s.RenderedSize() }
 
@@ -46,9 +44,9 @@ type TypeScale struct {
 
 var Type = func() TypeScale {
 	scale := TypeScale{
-		Display: TypeStyle{FontSans, 28, 36, 0},
-		Title:   TypeStyle{FontSans, 20, 28, 0},
-		Reading: TypeStyle{FontSans, 16, 28, 0.01 * 16},
+		Display: TypeStyle{FontSans, 28, 36, displayTracking * 28},
+		Title:   TypeStyle{FontSans, 20, 28, titleTracking * 20},
+		Reading: TypeStyle{FontSans, 16, 28, 0},
 		Small:   TypeStyle{FontSans, 14, 22, 0},
 		UI:      TypeStyle{FontSans, 13, 18, 0},
 		Control: TypeStyle{FontSans, 13, 20, 0},
@@ -68,24 +66,28 @@ type Palette struct {
 	Line, LineStrong                     ui.Color
 	Fill, FillHover, FillStrong          ui.Color
 	Accent, OnAccent, AccentSoft         ui.Color
+	Success                              ui.Color
 	Warn, WarnSoft, Danger, DangerSoft   ui.Color
 	Note, NoteSoft, Warning, WarningSoft ui.Color
 	Caution, CautionSoft                 ui.Color
 	Focus, Scrim, ModalScrim             ui.Color
 }
 
+var accent = ui.Hex("#3139fb")
+
 var Colors = Palette{
 	Chrome: ui.Hex("#f2f2f4"), Paper: ui.Hex("#ffffff"), Code: ui.Hex("#f6f6f8"),
 	Ink: ui.Hex("#1d1d1f"), Ink2: ui.Hex("#48484d"), Ink3: ui.Hex("#6e6e73"), Ink4: ui.Hex("#a1a1a6"),
 	Line: black(0.08), LineStrong: black(0.16),
 	Fill: black(0.045), FillHover: black(0.07), FillStrong: black(0.11),
-	Accent: ui.Hex("#2f6f62"), OnAccent: ui.Hex("#ffffff"), AccentSoft: ui.RGBA(47, 111, 98, 0.1),
-	Warn: ui.Hex("#9a4d12"), WarnSoft: ui.RGBA(154, 77, 18, 0.09),
+	Accent: accent, OnAccent: ui.Hex("#ffffff"), AccentSoft: accent.Alpha(0.1),
+	Success: ui.Hex("#197a49"),
+	Warn:    ui.Hex("#9a4d12"), WarnSoft: ui.RGBA(154, 77, 18, 0.09),
 	Danger: ui.Hex("#a83a3a"), DangerSoft: ui.RGBA(168, 58, 58, 0.08),
-	Note: ui.Hex("#2f6f62"), NoteSoft: ui.RGBA(47, 111, 98, 0.1),
+	Note: accent, NoteSoft: accent.Alpha(0.1),
 	Warning: ui.Hex("#9a4d12"), WarningSoft: ui.RGBA(154, 77, 18, 0.09),
 	Caution: ui.Hex("#a83a3a"), CautionSoft: ui.RGBA(168, 58, 58, 0.08),
-	Focus: ui.RGBA(47, 111, 98, 0.34), Scrim: ui.RGBA(29, 29, 31, 0.08),
+	Focus: accent.Alpha(0.28), Scrim: ui.RGBA(29, 29, 31, 0.08),
 	ModalScrim: ui.RGBA(29, 29, 31, 0.12),
 }
 

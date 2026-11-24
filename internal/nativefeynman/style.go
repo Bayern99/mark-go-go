@@ -9,7 +9,7 @@ import (
 func statusTone(status connectionStatus) portrait.Tone {
 	switch status {
 	case statusReady:
-		return portrait.Tones.Accent
+		return portrait.Tones.Success
 	case statusWorking, statusConnecting:
 		return portrait.Tones.Warning
 	default:

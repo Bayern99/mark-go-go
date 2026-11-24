@@ -24,8 +24,8 @@ func TestSpecialBlocksCarryTheirPortraitSurfaces(t *testing.T) {
 		c := img.RGBAAt(int(info.Bounds.X+info.Bounds.W/2), int(info.Bounds.Y+4))
 		return int(c.R), int(c.G), int(c.B)
 	}
-	if r, g, b := sample("Note alert block"); !(g > r+4 && g < 255) || b == 255 {
-		t.Errorf("note alert fill %d,%d,%d, want the soft accent", r, g, b)
+	if r, g, b := sample("Note alert block"); !(b > r+4 && b > g+4 && r < 255) {
+		t.Errorf("note alert fill %d,%d,%d, want the soft accent blue", r, g, b)
 	}
 	if r, g, b := sample("Caution alert block"); !(r > g+4 && g < 255) {
 		t.Errorf("caution alert fill %d,%d,%d, want the soft caution red", r, g, b)

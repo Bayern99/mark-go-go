@@ -62,16 +62,18 @@ func TestShellIconsArePhosphorGlyphsWithNamesAndTooltips(t *testing.T) {
 			}
 		}
 	}
-	check("Show navigation", "Close Paper.md", "Plugins", "Toggle research")
+	check("Show navigation", "Toggle research")
 	if err := app.Click("Show navigation"); err != nil {
 		t.Fatal(err)
 	}
+	app.Advance(time.Second)
+	check("Close Navigation", "Close Paper.md", "Plugins", "New document")
 	if err := app.Click("Filter files and headings"); err != nil {
 		t.Fatal(err)
 	}
 	app.Type("notes")
 	app.Advance(time.Second)
-	check("Close Navigation", "Clear filter")
+	check("Clear filter")
 	for _, text := range app.Texts() {
 		for _, glyph := range placeholderIcons {
 			if slices.Contains(strings.Fields(text), glyph) {

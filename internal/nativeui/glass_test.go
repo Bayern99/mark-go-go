@@ -76,38 +76,65 @@ func TestResearchDrawerIsOpaqueWhenTransparencyIsReducedOrContrastIncreased(t *t
 	}
 }
 
-func openTabMenuOverStripes(t *testing.T, prefs ui.Preferences) [][3]uint8 {
-	t.Helper()
+func stripedShell(prefs ui.Preferences) *ui.Tester {
 	var shell nativeui.Shell
-	var docs []workspace.DocumentInfo
-	for _, id := range []string{"a", "b", "c", "d", "e", "f"} {
-		docs = append(docs, workspace.DocumentInfo{ID: id, Name: id + ".md", ViewMode: "preview"})
-	}
-	model := nativeui.Model{Workspace: workspace.WorkspaceSnapshot{ActiveID: "a", Documents: docs}}
-	app := ui.NewTesterWith(func(c *ui.Context) {
-		shell.Draw(c, model, nativeui.Actions{}, nativeui.Slots{Document: stripes})
+	model := nativeui.Model{Git: true, Workspace: workspace.WorkspaceSnapshot{ActiveID: "a", Documents: []workspace.DocumentInfo{{ID: "a", Name: "Paper.md", ViewMode: "preview"}}}}
+	return ui.NewTesterWith(func(c *ui.Context) {
+		shell.Draw(c, model, nativeui.Actions{}, nativeui.Slots{Document: stripes, Checkpoints: func(c *ui.Context) { ui.Box(c).Size(220, 120) }})
 	}, 480, 360, ui.TesterOptions{Preferences: prefs})
-	if err := app.Click("More documents"); err != nil {
+}
+
+func openCheckpointsOverStripes(t *testing.T, prefs ui.Preferences) [][3]uint8 {
+	t.Helper()
+	app := stripedShell(prefs)
+	if err := app.Click("Checkpoints"); err != nil {
 		t.Fatal(err)
 	}
 	pop, ok := app.AccessByRole(ui.RolePopup, "")
 	if !ok {
-		t.Fatal("hidden-tabs popover did not open")
+		t.Fatal("checkpoints popover did not open")
 	}
 	app.Advance(time.Second)
 	b := pop.Bounds
 	return pixelRow(app, int(b.X+b.W/2), int(b.Y+b.H-2))
 }
 
-func TestTabMenuBlursTheDocumentBehindIt(t *testing.T) {
-	assertBlurredStripes(t, openTabMenuOverStripes(t, ui.Preferences{}))
+func TestCheckpointsPopoverBlursTheDocumentBehindIt(t *testing.T) {
+	assertBlurredStripes(t, openCheckpointsOverStripes(t, ui.Preferences{}))
 }
 
-func TestTabMenuIsOpaqueWhenTransparencyIsReducedOrContrastIncreased(t *testing.T) {
+func TestCheckpointsPopoverIsOpaqueWhenTransparencyIsReducedOrContrastIncreased(t *testing.T) {
 	for name, prefs := range map[string]ui.Preferences{"reduce transparency": {ReduceTransparency: true}, "high contrast": {HighContrast: true}} {
-		for _, c := range openTabMenuOverStripes(t, prefs) {
+		for _, c := range openCheckpointsOverStripes(t, prefs) {
 			if c != [3]uint8{255, 255, 255} {
 				t.Fatalf("%s: popover pixel %v, want opaque paper", name, c)
+			}
+		}
+	}
+}
+
+func openCommandBarOverStripes(t *testing.T, prefs ui.Preferences) [][3]uint8 {
+	t.Helper()
+	app := stripedShell(prefs)
+	app.Key(ui.Cmd, ui.KeyK)
+	bar, ok := app.AccessByRole(ui.RoleDialog, "Command Bar")
+	if !ok {
+		t.Fatal("command bar did not open")
+	}
+	app.Advance(time.Second)
+	b := bar.Bounds
+	return pixelRow(app, int(b.X+b.W/2), int(b.Y+b.H-3))
+}
+
+func TestCommandBarBlursTheDocumentBehindIt(t *testing.T) {
+	assertBlurredStripes(t, openCommandBarOverStripes(t, ui.Preferences{}))
+}
+
+func TestCommandBarIsOpaqueWhenTransparencyIsReducedOrContrastIncreased(t *testing.T) {
+	for name, prefs := range map[string]ui.Preferences{"reduce transparency": {ReduceTransparency: true}, "high contrast": {HighContrast: true}} {
+		for _, c := range openCommandBarOverStripes(t, prefs) {
+			if c != [3]uint8{255, 255, 255} {
+				t.Fatalf("%s: command bar pixel %v, want opaque paper", name, c)
 			}
 		}
 	}

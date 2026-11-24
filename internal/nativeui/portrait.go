@@ -5,12 +5,18 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+const collapsible float32 = 0
+
 func panel(c *ui.Context, docked bool) ui.Element {
-	e := ui.Column(c).Fill().Padding(8).Gap(6).Radius(portrait.Radii.XL).Clip()
+	e := ui.Column(c).Fill().Padding(8).Gap(6).Radius(portrait.Shell.PageRadius).Clip()
 	if docked {
-		portrait.Materials.Glass.Apply(e)
+		portrait.Materials.Page.Apply(e)
 	}
 	return e
+}
+
+func sheet(c *ui.Context) ui.Element {
+	return portrait.Materials.Page.Apply(ui.Column(c).Fill().MinWidth(0).Radius(portrait.Shell.PageRadius).Clip())
 }
 
 func scrollEdgeMask(angle float32) ui.LinearGradient {

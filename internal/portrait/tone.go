@@ -22,8 +22,8 @@ var Tones = func() ToneScale {
 	return ToneScale{
 		Neutral: newTone(Colors.Ink, Colors.Ink2),
 		Accent:  accent,
-		Success: accent,
-		Info:    newTone(ui.Hex("#2b6cb0"), ui.Hex("#1e4e8c")),
+		Success: newTone(Colors.Success, Colors.Success),
+		Info:    accent,
 		Warning: newTone(Colors.Warn, Colors.Warn),
 		Danger:  newTone(Colors.Danger, Colors.Danger),
 	}

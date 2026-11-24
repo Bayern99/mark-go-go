@@ -5,6 +5,8 @@ import (
 	"io"
 	"log"
 	"path/filepath"
+	"slices"
+	"sync"
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
@@ -44,6 +46,7 @@ func (a workspaceAdapter) CheckpointDocument(ctx context.Context, documentID, pa
 
 func main() {
 	host := workspace.NewService()
+	host.SetAutosave(documentAutosave)
 	configureReadBench(host)
 	mygo.App.OnBeforeQuit(host.OnBeforeQuit)
 	ds := mygo.NewDocuments(mygo.DocumentsOptions[string]{
@@ -72,6 +75,7 @@ func main() {
 	mcpServer := mcp.NewServer(mcp.Dependencies{Workspace: host, Review: reviewSvc})
 	research.SetBeforeStart(mcpServer.BeforeResearchStart)
 	research.SetAfterStop(mcpServer.AfterResearchStop)
+	nativeui.AfterWorkspaceChange = func() { refreshMenu(host) }
 	mygo.App.WhenReady(func() {
 		mygo.App.SetMenu(buildMenu(host))
 		workspace.ApplyNativeEditMenu(false, false)
@@ -87,22 +91,89 @@ func main() {
 	}
 }
 
+// menuRecents is the recent-document list the current menu was built from, so
+// a workspace change rebuilds the app's own Open Recent submenu only when MyGo
+// has a new list: MyGo refreshes role-based submenus, and this one keeps its
+// errors inside the Portrait window.
+var menuRecents struct {
+	sync.Mutex
+	paths []string
+	built bool
+}
+
+// refreshMenu rebuilds the menu when the recent documents changed.
+func refreshMenu(host *workspace.Service) {
+	if host == nil || !mygo.App.IsReady() {
+		return
+	}
+	paths := mygo.App.RecentDocuments()
+	menuRecents.Lock()
+	same := menuRecents.built && slices.Equal(paths, menuRecents.paths)
+	menuRecents.paths, menuRecents.built = slices.Clone(paths), true
+	menuRecents.Unlock()
+	if same {
+		return
+	}
+	mygo.App.SetMenu(buildMenu(host))
+}
+
+// recentItems lists the recent documents, keeping duplicate file names apart
+// by their folder, and ends with Clear Recent as AppKit's menu does.
+func recentItems(host *workspace.Service) []*mygo.MenuItem {
+	paths := mygo.App.RecentDocuments()
+	menuRecents.Lock()
+	menuRecents.paths, menuRecents.built = slices.Clone(paths), true
+	menuRecents.Unlock()
+	count := map[string]int{}
+	for _, path := range paths {
+		count[filepath.Base(path)]++
+	}
+	items := make([]*mygo.MenuItem, 0, len(paths)+2)
+	for _, path := range paths {
+		path := path
+		label := filepath.Base(path)
+		if count[label] > 1 {
+			label = filepath.Base(filepath.Dir(path)) + "/" + label
+		}
+		items = append(items, &mygo.MenuItem{Label: label, ToolTip: path, Click: func(_ *mygo.MenuItem, win *mygo.Window) {
+			if w := portraitWindow(win); w != nil {
+				w.OpenRecentDocument(path)
+				return
+			}
+			go func() {
+				if _, err := host.Open(desktop.WithWindow(context.Background(), win), path); err != nil {
+					log.Printf("markgogo: open recent: %v", err)
+				}
+			}()
+		}})
+	}
+	if len(items) == 0 {
+		return []*mygo.MenuItem{{Label: "No Recent Documents", Disabled: true}}
+	}
+	return append(items, mygo.Separator(), &mygo.MenuItem{Label: "Clear Recent", Click: func(*mygo.MenuItem, *mygo.Window) {
+		if err := mygo.App.ClearRecentDocuments(); err != nil {
+			log.Printf("markgogo: clear recent documents: %v", err)
+		}
+		go refreshMenu(host)
+	}})
+}
+
+// portraitWindow is the Portrait window a menu command belongs to: the
+// command's own window when it is registered, else the front one, so Open
+// still works for a window whose Portrait layer has not registered yet.
+func portraitWindow(win *mygo.Window) *nativeui.Window {
+	return nativeui.WindowFor(win)
+}
+
 func buildMenu(host *workspace.Service) *mygo.Menu {
 	withWindow := func(run func(*nativeui.Window)) func(*mygo.MenuItem, *mygo.Window) {
 		return func(_ *mygo.MenuItem, win *mygo.Window) {
-			if w := nativeui.WindowFor(win); w != nil {
+			if w := nativeui.FrontWindow(); w != nil {
 				run(w)
 			}
 		}
 	}
-	recent := make([]*mygo.MenuItem, 0, 10)
-	for _, path := range mygo.App.RecentDocuments() {
-		path := path
-		recent = append(recent, &mygo.MenuItem{Label: filepath.Base(path), Click: withWindow(func(w *nativeui.Window) { w.OpenRecentDocument(path) })})
-	}
-	if len(recent) == 0 {
-		recent = append(recent, &mygo.MenuItem{Label: "No Recent Documents", Disabled: true})
-	}
+	recent := recentItems(host)
 	return mygo.NewMenu([]*mygo.MenuItem{
 		{Role: mygo.RoleAppMenu, Submenu: []*mygo.MenuItem{
 			{Role: mygo.RoleAbout}, mygo.Separator(),

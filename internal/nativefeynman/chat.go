@@ -124,12 +124,14 @@ func (p *panel) message(c *ui.Context, index int, item message, streaming bool) 
 			text(c, portrait.Type.Meta, "Research plan").FontWeight(600).TextColor(portrait.Colors.Ink2)
 			for _, step := range item.steps {
 				icon, ink := portrait.IconCircle, portrait.Colors.Ink3
+				tone := portrait.Tones.Neutral
 				if step.Status == "completed" {
-					icon, ink = portrait.IconCheckCircle, portrait.Colors.Success
+					icon, ink, tone = portrait.IconCheckCircle, portrait.Colors.Success, portrait.Tones.Success
 				}
-				ui.Row(c).Gap(6).AlignItems(ui.Start).Children(func() {
+				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 					portrait.Glyph(c, icon, portrait.IconSizes.S, ink).Margin(1, 0, 0, 0)
-					text(c, portrait.Type.Meta, step.Content+" · "+step.Status).TextColor(portrait.Colors.Ink3).Grow(1).MinWidth(0).Wrap()
+					text(c, portrait.Type.Meta, step.Content).TextColor(portrait.Colors.Ink2).Grow(1).MinWidth(0).Wrap()
+					portrait.Badge(c, strings.ReplaceAll(step.Status, "_", " "), tone)
 				})
 			}
 		})
@@ -425,11 +427,16 @@ func (p *panel) commandList(c *ui.Context) {
 				continue
 			}
 			count++
-			label := "/" + command.Name
-			if command.Description != "" {
-				label += " · " + command.Description
+			// The name stays whole and the description takes its own line, so
+			// a short panel never cuts an action to an ellipsis.
+			spec := portrait.ListRowSpec{
+				Title: "/" + command.Name, Detail: command.Description, Label: "Choose research action " + command.Name,
 			}
-			if discreteButton(c, label, "Choose research action "+command.Name, portrait.Icon{}).Clicked() {
+			if command.Source != "" {
+				source := command.Source
+				spec.Trailing = func() { portrait.Caption(c, source).Shrink(0) }
+			}
+			if portrait.ListRow(c.Key("research-action-"+command.Name), spec).Clicked() {
 				s.draft = "/" + command.Name + " "
 				s.actionsOpen = false
 				p.commandQuery = ""

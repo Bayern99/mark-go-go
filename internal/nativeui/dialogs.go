@@ -17,14 +17,22 @@ import (
 
 type windowDialog struct {
 	kind, id, root string
-	open           bool
+	open, busy     bool
+	plan           workspace.ClosePlan
 	docs           []workspace.DocumentInfo
 	ids            []string
 	selected       []bool
+	folders        []workspace.NavEntry
 	value, dir     string
 	title, body    string
 }
 
+func isCloseDialog(d *windowDialog) bool {
+	return d != nil && strings.HasPrefix(d.kind, "close")
+}
+
+// setClosing protects documents whose edits must not reach the model while a
+// close is being resolved, and releases them once it is over.
 func (w *Window) setClosing(ids []string, closing bool) {
 	if w.closing == nil {
 		w.closing = map[string]bool{}
@@ -38,14 +46,45 @@ func (w *Window) setClosing(ids []string, closing bool) {
 	}
 }
 
+// cancelDialog closes the dialog that is up. Only the close dialog owns
+// closing flags, so a rename or move prompt never strands another dialog's
+// documents: those flags outlive every replacement and are released by the
+// close flow itself.
 func (w *Window) cancelDialog() {
 	if w.dialog == nil {
 		return
 	}
-	if strings.HasPrefix(w.dialog.kind, "close") {
+	if isCloseDialog(w.dialog) {
 		w.setClosing(closeDialogIDs(w.dialog), false)
 	}
 	w.dialog = nil
+	w.showNextDialog()
+}
+
+// showDialog replaces the dialog that is up. A close decision owns its
+// documents until it resolves, so a later alert waits its turn instead of
+// replacing the sheet and stranding the flags; every other request waits too,
+// as a sheet blocks its window's commands.
+func (w *Window) showDialog(d *windowDialog) {
+	if w.dialog != nil && isCloseDialog(w.dialog) {
+		if d.kind == "alert" {
+			w.alerts = append(w.alerts, d)
+		}
+		return
+	}
+	if w.dialog != nil {
+		w.cancelDialog()
+	}
+	w.dialog = d
+}
+
+// showNextDialog presents the first queued alert once the sheet is gone.
+func (w *Window) showNextDialog() {
+	for w.dialog == nil && len(w.alerts) > 0 {
+		d := w.alerts[0]
+		w.alerts = w.alerts[1:]
+		w.dialog = d
+	}
 }
 
 func closeDialogIDs(d *windowDialog) []string {
@@ -68,30 +107,6 @@ func closeDialogIDs(d *windowDialog) []string {
 	return nil
 }
 
-func (w *Window) requestClose(kind, root string, ids []string) {
-	edited, err := w.host.ClosePreflight(w.ctx, ids)
-	if err != nil {
-		w.failure = err.Error()
-		return
-	}
-	if len(edited) == 0 {
-		w.performClose(&windowDialog{kind: kind, root: root, id: first(ids), ids: ids})
-		return
-	}
-	w.setClosing(ids, true)
-	d := &windowDialog{kind: kind, root: root, id: first(ids), ids: ids, open: true, docs: edited, selected: make([]bool, len(edited))}
-	for i := range d.selected {
-		d.selected[i] = true
-	}
-	if len(edited) == 1 {
-		d.title = "Save changes to “" + edited[0].Name + "”?"
-	} else {
-		d.title = fmt.Sprintf("Save changes to %d documents?", len(edited))
-	}
-	d.body = "Your changes will be lost if you don't save them."
-	w.dialog = d
-}
-
 func first(values []string) string {
 	if len(values) == 0 {
 		return ""
@@ -99,55 +114,162 @@ func first(values []string) string {
 	return values[0]
 }
 
-func (w *Window) performClose(d *windowDialog) {
-	w.runDialogAction(d, func() error {
-		switch d.kind {
-		case "closeDocument":
-			_, err := w.host.CloseDocument(w.ctx, d.id)
-			return err
-		case "closeWorkspace":
-			_, err := w.host.CloseWorkspace(w.ctx)
-			return err
-		case "closeRoot":
-			_, err := w.host.CloseWorkspaceRoot(w.ctx, d.root)
-			return err
+// requestClose preflights every document the close targets. Documents that
+// autosave in place are written first and never asked about; only untitled,
+// read-only, conflicted, deleted or failed documents reach the sheet.
+func (w *Window) requestClose(kind, root string, ids []string) {
+	if isCloseDialog(w.dialog) {
+		return
+	}
+	targets := w.closeTargets(kind, root, ids)
+	for _, id := range targets {
+		if err := w.publish(id, 0); err != nil {
+			w.failure = err.Error()
+			return
 		}
-		return nil
-	}, portrait.ToastSpec{})
+	}
+	plan, err := w.host.ClosePreflight(w.ctx, targets)
+	if err != nil {
+		w.failure = err.Error()
+		return
+	}
+	if plan.NeedsDecision() {
+		w.setClosing(targets, true)
+		d := w.closeDecision(kind, root, targets, plan)
+		w.showDialog(d)
+		return
+	}
+	if len(plan.Silent) == 0 {
+		w.performClose(&windowDialog{kind: kind, root: root, id: first(targets), ids: targets})
+		return
+	}
+	w.setClosing(targets, true)
+	d := &windowDialog{kind: kind, root: root, id: first(targets), ids: targets, plan: plan, open: true}
+	go w.commitClose(d, workspace.CloseSelection{Silent: infoIDs(plan.Silent)})
 }
 
+// closeTargets resolves the documents a close covers from the workspace
+// service, so a restored tab the window never activated is still asked about.
+func (w *Window) closeTargets(kind, root string, ids []string) []string {
+	if kind == "closeDocument" {
+		return ids
+	}
+	targets, err := w.host.CloseTargetIDs(w.ctx, kind, root)
+	if err != nil || len(targets) == 0 {
+		return ids
+	}
+	return targets
+}
+
+func (w *Window) closeDecision(kind, root string, ids []string, plan workspace.ClosePlan) *windowDialog {
+	d := &windowDialog{kind: kind, root: root, id: first(ids), ids: ids, plan: plan, open: true, docs: plan.Prompt, selected: make([]bool, len(plan.Prompt))}
+	for i := range d.selected {
+		d.selected[i] = true
+	}
+	if len(plan.Prompt) == 1 {
+		d.title = "Save changes to “" + plan.Prompt[0].Name + "”?"
+	} else {
+		d.title = fmt.Sprintf("Save changes to %d documents?", len(plan.Prompt))
+	}
+	d.body = "Your changes will be lost if you don't save them."
+	return d
+}
+
+func (w *Window) performClose(d *windowDialog) {
+	w.runDialogAction(d, func() error { return w.closeDocumentTargets(d) }, portrait.ToastSpec{})
+}
+
+// resolveClose answers the sheet. Every fallible save runs before anything is
+// discarded, and the close itself only runs once all of them succeeded. The
+// sheet stays up, showing progress, so the documents it protects cannot take
+// an edit the close would then drop.
 func (w *Window) resolveClose(d *windowDialog, save bool) {
-	w.dialog = nil
-	ids := closeDialogIDs(d)
-	w.runDialogAction(d, func() error {
-		for i, doc := range d.docs {
-			if doc.ID == "" {
-				continue
-			}
-			shouldSave := save && (len(d.selected) == 0 || i >= len(d.selected) || d.selected[i])
-			var err error
-			if shouldSave {
-				err = w.host.SaveForClose(w.ctx, doc.ID)
-			} else {
-				err = w.host.DiscardDocument(w.ctx, doc.ID)
-			}
-			if err != nil {
-				return err
-			}
+	d.busy, d.open = true, true
+	w.dialog = d
+	sel := workspace.SelectClose(d.plan, save, d.selected)
+	go w.commitClose(d, sel)
+}
+
+func (w *Window) commitClose(d *windowDialog, sel workspace.CloseSelection) {
+	unsaved, err := w.host.ResolveClose(w.ctx, sel)
+	if err == nil && len(unsaved) == 0 {
+		if cerr := w.host.CommitClose(w.ctx, sel); cerr != nil {
+			err = cerr
 		}
-		switch d.kind {
-		case "closeDocument":
-			_, err := w.host.CloseDocument(w.ctx, first(ids))
-			return err
-		case "closeWorkspace":
-			_, err := w.host.CloseWorkspace(w.ctx)
-			return err
-		case "closeRoot":
-			_, err := w.host.CloseWorkspaceRoot(w.ctx, d.root)
-			return err
+	}
+	var closeErr error
+	if err == nil && len(unsaved) == 0 {
+		closeErr = w.closeDocumentTargets(d)
+	}
+	w.win.Update(func() {
+		w.setClosing(closeDialogIDs(d), false)
+		if w.dialog == d {
+			w.dialog = nil
 		}
-		return nil
-	}, portrait.ToastSpec{})
+		d.busy = false
+		w.failure = ""
+		if len(unsaved) > 0 {
+			w.promoteClose(unsaved)
+			return
+		}
+		switch {
+		case errors.Is(err, mygo.ErrCanceled), errors.Is(closeErr, mygo.ErrCanceled):
+			w.showNextDialog()
+		case err != nil:
+			w.ShowAlert("Could not close", err.Error())
+		case closeErr != nil:
+			w.ShowAlert("Could not close", closeErr.Error())
+		}
+		w.showNextDialog()
+	})
+}
+
+// promoteClose sends a document whose save failed back to a Portrait sheet
+// instead of a raw error string.
+func (w *Window) promoteClose(unsaved []workspace.DocumentInfo) {
+	if len(unsaved) == 1 {
+		doc := unsaved[0]
+		switch {
+		case doc.Conflict:
+			w.openConflict(doc.ID)
+			return
+		case doc.ReadOnly:
+			w.openReadOnly(doc.ID)
+			return
+		case doc.Deleted:
+			w.openConflict(doc.ID)
+			return
+		}
+	}
+	var names, reasons []string
+	for _, doc := range unsaved {
+		names = append(names, "“"+doc.Name+"”")
+		if doc.ActionError != "" {
+			reasons = append(reasons, doc.ActionError)
+		}
+	}
+	body := "Your changes are still open. Save again from the document, or choose Don't Save to close without them."
+	if len(reasons) > 0 {
+		body = reasons[0] + ". " + body
+	}
+	w.ShowAlert("Could not save "+strings.Join(names, ", "), body)
+}
+
+// closeDocumentTargets runs the close itself, now that every edit is either
+// written or explicitly discarded.
+func (w *Window) closeDocumentTargets(d *windowDialog) error {
+	switch d.kind {
+	case "closeDocument":
+		_, err := w.host.CloseDocument(w.ctx, d.id)
+		return err
+	case "closeWorkspace":
+		_, err := w.host.CloseWorkspace(w.ctx)
+		return err
+	case "closeRoot":
+		_, err := w.host.CloseWorkspaceRoot(w.ctx, d.root)
+		return err
+	}
+	return nil
 }
 
 func (w *Window) runDialogAction(d *windowDialog, run func() error, success portrait.ToastSpec) {
@@ -163,6 +285,7 @@ func (w *Window) runDialogAction(d *windowDialog, run func() error, success port
 			if err == nil && success.Title != "" {
 				w.toasts = append(w.toasts, success)
 			}
+			w.showNextDialog()
 		})
 	}()
 }
@@ -177,7 +300,44 @@ func (w *Window) requestSave(id string) {
 		w.openReadOnly(id)
 		return
 	}
-	go w.actionToast(func() error { return w.host.Save(w.ctx, id) }, portrait.ToastSpec{ID: "save:" + id, Tone: portrait.Tones.Success, Title: "Saved"})
+	go w.actionDialog("Could not save", func() error { return w.host.Save(w.ctx, id) }, portrait.ToastSpec{ID: "save:" + id, Tone: portrait.Tones.Success, Title: "Saved"})
+}
+
+// actionDialog runs an action and routes its failure to the sheet that can
+// resolve it: a conflict or read-only document gets its Portrait decision,
+// and anything else an in-window alert instead of a native dialog.
+func (w *Window) actionDialog(title string, run func() error, success portrait.ToastSpec) {
+	err := run()
+	w.win.Update(func() {
+		w.failure = ""
+		switch {
+		case err == nil:
+			if success.Title != "" {
+				w.toasts = append(w.toasts, success)
+			}
+		case errors.Is(err, mygo.ErrCanceled):
+		case errors.Is(err, workspace.ErrSaveConflict):
+			if strings.HasPrefix(success.ID, "save:") {
+				w.openConflict(strings.TrimPrefix(success.ID, "save:"))
+				return
+			}
+			w.ShowAlert(title, workspace.ErrSaveConflict.Error())
+		case errors.Is(err, workspace.ErrSaveReadOnly):
+			if strings.HasPrefix(success.ID, "save:") {
+				w.openReadOnly(strings.TrimPrefix(success.ID, "save:"))
+				return
+			}
+			w.ShowAlert(title, workspace.ErrSaveReadOnly.Error())
+		default:
+			w.ShowAlert(title, err.Error())
+		}
+	})
+}
+
+// saveConflict is the inline conflict alert's Save Anyway: the user chose to
+// keep their version, so it writes without asking again.
+func (w *Window) saveConflict(id string) {
+	go w.actionDialog("Could not save the document", func() error { return w.host.SaveAnyway(w.ctx, id) }, portrait.ToastSpec{ID: "save:" + id, Tone: portrait.Tones.Success, Title: "Saved"})
 }
 
 func (w *Window) documentInfo(id string) workspace.DocumentInfo {
@@ -191,49 +351,75 @@ func (w *Window) documentInfo(id string) workspace.DocumentInfo {
 
 func (w *Window) openConflict(id string) {
 	doc := w.documentInfo(id)
-	w.dialog = &windowDialog{kind: "conflict", id: id, open: true, title: "“" + doc.Name + "” changed on disk", body: "Save your version over the disk file, or revert to the disk version. Your unsaved text remains open until you choose."}
+	w.showDialog(&windowDialog{kind: "conflict", id: id, open: true, title: "“" + doc.Name + "” changed on disk", body: "Save your version over the disk file, or revert to the disk version. Your unsaved text remains open until you choose."})
 }
 
 func (w *Window) openReadOnly(id string) {
 	doc := w.documentInfo(id)
-	w.dialog = &windowDialog{kind: "readonly", id: id, open: true, title: "“" + doc.Name + "” is read only", body: "Choose Save As to save your changes to a new file."}
+	w.showDialog(&windowDialog{kind: "readonly", id: id, open: true, title: "“" + doc.Name + "” is read only", body: "Choose Save As to save your changes to a new file."})
 }
 
 func (w *Window) openRename(id string) {
 	doc := w.documentInfo(id)
 	name := doc.Name
 	stem := strings.TrimSuffix(name, filepath.Ext(name))
-	w.dialog = &windowDialog{kind: "rename", id: id, open: true, value: name, title: "Rename “" + name + "”", dir: fmt.Sprint(utf8.RuneCountInString(stem))}
+	w.showDialog(&windowDialog{kind: "rename", id: id, open: true, value: name, title: "Rename “" + name + "”", dir: fmt.Sprint(utf8.RuneCountInString(stem))})
 }
 
 func (w *Window) openRevert(id string) {
 	doc := w.documentInfo(id)
-	w.dialog = &windowDialog{kind: "revert", id: id, open: true, title: "Revert to saved?", body: "Revert “" + doc.Name + "” to the bytes on disk? Unsaved changes will be lost."}
+	w.showDialog(&windowDialog{kind: "revert", id: id, open: true, title: "Revert to saved?", body: "Revert “" + doc.Name + "” to the bytes on disk? Unsaved changes will be lost."})
 }
 
 func (w *Window) openMove(id string) {
 	doc := w.documentInfo(id)
-	w.dialog = &windowDialog{kind: "move", id: id, open: true, title: "Move “" + doc.Name + "”", body: "Choose a folder in this workspace, or choose another folder."}
+	w.showDialog(&windowDialog{kind: "move", id: id, open: true, title: "Move “" + doc.Name + "”", body: "Choose a folder in this workspace, or choose another folder.", folders: w.moveFolders()})
 }
 
+// moveFolders lists every folder of the workspace, so a move can reach one the
+// sidebar has collapsed. A scene supplies the list with the rest of its data.
+func (w *Window) moveFolders() []workspace.NavEntry {
+	if w.host == nil {
+		return w.sceneFolders
+	}
+	folders, _ := w.host.Folders(w.ctx)
+	return folders
+}
+
+// moveCurrent reports whether directory already holds the document.
+func (w *Window) moveCurrent(d *windowDialog, directory string) bool {
+	doc := w.documentInfo(d.id)
+	return directory != "" && filepath.Clean(directory) == filepath.Clean(filepath.Dir(doc.Path))
+}
+
+// chooseMove commits a chosen destination. A taken name asks first and is
+// only replaced once the user agrees.
 func (w *Window) chooseMove(d *windowDialog, directory string) {
 	if directory == "" {
 		return
 	}
-	target := workspace.MoveDestination(w.documentInfo(d.id).Path, directory)
-	if target != "" && target != w.documentInfo(d.id).Path {
+	doc := w.documentInfo(d.id)
+	target := workspace.MoveTarget(doc, directory)
+	if target != "" && !moveSameFile(target, doc.Path) {
 		if _, err := os.Lstat(target); err == nil {
 			d.kind, d.dir, d.open = "moveReplace", directory, true
 			d.title, d.body = "Replace “"+filepath.Base(target)+"”?", "A file with that name already exists in the destination. Replacing it cannot be undone."
 			w.dialog = d
 			return
 		} else if !errors.Is(err, os.ErrNotExist) {
-			w.failure = err.Error()
+			w.ShowAlert("Could not move the document", err.Error())
 			return
 		}
 	}
 	w.dialog = nil
-	w.runDialogAction(d, func() error { return w.host.MoveToFolder(w.ctx, d.id, directory, false) }, portrait.ToastSpec{})
+	go w.actionDialog("Could not move the document", func() error { return w.host.MoveToFolder(w.ctx, d.id, directory, false) }, portrait.ToastSpec{})
+}
+
+func moveSameFile(target, path string) bool {
+	if target == "" || path == "" {
+		return false
+	}
+	return filepath.Clean(target) == filepath.Clean(path)
 }
 
 // ShowAlert presents errors in the Calm Portrait window rather than NSAlert.
@@ -241,8 +427,10 @@ func (w *Window) ShowAlert(title, body string) {
 	if w == nil {
 		return
 	}
-	w.dialog = &windowDialog{kind: "alert", open: true, title: title, body: body}
-	w.win.Invalidate()
+	w.showDialog(&windowDialog{kind: "alert", open: true, title: title, body: body})
+	if w.win != nil {
+		w.win.Invalidate()
+	}
 }
 
 // OpenFiles and OpenRecentDocument keep Open errors inside the Portrait UI.
@@ -275,6 +463,19 @@ func (w *Window) drawDialog(c *ui.Context) {
 	}
 	switch d.kind {
 	case "closeDocument", "closeWorkspace", "closeRoot":
+		if d.busy {
+			// The saves are running. Escape cannot dismiss this one: the
+			// documents stay protected until the close resolves.
+			open := true
+			portrait.DialogShell(c, "close progress", &open, portrait.DialogSpec{Label: d.title, Width: portrait.Form.DialogWidth, Role: ui.RoleAlertDialog, Glass: true}, func() {
+				portrait.Type.Title.Apply(ui.Text(c, d.title)).FontWeight(600).TextColor(portrait.Colors.Ink).Wrap()
+				ui.Row(c).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
+					portrait.Spinner(c, "Saving changes")
+					portrait.Type.Small.Apply(ui.Text(c, "Saving your changes…")).TextColor(portrait.Colors.Ink2).Wrap()
+				})
+			}).Padding(portrait.Form.DialogPad).Gap(portrait.Form.DialogGap)
+			return
+		}
 		docs := make([]portrait.DecisionDocument, len(d.docs))
 		for i, doc := range d.docs {
 			docs[i] = portrait.DecisionDocument{ID: doc.ID, Name: doc.Name, Untitled: doc.Path == ""}
@@ -285,23 +486,23 @@ func (w *Window) drawDialog(c *ui.Context) {
 		} else if len(d.docs) == 1 && d.docs[0].Path == "" {
 			save = "Save…"
 		}
-		portrait.Decision(c, &d.open, portrait.DecisionSpec{Title: d.title, Body: d.body, Documents: docs, Selected: &d.selected, SaveLabel: save, DiscardLabel: discard, OnSave: func() { w.resolveClose(d, true) }, OnDiscard: func() { w.resolveClose(d, false) }, OnCancel: w.cancelDialog})
+		portrait.Decision(c, &d.open, portrait.DecisionSpec{Title: d.title, Body: d.body, Documents: docs, Selected: &d.selected, SaveLabel: save, DiscardLabel: discard, Return: &w.focusReturn, OnSave: func() { w.resolveClose(d, true) }, OnDiscard: func() { w.resolveClose(d, false) }, OnCancel: w.cancelDialog})
 	case "conflict":
-		portrait.Decision(c, &d.open, portrait.DecisionSpec{Title: d.title, Body: d.body, SaveLabel: "Save Anyway", DiscardLabel: "Revert to Disk", OnSave: func() {
+		portrait.Decision(c, &d.open, portrait.DecisionSpec{Title: d.title, Body: d.body, SaveLabel: "Save Anyway", DiscardLabel: "Revert to Disk", Return: &w.focusReturn, OnSave: func() {
 			w.dialog = nil
-			w.runDialogAction(d, func() error { return w.host.SaveAnyway(w.ctx, d.id) }, portrait.ToastSpec{ID: "save:" + d.id, Tone: portrait.Tones.Success, Title: "Saved"})
+			go w.actionDialog("Could not save the document", func() error { return w.host.SaveAnyway(w.ctx, d.id) }, portrait.ToastSpec{ID: "save:" + d.id, Tone: portrait.Tones.Success, Title: "Saved"})
 		}, OnDiscard: func() {
 			w.dialog = nil
-			w.runDialogAction(d, func() error { return w.host.Revert(w.ctx, d.id) }, portrait.ToastSpec{ID: "restore:" + d.id, Tone: portrait.Tones.Success, Title: "Restored"})
+			w.showDialog(&windowDialog{kind: "revert", id: d.id, open: true, title: "Revert to disk?", body: "Replace your unsaved text with the version on disk? This cannot be undone."})
 		}, OnCancel: w.cancelDialog})
 	case "readonly":
-		portrait.Decision(c, &d.open, portrait.DecisionSpec{Title: d.title, Body: d.body, SaveLabel: "Save As…", HideDiscard: true, OnSave: func() {
+		portrait.Decision(c, &d.open, portrait.DecisionSpec{Title: d.title, Body: d.body, SaveLabel: "Save As…", HideDiscard: true, Return: &w.focusReturn, OnSave: func() {
 			w.dialog = nil
-			w.runDialogAction(d, func() error { return w.host.SaveAs(w.ctx, d.id) }, portrait.ToastSpec{ID: "save:" + d.id, Tone: portrait.Tones.Success, Title: "Saved"})
+			go w.actionDialog("Could not save the document", func() error { return w.host.SaveAs(w.ctx, d.id) }, portrait.ToastSpec{ID: "save:" + d.id, Tone: portrait.Tones.Success, Title: "Saved"})
 		}, OnCancel: w.cancelDialog})
 	case "rename":
 		selectTo, _ := strconv.Atoi(d.dir)
-		portrait.Prompt(c, &d.open, portrait.PromptSpec{Title: d.title, Label: "File name", Value: &d.value, SelectTo: selectTo, SubmitLabel: "Rename", Validate: func(name string) string {
+		portrait.Prompt(c, &d.open, portrait.PromptSpec{Title: d.title, Label: "File name", Value: &d.value, SelectTo: selectTo, SubmitLabel: "Rename", Return: &w.focusReturn, Validate: func(name string) string {
 			if err := workspace.ValidateDocumentName(name); err != nil {
 				return err.Error()
 			}
@@ -309,58 +510,22 @@ func (w *Window) drawDialog(c *ui.Context) {
 		}, OnSubmit: func() {
 			name := d.value
 			w.dialog = nil
-			w.runDialogAction(d, func() error { return w.host.RenameTo(w.ctx, d.id, name) }, portrait.ToastSpec{})
+			go w.actionDialog("Could not rename the document", func() error { return w.host.RenameTo(w.ctx, d.id, name) }, portrait.ToastSpec{})
 		}})
 	case "revert":
-		portrait.Confirm(c, &d.open, portrait.ConfirmSpec{Title: d.title, Body: d.body, ConfirmLabel: "Revert", OnConfirm: func() {
+		portrait.Confirm(c, &d.open, portrait.ConfirmSpec{Title: d.title, Body: d.body, ConfirmLabel: "Revert", Return: &w.focusReturn, OnConfirm: func() {
 			w.dialog = nil
-			w.runDialogAction(d, func() error { return w.host.Revert(w.ctx, d.id) }, portrait.ToastSpec{ID: "restore:" + d.id, Tone: portrait.Tones.Success, Title: "Restored"})
+			go w.actionDialog("Could not revert the document", func() error { return w.host.Revert(w.ctx, d.id) }, portrait.ToastSpec{ID: "restore:" + d.id, Tone: portrait.Tones.Success, Title: "Restored"})
 		}})
 	case "moveReplace":
-		portrait.Confirm(c, &d.open, portrait.ConfirmSpec{Title: d.title, Body: d.body, ConfirmLabel: "Replace", OnConfirm: func() {
+		portrait.Confirm(c, &d.open, portrait.ConfirmSpec{Title: d.title, Body: d.body, ConfirmLabel: "Replace", Return: &w.focusReturn, OnConfirm: func() {
 			w.dialog = nil
-			w.runDialogAction(d, func() error { return w.host.MoveToFolder(w.ctx, d.id, d.dir, true) }, portrait.ToastSpec{})
+			go w.actionDialog("Could not move the document", func() error { return w.host.MoveToFolder(w.ctx, d.id, d.dir, true) }, portrait.ToastSpec{})
 		}})
 	case "move":
-		portrait.DialogShell(c, "move document", &d.open, portrait.DialogSpec{Label: d.title, Width: portrait.Form.DialogWidth}, func() {
-			portrait.Type.Title.Apply(ui.Text(c, d.title)).FontWeight(600).TextColor(portrait.Colors.Ink).Wrap()
-			portrait.Type.Small.Apply(ui.Text(c, d.body)).TextColor(portrait.Colors.Ink2).Wrap()
-			ui.Scroll(c).MaxHeight(portrait.Form.ListMax).FillWidth().Children(func() {
-				ui.Column(c).FillWidth().Gap(portrait.Form.PopoverGap).Children(func() {
-					if portrait.ButtonWith(c, w.snapshot.Name, "Move to "+w.snapshot.Root, portrait.ButtonSpec{Look: portrait.Quiet, Leading: portrait.IconFolder}).AlignSelf(ui.Start).Clicked() {
-						w.chooseMove(d, w.snapshot.Root)
-					}
-					for _, entry := range w.navigation.Entries {
-						if entry.Kind == "folder" {
-							entry := entry
-							label := strings.Repeat("  ", entry.Depth) + entry.Name
-							if portrait.ButtonWith(c.Key(entry.Path), label, "Move to "+entry.Path, portrait.ButtonSpec{Look: portrait.Quiet, Leading: portrait.IconFolder}).AlignSelf(ui.Start).Clicked() {
-								w.chooseMove(d, entry.Path)
-							}
-						}
-					}
-				})
-			})
-			ui.Row(c).Justify(ui.End).Gap(portrait.Form.DialogGap).Children(func() {
-				if portrait.QuietButton(c, "Cancel", "Cancel move").Clicked() {
-					d.open = false
-				}
-				if portrait.Button(c, "Choose another folder…", "Choose another folder").Clicked() {
-					go func() {
-						directory, err := w.host.ChooseFolder(w.ctx)
-						w.win.Update(func() {
-							if err == nil {
-								w.chooseMove(d, directory)
-							} else if !errors.Is(err, mygo.ErrCanceled) {
-								w.failure = err.Error()
-							}
-						})
-					}()
-				}
-			})
-		}).Padding(portrait.Form.DialogPad).Gap(portrait.Form.DialogGap)
+		w.drawMove(c, d)
 	case "alert":
-		portrait.DialogShell(c, "portrait alert", &d.open, portrait.DialogSpec{Label: d.title, Width: portrait.Form.DialogWidth, Role: ui.RoleAlertDialog}, func() {
+		portrait.DialogShell(c, "portrait alert", &d.open, portrait.DialogSpec{Label: d.title, Width: portrait.Form.DialogWidth, Role: ui.RoleAlertDialog, Glass: true}, func() {
 			portrait.Type.Title.Apply(ui.Text(c, d.title)).FontWeight(600).TextColor(portrait.Colors.Ink).Wrap()
 			portrait.Type.Small.Apply(ui.Text(c, d.body)).TextColor(portrait.Colors.Ink2).Wrap()
 			ui.Row(c).Justify(ui.End).Children(func() {
@@ -373,4 +538,65 @@ func (w *Window) drawDialog(c *ui.Context) {
 	if w.dialog == d && !d.open {
 		w.cancelDialog()
 	}
+}
+
+// drawMove is the Portrait folder picker: every folder of the workspace, with
+// the document's own folder marked and one primary Move action.
+func (w *Window) drawMove(c *ui.Context, d *windowDialog) {
+	current := filepath.Dir(w.documentInfo(d.id).Path)
+	portrait.DialogShell(c, "move document", &d.open, portrait.DialogSpec{Label: d.title, Width: portrait.Form.DialogWidth, Glass: true}, func() {
+		portrait.Type.Title.Apply(ui.Text(c, d.title)).FontWeight(600).TextColor(portrait.Colors.Ink).Wrap()
+		portrait.Type.Small.Apply(ui.Text(c, d.body)).TextColor(portrait.Colors.Ink2).Wrap()
+		ui.Scroll(c).MaxHeight(portrait.Form.ListMax).FillWidth().Children(func() {
+			ui.Column(c).FillWidth().Gap(portrait.Form.PopoverGap).Children(func() {
+				row := func(key, path, name string, depth int) {
+					spec := portrait.ButtonSpec{Look: portrait.Quiet, Leading: portrait.IconFolder, Selected: d.dir == path}
+					if moveSameFile(path, current) {
+						spec.Trailing = portrait.IconCheck
+					}
+					b := portrait.ButtonWith(c.Key(key), name, "Move to "+path, spec).FillWidth().Justify(ui.Start)
+					if depth > 0 {
+						b.Margin(0, 0, 0, float32(depth)*portrait.Form.PadX)
+					}
+					if b.Clicked() {
+						d.dir = path
+					}
+				}
+				if w.snapshot.Root != "" {
+					row("move-root", w.snapshot.Root, w.snapshot.Name, 0)
+				}
+				for _, entry := range d.folders {
+					row(entry.Path, entry.Path, entry.Name, entry.Depth)
+				}
+			})
+		})
+		ui.Row(c).Justify(ui.End).Gap(portrait.Form.DialogGap).Children(func() {
+			if portrait.QuietButton(c, "Cancel", "Cancel move").Clicked() {
+				d.open = false
+			}
+			if portrait.QuietButton(c, "Choose another folder…", "Choose another folder").Clicked() {
+				go func() {
+					directory, err := w.host.ChooseFolder(w.ctx)
+					w.win.Update(func() {
+						if err == nil {
+							w.chooseMove(d, directory)
+						} else if !errors.Is(err, mygo.ErrCanceled) {
+							w.ShowAlert("Could not choose a folder", err.Error())
+						}
+					})
+				}()
+			}
+			if portrait.AccentButton(c, "Move", "Move to the chosen folder").Disabled(d.dir == "" || moveSameFile(d.dir, current)).Clicked() {
+				w.chooseMove(d, d.dir)
+			}
+		})
+	}).Padding(portrait.Form.DialogPad).Gap(portrait.Form.DialogGap)
+}
+
+func infoIDs(docs []workspace.DocumentInfo) []string {
+	ids := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		ids = append(ids, doc.ID)
+	}
+	return ids
 }

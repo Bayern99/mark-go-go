@@ -2,6 +2,7 @@ package nativeeditor
 
 import (
 	"image/color"
+	"strings"
 	"testing"
 
 	"github.com/Bayern99/mark-go-go/internal/portrait"
@@ -76,4 +77,33 @@ func abs(n int) int {
 		return -n
 	}
 	return n
+}
+
+// TestPreviewBulletAndTaskTextShareOneColumn pins the marker column: an
+// ordinary bullet and a task checkbox occupy the same 20 points, so the first
+// glyph of their text starts at the same x.
+func TestPreviewBulletAndTaskTextShareOneColumn(t *testing.T) {
+	const src = "- Alpha\n- [ ] Beta\n- [x] Gamma\n"
+	d := New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 480, 240)
+	tt.Frame()
+	x := func(source string) float32 {
+		t.Helper()
+		at := strings.Index(src, source)
+		if at < 0 {
+			t.Fatalf("%q is not in the fixture", source)
+		}
+		r, ok := d.RectUTF16(at)
+		if !ok {
+			t.Fatalf("no position for %q", source)
+		}
+		return r.X
+	}
+	bullet := x("Alpha")
+	if task := x("Beta"); task != bullet {
+		t.Fatalf("task text starts at x=%.2f, bullet text at x=%.2f: the marker columns differ", task, bullet)
+	}
+	if done := x("Gamma"); done != bullet {
+		t.Fatalf("completed task text starts at x=%.2f, bullet text at x=%.2f", done, bullet)
+	}
 }

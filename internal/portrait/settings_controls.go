@@ -95,11 +95,13 @@ func Disclosure(c *ui.Context, title string, open *bool, spec DisclosureSpec, bu
 			}
 			Label(c, title).Grow(1).MaxLines(1).Ellipsis("…")
 			if spec.Status != "" {
-				ink := Colors.Ink3
 				if spec.Tone != (Tone{}) {
-					ink = spec.Tone.Ink
+					// A tool or step's outcome reads as a status badge, not as
+					// a green word beside the title.
+					Badge(c, spec.Status, spec.Tone)
+				} else {
+					Type.Meta.Apply(ui.Text(c, spec.Status)).TextColor(Colors.Ink3).MaxLines(1)
 				}
-				Type.Meta.Apply(ui.Text(c, spec.Status)).TextColor(ink).MaxLines(1)
 			}
 		})
 		if panel := parts.Panel(build); panel.Valid() {
@@ -151,6 +153,9 @@ type ListRowSpec struct {
 	Trailing      func()
 	Selected      bool
 	Group, Label  string
+	// IconColumn keeps the text of every row in a list at one x, whether the
+	// row shows an icon or not, as a check mark beside the current one does.
+	IconColumn bool
 }
 
 func ListRow(c *ui.Context, spec ListRowSpec) ui.Element {
@@ -166,8 +171,11 @@ func ListRow(c *ui.Context, spec ListRowSpec) ui.Element {
 		RowHover(row, row.Hovered())
 	}
 	row.Children(func() {
-		if spec.Icon.Glyph != "" {
+		switch {
+		case spec.Icon.Glyph != "":
 			Glyph(c, spec.Icon, IconSizes.M, Colors.Ink2).Shrink(0)
+		case spec.IconColumn:
+			ui.Box(c).Size(IconSizes.M, IconSizes.M).Shrink(0).AccessHidden(true)
 		}
 		ui.Column(c).Grow(1).MinWidth(0).Children(func() {
 			Label(c, spec.Title).MaxLines(1).Ellipsis("…")

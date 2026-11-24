@@ -118,7 +118,10 @@ auto type $'\nDiscard this draft'
 auto wait --text 'Discard this draft'
 auto press 'key="Close Discussion.md"'
 auto wait --text "Don't Save"
-auto press 'key="Don'"'"'t Save"' --settle
+auto press 'key="Don'"'"'t Save"'
+# Closing runs on a goroutine: the tab must be gone before the file is opened
+# again, or the press lands on the tab that is still closing.
+auto wait --text 'Close Discussion.md' --gone
 auto press key=file:Discussion.md --settle
 document_window '前🙂# Discussion' 'Discussion.md' 'Markdown source'
 if grep -F 'Discard this draft' "$WORK/tree"; then exit 1; fi

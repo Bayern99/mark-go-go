@@ -522,11 +522,12 @@ func (d *Document) composer(c *ui.Context, draft *blockDraft) {
 	ui.Row(c).Gap(6).Margin(8, 0, 0, 0).Children(func() {
 		emptyLink := draft.kind == "link" && strings.TrimSpace(draft.text) == ""
 		emptyNote := (draft.kind == "note" || draft.kind == "new note") && strings.TrimSpace(draft.text) == ""
-		if portrait.AccentButton(c, "Save", "Save").Disabled(d.state.ReadOnly || emptyLink || emptyNote).Clicked() {
-			save = true
-		}
+		// Cancel sits left of the primary action, as in every Portrait dialog.
 		if portrait.Button(c, "Cancel", "Cancel").Clicked() {
 			cancel = true
+		}
+		if portrait.AccentButton(c, "Save", "Save").Disabled(d.state.ReadOnly || emptyLink || emptyNote).Clicked() {
+			save = true
 		}
 	})
 	if cancel {

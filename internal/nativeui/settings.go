@@ -258,14 +258,14 @@ func (s *Shell) settingsPane(c *ui.Context, current SettingsPage, pages []Settin
 			header.Children(func() {
 				if !withRail {
 					ui.Spacer(c)
+				} else if query.Active() {
+					// The search header names what is on screen, not a
+					// "Settings / Search" path into a page.
+					portrait.Type.UI.Apply(ui.Text(c, "Search results")).FontWeight(600).TextColor(portrait.Colors.Ink).Role(ui.RoleHeading).Grow(1)
 				} else {
 					portrait.Type.UI.Apply(ui.Text(c, "Settings")).TextColor(portrait.Colors.Ink3)
 					portrait.Type.UI.Apply(ui.Text(c, "/")).TextColor(portrait.Colors.Ink4)
-					label := current.Label
-					if query.Active() {
-						label = "Search"
-					}
-					portrait.Type.UI.Apply(ui.Text(c, label)).FontWeight(600).TextColor(portrait.Colors.Ink).Role(ui.RoleHeading).Grow(1)
+					portrait.Type.UI.Apply(ui.Text(c, current.Label)).FontWeight(600).TextColor(portrait.Colors.Ink).Role(ui.RoleHeading).Grow(1)
 				}
 				if !query.Active() && current.Reset != nil && current.Dirty != nil && current.Dirty() {
 					reset := portrait.ButtonWith(c, "Reset to defaults", "Reset "+current.Label+" to defaults", portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Regular, Leading: portrait.IconArrowCounterClockwise}).Bind(&s.settingsReset)
@@ -292,7 +292,9 @@ func (s *Shell) settingsPane(c *ui.Context, current SettingsPage, pages []Settin
 							continue
 						}
 						ui.Column(c.Key("search-page-" + page.ID)).FillWidth().Gap(portrait.Settings.HeadingGap).Children(func() {
-							link := portrait.ButtonWith(c, page.Label, "Open "+page.Label, portrait.ButtonSpec{Look: portrait.Link, Size: portrait.Sizes.Regular}).AlignSelf(ui.Start).Justify(ui.Start)
+							// A link's text starts at the group headings' x, not
+							// its button padding's.
+							link := portrait.ButtonWith(c, page.Label, "Open "+page.Label, portrait.ButtonSpec{Look: portrait.Link, Size: portrait.Sizes.Regular}).AlignSelf(ui.Start).Justify(ui.Start).Padding(0)
 							if link.Clicked() {
 								s.settingsTab, s.settingsQuery = page.ID, ""
 							}

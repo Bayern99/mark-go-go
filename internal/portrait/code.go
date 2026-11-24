@@ -9,12 +9,18 @@ import (
 // chat. Keeping it here prevents the two Markdown renderers from drifting to
 // different accent, diagnostic and diff colors.
 func CodeTheme(t *ui.Theme) *editor.Theme {
+	// A dark field needs a stronger tint for the same visible difference, so
+	// the current find match stands apart from the other matches.
+	match, currentMatch := float32(0.18), float32(0.45)
+	if IsDark() {
+		match, currentMatch = 0.22, 0.62
+	}
 	th := editor.Theme{
 		Background: Colors.Paper, Text: Colors.Ink,
 		LineNumber: Colors.Ink3, ActiveLineNumber: Colors.Ink,
 		ActiveLine: Colors.Fill, Selection: t.Selection, InactiveSelection: t.Selection.Alpha(0.55), Cursor: Colors.Accent,
 		MatchingBracket: Colors.LineStrong,
-		Match:           Colors.Accent.Alpha(0.18), CurrentMatch: Colors.Accent.Alpha(0.45), Occurrence: Colors.Accent.Alpha(0.10),
+		Match:           Colors.Accent.Alpha(match), CurrentMatch: Colors.Accent.Alpha(currentMatch), Occurrence: Colors.Accent.Alpha(0.10),
 		IndentGuide: Colors.Line, ActiveIndentGuide: Colors.LineStrong, WrapGuide: Colors.Line, Whitespace: Colors.Ink4,
 		Error: Colors.Danger, Warning: Colors.Warn, Info: Colors.Accent, Hint: Colors.Ink3,
 		Added: Colors.Success, Deleted: Colors.Danger, Modified: Colors.Accent,

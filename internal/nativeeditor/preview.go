@@ -24,6 +24,8 @@ type previewLayout struct {
 	refs          map[string][]int
 	frontEnd      int
 	version       uint64
+	space         string
+	dark          bool
 	applied       bool
 	replacements  []editor.Replacement
 	readable      map[int]string
@@ -42,6 +44,30 @@ func (p *previewLayout) replace(start, end int, text string) {
 	if end > start {
 		p.replacements = append(p.replacements, editor.Replacement{Start: start, End: end, Text: text})
 	}
+}
+
+// markerWidth is the column a list marker occupies. Bullets and task
+// checkboxes share it, so their text starts at the same x.
+const markerWidth = 20
+
+// bulletMarker puts an ordinary bullet in the shared marker column, centered
+// as a task's checkbox is, so both their texts start at the same x. The
+// display text keeps the bullet: readable says what the projection shows in
+// place of an element.
+func (p *previewLayout) bulletMarker(start, end int) {
+	if end <= start {
+		return
+	}
+	p.readable[start] = "•"
+	p.replacements = append(p.replacements, editor.Replacement{
+		Start: start, End: end, Width: markerWidth,
+		Content: func(c *ui.Context, e ui.Element, _ editor.Replacement) {
+			e.AlignItems(ui.Center).Justify(ui.Center)
+			e.Children(func() {
+				portrait.Editor.Body.Apply(ui.Text(c, "•")).TextColor(portrait.Colors.Ink)
+			})
+		},
+	})
 }
 
 func previewTaskCheckbox(c *ui.Context, checked *bool) ui.Element {
@@ -147,7 +173,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 					p.replacements = append(p.replacements, editor.Replacement{
 						Start:       task,
 						End:         task + 3,
-						Width:       20,
+						Width:       markerWidth,
 						Interactive: true,
 						Content: func(c *ui.Context, e ui.Element, _ editor.Replacement) {
 							e.AlignItems(ui.Center).Justify(ui.Center)
@@ -170,7 +196,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 					})
 				}
 			} else if !parent.Ordered {
-				p.replace(b.Start, markerEnd, "•")
+				p.bulletMarker(b.Start, markerEnd)
 			}
 		}
 		if b.Kind != parser.Paragraph && b.Kind != parser.Heading {
@@ -548,6 +574,10 @@ func (d *Document) prepareView() {
 		st.OnHover = nil
 		st.Label = "Markdown source"
 		st.Font = portrait.Editor.Code.Font(400)
+		// Markdown source shows ##, -> and :== as written: no ligatures or
+		// contextual alternates fuse them into one glyph.
+		st.Font.Features = "liga=0, calt=0"
+
 		st.ReadingColumn = editor.ReadingColumn{}
 		st.LineBackgrounds = nil
 		st.LineNumbers = editor.LineNumbersOn
@@ -578,10 +608,17 @@ func (d *Document) prepareView() {
 	st.LineHeight = portrait.Editor.Body.LineHeight()
 	st.LineNumbers = editor.LineNumbersOff
 	st.ReadingColumn = editor.ReadingColumn{Width: portrait.Editor.Column, Left: portrait.Editor.GutterLeft, Right: portrait.Editor.GutterRight}
-	if p.applied && !p.dirty && p.version == d.Version() {
+	space, dark := portrait.ActiveSpace()
+	if p.applied && !p.dirty && p.version == d.Version() && p.space == space.Name && p.dark == dark {
 		return
 	}
 	if p.dirty || p.document == nil || p.version != d.Version() {
+		p.build(st.Buffer)
+	}
+	if p.space != space.Name || p.dark != dark {
+		// Quote, code, table and callout backgrounds come from the Space's
+		// tokens, so a Space or appearance change rebuilds the layout.
+		p.space, p.dark = space.Name, dark
 		p.build(st.Buffer)
 	}
 	st.SetBlocks(p.blocks)

@@ -52,13 +52,39 @@ type Window struct {
 	pendingReveal                 *workspace.DocReveal
 	menuKnown, menuUndo, menuRedo bool
 	dialog                        *windowDialog
+	alerts                        []*windowDialog
+	focusReturn                   ui.Handle
 	closing                       map[string]bool
+	sceneFolders                  []workspace.NavEntry
 }
 
-var windowRegistry = map[*mygo.Window]*Window{}
+var (
+	windowRegistry = map[*mygo.Window]*Window{}
+	windowOrder    []*mygo.Window
+)
+
+// AfterWorkspaceChange runs once a window has refreshed for a workspace
+// change. The app installs its Open Recent refresh here: the submenu is the
+// app's own, and MyGo only refreshes the role-based one.
+var AfterWorkspaceChange func()
 
 func WindowFor(native *mygo.Window) *Window {
 	return windowRegistry[native]
+}
+
+// FrontWindow returns a window Portrait has registered, preferring the one the
+// app has focused, so a menu command that arrives before its window is
+// registered still runs in a real Portrait window.
+func FrontWindow() *Window {
+	if w := WindowFor(mygo.FocusedWindow()); w != nil {
+		return w
+	}
+	for i := len(windowOrder) - 1; i >= 0; i-- {
+		if w := WindowFor(windowOrder[i]); w != nil {
+			return w
+		}
+	}
+	return nil
 }
 
 func (w *Window) OpenSettings(tab string) {
@@ -163,11 +189,22 @@ func NewWindow(host *workspace.Service, opts mygo.WindowOptions, extensions ...f
 		}
 		w.win = mygo.NewWindow(opts)
 		w.ctx = desktop.WithWindow(context.Background(), w.win)
-		workspace.WorkspaceChanged.Listen(w.win, func(_ workspace.WorkspaceSnapshot) { w.refresh() })
+		workspace.WorkspaceChanged.Listen(w.win, func(_ workspace.WorkspaceSnapshot) {
+			w.refresh()
+			if AfterWorkspaceChange != nil {
+				AfterWorkspaceChange()
+			}
+		})
 		workspace.DocumentReloaded.Listen(w.win, w.reload)
 		workspace.CommandRequested.Listen(w.win, w.command)
 		workspace.QuitFailed.Listen(w.win, func(f workspace.QuitFailure) { w.ShowAlert(f.Title, f.Body) })
-		w.win.OnFocus(func() { w.menuKnown = false; w.updateMenu() })
+		w.win.OnFocus(func() {
+			w.menuKnown = false
+			w.updateMenu()
+			if AfterWorkspaceChange != nil {
+				AfterWorkspaceChange()
+			}
+		})
 		w.win.OnShow(w.refresh)
 		workspace.NavigationChanged.Listen(w.win, func(n workspace.NavSnapshot) {
 			if n.Root == w.snapshot.Root {
@@ -185,9 +222,11 @@ func NewWindow(host *workspace.Service, opts mygo.WindowOptions, extensions ...f
 		}
 		w.preferences.windows[w] = true
 		windowRegistry[w.win] = w
+		windowOrder = append(windowOrder, w.win)
 		w.win.OnClosed(func() {
 			delete(w.preferences.windows, w)
 			delete(windowRegistry, w.win)
+			windowOrder = slices.DeleteFunc(windowOrder, func(native *mygo.Window) bool { return native == w.win })
 		})
 	})
 	if w.win == nil {
@@ -357,15 +396,7 @@ func (w *Window) command(cmd workspace.NativeCommand) {
 	case "close":
 		w.requestClose("closeDocument", "", []string{cmd.ID})
 	case "closeWorkspace":
-		ids := make([]string, 0, len(w.documents))
-		for id := range w.documents {
-			ids = append(ids, id)
-			if err := w.publish(id, 0); err != nil {
-				w.failure = err.Error()
-				return
-			}
-		}
-		w.requestClose("closeWorkspace", "", ids)
+		w.requestClose("closeWorkspace", "", nil)
 	}
 }
 
@@ -474,7 +505,7 @@ func (w *Window) View(c *ui.Context) {
 			return
 		}
 		doc := w.Active()
-		field := d.source.View(c.Key(doc.ID), doc.ReadOnly).Grow(1).MinHeight(0).FillWidth()
+		field := d.source.View(c.Key(doc.ID), doc.ReadOnly).Grow(1).MinHeight(0).FillWidth().Bind(&w.focusReturn)
 		if w.focusSource {
 			if !w.shell.focusedTab {
 				field.Focus()
@@ -498,21 +529,8 @@ func (w *Window) View(c *ui.Context) {
 		Activate:          func(id string) { go w.action(func() error { return w.host.Activate(w.ctx, id) }) },
 		ActivateWorkspace: func(id string) { go w.action(func() error { return w.host.ActivateWorkspace(w.ctx, id) }) },
 		CloseDocument:     func(id string) { w.command(workspace.NativeCommand{Command: "close", ID: id}) },
-		CloseWorkspace: func(id string) {
-			ids := make([]string, 0, len(w.snapshot.Documents))
-			for _, doc := range w.snapshot.Documents {
-				if doc.WorkspaceRoot != w.snapshot.Root {
-					continue
-				}
-				ids = append(ids, doc.ID)
-				if err := w.publish(doc.ID, 0); err != nil {
-					w.failure = err.Error()
-					return
-				}
-			}
-			w.requestClose("closeRoot", id, ids)
-		},
-		OpenPath: w.openPath, Reveal: w.Reveal, SetMode: w.SetMode,
+		CloseWorkspace:    func(id string) { w.requestClose("closeRoot", id, nil) },
+		OpenPath:          w.openPath, Reveal: w.Reveal, SetMode: w.SetMode,
 		OpenFolder:  func() { go w.action(func() error { _, err := w.host.PickFolder(w.ctx); return err }) },
 		NewDocument: func() { go w.action(func() error { _, err := w.host.New(w.ctx); return err }) },
 		OpenRecent:  func(path string) { go w.action(func() error { return w.host.OpenWorkspace(w.ctx, path) }) },
@@ -531,7 +549,7 @@ func (w *Window) View(c *ui.Context) {
 			}
 		},
 		SetFeynman: func(value bool) { w.setPlugin("feynman", value) }, SetGit: func(value bool) { w.setPlugin("git", value) },
-		SaveConflict: w.openConflict, RevertConflict: w.openConflict,
+		SaveConflict: w.saveConflict, RevertConflict: w.openRevert,
 	}
 	if !w.shell.ready {
 		w.shell.hideSidebar = w.Preference(sidebarHiddenPreference) == "on"
@@ -560,7 +578,7 @@ func (w *Window) View(c *ui.Context) {
 	}
 	w.toasts = nil
 	w.shell.Draw(c, model, actions, slots)
-	w.drawDialog(c)
+	w.DrawDialog(c)
 	w.updateMenu()
 	if oldWidth != 0 && oldWidth != w.shell.rightWidth {
 		w.setPreference("mgo.researchWidth", strconv.Itoa(int(w.shell.rightWidth)))

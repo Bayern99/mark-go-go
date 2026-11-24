@@ -7,6 +7,7 @@ import (
 	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"github.com/Bayern99/mark-go-go/internal/genui"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -38,7 +39,8 @@ type Service struct {
 	workspaceOrder []string
 	claims         map[string]string
 
-	docs *mygo.Documents[string]
+	docs     *mygo.Documents[string]
+	autosave mygo.Autosave
 
 	settings     *settingsStore
 	runs         sync.WaitGroup
@@ -86,6 +88,7 @@ type docSession struct {
 	scrollRestore   uint64
 	restoreError    string
 	actionError     string
+	disk            diskStamp
 
 	view *genui.ViewFollower
 }
@@ -143,6 +146,51 @@ func (s *docSession) documentState() mygo.DocumentState {
 		name = "untitled.md"
 	}
 	return mygo.DocumentState{Name: name, Path: path, Edited: s.edited}
+}
+
+// diskStamp is the file a session last read or wrote: its modification time
+// and size, the pair MyGo compares to know whether another app changed it.
+type diskStamp struct {
+	modTime int64
+	size    int64
+	known   bool
+}
+
+// recordDisk remembers the file a session's document now has, so a close can
+// see an external change even when MyGo's watch has not looked yet.
+func (h *Service) recordDisk(s *docSession) {
+	if s == nil {
+		return
+	}
+	stamp := diskStamp{}
+	if path := s.currentPath(); path != "" {
+		if info, err := os.Stat(path); err == nil {
+			stamp = diskStamp{modTime: info.ModTime().UnixNano(), size: info.Size(), known: true}
+		}
+	}
+	h.mu.Lock()
+	s.disk = stamp
+	h.mu.Unlock()
+}
+
+// changedOnDisk reports whether the file at the session's path differs from
+// what the session last read or wrote.
+func (h *Service) changedOnDisk(s *docSession) bool {
+	if s == nil {
+		return false
+	}
+	h.mu.Lock()
+	known := s.disk
+	h.mu.Unlock()
+	path := s.currentPath()
+	if path == "" || !known.known {
+		return false
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return info.ModTime().UnixNano() != known.modTime || info.Size() != known.size
 }
 
 func (s *docSession) currentText() string {
@@ -352,7 +400,13 @@ func (h *Service) adopt(doc *mygo.Document[string], win *mygo.Window) {
 			_ = DocumentReloaded.Emit(currentWin, s.snapshot())
 		}
 	})
+	h.recordDisk(s)
 	offState := doc.OnStateChange(func(state mygo.DocumentState) {
+		if !state.Edited {
+			// A write — ours or autosave's — made the file the document's
+			// baseline again.
+			h.recordDisk(s)
+		}
 		h.mu.Lock()
 		currentWin := s.win
 		h.mu.Unlock()
@@ -777,9 +831,15 @@ func (h *Service) saveDocument(s *docSession) error {
 	if path == "" {
 		return h.saveAsDocument(s)
 	}
-	if err := s.doc.Save(); err != nil {
+	if h.changedOnDisk(s) {
+		return ErrSaveConflict
+	}
+	// SaveAnyway, not Save: Save opens MyGo's own conflict and permission
+	// alerts, and this path has already decided which Portrait sheet answers.
+	if err := s.doc.SaveAnyway(); err != nil {
 		return err
 	}
+	h.recordDisk(s)
 	h.migrateIfNeeded(s)
 	return nil
 }
@@ -833,54 +893,15 @@ func (h *Service) askSavePath(s *docSession) (string, error) {
 	return target, nil
 }
 
-func (h *Service) Rename(ctx context.Context, documentID string) error {
-	s, err := h.docSession(documentID)
-	if err != nil {
-		return err
-	}
-	err = h.renameDocument(s)
-	h.noteAction(s, err)
-	return err
-}
-
-func (h *Service) renameDocument(s *docSession) error {
-	if err := h.rejectPathChange(s); err != nil {
-		return err
-	}
-	if err := s.doc.Rename(""); err != nil {
-		return err
-	}
-	h.migrateIfNeeded(s)
-	return nil
-}
-
-func (h *Service) MoveTo(ctx context.Context, documentID string) error {
-	s, err := h.docSession(documentID)
-	if err != nil {
-		return err
-	}
-	err = h.moveDocument(s)
-	h.noteAction(s, err)
-	return err
-}
-
-func (h *Service) moveDocument(s *docSession) error {
-	if err := h.rejectPathChange(s); err != nil {
-		return err
-	}
-	if err := s.doc.MoveTo(""); err != nil {
-		return err
-	}
-	h.migrateIfNeeded(s)
-	return nil
-}
-
 func (h *Service) Revert(ctx context.Context, documentID string) error {
 	s, err := h.docSession(documentID)
 	if err != nil {
 		return err
 	}
 	err = s.doc.Revert()
+	if err == nil {
+		h.recordDisk(s)
+	}
 	h.noteAction(s, err)
 	return err
 }

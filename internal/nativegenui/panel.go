@@ -136,7 +136,9 @@ func (p *panel) draw(c *ui.Context) {
 	raw := p.win.Source().Source()
 	v.index(raw)
 	busy := v.cancel != nil || d.Generating
-	ui.Column(c).Fill().MinHeight(0).Gap(8).Padding(12).Children(func() {
+	// The left edge matches the page bar's breadcrumb, so the request form
+	// lines up with the document it belongs to.
+	ui.Column(c).Fill().MinHeight(0).Gap(8).Padding(8, 12, 12, 12).Children(func() {
 		ui.Row(c).Justify(ui.End).Gap(portrait.Form.Gap).Children(func() {
 			if portrait.QuietButton(c, "Request", "Generation request").Expanded(v.settings).Clicked() {
 				v.settings = !v.settings

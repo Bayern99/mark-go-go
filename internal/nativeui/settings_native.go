@@ -150,7 +150,7 @@ func (s *Shell) nativeSettingsPages(m Model, a Actions) []SettingsPage {
 		},
 		{
 			ID: "shortcuts", Label: "Shortcuts", Icon: portrait.IconCommand, Order: 40,
-			Keywords: []string{"shortcuts command bar settings sidebar research preview markdown previous document close open folder save cancel search"},
+			Keywords: []string{"shortcuts keyboard keys command bar settings sidebar research preview markdown previous document close open folder save cancel search"},
 			Draw:     func(c *ui.Context, q SettingsQuery) { shortcutSettings(c, q) },
 		},
 		{

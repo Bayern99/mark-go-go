@@ -9,9 +9,11 @@ import (
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
 
 	"github.com/Bayern99/mark-go-go/internal/nativeeditor"
+	"github.com/Bayern99/mark-go-go/internal/nativereview"
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/review"
+	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -23,11 +25,11 @@ type shellScene struct {
 	mode          string
 	space         string
 	dark          bool
+	dialog        string
 	act           func(*ui.Tester)
 	actSource     func(*ui.Tester, *nativeeditor.Document)
 	research      func(*panel)
 	document      string
-	draw          func(*ui.Context)
 }
 
 func sceneActions(model *nativeui.Model) nativeui.Actions {
@@ -111,7 +113,7 @@ func wuxingScenes() []shellScene {
 		shellScene{name: "feynman_files_dark", width: 1440, height: 900, feynman: true, mode: "preview", space: "MetalWater", dark: true, research: sceneFiles},
 		shellScene{name: "alpha_light", width: 1440, height: 900, feynman: true, mode: "preview", space: "Wood", research: sceneAlpha},
 		shellScene{name: "checkpoints_light", width: 1280, height: 820, mode: "preview", space: "Wood", act: func(app *ui.Tester) { _ = app.Click("Checkpoints") }},
-		shellScene{name: "proposals_dark", width: 1280, height: 820, mode: "preview", space: "MetalWater", dark: true, act: func(app *ui.Tester) { _ = app.Click("Change proposals") }},
+		shellScene{name: "proposals_dark", width: 1280, height: 820, mode: "preview", space: "MetalWater", dark: true},
 		shellScene{name: "find_bar_dark", width: 1280, height: 820, mode: "markdown", space: "MetalWater", dark: true, act: func(app *ui.Tester) { _ = app.Click("Markdown source"); app.Key(ui.Cmd, ui.KeyF); app.Type("Markdown") }},
 		shellScene{name: "genui_request_light", width: 1280, height: 820, mode: "genui", space: "WoodFire"},
 		shellScene{name: "sidebar_drilled_light", width: 1440, height: 900, feynman: true, mode: "preview", space: "FiveElements", act: func(app *ui.Tester) { _ = app.Click("Essays") }},
@@ -127,7 +129,7 @@ func pass2Scenes() []shellScene {
 			suffix, space = "_dark", "MetalWater"
 		}
 		for _, name := range []string{"unsaved_single", "unsaved_multi", "conflict_decision", "readonly_decision", "rename_prompt", "move_picker", "revert_confirm", "quit_failed"} {
-			scenes = append(scenes, shellScene{name: name + suffix, width: 1280, height: 820, mode: "preview", space: space, dark: dark, draw: scenePortraitDialog(name)})
+			scenes = append(scenes, shellScene{name: name + suffix, width: 1280, height: 820, mode: "preview", space: space, dark: dark, dialog: name})
 		}
 		for _, tc := range []struct {
 			name string
@@ -194,62 +196,103 @@ const previewOrgansDocument = `# Preview Organs
 ` + "```go\nfunc calm() string {\n\treturn \"shared syntax\"\n}\n```" + `
 `
 
-func scenePortraitDialog(kind string) func(*ui.Context) {
-	open := true
-	title := "Save changes to “Quiet Software.md”?"
-	body := "Your changes will be lost if you don't save them."
-	docs := []portrait.DecisionDocument{{ID: "a", Name: "Quiet Software.md"}}
-	selected := []bool{true}
-	value := "Quiet Software.md"
-	return func(c *ui.Context) {
-		switch kind {
-		case "unsaved_multi":
-			title = "Save changes to 3 documents?"
-			docs = []portrait.DecisionDocument{{ID: "a", Name: "Quiet Software.md"}, {ID: "b", Name: "Reading List.md"}, {ID: "c", Name: "排版笔记.md"}}
-			if len(selected) != len(docs) {
-				selected = []bool{true, true, false}
-			}
-			portrait.Decision(c, &open, portrait.DecisionSpec{Title: title, Body: body, Documents: docs, Selected: &selected, SaveLabel: "Save Selected", DiscardLabel: "Discard All"})
-		case "conflict_decision":
-			portrait.Decision(c, &open, portrait.DecisionSpec{Title: "“Quiet Software.md” changed on disk", Body: "Save your version over the disk file, or revert to the disk version.", SaveLabel: "Save Anyway", DiscardLabel: "Revert to Disk"})
-		case "readonly_decision":
-			portrait.Decision(c, &open, portrait.DecisionSpec{Title: "“Quiet Software.md” is read only", Body: "Choose Save As to save your changes to a new file.", SaveLabel: "Save As…", HideDiscard: true})
-		case "rename_prompt":
-			portrait.Prompt(c, &open, portrait.PromptSpec{Title: "Rename “Quiet Software.md”", Label: "File name", Value: &value, SelectTo: 14, SubmitLabel: "Rename"})
-		case "move_picker":
-			portrait.DialogShell(c, "scene move", &open, portrait.DialogSpec{Label: "Move document", Width: portrait.Form.DialogWidth}, func() {
-				portrait.Type.Title.Apply(ui.Text(c, "Move “Quiet Software.md”")).FontWeight(600)
-				portrait.Type.Small.Apply(ui.Text(c, "Choose a folder in this workspace, or choose another folder.")).TextColor(portrait.Colors.Ink2).Wrap()
-				for _, folder := range []string{"Field Notes", "Essays", "Plans", "Archive"} {
-					portrait.ButtonWith(c.Key(folder), folder, "Move to "+folder, portrait.ButtonSpec{Look: portrait.Quiet, Leading: portrait.IconFolder}).FillWidth().Justify(ui.Start)
-				}
-				ui.Row(c).Justify(ui.End).Gap(portrait.Form.Gap).Children(func() {
-					portrait.QuietButton(c, "Cancel", "Cancel move")
-					portrait.Button(c, "Choose another folder…", "Choose another folder")
-				})
-			}).Padding(portrait.Form.DialogPad).Gap(portrait.Form.DialogGap)
-		case "revert_confirm":
-			portrait.Confirm(c, &open, portrait.ConfirmSpec{Title: "Revert to saved?", Body: "Revert “Quiet Software.md” to the bytes on disk? Unsaved changes will be lost.", ConfirmLabel: "Revert"})
-		case "quit_failed":
-			portrait.DialogShell(c, "scene quit failure", &open, portrait.DialogSpec{Label: "Could not quit Mark Go Go", Width: portrait.Form.DialogWidth, Role: ui.RoleAlertDialog}, func() {
-				portrait.Type.Title.Apply(ui.Text(c, "Could not quit Mark Go Go")).FontWeight(600)
-				portrait.Type.Small.Apply(ui.Text(c, "Your documents are still open. Resolve the issue, then choose Quit again.")).TextColor(portrait.Colors.Ink2).Wrap()
-				portrait.AccentButton(c, "OK", "Dismiss alert").AlignSelf(ui.End)
-			}).Padding(portrait.Form.DialogPad).Gap(portrait.Form.DialogGap)
-		default:
-			portrait.Decision(c, &open, portrait.DecisionSpec{Title: title, Body: body, Documents: docs, Selected: &selected})
-		}
+// sceneFolders is the move picker's list: every folder of the recorded
+// workspace, including one the sidebar shows collapsed.
+func sceneFolders() []workspace.NavEntry {
+	root := "/Users/ada/Field Notes"
+	folder := func(name, rel string, depth int) workspace.NavEntry {
+		return workspace.NavEntry{ID: "folder:" + rel, Kind: "folder", Name: name, Path: root + "/" + rel, Parent: ".", Depth: depth, MarkdownCount: 2, FolderState: workspace.FolderOpen}
+	}
+	return []workspace.NavEntry{
+		folder("Essays", "Essays", 0),
+		folder("Plans", "Plans", 0),
+		folder("Archive", "Archive", 0),
+		folder("Exports", "Archive/Exports", 1),
 	}
 }
+
+// sceneReview is the recorded review state the proposal, checkpoint and diff
+// scenes draw through nativereview.
+func sceneReview() nativereview.SceneState {
+	root := "/Users/ada/Field Notes"
+	path := root + "/Essays/Quiet Software.md"
+	hunks := []review.DiffHunk{{
+		ID: "h1", Header: "@@ -3,3 +3,4 @@", OldStart: 3, OldLines: 3, NewStart: 3, NewLines: 4,
+		Lines: []review.DiffLine{
+			{Kind: review.DiffLineContext, Text: "", OldLine: 3, NewLine: 3},
+			{Kind: review.DiffLineDelete, Text: "The window stays in front.", OldLine: 4},
+			{Kind: review.DiffLineInsert, Text: "The page stays in front.", NewLine: 4},
+			{Kind: review.DiffLineInsert, Text: "Everything else waits at the edge.", NewLine: 5},
+			{Kind: review.DiffLineContext, Text: "", OldLine: 5, NewLine: 6},
+		},
+	}}
+	proposal := review.ChangeProposal{
+		ID: "p1", Revision: 1, WorkspaceRoot: root, DocumentID: "a", Path: path,
+		Source: "Feynman Research", Summary: "Tighten the introduction and keep the checklist.",
+		Hunks: hunks, CreatedAt: time.Now().UnixMilli(),
+	}
+	state := nativereview.SceneState{
+		Proposals: review.ReviewUpdateEvent{WorkspaceRoot: root, Revision: 1, Proposals: []review.ChangeProposal{proposal, {
+			ID: "p2", Revision: 1, WorkspaceRoot: root, Path: root + "/Reading List.md",
+			Source: "Feynman Research", Summary: "Add the two books read this week.",
+		}}},
+		Compared: proposal,
+		Hunks:    hunks,
+		Checkpoints: []review.Checkpoint{
+			{ID: "c1", CreatedAt: time.Date(2026, 1, 14, 9, 30, 0, 0, time.Local).UnixMilli(), Label: "Quiet beginning", Backend: "git", Source: "git:HEAD"},
+			{ID: "c2", CreatedAt: time.Date(2026, 1, 14, 10, 15, 0, 0, time.Local).UnixMilli(), Label: "Before review", Backend: "local"},
+		},
+	}
+	return state
+}
+
+// sceneStatements is a published view whose statements draw every control the
+// reader renders, so the controls scene exercises the production widgets.
+const sceneStatements = `{
+  "version": 3,
+  "language": "openui-lang/1.0",
+  "sources": {},
+  "a2ui": [
+    {
+      "version": "1.0",
+      "createSurface": {
+        "surfaceId": "view",
+        "catalogId": "markgogo.dev:genui/v3",
+        "components": [
+          "$title = \"A calm reader\"",
+          "$request = \"A multiline request with Portrait field chrome.\"",
+          "$view = \"\"",
+          "$width = 64",
+          "$checked = true",
+          "$source = \"paper\"",
+          "$date = \"2026-01-14\"",
+          "$section = \"summary\"",
+          "form = Form([Input($title, \"Title\", null, \"Reading view title\"), TextArea($request, \"Request\", \"What should the view contain?\", 3), Select($view, [{value: \"preview\", label: \"Preview\"}, {value: \"markdown\", label: \"Markdown\"}], \"View\", \"Choose…\"), Slider($width, 0, 100, 1, \"Reading width\"), Checkbox($checked, \"Show sources\"), RadioGroup($source, [{value: \"paper\", label: \"Published paper\"}, {value: \"notes\", label: \"Local notes\"}], \"Source\"), DatePicker($date, \"Publication date\"), SegmentedControl($section, [{value: \"summary\", label: \"Summary\"}, {value: \"evidence\", label: \"Evidence\"}]), Row([Button(\"Generate\", null, \"solid\"), Button(\"Delete\", null, \"outline\", \"danger\")])])",
+          "root = Col([Title(\"GenUI Reader Controls\", \"lg\"), form])"
+        ]
+      }
+    }
+  ]
+}`
 
 func sceneChatOrgans(p *panel) {
 	p.state.messages = []message{{kind: "assistant", messageID: "organs", text: previewOrgansDocument}}
 }
 
+// TestPass2SceneCoverage keeps the Pass 2 acceptance set from shrinking.
 func TestPass2SceneCoverage(t *testing.T) {
 	scenes := pass2Scenes()
-	if len(scenes) < 40 {
-		t.Fatalf("Pass 2 has %d scenes, want at least 40", len(scenes))
+	if len(scenes) < 44 {
+		t.Fatalf("Pass 2 has %d scenes, want at least 44", len(scenes))
+	}
+	dialogs := 0
+	for _, sc := range scenes {
+		if sc.dialog != "" {
+			dialogs++
+		}
+	}
+	if dialogs != 16 {
+		t.Fatalf("dialog scenes = %d, want the eight dialogs in both appearances", dialogs)
 	}
 }
 

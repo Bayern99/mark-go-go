@@ -48,7 +48,7 @@ func choiceButton(c *ui.Context, key, label, description string, selected, small
 }
 
 func discreteButton(c *ui.Context, label, description string, mark portrait.Icon) ui.Element {
-	return portrait.Tooltip(c, portrait.ListRow(c.Key("research-option-"+label), portrait.ListRowSpec{Icon: mark, Title: label, Label: description}), description)
+	return portrait.Tooltip(c, portrait.ListRow(c.Key("research-option-"+label), portrait.ListRowSpec{Icon: mark, Title: label, Label: description, IconColumn: true}), description)
 }
 
 func chip(c *ui.Context, key string, icon portrait.Icon, label, description string, compact bool) ui.Element {

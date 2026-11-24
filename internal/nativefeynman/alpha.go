@@ -40,7 +40,8 @@ func (p *panel) alphaXiv(c *ui.Context) {
 			}
 			portrait.Track(c, "alpha-search-modes", func(track *portrait.Segments) {
 				for _, mode := range alphaModes {
-					if track.Segment(c, mode, "Search alphaXiv using "+mode+" mode", activeMode == mode).Clicked() {
+					// The label reads as a name; the value stays the command's.
+					if track.Segment(c, titleWord(mode), "Search alphaXiv using "+mode+" mode", activeMode == mode).Clicked() {
 						p.alphaMode = mode
 					}
 				}

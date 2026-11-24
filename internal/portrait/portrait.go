@@ -104,11 +104,27 @@ func paletteFor(s Scheme, dark bool) Palette {
 		Danger: s.Danger, DangerSoft: s.Danger.Alpha(soft - 0.02),
 		Note: s.Accent, NoteSoft: s.Accent.Alpha(soft),
 		Tip: s.Success, TipSoft: s.Success.Alpha(soft),
-		Important: s.Accent.Mix(s.Warn, 0.35), ImportantSoft: s.Accent.Mix(s.Warn, 0.35).Alpha(soft),
+		Important: importantTone.ForAppearance(dark).Mix(s.Accent, 0.12), ImportantSoft: importantTone.ForAppearance(dark).Mix(s.Accent, 0.12).Alpha(soft),
 		Warning: s.Warn, WarningSoft: s.Warn.Alpha(soft - 0.01),
 		Caution: s.Danger, CautionSoft: s.Danger.Alpha(soft - 0.02),
 		Focus: s.Accent.Alpha(focus), Scrim: scrim, ModalScrim: modal,
 	}
+}
+
+// importantTone is GitHub's violet for an Important alert. It is fixed rather
+// than derived from the Space: a Space whose accent and danger tone meet, as
+// Fire's do, would otherwise paint Important like Note or Caution.
+var importantTone = paletteTone{Light: ui.Hex("#8250DF"), Dark: ui.Hex("#C4B5FD")}
+
+// paletteTone is a color pair that does not follow the Space's tokens.
+type paletteTone struct{ Light, Dark ui.Color }
+
+// ForAppearance returns the tone for the light or the dark palette.
+func (t paletteTone) ForAppearance(dark bool) ui.Color {
+	if dark {
+		return t.Dark
+	}
+	return t.Light
 }
 
 func black(a float32) ui.Color { return ui.RGBA(0, 0, 0, a) }

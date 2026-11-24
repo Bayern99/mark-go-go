@@ -33,7 +33,9 @@ func (d *Document) previewHover(req editor.HoverRequest) {
 					destinationStart, destinationEnd, canEdit = d.preview.referenceDestination(snapshot, label)
 				}
 			}
-			d.state.ShowHover(in.Start, in.End, destination, func(c *ui.Context) {
+			// The card draws the URL itself as its mono line: the hover's own
+			// title would show it twice.
+			d.state.ShowHover(in.Start, in.End, "", func(c *ui.Context) {
 				if draft := d.draft; draft != nil && draft.kind == "link" && draft.anchor == in.Start {
 					d.drawDraft(c, draft)
 					return

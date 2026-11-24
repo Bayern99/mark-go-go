@@ -207,3 +207,27 @@ func TestUseSwapsTokensAndReturns(t *testing.T) {
 		t.Error("returning to Five Elements light did not restore its palette")
 	}
 }
+
+// TestCalloutTonesStayDistinct checks that Note and Important, the pair the
+// reviews found alike, are colors a reader can tell apart in every Space.
+func TestCalloutTonesStayDistinct(t *testing.T) {
+	distance := func(a, b ui.Color) int {
+		diff := func(x, y uint8) int {
+			if x < y {
+				return int(y - x)
+			}
+			return int(x - y)
+		}
+		return diff(a.R, b.R) + diff(a.G, b.G) + diff(a.B, b.B)
+	}
+	for _, space := range portrait.Spaces {
+		for _, dark := range []bool{false, true} {
+			portrait.Use(space, dark)
+			note, important := portrait.Colors.Note, portrait.Colors.Important
+			if d := distance(note, important); d < 48 {
+				t.Errorf("%s %v: Note %v and Important %v differ by %d, too close to read apart", space.Name, dark, note, important, d)
+			}
+		}
+	}
+	portrait.Use(portrait.DefaultSpace, false)
+}

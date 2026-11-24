@@ -74,7 +74,18 @@ func TestPromptPreselectsStemAndValidates(t *testing.T) {
 	if !ok {
 		t.Fatal("rename field is missing")
 	}
-	_ = node
+	if node.Value != "Draft.md" {
+		t.Fatalf("rename field shows %q, want the document's name", node.Value)
+	}
+	if !node.Focused {
+		t.Fatal("the rename field does not take the keyboard focus")
+	}
+	// The stem is preselected, so typing replaces "Draft" and leaves ".md".
+	app.Type("Notes")
+	app.Frame()
+	if value != "Notes.md" {
+		t.Fatalf("typing into the preselected stem gave %q, want %q", value, "Notes.md")
+	}
 	value = ""
 	app.Frame()
 	if !app.HasText("Enter a file name") {

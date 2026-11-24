@@ -46,7 +46,7 @@ func Decision(c *ui.Context, open *bool, spec DecisionSpec) ui.Element {
 	}
 	var panel ui.Element
 	owner.Children(func() {
-		panel = DialogShell(c, "decision dialog", open, DialogSpec{Label: spec.Title, Width: Form.DialogWidth, Role: ui.RoleAlertDialog}, func() {
+		panel = DialogShell(c, "decision dialog", open, DialogSpec{Label: spec.Title, Width: Form.DialogWidth, Role: ui.RoleAlertDialog, Glass: true}, func() {
 			Type.Title.Apply(ui.Text(c, spec.Title)).FontWeight(600).TextColor(Colors.Ink).MinWidth(0).Wrap().AccessHidden(true)
 			if spec.Body != "" {
 				Type.Small.Apply(ui.Text(c, spec.Body)).TextColor(Colors.Ink2).MinWidth(0).Wrap().AccessHidden(true)
@@ -58,10 +58,14 @@ func Decision(c *ui.Context, open *bool, spec DecisionSpec) ui.Element {
 						(*spec.Selected)[i] = true
 					}
 				}
-				ui.Column(c).FillWidth().Gap(Form.Gap).Role(ui.RoleGroup).Label("Documents to save").Children(func() {
-					for i, document := range spec.Documents {
-						Checkbox(c.Key(document.ID), &(*spec.Selected)[i], document.Name)
-					}
+				// A long list scrolls so the action row below always stays on
+				// screen, whatever the window's height.
+				ui.Scroll(c).MaxHeight(Form.ListMax).FillWidth().Role(ui.RoleGroup).Label("Documents to save").Children(func() {
+					ui.Column(c).FillWidth().Gap(Form.Gap).Children(func() {
+						for i, document := range spec.Documents {
+							Checkbox(c.Key(document.ID), &(*spec.Selected)[i], document.Name)
+						}
+					})
 				})
 			}
 			row := ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Form.DialogGap).FocusGroup(ui.Horizontal)
@@ -83,6 +87,12 @@ func Decision(c *ui.Context, open *bool, spec DecisionSpec) ui.Element {
 				}
 				ui.Spacer(c)
 				cancel := ButtonWith(c, spec.CancelLabel, spec.CancelLabel, ButtonSpec{Look: Quiet})
+				if c.Shortcut(ui.Cmd, ui.KeyPeriod) {
+					*open = false
+					if spec.OnCancel != nil {
+						spec.OnCancel()
+					}
+				}
 				if cancel.Clicked() {
 					*open = false
 					if spec.OnCancel != nil {
@@ -143,12 +153,20 @@ func Prompt(c *ui.Context, open *bool, spec PromptSpec) ui.Element {
 	}
 	owner := ui.Box(c.Key("prompt:"+spec.Title)).Absolute().Size(0, 0)
 	initialized := ui.Local(owner, "initialized", func() bool { return false })
+	wasOpen := ui.Local(owner, "was open", func() bool { return false })
+	returned := ui.Local(owner, "returned", func() bool { return false })
+	if *returned {
+		if spec.Return != nil {
+			spec.Return.CancelFocus(c)
+		}
+		*returned = false
+	}
 	if !*open {
 		*initialized = false
 	}
 	var panel ui.Element
 	owner.Children(func() {
-		panel = DialogShell(c, "prompt dialog", open, DialogSpec{Label: spec.Title, Width: Form.DialogWidth, Role: ui.RoleDialog}, func() {
+		panel = DialogShell(c, "prompt dialog", open, DialogSpec{Label: spec.Title, Width: Form.DialogWidth, Role: ui.RoleDialog, Glass: true}, func() {
 			Type.Title.Apply(ui.Text(c, spec.Title)).FontWeight(600).TextColor(Colors.Ink).Wrap().AccessHidden(true)
 			problem := ""
 			if spec.Validate != nil {
@@ -156,6 +174,7 @@ func Prompt(c *ui.Context, open *bool, spec PromptSpec) ui.Element {
 			}
 			field := TextField(c, spec.Value, FieldSpec{Label: spec.Label, Placeholder: spec.Placeholder, Invalid: problem != ""})
 			field.Frame().FillWidth()
+			field.Input().TextColor(Colors.Ink)
 			if !*initialized {
 				field.Input().Focus().SetTextSelection(0, max(0, min(spec.SelectTo, len([]rune(*spec.Value)))))
 				*initialized = true
@@ -164,7 +183,7 @@ func Prompt(c *ui.Context, open *bool, spec PromptSpec) ui.Element {
 				Type.Meta.Apply(ui.Text(c, problem)).TextColor(Colors.Danger).Role(ui.RoleAlert).Wrap()
 			}
 			ui.Row(c).Justify(ui.End).Gap(Form.DialogGap).Children(func() {
-				if QuietButton(c, spec.CancelLabel, spec.CancelLabel).Clicked() {
+				if QuietButton(c, spec.CancelLabel, spec.CancelLabel).Clicked() || c.Shortcut(ui.Cmd, ui.KeyPeriod) {
 					*open = false
 				}
 				if AccentButton(c, spec.SubmitLabel, spec.SubmitLabel).Disabled(problem != "").Clicked() || field.Input().Submitted() && problem == "" {
@@ -180,5 +199,14 @@ func Prompt(c *ui.Context, open *bool, spec PromptSpec) ui.Element {
 			Materials.Sheet.Apply(panel)
 		}
 	})
+	if *wasOpen && !*open && spec.Return != nil {
+		if target := c.Resolve(*spec.Return); target.Valid() {
+			spec.Return.Focus(c)
+			*returned = true
+		} else {
+			spec.Return.CancelFocus(c)
+		}
+	}
+	*wasOpen = *open
 	return panel
 }

@@ -43,7 +43,7 @@ func TextField(c *ui.Context, value *string, spec FieldSpec) Field {
 			Glyph(c, spec.Leading, IconSizes.S, Colors.Ink3).Shrink(0)
 		}
 		input = Type.UI.Apply(ui.TextInputBase(c.Key("input"), value)).FocusRing(false).Grow(1).MinWidth(0).
-			Label(label).Placeholder(spec.Placeholder).Invalid(spec.Invalid).Disabled(spec.Disabled)
+			TextColor(Colors.Ink).Label(label).Placeholder(spec.Placeholder).Invalid(spec.Invalid).Disabled(spec.Disabled)
 		if spec.Password {
 			input.Password()
 		}
@@ -142,7 +142,7 @@ func TextArea(c *ui.Context, value *string, spec AreaSpec) ui.Element {
 			style = Type.CodeSmall
 		}
 		input = style.Apply(ui.TextAreaBase(c.Key("input"), value)).FocusRing(false).Grow(1).MinWidth(0).MinHeight(0).Height(max(0, height-2*Form.AreaPadY)).
-			Label(spec.Label).Placeholder(spec.Placeholder).Invalid(spec.Invalid).Disabled(spec.Disabled)
+			TextColor(Colors.Ink).Label(spec.Label).Placeholder(spec.Placeholder).Invalid(spec.Invalid).Disabled(spec.Disabled)
 	})
 	applyFieldLook(frame, spec.Invalid)
 	return input
@@ -165,9 +165,10 @@ func FormRow(c *ui.Context, label, help string, control func()) ui.Element {
 type Option struct{ Value, Label string }
 
 type SelectSpec struct {
-	Label string
-	Size  float32
-	Width float32
+	Label       string
+	Placeholder string
+	Size        float32
+	Width       float32
 }
 
 func Select(c *ui.Context, selected *string, options []Option, spec SelectSpec) ui.Element {
@@ -175,11 +176,15 @@ func Select(c *ui.Context, selected *string, options []Option, spec SelectSpec) 
 	open := ui.Local(root, "select open", func() bool { return false })
 	var trigger ui.Element
 	root.Children(func() {
-		title := *selected
+		title, chosen := *selected, false
 		for _, option := range options {
 			if option.Value == *selected {
-				title = option.Label
+				title, chosen = option.Label, true
 			}
+		}
+		if !chosen {
+			// An empty select shows what it wants rather than a blank track.
+			title, chosen = spec.Placeholder, spec.Placeholder != ""
 		}
 		trigger = Menu(c.Key("menu"), open, func(menu *MenuBuilder) {
 			for _, option := range options {
@@ -201,7 +206,11 @@ func Select(c *ui.Context, selected *string, options []Option, spec SelectSpec) 
 		}
 		Press(trigger, Raised)
 		trigger.Children(func() {
-			Type.UI.Apply(ui.Text(c, title)).TextColor(Colors.Ink).Grow(1).MaxLines(1).Ellipsis("…")
+			ink := Colors.Ink
+			if !chosen {
+				ink = Colors.Ink3
+			}
+			Type.UI.Apply(ui.Text(c, title)).TextColor(ink).Grow(1).MaxLines(1).Ellipsis("…")
 			Glyph(c, IconCaretDown, IconSizes.XS, Colors.Ink3).Shrink(0)
 		})
 	})

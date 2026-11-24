@@ -450,7 +450,7 @@ func (r *Reading) control(c *ui.Context, e *openuilang.Element, p props, path st
 			for i, option := range options {
 				portraitOptions[i] = portrait.Option{Value: option.value, Label: option.label}
 			}
-			named(portrait.Select(c, &selected, portraitOptions, portrait.SelectSpec{Label: p.text("label")}), p.text("label"), placeholder, required).MinWidth(0).Invalid(problem != "")
+			named(portrait.Select(c, &selected, portraitOptions, portrait.SelectSpec{Label: p.text("label"), Placeholder: placeholder}), p.text("label"), placeholder, required).MinWidth(0).Invalid(problem != "")
 			if selected != value {
 				field.set(selected)
 			}

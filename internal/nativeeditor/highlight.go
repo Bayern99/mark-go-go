@@ -2,6 +2,7 @@ package nativeeditor
 
 import (
 	"slices"
+	"sort"
 
 	"github.com/egoist/mygo/ui/editor"
 	"github.com/egoist/mygo/ui/markdown/parser"
@@ -59,6 +60,17 @@ func (h *markdownHighlighter) Tokens(line int, text string, dst []editor.Token) 
 	start := len(dst)
 	dst, final := h.Highlighter.Tokens(line, text, dst)
 	offset := h.text.LineStart(line)
+	cursors := [3]int{
+		cursorAt(h.code, offset),
+		cursorAt(h.quotes, offset),
+		cursorAt(h.completed, offset),
+	}
+	// A line no range reaches keeps the tokenizer's tokens as they are.
+	if !reaches(h.code, cursors[0], offset, len(text)) &&
+		!reaches(h.quotes, cursors[1], offset, len(text)) &&
+		!reaches(h.completed, cursors[2], offset, len(text)) {
+		return dst, final
+	}
 	base := slices.Clone(dst[start:])
 	dst = dst[:start]
 	pos := 0
@@ -66,28 +78,39 @@ func (h *markdownHighlighter) Tokens(line int, text string, dst []editor.Token) 
 		for pos < token.End {
 			at := offset + pos
 			end, kind := token.End, token.Kind
-			apply := func(ranges []editor.Range, tokenKind editor.TokenKind) {
-				for _, span := range ranges {
-					if span.End <= at {
-						continue
-					}
-					if span.Start > at {
-						end = min(end, span.Start-offset)
-						break
-					}
-					if span.Start <= at && at < span.End {
-						kind = tokenKind
-						end = min(end, span.End-offset)
-					}
-					break
+			apply := func(ranges []editor.Range, cursor *int, tokenKind editor.TokenKind) {
+				for *cursor < len(ranges) && ranges[*cursor].End <= at {
+					*cursor++
 				}
+				if *cursor >= len(ranges) {
+					return
+				}
+				span := ranges[*cursor]
+				if span.Start > at {
+					end = min(end, span.Start-offset)
+					return
+				}
+				kind = tokenKind
+				end = min(end, span.End-offset)
 			}
-			apply(h.code, editor.TokenCode)
-			apply(h.quotes, editor.TokenType)
-			apply(h.completed, editor.TokenDeleted)
+			apply(h.code, &cursors[0], editor.TokenCode)
+			apply(h.quotes, &cursors[1], editor.TokenType)
+			apply(h.completed, &cursors[2], editor.TokenDeleted)
 			dst = append(dst, editor.Token{End: max(pos+1, end), Kind: kind})
 			pos = max(pos+1, end)
 		}
 	}
 	return dst, final
+}
+
+// cursorAt is the first range that can still reach offset. The ranges are
+// sorted, so a line's pass starts where the line does rather than at the
+// beginning of the document.
+func cursorAt(ranges []editor.Range, offset int) int {
+	return sort.Search(len(ranges), func(i int) bool { return ranges[i].End > offset })
+}
+
+// reaches reports whether the range at cursor meets the line at offset.
+func reaches(ranges []editor.Range, cursor, offset, length int) bool {
+	return cursor < len(ranges) && ranges[cursor].Start < offset+length
 }

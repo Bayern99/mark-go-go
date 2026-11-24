@@ -417,7 +417,9 @@ func (p *panel) header(c *ui.Context) {
 				p.loadSessions(s.root)
 			}
 		}
-		popoverWidth := min(float32(340), max(float32(260), width-32))
+		// The popover stays inside the research panel, so its rows never
+		// reach past the panel's own left edge.
+		popoverWidth := min(float32(320), max(float32(220), width-28))
 		maxHeight := max(float32(140), min(float32(360), height-160))
 		popover := portrait.PopoverWithSpec(c, button, &s.sessionsOpen, portrait.PopoverSpec{Width: popoverWidth, MaxHeight: maxHeight}, func() {
 			p.sessions(c)

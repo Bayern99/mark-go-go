@@ -10,6 +10,8 @@ import (
 
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
 	"github.com/Bayern99/mark-go-go/internal/nativeeditor"
+	"github.com/Bayern99/mark-go-go/internal/nativegenui"
+	"github.com/Bayern99/mark-go-go/internal/nativereview"
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
@@ -135,6 +137,15 @@ func TestShellScenes(t *testing.T) {
 			if sc.research != nil {
 				sc.research(p)
 			}
+			space := portrait.DefaultSpace
+			if named, ok := portrait.SpaceNamed(sc.space); ok {
+				space = named
+			}
+			// Every scene draws production surfaces: the dialogs come from
+			// Window.drawDialog, the review panels from nativereview's own
+			// draw code, and the reading controls from nativegenui's.
+			sceneWindow := nativeui.SceneWindow(model.Workspace, model.Navigation, sceneFolders(), sourceText, space, sc.dark)
+			reviewScene := nativereview.NewScene(sceneWindow, sceneReview())
 			slots := nativeui.Slots{
 				Document: func(c *ui.Context) {
 					field := source.View(c.Key("scene-doc"), false).Grow(1).MinHeight(0).FillWidth()
@@ -145,103 +156,40 @@ func TestShellScenes(t *testing.T) {
 				Research: func(c *ui.Context) {
 					ui.Column(c.Key("scene-research")).Fill().MinWidth(0).Children(func() { p.draw(c) })
 				},
-				Settings:    p.settingsPages(),
-				Checkpoints: func(c *ui.Context) {},
+				Settings: p.settingsPages(),
 			}
-			if sc.name == "checkpoints_light" {
-				slots.Checkpoints = func(c *ui.Context) {
-					portrait.SettingsGroup(c, "Checkpoints", func(rows *portrait.Rows) {
-						rows.Row(portrait.RowSpec{Title: "Quiet beginning", Description: "Git ref · 2026-01-14 09:30"}, func() { portrait.Button(c, "Compare", "Compare the selected checkpoint") })
-						rows.Row(portrait.RowSpec{Title: "Before review", Description: "Local snapshot · 2026-01-14 10:15"}, func() {})
-					})
+			switch {
+			case sc.dialog != "":
+				if !sceneWindow.SceneDialog(sc.dialog) {
+					t.Fatalf("scene dialog %q is not a production dialog", sc.dialog)
 				}
-			}
-			if strings.HasPrefix(sc.name, "proposals_") {
-				open := false
-				slots.Review = func(c *ui.Context) {
-					button := portrait.ButtonWith(c, "Change proposals · 1", "Change proposals", portrait.ButtonSpec{Look: portrait.Quiet, Leading: portrait.IconSparkle, Selected: open})
-					if button.Clicked() {
-						open = !open
-					}
-					portrait.PopoverWithSpec(c, button, &open, portrait.PopoverSpec{Width: portrait.Form.PopoverWide, Title: "Change proposals", Opaque: true}, func() {
-						ui.Column(c).Padding(0, portrait.Form.PadX).Children(func() {
-							portrait.SettingsGroup(c, "Quiet Software.md", func(rows *portrait.Rows) {
-								rows.Row(portrait.RowSpec{Title: "Tighten the introduction", Description: "Feynman Research · 2 clean hunks"}, func() { portrait.AccentButton(c, "Apply decisions", "Apply decisions") })
-							})
-						})
-					}).Background(portrait.Colors.Paper)
+			case strings.HasPrefix(sc.name, "proposals_"):
+				reviewScene.OpenProposals()
+				slots.Review = reviewScene.Proposals
+			case strings.HasPrefix(sc.name, "checkpoints_"), strings.HasPrefix(sc.name, "diff_"):
+				slots.Checkpoints = reviewScene.Checkpoints
+			case strings.HasPrefix(sc.name, "genui_controls_"):
+				reading, err := nativegenui.SceneReading(sceneStatements)
+				if err != nil {
+					t.Fatalf("genui statements: %v", err)
 				}
-			}
-			if strings.HasPrefix(sc.name, "diff_") {
-				slots.Checkpoints = func(c *ui.Context) {
-					portrait.SettingsGroup(c, "Quiet Software.md", func(rows *portrait.Rows) {
-						rows.Row(portrait.RowSpec{Title: "@@ -1,3 +1,3 @@", Description: "2 additions · 1 deletion", Stacked: true}, func() {
-							ui.Column(c).FillWidth().Radius(portrait.Radii.M).Clip().Children(func() {
-								for _, line := range []struct {
-									text string
-									back ui.Color
-								}{{"  Good tools recede.", portrait.Clear}, {"- The window stays in front.", portrait.Diff.Delete}, {"+ The page stays in front.", portrait.Diff.Insert}, {"+ Everything else waits at the edge.", portrait.Diff.Insert}} {
-									portrait.Diff.Lines.Apply(ui.Text(c, line.text)).TextColor(portrait.Colors.Ink).FillWidth().Padding(portrait.Form.HelpGap, portrait.Form.PadX).Background(line.back)
-								}
-							})
-						})
-					})
-				}
-			}
-			if strings.HasPrefix(sc.name, "genui_controls_") {
-				textValue, areaValue := "Calm reader", "A multiline request with Portrait field chrome."
-				selectedValue, radioValue, dateValue := "preview", "paper", time.Now()
-				sliderValue := 64.0
-				checked, tab := true, 0
-				slots.GenUI = func(c *ui.Context) {
-					ui.Scroll(c).Fill().Children(func() {
-						ui.Column(c).FillWidth().MaxWidth(portrait.Settings.Column).Padding(portrait.Settings.ColumnPadTop).Gap(portrait.Form.Gap).Children(func() {
-							portrait.PanelTitle(c, "GenUI Reader Controls")
-							portrait.TextField(c, &textValue, portrait.FieldSpec{Label: "Title"}).Frame().FillWidth()
-							portrait.TextArea(c, &areaValue, portrait.AreaSpec{Label: "Request", Rows: 3})
-							portrait.Select(c, &selectedValue, []portrait.Option{{Value: "preview", Label: "Preview"}, {Value: "markdown", Label: "Markdown"}}, portrait.SelectSpec{Label: "View"})
-							portrait.Slider(c, &sliderValue, 0, 100).Label("Reading width")
-							portrait.Checkbox(c, &checked, "Show sources")
-							ui.RadioGroup(c, func() {
-								portrait.Radio(c.Key("paper"), &radioValue, "paper", "Published paper")
-								portrait.Radio(c.Key("notes"), &radioValue, "notes", "Local notes")
-							})
-							portrait.DateField(c, &dateValue, "Publication date")
-							portrait.Segmented(c, &tab, []string{"Summary", "Evidence", "Sources"}, "Reading sections")
-							ui.Row(c).Gap(portrait.Form.Gap).Children(func() {
-								portrait.AccentButton(c, "Generate", "Generate view")
-								portrait.ButtonWith(c, "Delete", "Delete view", portrait.ButtonSpec{Look: portrait.DangerOutline})
-							})
-						})
-					})
-				}
-			}
-			if strings.HasPrefix(sc.name, "settings_genui_") {
-				slots.Settings = append(slots.Settings, nativeui.SettingsPage{ID: "genui", Section: "Workspace", Label: "GenUI", Icon: portrait.IconSparkle, Order: 210, Draw: func(c *ui.Context, _ nativeui.SettingsQuery) {
-					portrait.SettingsGroup(c, "Generated views", func(rows *portrait.Rows) {
-						rows.Row(portrait.RowSpec{Title: "Default view", Description: "Choose how generated documents first open."}, func() {
-							value := "preview"
-							portrait.Select(c, &value, []portrait.Option{{Value: "preview", Label: "Preview"}, {Value: "genui", Label: "GenUI"}}, portrait.SelectSpec{Label: "Default view"})
-						})
-					})
-				}})
-			}
-			if sc.name == "genui_request_light" {
+				reading.SelectItem = func(nativegenui.Node, string) {}
+				reading.CanSelect = func(nativegenui.Node) bool { return true }
+				slots.GenUI = func(c *ui.Context) { reading.View(c) }
+			case sc.name == "genui_request_light":
 				request := "Create a calm reading view with a summary and key principles."
-				slots.GenUI = func(c *ui.Context) {
-					ui.Column(c).Fill().Padding(0, 12, 12, 12).Gap(portrait.Form.Gap).Children(func() {
-						portrait.PanelTitle(c, "Request")
-						portrait.TextArea(c, &request, portrait.AreaSpec{Label: "Generation request", Rows: 3})
-						portrait.AccentButton(c, "Generate", "Generate").AlignSelf(ui.Start)
-					})
-				}
+				slots.GenUI = func(c *ui.Context) { nativegenui.SceneRequest(c, request) }
+			case strings.HasPrefix(sc.name, "settings_genui_"):
+				settings := workspace.DefaultSettings()
+				settings.Models = []string{"claude-sonnet-4-5", "gpt-5.4", "gemini-3-pro"}
+				settings.Model = "claude-sonnet-4-5"
+				settings.AgentCommand = "feynman genui --json"
+				slots.Settings = append(slots.Settings, nativegenui.SceneSettingsPage(settings))
 			}
 			app := ui.NewTester(func(c *ui.Context) {
 				c.SetMenuPresentation(ui.PopoverMenus)
 				shell.Draw(c, model, sceneActions(&model), slots)
-				if sc.draw != nil {
-					sc.draw(c)
-				}
+				sceneWindow.DrawDialog(c)
 			}, sc.width, sc.height)
 			app.SetScale(2)
 			app.Frame()
@@ -279,6 +227,13 @@ func TestShellScenes(t *testing.T) {
 					t.Fatal("link hover scene has no visible hover-card actions")
 				}
 			}
+			// Each production surface must show a control only it has, so a
+			// scene cannot pass with a stand-in panel.
+			for _, want := range sceneWitnesses(sc) {
+				if _, ok := app.Find(want); !ok {
+					t.Fatalf("scene %s does not show its production control %q", sc.name, want)
+				}
+			}
 			path := filepath.Join(dir, prefix+sc.name+".png")
 			file, err := os.Create(path)
 			if err != nil {
@@ -304,4 +259,39 @@ func TestShellScenes(t *testing.T) {
 			}
 		})
 	}
+}
+
+// sceneWitnesses names the control a surface is known by.
+func sceneWitnesses(sc shellScene) []string {
+	switch {
+	case sc.dialog == "unsaved_single":
+		return []string{"Don't Save"}
+	case sc.dialog == "unsaved_multi":
+		return []string{"Discard All"}
+	case sc.dialog == "conflict_decision":
+		return []string{"Save Anyway", "Revert to Disk"}
+	case sc.dialog == "readonly_decision":
+		return []string{"Save As…"}
+	case sc.dialog == "rename_prompt":
+		return []string{"File name"}
+	case sc.dialog == "move_picker":
+		return []string{"Choose another folder…"}
+	case sc.dialog == "revert_confirm":
+		return []string{"Revert"}
+	case sc.dialog == "quit_failed":
+		return []string{"Dismiss alert"}
+	case strings.HasPrefix(sc.name, "proposals_"):
+		return []string{"Apply decisions", "Dismiss proposal"}
+	case strings.HasPrefix(sc.name, "checkpoints_"):
+		return []string{"Create checkpoint"}
+	case strings.HasPrefix(sc.name, "diff_"):
+		return []string{"@@ -3,3 +3,4 @@"}
+	case strings.HasPrefix(sc.name, "genui_controls_"):
+		return []string{"Reading width", "Choose…"}
+	case sc.name == "genui_request_light":
+		return []string{"Generate"}
+	case strings.HasPrefix(sc.name, "settings_genui_"):
+		return []string{"Agent command"}
+	}
+	return nil
 }

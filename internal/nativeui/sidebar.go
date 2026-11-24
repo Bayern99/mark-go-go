@@ -121,7 +121,8 @@ func (s *Shell) space(c *ui.Context, m Model, a Actions) {
 		meta = fmt.Sprintf("%s · %d files", w.Root, m.Navigation.Total)
 	}
 	space := spaceOf(m)
-	switcher := portrait.MenuWithSpec(c, &s.workspaceMenu, portrait.MenuSpec{TopOffset: portrait.Shell.Row + portrait.Sizes.Regular + portrait.Form.Gap}, func(menu *portrait.MenuBuilder) {
+	// The menu hangs right below its trigger, as every other popover does.
+	switcher := portrait.Menu(c, &s.workspaceMenu, func(menu *portrait.MenuBuilder) {
 		var current string
 		menu.Section("Workspaces")
 		for _, root := range w.Workspaces {

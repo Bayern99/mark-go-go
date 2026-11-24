@@ -61,8 +61,9 @@ func Radio[T comparable](c *ui.Context, selected *T, value T, label string) ui.E
 // MyGo currently exposes DateInput rather than a DateInputBase; this wrapper
 // keeps that framework detail out of every application surface.
 func DateField(c *ui.Context, date *time.Time, label string) ui.Element {
-	d := ui.DateInput(c, date).Label(label).Height(Form.Field).Padding(0, Form.PadX).Radius(Form.Radius)
-	Press(d, Raised)
+	d := ui.DateInput(c, date).Label(label).FocusRing(false).Height(Form.Field).Padding(0, Form.PadX).Radius(Form.Radius)
+	// The same border as a text field, so a form does not mix weights.
+	applyFieldLook(d, false)
 	return d
 }
 
@@ -81,7 +82,7 @@ func Segmented(c *ui.Context, selected *int, options []string, label string) ui.
 // content theme while sharing the same accessible control and motion.
 func SegmentedWithSpec(c *ui.Context, selected *int, options []string, label string, spec SegmentedSpec) ui.Element {
 	parts := ui.SegmentedBase(c, selected, len(options))
-	track := parts.Track.Label(label).Padding(2).Gap(2).Radius(Radii.Track).AlignItems(ui.Center)
+	track := parts.Track.Label(label).Padding(2).Gap(2).Radius(Radii.Track).AlignItems(ui.Center).AlignSelf(ui.Start).Shrink(0)
 	spec.Track.Apply(track)
 	track.Children(func() {
 		for i, option := range options {

@@ -22,7 +22,6 @@ var nativeLiteralAllowlist = map[string]map[string]int{
 		"MaxHeight(170)": 4,
 		"MaxHeight(220)": 1,
 		"MinHeight(0)":   1,
-		"Radius(12)":     2,
 		"Radius(6)":      1,
 		"Radius(7)":      1,
 		"Radius(8)":      1,
@@ -39,9 +38,7 @@ var nativeLiteralAllowlist = map[string]map[string]int{
 		"Radius(7)":     1,
 	},
 	"../nativefeynman/extension.go": {
-		"MinHeight(30)": 1,
-		"MinHeight(38)": 1,
-		"Radius(8)":     1,
+		"Radius(8)": 1,
 	},
 	"../nativefeynman/files.go": {
 		"MinHeight(0)": 1,
@@ -49,7 +46,6 @@ var nativeLiteralAllowlist = map[string]map[string]int{
 	},
 	"../nativefeynman/settings.go": {
 		"MinHeight(0)": 1,
-		"Radius(9)":    6,
 	},
 	"../nativefeynman/style.go": {
 		"Height(20)":    1,

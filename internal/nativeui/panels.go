@@ -11,6 +11,7 @@ import (
 
 type Panels struct {
 	GenUI, Research, Checkpoints, Review func(*ui.Context)
+	FeynmanSettings                      func(*ui.Context, string)
 	Changed, Closed                      func()
 }
 
@@ -79,6 +80,9 @@ func (w *Window) install(p Panels) {
 	}
 	if p.Review != nil {
 		w.slots.Review = p.Review
+	}
+	if p.FeynmanSettings != nil {
+		w.slots.FeynmanSettings = p.FeynmanSettings
 	}
 	if p.Changed != nil {
 		w.changed = append(w.changed, p.Changed)

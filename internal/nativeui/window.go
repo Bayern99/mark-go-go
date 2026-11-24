@@ -53,6 +53,66 @@ type Window struct {
 	menuKnown, menuUndo, menuRedo bool
 }
 
+var windowRegistry = map[*mygo.Window]*Window{}
+
+func WindowFor(native *mygo.Window) *Window {
+	return windowRegistry[native]
+}
+
+func (w *Window) OpenSettings(tab string) {
+	if w == nil {
+		return
+	}
+	w.shell.OpenSettings(tab)
+	if w.win != nil {
+		w.win.Invalidate()
+	}
+}
+
+func (w *Window) OpenCommandBar() {
+	if w == nil {
+		return
+	}
+	w.shell.command = commandBar{open: true, focus: true}
+	if w.win != nil {
+		w.win.Invalidate()
+	}
+}
+
+func (w *Window) ToggleSidebar() {
+	if w == nil {
+		return
+	}
+	w.shell.hideSidebar = !w.shell.hideSidebar
+	if w.win != nil {
+		w.win.Invalidate()
+	}
+}
+
+func (w *Window) ToggleResearch() {
+	if w == nil || !w.PluginEnabled("feynman") {
+		return
+	}
+	w.shell.hideResearch = !w.shell.hideResearch
+	if w.win != nil {
+		w.win.Invalidate()
+	}
+}
+
+func (w *Window) SetSpace(name string) {
+	if w == nil {
+		return
+	}
+	w.setPreference(spacePreference+w.snapshot.Root, name)
+}
+
+func (w *Window) SetAppearance(a portrait.Appearance) {
+	if w == nil {
+		return
+	}
+	w.setPreference(appearancePreference, string(a))
+}
+
 const (
 	spacePreference      = "mgo.space:"
 	appearancePreference = "mgo.appearance"
@@ -64,7 +124,6 @@ func NewWindow(host *workspace.Service, opts mygo.WindowOptions, extensions ...f
 	if runtime.GOOS == "darwin" {
 		opts.TitleBarStyle = mygo.TitleBarHidden
 		opts.TrafficLightPosition = &mygo.Point{X: 16, Y: 21}
-		opts.Vibrancy = mygo.VibrancySidebar
 	}
 	mygo.RunOnMain(func() {
 		if err := portrait.RegisterFonts(); err != nil {
@@ -96,7 +155,11 @@ func NewWindow(host *workspace.Service, opts mygo.WindowOptions, extensions ...f
 			w.install(attach(w))
 		}
 		w.preferences.windows[w] = true
-		w.win.OnClosed(func() { delete(w.preferences.windows, w) })
+		windowRegistry[w.win] = w
+		w.win.OnClosed(func() {
+			delete(w.preferences.windows, w)
+			delete(windowRegistry, w.win)
+		})
 	})
 	if w.win == nil {
 		// RunOnMain drops its closure once the loop has shut down. Ask mygo
@@ -389,6 +452,7 @@ func (w *Window) View(c *ui.Context) {
 				w.failure = err.Error()
 			}
 			w.shell.outline = false
+			w.shell.drillTo(w.snapshot.Root, path)
 		},
 		Activate:          func(id string) { go w.action(func() error { return w.host.Activate(w.ctx, id) }) },
 		ActivateWorkspace: func(id string) { go w.action(func() error { return w.host.ActivateWorkspace(w.ctx, id) }) },

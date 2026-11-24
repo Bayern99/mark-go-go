@@ -114,7 +114,12 @@ func (s *Shell) documents(c *ui.Context, m Model, a Actions) {
 					ink = portrait.Colors.Ink
 				}
 				tab.Children(func() {
-					portrait.Glyph(c, portrait.IconFileText, portrait.Type.Small.Size, portrait.Colors.Ink2)
+					iconColor := portrait.Colors.Ink2
+					if selected {
+						ui.Box(c.Key("active-bar")).Size(3, portrait.Type.Small.Size).Radius(portrait.Radii.Pill).Background(portrait.Colors.Accent).Shrink(0).AccessHidden(true)
+						iconColor = portrait.Colors.Accent
+					}
+					portrait.Glyph(c, portrait.IconFileText, portrait.Type.Small.Size, iconColor)
 					portrait.Type.UI.Apply(ui.Text(c, labels[d.ID])).FontWeight(500).TextColor(ink).MaxLines(1).Ellipsis("…").MinWidth(0)
 				})
 				if s.tabFocus == d.ID && selected {

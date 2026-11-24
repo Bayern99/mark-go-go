@@ -131,7 +131,8 @@ func TestShellScenes(t *testing.T) {
 				Research: func(c *ui.Context) {
 					ui.Column(c.Key("scene-research")).Fill().MinWidth(0).Children(func() { p.draw(c) })
 				},
-				Checkpoints: func(c *ui.Context) {},
+				FeynmanSettings: p.drawSettingsTab,
+				Checkpoints:     func(c *ui.Context) {},
 			}
 			app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, model, sceneActions(&model), slots) }, sc.width, sc.height)
 			app.SetScale(2)

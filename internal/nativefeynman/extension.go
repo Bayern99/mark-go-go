@@ -27,9 +27,10 @@ func (e Extension) Attach(window *nativeui.Window) nativeui.Panels {
 	feynman.FocusRequested.Listen(window.Native(), p.focusRequested)
 	review.ResearchFilePublished.Listen(window.Native(), p.filePublished)
 	return nativeui.Panels{
-		Research: p.draw,
-		Changed:  p.syncConnection,
-		Closed:   p.close,
+		Research:        p.draw,
+		FeynmanSettings: p.drawSettingsTab,
+		Changed:         p.syncConnection,
+		Closed:          p.close,
 	}
 }
 
@@ -57,6 +58,7 @@ type panel struct {
 	localPrefs          map[string]string
 	cliPassword         string
 	searchKey           string
+	mcpAddOpen          bool
 	serverLocal         bool
 	serverArgs          string
 	serverEnv           string
@@ -366,93 +368,100 @@ func (p *panel) draw(c *ui.Context) {
 	p.drawConfirmation(c)
 }
 
+func (p *panel) openSettings(tab string) {
+	if p.state != nil && p.state.root != "" && p.settingsRoot != p.state.root {
+		p.loadSettings(p.state.root)
+	}
+	if p.window != nil {
+		p.window.OpenSettings(tab)
+	}
+}
+
 func (p *panel) heading(c *ui.Context) {
 	s := p.state
-	portrait.Glyph(c, portrait.IconAtom, 20, portrait.Colors.Accent)
-	ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-		text(c, portrait.Type.Small, "Feynman").FontWeight(600).TextColor(portrait.Colors.Ink)
-		name := s.root
-		if i := strings.LastIndex(name, "/"); i >= 0 && i+1 < len(name) {
-			name = name[i+1:]
-		}
-		if s.title != "" {
-			name += " · " + s.title
-		}
-		portrait.Tooltip(c, text(c, portrait.Type.Meta, name).MaxLines(1).Ellipsis("…").TextColor(portrait.Colors.Ink3), s.root)
-	})
-	if s.status == statusWorking {
-		portrait.Spinner(c, "Feynman is working")
+	portrait.Glyph(c, portrait.IconAtom, portrait.Type.Reading.Size, portrait.Colors.Accent).Shrink(0)
+	name := s.root
+	if i := strings.LastIndex(name, "/"); i >= 0 && i+1 < len(name) {
+		name = name[i+1:]
+	}
+	if s.title != "" {
+		name += " · " + s.title
 	}
 	status := string(s.status)
 	if status == "" {
 		status = string(statusOffline)
 	}
-	portrait.Badge(c, status, statusTone(s.status)).Label("Feynman connection status")
+	tip := status
+	if name != "" {
+		tip = name + " · " + status
+	}
+	portrait.Tooltip(c, text(c, portrait.Type.Small, "Research").FontWeight(600).TextColor(portrait.Colors.Ink).MaxLines(1), tip)
+	if s.status == statusWorking {
+		portrait.Spinner(c, "Feynman is working")
+		text(c, portrait.Type.Meta, status).TextColor(portrait.Colors.Ink3).Label("Feynman connection status").MaxLines(1)
+	} else {
+		dot := ui.Box(c.Key("feynman-status-dot")).Size(6, 6).Radius(portrait.Radii.Pill).
+			Background(statusTone(s.status).Solid).Role(ui.RoleStatus).Label("Feynman connection status").Value(status).Shrink(0)
+		portrait.Tooltip(c, dot, tip)
+	}
+	ui.Row(c).Grow(1)
 }
 
 func (p *panel) header(c *ui.Context) {
 	s := p.state
-	compact := compactResearchLayout(c)
 	width, height := c.Size()
 	connect := func() {
-		if p.connected == "" && s.root != "" && controlButton(c, "Connect", "Connect Feynman to this workspace").Clicked() {
+		if p.connected == "" && s.root != "" && s.status == statusOffline && toolButton(c, "Connect", "Connect Feynman to this workspace", true, false).Clicked() {
 			p.syncConnection()
 		}
 	}
 	history := func() ui.Element {
-		button := toolButton(c, "History", "Workspace conversation history", false, s.sessionsOpen).Expanded(s.sessionsOpen)
+		button := portrait.ButtonWith(c.Key("research-tool-History"), "", "Workspace conversation history", portrait.ButtonSpec{
+			Look:     portrait.Quiet,
+			Size:     portrait.Sizes.Regular,
+			Leading:  portrait.IconClockCounterClockwise,
+			Selected: s.sessionsOpen,
+		}).Expanded(s.sessionsOpen)
 		if button.Clicked() {
 			s.sessionsOpen = !s.sessionsOpen
 			if s.sessionsOpen {
 				p.loadSessions(s.root)
 			}
 		}
-		if compact {
-			portrait.Popover(c, button, &s.sessionsOpen, func() {
-				popoverWidth := min(float32(352), max(float32(280), width-128))
-				maxHeight := max(float32(120), height-170)
-				ui.Column(c).Width(popoverWidth).Children(func() {
-					ui.Scroll(c.Key("feynman-history-popover-scroll")).MaxHeight(maxHeight).FillWidth().Label("Workspace conversation history").Children(func() {
-						p.sessions(c)
-					})
+		portrait.Popover(c, button, &s.sessionsOpen, func() {
+			popoverWidth := min(float32(340), max(float32(260), width-32))
+			maxHeight := max(float32(140), min(float32(360), height-160))
+			ui.Column(c).Width(popoverWidth).Children(func() {
+				ui.Scroll(c.Key("feynman-history-popover-scroll")).MaxHeight(maxHeight).FillWidth().Label("Workspace conversation history").Children(func() {
+					p.sessions(c)
 				})
 			})
-		}
+		})
 		return button
 	}
-	if compact {
-		ui.Column(c.Key("feynman-heading")).Padding(2, 6).Children(func() {
-			ui.Row(c.Key("feynman-heading-title")).MinHeight(30).Gap(6).AlignItems(ui.Center).Children(func() {
-				history()
-				p.heading(c)
-				connect()
-			})
-		})
-		return
+	settingsBtn := func() {
+		if portrait.QuietIconButton(c, portrait.IconGear, "Feynman settings").Clicked() {
+			p.openSettings("models")
+		}
 	}
-	ui.Row(c.Key("feynman-heading")).MinHeight(38).Gap(8).AlignItems(ui.Center).Padding(4, 6).Children(func() {
+	ui.Row(c.Key("feynman-heading")).Height(portrait.Shell.PageBar).Gap(6).AlignItems(ui.Center).Padding(0, 4).Children(func() {
 		p.heading(c)
 		connect()
 		history()
+		settingsBtn()
 	})
-	if s.sessionsOpen {
-		p.sessions(c)
-	}
 }
 
 func (p *panel) tabs(c *ui.Context) {
 	s := p.state
 	portrait.Track(c, "feynman tabs", func(t *portrait.Segments) {
-		for _, tab := range []struct{ id, label string }{{"chat", "Chat"}, {"files", "Files"}, {"settings", "Settings"}, {"alpha", "alphaXiv"}} {
-			selected := s.selectedTab == tab.id
+		for _, tab := range []struct{ id, label string }{{"chat", "Chat"}, {"files", "Files"}, {"alpha", "alphaXiv"}} {
+			selected := s.selectedTab == tab.id || (tab.id == "chat" && s.selectedTab != "files" && s.selectedTab != "alpha" && s.selectedTab != "settings")
 			button := t.Segment(c, tab.label, tab.label, selected).Grow(1).Role(ui.RoleTab).AccessSelected(selected)
 			if button.Clicked() {
 				s.selectedTab = tab.id
 				if tab.id == "files" {
 					p.refreshFiles(s.root)
-				}
-				if tab.id == "settings" && p.settingsRoot != s.root {
-					p.loadSettings(s.root)
 				}
 				if tab.id == "alpha" && s.cliStatus == nil {
 					p.loadSettings(s.root)

@@ -13,6 +13,7 @@ import (
 	"github.com/Bayern99/mark-go-go/internal/nativegenui"
 	"github.com/Bayern99/mark-go-go/internal/nativereview"
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/review"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo"
@@ -108,8 +109,48 @@ func main() {
 	research.SetAfterStop(mcpServer.AfterResearchStop)
 
 	mygo.App.WhenReady(func() {
+		spaceItems := make([]*mygo.MenuItem, 0, len(portrait.Spaces))
+		for _, sp := range portrait.Spaces {
+			spaceName := sp.Name
+			spaceItems = append(spaceItems, &mygo.MenuItem{
+				Label: sp.Label,
+				Click: func(_ *mygo.MenuItem, win *mygo.Window) {
+					if w := nativeui.WindowFor(win); w != nil {
+						w.SetSpace(spaceName)
+					}
+				},
+			})
+		}
+		appearanceItems := make([]*mygo.MenuItem, 0, len(portrait.Appearances))
+		for _, ap := range portrait.Appearances {
+			appearance := ap
+			appearanceItems = append(appearanceItems, &mygo.MenuItem{
+				Label: string(ap),
+				Click: func(_ *mygo.MenuItem, win *mygo.Window) {
+					if w := nativeui.WindowFor(win); w != nil {
+						w.SetAppearance(appearance)
+					}
+				},
+			})
+		}
 		mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-			{Role: mygo.RoleAppMenu},
+			{Role: mygo.RoleAppMenu, Submenu: []*mygo.MenuItem{
+				{Role: mygo.RoleAbout},
+				mygo.Separator(),
+				{Label: "Settings…", Accelerator: "CmdOrCtrl+,", Click: func(_ *mygo.MenuItem, win *mygo.Window) {
+					if w := nativeui.WindowFor(win); w != nil {
+						w.OpenSettings("appearance")
+					}
+				}},
+				mygo.Separator(),
+				{Role: mygo.RoleServices},
+				mygo.Separator(),
+				{Role: mygo.RoleHide},
+				{Role: mygo.RoleHideOthers},
+				{Role: mygo.RoleUnhide},
+				mygo.Separator(),
+				{Role: mygo.RoleQuit},
+			}},
 			{Role: mygo.RoleFileMenu, Submenu: []*mygo.MenuItem{
 				{Role: mygo.RoleNew},
 				{Role: mygo.RoleOpen},
@@ -129,7 +170,49 @@ func main() {
 				{Role: mygo.RoleRevert},
 			}},
 			{Role: mygo.RoleEditMenu},
-			{Role: mygo.RoleViewMenu},
+			{Role: mygo.RoleViewMenu, Submenu: []*mygo.MenuItem{
+				{Label: "Command Bar…", Accelerator: "CmdOrCtrl+K", Click: func(_ *mygo.MenuItem, win *mygo.Window) {
+					if w := nativeui.WindowFor(win); w != nil {
+						w.OpenCommandBar()
+					}
+				}},
+				mygo.Separator(),
+				{Label: "Preview", Click: func(_ *mygo.MenuItem, win *mygo.Window) {
+					if w := nativeui.WindowFor(win); w != nil {
+						w.SetMode("preview")
+					}
+				}},
+				{Label: "Markdown", Accelerator: "CmdOrCtrl+/", Click: func(_ *mygo.MenuItem, win *mygo.Window) {
+					if w := nativeui.WindowFor(win); w != nil {
+						if w.Active().ViewMode == "markdown" {
+							w.SetMode("preview")
+						} else {
+							w.SetMode("markdown")
+						}
+					}
+				}},
+				{Label: "GenUI", Click: func(_ *mygo.MenuItem, win *mygo.Window) {
+					if w := nativeui.WindowFor(win); w != nil {
+						w.SetMode("genui")
+					}
+				}},
+				mygo.Separator(),
+				{Label: "Toggle Sidebar", Accelerator: "CmdOrCtrl+0", Click: func(_ *mygo.MenuItem, win *mygo.Window) {
+					if w := nativeui.WindowFor(win); w != nil {
+						w.ToggleSidebar()
+					}
+				}},
+				{Label: "Toggle Research", Accelerator: "CmdOrCtrl+Alt+0", Click: func(_ *mygo.MenuItem, win *mygo.Window) {
+					if w := nativeui.WindowFor(win); w != nil {
+						w.ToggleResearch()
+					}
+				}},
+				mygo.Separator(),
+				{Label: "Space", Submenu: spaceItems},
+				{Label: "Appearance", Submenu: appearanceItems},
+				mygo.Separator(),
+				{Role: mygo.RoleToggleFullScreen},
+			}},
 			{Role: mygo.RoleWindowMenu},
 		}))
 		workspace.ApplyNativeEditMenu(false, false)

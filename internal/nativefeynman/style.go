@@ -36,7 +36,7 @@ func controlButton(c *ui.Context, label, description string) ui.Element {
 }
 
 func smallButton(c *ui.Context, label, description string) ui.Element {
-	return option(c, "research-small-"+label, label, description, portrait.Raised, true, false)
+	return option(c, "research-small-"+label, label, description, portrait.Quiet, true, false)
 }
 
 func toolButton(c *ui.Context, label, description string, small, selected bool) ui.Element {

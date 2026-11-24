@@ -97,7 +97,7 @@ func TestCommandBarNavigationResultsMoveTheSidebar(t *testing.T) {
 	app.Type("hide sidebar")
 	app.Key(0, ui.KeyEnter)
 	app.Frame()
-	if _, ok := app.Access("Filter files and headings"); ok {
+	if _, ok := app.Access("Workspace files"); ok {
 		t.Fatal("Hide Sidebar left the sidebar docked")
 	}
 	app.Key(ui.Cmd, ui.KeyK)
@@ -136,6 +136,9 @@ func TestCommandBarSearchesTheWorkspaceAndGivesTheSidebarItsFilterBack(t *testin
 		OpenPath: func(path string, offset int) { opens = append(opens, opened{path, offset}) },
 	}
 	app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, model, actions, nativeui.Slots{}) }, 1280, 820)
+	if err := app.Click("Filter files"); err != nil {
+		t.Fatal(err)
+	}
 	if err := app.Click("Filter files and headings"); err != nil {
 		t.Fatal(err)
 	}

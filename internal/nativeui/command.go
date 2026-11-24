@@ -191,6 +191,7 @@ func (s *Shell) commandItems(m Model, a Actions, slots Slots, width float32) []c
 		}
 		add(commandItem{icon: icon, title: "Toggle Dark Mode", detail: "Appearance", run: func() { a.SetAppearance(next) }})
 	}
+	add(commandItem{icon: portrait.IconGear, title: "Open Settings…", detail: "Appearance, Spaces, Models & MCP", keys: []string{"⌘", ","}, run: func() { s.OpenSettings("appearance") }})
 	if doc.ID != "" && a.CloseDocument != nil {
 		add(commandItem{icon: portrait.IconX, title: "Close Document", detail: labels[doc.ID], keys: []string{"⌘", "W"}, run: func() { a.CloseDocument(doc.ID) }})
 	}

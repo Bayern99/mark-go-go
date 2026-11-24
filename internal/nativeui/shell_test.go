@@ -23,7 +23,7 @@ func TestNarrowNavigationReturnsKeyboardFocus(t *testing.T) {
 		t.Fatal("closing the drawer should return focus to its opener")
 	}
 	app.SetSize(1280, 820)
-	if _, ok := app.Access("Filter files and headings"); !ok {
+	if _, ok := app.Access("Workspace files"); !ok {
 		t.Fatal("workspace tree is not docked at the default size")
 	}
 }

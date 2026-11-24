@@ -72,4 +72,5 @@ var (
 	IconStar                  = Icon{Glyph: "\ue46a"}
 	IconPushPin               = Icon{Glyph: "\ue3e2"}
 	IconCaretLeft             = Icon{Glyph: "\ue138"}
+	IconGear                  = Icon{Glyph: "\ue272"}
 )

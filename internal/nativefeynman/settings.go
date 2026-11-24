@@ -10,7 +10,7 @@ import (
 )
 
 func (p *panel) loadSettings(root string) {
-	if root == "" || p.state.cliBusy {
+	if root == "" || p.state.cliBusy || p.host == nil {
 		return
 	}
 	p.settingsRoot = root
@@ -50,12 +50,57 @@ func ptrIfOK[T any](value T, err error) *T {
 	return &value
 }
 
+func (p *panel) drawSettingsTab(c *ui.Context, tab string) {
+	p.syncConnection()
+	s := p.state
+	if s.root == "" {
+		mutedText(c, "Open a workspace folder to configure Feynman models, MCP servers, and diagnostics.")
+		return
+	}
+	if p.settingsRoot != s.root && !s.cliBusy {
+		p.loadSettings(s.root)
+	}
+	ui.Row(c.Key("feynman-settings-header")).Gap(6).AlignItems(ui.Center).Children(func() {
+		title := "Models & Auth"
+		switch tab {
+		case "tools":
+			title = "Tools & MCP"
+		case "diagnostics":
+			title = "Diagnostics"
+		}
+		sectionTitle(c, title)
+		ui.Row(c).Grow(1)
+		if toolButton(c, "Refresh", "Refresh Feynman CLI settings", true, false).Disabled(s.cliBusy).Clicked() {
+			p.settingsRoot = ""
+			p.loadSettings(s.root)
+		}
+	})
+	if s.cliError != "" {
+		text(c, portrait.Type.Meta, s.cliError).Role(ui.RoleAlert).TextColor(portrait.Colors.Danger).FillWidth().Wrap()
+	}
+	if s.cliResult != "" {
+		resultText(c, "Command result", s.cliResult, "")
+	}
+	switch tab {
+	case "tools":
+		p.alphaSettings(c)
+		p.searchSettings(c)
+		p.mcpSettings(c)
+		p.packageSettings(c)
+	case "diagnostics":
+		p.statusSettings(c)
+	default:
+		p.modelSettings(c)
+	}
+	p.drawConfirmation(c)
+}
+
 func (p *panel) settings(c *ui.Context) {
 	s := p.state
 	ui.Row(c.Key("feynman-settings-header")).Gap(4).AlignItems(ui.Center).Children(func() {
 		sectionTitle(c, "Feynman settings")
 		ui.Row(c).Grow(1)
-		if smallButton(c, "Refresh", "Refresh Feynman CLI settings").Disabled(s.cliBusy).Clicked() {
+		if toolButton(c, "Refresh", "Refresh Feynman CLI settings", true, false).Disabled(s.cliBusy).Clicked() {
 			p.settingsRoot = ""
 			p.loadSettings(s.root)
 		}
@@ -78,7 +123,7 @@ func (p *panel) settings(c *ui.Context) {
 
 func (p *panel) statusSettings(c *ui.Context) {
 	s := p.state
-	ui.Column(c.Key("feynman-status-settings")).Gap(4).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
+	ui.Column(c.Key("feynman-status-settings")).Gap(6).Padding(10).Radius(portrait.Radii.L).Background(portrait.Colors.Fill).Children(func() {
 		mutedText(c, "Feynman CLI status, doctor and setup output.")
 		ui.Row(c).Wrap().Gap(4).Children(func() {
 			if smallButton(c, "Run Doctor", "Run feynman doctor").Disabled(s.cliBusy).Clicked() {
@@ -177,11 +222,12 @@ func (p *panel) modelSettings(c *ui.Context) {
 			p.tierValue, p.tierLoaded = tier, true
 		}
 	}
-	ui.Column(c.Key("feynman-model-settings")).Gap(6).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
-		sectionTitle(c, "Models")
-		ui.Row(c).Wrap().Gap(4).AlignItems(ui.Center).Children(func() {
+	ui.Column(c.Key("feynman-model-settings")).Gap(8).Padding(10).Radius(portrait.Radii.L).Background(portrait.Colors.Fill).Children(func() {
+		ui.Row(c).Gap(8).AlignItems(ui.Center).FillWidth().Children(func() {
 			text(c, portrait.Type.Meta, "Service tier").FontWeight(600).TextColor(portrait.Colors.Ink2).Shrink(0)
-			input(c, "feynman-service-tier", "Service tier", &p.tierValue, "Tier value")
+			ui.Row(c).Grow(1).MinWidth(0).Children(func() {
+				input(c, "feynman-service-tier", "Service tier", &p.tierValue, "Tier value")
+			})
 			if smallButton(c, "Apply tier", "Set the Feynman service tier").Disabled(s.cliBusy || strings.TrimSpace(p.tierValue) == "" || p.tierValue == firstNonEmpty(tierOf(s.cliModels), serviceTierOf(s.cliStatus))).Clicked() {
 				p.modelAction("tier", strings.TrimSpace(p.tierValue))
 			}
@@ -196,8 +242,10 @@ func (p *panel) modelSettings(c *ui.Context) {
 		for _, g := range groups {
 			p.providerGroup(c, g)
 		}
-		ui.Row(c).Wrap().Gap(4).AlignItems(ui.Center).Children(func() {
-			input(c, "feynman-provider-login", "Model provider", &p.loginProvider, "Another provider, such as anthropic")
+		ui.Row(c).Gap(8).AlignItems(ui.Center).FillWidth().Children(func() {
+			ui.Row(c).Grow(1).MinWidth(0).Children(func() {
+				input(c, "feynman-provider-login", "Model provider", &p.loginProvider, "Another provider, such as anthropic")
+			})
 			if toolButton(c, "Sign in in Terminal", "Sign in to another model provider in Terminal", true, false).Disabled(s.cliBusy).Clicked() {
 				p.launchWizard("model_login", strings.TrimSpace(p.loginProvider))
 			}
@@ -289,7 +337,7 @@ func (p *panel) modelAction(action, value string) {
 
 func (p *panel) alphaSettings(c *ui.Context) {
 	s := p.state
-	ui.Column(c.Key("feynman-alpha-settings")).Gap(4).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
+	ui.Column(c.Key("feynman-alpha-settings")).Gap(6).Padding(10).Radius(portrait.Radii.L).Background(portrait.Colors.Fill).Children(func() {
 		sectionTitle(c, "alphaXiv account")
 		if s.alphaStatus == nil {
 			mutedText(c, "alphaXiv status has not loaded.")
@@ -325,7 +373,7 @@ func (p *panel) alphaSettings(c *ui.Context) {
 
 func (p *panel) searchSettings(c *ui.Context) {
 	s := p.state
-	ui.Column(c.Key("feynman-search-settings")).Gap(4).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
+	ui.Column(c.Key("feynman-search-settings")).Gap(6).Padding(10).Radius(portrait.Radii.L).Background(portrait.Colors.Fill).Children(func() {
 		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
 			sectionTitle(c, "Web search")
 			ui.Row(c).Grow(1)
@@ -389,11 +437,23 @@ func (p *panel) searchSettings(c *ui.Context) {
 
 func (p *panel) mcpSettings(c *ui.Context) {
 	s := p.state
-	ui.Column(c.Key("feynman-mcp-settings")).Gap(4).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
-		sectionTitle(c, "MCP servers")
+	ui.Column(c.Key("feynman-mcp-settings")).Gap(6).Padding(10).Radius(portrait.Radii.L).Background(portrait.Colors.Fill).Children(func() {
+		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+			sectionTitle(c, "MCP servers")
+			ui.Row(c).Grow(1)
+			addLabel := "+ Add server"
+			if p.mcpAddOpen {
+				addLabel = "Hide form"
+			}
+			if toolButton(c, addLabel, "Toggle add MCP server form", true, p.mcpAddOpen).Clicked() {
+				p.mcpAddOpen = !p.mcpAddOpen
+			}
+		})
 		if s.mcpServers != nil {
 			if !s.mcpServers.Parsed {
 				resultText(c, s.mcpServers.Command, s.mcpServers.RawOutput, s.mcpServers.Error)
+			} else if len(s.mcpServers.Servers) == 0 {
+				mutedText(c, "No MCP servers configured.")
 			} else {
 				for _, server := range s.mcpServers.Servers {
 					ui.Row(c.Key("mcp-server-" + server.Name)).Wrap().Gap(4).AlignItems(ui.Center).Children(func() {
@@ -401,7 +461,7 @@ func (p *panel) mcpSettings(c *ui.Context) {
 							text(c, portrait.Type.UI, server.Name).FontWeight(600).TextColor(portrait.Colors.Ink)
 							mutedText(c, strings.Join([]string{server.Scope, server.Transport, server.Status}, " · "))
 						})
-						trigger := smallButton(c, "Remove", "Remove MCP server "+server.Name).Disabled(s.cliBusy)
+						trigger := toolButton(c, "Remove", "Remove MCP server "+server.Name, true, false).Disabled(s.cliBusy)
 						p.confirmOnClick("remove-mcp:"+server.Scope+":"+server.Name, trigger, portrait.ConfirmSpec{
 							Title:        "Remove MCP server?",
 							Body:         "Remove “" + server.Name + "” from Feynman? This action cannot be undone.",
@@ -412,33 +472,37 @@ func (p *panel) mcpSettings(c *ui.Context) {
 				}
 			}
 		}
-		input(c, "feynman-mcp-name", "Server name", &p.serverName, "Name")
-		ui.Row(c).Wrap().Gap(4).Children(func() {
-			for _, transport := range []string{"http", "stdio"} {
-				if choiceButton(c, "research-transport-"+transport, transport, "Use "+transport+" transport", p.serverTransport == transport, true).Clicked() {
-					p.serverTransport = transport
+		if p.mcpAddOpen {
+			ui.Column(c.Key("feynman-mcp-add-form")).Gap(5).Padding(8, 0, 0, 0).BorderWidth(1, 0, 0, 0).BorderColor(portrait.Colors.Line).Children(func() {
+				input(c, "feynman-mcp-name", "Server name", &p.serverName, "Name")
+				ui.Row(c).Wrap().Gap(4).Children(func() {
+					for _, transport := range []string{"http", "stdio"} {
+						if choiceButton(c, "research-transport-"+transport, transport, "Use "+transport+" transport", p.serverTransport == transport, true).Clicked() {
+							p.serverTransport = transport
+						}
+					}
+				})
+				if p.serverTransport == "stdio" {
+					input(c, "feynman-mcp-command", "Command", &p.serverCommand, "Command path")
+					input(c, "feynman-mcp-args", "Arguments", &p.serverArgs, "Space separated arguments")
+					area(c, "feynman-mcp-env", "Environment variables", &p.serverEnv, "KEY=value, one per line", 55)
+					input(c, "feynman-mcp-cwd", "Working folder", &p.serverCwd, "Optional working directory")
+				} else {
+					input(c, "feynman-mcp-url", "HTTP URL", &p.serverURL, "https://…")
+					area(c, "feynman-mcp-headers", "Headers", &p.serverHeaders, "Header: value, one per line", 55)
 				}
-			}
-		})
-		if p.serverTransport == "stdio" {
-			input(c, "feynman-mcp-command", "Command", &p.serverCommand, "Command path")
-			input(c, "feynman-mcp-args", "Arguments", &p.serverArgs, "Space separated arguments")
-			area(c, "feynman-mcp-env", "Environment variables", &p.serverEnv, "KEY=value, one per line", 55)
-			input(c, "feynman-mcp-cwd", "Working folder", &p.serverCwd, "Optional working directory")
-		} else {
-			input(c, "feynman-mcp-url", "HTTP URL", &p.serverURL, "https://…")
-			area(c, "feynman-mcp-headers", "Headers", &p.serverHeaders, "Header: value, one per line", 55)
-		}
-		ui.Row(c).Wrap().Gap(4).Children(func() {
-			input(c, "feynman-mcp-exposure", "Exposure", &p.serverExposure, "direct")
-			input(c, "feynman-mcp-description", "Description", &p.serverDescription, "Optional description")
-		})
-		if p.serverTransport == "http" {
-			input(c, "feynman-mcp-bearer-env", "Bearer token environment variable", &p.serverBearerEnv, "Optional environment variable name")
-		}
-		portrait.Checkbox(c.Key("feynman-mcp-local"), &p.serverLocal, "Project-local configuration")
-		if controlButton(c, "Add MCP server", "Add MCP server to Feynman").Disabled(s.cliBusy || strings.TrimSpace(p.serverName) == "").Clicked() {
-			p.addMCPServer()
+				ui.Row(c).Wrap().Gap(4).Children(func() {
+					input(c, "feynman-mcp-exposure", "Exposure", &p.serverExposure, "direct")
+					input(c, "feynman-mcp-description", "Description", &p.serverDescription, "Optional description")
+				})
+				if p.serverTransport == "http" {
+					input(c, "feynman-mcp-bearer-env", "Bearer token environment variable", &p.serverBearerEnv, "Optional environment variable name")
+				}
+				portrait.Checkbox(c.Key("feynman-mcp-local"), &p.serverLocal, "Project-local configuration")
+				if controlButton(c, "Add MCP server", "Add MCP server to Feynman").Disabled(s.cliBusy || strings.TrimSpace(p.serverName) == "").Clicked() {
+					p.addMCPServer()
+				}
+			})
 		}
 	})
 }
@@ -483,7 +547,7 @@ func (p *panel) addMCPServer() {
 
 func (p *panel) packageSettings(c *ui.Context) {
 	s := p.state
-	ui.Column(c.Key("feynman-package-settings")).Gap(4).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
+	ui.Column(c.Key("feynman-package-settings")).Gap(6).Padding(10).Radius(portrait.Radii.L).Background(portrait.Colors.Fill).Children(func() {
 		sectionTitle(c, "Workflows, skills and extensions")
 		if s.packages != nil {
 			if !s.packages.Parsed {

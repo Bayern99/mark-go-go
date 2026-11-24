@@ -36,13 +36,17 @@ type Actions struct {
 
 type Slots struct {
 	Document, GenUI, Research, Checkpoints, Review func(*ui.Context)
+	FeynmanSettings                                func(*ui.Context, string)
 }
 
 type Shell struct {
 	ready, outline, navFocus                       bool
 	leftOpen, rightOpen, hideResearch, hideSidebar bool
+	filterOpen, filterFocus                        bool
 	focusedTab, dark                               bool
 	checkpoints                                    bool
+	settingsOpen                                   bool
+	settingsTab                                    string
 	command                                        commandBar
 	workspaceID, activeID, query, tabFocus         string
 	history                                        []string
@@ -50,6 +54,7 @@ type Shell struct {
 	leftToggle, rightToggle                        ui.Handle
 	leftKeys, rightKeys                            portrait.KeyTrigger
 	queries                                        map[string]string
+	drills                                         map[string]string
 	scrolls                                        map[string]*ui.ScrollState
 	openCheckpoints                                map[string]bool
 	sidebarDocked, researchDocked                  bool
@@ -64,6 +69,7 @@ const (
 func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 	if !s.ready {
 		s.queries = map[string]string{}
+		s.drills = map[string]string{}
 		s.openCheckpoints = map[string]bool{}
 		s.leftWidth, s.ready = portrait.Shell.SidebarWidth, true
 		if s.rightWidth == 0 {
@@ -72,6 +78,7 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 	}
 	if s.workspaceID != m.Workspace.Root {
 		s.workspaceID, s.query = m.Workspace.Root, s.queries[m.Workspace.Root]
+		s.filterOpen = s.query != ""
 	}
 	if s.activeID != m.Workspace.ActiveID {
 		if s.activeID != "" {
@@ -121,6 +128,13 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 	}
 	if c.Shortcut(ui.Cmd, ui.KeyK) || c.Shortcut(ui.Cmd, ui.KeyT) {
 		s.toggleCommand(a)
+	}
+	if c.Shortcut(ui.Cmd, ui.KeyComma) {
+		if s.settingsOpen {
+			s.settingsOpen = false
+		} else {
+			s.OpenSettings("appearance")
+		}
 	}
 	sidebarDocked, researchDocked := width >= sidebarDocksAt && !s.hideSidebar, m.Feynman && !s.hideResearch && width >= researchDocksAt
 	if sidebarDocked != s.sidebarDocked || researchDocked != s.researchDocked {
@@ -202,8 +216,28 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 		s.drawer(c, true, width, height, m, a, slots)
 		s.drawer(c, false, width, height, m, a, slots)
 		s.commandBar(c, width, height, m, a, slots)
+		s.settingsDialog(c, width, height, m, a, slots)
 		portrait.Toasts(c)
 	})
+}
+
+func (s *Shell) OpenSettings(tab string) {
+	if tab == "" {
+		tab = "appearance"
+	}
+	s.settingsTab = tab
+	s.settingsOpen = true
+}
+
+func (s *Shell) drillTo(root, dir string) {
+	if s.drills == nil {
+		s.drills = map[string]string{}
+	}
+	if root == "" || dir == "" || dir == root {
+		delete(s.drills, root)
+		return
+	}
+	s.drills[root] = dir
 }
 
 func themed(c *ui.Context, t *ui.Theme) ui.Element {

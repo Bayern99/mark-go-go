@@ -90,7 +90,7 @@ func TestCommandZeroHidesTheDockedSidebarAndTheToggleBringsItBack(t *testing.T) 
 	}
 	app.Key(ui.Cmd, ui.Key0)
 	app.Frame()
-	if _, ok := app.Access("Filter files and headings"); ok {
+	if _, ok := app.Access("Workspace files"); ok {
 		t.Fatal("Command 0 left the sidebar docked")
 	}
 	alone := mustAccess(t, app, ui.RoleMain, "Document").Bounds
@@ -104,14 +104,14 @@ func TestCommandZeroHidesTheDockedSidebarAndTheToggleBringsItBack(t *testing.T) 
 	if _, ok := app.AccessByRole(ui.RoleDialog, "Navigation"); ok {
 		t.Fatal("a wide window opened the sidebar as a drawer")
 	}
-	if _, ok := app.Access("Filter files and headings"); !ok {
+	if _, ok := app.Access("Workspace files"); !ok {
 		t.Fatal("the toggle did not dock the sidebar again")
 	}
 	if err := app.Click("Hide sidebar"); err != nil {
 		t.Fatal(err)
 	}
 	app.Frame()
-	if _, ok := app.Access("Filter files and headings"); ok {
+	if _, ok := app.Access("Workspace files"); ok {
 		t.Fatal("Hide sidebar left the sidebar docked")
 	}
 }
@@ -248,5 +248,120 @@ func TestSceneryLetsTheWindowMaterialThroughUnlessTransparencyIsReduced(t *testi
 	}
 	if reduced := render(true, ui.Preferences{ReduceTransparency: true}); reduced != opaque {
 		t.Fatalf("with reduced transparency the field is %v, want the opaque %v", reduced, opaque)
+	}
+}
+
+func TestZeroIndentDrillDownAndAncestors(t *testing.T) {
+	var shell nativeui.Shell
+	model := libraryModel()
+	model.Navigation = workspace.NavSnapshot{
+		Root: "/library",
+		Entries: []workspace.NavEntry{
+			{ID: "folder:Essays", Kind: "folder", Name: "Essays", Path: "/library/Essays", Depth: 0, MarkdownCount: 2, FolderState: workspace.FolderOpen},
+			{ID: "file:Essays/A.md", Kind: "file", Name: "A.md", Path: "/library/Essays/A.md", Depth: 1},
+			{ID: "folder:Essays/Deep", Kind: "folder", Name: "Deep", Path: "/library/Essays/Deep", Depth: 1, MarkdownCount: 1, FolderState: workspace.FolderOpen},
+			{ID: "file:Essays/Deep/B.md", Kind: "file", Name: "B.md", Path: "/library/Essays/Deep/B.md", Depth: 2},
+			{ID: "file:Root.md", Kind: "file", Name: "Root.md", Path: "/library/Root.md", Depth: 0},
+		},
+	}
+	app := ui.NewTester(func(c *ui.Context) {
+		shell.Draw(c, model, nativeui.Actions{}, nativeui.Slots{})
+	}, 1280, 820)
+	app.Frame()
+	rootFile := mustAccess(t, app, ui.RoleTreeItem, "Root.md")
+	if _, ok := app.AccessByRole(ui.RoleTreeItem, "A.md"); ok {
+		t.Fatal("nested file A.md should stay hidden until Essays is drilled into")
+	}
+	if err := app.Click("Essays"); err != nil {
+		t.Fatal(err)
+	}
+	app.Frame()
+	nestedFile := mustAccess(t, app, ui.RoleTreeItem, "A.md")
+	if nestedFile.Bounds.X != rootFile.Bounds.X {
+		t.Fatalf("drilled file A.md X = %v, want zero-indent root X = %v", nestedFile.Bounds.X, rootFile.Bounds.X)
+	}
+	if err := app.Click("Go to Library"); err != nil {
+		t.Fatal(err)
+	}
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RoleTreeItem, "Root.md"); !ok {
+		t.Fatal("clicking root ancestor did not return to workspace root")
+	}
+}
+
+func TestSidebarFooterSwitchesWuXingSpaceAndAppearance(t *testing.T) {
+	t.Cleanup(func() { portrait.Use(portrait.DefaultSpace, false) })
+	var shell nativeui.Shell
+	model := libraryModel()
+	var spaces []string
+	var appearances []portrait.Appearance
+	actions := nativeui.Actions{
+		SetSpace: func(name string) {
+			spaces = append(spaces, name)
+			model.Spaces = map[string]string{model.Workspace.Root: name}
+		},
+		SetAppearance: func(a portrait.Appearance) { appearances = append(appearances, a); model.Appearance = a },
+	}
+	app := ui.NewTester(func(c *ui.Context) {
+		shell.Draw(c, model, actions, nativeui.Slots{})
+	}, 1280, 820)
+	app.Frame()
+	if err := app.Click("Space: Wood–Fire"); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Click("Switch to Dark Mode"); err != nil {
+		t.Fatal(err)
+	}
+	app.Frame()
+	if !slices.Equal(spaces, []string{"WoodFire"}) {
+		t.Fatalf("footer palette stored %v, want [WoodFire]", spaces)
+	}
+	if !slices.Equal(appearances, []portrait.Appearance{portrait.Dark}) {
+		t.Fatalf("footer appearance toggle stored %v, want [Dark]", appearances)
+	}
+}
+
+func TestSettingsDialogSwitchesSpaceAppearanceAndFeynmanTabs(t *testing.T) {
+	t.Cleanup(func() { portrait.Use(portrait.DefaultSpace, false) })
+	var shell nativeui.Shell
+	model := libraryModel()
+	var seenTabs []string
+	actions := nativeui.Actions{
+		SetSpace:      func(name string) { model.Spaces = map[string]string{model.Workspace.Root: name} },
+		SetAppearance: func(a portrait.Appearance) { model.Appearance = a },
+	}
+	slots := nativeui.Slots{
+		FeynmanSettings: func(c *ui.Context, tab string) {
+			seenTabs = append(seenTabs, tab)
+			portrait.Type.UI.Apply(ui.Text(c, "Feynman tab: "+tab))
+		},
+	}
+	app := ui.NewTester(func(c *ui.Context) {
+		shell.Draw(c, model, actions, slots)
+	}, 1280, 820)
+	app.Frame()
+	app.Key(ui.Cmd, ui.KeyComma)
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RoleDialog, "Settings"); !ok {
+		t.Fatal("Command-, did not open the dedicated Settings modal")
+	}
+	if err := app.Click("Models & Auth"); err != nil {
+		t.Fatal(err)
+	}
+	app.Frame()
+	if !app.HasText("Feynman tab: models") {
+		t.Fatal("Models & Auth did not render Feynman settings slot")
+	}
+	if err := app.Click("Tools & MCP"); err != nil {
+		t.Fatal(err)
+	}
+	app.Frame()
+	if !app.HasText("Feynman tab: tools") {
+		t.Fatal("Tools & MCP did not render Feynman settings slot")
+	}
+	app.Key(0, ui.KeyEscape)
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RoleDialog, "Settings"); ok {
+		t.Fatal("Escape left Settings modal open")
 	}
 }

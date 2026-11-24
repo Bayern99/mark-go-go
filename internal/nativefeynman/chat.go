@@ -70,9 +70,10 @@ func (p *panel) message(c *ui.Context, index int, item message, streaming bool) 
 	key := fmt.Sprintf("message-%d", index)
 	switch item.kind {
 	case "user":
-		ui.Column(c.Key(key)).AlignItems(ui.End).Padding(3, 8).Children(func() {
-			text(c, portrait.Type.Meta, "You").FontWeight(600).TextColor(portrait.Colors.Ink3)
-			text(c, portrait.Type.UI, item.text).FillWidth().TextColor(portrait.Colors.Ink).Padding(9, 11).Radius(12).Background(portrait.Colors.AccentSoft)
+		ui.Column(c.Key(key)).FillWidth().AlignItems(ui.End).Padding(3, 6).Children(func() {
+			ui.Column(c).MaxWidth(290).Padding(8, 12).Radius(portrait.Radii.L).Background(portrait.Colors.AccentSoft).Children(func() {
+				text(c, portrait.Type.UI, item.text).Wrap().TextColor(portrait.Colors.Ink)
+			})
 			p.image(c, item.image)
 		})
 	case "assistant":
@@ -280,7 +281,7 @@ func (p *panel) composer(c *ui.Context) {
 		paddingY, gap = 3, 3
 	}
 	ui.Column(c.Key("feynman-compose")).Children(func() {
-		composer := ui.Column(c.Key("feynman-composer")).Padding(paddingY, 7).Gap(gap).Radius(12).Background(portrait.Colors.Paper).Border(1, portrait.Colors.LineStrong)
+		composer := ui.Column(c.Key("feynman-composer")).Padding(paddingY, 7).Gap(gap).Radius(portrait.Radii.L).Background(portrait.Colors.Paper).Border(1, portrait.Colors.LineStrong)
 		if composer.FocusWithin() {
 			portrait.Rings.Editing.Apply(composer)
 		}
@@ -308,12 +309,9 @@ func (p *panel) composer(c *ui.Context) {
 					}
 				})
 			}
-			if s.actionsOpen {
-				p.commandList(c)
-			}
-			promptHeight := float32(76)
+			promptHeight := float32(68)
 			if compact {
-				promptHeight = 44
+				promptHeight = 42
 			}
 			var draftEditor ui.Element
 			entry := area(c, "research-draft", "Research prompt", &s.draft, promptPlaceholder(s.status), promptHeight, func(editor ui.Element) {
@@ -349,35 +347,41 @@ func (p *panel) composer(c *ui.Context) {
 				if toolButton(c, "Attach", "Attach source files", true, false).Disabled(s.status == statusOffline || s.status == statusConnecting).Clicked() {
 					p.attachSources()
 				}
-				if toolButton(c, "Actions", "Browse workflows, skills and extensions", true, s.actionsOpen).Disabled(len(s.commands) == 0).Clicked() {
+				actionsBtn := toolButton(c, "Actions", "Browse workflows, skills and extensions", true, s.actionsOpen).Disabled(len(s.commands) == 0).Expanded(s.actionsOpen)
+				if actionsBtn.Clicked() {
 					s.actionsOpen = !s.actionsOpen
-					if s.actionsOpen {
-						s.actionsOpen = true
-					}
 				}
+				ui.PopoverBase(c, actionsBtn, &s.actionsOpen, func(pop ui.Element) {
+					width, _ := c.Size()
+					pop.AttachTo(actionsBtn, ui.AnchorTopStart, ui.AnchorBottomStart).
+						Width(min(float32(300), max(float32(200), width-24))).
+						Margin(0, 0, 6, 0).Padding(6).Radius(portrait.Radii.L).Gap(4).Label("Research actions")
+					portrait.Materials.GlassOverlay.Apply(pop)
+					p.commandList(c)
+				})
 				if doc := p.window.Active(); doc.ID != "" && doc.Path != "" && !doc.ReadOnly {
-					portrait.Checkbox(c.Key("research-include-document"), &s.includeDoc, "Include document")
+					portrait.Checkbox(c.Key("research-include-document"), &s.includeDoc, "Include doc")
 				}
 				ui.Row(c).Grow(1).Justify(ui.End).Gap(4).Children(func() {
 					if s.status == statusWorking {
-						if smallButton(c, "Steer", "Send a steering message").Disabled(strings.TrimSpace(s.draft) == "").Clicked() {
+						if toolButton(c, "Steer", "Send a steering message", true, false).Disabled(strings.TrimSpace(s.draft) == "").Clicked() {
 							p.steer()
 						}
-						if smallButton(c, "Follow up", "Queue a follow-up message").Disabled(strings.TrimSpace(s.draft) == "").Clicked() {
+						if toolButton(c, "Follow up", "Queue a follow-up message", true, false).Disabled(strings.TrimSpace(s.draft) == "").Clicked() {
 							p.followUp()
 						}
 						if controlButton(c, "Stop", "Stop the current research action").Clicked() {
 							p.run(func() error { return p.host.Abort(p.window.Context(), s.root) })
 						}
 					} else {
-						if option(c, "research-control-Send", "Send", "Send research prompt", portrait.Accent, false, false).Disabled(s.status != statusReady || strings.TrimSpace(s.draft) == "").Clicked() {
+						if option(c, "research-control-Send", "Send", "Send research prompt", portrait.Accent, true, false).Disabled(s.status != statusReady || strings.TrimSpace(s.draft) == "").Clicked() {
 							p.send()
 						}
 					}
 				})
 			})
+			p.configControls(c)
 		})
-		p.configControls(c)
 	})
 }
 

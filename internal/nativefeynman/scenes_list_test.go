@@ -75,9 +75,27 @@ func wuxingScenes() []shellScene {
 		shellScene{name: "markdown_dark", width: 1280, height: 820, mode: "markdown", space: "FiveElements", dark: true},
 		shellScene{name: "feynman_picker_light", width: 1440, height: 900, feynman: true, mode: "preview", space: "Wood", research: sceneModels, act: openModelPicker},
 		shellScene{name: "feynman_picker_dark", width: 1440, height: 900, feynman: true, mode: "preview", space: "Wood", dark: true, research: sceneModels, act: openModelPicker},
-		shellScene{name: "feynman_settings_light", width: 1440, height: 1100, feynman: true, mode: "preview", space: "MetalWater", research: sceneSettings},
-		shellScene{name: "feynman_settings_dark", width: 1440, height: 1100, feynman: true, mode: "preview", space: "MetalWater", dark: true, research: sceneSettings},
+		shellScene{name: "settings_appearance_light", width: 1440, height: 900, feynman: true, mode: "preview", space: "WoodFire", research: sceneSettingsModal, act: func(app *ui.Tester) { app.Key(ui.Cmd, ui.KeyComma) }},
+		shellScene{name: "settings_appearance_dark", width: 1440, height: 900, feynman: true, mode: "preview", space: "WoodFire", dark: true, research: sceneSettingsModal, act: func(app *ui.Tester) { app.Key(ui.Cmd, ui.KeyComma) }},
+		shellScene{name: "settings_models_light", width: 1440, height: 900, feynman: true, mode: "preview", space: "MetalWater", research: sceneSettingsModal, act: func(app *ui.Tester) {
+			app.Key(ui.Cmd, ui.KeyComma)
+			app.Frame()
+			_ = app.Click("Models & Auth")
+		}},
+		shellScene{name: "settings_models_dark", width: 1440, height: 900, feynman: true, mode: "preview", space: "FiveElements", dark: true, research: sceneSettingsModal, act: func(app *ui.Tester) {
+			app.Key(ui.Cmd, ui.KeyComma)
+			app.Frame()
+			_ = app.Click("Models & Auth")
+		}},
+		shellScene{name: "sidebar_drilled_light", width: 1440, height: 900, feynman: true, mode: "preview", space: "FiveElements", act: func(app *ui.Tester) {
+			_ = app.Click("Essays")
+		}},
 	)
+}
+
+func sceneSettingsModal(p *panel) {
+	sceneSettings(p)
+	p.state.selectedTab = "chat"
 }
 
 func openModelPicker(app *ui.Tester) {

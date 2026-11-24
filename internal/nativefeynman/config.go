@@ -276,7 +276,7 @@ func (p *panel) configControls(c *ui.Context) {
 	if len(pickers) == 0 {
 		return
 	}
-	ui.Row(c.Key("research-configs")).Wrap().Gap(2).Padding(4, 7, 0, 7).AlignItems(ui.Center).Children(func() {
+	ui.Row(c.Key("research-configs")).Wrap().Gap(2).Padding(4, 0, 0, 0).BorderWidth(1, 0, 0, 0).BorderColor(portrait.Colors.Line).AlignItems(ui.Center).Children(func() {
 		for _, picker := range pickers {
 			p.configPicker(c, picker)
 		}
@@ -385,6 +385,21 @@ func (p *panel) configPicker(c *ui.Context, picker researchPicker) {
 					}
 				}
 			})
+			if picker.key == "model" {
+				ui.Row(c.Key("research-picker-manage")).FillWidth().Padding(4, 0, 0, 0).BorderWidth(1, 0, 0, 0).BorderColor(portrait.Colors.Line).Children(func() {
+					manage := ui.ButtonBase(c.Key("manage-models")).Label("Manage models and providers").FillWidth().Height(portrait.Sizes.Regular).Padding(0, 8).Radius(portrait.Radii.S).AlignItems(ui.Center)
+					ink := portrait.Press(manage, portrait.Quiet)
+					manage.Children(func() {
+						text(c, portrait.Type.Meta, "Manage models & providers…").TextColor(ink).Grow(1)
+						portrait.Glyph(c, portrait.IconCaretRight, 11, portrait.Colors.Ink3).Shrink(0)
+					})
+					if manage.Clicked() {
+						*open = false
+						state.query, state.provider = "", ""
+						p.openSettings("models")
+					}
+				})
+			}
 		})
 	})
 	if popover.Dismissed() {

@@ -300,10 +300,14 @@ func (p *panel) composer(c *ui.Context) {
 			})
 		}
 	}
-	if s.failedDraft != "" {
+	if s.failedDraft != "" || len(s.failedSources) > 0 {
 		card(c.Key("research-failed-draft")).Gap(4).Padding(4, 8).Children(func() {
-			text(c, portrait.Type.Meta, "Previous message was not sent:").TextColor(portrait.Colors.Ink2)
-			text(c, portrait.Type.Meta, s.failedDraft).MaxLines(2).Ellipsis("…").TextColor(portrait.Colors.Ink)
+			text(c, portrait.Type.Meta, "Held draft:").TextColor(portrait.Colors.Ink2)
+			summary := s.failedDraft
+			if summary == "" {
+				summary = fmt.Sprintf("%d attached source(s)", len(s.failedSources))
+			}
+			text(c, portrait.Type.Meta, summary).MaxLines(2).Ellipsis("…").TextColor(portrait.Colors.Ink)
 			ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
 				composerHasInput := s.draft != "" || len(s.sources) > 0
 				actionTitle := "Restore failed draft"
@@ -407,6 +411,9 @@ func (p *panel) composer(c *ui.Context) {
 			})
 			if draftEditor.Changed() {
 				if !strings.HasPrefix(s.draft, "/") {
+					if p.actionsFromSlash {
+						p.commandQuery = ""
+					}
 					p.actionsDismissed = false
 					p.actionsFromSlash = false
 					s.actionsOpen = false

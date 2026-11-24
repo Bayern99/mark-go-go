@@ -117,10 +117,10 @@ func feynmanSettingsTabMatches(tab string, q nativeui.SettingsQuery) bool {
 	}
 }
 
-func firstMatchingFeynmanSettingsTab(q nativeui.SettingsQuery) string {
-	for _, tab := range []string{"models", "search", "mcp", "packages", "diagnostics"} {
-		if feynmanSettingsTabMatches(tab, q) {
-			return tab
+func (p *panel) firstMatchingFeynmanSettingsTab(q nativeui.SettingsQuery) string {
+	for _, page := range p.settingsPages() {
+		if q.PageMatch(page) && feynmanSettingsTabMatches(page.ID, q) {
+			return page.ID
 		}
 	}
 	return ""
@@ -156,7 +156,7 @@ func (p *panel) drawSettingsPage(c *ui.Context, tab string, q nativeui.SettingsQ
 	if p.settingsRoot != s.root && !s.cliBusy {
 		p.loadSettings(s.root)
 	}
-	if s.cliError != "" && (!q.Active() || tab == firstMatchingFeynmanSettingsTab(q)) {
+	if s.cliError != "" && (!q.Active() || tab == p.firstMatchingFeynmanSettingsTab(q)) {
 		portrait.Alert(c, portrait.Tones.Danger, "Feynman CLI", s.cliError)
 	}
 	if s.cliResult != "" && !q.Active() {
@@ -180,7 +180,7 @@ func (p *panel) drawSettingsPage(c *ui.Context, tab string, q nativeui.SettingsQ
 	if drawModels && q.Match("Models & Providers", "Authentication, service tier, default model, and picker visibility.", "models providers authentication service tier default pin show picker sign in log out") {
 		p.modelSettings(c)
 	}
-	if !q.Active() || tab == firstMatchingFeynmanSettingsTab(q) {
+	if !q.Active() || tab == p.firstMatchingFeynmanSettingsTab(q) {
 		p.drawConfirmation(c)
 	}
 }

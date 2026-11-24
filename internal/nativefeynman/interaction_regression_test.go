@@ -413,6 +413,30 @@ func TestAsyncSendFailurePreservesRawIndentationAndSeparatesInterveningDraft(t *
 	if p2.state.failedDraft != "new draft typed while waiting" || len(p2.state.failedSources) != 1 {
 		t.Fatalf("send() discarded held failed draft: %q %v", p2.state.failedDraft, p2.state.failedSources)
 	}
+
+	// Swapping a sources-only composer keeps the held attachment visible and swappable back.
+	pSrcOnly := fixtureReadyPanel()
+	pSrcOnly.state.draft = ""
+	pSrcOnly.state.sources = []string{"/workspace/notes/B.md"}
+	pSrcOnly.state.restoreDraft("failed A", []string{"/workspace/notes/A.md"})
+	appSrc := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Children(func() { pSrcOnly.composer(c) })
+	}, 520, 480)
+	appSrc.Frame()
+	if err := appSrc.Click("Restore unsent prompt and sources"); err != nil {
+		t.Fatalf("sources-only swap button missing: %v", err)
+	}
+	appSrc.Frame()
+	if pSrcOnly.state.draft != "failed A" || len(pSrcOnly.state.failedSources) != 1 || pSrcOnly.state.failedSources[0] != "/workspace/notes/B.md" {
+		t.Fatalf("sources-only swap state = draft:%q failedSources:%v", pSrcOnly.state.draft, pSrcOnly.state.failedSources)
+	}
+	if err := appSrc.Click("Restore unsent prompt and sources"); err != nil {
+		t.Fatalf("held sources-only banner vanished after swap: %v", err)
+	}
+	appSrc.Frame()
+	if pSrcOnly.state.draft != "" || len(pSrcOnly.state.sources) != 1 || pSrcOnly.state.sources[0] != "/workspace/notes/B.md" {
+		t.Fatalf("swap back did not recover B.md: draft=%q sources=%v", pSrcOnly.state.draft, pSrcOnly.state.sources)
+	}
 }
 
 func TestFeynmanSettingsErrorRendersDuringSearchAndRejectsEmptyHostnameURL(t *testing.T) {
@@ -422,24 +446,36 @@ func TestFeynmanSettingsErrorRendersDuringSearchAndRejectsEmptyHostnameURL(t *te
 	if err := mcpTransportValidation("http", "https://mcp.example.com:443/mcp", ""); err != "" {
 		t.Fatalf("valid https URL rejected: %q", err)
 	}
-	p := fixtureReadyPanel()
-	p.settingsRoot = p.state.root
-	p.state.cliError = "MCP server failed to add"
-	app := ui.NewTester(func(c *ui.Context) {
-		ui.Column(c).Fill().Children(func() {
-			q := nativeui.SettingsQuery{Text: "remove"}
-			ui.Column(c.Key("search-page-mcp")).FillWidth().Children(func() { p.drawSettingsPage(c, "mcp", q) })
-			ui.Column(c.Key("search-page-packages")).FillWidth().Children(func() { p.drawSettingsPage(c, "packages", q) })
+	for _, queryText := range []string{"remove", "and", "tool install"} {
+		t.Run(queryText, func(t *testing.T) {
+			p := fixtureReadyPanel()
+			p.settingsRoot = p.state.root
+			p.state.cliError = "MCP server failed to add"
+			pages := p.settingsPages()
+			app := ui.NewTester(func(c *ui.Context) {
+				ui.Column(c).Fill().Children(func() {
+					q := nativeui.SettingsQuery{Text: queryText}
+					for _, page := range pages {
+						if !q.PageMatch(page) {
+							continue
+						}
+						pg := page
+						ui.Column(c.Key("search-page-" + pg.ID)).FillWidth().Children(func() {
+							pg.Draw(c, q)
+						})
+					}
+				})
+			}, 720, 1200)
+			app.Frame()
+			alerts := 0
+			for _, txt := range app.Texts() {
+				if txt == "MCP server failed to add" {
+					alerts++
+				}
+			}
+			if alerts != 1 {
+				t.Fatalf("query %q rendered cliError %d times, want exactly 1; texts: %v", queryText, alerts, app.Texts())
+			}
 		})
-	}, 720, 900)
-	app.Frame()
-	alerts := 0
-	for _, txt := range app.Texts() {
-		if txt == "MCP server failed to add" {
-			alerts++
-		}
-	}
-	if alerts != 1 {
-		t.Fatalf("cliError rendered %d times during multi-page search 'remove', want exactly 1; texts: %v", alerts, app.Texts())
 	}
 }

@@ -150,7 +150,7 @@ func (s *Shell) nativeSettingsPages(m Model, a Actions) []SettingsPage {
 		},
 		{
 			ID: "shortcuts", Label: "Shortcuts", Icon: portrait.IconCommand, Order: 40,
-			Keywords: []string{"keyboard shortcuts command bar settings sidebar research preview markdown previous document close open folder save cancel search"},
+			Keywords: []string{"shortcuts command bar settings sidebar research preview markdown previous document close open folder save cancel search"},
 			Draw:     func(c *ui.Context, q SettingsQuery) { shortcutSettings(c, q) },
 		},
 		{
@@ -239,10 +239,10 @@ func (s *Shell) appearanceSettingsPage(c *ui.Context, m Model, a Actions, q Sett
 		}
 		rows.Row(spec, func() {
 			activeSpace := spaceOf(m)
-			columns := 2
+			columns := 4
 			width, _ := c.Size()
 			if width < portrait.Settings.Collapse {
-				columns = 4
+				columns = 2
 			}
 			for start := 0; start < len(portrait.Spaces); start += columns {
 				ui.Row(c.Key("space-row-" + portrait.Spaces[start].Name)).FillWidth().Gap(portrait.Form.PadX).Children(func() {
@@ -345,10 +345,11 @@ func preferenceInt(m Model, key string, fallback int) int {
 }
 
 func shortcutSettings(c *ui.Context, q SettingsQuery) {
-	shortcuts := []struct {
+	type shortcutRow struct {
 		title, detail string
 		keys          []string
-	}{
+	}
+	shortcuts := []shortcutRow{
 		{"Command Bar", "Search files and run commands", []string{"⌘K"}},
 		{"Command Bar", "Open a new command", []string{"⌘T"}},
 		{"Settings", "Open the Settings Center", []string{"⌘,"}},
@@ -362,12 +363,18 @@ func shortcutSettings(c *ui.Context, q SettingsQuery) {
 		{"Cancel", "Cancel or close the active surface", []string{"Esc"}},
 		{"Search settings", "Focus Settings search", []string{"/"}},
 	}
+	matched := make([]shortcutRow, 0, len(shortcuts))
+	for _, shortcut := range shortcuts {
+		if q.Match(shortcut.title, shortcut.detail, strings.Join(shortcut.keys, " ")) {
+			matched = append(matched, shortcut)
+		}
+	}
+	if len(matched) == 0 {
+		return
+	}
 	portrait.SettingsGroup(c, "Keyboard shortcuts", func(rows *portrait.Rows) {
-		for _, shortcut := range shortcuts {
+		for _, shortcut := range matched {
 			shortcut := shortcut
-			if !q.Match(shortcut.title, shortcut.detail, strings.Join(shortcut.keys, " ")) {
-				continue
-			}
 			rows.Row(portrait.RowSpec{Title: shortcut.title, Description: shortcut.detail}, func() { portrait.Kbd(c, shortcut.keys...) })
 		}
 	})

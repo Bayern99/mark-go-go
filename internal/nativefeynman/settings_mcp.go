@@ -10,7 +10,7 @@ import (
 
 func (p *panel) mcpSettings(c *ui.Context) {
 	s := p.state
-	settingsSection(c, "Servers", "Configured MCP servers and their exposure.", func() {
+	settingsSection(c, "MCP Servers", "Configured servers", "Manage MCP servers and their tool exposure.", func() {
 		ui.Row(c).Gap(portrait.Form.Gap).AlignItems(ui.Center).Justify(ui.End).Children(func() {
 			addLabel := "Add server"
 			if p.mcpAddOpen {
@@ -47,13 +47,17 @@ func (p *panel) mcpSettings(c *ui.Context) {
 			ui.Column(c.Key("feynman-mcp-add-form")).Gap(portrait.Form.Gap).Padding(portrait.Form.AreaPadY, 0, 0, 0).BorderWidth(portrait.Editor.Hairline, 0, 0, 0).BorderColor(portrait.Colors.Line).Children(func() {
 				portrait.FormRow(c, "Name", "", func() { input(c, "feynman-mcp-name", "Server name", &p.serverName, "Name") })
 				portrait.FormRow(c, "Transport", "", func() {
+					activeTransport := p.serverTransport
+					if activeTransport == "" {
+						activeTransport = "http"
+					}
 					portrait.Track(c, "research-transport", func(track *portrait.Segments) {
 						for _, transport := range []string{"http", "stdio"} {
-							if track.Segment(c, transport, "Use "+transport+" transport", p.serverTransport == transport).Clicked() {
+							if track.Segment(c, transport, "Use "+transport+" transport", activeTransport == transport).Clicked() {
 								p.serverTransport = transport
 							}
 						}
-					}).Label("MCP transport")
+					}).Label("MCP transport").AlignSelf(ui.Start)
 				})
 				if p.serverTransport == "stdio" {
 					portrait.FormRow(c, "Command", "", func() { input(c, "feynman-mcp-command", "Command", &p.serverCommand, "Command path") })

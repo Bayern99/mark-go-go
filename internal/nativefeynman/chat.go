@@ -350,7 +350,7 @@ func (p *panel) composer(c *ui.Context) {
 				if actionsBtn.Clicked() {
 					s.actionsOpen = !s.actionsOpen
 				}
-				actionsPopover := portrait.PopoverWithSpec(c, actionsBtn, &s.actionsOpen, portrait.PopoverSpec{Width: min(portrait.Form.MenuMax, max(portrait.Form.MenuMin, float32(200))), Title: "Research actions", Placement: ui.AnchorTopStart}, func() {
+				actionsPopover := portrait.PopoverWithSpec(c, actionsBtn, &s.actionsOpen, portrait.PopoverSpec{Width: portrait.Form.SelectMax, Title: "Research actions", Placement: ui.AnchorTopStart}, func() {
 					p.commandList(c)
 				})
 				actionsPopover.AttachTo(actionsBtn, ui.AnchorTopStart, ui.AnchorBottomStart).Label("Research actions")
@@ -404,7 +404,7 @@ func (p *panel) commandList(c *ui.Context) {
 		query = strings.TrimSpace(strings.TrimPrefix(s.draft, "/"))
 	}
 	var filterEditor ui.Element
-	filterInput(c, "research-actions-filter", "Filter research actions", &p.commandQuery, "Find a workflow, skill or extension…", func(editor ui.Element) {
+	filterInput(c, "research-actions-filter", "Filter research actions", &p.commandQuery, "Search workflows and skills…", func(editor ui.Element) {
 		filterEditor = editor
 	})
 	if filterEditor.Changed() {

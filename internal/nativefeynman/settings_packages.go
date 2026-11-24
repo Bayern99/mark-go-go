@@ -9,8 +9,7 @@ import (
 
 func (p *panel) packageSettings(c *ui.Context) {
 	s := p.state
-	settingsSection(c, "Workflows, skills and extensions", "Install and update Feynman packages.", func() {
-		sectionTitle(c, "Workflows, skills and extensions")
+	settingsSection(c, "Packages", "Workflows, skills and extensions", "Install and update Feynman packages.", func() {
 		if s.packages != nil {
 			if !s.packages.Parsed {
 				resultText(c, s.packages.Command, s.packages.RawOutput, s.packages.Error)

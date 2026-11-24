@@ -61,7 +61,7 @@ func applyFieldLook(frame ui.Element, invalid bool) {
 	} else if frame.FocusWithin() {
 		Surface{Colors.Paper, Colors.Paper, Rings.Field}.Apply(frame)
 	} else {
-		Materials.Sunken.Apply(frame)
+		Surface{Colors.Paper, Colors.Paper, Shadows{in(0, 0, 0, 1, Colors.Line)}}.Apply(frame)
 	}
 }
 

@@ -34,9 +34,13 @@ func (p *panel) alphaXiv(c *ui.Context) {
 	})
 	ui.Scroll(c.Key("alpha-scroll")).Grow(1).MinHeight(0).FillWidth().TrackScroll(&p.alphaScroll).Label("alphaXiv search and paper tools").Children(func() {
 		portrait.Card(c.Key("alpha-controls")).Gap(portrait.Form.Gap).Padding(portrait.Form.AreaPadY).Radius(portrait.Radii.L).Children(func() {
+			activeMode := p.alphaMode
+			if activeMode == "" {
+				activeMode = "semantic"
+			}
 			portrait.Track(c, "alpha-search-modes", func(track *portrait.Segments) {
 				for _, mode := range alphaModes {
-					if track.Segment(c, mode, "Search alphaXiv using "+mode+" mode", p.alphaMode == mode).Clicked() {
+					if track.Segment(c, mode, "Search alphaXiv using "+mode+" mode", activeMode == mode).Clicked() {
 						p.alphaMode = mode
 					}
 				}

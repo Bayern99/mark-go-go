@@ -57,9 +57,11 @@ func (r *Rows) Row(spec RowSpec, control func()) ui.Element {
 				}
 			})
 			if control != nil {
-				holder := ui.Row(r.context()).Shrink(0).AlignItems(ui.Center).Justify(ui.End)
+				var holder ui.Element
 				if spec.Stacked {
-					holder.FillWidth().Justify(ui.Start)
+					holder = ui.Column(r.context()).FillWidth().Gap(Form.Gap).AlignItems(ui.Start)
+				} else {
+					holder = ui.Row(r.context()).Shrink(0).AlignItems(ui.Center).Justify(ui.End)
 				}
 				holder.Children(control)
 			}

@@ -102,8 +102,8 @@ func area(c *ui.Context, key, label string, value *string, placeholder string, r
 	return entry
 }
 
-func settingsSection(c *ui.Context, title, description string, build func()) {
-	portrait.SettingsGroup(c, title, func(rows *portrait.Rows) {
+func settingsSection(c *ui.Context, group, title, description string, build func()) {
+	portrait.SettingsGroup(c, group, func(rows *portrait.Rows) {
 		rows.Row(portrait.RowSpec{Title: title, Description: description, Stacked: true}, func() {
 			ui.Column(c).FillWidth().Gap(portrait.Form.Gap).Children(build)
 		})

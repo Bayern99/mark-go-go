@@ -14,7 +14,7 @@ var (
 	IconSidebar           = Icon{Glyph: "\uec24"}
 	IconPlugs             = Icon{Glyph: "\ueb56"}
 	IconCaretDown         = Icon{Glyph: "\ue136"}
-	IconCaretUp           = Icon{Glyph: "\ue132"}
+	IconCaretUp           = Icon{Glyph: "\ue13c"}
 	IconCaretRight        = Icon{Glyph: "\ue13a"}
 	IconCube              = Icon{Glyph: "\ue1da"}
 	IconSlidersHorizontal = Icon{Glyph: "\ue434"}
@@ -74,12 +74,12 @@ var (
 	IconPushPin               = Icon{Glyph: "\ue3e2"}
 	IconCaretLeft             = Icon{Glyph: "\ue138"}
 	IconGear                  = Icon{Glyph: "\ue272"}
-	IconPuzzlePiece           = Icon{Glyph: "\ue3ec"}
-	IconWrench                = Icon{Glyph: "\ue4f4"}
-	IconKeyboard              = Icon{Glyph: "\ue2d0"}
+	IconPuzzlePiece           = Icon{Glyph: "\ue596"}
+	IconWrench                = Icon{Glyph: "\ue5d4"}
+	IconKeyboard              = Icon{Glyph: "\ue2d8"}
 	IconMinus                 = Icon{Glyph: "\ue32a"}
-	IconArrowCounterClockwise = Icon{Glyph: "\ue04c"}
-	IconTrash                 = Icon{Glyph: "\ue4d8"}
-	IconPaperPlaneRight       = Icon{Glyph: "\ue398"}
-	IconStop                  = Icon{Glyph: "\ue46e"}
+	IconArrowCounterClockwise = Icon{Glyph: "\ue038"}
+	IconTrash                 = Icon{Glyph: "\ue4a6"}
+	IconPaperPlaneRight       = Icon{Glyph: "\ue396"}
+	IconStop                  = Icon{Glyph: "\ue46c"}
 )

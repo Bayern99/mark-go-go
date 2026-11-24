@@ -9,8 +9,7 @@ import (
 
 func (p *panel) alphaSettings(c *ui.Context) {
 	s := p.state
-	settingsSection(c, "alphaXiv account", "Paper search and annotation account.", func() {
-		sectionTitle(c, "alphaXiv account")
+	settingsSection(c, "alphaXiv", "Account", "Paper search and annotation account.", func() {
 		if s.alphaStatus == nil {
 			mutedText(c, "alphaXiv status has not loaded.")
 		} else if s.alphaStatus.Parsed {
@@ -25,7 +24,7 @@ func (p *panel) alphaSettings(c *ui.Context) {
 		} else {
 			resultText(c, s.alphaStatus.Command, s.alphaStatus.RawOutput, s.alphaStatus.Error)
 		}
-		ui.Row(c).Wrap().Gap(4).Children(func() {
+		ui.Row(c).Wrap().Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
 			if smallButton(c, "Sign in to alphaXiv in Terminal", "Sign in to alphaXiv using Terminal").Disabled(s.cliBusy).Clicked() {
 				p.launchWizard("alpha_login", "")
 			}
@@ -36,23 +35,16 @@ func (p *panel) alphaSettings(c *ui.Context) {
 				})
 				p.loadSettings(s.root)
 			}
+			if portrait.ButtonWith(c, "Open alphaXiv research", "Open alphaXiv search and paper tools", portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Compact}).Clicked() {
+				s.selectedTab = "alpha"
+			}
 		})
-		if smallButton(c, "Open alphaXiv research", "Open alphaXiv search and paper tools").Clicked() {
-			s.selectedTab = "alpha"
-		}
 	})
 }
 
 func (p *panel) searchSettings(c *ui.Context) {
 	s := p.state
-	settingsSection(c, "Web search", "Provider routing and saved authentication.", func() {
-		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-			sectionTitle(c, "Web search")
-			ui.Row(c).Grow(1)
-			if smallButton(c, "Reset to Auto", "Reset search routing to automatic").Disabled(s.cliBusy).Clicked() {
-				p.resetSearchSettings()
-			}
-		})
+	settingsSection(c, "Web search", "Provider & API key", "Provider routing and saved authentication.", func() {
 		if s.searchStatus != nil {
 			if s.searchStatus.Parsed {
 				for _, entry := range s.searchStatus.Entries {
@@ -79,20 +71,29 @@ func (p *panel) searchSettings(c *ui.Context) {
 				resultText(c, s.searchStatus.Command, s.searchStatus.RawOutput, s.searchStatus.Error)
 			}
 		}
-		input(c, "feynman-search-provider", "Search provider", &p.searchProvider, "auto, exa, brave, tavily…")
-		input(c, "feynman-search-key", "Optional API key", &p.searchKey, "Leave blank to use existing authentication", func(entry ui.Element) {
-			entry.Password()
+		portrait.FormRow(c, "Provider", "", func() {
+			input(c, "feynman-search-provider", "Search provider", &p.searchProvider, "auto, exa, brave, tavily…")
 		})
-		if portrait.AccentButton(c, "Save", "Set the selected web search provider and API key").Disabled(s.cliBusy || strings.TrimSpace(p.searchProvider) == "").Clicked() {
-			p.runUpdate(func() (func(), error) {
-				result, err := p.host.CLISearchAction(p.window.Context(), s.root, "set", strings.TrimSpace(p.searchProvider), strings.TrimSpace(p.searchKey))
-				status, statusErr := p.host.CLISearchStatus(p.window.Context(), s.root)
-				return func() {
-					s.cliResult = firstNonEmpty(result.Summary, result.RawOutput)
-					s.searchStatus = &status
-					p.searchKey = ""
-				}, errorsJoin(err, statusErr)
+		portrait.FormRow(c, "API key", "", func() {
+			input(c, "feynman-search-key", "Optional API key", &p.searchKey, "Leave blank to use existing authentication", func(entry ui.Element) {
+				entry.Password()
 			})
-		}
+		})
+		ui.Row(c).FillWidth().Justify(ui.End).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
+			if portrait.ButtonWith(c, "Reset to Auto", "Reset search routing to automatic", portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Compact}).Disabled(s.cliBusy).Clicked() {
+				p.resetSearchSettings()
+			}
+			if portrait.ButtonWith(c, "Save", "Set the selected web search provider and API key", portrait.ButtonSpec{Look: portrait.Accent, Size: portrait.Sizes.Compact}).Disabled(s.cliBusy || strings.TrimSpace(p.searchProvider) == "").Clicked() {
+				p.runUpdate(func() (func(), error) {
+					result, err := p.host.CLISearchAction(p.window.Context(), s.root, "set", strings.TrimSpace(p.searchProvider), strings.TrimSpace(p.searchKey))
+					status, statusErr := p.host.CLISearchStatus(p.window.Context(), s.root)
+					return func() {
+						s.cliResult = firstNonEmpty(result.Summary, result.RawOutput)
+						s.searchStatus = &status
+						p.searchKey = ""
+					}, errorsJoin(err, statusErr)
+				})
+			}
+		})
 	})
 }

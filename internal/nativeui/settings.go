@@ -176,7 +176,7 @@ func (s *Shell) settingsRail(c *ui.Context, pages []SettingsPage, query Settings
 func (s *Shell) settingsNavItem(c *ui.Context, pages []SettingsPage, index int, page SettingsPage) {
 	selected := s.settingsTab == page.ID && s.settingsQuery == ""
 	button := ui.ButtonBase(c.Key("settings-page-"+page.ID)).Role(ui.RoleTab).Label(page.Label).AccessSelected(selected).
-		FillWidth().Height(portrait.Settings.NavRow).Padding(0, portrait.Form.PadX).Gap(portrait.Form.Gap).Radius(portrait.Radii.M).AlignItems(ui.Center).
+		FillWidth().Height(portrait.Settings.NavRow).Padding(0, portrait.Form.PadX).Gap(portrait.Form.Gap).Radius(portrait.Radii.M).AlignItems(ui.Center).Justify(ui.Start).
 		Bind(settingsHandle(s.settingsNav, page.ID))
 	ink := portrait.Colors.Ink2
 	if selected {
@@ -276,7 +276,7 @@ func (s *Shell) settingsPane(c *ui.Context, current SettingsPage, pages []Settin
 							continue
 						}
 						ui.Column(c.Key("search-page-" + page.ID)).FillWidth().Gap(portrait.Settings.HeadingGap).Children(func() {
-							link := portrait.ButtonWith(c, page.Label, "Open "+page.Label, portrait.ButtonSpec{Look: portrait.Link, Size: portrait.Sizes.Regular})
+							link := portrait.ButtonWith(c, page.Label, "Open "+page.Label, portrait.ButtonSpec{Look: portrait.Link, Size: portrait.Sizes.Regular}).AlignSelf(ui.Start).Justify(ui.Start)
 							if link.Clicked() {
 								s.settingsTab, s.settingsQuery = page.ID, ""
 							}

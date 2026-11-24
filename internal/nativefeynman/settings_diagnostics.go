@@ -7,8 +7,7 @@ import (
 
 func (p *panel) statusSettings(c *ui.Context) {
 	s := p.state
-	settingsSection(c, "Feynman CLI", "Feynman CLI status, doctor and setup output.", func() {
-		mutedText(c, "Feynman CLI status, doctor and setup output.")
+	settingsSection(c, "Feynman CLI", "Status & diagnostics", "Feynman CLI status, doctor and setup output.", func() {
 		ui.Row(c).Wrap().Gap(4).Children(func() {
 			if smallButton(c, "Run Doctor", "Run feynman doctor").Disabled(s.cliBusy).Clicked() {
 				p.runUpdate(func() (func(), error) {

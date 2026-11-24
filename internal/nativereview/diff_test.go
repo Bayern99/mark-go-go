@@ -2,6 +2,7 @@ package nativereview
 
 import (
 	"image"
+	"math"
 	"strings"
 	"testing"
 
@@ -270,4 +271,104 @@ func TestDiffSetsHanInIBMPlexSansSC(t *testing.T) {
 func similar(a, b image.Rectangle) bool {
 	dx, dy := a.Dx()-b.Dx(), a.Dy()-b.Dy()
 	return dx*dx <= 4 && dy*dy <= 4
+}
+
+func describes(t *testing.T, tt *ui.Tester, want string) bool {
+	t.Helper()
+	for _, info := range tt.AccessAll() {
+		if strings.Contains(info.Description, want) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestDiffMarksWhitespaceChangesItsLinesCannotShow(t *testing.T) {
+	for _, tc := range []struct{ name, before, after, glyph, described string }{
+		{"trailing space", "alpha\nbeta \ngamma\n", "alpha\nbeta\ngamma\n", "·", "1 trailing space"},
+		{"trailing tab", "alpha\nbeta\t\n", "alpha\nbeta\n", "→", "1 trailing tab"},
+		{"crlf to lf", "alpha\r\nbeta\r\n", "alpha\nbeta\n", "␍", "CRLF line ending, the other side uses LF"},
+		{"missing last newline", "alpha\nbeta\n", "alpha\nbeta", "no newline at end", "no newline at end of file"},
+		{"leading space", "alpha\nbeta\n", "alpha\n beta\n", "·", "1 leading space"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hunks := review.ComputeDiff(tc.before, tc.after)
+			tt := ui.NewTester(func(c *ui.Context) {
+				ui.Column(c).Fill().Background(portrait.Colors.Paper).Padding(8).Children(func() {
+					drawDiffSides(c, hunks, nil, diffSides{before: tc.before, after: tc.after})
+				})
+			}, 640, 600)
+			tt.Frame()
+			if !tt.HasText(tc.glyph) {
+				t.Fatalf("the %s change shows no %q marker: %q", tc.name, tc.glyph, tt.Texts())
+			}
+			if !describes(t, tt, tc.described) {
+				t.Fatalf("the %s change does not describe %q", tc.name, tc.described)
+			}
+		})
+	}
+}
+
+func TestDiffLeavesUnchangedTextUnmarked(t *testing.T) {
+	hunks := fixtureHunks()
+	tt := ui.NewTester(func(c *ui.Context) { drawDiff(c, hunks, nil) }, 640, 600)
+	tt.Frame()
+	for _, glyph := range []string{"·", "→", "␍", "no newline at end"} {
+		if tt.HasText(glyph) {
+			t.Fatalf("a diff with no whitespace change marks %q: %q", glyph, tt.Texts())
+		}
+	}
+}
+
+func luminance(c [3]int) float64 {
+	channel := func(v int) float64 {
+		s := float64(v) / 255
+		if s <= 0.03928 {
+			return s / 12.92
+		}
+		return math.Pow((s+0.055)/1.055, 2.4)
+	}
+	return 0.2126*channel(c[0]) + 0.7152*channel(c[1]) + 0.0722*channel(c[2])
+}
+
+func contrast(a, b [3]int) float64 {
+	la, lb := luminance(a), luminance(b)
+	if la < lb {
+		la, lb = lb, la
+	}
+	return (la + 0.05) / (lb + 0.05)
+}
+
+func TestDiffLineNumbersMeetWCAGAAInTheLightDiff(t *testing.T) {
+	const scale = 3
+	hunks := fixtureHunks()
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Background(portrait.Colors.Paper).Padding(8).Children(func() {
+			drawDiff(c, hunks, nil)
+		})
+	}, 640, 600)
+	tt.SetScale(scale)
+	tt.Frame()
+
+	numbers := find(t, tt, "5")
+	img := tt.Image()
+	ink := [3]int{255, 255, 255}
+	for y := int(numbers.Y * scale); y < int((numbers.Y+numbers.H)*scale); y++ {
+		for x := int(numbers.X * scale); x < int((numbers.X+numbers.W)*scale); x++ {
+			px := img.RGBAAt(x, y)
+			got := [3]int{int(px.R), int(px.G), int(px.B)}
+			if got[0]+got[1]+got[2] < ink[0]+ink[1]+ink[2] {
+				ink = got
+			}
+		}
+	}
+	want := over(portrait.Colors.Ink2)
+	if !close3(ink, want) {
+		t.Fatalf("a light diff line number is inked %v, want Ink2 %v", ink, want)
+	}
+	for _, ground := range [][3]int{over(portrait.Colors.Paper), over(portrait.Diff.Delete), over(portrait.Diff.Insert)} {
+		if ratio := contrast(want, ground); ratio < 4.5 {
+			t.Errorf("line-number contrast on %v is %.2f, want >= 4.5", ground, ratio)
+		}
+	}
 }

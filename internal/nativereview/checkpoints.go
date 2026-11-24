@@ -65,7 +65,7 @@ func (p *panel) drawCheckpoints(c *ui.Context) {
 			p.drawCheckpointList(c, s)
 		}
 		if s.comparing {
-			drawDiff(c, s.diff, nil)
+			drawDiffSides(c, s.diff, nil, diffSides{before: s.base.text, after: s.original})
 			valid := s.base.current(p.win)
 			if !valid {
 				portrait.Alert(c, portrait.Tones.Warning, "Document changed", "The document changed. Compare again before restoring.")
@@ -98,7 +98,8 @@ func (p *panel) drawCheckpoints(c *ui.Context) {
 
 func (p *panel) drawCheckpointList(c *ui.Context, s *checkpointState) {
 	ui.Scroll(c).MaxHeight(portrait.Form.ListMax).Label("Saved checkpoints").Children(func() {
-		ui.Column(c).Gap(4).Children(func() {
+		// The inset keeps a row's focus ring inside the scroll viewport.
+		ui.Column(c).Gap(4).Padding(3).Children(func() {
 			for _, item := range s.items {
 				when := time.UnixMilli(item.CreatedAt).Local().Format("2006-01-02 15:04")
 				backend := "Git ref"
@@ -116,7 +117,7 @@ func (p *panel) drawCheckpointList(c *ui.Context, s *checkpointState) {
 				row.Children(func() {
 					portrait.RowCapsule(c, row, selected, "checkpoints:"+s.id)
 					portrait.Type.UI.Apply(ui.Text(c, name)).FontWeight(500).TextColor(portrait.Colors.Ink).ZIndex(1).MaxLines(1).Ellipsis("…").Grow(1).MinWidth(0)
-					portrait.Type.Meta.Apply(ui.Text(c, backend+" · "+when)).TextColor(portrait.Colors.Ink3).ZIndex(1).MaxLines(1).Shrink(0)
+					portrait.Type.Meta.Apply(ui.Text(c, backend+" · "+when)).FontFeatures("tnum").TextColor(portrait.Colors.Ink3).ZIndex(1).MaxLines(1).Shrink(0)
 				})
 				if row.Clicked() {
 					s.selected = item.ID

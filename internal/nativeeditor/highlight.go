@@ -8,6 +8,12 @@ import (
 	"github.com/egoist/mygo/ui/markdown/parser"
 )
 
+// quoteInk is the token that paints blockquote prose: a quote is quiet body
+// text, not a caution, so it takes Ink2 rather than TokenType's Warn, as
+// chat's blockquotes do. portrait.CodeTheme gives TokenRegexp that ink, and
+// Markdown has no regexp to lose it to.
+const quoteInk = editor.TokenRegexp
+
 type markdownHighlighter struct {
 	editor.Highlighter
 	document  *parser.Document
@@ -94,7 +100,7 @@ func (h *markdownHighlighter) Tokens(line int, text string, dst []editor.Token) 
 				end = min(end, span.End-offset)
 			}
 			apply(h.code, &cursors[0], editor.TokenCode)
-			apply(h.quotes, &cursors[1], editor.TokenType)
+			apply(h.quotes, &cursors[1], quoteInk)
 			apply(h.completed, &cursors[2], editor.TokenDeleted)
 			dst = append(dst, editor.Token{End: max(pos+1, end), Kind: kind})
 			pos = max(pos+1, end)

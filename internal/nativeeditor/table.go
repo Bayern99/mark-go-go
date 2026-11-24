@@ -31,18 +31,8 @@ type tableCell struct {
 }
 
 func (p *previewLayout) standIn(snap editor.Snapshot, start, end int, visible string, block editor.Block) {
-	line := snap.LineOf(start)
-	first := snap.LineStart(line)
-	last := end
-	if end < snap.Len() && snap.Slice(end, end+1) == "\n" {
-		last++
-		visible += "\n"
-	}
-	p.replace(first, last, "")
-	p.readable[first] = visible
-	block.Line = line
 	block.Interactive = true
-	p.blocks = append(p.blocks, block)
+	p.hideLines(snap, start, end, visible, block)
 }
 
 func (p *previewLayout) table(snap editor.Snapshot, idx int) {
@@ -160,7 +150,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 								}
 								box.Children(func() {
 									child.state.ReadOnly = doc.state.ReadOnly
-									child.prepareView()
+									child.prepareView(c)
 									child.state.SetBlocks(nil)
 									child.state.ReadingColumn = editor.ReadingColumn{}
 									child.state.Label = fmt.Sprintf("Table row %d column %d", r+1, k+1)

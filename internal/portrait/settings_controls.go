@@ -77,19 +77,34 @@ type DisclosureSpec struct {
 	Leading Icon
 }
 
+type disclosureKey struct{}
+
 func Disclosure(c *ui.Context, title string, open *bool, spec DisclosureSpec, build func()) ui.Element {
 	root := ui.Column(c).FillWidth()
 	root.Children(func() {
-		parts := ui.CollapsibleBase(c.Key("disclosure"), open)
 		label := spec.Label
 		if label == "" {
 			label = title
 		}
-		trigger := parts.Trigger.FillWidth().Height(Sizes.Regular).Padding(0, Form.PadX).Gap(Form.Gap).Radius(Radii.M).AlignItems(ui.Center).Label(label)
+		trigger := ui.ButtonBase(c.Key("disclosure")).Role(ui.RoleDisclosure).Expanded(*open).
+			FillWidth().Height(Sizes.Regular).Padding(0, Form.PadX).Gap(Form.Gap).Radius(Radii.M).
+			AlignItems(ui.Center).Label(label)
+		if trigger.Clicked() {
+			*open = !*open
+			trigger.Expanded(*open)
+		}
+		anim := ui.Animation{Duration: Motion.Expand, Ease: Motion.EaseInOut.Easing()}
+		if !Animates(c, c.KeyboardInput()) {
+			anim.Duration = 0
+		}
+		progress := trigger.AnimateTo(disclosureKey{}, flag(*open), anim)
+		if anim.Duration == 0 {
+			progress = flag(*open)
+		}
 		RowHover(trigger, trigger.Hovered())
 		trigger.Children(func() {
 			caret := Glyph(c, IconCaretRight, IconSizes.XS, Colors.Ink3)
-			caret.TransformOrigin(0.5, 0.5).Rotate(90 * parts.Progress())
+			caret.TransformOrigin(0.5, 0.5).Rotate(90 * progress)
 			if spec.Leading.Glyph != "" {
 				Glyph(c, spec.Leading, IconSizes.M, Colors.Ink2)
 			}
@@ -104,8 +119,17 @@ func Disclosure(c *ui.Context, title string, open *bool, spec DisclosureSpec, bu
 				}
 			}
 		})
-		if panel := parts.Panel(build); panel.Valid() {
-			panel.Padding(Form.AreaPadY, Form.PadX).PaddingStart(Form.PadX + Form.AreaPadY).Gap(Form.Gap)
+		if *open || progress > 0 {
+			clip := ui.Column(c.Key("disclosure-panel")).FillWidth().Shrink(0)
+			var inner ui.Element
+			clip.Children(func() {
+				inner = ui.Column(c).FillWidth().Shrink(0).
+					Padding(Form.AreaPadY, Form.PadX).PaddingStart(Form.PadX + Form.AreaPadY).Gap(Form.Gap)
+				inner.Children(build)
+			})
+			if progress < 1 {
+				clip.ClipY().Height(progress * inner.Bounds().H)
+			}
 		}
 	})
 	return root

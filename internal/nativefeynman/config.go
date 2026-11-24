@@ -32,6 +32,7 @@ type researchPickerState struct {
 	query, provider string
 	cursor, focus   int
 	reset           bool
+	scrollCursor    bool
 }
 
 func (p *panel) pickerState(key string) *researchPickerState {
@@ -155,7 +156,7 @@ func (p *panel) researchConfigPickers() []researchPicker {
 	}
 	if len(thinkingItems) > 0 {
 		pickers = append(pickers, researchPicker{
-			key: "thinking", label: "Thinking", current: currentThinking, icon: portrait.IconSlidersHorizontal,
+			key: "thinking", label: "Thinking level", current: currentThinking, icon: portrait.IconSlidersHorizontal,
 			items: thinkingItems, disabled: disabled,
 			onSelect: func(value string) {
 				if len(p.state.thinking) > 0 {
@@ -344,6 +345,12 @@ func (p *panel) configPicker(c *ui.Context, picker researchPicker) {
 				}
 				for i, row := range rows {
 					choice := p.pickerRowView(c, picker, row)
+					if i == state.cursor {
+						portrait.RowWash(c, choice, true, "research-picker-cursor-"+picker.key)
+						if state.scrollCursor {
+							choice.ScrollIntoView()
+						}
+					}
 					if p.pickerFocus == picker.key && state.focus == i {
 						choice.Focus().ScrollIntoView()
 						p.pickerFocus = ""
@@ -352,6 +359,7 @@ func (p *panel) configPicker(c *ui.Context, picker researchPicker) {
 						activate(row)
 					}
 				}
+				state.scrollCursor = false
 			})
 		})
 		if picker.key == "model" {
@@ -378,8 +386,8 @@ func (p *panel) configPicker(c *ui.Context, picker researchPicker) {
 		default:
 			return
 		}
-		state.focus = state.cursor
-		p.pickerFocus = picker.key
+		state.focus = -1
+		state.scrollCursor = true
 	})
 	if popover.Dismissed() {
 		state.query, state.provider = "", ""

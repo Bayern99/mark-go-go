@@ -839,7 +839,7 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 		if named, ok := ink(c, p.text("color")); ok {
 			color = named
 		}
-		title := ui.Text(c, p.text("text")).Font(typeface(p.text("text"))).FontSize(face.size).FontWeight(600).LineHeight(face.line).LetterSpacing(face.tracking).TextColor(color).Role(ui.RoleHeading).Wrap()
+		title := ui.Text(c, p.text("text")).Font(typeface(p.text("text"))).FontSize(face.size).FontWeight(600).LineHeight(face.line).LetterSpacing(face.tracking).TextColor(color).Role(ui.RoleHeading).Wrap().Balance()
 		if at.row {
 			title.MaxWidthPercent(100)
 		} else {

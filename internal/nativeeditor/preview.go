@@ -226,6 +226,8 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 		}
 		for j, in := range inlines {
 			switch in.Kind {
+			case parser.SoftBreak, parser.LineBreak:
+				p.reflowBreak(src, in, inlineFloor(b, inlines, j))
 			case parser.Strong, parser.Emphasis, parser.Strikethrough:
 				if in.Next > j+1 {
 					p.replace(in.Start, inlines[j+1].Start, "")
@@ -314,7 +316,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	}
 	p.referenceDefinitions(snap, frontEnd)
 	if draft := p.owner.draft; draft != nil && (draft.kind == "new note" || !p.draftAnchored) {
-		p.blocks = append(p.blocks, editor.Block{Line: snap.LineOf(min(snap.Len(), draft.anchor)), Height: 140, Interactive: true, Label: "Note composer", Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
+		p.blocks = append(p.blocks, editor.Block{Line: snap.LineOf(min(snap.Len(), draft.anchor)), Height: 140, Interactive: true, Label: draftLabel(draft), Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
 			if p.owner.draft == draft {
 				e.Children(func() { p.owner.drawDraft(c, draft) })
 			}
@@ -328,6 +330,72 @@ const (
 	quoteBarWidth = 2
 	quoteBarInset = 14
 )
+
+// inlineFloor is the offset a break's line ending and indentation may be
+// hidden back to: the end of the inline before it, or the block's start.
+func inlineFloor(block *parser.Block, inlines []parser.Inline, i int) int {
+	if i > 0 {
+		return inlines[i-1].End
+	}
+	return block.Start
+}
+
+// reflowBreak hides a paragraph's line ending with the spaces around it. A
+// soft break reads as one space, or as nothing between two CJK runes, where
+// CommonMark and CJK typesetting join the lines; a hard break, two trailing
+// spaces or a backslash, keeps its break.
+func (p *previewLayout) reflowBreak(src string, in parser.Inline, floor int) {
+	start, end := in.Start, in.End
+	for start > floor && (src[start-1] == ' ' || src[start-1] == '\t') {
+		start--
+	}
+	for end < len(src) && (src[end] == ' ' || src[end] == '\t') {
+		end++
+	}
+	sep := "\n"
+	if in.Kind == parser.SoftBreak {
+		sep = " "
+		if joinsWithoutSpace(src, start, end) {
+			sep = ""
+		}
+	}
+	p.readable[start] = sep
+	p.replace(start, end, sep)
+}
+
+// joinsWithoutSpace reports whether the runes around a soft break are CJK,
+// whose lines join without a word space.
+func joinsWithoutSpace(src string, start, end int) bool {
+	if start <= 0 || end >= len(src) {
+		return false
+	}
+	before, _ := utf8.DecodeLastRuneInString(src[:start])
+	after, _ := utf8.DecodeRuneInString(src[end:])
+	return cjkRune(before) && cjkRune(after)
+}
+
+// cjkRune reports whether r is CJK writing: ideographs, kana or their
+// punctuation. Portrait's contract keeps the Unicode script tables out of
+// the native surfaces, so the ranges are written here.
+func cjkRune(r rune) bool {
+	switch {
+	case r >= 0x2E80 && r <= 0x33FF: // radicals, symbols and punctuation
+		return true
+	case r >= 0x3400 && r <= 0x4DBF: // Unified Ideographs Extension A
+		return true
+	case r >= 0x4E00 && r <= 0x9FFF: // Unified Ideographs
+		return true
+	case r >= 0xF900 && r <= 0xFAFF: // Compatibility Ideographs
+		return true
+	case r >= 0xFE30 && r <= 0xFE4F: // Compatibility Forms
+		return true
+	case r >= 0xFF00 && r <= 0xFF65: // Halfwidth and Fullwidth Forms
+		return true
+	case r >= 0x20000 && r <= 0x3FFFF: // Extensions B and on
+		return true
+	}
+	return false
+}
 
 // addIndent adds horizontal insets to a line's existing font style, or
 // gives it a style of its own. Quoted headings need both.
@@ -349,12 +417,42 @@ func quoteBar(c *ui.Context, e ui.Element, _ editor.Replacement) {
 }
 
 func (p *previewLayout) thematicBreak(snap editor.Snapshot, start, end int) {
-	p.replace(start, end, "")
-	p.blocks = append(p.blocks, editor.Block{Line: snap.LineOf(start), Above: true, Height: portrait.Type.Reading.Leading, Label: "Thematic break", Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
-		e.Children(func() {
-			ui.Box(c).FillWidth().Height(portrait.Editor.Hairline).AlignSelf(ui.Center).Background(portrait.Colors.Line).AccessHidden(true)
+	block := editor.Block{Line: snap.LineOf(start), Height: portrait.Type.Reading.Leading, Label: "Thematic break", Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
+		e.FillWidth().Height(portrait.Type.Reading.Leading).Justify(ui.Center).Children(func() {
+			ui.Box(c).FillWidth().Height(portrait.Editor.Hairline).Background(portrait.Colors.Line).AccessHidden(true)
 		})
-	}})
+	}}
+	// The rule takes the room of its own Markdown line, vertically
+	// centered in it: an emptied line keeps its height below the rule
+	// otherwise, doubling the space under it.
+	p.hideLines(snap, start, end, "", block)
+}
+
+// draftLabel names the block a draft without a block of its own is
+// composed in.
+func draftLabel(draft *blockDraft) string {
+	switch draft.kind {
+	case "link":
+		return "Link editor"
+	case "note", "new note":
+		return "Note composer"
+	}
+	return "Block editor"
+}
+
+// hideLines hides the lines start through end belong to, with the newline
+// that ends them, and puts block in their place: the block then takes the
+// room the lines had, rather than standing above lines left empty.
+func (p *previewLayout) hideLines(snap editor.Snapshot, start, end int, visible string, block editor.Block) {
+	first := snap.LineStart(snap.LineOf(start))
+	last := snap.LineEnd(snap.LineOf(max(start, end-1)))
+	if last < snap.Len() {
+		last++
+	}
+	p.replace(first, last, "")
+	p.readable[first] = visible + "\n"
+	block.Line = snap.LineOf(first)
+	p.blocks = append(p.blocks, block)
 }
 
 func previewImageURLs(doc *parser.Document) map[string]struct{} {
@@ -397,32 +495,21 @@ func imageOnlyParagraph(inlines []parser.Inline) bool {
 
 func (p *previewLayout) standaloneImages(snap editor.Snapshot, blockIndex int, inlines []parser.Inline) {
 	images := make([]previewImage, 0, len(inlines))
+	labels := make([]string, 0, len(inlines))
 	for i := 0; i < len(inlines); {
 		in := inlines[i]
-		switch in.Kind {
-		case parser.Image:
+		if in.Kind == parser.Image {
 			label := parser.PlainText(inlines[i+1 : in.Next])
 			if label == "" {
 				label = "Image"
 			}
-			p.readable[in.Start] = label
-			p.replace(in.Start, in.End, "")
 			images = append(images, previewImage{destination: in.Dest, title: in.Title, label: label})
-		case parser.Text:
-			if strings.TrimSpace(in.Text) == "" {
-				p.readable[in.Start] = " "
-				p.replace(in.Start, in.End, "")
-			}
-		case parser.SoftBreak, parser.LineBreak:
-			p.readable[in.Start] = " "
-			p.replace(in.Start, in.End, "")
+			labels = append(labels, label)
 		}
 		i = max(i+1, in.Next)
 	}
 	block := p.document.Block(blockIndex)
-	p.blocks = append(p.blocks, editor.Block{
-		Line:   snap.LineOf(block.Start),
-		Above:  true,
+	p.hideLines(snap, block.Start, block.End, strings.Join(labels, "\n"), editor.Block{
 		Height: 180,
 		Width:  portrait.Editor.Column,
 		Label:  "Markdown image",
@@ -561,7 +648,7 @@ func (p *previewLayout) sourceOffset(runes int) int {
 	return last.to + off - last.shownTo
 }
 
-func (d *Document) prepareView() {
+func (d *Document) prepareView(c *ui.Context) {
 	st, p := &d.state, &d.preview
 	p.owner = d
 	st.NoActiveLine = d.mode == Preview
@@ -595,7 +682,13 @@ func (d *Document) prepareView() {
 		return
 	}
 	st.ContextMenu = func(m *ui.Menu) {
+		// The pointer's hover card keeps its link actions; these are the
+		// same ones, where the keyboard's caret is in the link too.
+		links := d.previewLinkMenu(c.Services(), m)
 		if !d.state.ReadOnly {
+			if links {
+				m.Separator()
+			}
 			if m.Item("Add note").Chosen() {
 				d.beginNote()
 			}

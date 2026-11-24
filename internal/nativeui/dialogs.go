@@ -551,7 +551,7 @@ func (w *Window) drawMove(c *ui.Context, d *windowDialog) {
 	current := filepath.Dir(w.documentInfo(d.id).Path)
 	panel := portrait.DialogShell(c, "move document", &d.open, portrait.DialogSpec{Label: d.title, Width: portrait.Form.DialogWidth, Glass: true}, func() {
 		portrait.Type.Title.Apply(ui.Text(c, d.title)).FontWeight(600).TextColor(portrait.Colors.Ink).Wrap()
-		portrait.Type.Small.Apply(ui.Text(c, d.body)).TextColor(portrait.Colors.Ink2).Wrap()
+		portrait.Type.Small.Apply(ui.Text(c, d.body)).TextColor(portrait.Colors.Ink2).Wrap().Pretty()
 		ui.Scroll(c).MaxHeight(portrait.Form.ListMax).FillWidth().Children(func() {
 			ui.Column(c).FillWidth().Gap(portrait.Form.PopoverGap).Children(func() {
 				row := func(key, path, name string, depth int) {

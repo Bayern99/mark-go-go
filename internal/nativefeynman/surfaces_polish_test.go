@@ -35,6 +35,22 @@ func TestFilesPanelWithoutArtifactsDrawsNoEmptyCard(t *testing.T) {
 	}
 }
 
+func TestFilesErrorReplacesEmptyState(t *testing.T) {
+	p := fixtureReadyPanel()
+	p.state.artifacts = nil
+	p.state.filesError = "Could not load research files"
+	app := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Padding(12).Children(func() { p.files(c) })
+	}, 640, 480)
+	app.Frame()
+	if !app.HasText("Could not load research files") {
+		t.Fatal("Files error is not visible")
+	}
+	if app.HasText("No research files yet") {
+		t.Fatal("Files error is accompanied by a contradictory empty state")
+	}
+}
+
 func TestAlphaXivFullTextCheckboxKeepsCompactHeight(t *testing.T) {
 	p := fixtureAlphaPanel()
 	app := ui.NewTester(func(c *ui.Context) {

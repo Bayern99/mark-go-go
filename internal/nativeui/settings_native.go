@@ -122,13 +122,15 @@ func (s *Shell) nativeSettingsPages(m Model, a Actions) []SettingsPage {
 						if q.Match("Default view", "Used when a document has no saved view.", "documents preview markdown") {
 							rows.Row(portrait.RowSpec{Title: "Default view", Description: "Used when a document has no saved view."}, func() {
 								mode := preference(m, defaultViewPreference, "preview")
-								portrait.Track(c, "settings-default-view", func(track *portrait.Segments) {
-									for _, option := range []struct{ value, label string }{{"preview", "Preview"}, {"markdown", "Markdown"}} {
-										if track.Segment(c, option.label, "Default view "+option.label, mode == option.value).Clicked() {
-											setPreference(a, defaultViewPreference, option.value)
-										}
-									}
-								}).Label("Default document view")
+								selected := 0
+								if mode == "markdown" {
+									selected = 1
+								}
+								before := selected
+								portrait.Segmented(c, &selected, []string{"Preview", "Markdown"}, "Default document view")
+								if selected != before {
+									setPreference(a, defaultViewPreference, []string{"preview", "markdown"}[selected])
+								}
 							})
 						}
 					})
@@ -197,7 +199,8 @@ func (s *Shell) nativeSettingsPages(m Model, a Actions) []SettingsPage {
 					}
 					if q.Match("Reset all settings", "Restore every application and research preference.", "reset preferences") {
 						rows.Row(portrait.RowSpec{Title: "Reset all settings", Description: "Restore every application and research preference."}, func() {
-							if portrait.ButtonWith(c, "Reset all settings", "Reset all settings", portrait.ButtonSpec{Look: portrait.Danger, Size: portrait.Sizes.Regular}).Clicked() {
+							reset := portrait.ButtonWith(c, "Reset all settings", "Reset all settings", portrait.ButtonSpec{Look: portrait.Danger, Size: portrait.Sizes.Regular}).Bind(&s.settingsReset)
+							if reset.Clicked() {
 								s.settingsResetID, s.settingsResetOpen = "all", true
 							}
 						})
@@ -214,14 +217,19 @@ func (s *Shell) appearanceSettingsPage(c *ui.Context, m Model, a Actions, q Sett
 		portrait.SettingsGroup(c, "Theme", func(rows *portrait.Rows) {
 			if q.Match("Appearance", "Choose Light, Dark, or follow macOS automatically.", "appearance theme dark light system") {
 				rows.Row(portrait.RowSpec{Title: "Appearance", Description: "Choose Light, Dark, or follow macOS automatically."}, func() {
-					portrait.Track(c, "settings-appearance", func(track *portrait.Segments) {
-						for _, option := range portrait.Appearances {
-							selected := option == m.Appearance || (option == portrait.System && m.Appearance == "")
-							if track.Segment(c, string(option), "Appearance "+string(option), selected).Role(ui.RoleTab).AccessSelected(selected).Clicked() && a.SetAppearance != nil {
-								a.SetAppearance(option)
-							}
+					options := make([]string, len(portrait.Appearances))
+					selected := 0
+					for i, option := range portrait.Appearances {
+						options[i] = string(option)
+						if option == m.Appearance || (option == portrait.System && m.Appearance == "") {
+							selected = i
 						}
-					}).Label("Appearance mode")
+					}
+					before := selected
+					portrait.Segmented(c, &selected, options, "Appearance mode")
+					if selected != before && a.SetAppearance != nil {
+						a.SetAppearance(portrait.Appearances[selected])
+					}
 				})
 			}
 		})
@@ -239,22 +247,26 @@ func (s *Shell) appearanceSettingsPage(c *ui.Context, m Model, a Actions, q Sett
 		}
 		rows.Row(spec, func() {
 			activeSpace := spaceOf(m)
-			columns := 4
-			width, _ := c.Size()
-			if width < portrait.Settings.Collapse {
-				columns = 2
+			grid := ui.Column(c).FillWidth()
+			available := grid.Bounds().W
+			if available <= 0 {
+				available = portrait.Settings.Column
+				c.Invalidate()
 			}
-			for start := 0; start < len(portrait.Spaces); start += columns {
-				ui.Row(c.Key("space-row-" + portrait.Spaces[start].Name)).FillWidth().Gap(portrait.Form.PadX).Children(func() {
-					for column := 0; column < columns && start+column < len(portrait.Spaces); column++ {
-						space := portrait.Spaces[start+column]
-						card := portrait.SpaceCard(c, space, space.Name == activeSpace.Name, s.dark)
-						if card.Clicked() && a.SetSpace != nil {
-							a.SetSpace(space.Name)
+			columns := max(1, min(4, int((available+portrait.Form.PadX)/(portrait.Form.SelectMin+portrait.Form.PadX))))
+			grid.Children(func() {
+				for start := 0; start < len(portrait.Spaces); start += columns {
+					ui.Row(c.Key("space-row-" + portrait.Spaces[start].Name)).FillWidth().Gap(portrait.Form.PadX).Children(func() {
+						for column := 0; column < columns && start+column < len(portrait.Spaces); column++ {
+							space := portrait.Spaces[start+column]
+							card := portrait.SpaceCard(c, space, space.Name == activeSpace.Name, s.dark)
+							if card.Clicked() && a.SetSpace != nil {
+								a.SetSpace(space.Name)
+							}
 						}
-					}
-				})
-			}
+					})
+				}
+			})
 		})
 	})
 }
@@ -275,16 +287,18 @@ func (s *Shell) editorSettingsPage(c *ui.Context, m Model, a Actions, q Settings
 			if q.Match("Line width", "Maximum reading column width.", "line width narrow default wide") {
 				rows.Row(portrait.RowSpec{Title: "Line width", Description: "Maximum reading column width."}, func() {
 					width := preferenceInt(m, readingWidthPreference, 624)
-					portrait.Track(c, "settings-reading-width", func(track *portrait.Segments) {
-						for _, option := range []struct {
-							width int
-							label string
-						}{{560, "Narrow"}, {624, "Default"}, {720, "Wide"}} {
-							if track.Segment(c, option.label, fmt.Sprintf("Reading width %d", option.width), width == option.width).Clicked() {
-								setPreference(a, readingWidthPreference, strconv.Itoa(option.width))
-							}
+					widths := []int{560, 624, 720}
+					selected := 1
+					for i, option := range widths {
+						if width == option {
+							selected = i
 						}
-					}).Label("Reading line width")
+					}
+					before := selected
+					portrait.Segmented(c, &selected, []string{"Narrow", "Default", "Wide"}, "Reading line width")
+					if selected != before {
+						setPreference(a, readingWidthPreference, strconv.Itoa(widths[selected]))
+					}
 				})
 			}
 		})
@@ -347,25 +361,30 @@ func preferenceInt(m Model, key string, fallback int) int {
 func shortcutSettings(c *ui.Context, q SettingsQuery) {
 	type shortcutRow struct {
 		title, detail string
+		mods          ui.Modifiers
 		keys          []string
 	}
 	shortcuts := []shortcutRow{
-		{"Command Bar", "Search files and run commands", []string{"⌘K"}},
-		{"Command Bar", "Open a new command", []string{"⌘T"}},
-		{"Settings", "Open the Settings Center", []string{"⌘,"}},
-		{"Sidebar", "Show or hide navigation", []string{"⌘0"}},
-		{"Research", "Show or hide research", []string{"⌥⌘0"}},
-		{"Preview ↔ Markdown", "Switch the document mode", []string{"⌘/"}},
-		{"Previous document", "Return to the previous tab", []string{"⌃Tab"}},
-		{"Close document", "Close the current document", []string{"⌘W"}},
-		{"Open folder", "Open a workspace folder", []string{"⇧⌘O"}},
-		{"Save note or block", "Commit the active draft", []string{"⌘↩"}},
-		{"Cancel", "Cancel or close the active surface", []string{"Esc"}},
-		{"Search settings", "Focus Settings search", []string{"/"}},
+		{"Command Bar", "Search files and run commands · also " + shortcutText(ui.Cmd, "T"), ui.Cmd, []string{"K"}},
+		{"Settings", "Open the Settings Center", ui.Cmd, []string{","}},
+		{"Sidebar", "Show or hide navigation", ui.Cmd, []string{"0"}},
+		{"Research", "Show or hide research", ui.Cmd | ui.Alt, []string{"0"}},
+		{"Preview ↔ Markdown", "Switch the document mode", ui.Cmd, []string{"E"}},
+		{"Previous document", "Return to the previous tab", ui.Ctrl, []string{"Tab"}},
+		{"Close document", "Close the current document", ui.Cmd, []string{"W"}},
+		{"Open document", "Open Markdown files", ui.Cmd, []string{"O"}},
+		{"Open folder", "Open a workspace folder", ui.Cmd | ui.Shift, []string{"O"}},
+		{"Save", "Save the current document", ui.Cmd, []string{"S"}},
+		{"Find", "Find in the current document", ui.Cmd, []string{"F"}},
+		{"Duplicate", "Duplicate the current document", ui.Cmd, []string{"D"}},
+		{"Save note or block", "Commit the active draft", ui.Cmd, []string{"↩"}},
+		{"Cancel", "Cancel the active decision", ui.Cmd, []string{"."}},
+		{"Dismiss", "Close the active surface", 0, []string{"Esc"}},
+		{"Search settings", "Focus Settings search", 0, []string{"/"}},
 	}
 	matched := make([]shortcutRow, 0, len(shortcuts))
 	for _, shortcut := range shortcuts {
-		if q.Match(shortcut.title, shortcut.detail, strings.Join(shortcut.keys, " ")) {
+		if q.Match(shortcut.title, shortcut.detail, strings.Join(shortcutKeys(shortcut.mods, shortcut.keys...), " ")) {
 			matched = append(matched, shortcut)
 		}
 	}
@@ -375,7 +394,7 @@ func shortcutSettings(c *ui.Context, q SettingsQuery) {
 	portrait.SettingsGroup(c, "Keyboard shortcuts", func(rows *portrait.Rows) {
 		for _, shortcut := range matched {
 			shortcut := shortcut
-			rows.Row(portrait.RowSpec{Title: shortcut.title, Description: shortcut.detail}, func() { portrait.Kbd(c, shortcut.keys...) })
+			rows.Row(portrait.RowSpec{Title: shortcut.title, Description: shortcut.detail}, func() { shortcutKbd(c, shortcut.mods, shortcut.keys...) })
 		}
 	})
 }

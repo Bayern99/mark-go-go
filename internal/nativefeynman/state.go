@@ -240,6 +240,11 @@ func (s *paneState) receive(update feynman.ResearchUpdate) {
 	case "agentSettled":
 		s.progress = ""
 		s.status = statusReady
+		status := "interrupted"
+		if update.Aborted {
+			status = "cancelled"
+		}
+		s.reconcilePendingSteps(status)
 	case "commands":
 		s.commands = append([]feynman.ResearchCommand(nil), update.Commands...)
 	case "setStatus":
@@ -292,6 +297,34 @@ func (s *paneState) receive(update feynman.ResearchUpdate) {
 		s.permission = nil
 		s.statuses = make(map[string]string)
 		s.error = text
+		s.reconcilePendingSteps("interrupted")
+	}
+}
+
+func (s *paneState) reconcilePendingSteps(status string) {
+	for i := range s.messages {
+		item := &s.messages[i]
+		switch item.kind {
+		case "tool":
+			if !terminalResearchStep(item.tool.Status) {
+				item.tool.Status = status
+			}
+		case "plan":
+			for j := range item.steps {
+				if !terminalResearchStep(item.steps[j].Status) {
+					item.steps[j].Status = status
+				}
+			}
+		}
+	}
+}
+
+func terminalResearchStep(status string) bool {
+	switch status {
+	case "completed", "failed", "error", "cancelled", "canceled", "interrupted":
+		return true
+	default:
+		return false
 	}
 }
 

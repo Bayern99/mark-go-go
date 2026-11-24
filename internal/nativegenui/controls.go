@@ -513,7 +513,7 @@ func (r *Reading) control(c *ui.Context, e *openuilang.Element, p props, path st
 		if state.flipped {
 			side, other = other, side
 		}
-		card := ui.Column(c).MinWidth(0).MinHeight(160).Padding(20).Gap(8).Radius(14).Border(1, theme.Text.Alpha(0.08)).Background(theme.Surface).AlignItems(ui.Center).Justify(ui.Center).Focusable().Role(ui.RoleButton).Cursor(ui.CursorPointer).Label(strings.TrimSpace(p.text(side) + " Flashcard, " + side + " side. Press to show the " + other + "."))
+		card := ui.Column(c).MinWidth(0).MinHeight(160).Padding(20).Gap(8).Radius(portrait.Radii.L).Border(1, theme.Text.Alpha(0.08)).Background(theme.Surface).AlignItems(ui.Center).Justify(ui.Center).Focusable().Role(ui.RoleButton).Cursor(ui.CursorPointer).Label(strings.TrimSpace(p.text(side) + " Flashcard, " + side + " side. Press to show the " + other + "."))
 		if at.row {
 			card.Grow(1).Basis(rowShare)
 		}

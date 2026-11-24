@@ -190,7 +190,7 @@ func (d *Document) SetScrollY(y float32) {
 
 func (d *Document) View(c *ui.Context, readOnly bool) ui.Element {
 	d.state.ReadOnly = readOnly
-	d.prepareView()
+	d.prepareView(c)
 	d.state.Theme = documentTheme(c.Theme(), d.mode)
 	if d.hasPendingScroll && d.state.ViewportHeight() > 0 {
 		d.hasPendingScroll = false

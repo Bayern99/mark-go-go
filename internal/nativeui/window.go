@@ -122,7 +122,8 @@ func (w *Window) OpenCommandBar() {
 	if w == nil {
 		return
 	}
-	w.shell.command = commandBar{open: true, focus: true}
+	trigger := w.shell.command.trigger
+	w.shell.command = commandBar{open: true, focus: true, capture: true, trigger: trigger}
 	if w.win != nil {
 		w.win.Invalidate()
 	}
@@ -496,6 +497,9 @@ func (w *Window) View(c *ui.Context) {
 		d.source.SetLineNumbers(w.Preference(lineNumbersPreference) != "off")
 	}
 	model := Model{Workspace: w.snapshot, Navigation: w.navigation, Recents: w.recents, Search: w.search, Message: w.failure, Feynman: w.PluginEnabled("feynman"), Git: w.PluginEnabled("git"), Spaces: map[string]string{}, Appearance: portrait.AppearanceNamed(w.Preference(appearancePreference)), Preferences: w.store().values, PreferenceFile: w.store().path()}
+	if d != nil {
+		model.DocumentScrollY = d.source.ScrollY()
+	}
 	for _, root := range w.snapshot.Workspaces {
 		model.Spaces[root.Root] = w.Preference(spacePreference + root.Root)
 	}
@@ -548,9 +552,18 @@ func (w *Window) View(c *ui.Context) {
 		CloseDocument:     func(id string) { w.command(workspace.NativeCommand{Command: "close", ID: id}) },
 		CloseWorkspace:    func(id string) { w.requestClose("closeRoot", id, nil) },
 		OpenPath:          w.openPath, Reveal: w.Reveal, SetMode: w.SetMode,
-		OpenFolder:  func() { go w.action(func() error { _, err := w.host.PickFolder(w.ctx); return err }) },
-		NewDocument: func() { go w.action(func() error { _, err := w.host.New(w.ctx); return err }) },
-		OpenRecent:  func(path string) { go w.action(func() error { return w.host.OpenWorkspace(w.ctx, path) }) },
+		OpenFolder:   func() { go w.action(func() error { _, err := w.host.PickFolder(w.ctx); return err }) },
+		NewDocument:  func() { go w.action(func() error { _, err := w.host.New(w.ctx); return err }) },
+		OpenFiles:    w.OpenFiles,
+		Find:         func() { w.win.EditContent("find") },
+		Undo:         func() { w.command(workspace.NativeCommand{Command: "undo", ID: w.snapshot.ActiveID}) },
+		Save:         func(id string) { w.command(workspace.NativeCommand{Command: "save", ID: id}) },
+		SaveAs:       func(id string) { w.command(workspace.NativeCommand{Command: "saveAs", ID: id}) },
+		Rename:       func(id string) { w.command(workspace.NativeCommand{Command: "rename", ID: id}) },
+		Move:         func(id string) { w.command(workspace.NativeCommand{Command: "moveTo", ID: id}) },
+		Revert:       func(id string) { w.command(workspace.NativeCommand{Command: "revert", ID: id}) },
+		CommandFocus: func() *ui.Handle { return &w.focusReturn },
+		OpenRecent:   func(path string) { go w.action(func() error { return w.host.OpenWorkspace(w.ctx, path) }) },
 		ToggleFolder: func(rel string) {
 			if err := w.host.ToggleFolder(w.ctx, rel); err != nil {
 				w.failure = err.Error()

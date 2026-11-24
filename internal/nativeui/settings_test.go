@@ -76,7 +76,7 @@ func TestSettingsPreferencesRoundTripThroughActions(t *testing.T) {
 	if got := model.Preferences["mgo.editor.readingSize"]; got != "17" {
 		t.Fatalf("reading size = %q", got)
 	}
-	if err := app.Click("Reading width 720"); err != nil {
+	if err := app.Click("Wide"); err != nil {
 		t.Fatal(err)
 	}
 	if info, ok := app.AccessByRole(ui.RoleSwitch, "Line numbers"); ok {
@@ -90,7 +90,7 @@ func TestSettingsPreferencesRoundTripThroughActions(t *testing.T) {
 		t.Fatal(err)
 	}
 	app.Frame()
-	if err := app.Click("Default view Markdown"); err != nil {
+	if err := app.Click("Markdown"); err != nil {
 		t.Fatal(err)
 	}
 	if info, ok := app.AccessByRole(ui.RoleSwitch, "Show sidebar"); ok {

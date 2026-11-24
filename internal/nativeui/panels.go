@@ -65,6 +65,17 @@ func (w *Window) SetMode(mode string) {
 		w.setPreference("mgo.viewMode:"+path, mode)
 	}
 }
+
+// ToggleMode switches between reading and Markdown without exposing the
+// editor's Command-/ comment shortcut on the window's view command.
+func (w *Window) ToggleMode() {
+	mode := "preview"
+	if w.Active().ViewMode != "markdown" {
+		mode = "markdown"
+	}
+	w.SetMode(mode)
+}
+
 func (w *Window) PluginEnabled(name string) bool { return w.Preference("mgo.plugin."+name) == "on" }
 func (w *Window) Preference(key string) string   { return w.store().values[key] }
 

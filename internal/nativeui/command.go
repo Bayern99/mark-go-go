@@ -13,37 +13,66 @@ import (
 
 type commandBar struct {
 	open, focus, moved bool
-	toggled            bool
+	toggled, capture   bool
+	hasReturn          bool
 	query, sent        string
 	index              int
+	trigger            ui.Handle
+	returnFocus        ui.Handle
 }
 
 type commandItem struct {
-	icon          portrait.Icon
-	title, detail string
-	keys          []string
-	run           func()
+	icon                    portrait.Icon
+	title, detail, keywords string
+	keys                    []string
+	run                     func()
 }
 
 const commandSearchLimit = 24
 
-func (s *Shell) toggleCommand(a Actions) {
+func (s *Shell) toggleCommand(c *ui.Context, a Actions) {
 	if s.command.toggled {
 		return
 	}
 	if s.command.open {
 		s.closeCommand(a)
 	} else {
-		s.command = commandBar{open: true, focus: true}
+		trigger := s.command.trigger
+		s.command = commandBar{open: true, focus: true, capture: true, trigger: trigger}
 	}
 	s.command.toggled = true
+}
+
+func (s *Shell) captureCommandFocus(c *ui.Context, a Actions) {
+	bar := &s.command
+	if !bar.capture {
+		return
+	}
+	bar.capture = false
+	capture := func(handle *ui.Handle) {
+		if bar.hasReturn || handle == nil || !handle.Focused(c) {
+			return
+		}
+		bar.returnFocus = *handle
+		bar.hasReturn = true
+	}
+	if a.CommandFocus != nil {
+		capture(a.CommandFocus())
+	}
+	capture(&s.filterReturn)
+	capture(&bar.trigger)
 }
 
 func (s *Shell) closeCommand(a Actions) {
 	if s.command.sent != "" && a.Filter != nil {
 		a.Filter(s.query)
 	}
-	s.command = commandBar{}
+	returnFocus, hasReturn := s.command.returnFocus, s.command.hasReturn
+	trigger := s.command.trigger
+	s.command = commandBar{trigger: trigger}
+	if hasReturn {
+		returnFocus.Focus()
+	}
 }
 
 func (s *Shell) searchQuery(root string) string {
@@ -62,7 +91,7 @@ func (s *Shell) commandItems(m Model, a Actions, slots Slots, width float32) []c
 	needle := strings.ToLower(query)
 	var items []commandItem
 	add := func(item commandItem) {
-		if needle == "" || strings.Contains(strings.ToLower(item.title+" "+item.detail), needle) {
+		if needle == "" || strings.Contains(strings.ToLower(item.title+" "+item.detail+" "+item.keywords), needle) {
 			items = append(items, item)
 		}
 	}
@@ -131,15 +160,41 @@ func (s *Shell) commandItems(m Model, a Actions, slots Slots, width float32) []c
 	if a.NewDocument != nil {
 		add(commandItem{icon: portrait.IconPlus, title: "New Document", detail: "Start an untitled document", run: a.NewDocument})
 	}
+	if a.OpenFiles != nil {
+		add(commandItem{icon: portrait.IconFileText, title: "Open…", detail: "Open Markdown files", keywords: "open file document", keys: shortcutKeys(ui.Cmd, "O"), run: a.OpenFiles})
+	}
 	if a.OpenFolder != nil {
-		add(commandItem{icon: portrait.IconFolderPlus, title: "Open Folder…", detail: "Add a workspace to this window", run: a.OpenFolder})
+		add(commandItem{icon: portrait.IconFolderPlus, title: "Open Folder…", detail: "Add a workspace to this window", keywords: "open folder workspace", keys: shortcutKeys(ui.Cmd|ui.Shift, "O"), run: a.OpenFolder})
+	}
+	if doc.ID != "" {
+		if a.Save != nil {
+			add(commandItem{icon: portrait.IconFileText, title: "Save", detail: labels[doc.ID], keywords: "save document write", keys: shortcutKeys(ui.Cmd, "S"), run: func() { a.Save(doc.ID) }})
+		}
+		if a.SaveAs != nil {
+			add(commandItem{icon: portrait.IconFileText, title: "Save As…", detail: labels[doc.ID], keywords: "save as document copy", run: func() { a.SaveAs(doc.ID) }})
+		}
+		if a.Rename != nil {
+			add(commandItem{icon: portrait.IconPencil, title: "Rename…", detail: labels[doc.ID], keywords: "rename title filename", run: func() { a.Rename(doc.ID) }})
+		}
+		if a.Move != nil {
+			add(commandItem{icon: portrait.IconFolder, title: "Move…", detail: labels[doc.ID], keywords: "move folder relocate", run: func() { a.Move(doc.ID) }})
+		}
+		if a.Revert != nil {
+			add(commandItem{icon: portrait.IconArrowCounterClockwise, title: "Revert", detail: labels[doc.ID], keywords: "revert restore discard changes", run: func() { a.Revert(doc.ID) }})
+		}
+		if a.Find != nil {
+			add(commandItem{icon: portrait.IconMagnifyingGlass, title: "Find", detail: "Find in the current document", keywords: "find search text", keys: shortcutKeys(ui.Cmd, "F"), run: a.Find})
+		}
+		if a.Undo != nil {
+			add(commandItem{icon: portrait.IconArrowCounterClockwise, title: "Undo", detail: "Undo the last edit", keywords: "undo edit", keys: shortcutKeys(ui.Cmd, "Z"), run: a.Undo})
+		}
 	}
 	if doc.ID != "" && a.SetMode != nil {
 		for _, mode := range []struct {
 			id, title string
 			icon      portrait.Icon
 			keys      []string
-		}{{"preview", "Show Preview", portrait.IconEye, []string{"⌘", "/"}}, {"markdown", "Show Markdown", portrait.IconCode, []string{"⌘", "/"}}, {"genui", "Show GenUI", portrait.IconSparkle, nil}} {
+		}{{"preview", "Show Preview", portrait.IconEye, shortcutKeys(ui.Cmd, "E")}, {"markdown", "Show Markdown", portrait.IconCode, shortcutKeys(ui.Cmd, "E")}, {"genui", "Show GenUI", portrait.IconSparkle, nil}} {
 			current := doc.ViewMode == mode.id || mode.id == "preview" && doc.ViewMode != "markdown" && doc.ViewMode != "genui"
 			if current || mode.id == "genui" && slots.GenUI == nil {
 				continue
@@ -154,7 +209,7 @@ func (s *Shell) commandItems(m Model, a Actions, slots Slots, width float32) []c
 	if !s.sidebarDocked && !s.leftOpen {
 		sidebar = "Show Sidebar"
 	}
-	add(commandItem{icon: portrait.IconSidebar, title: sidebar, detail: "Navigation", keys: []string{"⌘", "0"}, run: func() { s.toggleSidebar(width); s.persistSidebar(a) }})
+	add(commandItem{icon: portrait.IconSidebar, title: sidebar, detail: "Navigation", keys: shortcutKeys(ui.Cmd, "0"), run: func() { s.toggleSidebar(width); s.persistSidebar(a) }})
 	show := func(outline bool) func() {
 		return func() {
 			s.outline = outline
@@ -168,7 +223,7 @@ func (s *Shell) commandItems(m Model, a Actions, slots Slots, width float32) []c
 	add(commandItem{icon: portrait.IconHash, title: "Show Outline", detail: "Navigation", run: show(true)})
 	add(commandItem{icon: portrait.IconFolder, title: "Show Files", detail: "Navigation", run: show(false)})
 	if m.Feynman {
-		add(commandItem{icon: portrait.IconAtom, title: "Toggle Research Panel", detail: "Feynman", keys: []string{"⌥", "⌘", "0"}, run: func() { s.toggleResearch(width); s.persistResearch(a) }})
+		add(commandItem{icon: portrait.IconAtom, title: "Toggle Research Panel", detail: "Feynman", keys: shortcutKeys(ui.Cmd|ui.Alt, "0"), run: func() { s.toggleResearch(width); s.persistResearch(a) }})
 	}
 	for _, plugin := range []struct {
 		name string
@@ -189,11 +244,11 @@ func (s *Shell) commandItems(m Model, a Actions, slots Slots, width float32) []c
 		if s.dark {
 			next, icon = portrait.Light, portrait.IconSun
 		}
-		add(commandItem{icon: icon, title: "Toggle Dark Mode", detail: "Appearance", run: func() { a.SetAppearance(next) }})
+		add(commandItem{icon: icon, title: "Toggle Dark Mode", detail: "Appearance", keywords: "color colour theme appearance", run: func() { a.SetAppearance(next) }})
 	}
-	add(commandItem{icon: portrait.IconGear, title: "Open Settings…", detail: "General, Appearance, Editor, Research", keys: []string{"⌘", ","}, run: func() { s.OpenSettings("") }})
+	add(commandItem{icon: portrait.IconGear, title: "Open Settings…", detail: "General, Appearance, Editor, Research", keywords: "preferences settings keyboard shortcut color colour theme", keys: shortcutKeys(ui.Cmd, ","), run: func() { s.OpenSettings("") }})
 	if doc.ID != "" && a.CloseDocument != nil {
-		add(commandItem{icon: portrait.IconX, title: "Close Document", detail: labels[doc.ID], keys: []string{"⌘", "W"}, run: func() { a.CloseDocument(doc.ID) }})
+		add(commandItem{icon: portrait.IconX, title: "Close Document", detail: labels[doc.ID], keys: shortcutKeys(ui.Cmd, "W"), run: func() { a.CloseDocument(doc.ID) }})
 	}
 	if a.ActivateWorkspace != nil {
 		for _, root := range w.Workspaces {
@@ -237,6 +292,10 @@ func (s *Shell) commandBar(c *ui.Context, width, height float32, m Model, a Acti
 		bar.index = max(0, min(bar.index, len(items)-1))
 	}
 	var run func()
+	if bar.open {
+		s.captureCommandFocus(c, a)
+	}
+	resultsScroll := s.scrollState("command results")
 	panel := portrait.DialogShell(c, "command bar", &bar.open, portrait.DialogSpec{
 		Label: "Command Bar", Width: portrait.Shell.CommandWidth, Margin: 2 * portrait.Shell.PageInset,
 		Radius: portrait.Radii.XL, Glass: true, Top: min(portrait.Shell.CommandTop, height/8),
@@ -253,6 +312,7 @@ func (s *Shell) commandBar(c *ui.Context, width, height float32, m Model, a Acti
 				bar.index = 0
 				if query := strings.TrimSpace(bar.query); a.Filter != nil && m.Workspace.Kind == "folder" && (query != "" || bar.sent != "") {
 					bar.sent = query
+					resultsScroll.Y = 0
 					a.Filter(query)
 				}
 			}
@@ -268,12 +328,13 @@ func (s *Shell) commandBar(c *ui.Context, width, height float32, m Model, a Acti
 				}
 			}
 			if input.Shortcut(ui.Cmd, ui.KeyK) || input.Shortcut(ui.Cmd, ui.KeyT) {
-				s.toggleCommand(a)
+				s.toggleCommand(c, a)
 			}
-			portrait.Kbd(c, "esc").Opacity(0.7)
+			portrait.KbdTint(c, portrait.Colors.Ink2, portrait.Colors.Fill, "esc")
 		})
 		ui.Scroll(c.Key("command results")).FillWidth().MaxHeight(min(portrait.Shell.Results, height-portrait.Shell.CommandTop-portrait.Shell.CommandInput-portrait.Shell.Strip)).
-			Padding(6).Gap(1).BorderWidth(1, 0, 0, 0).BorderColor(portrait.Colors.Line).Role(ui.RoleListBox).Label("Results").Children(func() {
+			Padding(6, 6, portrait.Sizes.Regular, 6).Gap(1).BorderWidth(1, 0, 0, 0).BorderColor(portrait.Colors.Line).Role(ui.RoleListBox).Label("Results").
+			TrackScroll(resultsScroll).MaskLinearGradient(scrollEdgeMask(180, resultsScroll)).Children(func() {
 			for i, item := range items {
 				selected := i == bar.index
 				row := ui.ButtonBase(c.Key(fmt.Sprintf("result:%d", i))).Role(ui.RoleOption).Label(item.title).Description(item.detail).AccessSelected(selected).TabStop(false).
@@ -282,7 +343,7 @@ func (s *Shell) commandBar(c *ui.Context, width, height float32, m Model, a Acti
 				switch {
 				case selected:
 					row.Background(portrait.Colors.AccentSoft)
-					ink, muted = portrait.Colors.Accent, portrait.Colors.Ink2
+					muted = portrait.Colors.Ink2
 				case row.Hovered():
 					row.Background(portrait.Colors.Fill)
 				}
@@ -296,7 +357,7 @@ func (s *Shell) commandBar(c *ui.Context, width, height float32, m Model, a Acti
 					if selected {
 						portrait.Glyph(c, portrait.IconArrowElbowDownLeft, portrait.IconSizes.S, muted).Shrink(0)
 					} else if len(item.keys) > 0 {
-						portrait.KbdTint(c, muted, portrait.Clear, item.keys...).Shrink(0).AccessHidden(true)
+						portrait.KbdTint(c, portrait.Colors.Ink2, portrait.Clear, item.keys...).Shrink(0).AccessHidden(true)
 					}
 				})
 				if row.Clicked() {

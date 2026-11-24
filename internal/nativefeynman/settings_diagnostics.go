@@ -10,13 +10,13 @@ func (p *panel) statusSettings(c *ui.Context) {
 	settingsSection(c, "Feynman CLI", "Status & diagnostics", "Feynman CLI status, doctor and setup output.", func() {
 		ui.Row(c).Wrap().Gap(4).Children(func() {
 			if controlButton(c, "Run Doctor", "Run feynman doctor").Disabled(s.cliBusy).Clicked() {
-				p.runUpdate(func() (func(), error) {
+				p.runSettingsUpdate(func() (func(), error) {
 					result, err := p.host.CLIDoctor(p.window.Context(), s.root)
 					return func() { s.doctorResult = &result }, err
 				})
 			}
 			if controlButton(c, "Verify Preview", "Run feynman setup preview").Disabled(s.cliBusy).Clicked() {
-				p.runUpdate(func() (func(), error) {
+				p.runSettingsUpdate(func() (func(), error) {
 					result, err := p.host.CLISetupPreview(p.window.Context(), s.root)
 					return func() { s.setupPreview = &result }, err
 				})

@@ -248,8 +248,7 @@ func buildMenu(host *workspace.Service) *mygo.Menu {
 		{Role: mygo.RoleEditMenu},
 		{Role: mygo.RoleViewMenu, Submenu: []*mygo.MenuItem{
 			{Label: "Command Bar…", Accelerator: "CmdOrCtrl+K", Click: withWindow(func(w *nativeui.Window) { w.OpenCommandBar() })}, mygo.Separator(),
-			{Label: "Preview", Type: mygo.MenuItemRadio, Checked: true, Click: withWindow(func(w *nativeui.Window) { w.SetMode("preview") })},
-			{Label: "Markdown", Type: mygo.MenuItemRadio, Accelerator: "CmdOrCtrl+/", Click: withWindow(func(w *nativeui.Window) { w.SetMode("markdown") })},
+			{Label: "Toggle Preview / Markdown", Accelerator: "CmdOrCtrl+E", Click: withWindow(func(w *nativeui.Window) { w.ToggleMode() })},
 			{Label: "GenUI", Type: mygo.MenuItemRadio, Click: withWindow(func(w *nativeui.Window) { w.SetMode("genui") })},
 			mygo.Separator(),
 			{Label: "Toggle Sidebar", Accelerator: "CmdOrCtrl+0", Click: withWindow(func(w *nativeui.Window) { w.ToggleSidebar() })},

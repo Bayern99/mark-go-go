@@ -7,75 +7,133 @@ import (
 	"github.com/egoist/mygo/ui/markdown/parser"
 )
 
-func (d *Document) previewHover(req editor.HoverRequest) {
-	if d.mode != Preview || req.Version != d.Version() || d.preview.document == nil || d.preview.version != req.Version {
-		return
+// previewLink is the link at a position of Preview, with the source ranges
+// its actions edit.
+type previewLink struct {
+	link                             parser.Inline
+	destination                      string
+	labelStart, labelEnd             int
+	destinationStart, destinationEnd int
+	canOpen, canEdit, canRemove      bool
+}
+
+// linkAt returns the link under an offset of Preview, as the pointer finds
+// one: the inline itself, its label and destination, and which actions it
+// takes.
+func (d *Document) linkAt(offset int) (previewLink, bool) {
+	if d.mode != Preview || d.preview.document == nil || d.preview.version != d.Version() {
+		return previewLink{}, false
 	}
+	snapshot := d.state.Buffer.Snapshot()
+	source := snapshot.String()
 	for i := 1; i < d.preview.document.Len(); i++ {
 		block := d.preview.document.Block(i)
-		if req.Offset < block.Start || req.Offset > block.End {
+		if offset < block.Start || offset > block.End {
 			continue
 		}
-		inlines := d.preview.document.Inlines(i)
-		snapshot := d.state.Buffer.Snapshot()
-		source := snapshot.String()
-		for _, in := range inlines {
-			if in.Kind != parser.Link || req.Offset < in.Start || req.Offset > in.End {
+		for _, in := range d.preview.document.Inlines(i) {
+			if in.Kind != parser.Link || offset < in.Start || offset > in.End {
 				continue
 			}
-			destination := in.Dest
-			canOpen := ui.SafeToOpen(destination)
-			labelStart, labelEnd, hasLabel := inlineLinkLabelRange(source, in)
-			canRemove := hasLabel && !in.Auto
-			destinationStart, destinationEnd, canEdit := inlineDestinationRange(source, in)
-			if !canEdit {
+			found := previewLink{link: in, destination: in.Dest, canOpen: ui.SafeToOpen(in.Dest)}
+			found.labelStart, found.labelEnd, found.canRemove = inlineLinkLabelRange(source, in)
+			found.canRemove = found.canRemove && !in.Auto
+			found.destinationStart, found.destinationEnd, found.canEdit = inlineDestinationRange(source, in)
+			if !found.canEdit {
 				if label, ok := referenceLinkLabel(source, in); ok {
-					destinationStart, destinationEnd, canEdit = d.preview.referenceDestination(snapshot, label)
+					found.destinationStart, found.destinationEnd, found.canEdit = d.preview.referenceDestination(snapshot, label)
 				}
 			}
-			// The card draws the URL itself as its mono line: the hover's own
-			// title would show it twice.
-			d.state.ShowHover(in.Start, in.End, "", func(c *ui.Context) {
-				if draft := d.draft; draft != nil && draft.kind == "link" && draft.anchor == in.Start {
-					d.drawDraft(c, draft)
-					return
-				}
-				if d.Version() != req.Version {
-					portrait.Alert(c, portrait.Tones.Warning, "Link changed", "Reopen the link after the document settles.")
-					return
-				}
-				ui.Column(c).Gap(portrait.Form.PopoverGap).Children(func() {
-					portrait.Type.CodeSmall.Apply(ui.Text(c, destination)).TextColor(portrait.Colors.Ink3).MaxLines(1).Ellipsis("…").Padding(0, portrait.Form.PadX)
-					if canOpen {
-						open := portrait.ListRow(c, portrait.ListRowSpec{Icon: portrait.IconArrowUpRight, Title: "Open link", Label: "Open link"})
-						open.Description(destination)
-						if open.Clicked() {
-							c.Services().OpenURL(destination)
-						}
-					}
-					if portrait.ListRow(c, portrait.ListRowSpec{Icon: portrait.IconCopy, Title: "Copy link", Label: "Copy link"}).Clicked() {
-						c.Services().WriteClipboard(destination)
-					}
-					if d.state.ReadOnly {
-						return
-					}
-					if canEdit && portrait.ListRow(c, portrait.ListRowSpec{Icon: portrait.IconPencil, Title: "Edit link", Label: "Edit link"}).Clicked() && d.Version() == req.Version {
-						d.openDraft(destinationStart, destinationEnd, "link")
-						d.draft.anchor = in.Start
-						c.Invalidate()
-					}
-					if canRemove {
-						remove := portrait.ListRow(c, portrait.ListRowSpec{Icon: portrait.IconTrash, Title: "Remove link", Label: "Remove link"})
-						if remove.Clicked() && d.Version() == req.Version && d.removeLink(req.Version, in, labelStart, labelEnd) == nil {
-							d.refocus = true
-							c.Invalidate()
-						}
-					}
-				})
-			})
-			return
+			return found, true
 		}
 	}
+	return previewLink{}, false
+}
+
+func (d *Document) previewHover(req editor.HoverRequest) {
+	if req.Version != d.Version() {
+		return
+	}
+	found, ok := d.linkAt(req.Offset)
+	if !ok {
+		return
+	}
+	in, destination := found.link, found.destination
+	// The card draws the URL itself as its mono line: the hover's own
+	// title would show it twice.
+	d.state.ShowHover(in.Start, in.End, "", func(c *ui.Context) {
+		if draft := d.draft; draft != nil && draft.kind == "link" && draft.anchor == in.Start {
+			d.drawDraft(c, draft)
+			return
+		}
+		if d.Version() != req.Version {
+			portrait.Alert(c, portrait.Tones.Warning, "Link changed", "Reopen the link after the document settles.")
+			return
+		}
+		ui.Column(c).Gap(portrait.Form.PopoverGap).Children(func() {
+			portrait.Type.CodeSmall.Apply(ui.Text(c, destination)).TextColor(portrait.Colors.Ink3).MaxLines(1).Ellipsis("…").Padding(0, portrait.Form.PadX)
+			if found.canOpen {
+				open := portrait.ListRow(c, portrait.ListRowSpec{Icon: portrait.IconArrowUpRight, Title: "Open link", Label: "Open link"})
+				open.Description(destination)
+				if open.Clicked() {
+					c.Services().OpenURL(destination)
+				}
+			}
+			if portrait.ListRow(c, portrait.ListRowSpec{Icon: portrait.IconCopy, Title: "Copy link", Label: "Copy link"}).Clicked() {
+				c.Services().WriteClipboard(destination)
+			}
+			if d.state.ReadOnly {
+				return
+			}
+			if found.canEdit && portrait.ListRow(c, portrait.ListRowSpec{Icon: portrait.IconPencil, Title: "Edit link", Label: "Edit link"}).Clicked() && d.Version() == req.Version {
+				d.openDraft(found.destinationStart, found.destinationEnd, "link")
+				d.draft.anchor = in.Start
+				c.Invalidate()
+			}
+			if found.canRemove {
+				remove := portrait.ListRow(c, portrait.ListRowSpec{Icon: portrait.IconTrash, Title: "Remove link", Label: "Remove link"})
+				if remove.Clicked() && d.Version() == req.Version && d.removeLink(req.Version, in, found.labelStart, found.labelEnd) == nil {
+					d.refocus = true
+					c.Invalidate()
+				}
+			}
+		})
+	})
+}
+
+// previewLinkMenu puts the link's actions in the context menu too, so the
+// keyboard reaches what the pointer's hover card shows: the same open, copy,
+// edit and remove, on the link the caret is in. It reports whether it added
+// them.
+func (d *Document) previewLinkMenu(services ui.Services, m *ui.Menu) bool {
+	found, ok := d.linkAt(d.state.Cursor())
+	if !ok {
+		return false
+	}
+	if found.canOpen {
+		if m.Item("Open link").Chosen() {
+			services.OpenURL(found.destination)
+		}
+	}
+	if m.Item("Copy link").Chosen() {
+		services.WriteClipboard(found.destination)
+	}
+	if d.state.ReadOnly {
+		return true
+	}
+	if found.canEdit && m.Item("Edit link").Chosen() {
+		d.openDraft(found.destinationStart, found.destinationEnd, "link")
+		d.draft.anchor = found.link.Start
+		// No hover card shows the draft here, so the link's own line
+		// carries it instead.
+		d.preview.dirty = true
+		services.Invalidate()
+	}
+	if found.canRemove && m.Item("Remove link").Chosen() && d.removeLink(d.Version(), found.link, found.labelStart, found.labelEnd) == nil {
+		d.refocus = true
+		services.Invalidate()
+	}
+	return true
 }
 
 func inlineLinkLabelRange(source string, link parser.Inline) (start, end int, ok bool) {

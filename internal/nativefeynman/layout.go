@@ -1,8 +1,11 @@
 package nativefeynman
 
-import "github.com/egoist/mygo/ui"
+import (
+	"github.com/Bayern99/mark-go-go/internal/portrait"
+	"github.com/egoist/mygo/ui"
+)
 
 func compactResearchLayout(c *ui.Context) bool {
-	width, height := c.Size()
-	return width < 641 || height < 430
+	_, height := c.Size()
+	return height < 6*portrait.Form.AreaMin
 }

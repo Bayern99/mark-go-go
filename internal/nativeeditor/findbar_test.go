@@ -1,6 +1,8 @@
 package nativeeditor
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -37,6 +39,46 @@ func TestFindBarUsesPortraitControls(t *testing.T) {
 	for _, name := range []string{"Replace current match", "Replace all matches"} {
 		if _, ok := app.AccessByRole(ui.RoleButton, name); !ok {
 			t.Errorf("missing replacement control %q", name)
+		}
+	}
+}
+
+func TestFindBarCounterKeepsTheQueryFieldInPlace(t *testing.T) {
+	doc := New(strings.Repeat("one\n", 100))
+	app := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Children(func() { doc.View(c, false).Grow(1).FillWidth().AutoFocus() })
+	}, 900, 700)
+	app.Frame()
+	app.Key(ui.Cmd, ui.KeyF)
+	app.Frame()
+	app.Type("one")
+	app.Frame()
+	queryX := func(index int) float32 {
+		t.Helper()
+		found := false
+		for _, text := range app.Texts() {
+			if text == fmt.Sprintf("%d of 100", index) {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("the counter does not show %d of 100: %v", index, app.Texts())
+		}
+		field, ok := app.Access("Find")
+		if !ok {
+			t.Fatal("the query field is missing")
+		}
+		return field.Bounds.X
+	}
+	at := map[int]float32{}
+	for index := 1; index <= 100; index++ {
+		at[index] = queryX(index)
+		app.Key(0, ui.KeyEnter)
+		app.Frame()
+	}
+	for _, index := range []int{10, 99, 100} {
+		if at[index] != at[9] {
+			t.Errorf("the query field sits at %v for match %d and at %v for match 9; the counter must not move it", at[index], index, at[9])
 		}
 	}
 }

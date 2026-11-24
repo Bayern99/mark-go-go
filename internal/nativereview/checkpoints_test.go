@@ -72,3 +72,18 @@ func TestCheckpointEmptyUsesPortraitEmpty(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckpointRowsKeepTheirFocusRingInsideTheList(t *testing.T) {
+	app := checkpointLayoutTester(t, false)
+	list, ok := app.Access("Saved checkpoints")
+	if !ok {
+		t.Fatalf("the checkpoint list has no accessible name: %q", app.Texts())
+	}
+	name := find(t, app, "Before edits")
+	if inset := name.X - list.Bounds.X; inset < 2.5 {
+		t.Fatalf("the first checkpoint row starts %.1f inside its list %v; a focused row's ring would clip", inset, list.Bounds)
+	}
+	if inset := name.Y - list.Bounds.Y; inset < 2.5 {
+		t.Fatalf("the first checkpoint row starts %.1f from the list top %v; a focused row's ring would clip", inset, list.Bounds)
+	}
+}

@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -183,7 +184,7 @@ func TestPreviewTaskCheckboxUsesAccentCheckedColors(t *testing.T) {
 	if got, want := pixel(unchecked.Bounds, unchecked.Bounds.W/2, unchecked.Bounds.H/2), rgba(theme.Background); got != want {
 		t.Errorf("unchecked task fill = %v; want %v", got, want)
 	}
-	if got, want := pixel(unchecked.Bounds, 0, unchecked.Bounds.H/2), over(portrait.Colors.LineStrong, portrait.Colors.Paper); got != want {
+	if got, want := pixel(unchecked.Bounds, 0, unchecked.Bounds.H/2), over(portrait.Colors.Ink3, portrait.Colors.Paper); got != want {
 		t.Errorf("unchecked task border = %v; want %v", got, want)
 	}
 	tt.Move(unchecked.Bounds.X+unchecked.Bounds.W/2, unchecked.Bounds.Y+unchecked.Bounds.H/2)
@@ -763,6 +764,201 @@ func TestInlineHTMLRemainsLiteralInPreview(t *testing.T) {
 	if d.Source() != src {
 		t.Fatal("presenting inline HTML changed the source")
 	}
+}
+
+func TestPreviewSoftBreaksJoinParagraphLines(t *testing.T) {
+	const src = "Short lines join\nhere at 560 points.\n"
+	d := nativeeditor.New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill().AutoFocus() }, 560, 320)
+	tt.Frame()
+	// Preview lays its own lines out by the source's, but what it reads and
+	// copies is the paragraph CommonMark makes of them.
+	preview, ok := tt.Access("Markdown Preview")
+	if want := "Short lines join here at 560 points.\n"; !ok || preview.Value != want {
+		t.Fatalf("Preview reads %q, want the paragraph joined: %q", preview.Value, want)
+	}
+	if err := d.SelectUTF16(0, utf8.RuneCountInString(src)); err != nil {
+		t.Fatal(err)
+	}
+	tt.Command("copy")
+	if got, want := tt.Clipboard(), "Short lines join here at 560 points.\n"; got != want {
+		t.Fatalf("copied %q, want %q", got, want)
+	}
+	markdown, err := tt.ClipboardData().Read(transfer.Markdown)
+	if err != nil || string(markdown) != src {
+		t.Fatalf("copied Markdown %q, %v; want the source's own line endings", markdown, err)
+	}
+	here, hasHere := d.RectUTF16(utf8.RuneCountInString(src[:strings.Index(src, "here")]))
+	if !hasHere {
+		t.Fatal("missing the second line of the paragraph")
+	}
+	tt.ClickAt(here.X+.1, here.Y+here.H/2)
+	tt.Type("own ")
+	tt.Frame()
+	if want := strings.Replace(src, "here", "own here", 1); d.Source() != want {
+		t.Fatalf("editing across a soft break wrote %q; want %q", d.Source(), want)
+	}
+}
+
+func TestPreviewSoftBreaksJoinCJKWithoutASpace(t *testing.T) {
+	for _, tc := range []struct{ name, source, want string }{
+		{name: "ideographs", source: "中文换行不加空格\n内容紧随其后\n", want: "中文换行不加空格内容紧随其后\n"},
+		{name: "latin and CJK", source: "中文\nlatin\n", want: "中文 latin\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := nativeeditor.New(tc.source)
+			tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 560, 320)
+			tt.Frame()
+			preview, ok := tt.Access("Markdown Preview")
+			if !ok || preview.Value != tc.want {
+				t.Fatalf("Preview reads %q, want %q", preview.Value, tc.want)
+			}
+		})
+	}
+}
+
+func TestPreviewHardBreaksKeepTheirBreaks(t *testing.T) {
+	const src = "Two spaces keep  \ntheir break and\\\nthe backslash goes.\n"
+	d := nativeeditor.New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 560, 320)
+	tt.Frame()
+	preview, ok := tt.Access("Markdown Preview")
+	if want := "Two spaces keep\ntheir break and\nthe backslash goes.\n"; !ok || preview.Value != want {
+		t.Fatalf("Preview reads %q, want the hard breaks kept: %q", preview.Value, want)
+	}
+	keep, hasKeep := d.RectUTF16(utf8.RuneCountInString(src[:strings.Index(src, "keep")]))
+	their, hasTheir := d.RectUTF16(utf8.RuneCountInString(src[:strings.Index(src, "their")]))
+	if !hasKeep || !hasTheir || their.Y <= keep.Y {
+		t.Fatalf("a hard break did not start a new line: %v and %v", keep, their)
+	}
+}
+
+func TestLinkActionsAreReachableFromTheContextMenu(t *testing.T) {
+	const src = "Before [guide](https://example.com/docs) after.\r\n"
+	d := nativeeditor.New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill().AutoFocus() }, 700, 360)
+	tt.Frame()
+	caret := utf8.RuneCountInString(src[:strings.Index(src, "guide")]) + 2
+	if err := d.SelectUTF16(caret, caret); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	tt.Key(0, ui.KeyContextMenu)
+	tt.Frame()
+	for _, label := range []string{"Open link", "Copy link", "Edit link", "Remove link"} {
+		if !slices.Contains(tt.Menu(), label) {
+			t.Fatalf("the context menu has no %q: %v", label, tt.Menu())
+		}
+	}
+	if err := tt.ChooseMenuItem("Copy link"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if got := tt.Clipboard(); got != "https://example.com/docs" {
+		t.Fatalf("copied link %q from the context menu", got)
+	}
+	tt.Key(0, ui.KeyContextMenu)
+	tt.Frame()
+	if err := tt.ChooseMenuItem("Edit link"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	destination, ok := tt.AccessByRole(ui.RoleTextField, "Link destination")
+	if !ok || destination.Value != "https://example.com/docs" {
+		t.Fatalf("Edit link from the context menu opened %+v, %v; want the destination draft", destination, ok)
+	}
+	if d.Source() != src || d.Modified() {
+		t.Fatal("opening the link draft changed the source")
+	}
+}
+
+func TestUnsafeAndReadOnlyLinksOfferOnlyKeyboardActionsTheyTake(t *testing.T) {
+	const src = "Before [script](javascript:alert(1)) after.\r\n"
+	for _, tc := range []struct {
+		name     string
+		readOnly bool
+		menu     []string
+	}{
+		{name: "writable", menu: []string{"Copy link", "Edit link", "Remove link"}},
+		{name: "read only", readOnly: true, menu: []string{"Copy link"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := nativeeditor.New(src)
+			tt := ui.NewTester(func(c *ui.Context) { d.View(c, tc.readOnly).Fill().AutoFocus() }, 700, 360)
+			tt.Frame()
+			caret := utf8.RuneCountInString(src[:strings.Index(src, "script")]) + 1
+			if err := d.SelectUTF16(caret, caret); err != nil {
+				t.Fatal(err)
+			}
+			tt.Frame()
+			tt.Key(0, ui.KeyContextMenu)
+			tt.Frame()
+			if slices.Contains(tt.Menu(), "Open link") {
+				t.Fatalf("the context menu opens a script URL: %v", tt.Menu())
+			}
+			for _, label := range tc.menu {
+				if !slices.Contains(tt.Menu(), label) {
+					t.Fatalf("the context menu has no %q: %v", label, tt.Menu())
+				}
+			}
+			tt.CloseMenu()
+		})
+	}
+}
+
+func TestThematicBreakCentersInItsLine(t *testing.T) {
+	const src = "Before the rule.\n\n---\n\nAfter the rule.\n"
+	d := nativeeditor.New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 820, 560)
+	tt.Frame()
+	before, hasBefore := d.RectUTF16(0)
+	after, hasAfter := d.RectUTF16(utf8.RuneCountInString(src[:strings.Index(src, "After")]))
+	if !hasBefore || !hasAfter {
+		t.Fatal("missing paragraph bounds around the rule")
+	}
+	rule := paperRuleY(t, tt, before.Y+before.H, after.Y)
+	above, below := rule-(before.Y+before.H), after.Y-(rule+portrait.Editor.Hairline)
+	if math.Abs(float64(above-below)) > 1 {
+		t.Errorf("the rule sits %v above and %v below its neighbors; want it centered in its line", above, below)
+	}
+}
+
+func TestStandaloneImageTakesTheRoomOfItsOwnLines(t *testing.T) {
+	dir := t.TempDir()
+	const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180"><rect width="320" height="180" fill="#e11d48"/></svg>`
+	if err := os.WriteFile(filepath.Join(dir, "figure.svg"), []byte(svg), 0600); err != nil {
+		t.Fatal(err)
+	}
+	const src = "Before text.\n\n![Chart alt](figure.svg)\n\nAfter text.\n"
+	d := nativeeditor.New(src)
+	d.SetImageDirectory(dir)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 820, 560)
+	tt.Frame()
+	figure := waitForImage(t, tt, "Chart alt", func(px color.RGBA) bool {
+		return px.R > 200 && px.G < 80 && px.B < 160
+	})
+	after, ok := d.RectUTF16(utf8.RuneCountInString(src[:strings.Index(src, "After")]))
+	if !ok {
+		t.Fatal("missing the paragraph after the image")
+	}
+	if gap := after.Y - (figure.Y + figure.H); math.Abs(float64(gap-portrait.Type.Reading.Leading)) > 1 {
+		t.Errorf("the image leaves %v below it; want one empty line, %v", gap, portrait.Type.Reading.Leading)
+	}
+}
+
+// paperRuleY returns the row of the only ink between two paragraphs: the
+// thematic break's rule.
+func paperRuleY(t *testing.T, tt *ui.Tester, top, bottom float32) float32 {
+	t.Helper()
+	image := tt.Image()
+	for y := int(top); y < int(bottom); y++ {
+		px := image.RGBAAt(400, y)
+		if px != (color.RGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}) {
+			return float32(y)
+		}
+	}
+	t.Fatalf("no rule is drawn between y %v and y %v", top, bottom)
+	return 0
 }
 
 func waitForImage(t *testing.T, tt *ui.Tester, label string, matches func(color.RGBA) bool) ui.Rect {

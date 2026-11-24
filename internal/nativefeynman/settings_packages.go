@@ -47,7 +47,7 @@ func (p *panel) packageSettings(c *ui.Context) {
 
 func (p *panel) packageAction(action, target string) {
 	root := p.state.root
-	p.runUpdate(func() (func(), error) {
+	p.runSettingsUpdate(func() (func(), error) {
 		result, err := p.host.CLIPackageAction(p.window.Context(), root, action, target)
 		rows, rowsErr := p.host.CLIPackagesList(p.window.Context(), root)
 		return func() { p.state.cliResult = firstNonEmpty(result.Summary, result.RawOutput); p.state.packages = &rows }, errorsJoin(err, rowsErr)

@@ -9,19 +9,20 @@ import (
 )
 
 type Model struct {
-	ReturnToGenUI  bool
-	Crumbs         []workspace.Crumb
-	Workspace      workspace.WorkspaceSnapshot
-	Navigation     workspace.NavSnapshot
-	Sections       []workspace.Section
-	Recents        []workspace.RecentWorkspace
-	Search         workspace.NavSearchResult
-	Feynman, Git   bool
-	Message        string
-	Spaces         map[string]string
-	Appearance     portrait.Appearance
-	Preferences    map[string]string
-	PreferenceFile string
+	ReturnToGenUI   bool
+	DocumentScrollY float32
+	Crumbs          []workspace.Crumb
+	Workspace       workspace.WorkspaceSnapshot
+	Navigation      workspace.NavSnapshot
+	Sections        []workspace.Section
+	Recents         []workspace.RecentWorkspace
+	Search          workspace.NavSearchResult
+	Feynman, Git    bool
+	Message         string
+	Spaces          map[string]string
+	Appearance      portrait.Appearance
+	Preferences     map[string]string
+	PreferenceFile  string
 }
 
 type Actions struct {
@@ -32,6 +33,9 @@ type Actions struct {
 	OpenPath                                                   func(path string, offset int)
 	Reveal                                                     func(int)
 	NewDocument, OpenFolder                                    func()
+	Save, SaveAs, Rename, Move, Revert                         func(string)
+	OpenFiles, Find, Undo                                      func()
+	CommandFocus                                               func() *ui.Handle
 	SetFeynman, SetGit                                         func(bool)
 	SetAppearance                                              func(portrait.Appearance)
 	SetPreference                                              func(key, value string)
@@ -63,6 +67,8 @@ type Shell struct {
 	settingsNav                                    map[string]*ui.Handle
 	command                                        commandBar
 	workspaceID, activeID, query, tabFocus         string
+	tabScroll                                      string
+	filterReturn                                   ui.Handle
 	history                                        []string
 	leftWidth, rightWidth                          float32
 	leftToggle, rightToggle                        ui.Handle
@@ -99,6 +105,7 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 			s.openCheckpoints[s.activeID] = s.checkpoints
 		}
 		s.activeID = m.Workspace.ActiveID
+		s.tabScroll = s.activeID
 		s.leftOpen, s.checkpoints = false, s.openCheckpoints[s.activeID]
 	}
 	s.history = slices.DeleteFunc(s.history, func(id string) bool {
@@ -123,7 +130,7 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 			a.Activate(s.history[1])
 		}
 	}
-	if c.Shortcut(ui.Cmd, ui.KeySlash) && doc.ID != "" && a.SetMode != nil {
+	if c.Shortcut(ui.Cmd, ui.KeyE) && doc.ID != "" && a.SetMode != nil {
 		if doc.ViewMode == "markdown" {
 			a.SetMode("preview")
 		} else {
@@ -147,7 +154,7 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 		s.rightKeys.Flip()
 	}
 	if c.Shortcut(ui.Cmd, ui.KeyK) || c.Shortcut(ui.Cmd, ui.KeyT) {
-		s.toggleCommand(a)
+		s.toggleCommand(c, a)
 	}
 	if c.Shortcut(ui.Cmd, ui.KeyComma) {
 		if s.settingsOpen {
@@ -352,7 +359,13 @@ func (s *Shell) drawer(c *ui.Context, left bool, width, height float32, m Model,
 		PlainScrim: true, Drawer: true, DrawerRight: !left, DrawerMotion: slide, Keyboard: keyboard, OriginX: origin,
 	}, func() {
 		ui.Row(c).Padding(edge, portrait.Form.PadX, portrait.Form.PopoverGap, portrait.Form.PadX+portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
-			portrait.PanelTitle(c, name).Grow(1)
+			if left {
+				portrait.PanelTitle(c, name).Grow(1)
+			} else {
+				// The research panel's own header carries its title and tools.
+				// Keep the dialog's accessible name without drawing that title twice.
+				ui.Row(c).Grow(1)
+			}
 			close := portrait.QuietIconButton(c, portrait.IconX, "Close "+name)
 			close.AutoFocus()
 			if close.Clicked() {

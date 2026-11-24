@@ -78,7 +78,7 @@ func TestAppearanceSettingsAndCommandBarStoreTheChoice(t *testing.T) {
 	app.Frame()
 	shell.OpenSettings("appearance")
 	app.Frame()
-	if err := app.Click("Appearance Dark"); err != nil {
+	if err := app.Click("Dark"); err != nil {
 		t.Fatal(err)
 	}
 	if err := app.Click("Close settings"); err != nil {

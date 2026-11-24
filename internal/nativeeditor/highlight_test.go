@@ -123,3 +123,30 @@ func TestPreviewInlineCodeUsesPortraitFontAndPreservesBytes(t *testing.T) {
 	tt.Frame()
 	assertMono(d, strings.Index(d.state.Buffer.Snapshot().String(), "Wi"))
 }
+
+func TestBlockquoteProseTakesInk2RatherThanTheWarningTone(t *testing.T) {
+	const line = "> Quoted prose"
+	buffer := editor.NewBuffer(line)
+	h := newMarkdownHighlighter(buffer.Snapshot(), nil)
+	h.Highlight(0, time.Second)
+	tokens, _ := h.Tokens(0, line, nil)
+	theme := documentTheme(&ui.Theme{}, Preview)
+	seen, pos := 0, 0
+	for _, token := range tokens {
+		part := line[pos:token.End]
+		pos = token.End
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		seen++
+		if got := theme.Tokens[token.Kind].Color; got != portrait.Colors.Ink2 {
+			t.Errorf("blockquote %q is painted %v; want Ink2 %v", part, got, portrait.Colors.Ink2)
+		}
+	}
+	if seen == 0 {
+		t.Fatalf("the quoted line has no tokens: %+v", tokens)
+	}
+	if theme.Tokens[quoteInk].Color == portrait.Colors.Warn {
+		t.Fatal("blockquote prose still takes the warning tone")
+	}
+}

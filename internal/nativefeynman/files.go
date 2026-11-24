@@ -11,7 +11,7 @@ import (
 
 func (p *panel) files(c *ui.Context) {
 	s := p.state
-	ui.Row(c.Key("research-files-heading")).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
+	ui.Row(c.Key("research-files-heading")).Gap(portrait.Form.Gap).Margin(0, 0, portrait.Form.Gap, 0).AlignItems(ui.Center).Children(func() {
 		sectionTitle(c, "Research files")
 		ui.Row(c).Grow(1)
 		if controlButton(c, "Refresh", "Refresh research artifacts").Disabled(s.filesLoading || s.status == statusWorking).Clicked() {
@@ -30,7 +30,7 @@ func (p *panel) files(c *ui.Context) {
 				portrait.Empty(c, portrait.EmptySpec{Icon: portrait.IconFolderOpen, Title: "Loading research files…"})
 			})
 		}
-		if len(s.artifacts) == 0 && !s.filesLoading {
+		if len(s.artifacts) == 0 && !s.filesLoading && s.filesError == "" {
 			ui.Column(c).Fill().AlignItems(ui.Center).Justify(ui.Center).Padding(portrait.Form.DialogPad).Children(func() {
 				portrait.Empty(c, portrait.EmptySpec{Icon: portrait.IconFileText, Title: "No research files yet", Description: "Completed research files appear here."})
 			})

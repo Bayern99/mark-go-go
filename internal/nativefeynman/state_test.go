@@ -54,6 +54,40 @@ func TestFailedPromptRestoresOldPromptOnlyWhenNothingNewWasTyped(t *testing.T) {
 	}
 }
 
+func TestSettledAndDisconnectedSessionsReconcilePendingSteps(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		update feynman.ResearchUpdate
+		want   string
+	}{
+		{name: "abort", update: feynman.ResearchUpdate{Root: "/workspace", Kind: "agentSettled", Aborted: true}, want: "cancelled"},
+		{name: "settled", update: feynman.ResearchUpdate{Root: "/workspace", Kind: "agentSettled"}, want: "interrupted"},
+		{name: "disconnect", update: feynman.ResearchUpdate{Root: "/workspace", Kind: "error", Text: "disconnected"}, want: "interrupted"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state := newPaneState("/workspace")
+			state.messages = []message{
+				{kind: "tool", tool: feynman.ResearchTool{ToolCallID: "pending", Status: "in_progress"}},
+				{kind: "tool", tool: feynman.ResearchTool{ToolCallID: "done", Status: "completed"}},
+				{kind: "plan", steps: []feynman.ResearchPlanEntry{{Content: "Wait", Status: "pending"}, {Content: "Done", Status: "completed"}}},
+			}
+			state.receive(tc.update)
+			if got := state.messages[0].tool.Status; got != tc.want {
+				t.Fatalf("pending tool status = %q, want %q", got, tc.want)
+			}
+			if got := state.messages[1].tool.Status; got != "completed" {
+				t.Fatalf("completed tool changed to %q", got)
+			}
+			if got := state.messages[2].steps[0].Status; got != tc.want {
+				t.Fatalf("pending plan status = %q, want %q", got, tc.want)
+			}
+			if got := state.messages[2].steps[1].Status; got != "completed" {
+				t.Fatalf("completed plan step changed to %q", got)
+			}
+		})
+	}
+}
+
 func containsSource(sources []string, target string) bool {
 	for _, source := range sources {
 		if source == target {

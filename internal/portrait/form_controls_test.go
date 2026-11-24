@@ -2,6 +2,7 @@ package portrait_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
@@ -114,6 +115,39 @@ func TestPortraitDisclosureOutputAndListRow(t *testing.T) {
 	}
 	if !clicked {
 		t.Fatal("list row did not activate")
+	}
+}
+
+func TestPortraitDisclosureLandsAtOnceForKeyboard(t *testing.T) {
+	open := false
+	app := ui.NewTester(onChrome(func(c *ui.Context) {
+		ui.Column(c).FillWidth().Gap(8).Children(func() {
+			portrait.Disclosure(c, "Runtime details", &open, portrait.DisclosureSpec{}, func() {
+				portrait.Caption(c, "Runtime ready")
+			})
+			portrait.QuietButton(c, "Following action", "Following action")
+		})
+	}), 520, 360)
+	app.Frame()
+	app.Key(0, ui.KeyTab)
+	app.Frame()
+	app.Key(0, ui.KeySpace)
+	app.Frame()
+	if !open {
+		t.Fatal("Space did not open Disclosure")
+	}
+	first, ok := app.AccessByRole(ui.RoleButton, "Following action")
+	if !ok {
+		t.Fatal("Following action not found after opening")
+	}
+	app.Advance(300 * time.Millisecond)
+	app.Frame()
+	settled, ok := app.AccessByRole(ui.RoleButton, "Following action")
+	if !ok {
+		t.Fatal("Following action not found after settling")
+	}
+	if first.Bounds.Y != settled.Bounds.Y {
+		t.Fatalf("keyboard Disclosure animated layout from y=%v to y=%v, want immediate landing", first.Bounds.Y, settled.Bounds.Y)
 	}
 }
 

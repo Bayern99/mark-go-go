@@ -9,6 +9,7 @@ import (
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/review"
+	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -35,66 +36,74 @@ func (e Extension) Attach(window *nativeui.Window) nativeui.Panels {
 }
 
 type panel struct {
-	window              *nativeui.Window
-	host                *feynman.ResearchHost
-	review              *review.Service
-	state               *paneState
-	connected           string
-	settingsRoot        string
-	closed              bool
-	chatScroll          ui.ScrollState
-	filesScroll         ui.ScrollState
-	alphaScroll         ui.ScrollState
-	commandQuery        string
-	questionText        string
-	questionPick        string
-	questionFind        string
-	permissionID        string
-	questionPending     bool
-	collapsed           map[string]*bool
-	pickerStates        map[string]*researchPickerState
-	pickerFocus         string
-	localPrefs          map[string]string
-	cliPassword         string
-	searchKey           string
-	mcpAddOpen          bool
-	sessionMenu         bool
-	serverLocal         bool
-	serverArgs          string
-	serverEnv           string
-	serverHeaders       string
-	serverTransport     string
-	serverExposure      string
-	serverName          string
-	serverURL           string
-	serverCommand       string
-	serverCwd           string
-	serverDescription   string
-	serverBearerEnv     string
-	sessionView         string
-	forkMessages        []feynman.ResearchForkMessage
-	researchTree        *feynman.ResearchTree
-	loginProvider       string
-	tierValue           string
-	tierLoaded          bool
-	searchProvider      string
-	packageTarget       string
-	modelTarget         string
-	alphaQuery          string
-	alphaMode           string
-	alphaPaperID        string
-	alphaQuestion       string
-	alphaRepoURL        string
-	alphaFilePath       string
-	alphaNoteInput      string
-	alphaFullText       bool
-	alphaAnnotation     *feynman.CLIAlphaAnnotateResult
-	alphaAskResult      *feynman.CLICommandResult
-	alphaCodeResult     *feynman.CLICommandResult
-	decodedImages       map[string]decodedDataImage
-	confirmationOpen    bool
-	confirmationSpec    portrait.ConfirmSpec
-	confirmationReturns map[string]*ui.Handle
+	window               *nativeui.Window
+	host                 *feynman.ResearchHost
+	review               *review.Service
+	state                *paneState
+	connected            string
+	settingsRoot         string
+	closed               bool
+	chatScroll           ui.ScrollState
+	chatFollow           bool
+	chatReady            bool
+	chatLastY            float32
+	chatLastMaxY         float32
+	filesScroll          ui.ScrollState
+	alphaScroll          ui.ScrollState
+	commandQuery         string
+	actionsDismissed     bool
+	questionText         string
+	questionPick         string
+	questionFind         string
+	permissionID         string
+	questionPending      bool
+	collapsed            map[string]*bool
+	pickerStates         map[string]*researchPickerState
+	pickerFocus          string
+	localPrefs           map[string]string
+	cliPassword          string
+	searchKey            string
+	mcpAddOpen           bool
+	sessionMenu          bool
+	serverLocal          bool
+	serverArgs           string
+	serverEnv            string
+	serverHeaders        string
+	serverTransport      string
+	serverExposure       string
+	serverName           string
+	serverURL            string
+	serverCommand        string
+	serverCwd            string
+	serverDescription    string
+	serverBearerEnv      string
+	sessionView          string
+	forkMessages         []feynman.ResearchForkMessage
+	researchTree         *feynman.ResearchTree
+	loginProvider        string
+	tierValue            string
+	tierLoaded           bool
+	searchProvider       string
+	packageTarget        string
+	modelTarget          string
+	alphaQuery           string
+	alphaMode            string
+	alphaPaperID         string
+	alphaQuestion        string
+	alphaRepoURL         string
+	alphaFilePath        string
+	alphaNoteInput       string
+	alphaFullText        bool
+	alphaAnnotation      *feynman.CLIAlphaAnnotateResult
+	alphaAskResult       *feynman.CLICommandResult
+	alphaCodeResult      *feynman.CLICommandResult
+	decodedImages        map[string]decodedDataImage
+	confirmationOpen     bool
+	confirmationSpec     portrait.ConfirmSpec
+	confirmationReturns  map[string]*ui.Handle
+	activeDocument       func() workspace.DocumentInfo
+	loadResearchDocument func(string) (workspace.Snapshot, error)
+	submitPrompt         func(root, prompt, documentID, base string, sources []string) (string, error)
 }
 
 func (p *panel) collapsibleState(key string) *bool {
@@ -252,6 +261,7 @@ func (p *panel) researchUpdated(update feynman.ResearchUpdate) {
 	}
 	if update.Kind == "reset" {
 		p.resetSessionViews()
+		p.chatFollow = true
 	}
 	p.state.receive(update)
 	if update.Kind == "agentSettled" {
@@ -460,5 +470,5 @@ func (p *panel) tabs(c *ui.Context) {
 				}
 			}
 		}
-	}).Margin(2, 0, 6, 0)
+	}).Label("Research sections").Margin(2, 0, 6, 0)
 }

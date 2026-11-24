@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/nativeeditor"
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
@@ -55,8 +57,21 @@ type panel struct {
 	decisions      map[string]review.HunkDecision
 	open           bool
 	proposalError  string
+	dismissed      map[string]*dismissedProposal
 	checkpointDocs map[string]*checkpointState
 }
+
+// dismissedProposal is what "Dismiss proposal" removed, so the toast it shows
+// can put the same proposal back with the hunks and decisions it had.
+type dismissedProposal struct {
+	proposal  review.ChangeProposal
+	decisions map[string]review.HunkDecision
+	at        time.Time
+}
+
+// undoDismissTimeout keeps a dismissed proposal reachable for long enough to
+// notice the mistake without holding the toast on screen.
+const undoDismissTimeout = 8 * time.Second
 
 func Install(work *workspace.Service, proposals *review.Service, checkpoints *review.CheckpointHost) func(*nativeui.Window) nativeui.Panels {
 	return func(win *nativeui.Window) nativeui.Panels {
@@ -119,19 +134,13 @@ func (p *panel) drawProposals(c *ui.Context) {
 }
 
 func (p *panel) proposalPopover(c *ui.Context) {
+	tabs := proposalTabs(p.latest.Proposals)
+	if p.selected == "" {
+		p.selected = tabs[0].key
+	}
 	ui.Column(c).Gap(portrait.Form.Gap).Padding(0, portrait.Form.PadX).Children(func() {
 		var active review.ChangeProposal
-		portrait.Track(c, "change proposals", func(track *portrait.Segments) {
-			for _, item := range p.latest.Proposals {
-				if p.selected == "" {
-					p.selected = item.ID
-				}
-				if track.Segment(c.Key(item.ID), proposalLabel(item), proposalLabel(item), p.selected == item.ID).Grow(1).MinWidth(0).Clicked() {
-					p.selected = item.ID
-					p.clearComparison()
-				}
-			}
-		}).Label("Change proposal documents")
+		p.proposalPicker(c, tabs)
 		for _, item := range p.latest.Proposals {
 			if item.ID == p.selected {
 				active = item
@@ -140,7 +149,7 @@ func (p *panel) proposalPopover(c *ui.Context) {
 		}
 		if active.ID == "" {
 			active = p.latest.Proposals[0]
-			p.selected = active.ID
+			p.selected = tabs[0].key
 			p.clearComparison()
 		}
 		if active.Summary != "" {
@@ -167,6 +176,121 @@ func proposalLabel(p review.ChangeProposal) string {
 		return "Untitled document"
 	}
 	return filepath.Base(p.Path)
+}
+
+// proposalTab is one document in the proposal popover. Its key is the
+// proposal ID, so two proposals whose files share a basename still have two
+// distinct tabs.
+type proposalTab struct {
+	key, title, tip string
+}
+
+// maxProposalTabs is how many tabs still fit a readable label; past it the
+// documents move into a selector instead of squeezing every label.
+const maxProposalTabs = 4
+
+func proposalTabs(proposals []review.ChangeProposal) []proposalTab {
+	bases := make([]string, len(proposals))
+	shared := map[string]int{}
+	for i, item := range proposals {
+		bases[i] = proposalLabel(item)
+		shared[bases[i]]++
+	}
+	tabs := make([]proposalTab, len(proposals))
+	for i, item := range proposals {
+		title := bases[i]
+		if shared[title] > 1 {
+			title = proposalDisambiguation(item, i)
+		}
+		tip := item.Path
+		if tip == "" {
+			tip = item.RelPath
+		}
+		tabs[i] = proposalTab{key: item.ID, title: title, tip: tip}
+	}
+	// A tab's key and label stay distinct even when records disagree about
+	// an ID or two documents share a folder and a name.
+	keys := map[string]int{}
+	for i := range tabs {
+		if tabs[i].key == "" {
+			tabs[i].key = fmt.Sprintf("proposal:%d", i)
+		}
+		keys[tabs[i].key]++
+		if keys[tabs[i].key] > 1 {
+			tabs[i].key = fmt.Sprintf("%s:%d", tabs[i].key, keys[tabs[i].key])
+		}
+	}
+	titles := map[string]int{}
+	for _, tab := range tabs {
+		titles[tab.title]++
+	}
+	seen := map[string]int{}
+	for i := range tabs {
+		if titles[tabs[i].title] > 1 {
+			seen[tabs[i].title]++
+			tabs[i].title = fmt.Sprintf("%s (%d)", tabs[i].title, seen[tabs[i].title])
+		}
+	}
+	return tabs
+}
+
+// proposalDisambiguation names a document that shares its basename with
+// another proposal by the folder that holds it.
+func proposalDisambiguation(p review.ChangeProposal, index int) string {
+	rel := ""
+	if p.Path != "" {
+		rel = p.Path
+		if p.WorkspaceRoot != "" {
+			if trimmed, err := filepath.Rel(p.WorkspaceRoot, p.Path); err == nil && filepath.IsLocal(trimmed) {
+				rel = trimmed
+			}
+		}
+	}
+	if trimmed := strings.TrimPrefix(filepath.ToSlash(strings.TrimSpace(p.RelPath)), "./"); trimmed != "" {
+		rel = trimmed
+	}
+	if rel == "" {
+		return fmt.Sprintf("Untitled document %d", index+1)
+	}
+	rel = filepath.ToSlash(rel)
+	if folder := filepath.ToSlash(filepath.Dir(rel)); folder != "" && folder != "." && folder != "/" {
+		return folder + "/" + filepath.Base(rel)
+	}
+	return filepath.Base(rel)
+}
+
+// proposalPicker draws one tab per document until there are more documents
+// than fit readable tabs, and a selector from then on.
+func (p *panel) proposalPicker(c *ui.Context, tabs []proposalTab) {
+	if len(tabs) > maxProposalTabs {
+		selected := p.selected
+		options := make([]portrait.Option, 0, len(tabs))
+		for _, tab := range tabs {
+			options = append(options, portrait.Option{Value: tab.key, Label: tab.title})
+		}
+		trigger := portrait.Select(c, &selected, options, portrait.SelectSpec{Label: "Change proposal documents", Width: portrait.Form.SelectMax})
+		for _, tab := range tabs {
+			if tab.key == selected {
+				portrait.Tooltip(c, trigger, tab.tip)
+			}
+		}
+		if selected != p.selected {
+			p.selected = selected
+			p.clearComparison()
+		}
+		return
+	}
+	portrait.Track(c, "change proposals", func(track *portrait.Segments) {
+		for _, tab := range tabs {
+			segment := track.SegmentKey(c, tab.key, tab.title, tab.title, p.selected == tab.key)
+			segment.Grow(1).MinWidth(0)
+			portrait.Tooltip(c, segment, tab.tip)
+			if segment.Clicked() {
+				p.selected = tab.key
+				p.clearComparison()
+			}
+		}
+	}).Label("Change proposal documents")
 }
 
 func proposalTargets(d workspace.DocumentInfo, p review.ChangeProposal) bool {
@@ -216,18 +340,14 @@ func (p *panel) drawComparison(c *ui.Context, active review.ChangeProposal) {
 			}
 		}
 	} else {
-		drawDiff(c, p.compared.Hunks, p.decisions)
+		drawDiffSides(c, p.compared.Hunks, p.decisions, diffSides{before: p.base.text, after: p.compared.ProposedText})
 		if p.compared.HasConflict {
 			portrait.Alert(c, portrait.Tones.Warning, "Conflicting hunks", "Some hunks conflict with concurrent edits.")
 		}
 	}
 	ui.Row(c).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
 		if portrait.ButtonWith(c, "Dismiss proposal", "Dismiss proposal", portrait.ButtonSpec{Look: portrait.DangerOutline}).Clicked() {
-			if _, err := p.proposals.DismissProposal(p.root, active.ID); err != nil {
-				p.proposalError = err.Error()
-			} else {
-				p.clearComparison()
-			}
+			p.dismissProposal(c, active)
 		}
 		ui.Spacer(c)
 		if available {
@@ -252,4 +372,74 @@ func (p *panel) drawComparison(c *ui.Context, active review.ChangeProposal) {
 			}
 		}
 	})
+}
+
+// dismissProposal removes a proposal but keeps enough of it to put it back:
+// the popover shows an Undo toast instead of deleting the work silently.
+func (p *panel) dismissProposal(c *ui.Context, active review.ChangeProposal) {
+	if _, err := p.proposals.DismissProposal(p.root, active.ID); err != nil {
+		p.proposalError = err.Error()
+		return
+	}
+	decisions := make(map[string]review.HunkDecision, len(p.decisions))
+	for id, decision := range p.decisions {
+		decisions[id] = decision
+	}
+	if p.dismissed == nil {
+		p.dismissed = map[string]*dismissedProposal{}
+	}
+	for id, kept := range p.dismissed {
+		// A toast that timed out can no longer undo its proposal.
+		if time.Since(kept.at) > undoDismissTimeout {
+			delete(p.dismissed, id)
+		}
+	}
+	p.dismissed[active.ID] = &dismissedProposal{proposal: active, decisions: decisions, at: time.Now()}
+	p.selected = ""
+	p.clearComparison()
+	portrait.Notify(c, portrait.ToastSpec{
+		ID:       "review:dismiss:" + active.ID,
+		Tone:     portrait.Tones.Neutral,
+		Title:    "Proposal dismissed",
+		Action:   "Undo",
+		Timeout:  undoDismissTimeout,
+		OnAction: func() { p.restoreDismissed(active.ID) },
+	})
+}
+
+// restoreDismissed resubmits the dismissed proposal under its old ID, so the
+// same hunks return, then replays the decisions it had.
+func (p *panel) restoreDismissed(id string) {
+	dismissed := p.dismissed[id]
+	if dismissed == nil {
+		return
+	}
+	delete(p.dismissed, id)
+	proposal := dismissed.proposal
+	restored, err := p.proposals.SubmitProposal(review.ProposeInput{
+		ID:            proposal.ID,
+		WorkspaceRoot: proposal.WorkspaceRoot,
+		DocumentID:    proposal.DocumentID,
+		Path:          proposal.Path,
+		Source:        proposal.Source,
+		Summary:       proposal.Summary,
+		BaseVersion:   proposal.BaseVersion,
+		BaseText:      proposal.BaseText,
+		ProposedText:  proposal.ProposedText,
+	})
+	if err != nil {
+		p.proposalError = err.Error()
+		return
+	}
+	for id, decision := range dismissed.decisions {
+		if decision == "" || decision == review.HunkPending {
+			continue
+		}
+		if next, err := p.proposals.DecideHunk(p.root, restored.ID, id, decision, proposal.LiveText); err == nil {
+			restored = next
+		}
+	}
+	p.selected = restored.ID
+	p.latest = p.proposals.Snapshot(p.root)
+	p.clearComparison()
 }

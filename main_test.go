@@ -85,6 +85,27 @@ func TestRecentLabelsTellSameNamedFilesApart(t *testing.T) {
 	}
 }
 
+func TestViewMenuUsesCommandEForPreviewMarkdownToggle(t *testing.T) {
+	menu := buildMenu(workspace.NewService())
+	var toggle *mygo.MenuItem
+	var walk func([]*mygo.MenuItem)
+	walk = func(items []*mygo.MenuItem) {
+		for _, item := range items {
+			if item.Accelerator == "CmdOrCtrl+/" {
+				t.Errorf("%s still owns Command-/, which belongs to Toggle Comment", item.Label)
+			}
+			if item.Label == "Toggle Preview / Markdown" {
+				toggle = item
+			}
+			walk(item.Submenu)
+		}
+	}
+	walk(menu.Items())
+	if toggle == nil || toggle.Accelerator != "CmdOrCtrl+E" {
+		t.Fatalf("Preview / Markdown toggle = %+v, want Command-E", toggle)
+	}
+}
+
 func TestBuildMenuUsesSettingsCenterDeepLinks(t *testing.T) {
 	menu := buildMenu(workspace.NewService())
 	labels := map[string]bool{}

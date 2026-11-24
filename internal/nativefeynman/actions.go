@@ -51,37 +51,50 @@ func (p *panel) loadSessions(root string) {
 	}()
 }
 
-func (p *panel) send() {
+func (p *panel) send() bool {
 	s := p.state
 	if s.status != statusReady || strings.TrimSpace(s.draft) == "" {
-		return
+		return false
 	}
 	root := s.root
 	prompt := strings.TrimSpace(s.draft)
 	sources := append([]string(nil), s.sources...)
-	document := p.window.Active()
+	document := p.activeResearchDocument()
 	var base workspace.Snapshot
 	var documentID string
-	if s.includeDoc && document.ID != "" && document.Path != "" && !document.ReadOnly && document.WorkspaceRoot == root {
-		snapshot, err := p.window.LoadResearchDocument(document.ID)
+	if s.includeDoc && researchDocumentEligible(document, root) {
+		loadDocument := p.loadResearchDocument
+		if loadDocument == nil {
+			loadDocument = p.window.LoadResearchDocument
+		}
+		snapshot, err := loadDocument(document.ID)
 		if err != nil {
 			s.error = err.Error()
-			return
+			return false
 		}
 		if snapshot.ID != document.ID || snapshot.State.Path != document.Path || snapshot.State.WorkspaceRoot != root {
 			s.error = "The active document changed before research started. Try again."
-			return
+			return false
 		}
 		base, documentID = snapshot, document.ID
+	}
+	if p.submitPrompt == nil && p.host == nil {
+		s.error = "Feynman is unavailable."
+		return false
 	}
 	s.draft = ""
 	s.sources = nil
 	s.status, s.progress, s.error = statusWorking, "Working…", ""
-	p.window.Native().Invalidate()
+	p.chatFollow = true
+	if win := p.window.Native(); win != nil {
+		win.Invalidate()
+	}
 	go func() {
 		var proposed string
 		var err error
-		if len(sources) > 0 {
+		if p.submitPrompt != nil {
+			proposed, err = p.submitPrompt(root, prompt, documentID, base.Text, sources)
+		} else if len(sources) > 0 {
 			proposed, err = p.host.PromptWithSources(p.window.Context(), root, prompt, documentID, base.Text, sources)
 		} else {
 			proposed, err = p.host.Prompt(p.window.Context(), root, prompt, documentID, base.Text)
@@ -105,26 +118,30 @@ func (p *panel) send() {
 			p.refreshFiles(root)
 		})
 	}()
+	return true
 }
 
-func (p *panel) steer() {
-	p.queueMessage(true)
+func (p *panel) steer() bool {
+	return p.queueMessage(true)
 }
 
-func (p *panel) followUp() {
-	p.queueMessage(false)
+func (p *panel) followUp() bool {
+	return p.queueMessage(false)
 }
 
-func (p *panel) queueMessage(steer bool) {
+func (p *panel) queueMessage(steer bool) bool {
 	s := p.state
-	if s.status != statusWorking || strings.TrimSpace(s.draft) == "" {
-		return
+	if s.status != statusWorking || strings.TrimSpace(s.draft) == "" || p.host == nil {
+		return false
 	}
 	root := s.root
 	text := strings.TrimSpace(s.draft)
 	sources := append([]string(nil), s.sources...)
 	s.draft, s.sources, s.error = "", nil, ""
-	p.window.Native().Invalidate()
+	p.chatFollow = true
+	if win := p.window.Native(); win != nil {
+		win.Invalidate()
+	}
 	go func() {
 		var err error
 		if steer {
@@ -139,6 +156,18 @@ func (p *panel) queueMessage(steer bool) {
 			}
 		})
 	}()
+	return true
+}
+
+func researchDocumentEligible(document workspace.DocumentInfo, root string) bool {
+	return document.ID != "" && document.Path != "" && !document.ReadOnly && document.WorkspaceRoot == root
+}
+
+func (p *panel) activeResearchDocument() workspace.DocumentInfo {
+	if p.activeDocument != nil {
+		return p.activeDocument()
+	}
+	return p.window.Active()
 }
 
 func mergeSources(first, second []string) []string {

@@ -29,7 +29,7 @@ func (p *panel) alphaSettings(c *ui.Context) {
 				p.launchWizard("alpha_login", "")
 			}
 			if s.alphaStatus != nil && s.alphaStatus.LoggedIn && portrait.ButtonWith(c, "Log out", "Log out from alphaXiv", portrait.ButtonSpec{Look: portrait.DangerOutline, Size: portrait.Sizes.Regular}).Disabled(s.cliBusy).Clicked() {
-				p.runUpdate(func() (func(), error) {
+				p.runSettingsUpdate(func() (func(), error) {
 					result, err := p.host.CLIAlphaLogout(p.window.Context(), s.root)
 					return func() { s.cliResult = firstNonEmpty(result.Summary, result.RawOutput) }, err
 				})
@@ -40,6 +40,19 @@ func (p *panel) alphaSettings(c *ui.Context) {
 			}
 		})
 	})
+}
+
+func searchProviderOptions(current string) []portrait.Option {
+	options := []portrait.Option{{Value: "auto", Label: "Auto"}, {Value: "exa", Label: "Exa"}, {Value: "brave", Label: "Brave"}, {Value: "tavily", Label: "Tavily"}}
+	for _, option := range options {
+		if option.Value == current {
+			return options
+		}
+	}
+	if strings.TrimSpace(current) != "" {
+		options = append(options, portrait.Option{Value: current, Label: current})
+	}
+	return options
 }
 
 func (p *panel) searchSettings(c *ui.Context) {
@@ -72,7 +85,9 @@ func (p *panel) searchSettings(c *ui.Context) {
 			}
 		}
 		portrait.FormRow(c, "Provider", "", func() {
-			input(c, "feynman-search-provider", "Search provider", &p.searchProvider, "auto, exa, brave, tavily…")
+			portrait.Select(c.Key("feynman-search-provider"), &p.searchProvider, searchProviderOptions(p.searchProvider), portrait.SelectSpec{
+				Label: "Search provider", Placeholder: "Choose a provider", Width: portrait.Form.SelectMin,
+			})
 		})
 		portrait.FormRow(c, "API key", "", func() {
 			input(c, "feynman-search-key", "Optional API key", &p.searchKey, "Leave blank to use existing authentication", func(entry ui.Element) {
@@ -84,7 +99,7 @@ func (p *panel) searchSettings(c *ui.Context) {
 				p.resetSearchSettings()
 			}
 			if portrait.ButtonWith(c, "Save", "Set the selected web search provider and API key", portrait.ButtonSpec{Look: portrait.Accent, Size: portrait.Sizes.Regular}).Disabled(s.cliBusy || strings.TrimSpace(p.searchProvider) == "").Clicked() {
-				p.runUpdate(func() (func(), error) {
+				p.runSettingsUpdate(func() (func(), error) {
 					result, err := p.host.CLISearchAction(p.window.Context(), s.root, "set", strings.TrimSpace(p.searchProvider), strings.TrimSpace(p.searchKey))
 					status, statusErr := p.host.CLISearchStatus(p.window.Context(), s.root)
 					return func() {

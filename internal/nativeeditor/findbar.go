@@ -2,6 +2,8 @@ package nativeeditor
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
@@ -17,7 +19,7 @@ func renderFindBar(c *ui.Context, bar ui.Element, find *editor.FindBar) {
 				field := portrait.TextField(c, find.Query(), portrait.FieldSpec{Label: "Find", Placeholder: "Find", Leading: portrait.IconMagnifyingGlass, Invalid: find.Err() != nil, Size: portrait.Form.FieldCompact})
 				field.Frame().MinWidth(portrait.Form.MenuMin).MaxWidth(portrait.Form.SelectMax).Grow(1)
 				find.QueryInput(field.Input())
-				portrait.Type.Meta.Apply(ui.Text(c, find.Status())).TextColor(portrait.Colors.Ink3).FontFeatures("tnum").Role(ui.RoleStatus).MaxLines(1)
+				matchCounter(c, find)
 				if portrait.QuietIconButton(c, portrait.IconCaretUp, "Previous match").KeepFocus().Clicked() {
 					find.Previous()
 				}
@@ -61,6 +63,36 @@ func renderFindBar(c *ui.Context, bar ui.Element, find *editor.FindBar) {
 			}
 		})
 	})
+}
+
+// matchCounter shows how many matches there are and which is selected. Its
+// room is the widest count the matches can have, so the query field keeps
+// its place as the index grows from 9 to 10 or from 99 to 100.
+func matchCounter(c *ui.Context, find *editor.FindBar) {
+	total, _ := find.Matches()
+	status := find.Status()
+	portrait.Type.Meta.Apply(ui.Text(c, status)).TextColor(portrait.Colors.Ink3).FontFeatures("tnum").Role(ui.RoleStatus).MaxLines(1).
+		MinWidth(counterWidth(status, total)).TextAlign(ui.End)
+}
+
+// counterWidth is the width of the widest count: the count in status padded
+// to the digits of total, whose digits share one advance as tabular figures.
+func counterWidth(status string, total int) float32 {
+	return textAdvance(widestCount(status, total), portrait.Type.Meta.Size)
+}
+
+// widestCount is status with its count as long as total's, the number of
+// digits a count can have at most: "9 of 100" reserves "000 of 100".
+func widestCount(status string, total int) string {
+	start := strings.IndexFunc(status, func(r rune) bool { return r >= '0' && r <= '9' })
+	if start < 0 {
+		return status
+	}
+	end := start
+	for end < len(status) && status[end] >= '0' && status[end] <= '9' {
+		end++
+	}
+	return status[:start] + strings.Repeat("0", len(strconv.Itoa(max(total, 1)))) + status[end:]
 }
 
 func renderGoToLine(c *ui.Context, bar ui.Element, goTo *editor.GoToLineBar) {

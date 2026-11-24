@@ -5,11 +5,18 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-const collapsible float32 = 0
+const (
+	collapsible        float32 = 0
+	scrollContentInset float32 = 3
+)
 
 func panel(c *ui.Context, docked bool) ui.Element {
-	e := ui.Column(c).Fill().Padding(8).Gap(6).Radius(portrait.Shell.PageRadius).Clip()
+	e := ui.Column(c).Fill().Padding(portrait.Shell.PageInset).Gap(6).Radius(portrait.Shell.PageRadius).Clip()
 	if docked {
+		// The research header shares the document page bar's 40pt row. One
+		// hairline of inset replaces the drawer's 8pt padding, keeping both
+		// headers on the same baseline instead of seven points apart.
+		e.Padding(hairlineHeight, portrait.Shell.PageInset, portrait.Shell.PageInset, portrait.Shell.PageInset)
 		portrait.Materials.Page.Apply(e)
 	}
 	return e

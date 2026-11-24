@@ -8,11 +8,15 @@ import (
 
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
 	"github.com/Bayern99/mark-go-go/internal/review"
+	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
 )
 
 func fixtureBusyPanel() *panel {
 	p := fixtureReadyPanel()
+	p.activeDocument = func() workspace.DocumentInfo {
+		return workspace.DocumentInfo{ID: "active", Name: "Current.md", Path: "/workspace/notes/Current.md", WorkspaceRoot: "/workspace/notes"}
+	}
 	s := p.state
 	s.status = statusWorking
 	s.progress = "Reading three sources"

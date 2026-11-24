@@ -1,6 +1,7 @@
 package nativefeynman
 
 import (
+	"net/url"
 	"strings"
 
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
@@ -42,30 +43,39 @@ func (p *panel) mcpSettings(c *ui.Context) {
 			}
 		}
 		if p.mcpAddOpen {
+			transport := p.serverTransport
+			if transport == "" {
+				transport = "http"
+			}
+			transportError := mcpTransportValidation(transport, p.serverURL, p.serverCommand)
+			validation := mcpServerValidation(p.serverName, transportError)
 			ui.Column(c.Key("feynman-mcp-add-form")).Gap(portrait.Form.Gap).Padding(portrait.Form.AreaPadY, 0, 0, 0).BorderWidth(portrait.Editor.Hairline, 0, 0, 0).BorderColor(portrait.Colors.Line).Children(func() {
 				portrait.FormRow(c, "Name", "", func() { input(c, "feynman-mcp-name", "Server name", &p.serverName, "Name") })
 				portrait.FormRow(c, "Transport", "", func() {
-					activeTransport := p.serverTransport
-					if activeTransport == "" {
-						activeTransport = "http"
+					selected := 0
+					if transport == "stdio" {
+						selected = 1
 					}
-					portrait.Track(c, "research-transport", func(track *portrait.Segments) {
-						for _, transport := range []string{"http", "stdio"} {
-							if track.Segment(c, transport, "Use "+transport+" transport", activeTransport == transport).Clicked() {
-								p.serverTransport = transport
-							}
-						}
-					}).Label("MCP transport").AlignSelf(ui.Start)
+					portrait.Segmented(c.Key("research-transport"), &selected, []string{"HTTP", "Stdio"}, "MCP transport")
+					if selected == 0 {
+						p.serverTransport = "http"
+					} else {
+						p.serverTransport = "stdio"
+					}
 				})
-				if p.serverTransport == "stdio" {
-					portrait.FormRow(c, "Command", "", func() { input(c, "feynman-mcp-command", "Command", &p.serverCommand, "Command path") })
+				if transport == "stdio" {
+					portrait.FormRow(c, "Command", transportError, func() {
+						validatedInput(c, "feynman-mcp-command", "Command", &p.serverCommand, "Command path", transportError != "")
+					})
 					portrait.FormRow(c, "Arguments", "", func() { input(c, "feynman-mcp-args", "Arguments", &p.serverArgs, "Space separated arguments") })
 					portrait.FormRow(c, "Environment", "One KEY=value pair per line.", func() {
 						area(c, "feynman-mcp-env", "Environment variables", &p.serverEnv, "KEY=value, one per line", portrait.Form.AreaMin)
 					})
 					portrait.FormRow(c, "Working folder", "", func() { input(c, "feynman-mcp-cwd", "Working folder", &p.serverCwd, "Optional working directory") })
 				} else {
-					portrait.FormRow(c, "URL", "", func() { input(c, "feynman-mcp-url", "HTTP URL", &p.serverURL, "https://…") })
+					portrait.FormRow(c, "URL", transportError, func() {
+						validatedInput(c, "feynman-mcp-url", "HTTP URL", &p.serverURL, "https://…", transportError != "")
+					})
 					portrait.FormRow(c, "Headers", "One Header: value pair per line.", func() {
 						area(c, "feynman-mcp-headers", "Headers", &p.serverHeaders, "Header: value, one per line", portrait.Form.AreaMin)
 					})
@@ -78,19 +88,19 @@ func (p *panel) mcpSettings(c *ui.Context) {
 						input(c, "feynman-mcp-description", "Description", &p.serverDescription, "Optional description")
 					})
 				})
-				if p.serverTransport == "http" {
+				if transport == "http" {
 					portrait.FormRow(c, "Bearer token env var", "", func() {
 						input(c, "feynman-mcp-bearer-env", "Bearer token environment variable", &p.serverBearerEnv, "Optional environment variable name")
 					})
 				}
 				portrait.FormRow(c, "Project-local", "Save this server to the project instead of your user configuration.", func() {
-					portrait.Switch(c.Key("feynman-mcp-local"), &p.serverLocal).Label("Project-local configuration")
+					portrait.Checkbox(c.Key("feynman-mcp-local"), &p.serverLocal, "Project-local configuration")
 				})
 				ui.Row(c).Justify(ui.End).Gap(portrait.Form.Gap).Children(func() {
 					if portrait.QuietButton(c, "Cancel", "Cancel adding MCP server").Clicked() {
 						p.mcpAddOpen = false
 					}
-					if portrait.AccentButton(c, "Add server", "Add MCP server to Feynman").Disabled(s.cliBusy || strings.TrimSpace(p.serverName) == "").Clicked() {
+					if portrait.AccentButton(c, "Add server", "Add MCP server to Feynman").Disabled(s.cliBusy || validation != "").Clicked() {
 						p.addMCPServer()
 					}
 				})
@@ -99,9 +109,36 @@ func (p *panel) mcpSettings(c *ui.Context) {
 	})
 }
 
+func validatedInput(c *ui.Context, key, label string, value *string, placeholder string, invalid bool) ui.Element {
+	field := portrait.TextField(c.Key(key), value, portrait.FieldSpec{Label: label, Placeholder: placeholder, Size: portrait.Form.Field, Invalid: invalid})
+	field.Frame().FillWidth().MinWidth(0)
+	return field.Frame()
+}
+
+func mcpTransportValidation(transport, serverURL, command string) string {
+	if transport == "stdio" {
+		if strings.TrimSpace(command) == "" {
+			return "Enter a stdio command."
+		}
+		return ""
+	}
+	parsed, err := url.Parse(strings.TrimSpace(serverURL))
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return "Enter a valid http:// or https:// URL with a host."
+	}
+	return ""
+}
+
+func mcpServerValidation(name, transportError string) string {
+	if strings.TrimSpace(name) == "" {
+		return "Enter a server name."
+	}
+	return transportError
+}
+
 func (p *panel) removeMCPServer(server feynman.CLIMCPServer) {
 	s := p.state
-	p.runUpdate(func() (func(), error) {
+	p.runSettingsUpdate(func() (func(), error) {
 		result, err := p.host.CLIMCPRemove(p.window.Context(), s.root, server.Name, server.Scope == "project")
 		rows, rowsErr := p.host.CLIMCPList(p.window.Context(), s.root)
 		return func() {
@@ -113,9 +150,16 @@ func (p *panel) removeMCPServer(server feynman.CLIMCPServer) {
 
 func (p *panel) addMCPServer() {
 	root := p.state.root
+	transport := p.serverTransport
+	if transport == "" {
+		transport = "http"
+	}
+	if mcpServerValidation(p.serverName, mcpTransportValidation(transport, p.serverURL, p.serverCommand)) != "" {
+		return
+	}
 	inputValue := feynman.CLIMCPAddInput{
 		Name:              strings.TrimSpace(p.serverName),
-		Transport:         p.serverTransport,
+		Transport:         transport,
 		URL:               strings.TrimSpace(p.serverURL),
 		Headers:           splitLines(p.serverHeaders),
 		BearerTokenEnvVar: strings.TrimSpace(p.serverBearerEnv),
@@ -127,7 +171,7 @@ func (p *panel) addMCPServer() {
 		Description:       strings.TrimSpace(p.serverDescription),
 		Local:             p.serverLocal,
 	}
-	p.runUpdate(func() (func(), error) {
+	p.runSettingsUpdate(func() (func(), error) {
 		result, err := p.host.CLIMCPAdd(p.window.Context(), root, inputValue)
 		rows, rowsErr := p.host.CLIMCPList(p.window.Context(), root)
 		return func() {

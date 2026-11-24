@@ -38,47 +38,62 @@ func (s *Shell) settingsDialog(c *ui.Context, width, height float32, m Model, a 
 		Margin: portrait.Settings.Margin, Radius: portrait.Settings.Radius, Glass: true,
 	}, func() {
 		sheetWidth := min(portrait.Settings.Width, max(0, width-2*portrait.Settings.Margin))
-		root := ui.Row(c).Fill().MinWidth(0)
-		root.Children(func() {
-			if sheetWidth >= portrait.Settings.Collapse {
-				railButtons := map[string]ui.Element{}
-				s.settingsRail(c, visible, railButtons)
-				s.settingsPane(c, current, visible, query, searchState, true)
-				if query.Active() {
-					for _, page := range visible {
-						if button, ok := railButtons[page.ID]; ok && searchState.hits(page.ID) == 0 {
-							button.Opacity(0.42)
-						}
-					}
-				}
-			} else {
-				ui.Column(c).Fill().MinWidth(0).Children(func() {
-					ui.Row(c).FillWidth().Height(portrait.Settings.Header).Padding(0, portrait.Form.PadX).Gap(portrait.Form.Gap).
-						BorderWidth(0, 0, portrait.Editor.Hairline, 0).BorderColor(portrait.Colors.Line).AlignItems(ui.Center).Children(func() {
-						selected := s.settingsTab
-						options := make([]portrait.Option, 0, len(visible))
-						for _, page := range visible {
-							options = append(options, portrait.Option{Value: page.ID, Label: page.Label})
-						}
-						before := selected
-						portrait.Select(c, &selected, options, portrait.SelectSpec{Label: "Settings category", Width: portrait.Form.MenuMin})
-						if selected != before {
-							s.settingsTab, s.settingsQuery = selected, ""
-						}
-						s.settingsSearch(c, visible).Frame().Grow(1).MinWidth(0)
-						if !query.Active() && current.Reset != nil && current.Dirty != nil && current.Dirty() {
-							reset := portrait.QuietIconButton(c, portrait.IconArrowCounterClockwise, "Reset "+current.Label+" to defaults").Bind(&s.settingsReset)
-							if reset.Clicked() {
-								s.settingsResetID, s.settingsResetOpen = current.ID, true
-							}
-						}
-						if portrait.QuietIconButton(c, portrait.IconX, "Close settings").Clicked() {
-							s.settingsOpen = false
-						}
-					})
-					s.settingsPane(c, current, visible, query, searchState, false)
+		ui.Column(c).Fill().MinWidth(0).Children(func() {
+			if m.Message != "" {
+				ui.Row(c).FillWidth().Padding(portrait.Form.PopoverPad, portrait.Form.PadX, 0, portrait.Form.PadX).Children(func() {
+					portrait.Alert(c, portrait.Tones.Danger, m.Message, "")
 				})
 			}
+			root := ui.Row(c).FillWidth().Grow(1).MinHeight(collapsible).MinWidth(0)
+			root.Children(func() {
+				if sheetWidth >= portrait.Settings.Collapse {
+					railButtons := map[string]ui.Element{}
+					s.settingsRail(c, visible, railButtons)
+					s.settingsPane(c, current, visible, query, searchState, true)
+					if query.Active() {
+						for _, page := range visible {
+							button, ok := railButtons[page.ID]
+							if !ok {
+								continue
+							}
+							if searchState.hits(page.ID) > 0 {
+								button.Background(portrait.Colors.AccentSoft)
+							} else {
+								// Unmatched destinations stay fully legible and clickable;
+								// only the matched surface treatment changes.
+								button.Background(portrait.Clear)
+							}
+						}
+					}
+				} else {
+					ui.Column(c).Fill().MinWidth(0).Children(func() {
+						ui.Row(c).FillWidth().Height(portrait.Settings.Header).Padding(0, portrait.Form.PadX).Gap(portrait.Form.Gap).
+							BorderWidth(0, 0, portrait.Editor.Hairline, 0).BorderColor(portrait.Colors.Line).AlignItems(ui.Center).Children(func() {
+							selected := s.settingsTab
+							options := make([]portrait.Option, 0, len(visible))
+							for _, page := range visible {
+								options = append(options, portrait.Option{Value: page.ID, Label: page.Label})
+							}
+							before := selected
+							portrait.Select(c, &selected, options, portrait.SelectSpec{Label: "Settings category", Width: portrait.Form.MenuMin})
+							if selected != before {
+								s.settingsTab, s.settingsQuery = selected, ""
+							}
+							s.settingsSearch(c, visible).Frame().Grow(1).MinWidth(0)
+							if !query.Active() && current.Reset != nil && current.Dirty != nil && current.Dirty() {
+								reset := portrait.QuietIconButton(c, portrait.IconArrowCounterClockwise, "Reset "+current.Label+" to defaults").Bind(&s.settingsReset)
+								if reset.Clicked() {
+									s.settingsResetID, s.settingsResetOpen = current.ID, true
+								}
+							}
+							if portrait.QuietIconButton(c, portrait.IconX, "Close settings").Clicked() {
+								s.settingsOpen = false
+							}
+						})
+						s.settingsPane(c, current, visible, query, searchState, false)
+					})
+				}
+			})
 		})
 	})
 	if s.settingsResetOpen {
@@ -87,7 +102,7 @@ func (s *Shell) settingsDialog(c *ui.Context, width, height float32, m Model, a 
 		if s.settingsResetID == "all" {
 			label = "all settings"
 		}
-		portrait.Confirm(c, &s.settingsResetOpen, portrait.ConfirmSpec{
+		settingsResetConfirm(c, &s.settingsResetOpen, portrait.ConfirmSpec{
 			Title: "Reset " + label + "?", Body: "Restore the defaults for " + label + ".",
 			ConfirmLabel: "Reset to defaults", Return: &s.settingsReset,
 			OnConfirm: func() {
@@ -99,6 +114,52 @@ func (s *Shell) settingsDialog(c *ui.Context, width, height float32, m Model, a 
 			},
 		})
 	}
+}
+
+// settingsResetConfirm keeps Confirm's focus contract while using the
+// nested DialogShell scrim required above the Settings sheet.
+func settingsResetConfirm(c *ui.Context, open *bool, spec portrait.ConfirmSpec) ui.Element {
+	owner := ui.Box(c.Key("confirm:"+spec.Title)).Absolute().Size(0, 0)
+	wasOpen := ui.Local(owner, "was open", func() bool { return false })
+	returned := ui.Local(owner, "returned", func() bool { return false })
+	if *returned {
+		spec.Return.CancelFocus(c)
+		*returned = false
+	}
+	var panel ui.Element
+	owner.Children(func() {
+		panel = portrait.DialogShell(c, "confirm dialog", open, portrait.DialogSpec{
+			Label: spec.Title, Width: portrait.Form.DialogWidth, Role: ui.RoleAlertDialog, Glass: true, Nested: true,
+		}, func() {
+			portrait.Type.Title.Apply(ui.Text(c, spec.Title)).FontWeight(600).TextColor(portrait.Colors.Ink).MinWidth(0).Wrap().AccessHidden(true)
+			portrait.Type.Small.Apply(ui.Text(c, spec.Body)).TextColor(portrait.Colors.Ink2).MinWidth(0).Wrap().Pretty().AccessHidden(true)
+			ui.Row(c).Justify(ui.End).AlignItems(ui.Center).Gap(portrait.Form.DialogGap).Wrap().Children(func() {
+				if portrait.QuietButton(c, "Cancel", "Cancel").AutoFocus().Clicked() {
+					*open = false
+				}
+				if portrait.ButtonWith(c, spec.ConfirmLabel, spec.ConfirmLabel, portrait.ButtonSpec{Look: portrait.Danger}).Clicked() {
+					*open = false
+					if spec.OnConfirm != nil {
+						spec.OnConfirm()
+					}
+				}
+			})
+		})
+		if panel.Valid() {
+			panel.Padding(portrait.Form.DialogPad).Gap(portrait.Form.DialogGap).Description(spec.Body)
+			portrait.Materials.Sheet.Apply(panel)
+		}
+	})
+	if *wasOpen && !*open {
+		if target := c.Resolve(*spec.Return); target.Valid() {
+			spec.Return.Focus(c)
+			*returned = true
+		} else {
+			spec.Return.CancelFocus(c)
+		}
+	}
+	*wasOpen = *open
+	return panel
 }
 
 func settingsPageVisible(pages []SettingsPage, id string) bool {
@@ -119,7 +180,7 @@ func settingsPageByID(pages []SettingsPage, id string) SettingsPage {
 	return SettingsPage{}
 }
 
-func (s *Shell) settingsSearch(c *ui.Context, pages []SettingsPage) portrait.Field {
+func (s *Shell) settingsSearch(c *ui.Context, _ []SettingsPage) portrait.Field {
 	field := portrait.SearchField(c, &s.settingsQuery, portrait.SearchSpec{Label: "Search settings", Placeholder: "Search", Shortcut: []string{"/"}, Size: portrait.Sizes.Regular, SingleFocusRing: true})
 	field.Frame().Margin(portrait.Form.MenuPad, portrait.Form.PadX)
 	if s.settingsFocus {
@@ -145,26 +206,14 @@ func (s *Shell) settingsSearch(c *ui.Context, pages []SettingsPage) portrait.Fie
 				}
 				return false
 			}
-			for _, page := range pages {
-				if settingsPageMatchesText(page, key.Text()) {
-					s.settingsTab = page.ID
-					key.SetText("")
-					return true
-				}
-			}
+			// The frame has not drawn this query yet. Waiting is safer than
+			// using page keywords, which can name a page with no result rows.
+			return false
 		}
 		return false
 	})
 	s.settingsEditing = field.Frame().FocusWithin()
 	return field
-}
-
-func settingsPageMatchesText(page SettingsPage, text string) bool {
-	if strings.TrimSpace(text) == "" {
-		return true
-	}
-	q := SettingsQuery{Text: text}
-	return q.PageMatch(page)
 }
 
 func (s *Shell) settingsRail(c *ui.Context, pages []SettingsPage, buttons map[string]ui.Element) {

@@ -21,6 +21,70 @@ func fixtureSettingsPanel() *panel {
 	return p
 }
 
+func TestMCPServerValidationRequiresURLHostOrStdioCommand(t *testing.T) {
+	for _, tc := range []struct {
+		name, transport, serverURL, command string
+		valid                               bool
+	}{
+		{name: "empty HTTP URL", transport: "http"},
+		{name: "HTTP URL without host", transport: "http", serverURL: "https:///socket"},
+		{name: "non-HTTP URL", transport: "http", serverURL: "ftp://example.com/socket"},
+		{name: "valid HTTPS URL", transport: "http", serverURL: "https://example.com/socket", valid: true},
+		{name: "empty stdio command", transport: "stdio"},
+		{name: "valid stdio command", transport: "stdio", command: "feynman-mcp", valid: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := mcpTransportValidation(tc.transport, tc.serverURL, tc.command)
+			if (err == "") != tc.valid {
+				t.Fatalf("validation = %q, valid=%t", err, tc.valid)
+			}
+		})
+	}
+}
+
+func TestMCPFormUsesValidatedSegmentedTransportAndCheckbox(t *testing.T) {
+	p := fixtureSettingsPanel()
+	p.mcpAddOpen = true
+	app := ui.NewTester(func(c *ui.Context) { p.mcpSettings(c) }, 800, 1000)
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RoleRadioGroup, "MCP transport"); !ok {
+		t.Fatal("MCP transport is not an accessible segmented radio group")
+	}
+	if _, ok := app.AccessByRole(ui.RoleCheckBox, "Project-local configuration"); !ok {
+		t.Fatal("Project-local is not a checkbox inside the submit form")
+	}
+	if add, ok := app.AccessByRole(ui.RoleButton, "Add MCP server to Feynman"); !ok || !add.Disabled {
+		t.Fatalf("Add server = %+v, present=%t; want disabled for an empty URL", add, ok)
+	}
+	if !app.HasText("Enter a valid http:// or https:// URL with a host.") {
+		t.Fatal("invalid MCP URL has no inline validation message")
+	}
+}
+
+func TestSettingsLoadingAndProviderControls(t *testing.T) {
+	p := fixtureSettingsPanel()
+	p.state.cliBusy = true
+	p.state.cliModels = nil
+	p.state.models = nil
+	models := ui.NewTester(func(c *ui.Context) { p.modelSettings(c) }, 800, 1000)
+	models.Frame()
+	loading, ok := models.AccessByRole(ui.RoleGroup, "Loading models…")
+	if !ok || !loading.Busy || models.HasText("No models yet") {
+		t.Fatalf("loading models state = %+v, present=%t", loading, ok)
+	}
+
+	p = fixtureSettingsPanel()
+	p.searchProvider = "auto"
+	search := ui.NewTester(func(c *ui.Context) { p.searchSettings(c) }, 800, 1000)
+	search.Frame()
+	if _, ok := search.AccessByRole(ui.RoleMenuButton, "Search provider"); !ok {
+		t.Fatal("search provider is not an enumerable select")
+	}
+	if _, ok := search.AccessByRole(ui.RoleTextField, "Search provider"); ok {
+		t.Fatal("search provider still accepts free text")
+	}
+}
+
 func TestSettingsGroupModelsByProviderWithOneSignOut(t *testing.T) {
 	p := fixtureSettingsPanel()
 	app := ui.NewTester(func(c *ui.Context) {
@@ -76,8 +140,8 @@ func TestSettingsPrefillServiceTierAndCollapseStatusSections(t *testing.T) {
 		ui.Column(c).Fill().Padding(12).Children(func() { p.modelSettings(c) })
 	}, 1280, 1600)
 	models.Frame()
-	if tier, ok := models.AccessByRole(ui.RoleTextField, "Service tier"); !ok || tier.Value != "priority" {
-		t.Fatalf("service tier field = %+v, want the CLI's priority", tier)
+	if tier, ok := models.AccessByRole(ui.RoleMenuButton, "Service tier"); !ok || !models.HasText("Priority") {
+		t.Fatalf("service tier control = %+v, want the CLI's priority", tier)
 	}
 	p = fixtureSettingsPanel()
 	app := ui.NewTester(func(c *ui.Context) {

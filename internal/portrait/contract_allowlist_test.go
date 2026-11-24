@@ -18,7 +18,6 @@ var nativeLiteralAllowlist = map[string]map[string]int{
 		"Height(16)":     1,
 		"MinHeight(160)": 1,
 		"Radius(12)":     1,
-		"Radius(14)":     1,
 		"Radius(999)":    1,
 	},
 	"../nativegenui/media.go": {

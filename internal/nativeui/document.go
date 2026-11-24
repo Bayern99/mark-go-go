@@ -64,7 +64,11 @@ func (s *Shell) pageBar(c *ui.Context, doc workspace.DocumentInfo, m Model, a Ac
 	if !s.sidebarDocked {
 		lead = max(lead, bar.Left-portrait.Shell.PageInset/4)
 	}
-	ui.Row(c).Height(portrait.Shell.PageBar).Padding(0, 8, 0, lead).Gap(6).AlignItems(ui.Center).DragWindow().Children(func() {
+	barRow := ui.Row(c).Height(portrait.Shell.PageBar).Padding(0, 8, 0, lead).Gap(6).AlignItems(ui.Center).DragWindow()
+	if m.DocumentScrollY > 0 {
+		barRow.BorderWidth(0, 0, portrait.Editor.Hairline, 0).BorderColor(portrait.Colors.Line)
+	}
+	barRow.Children(func() {
 		if !s.sidebarDocked {
 			toggle := portrait.QuietIconButton(c, portrait.IconSidebar, "Show navigation").Expanded(s.leftOpen).Bind(&s.leftToggle)
 			toggle.ObserveInput(func(ev ui.InputEvent) {
@@ -82,23 +86,30 @@ func (s *Shell) pageBar(c *ui.Context, doc workspace.DocumentInfo, m Model, a Ac
 				return
 			}
 			if len(m.Crumbs) == 0 {
-				portrait.Type.UI.Apply(ui.Text(c, doc.Name)).FontWeight(500).TextColor(portrait.Colors.Ink).MaxLines(1).Ellipsis("…")
+				portrait.Type.UI.Apply(ui.Text(c, doc.Name)).FontWeight(500).TextColor(portrait.Colors.Ink).SingleLine().TruncateMiddle().MinWidth(0).Ellipsis("…")
 				return
 			}
+			showAncestors := width >= sidebarDocksAt+portrait.Shell.SidebarMin
 			for _, crumb := range m.Crumbs {
-				if !crumb.IsFile && width < sidebarDocksAt {
+				if !crumb.IsFile && !showAncestors {
 					continue
 				}
 				if crumb.IsFile {
-					portrait.Tooltip(c, portrait.Type.UI.Apply(ui.Text(c, crumb.Name)).FontWeight(500).TextColor(portrait.Colors.Ink).MaxLines(1).Ellipsis("…").MinWidth(0), doc.Path)
+					name := portrait.Type.UI.Apply(ui.Text(c, crumb.Name)).FontWeight(500).TextColor(portrait.Colors.Ink).SingleLine().TruncateMiddle().Ellipsis("…").MinWidth(0).Grow(1).Shrink(1)
+					if showAncestors {
+						name.MinWidth(portrait.Form.SelectMin)
+					}
+					portrait.Tooltip(c, name, doc.Path)
 					continue
 				}
-				b := portrait.Tooltip(c, ui.ButtonBase(c.Key(crumb.Path)).Label("Reveal "+crumb.Name), crumb.Path).Padding(2, 4).Radius(portrait.Radii.S).Shrink(0)
+				b := portrait.Tooltip(c, ui.ButtonBase(c.Key(crumb.Path)).Label("Reveal "+crumb.Name), crumb.Path).Padding(2, 4).Radius(portrait.Radii.S).MinWidth(0).Shrink(1)
 				ink := portrait.Press(b, portrait.Quiet)
 				if !b.Hovered() {
 					ink = portrait.Colors.Ink3
 				}
-				b.Children(func() { portrait.Type.UI.Apply(ui.Text(c, crumb.Name)).TextColor(ink).MaxLines(1) })
+				b.Children(func() {
+					portrait.Type.UI.Apply(ui.Text(c, crumb.Name)).TextColor(ink).SingleLine().TruncateMiddle().MinWidth(0).Ellipsis("…")
+				})
 				if b.Clicked() && a.RevealPath != nil {
 					a.RevealPath(crumb.Path)
 				}
@@ -174,10 +185,10 @@ func (s *Shell) welcome(c *ui.Context, m Model, a Actions) {
 			ui.Column(c).FillWidth().MaxWidth(portrait.Shell.CommandWidth - 160).Gap(6).Children(func() {
 				if m.Workspace.Kind == "folder" {
 					title.In(portrait.FontDisplay).Apply(ui.Text(c, m.Workspace.Name)).FontWeight(600).TextColor(portrait.Colors.Ink)
-					lede.Apply(ui.Text(c, "Open a Markdown file from this folder.")).TextColor(portrait.Colors.Ink3)
+					lede.Apply(ui.Text(c, "Open a Markdown file from this folder.")).TextColor(portrait.Colors.Ink3).Wrap().Pretty()
 				} else {
 					title.In(portrait.FontDisplay).Apply(ui.Text(c, "Welcome")).FontWeight(600).TextColor(portrait.Colors.Ink)
-					lede.Apply(ui.Text(c, "Open a folder to browse Markdown files, or start an untitled document.")).TextColor(portrait.Colors.Ink3).Wrap()
+					lede.Apply(ui.Text(c, "Open a folder to browse Markdown files, or start an untitled document.")).TextColor(portrait.Colors.Ink3).Wrap().Pretty()
 				}
 				ui.Row(c).Padding(top/4, 0, 6, 0).Gap(8).AlignItems(ui.Center).Children(func() {
 					if m.Workspace.Kind != "folder" {
@@ -196,10 +207,10 @@ func (s *Shell) welcome(c *ui.Context, m Model, a Actions) {
 					portrait.Press(hint, portrait.Quiet)
 					hint.Children(func() {
 						portrait.Type.UI.Apply(ui.Text(c, "Search and commands")).TextColor(portrait.Colors.Ink3)
-						portrait.Kbd(c, "⌘", "K")
+						shortcutKbd(c, ui.Cmd, "K")
 					})
 					if hint.Clicked() {
-						s.toggleCommand(a)
+						s.toggleCommand(c, a)
 					}
 				})
 				if m.Workspace.Kind == "folder" {

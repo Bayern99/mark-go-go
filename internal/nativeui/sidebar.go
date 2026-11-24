@@ -14,7 +14,7 @@ import (
 const hairlineHeight = float32(1)
 
 func (s *Shell) sidebar(c *ui.Context, m Model, a Actions, docked bool) {
-	side := ui.Column(c).Fill().MinWidth(0).Role(ui.RoleNavigation).Label("Workspace navigation").Gap(6)
+	side := ui.Column(c).Grow(1).MinHeight(collapsible).FillWidth().MinWidth(0).Role(ui.RoleNavigation).Label("Workspace navigation").Gap(6)
 	edge := portrait.Shell.PageInset
 	if docked {
 		side.Padding(edge, edge/2, edge, edge)
@@ -25,7 +25,9 @@ func (s *Shell) sidebar(c *ui.Context, m Model, a Actions, docked bool) {
 		if docked {
 			ui.Row(c).Height(portrait.Shell.PageBar).Padding(0, 0, 0, c.TitleBar().Left).AlignItems(ui.Center).DragWindow().Children(func() {
 				ui.Row(c).Grow(1)
-				if portrait.QuietIconButton(c, portrait.IconSidebar, "Hide sidebar").Clicked() {
+				hide := portrait.QuietIconButton(c, portrait.IconSidebar, "Hide sidebar").KeyShortcuts(ui.Cmd, ui.Key0)
+				portrait.Tooltip(c, hide, "Hide sidebar · "+shortcutText(ui.Cmd, "0"))
+				if hide.Clicked() {
 					s.hideSidebar = true
 					s.persistSidebar(a)
 				}
@@ -35,7 +37,7 @@ func (s *Shell) sidebar(c *ui.Context, m Model, a Actions, docked bool) {
 		s.commandField(c, a)
 		s.documents(c, m, a)
 		if len(m.Workspace.Documents) > 0 {
-			ui.Box(c).FillWidth().Height(hairlineHeight).Background(portrait.Colors.Line).Margin(2, 4)
+			ui.Box(c).FillWidth().Height(hairlineHeight).Background(portrait.Colors.Line).Margin(2, 0)
 		}
 		s.navHeader(c, m, a)
 		if s.outline {
@@ -95,18 +97,16 @@ func (s *Shell) navHeader(c *ui.Context, m Model, a Actions) {
 }
 
 func (s *Shell) commandField(c *ui.Context, a Actions) {
-	field := ui.ButtonBase(c.Key("command field")).Label("Search or run a command").FillWidth().Height(portrait.Shell.Row).Padding(0, 10).Gap(8).Radius(portrait.Radii.M).AlignItems(ui.Center).Expanded(s.command.open)
+	field := ui.ButtonBase(c.Key("command field")).Label("Search or run a command").FillWidth().Height(portrait.Shell.Row).Padding(0, 10).Gap(8).Radius(portrait.Radii.M).AlignItems(ui.Center).Expanded(s.command.open).Bind(&s.command.trigger)
 	portrait.Materials.Sunken.Apply(field)
-	if field.Hovered() {
-		field.Background(portrait.Materials.GlassHover)
-	}
+	portrait.RowHover(field, field.Hovered())
 	field.Children(func() {
 		portrait.Glyph(c, portrait.IconMagnifyingGlass, portrait.IconSizes.S, portrait.Colors.Ink2)
 		portrait.Type.UI.Apply(ui.Text(c, "Search or jump to…")).TextColor(portrait.Colors.Ink2).Grow(1).MinWidth(0).MaxLines(1).Ellipsis("…")
-		portrait.Kbd(c, "⌘K").AccessHidden(true)
+		shortcutKbd(c, ui.Cmd, "K").AccessHidden(true)
 	})
 	if field.Clicked() {
-		s.toggleCommand(a)
+		s.toggleCommand(c, a)
 	}
 }
 
@@ -136,14 +136,14 @@ func (s *Shell) space(c *ui.Context, m Model, a Actions) {
 			}
 		}
 		menu.Separator()
-		if menu.Item(portrait.MenuItemSpec{Label: "Open Folder…", Icon: portrait.IconFolderOpen}).Clicked() && a.OpenFolder != nil {
+		if menu.Item(portrait.MenuItemSpec{Label: "Open Folder…", Icon: portrait.IconFolderOpen, Shortcut: shortcutKeys(ui.Cmd|ui.Shift, "O")}).Clicked() && a.OpenFolder != nil {
 			a.OpenFolder()
 		}
 		if w.Kind == "folder" && current != "" && menu.Item(portrait.MenuItemSpec{Label: "Close Workspace", Icon: portrait.IconFolderMinus}).Clicked() && a.CloseWorkspace != nil {
 			a.CloseWorkspace(current)
 		}
 		menu.Separator()
-		if menu.Item(portrait.MenuItemSpec{Label: "Settings…", Icon: portrait.IconGear}).Clicked() {
+		if menu.Item(portrait.MenuItemSpec{Label: "Settings…", Icon: portrait.IconGear, Shortcut: shortcutKeys(ui.Cmd, ",")}).Clicked() {
 			s.OpenSettings("")
 		}
 	})
@@ -273,7 +273,7 @@ func (s *Shell) files(c *ui.Context, m Model, a Actions) {
 				a.Filter("")
 			}
 		}})
-		filter := field.Input()
+		filter := field.Input().Bind(&s.filterReturn)
 		if s.filterFocus {
 			filter.Focus()
 			s.filterFocus = false
@@ -297,19 +297,20 @@ func (s *Shell) files(c *ui.Context, m Model, a Actions) {
 			return true
 		})
 	}
-	scrollKey := "workspace:" + w.Root
+	dir := s.currentDir(w.Root)
+	scrollKey := "workspace:" + w.Root + ":" + dir
 	if strings.TrimSpace(s.query) != "" {
 		scrollKey = "filter:" + w.Root
 	}
 	capsuleGroup := "workspace:" + scrollKey
 	scroll := s.scrollState(scrollKey)
-	ui.Scroll(c.Key(scrollKey)).Grow(1).MinHeight(collapsible).FillWidth().Role(ui.RoleTree).FocusGroup(ui.Vertical).Label("Workspace files").TrackScroll(scroll).MaskLinearGradient(scrollEdgeMask(180, scroll)).Children(func() {
+	ui.Scroll(c.Key(scrollKey)).Grow(1).MinHeight(collapsible).FillWidth().Padding(scrollContentInset, scrollContentInset, portrait.Sizes.Regular, scrollContentInset).Role(ui.RoleTree).FocusGroup(ui.Vertical).Label("Workspace files").TrackScroll(scroll).MaskLinearGradient(scrollEdgeMask(180, scroll)).Children(func() {
 		if strings.TrimSpace(s.query) != "" {
 			if strings.TrimSpace(s.query) != m.Search.Query {
 				return
 			}
 			for _, hit := range m.Search.Hits {
-				if navRow(c, navItem{key: hit.Path, title: hit.Name, detail: hit.Excerpt, excerpt: hit.Excerpt, selected: hit.DocumentID == w.ActiveID, icon: portrait.IconFileText, group: capsuleGroup}).Clicked() && a.OpenPath != nil {
+				if navRow(c, navItem{key: hit.Path, path: hit.Path, title: hit.Name, detail: hit.Excerpt, excerpt: hit.Excerpt, selected: hit.DocumentID == w.ActiveID, icon: portrait.IconFileText, group: capsuleGroup}).Clicked() && a.OpenPath != nil {
 					s.leftOpen = false
 					a.OpenPath(hit.Path, -1)
 				}
@@ -332,7 +333,6 @@ func (s *Shell) files(c *ui.Context, m Model, a Actions) {
 			}
 			return
 		}
-		dir := s.currentDir(w.Root)
 		if dir != "" {
 			s.drillAncestors(c, w.Root, w.Name, dir)
 		}
@@ -373,6 +373,7 @@ func (s *Shell) files(c *ui.Context, m Model, a Actions) {
 			}
 			button := navRow(c, navItem{
 				key:           entry.ID,
+				path:          entry.Path,
 				title:         entry.Name,
 				detail:        detail,
 				trailing:      trailing,
@@ -432,18 +433,17 @@ func (s *Shell) files(c *ui.Context, m Model, a Actions) {
 func (s *Shell) sidebarFooter(c *ui.Context, m Model, a Actions) {
 	w := m.Workspace
 	activeSpace := spaceOf(m)
-	ui.Column(c).FillWidth().Gap(4).Padding(6, 0, 0, 0).BorderWidth(1, 0, 0, 0).BorderColor(portrait.Colors.Line).Children(func() {
-		ui.Row(c.Key("wuxing-palette-strip")).FillWidth().Height(portrait.Sizes.Compact).Gap(2).AlignItems(ui.Center).Children(func() {
-			ui.Row(c).Role(ui.RoleGroup).Label("Wu Xing Spaces").Gap(2).AlignItems(ui.Center).Grow(1).MinWidth(0).Children(func() {
+	ui.Column(c).FillWidth().Shrink(0).Gap(4).Padding(6, 0, 0, 0).BorderWidth(1, 0, 0, 0).BorderColor(portrait.Colors.Line).Children(func() {
+		ui.Row(c.Key("wuxing-palette-strip")).FillWidth().MinHeight(portrait.Sizes.Compact).Gap(2).Wrap().AlignItems(ui.Center).Children(func() {
+			ui.Row(c).Role(ui.RoleGroup).Label("Wu Xing Spaces").Gap(2).Wrap().AlignItems(ui.Center).Grow(1).MinWidth(0).Children(func() {
 				for _, opt := range portrait.Spaces {
 					selected := opt.Name == activeSpace.Name
 					tip := opt.Label + " · " + opt.Element
 					btn := portrait.Tooltip(c, ui.ButtonBase(c.Key("palette:"+opt.Name)).Label("Space: "+opt.Label).AccessSelected(selected), tip).
 						Size(portrait.Shell.SpaceDotButton, portrait.Shell.SpaceDotButton).Radius(portrait.Radii.Pill).AlignItems(ui.Center).Justify(ui.Center).Shrink(0)
+					portrait.Press(btn, portrait.Quiet)
 					if selected {
 						btn.Border(1.5, portrait.Colors.Accent)
-					} else if btn.Hovered() {
-						btn.Background(portrait.Materials.GlassHover)
 					}
 					btn.Children(func() {
 						dot := opt.Dot(ui.Box(c).Size(portrait.Shell.SpaceDotCircle, portrait.Shell.SpaceDotCircle).Radius(portrait.Radii.Pill).AccessHidden(true))
@@ -472,10 +472,9 @@ func (s *Shell) sidebarFooter(c *ui.Context, m Model, a Actions) {
 					for _, root := range w.Workspaces {
 						selected := root.Root == w.Root
 						dot := portrait.Tooltip(c, ui.ButtonBase(c.Key("space:"+root.ID)).Role(ui.RoleTab).Label("Show "+root.Name), root.Root).Size(portrait.Sizes.Compact, portrait.Sizes.Compact).Radius(portrait.Radii.S).AlignItems(ui.Center).Justify(ui.Center).AccessSelected(selected).Shrink(0)
+						portrait.Press(dot, portrait.Quiet)
 						if selected {
 							dot.Background(portrait.Materials.GlassSelected)
-						} else if dot.Hovered() {
-							dot.Background(portrait.Materials.GlassHover)
 						}
 						dot.Children(func() {
 							mark := spaceNamed(m, root.Root).Swatch(ui.Box(c).Size(portrait.Type.Meta.Size, portrait.Type.Meta.Size).Radius(portrait.Radii.XS).AccessHidden(true))
@@ -522,14 +521,14 @@ func (s *Shell) scrollState(key string) *ui.ScrollState {
 }
 
 type navItem struct {
-	key, title, detail, trailing, excerpt string
-	trailingColor                         ui.Color
-	chevron                               bool
-	selected                              bool
-	icon                                  portrait.Icon
-	group                                 string
-	weight                                int
-	ink                                   ui.Color
+	key, path, title, detail, trailing, excerpt string
+	trailingColor                               ui.Color
+	chevron                                     bool
+	selected                                    bool
+	icon                                        portrait.Icon
+	group                                       string
+	weight                                      int
+	ink                                         ui.Color
 }
 
 // navRow is one row of the file tree or the outline: a 28pt row whose 12pt
@@ -537,9 +536,8 @@ type navItem struct {
 // folder reads as a hierarchy rather than a list of the same weight.
 func navRow(c *ui.Context, item navItem) ui.Element {
 	row := ui.ButtonBase(c.Key(item.key)).FillWidth().Role(ui.RoleTreeItem).Label(item.title).Description(item.detail).AccessSelected(item.selected).MinHeight(portrait.Sizes.Regular).Padding(4, 8).Radius(portrait.Radii.M).AlignItems(ui.Center)
-	if !item.selected && row.Hovered() {
-		row.Background(portrait.Materials.GlassHover)
-	}
+	portrait.RowHover(row, !item.selected && row.Hovered())
+	portrait.Press(row, portrait.Quiet)
 	ink := item.ink
 	if ink == (ui.Color{}) {
 		ink = portrait.Colors.Ink2
@@ -575,13 +573,23 @@ func navRow(c *ui.Context, item navItem) ui.Element {
 				if tColor == (ui.Color{}) {
 					tColor = portrait.Colors.Ink2
 				}
-				portrait.Type.Meta.Apply(ui.Text(c, item.trailing)).TextColor(tColor).Shrink(0).AccessHidden(true)
+				portrait.Type.Meta.Apply(ui.Text(c, item.trailing)).TextColor(tColor).FontFeatures("tnum").Shrink(0).AccessHidden(true)
 			}
 			if item.chevron {
 				portrait.Glyph(c, portrait.IconCaretRight, portrait.IconSizes.XS, portrait.Colors.Ink3).Shrink(0)
 			}
 		})
 	})
+	focusReveal := ui.Local(row, "navigation focus reveal", func() bool { return false })
+	if row.Focused() && !*focusReveal {
+		row.ScrollIntoView(ui.ScrollIntoViewOptions{Block: ui.ScrollCenter})
+		*focusReveal = true
+	} else if !row.Focused() {
+		*focusReveal = false
+	}
+	if item.path != "" {
+		row = portrait.Tooltip(c, row, item.path)
+	}
 	return row
 }
 
@@ -599,7 +607,7 @@ func navTitle(c *ui.Context, title string, ink ui.Color, weight int, file bool) 
 			}
 		}
 	}
-	text := portrait.Type.Meta.Apply(ui.Text(c, stem)).MaxLines(1).Ellipsis("…").TextColor(ink)
+	text := portrait.Type.Meta.Apply(ui.Text(c, stem)).SingleLine().TruncateMiddle().MinWidth(0).Ellipsis("…").TextColor(ink)
 	if weight != 0 {
 		text.FontWeight(weight)
 	}
@@ -609,6 +617,6 @@ func navTitle(c *ui.Context, title string, ink ui.Color, weight int, file bool) 
 	// The extension continues the title's paragraph as a span, so the line
 	// still truncates as a whole and a long name never wraps.
 	text.Children(func() {
-		portrait.Type.Meta.Apply(ui.Text(c, suffix)).TextColor(portrait.Colors.Ink3)
+		portrait.Type.Meta.Apply(ui.Text(c, suffix)).TextColor(portrait.Colors.Ink2)
 	})
 }

@@ -100,8 +100,13 @@ func TestResearchPickerOpensAboveAndFiltersThenSelects(t *testing.T) {
 	}
 	app.Key(0, ui.KeyDown)
 	app.Frame()
-	if !app.Focused("Use openai model gpt") {
-		t.Fatal("ArrowDown did not move focus from the filter to the matching option")
+	if !app.Focused("Find Model") {
+		t.Fatal("ArrowDown moved focus out of the model filter")
+	}
+	app.Type(" terra")
+	app.Frame()
+	if !app.Focused("Find Model") || p.pickerState("model").query != "gpt terra" {
+		t.Fatal("continued typing after ArrowDown did not update the model filter")
 	}
 	app.Key(0, ui.KeyEnter)
 	app.Frame()
@@ -149,7 +154,8 @@ func TestResearchPickerPaintsProviderRows(t *testing.T) {
 func TestResearchPickerArrowKeysWrapThroughOptions(t *testing.T) {
 	selected := ""
 	p := &panel{collapsed: make(map[string]*bool)}
-	app := newResearchPickerTester(p, fixtureResearchPicker(&selected))
+	picker := fixtureResearchPicker(&selected)
+	app := newResearchPickerTester(p, picker)
 	app.Frame()
 	if err := app.Click("Model"); err != nil {
 		t.Fatalf("open Model picker: %v", err)
@@ -167,8 +173,13 @@ func TestResearchPickerArrowKeysWrapThroughOptions(t *testing.T) {
 	} {
 		app.Key(0, step.key)
 		app.Frame()
-		if !app.Focused(step.want) {
-			t.Fatalf("after %v, focused option is not %q", step.key, step.want)
+		if !app.Focused("Find Model") {
+			t.Fatalf("after %v, focus left the model filter", step.key)
+		}
+		state := p.pickerState("model")
+		rows := p.pickerRows(picker, state)
+		if got := rows[state.cursor].label(); got != step.want {
+			t.Fatalf("after %v, cursor row = %q, want %q", step.key, got, step.want)
 		}
 	}
 }

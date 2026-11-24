@@ -53,7 +53,7 @@ func (p *panel) modelSettings(c *ui.Context) {
 	portrait.SettingsGroup(c, "Defaults", func(rows *portrait.Rows) {
 		rows.Row(portrait.RowSpec{Title: "Service tier", Description: "The service tier used for research requests."}, func() {
 			ui.Row(c).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
-				input(c, "feynman-service-tier", "Service tier", &p.tierValue, "Tier value").Width(portrait.Form.SelectMin)
+				portrait.Select(c.Key("feynman-service-tier"), &p.tierValue, serviceTierOptions(p.tierValue), portrait.SelectSpec{Label: "Service tier", Placeholder: "Choose a tier", Width: portrait.Form.SelectMin})
 				if portrait.Button(c, "Apply", "Set the Feynman service tier").Disabled(s.cliBusy || strings.TrimSpace(p.tierValue) == "" || p.tierValue == firstNonEmpty(tierOf(s.cliModels), serviceTierOf(s.cliStatus))).Clicked() {
 					p.modelAction("tier", strings.TrimSpace(p.tierValue))
 				}
@@ -61,7 +61,10 @@ func (p *panel) modelSettings(c *ui.Context) {
 		})
 	})
 	groups := p.providerGroups()
-	if s.cliModels != nil && !s.cliModels.Parsed {
+	loadingModels := s.cliBusy && (s.cliModels == nil || len(s.cliModels.Models) == 0)
+	if loadingModels {
+		portrait.Empty(c, portrait.EmptySpec{Icon: portrait.IconCube, Title: "Loading models…"}).Busy(true)
+	} else if s.cliModels != nil && !s.cliModels.Parsed {
 		resultText(c, s.cliModels.Command, s.cliModels.RawOutput, s.cliModels.Error)
 	} else if len(groups) == 0 {
 		portrait.Empty(c, portrait.EmptySpec{Icon: portrait.IconCube, Title: "No models yet", Description: "Sign in to a provider in Terminal."})
@@ -73,12 +76,25 @@ func (p *panel) modelSettings(c *ui.Context) {
 		rows.Row(portrait.RowSpec{Title: "Provider id", Description: "Another provider, such as anthropic."}, func() {
 			ui.Row(c).Gap(portrait.Form.Gap).Children(func() {
 				input(c, "feynman-provider-login", "Model provider", &p.loginProvider, "Provider id").Width(portrait.Form.SelectMin)
-				if portrait.Button(c, "Sign in in Terminal", "Sign in to another model provider in Terminal").Disabled(s.cliBusy).Clicked() {
+				if portrait.Button(c, "Sign in in Terminal", "Sign in to another model provider in Terminal").Disabled(s.cliBusy || strings.TrimSpace(p.loginProvider) == "").Clicked() {
 					p.launchWizard("model_login", strings.TrimSpace(p.loginProvider))
 				}
 			})
 		})
 	})
+}
+
+func serviceTierOptions(current string) []portrait.Option {
+	options := []portrait.Option{{Value: "default", Label: "Default"}, {Value: "priority", Label: "Priority"}, {Value: "flex", Label: "Flex"}}
+	for _, option := range options {
+		if option.Value == current {
+			return options
+		}
+	}
+	if strings.TrimSpace(current) != "" {
+		options = append(options, portrait.Option{Value: current, Label: current})
+	}
+	return options
 }
 
 func tierOf(r *feynman.CLIModelListResult) string {
@@ -153,7 +169,7 @@ func (p *panel) cliModelRow(c *ui.Context, rows *portrait.Rows, model feynman.CL
 
 func (p *panel) modelAction(action, value string) {
 	root := p.state.root
-	p.runUpdate(func() (func(), error) {
+	p.runSettingsUpdate(func() (func(), error) {
 		result, err := p.host.CLIModelAction(p.window.Context(), root, action, value)
 		return func() {
 			p.state.cliResult = firstNonEmpty(result.Summary, result.RawOutput)

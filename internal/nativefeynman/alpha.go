@@ -2,6 +2,7 @@ package nativefeynman
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
@@ -25,7 +26,7 @@ func (p *panel) alphaSectionState(key string) *bool {
 
 func (p *panel) alphaXiv(c *ui.Context) {
 	s := p.state
-	ui.Row(c.Key("alpha-header")).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
+	ui.Row(c.Key("alpha-header")).Gap(portrait.Form.Gap).Margin(0, 0, portrait.Form.Gap, 0).AlignItems(ui.Center).Children(func() {
 		sectionTitle(c, "alphaXiv research")
 		ui.Row(c).Grow(1)
 		if portrait.ButtonWith(c, "Account…", "alphaXiv account settings", portrait.ButtonSpec{Look: portrait.Raised, Size: portrait.Sizes.Compact, Leading: portrait.IconGear}).Clicked() {
@@ -33,19 +34,18 @@ func (p *panel) alphaXiv(c *ui.Context) {
 		}
 	})
 	ui.Scroll(c.Key("alpha-scroll")).Grow(1).MinHeight(0).FillWidth().TrackScroll(&p.alphaScroll).Label("alphaXiv search and paper tools").Children(func() {
-		portrait.Card(c.Key("alpha-controls")).Gap(portrait.Form.Gap).Padding(portrait.Form.AreaPadY).Radius(portrait.Radii.L).Children(func() {
+		portrait.Card(c.Key("alpha-controls")).Gap(portrait.Form.Gap).Padding(portrait.GenUI.CardPadding).Radius(portrait.Radii.L).Children(func() {
 			activeMode := p.alphaMode
 			if activeMode == "" {
 				activeMode = "semantic"
 			}
-			portrait.Track(c, "alpha-search-modes", func(track *portrait.Segments) {
-				for _, mode := range alphaModes {
-					// The label reads as a name; the value stays the command's.
-					if track.Segment(c, titleWord(mode), "Search alphaXiv using "+mode+" mode", activeMode == mode).Clicked() {
-						p.alphaMode = mode
-					}
-				}
-			}).Label("alphaXiv search modes")
+			selectedMode := max(0, slices.Index(alphaModes, activeMode))
+			modeLabels := make([]string, len(alphaModes))
+			for i, mode := range alphaModes {
+				modeLabels[i] = titleWord(mode)
+			}
+			portrait.Segmented(c.Key("alpha-search-modes"), &selectedMode, modeLabels, "alphaXiv search modes")
+			p.alphaMode = alphaModes[selectedMode]
 			ui.Row(c).Wrap().Gap(portrait.Form.Gap).Children(func() {
 				search := portrait.SearchField(c, &p.alphaQuery, portrait.SearchSpec{Label: "Search papers", Placeholder: "Search alphaXiv papers…"})
 				search.Frame().Basis(160).Grow(1).MinWidth(0)
@@ -174,7 +174,7 @@ func (p *panel) alphaResults(c *ui.Context, result feynman.CLIAlphaSearchResult)
 				mutedText(c, "No matching alphaXiv papers.")
 			}
 			for _, paper := range group.Papers {
-				portrait.Card(c.Key("alpha-paper-"+paper.ID)).Gap(3).Padding(portrait.Form.Gap).Radius(portrait.Radii.L).Background(portrait.Colors.Paper).Border(0.5, portrait.Colors.Line).Children(func() {
+				portrait.Card(c.Key("alpha-paper-"+paper.ID)).Gap(3).Padding(portrait.GenUI.CardPadding).Radius(portrait.Radii.L).Background(portrait.Colors.Paper).Border(0.5, portrait.Colors.Line).Children(func() {
 					text(c, portrait.Type.UI, paper.Title).FontWeight(600).TextColor(portrait.Colors.Ink).FillWidth().Wrap()
 					meta := strings.Join(nonEmpty(paper.Authors, paper.Published, paper.ID), " · ")
 					mutedText(c, meta)
@@ -225,7 +225,7 @@ func (p *panel) alphaPaper(c *ui.Context, result feynman.CLIAlphaPaperResult) {
 		resultText(c, result.Command, result.RawOutput, result.Error)
 		return
 	}
-	portrait.Card(c.Key("alpha-paper-result")).Gap(portrait.Form.HelpGap).Padding(portrait.Form.Gap, portrait.Form.AreaPadY).Radius(portrait.Radii.L).Background(portrait.Colors.Paper).Border(0.5, portrait.Colors.Line).Children(func() {
+	portrait.Card(c.Key("alpha-paper-result")).Gap(portrait.Form.HelpGap).Padding(portrait.GenUI.CardPadding).Radius(portrait.Radii.L).Background(portrait.Colors.Paper).Border(0.5, portrait.Colors.Line).Children(func() {
 		text(c, portrait.Type.UI, result.Title).FontWeight(600).TextColor(portrait.Colors.Ink).FillWidth().Wrap()
 		mutedText(c, result.PaperID+map[bool]string{true: " · full text", false: " · abstract"}[result.FullText])
 		if result.Content != "" {

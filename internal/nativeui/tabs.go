@@ -93,15 +93,19 @@ func (s *Shell) documents(c *ui.Context, m Model, a Actions) {
 		return
 	}
 	labels := tabLabels(docs)
-	ui.Scroll(c.Key("documents")).FillWidth().MaxHeight(portrait.Shell.Documents).Shrink(0).Role(ui.RoleTabList).Label("Documents").TrackScroll(s.scrollState("documents")).Children(func() {
+	scroll := s.scrollState("documents")
+	ui.Scroll(c.Key("documents")).FillWidth().MaxHeight(portrait.Shell.Documents).Shrink(0).Padding(scrollContentInset, scrollContentInset, portrait.Sizes.Regular, scrollContentInset).Role(ui.RoleTabList).Label("Documents").TrackScroll(scroll).MaskLinearGradient(scrollEdgeMask(180, scroll)).Children(func() {
 		for i, d := range docs {
 			selected := d.ID == s.activeID
 			states := documentStates(d.Edited, d.Conflict, d.Deleted, d.ReadOnly, d.Generating)
 			status := stateLabel(d.Edited, d.Conflict, d.Deleted, d.ReadOnly, d.Generating)
 			row := ui.Row(c.Key(d.ID)).FillWidth().Height(portrait.Shell.Row).Radius(portrait.Radii.M).AlignItems(ui.Center).Padding(0, 5, 0, 0).Gap(4)
 			hovered := row.Hovered()
-			if hovered && !selected {
-				row.Background(portrait.Materials.GlassHover)
+			portrait.RowHover(row, hovered && !selected)
+			portrait.Press(row, portrait.Quiet)
+			if selected && s.tabScroll == d.ID {
+				row.ScrollIntoView()
+				s.tabScroll = ""
 			}
 			row.Children(func() {
 				portrait.RowCapsule(c, row, selected, "documents")
@@ -116,7 +120,7 @@ func (s *Shell) documents(c *ui.Context, m Model, a Actions) {
 				tab.Children(func() {
 					iconColor := portrait.Colors.Ink2
 					if selected {
-						ui.Box(c.Key("active-bar")).Size(3, portrait.Type.Small.Size).Radius(portrait.Radii.Pill).Background(portrait.Colors.Accent).Shrink(0).AccessHidden(true)
+						ui.Box(c.Key("active-bar")).Size(3, portrait.Type.Small.Size).Absolute().Left(0).Top((portrait.Shell.Row - portrait.Type.Small.Size) / 2).Radius(portrait.Radii.Pill).Background(portrait.Colors.Accent).AccessHidden(true)
 						iconColor = portrait.Colors.Accent
 					}
 					portrait.Glyph(c, portrait.IconFileText, portrait.Type.Small.Size, iconColor)
@@ -126,7 +130,7 @@ func (s *Shell) documents(c *ui.Context, m Model, a Actions) {
 					if selected {
 						title.FontWeight(500)
 					}
-					title.TextColor(ink).MaxLines(1).Ellipsis("…").MinWidth(0)
+					title.TextColor(ink).SingleLine().TruncateMiddle().Ellipsis("…").MinWidth(0)
 				})
 				if s.tabFocus == d.ID && selected {
 					tab.Focus()
@@ -155,14 +159,16 @@ func (s *Shell) documents(c *ui.Context, m Model, a Actions) {
 				}
 				for _, state := range states {
 					dot := ui.Box(c.Key("status-"+state.label)).Size(tabStatusDotSize, tabStatusDotSize).
-						Radius(portrait.Radii.Pill).Background(state.tone.Solid).
-						Role(ui.RoleText).Label(state.label).Shrink(0).ZIndex(1)
+						Radius(portrait.Radii.Pill).Role(ui.RoleText).Label(state.label).Shrink(0).ZIndex(1)
+					if state.label == "Generating" {
+						dot.Border(1.5, state.tone.Solid)
+					} else {
+						dot.Background(state.tone.Solid)
+					}
 					portrait.Tooltip(c, dot, state.label)
 				}
 				closeTab := portrait.QuietIconButton(c, portrait.IconX, "Close "+labels[d.ID]).Size(portrait.Sizes.Compact, portrait.Sizes.Compact).Radius(portrait.Radii.S).ZIndex(1)
-				if !hovered && !selected && !closeTab.Hovered() && !closeTab.Focused() {
-					closeTab.Opacity(0)
-				}
+				portrait.RevealFor(c, closeTab, hovered || selected || closeTab.Hovered() || closeTab.Focused())
 				if closeTab.Clicked() && a.CloseDocument != nil {
 					a.CloseDocument(d.ID)
 				}

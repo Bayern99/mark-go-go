@@ -91,8 +91,8 @@ func TestQuestionCardUsesCompactRadiosAndCancelFirstRegularActions(t *testing.T)
 	if !ok {
 		t.Fatal("question option is not an accessible radio")
 	}
-	if radio.Bounds.H != portrait.Type.UI.Leading {
-		t.Fatalf("question radio height = %v, want compact UI leading %v", radio.Bounds.H, portrait.Type.UI.Leading)
+	if radio.Bounds.H != portrait.Sizes.Compact {
+		t.Fatalf("question radio height = %v, want compact control height %v", radio.Bounds.H, portrait.Sizes.Compact)
 	}
 	group, _ := app.AccessByRole(ui.RoleGroup, "Feynman confirmation")
 	cancel, cancelOK := app.AccessByRole(ui.RoleButton, "Cancel this Feynman request")
@@ -125,7 +125,7 @@ func TestComposerFooterControlsShareRegularHeight(t *testing.T) {
 	p.state.status = statusWorking
 	app := ui.NewTester(func(c *ui.Context) { drawWidePane(c, p) }, 1280, 820)
 	app.Frame()
-	for _, name := range []string{"Send a steering message", "Queue a follow-up message", "Stop the current research action", "Model", "Thinking"} {
+	for _, name := range []string{"Send a steering message", "Queue a follow-up message", "Stop the current research action", "Model", "Thinking level"} {
 		button, ok := app.AccessByRole(ui.RoleButton, name)
 		if !ok {
 			t.Errorf("missing footer button %q", name)

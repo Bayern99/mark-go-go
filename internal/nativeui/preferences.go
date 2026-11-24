@@ -89,8 +89,10 @@ func (w *Window) ResetPreferencePrefixes(prefixes ...string) {
 }
 func (w *Window) resetPreferences(match func(string) bool) {
 	p := w.store()
+	previous := make(map[string]string, len(p.values))
 	changed := false
-	for key := range p.values {
+	for key, value := range p.values {
+		previous[key] = value
 		if match(key) {
 			delete(p.values, key)
 			changed = true
@@ -100,8 +102,14 @@ func (w *Window) resetPreferences(match func(string) bool) {
 		return
 	}
 	if err := p.save(); err != nil {
+		p.values = previous
 		w.failure = err.Error()
+		if w.win != nil {
+			w.win.Invalidate()
+		}
+		return
 	}
+	w.failure = ""
 	for window := range p.windows {
 		if window.win != nil {
 			window.win.Invalidate()
@@ -122,10 +130,21 @@ func (w *Window) setPreference(key, value string) {
 	if p.values[key] == value {
 		return
 	}
+	previous, existed := p.values[key]
 	p.values[key] = value
 	if err := p.save(); err != nil {
+		if existed {
+			p.values[key] = previous
+		} else {
+			delete(p.values, key)
+		}
 		w.failure = err.Error()
+		if w.win != nil {
+			w.win.Invalidate()
+		}
+		return
 	}
+	w.failure = ""
 	for window := range p.windows {
 		if window.win != nil {
 			window.win.Invalidate()

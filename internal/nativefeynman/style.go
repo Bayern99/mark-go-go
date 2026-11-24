@@ -52,7 +52,10 @@ func discreteButton(c *ui.Context, label, description string, mark portrait.Icon
 }
 
 func chip(c *ui.Context, key string, icon portrait.Icon, label, description string, compact bool) ui.Element {
-	chip := portrait.Chip(c.Key(key), icon, label, nil).Label(description)
+	chip := portrait.Chip(c.Key(key), icon, label, nil).Label(description).MinHeight(portrait.Sizes.Compact)
+	chip.Children(func() {
+		portrait.Glyph(c, portrait.IconX, portrait.IconSizes.XS, portrait.Colors.Accent).AccessHidden(true)
+	})
 	if compact {
 		chip.Height(portrait.Sizes.Compact)
 	}

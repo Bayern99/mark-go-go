@@ -42,6 +42,29 @@ func (p *panel) loadSettings(root string) {
 	}()
 }
 
+func (p *panel) runSettingsUpdate(run func() (func(), error)) {
+	if p.state.cliBusy {
+		return
+	}
+	root := p.state.root
+	p.state.cliBusy = true
+	p.state.cliError = ""
+	p.window.Native().Invalidate()
+	go func() {
+		apply, err := run()
+		p.update(root, func() {
+			p.state.cliBusy = false
+			if err != nil {
+				p.state.cliError = err.Error()
+				return
+			}
+			if apply != nil {
+				apply()
+			}
+		})
+	}()
+}
+
 func ptrIfOK[T any](value T, err error) *T {
 	if err != nil {
 		return nil
@@ -140,7 +163,7 @@ func (p *panel) resetSearchSettings() {
 	if s.root == "" || s.cliBusy {
 		return
 	}
-	p.runUpdate(func() (func(), error) {
+	p.runSettingsUpdate(func() (func(), error) {
 		result, err := p.host.CLISearchAction(p.window.Context(), s.root, "clear", "", "")
 		status, statusErr := p.host.CLISearchStatus(p.window.Context(), s.root)
 		return func() {
@@ -153,7 +176,7 @@ func (p *panel) resetSearchSettings() {
 
 func (p *panel) launchWizard(wizard, target string) {
 	root := p.state.root
-	p.runUpdate(func() (func(), error) {
+	p.runSettingsUpdate(func() (func(), error) {
 		result, err := p.host.LaunchTerminalWizard(p.window.Context(), root, wizard, target)
 		message := result.Command
 		if result.Launched {
@@ -165,7 +188,7 @@ func (p *panel) launchWizard(wizard, target string) {
 
 func (p *panel) clearSearchKey(provider string) {
 	root := p.state.root
-	p.runUpdate(func() (func(), error) {
+	p.runSettingsUpdate(func() (func(), error) {
 		result, err := p.host.CLISearchAction(p.window.Context(), root, "clear-key", provider, "")
 		status, statusErr := p.host.CLISearchStatus(p.window.Context(), root)
 		return func() {

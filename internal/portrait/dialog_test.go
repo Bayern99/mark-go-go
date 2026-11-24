@@ -1,6 +1,7 @@
 package portrait_test
 
 import (
+	"image/color"
 	"testing"
 	"time"
 
@@ -129,6 +130,7 @@ func TestConfirmAccessibilityGeometryAndScrim(t *testing.T) {
 		tt.Frame()
 		before := tt.Image().RGBAAt(5, 5)
 		openConfirm(t, tt)
+		tt.Advance(time.Second)
 		dialog, ok := tt.AccessByRole(ui.RoleAlertDialog, "Delete this conversation?")
 		if !ok || dialog.Description != "This action cannot be undone." {
 			t.Fatalf("dialog accessibility = %+v, %v", dialog, ok)
@@ -162,6 +164,51 @@ func TestConfirmUsesRightAlignedCancelThenDangerButton(t *testing.T) {
 	want := portrait.Tones.Danger.Solid
 	if px.R != want.R || px.G != want.G || px.B != want.B {
 		t.Fatalf("Delete fill = #%02x%02x%02x, want Danger #%02x%02x%02x", px.R, px.G, px.B, want.R, want.G, want.B)
+	}
+}
+
+func TestDialogShellScrimMotionFollowsInputAndReduceMotion(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		keyboard     bool
+		reduceMotion bool
+		wantPending  bool
+	}{
+		{name: "pointer", wantPending: true},
+		{name: "keyboard", keyboard: true},
+		{name: "reduce motion", reduceMotion: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &confirmFixture{}
+			tt := ui.NewTesterWith(f.view, 600, 400, ui.TesterOptions{Preferences: ui.Preferences{ReduceMotion: tc.reduceMotion}})
+			tt.Frame()
+			if tc.keyboard {
+				tt.Key(0, ui.KeyTab)
+				tt.Key(0, ui.KeyEnter)
+			} else {
+				openConfirm(t, tt)
+			}
+			if !f.open || tt.FramePending() != tc.wantPending {
+				t.Fatalf("open=%v frame pending=%v, want %v", f.open, tt.FramePending(), tc.wantPending)
+			}
+		})
+	}
+}
+
+func TestNestedDialogUsesOnlySubtleScrim(t *testing.T) {
+	render := func(nested bool) color.RGBA {
+		open := true
+		tt := ui.NewTester(func(c *ui.Context) {
+			ui.Column(c).Fill().Background(portrait.Colors.Paper)
+			portrait.DialogShell(c, "nested", &open, portrait.DialogSpec{Label: "Confirm", Glass: true, Nested: nested}, func() {})
+		}, 600, 400)
+		tt.Frame()
+		tt.Advance(time.Second)
+		return tt.Image().RGBAAt(5, 5)
+	}
+	nested, ordinary := render(true), render(false)
+	if nested.R <= ordinary.R {
+		t.Fatalf("nested scrim %v is not subtler than ordinary scrim %v", nested, ordinary)
 	}
 }
 

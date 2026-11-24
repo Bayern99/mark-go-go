@@ -48,7 +48,7 @@ func CheckboxFace(c *ui.Context, control ui.Element, state ui.CheckState, label 
 
 func checkboxFace(c *ui.Context, control ui.Element, state ui.CheckState, label string, style TypeStyle, weight int) {
 	control.Children(func() {
-		fill, border := Colors.Paper, Colors.LineStrong
+		fill, border := Colors.Paper, Colors.Ink3
 		if state != ui.CheckOff {
 			fill, border = Tones.Accent.Solid, Tones.Accent.Solid
 		} else if control.Hovered() {
@@ -57,6 +57,7 @@ func checkboxFace(c *ui.Context, control ui.Element, state ui.CheckState, label 
 		if c.Preferences().HighContrast && state == ui.CheckOff {
 			border = Colors.Ink2
 		}
+		focusVisible := control.FocusVisible()
 		box := ui.Box(c).Size(checkboxSize, checkboxSize).Radius(Radii.XS).Shrink(0).
 			Background(fill).Border(1, border).AccessHidden(true)
 		box.DrawOver(func(p *ui.Painter, r ui.Rect) {
@@ -70,7 +71,7 @@ func checkboxFace(c *ui.Context, control ui.Element, state ui.CheckState, label 
 			case ui.CheckMixed:
 				p.Line(r.X+r.W*0.25, r.Y+r.H*0.5, r.X+r.W*0.75, r.Y+r.H*0.5, checkboxStroke, Tones.Accent.OnSolid)
 			}
-			if control.FocusVisible() {
+			if focusVisible {
 				p.FocusRing(r, [4]float32{Radii.XS, Radii.XS, Radii.XS, Radii.XS})
 			}
 		})

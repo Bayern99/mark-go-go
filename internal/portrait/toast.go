@@ -55,10 +55,12 @@ func Toasts(c *ui.Context) ui.Element {
 func toast(c *ui.Context, t ui.Toast) ui.Element {
 	tone := toneFromType(t.Type)
 	parts := ui.ToastBase(c, t)
-	root := parts.Root.Row().Gap(10).Padding(10, 12).Radius(Radii.L).Border(0.5, tone.Border).
+	root := parts.Root.Row().Gap(10).Padding(10, 12).Radius(Radii.L).
 		MaxWidth(380).AlignItems(ui.Center).Label(t.Title)
-	Materials.Pop.Apply(root)
-	root.Background(tone.Wash)
+	pop := Materials.Pop
+	pop.Shadows = pop.Shadows[1:] // Toast owns its one crisp border.
+	pop.Apply(root)
+	root.Border(0.5, tone.Border).Background(Colors.Paper.Mix(tone.Solid, toneWashAlpha))
 	enter := ui.Motion{Y: 8, Opacity: 0}
 	root.Transition(Transition(c, c.KeyboardInput(), ui.ElementTransition{
 		Duration: Motion.Enter,

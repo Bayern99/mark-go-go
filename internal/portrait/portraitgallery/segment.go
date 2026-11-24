@@ -8,7 +8,7 @@ import (
 const Track Component = "Track"
 
 func init() {
-	register(Definition{Name: Track, Role: ui.RoleButton, Label: "Preview", LongLabel: "文档预览与源码编辑", build: trackCell})
+	register(Definition{Name: Track, Role: ui.RoleTab, Label: "Preview", LongLabel: "文档预览与源码编辑", build: trackCell})
 }
 
 func trackCell(c *ui.Context, cell Cell) ui.Element {

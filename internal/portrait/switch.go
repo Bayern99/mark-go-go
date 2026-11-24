@@ -15,13 +15,18 @@ type switchThumbKey struct{}
 func Switch(c *ui.Context, on *bool) ui.Element {
 	control := ui.SwitchBase(c, on).Size(switchWidth, switchHeight).Radius(Radii.Pill).
 		FocusRing(false).Cursor(ui.CursorPointer)
+	duration := Motion.Switch
+	if c.KeyboardInput() || c.Preferences().ReduceMotion {
+		c.DisableAnimations()
+		duration = 0
+	}
 	position := control.AnimateTo(switchThumbKey{}, flag(*on), ui.Animation{
-		Duration: Motion.Switch,
+		Duration: duration,
 		Ease:     Motion.EaseInOut.Easing(),
 	})
-	off := Colors.Ink4
+	off := Colors.Ink3
 	if c.Preferences().HighContrast {
-		off = Colors.Ink3
+		off = Colors.Ink2
 	}
 	control.Background(off.Mix(Tones.Accent.Solid, position))
 	control.DrawOver(func(p *ui.Painter, r ui.Rect) {

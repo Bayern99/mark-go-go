@@ -57,7 +57,7 @@ var Spaces = [...]Space{
 		light("#F9E9CD", "#F6DEAD", "#FFFFFF", "#FAF6ED", "#815F25", "#815F25"),
 		dark("#1D1B1C", "#503E2A", "#1A1816", "#24201C", "#E2C17C", "#E2C17C")},
 	{"Metal", "Metal", "金 · 秋西",
-		light("#F2F3F4", "#E2E1E4", "#FFFFFF", "#F5F5F6", "#4B6C8C", "#4B6C8C"),
+		light("#F2F3F4", "#E2E1E4", "#FFFFFF", "#F5F5F6", "#3F5E7D", "#4B6C8C"),
 		dark("#0E100F", "#2B333E", "#16181A", "#1F2226", "#D0E7F9", "#D0E7F9")},
 	{"Wood", "Wood", "木 · 春东",
 		light("#EEF7F2", "#C6E3E1", "#FFFFFF", "#F3F7F6", "#126E82", "#126E82"),

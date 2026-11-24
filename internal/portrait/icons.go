@@ -10,6 +10,7 @@ type Icon struct {
 func (i Icon) Mirrored() Icon { i.Mirror = !i.Mirror; return i }
 
 var (
+	IconNone              = Icon{}
 	IconX                 = Icon{Glyph: "\ue4f6"}
 	IconSidebar           = Icon{Glyph: "\uec24"}
 	IconPlugs             = Icon{Glyph: "\ueb56"}

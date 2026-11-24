@@ -38,7 +38,7 @@ func controlLooks() {
 		Link:          {Surface{ui.Transparent, ui.Transparent, nil}, Surface{ui.Transparent, ui.Transparent, nil}, Surface{Colors.AccentSoft, Colors.AccentSoft, nil}, Colors.Accent, Colors.Accent, 0.98},
 	}
 	Rings = struct{ Field, Editing, Invalid Shadows }{
-		Field:   Shadows{out(0, 0, 0, 0.5, Colors.LineStrong), out(0, 0, 0, 3, Colors.Focus)},
+		Field:   Shadows{out(0, 0, 0, 1, Colors.Accent), out(0, 0, 0, 3, Colors.Focus)},
 		Editing: Shadows{out(0, 0, 0, 1, Colors.Accent), out(0, 0, 0, 3, Colors.Focus)},
 		Invalid: Shadows{out(0, 0, 0, 1, Colors.Danger), out(0, 0, 0, 3, Tones.Danger.Soft)},
 	}
@@ -51,6 +51,11 @@ type pressKey struct{}
 
 func Press(b ui.Element, look Look) ui.Color {
 	f := looks[look]
+	if b.IsDisabled() {
+		f.rest.Apply(b)
+		b.TransformOrigin(0.5, 0.5).Translate(0, 0).Scale(1, 1)
+		return f.ink
+	}
 	ease := Motion.EaseOut.Easing()
 	hovered, pressed := b.Hovered(), b.Pressed()
 	h := b.AnimateTo(hoverKey{}, flag(hovered && !pressed), ui.Animation{Duration: hoverShadow, Ease: ease})
@@ -65,9 +70,11 @@ func Press(b ui.Element, look Look) ui.Color {
 }
 
 func RowHover(row ui.Element, on bool) {
-	h := row.AnimateTo(hoverKey{}, flag(on), ui.Animation{Duration: hoverShadow, Ease: Motion.EaseOut.Easing()})
-	if h > 0 {
-		Surface{ui.Transparent, ui.Transparent, nil}.Mix(Materials.Row, h).Apply(row)
+	ease := Motion.EaseOut.Easing()
+	h := row.AnimateTo(hoverKey{}, flag(on), ui.Animation{Duration: hoverShadow, Ease: ease})
+	p := row.AnimateTo(pressKey{}, flag(row.Pressed()), ui.Animation{Duration: Motion.Press, Ease: ease})
+	if h > 0 || p > 0 {
+		Surface{ui.Transparent, ui.Transparent, nil}.Mix(Materials.Row, h).Mix(Materials.RaisedPress, p).Apply(row)
 	}
 }
 
@@ -75,6 +82,17 @@ func RowHover(row ui.Element, on bool) {
 // focus; ReduceMotion shows it at once.
 func Reveal(e ui.Element, on bool) ui.Element {
 	return e.Opacity(e.AnimateTo(revealKey{}, flag(on), ui.Animation{Duration: hoverShadow, Ease: Motion.EaseOut.Easing()}))
+}
+
+// RevealFor keeps secondary actions visible where hover is unavailable and
+// otherwise gives them the same eased reveal as Reveal.
+func RevealFor(c *ui.Context, e ui.Element, on bool) ui.Element {
+	visible := on || !c.Preferences().Hover()
+	duration := hoverShadow
+	if c.Preferences().ReduceMotion {
+		duration = 0
+	}
+	return e.Opacity(e.AnimateTo(revealKey{}, flag(visible), ui.Animation{Duration: duration, Ease: Motion.EaseOut.Easing()}))
 }
 
 type revealKey struct{}
@@ -91,7 +109,7 @@ type Segments struct {
 }
 
 func Track(c *ui.Context, group string, build func(s *Segments)) ui.Element {
-	t := ui.Row(c.Key("track:" + group)).Role(ui.RoleTabList).Padding(2).Gap(2).Radius(Radii.Track).AlignItems(ui.Center)
+	t := ui.Row(c.Key("track:" + group)).Role(ui.RoleTabList).FocusGroup(ui.Horizontal).Padding(2).Gap(2).Radius(Radii.Track).AlignItems(ui.Center)
 	Materials.Track.Apply(t)
 	s := &Segments{group: group}
 	t.Children(func() { build(s) })
@@ -99,8 +117,15 @@ func Track(c *ui.Context, group string, build func(s *Segments)) ui.Element {
 }
 
 func (s *Segments) Segment(c *ui.Context, title, label string, selected bool) ui.Element {
-	b := ui.ButtonBase(c.Key(label)).Label(label).Height(Sizes.Regular-4).Padding(0, 10).Radius(Radii.Segment).AlignItems(ui.Center).Justify(ui.Center).MinWidth(0)
-	ink := Colors.Ink3
+	return s.SegmentKey(c, label, title, label, selected)
+}
+
+// SegmentKey adds a tab whose identity is independent of its visible title
+// and accessible label.
+func (s *Segments) SegmentKey(c *ui.Context, key, title, label string, selected bool) ui.Element {
+	b := ui.ButtonBase(c.Key(key)).Label(label).Role(ui.RoleTab).AccessSelected(selected).Height(Sizes.Regular-4).Padding(0, 10).Radius(Radii.Segment).AlignItems(ui.Center).Justify(ui.Center).MinWidth(0)
+	RowHover(b, b.Hovered() && !selected)
+	ink := Colors.Ink2
 	if selected || b.Hovered() {
 		ink = Colors.Ink
 	}

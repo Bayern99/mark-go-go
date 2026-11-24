@@ -47,7 +47,7 @@ var Shell = ShellTokens{
 	Results:        10 * 36,
 	Swatch:         16,
 	CommandInput:   52,
-	SpaceDotButton: 18, SpaceDotCircle: 10,
+	SpaceDotButton: Sizes.Compact, SpaceDotCircle: 10,
 	ResearchWidth: 376, ResearchMin: 310, ResearchMax: 800,
 	SidebarMin: 180, SidebarMax: 420, PageMin: 412,
 }

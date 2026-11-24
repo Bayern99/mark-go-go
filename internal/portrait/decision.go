@@ -1,6 +1,8 @@
 package portrait
 
 import (
+	"fmt"
+
 	"github.com/egoist/mygo/ui"
 )
 
@@ -47,17 +49,32 @@ func Decision(c *ui.Context, open *bool, spec DecisionSpec) ui.Element {
 	var panel ui.Element
 	owner.Children(func() {
 		panel = DialogShell(c, "decision dialog", open, DialogSpec{Label: spec.Title, Width: Form.DialogWidth, Role: ui.RoleAlertDialog, Glass: true}, func() {
-			Type.Title.Apply(ui.Text(c, spec.Title)).FontWeight(600).TextColor(Colors.Ink).MinWidth(0).Wrap().AccessHidden(true)
-			if spec.Body != "" {
-				Type.Small.Apply(ui.Text(c, spec.Body)).TextColor(Colors.Ink2).MinWidth(0).Wrap().AccessHidden(true)
-			}
-			if len(spec.Documents) > 1 && spec.Selected != nil {
+			hasSelection := len(spec.Documents) > 0 && spec.Selected != nil
+			checkedCount, uncheckedCount := 0, 0
+			if hasSelection {
 				if len(*spec.Selected) != len(spec.Documents) {
 					*spec.Selected = make([]bool, len(spec.Documents))
 					for i := range *spec.Selected {
 						(*spec.Selected)[i] = true
 					}
 				}
+				for _, checked := range *spec.Selected {
+					if checked {
+						checkedCount++
+					} else {
+						uncheckedCount++
+					}
+				}
+			}
+			saveDisabled := hasSelection && checkedCount == 0
+			if hasSelection && checkedCount > 0 && uncheckedCount > 0 {
+				spec.SaveLabel = fmt.Sprintf("Save %d, Discard %d", checkedCount, uncheckedCount)
+			}
+			Type.Title.Apply(ui.Text(c, spec.Title)).FontWeight(600).TextColor(Colors.Ink).MinWidth(0).Wrap().AccessHidden(true)
+			if spec.Body != "" {
+				Type.Small.Apply(ui.Text(c, spec.Body)).TextColor(Colors.Ink2).MinWidth(0).Wrap().AccessHidden(true)
+			}
+			if len(spec.Documents) > 1 && spec.Selected != nil {
 				// A long list scrolls so the action row below always stays on
 				// screen, whatever the window's height.
 				ui.Scroll(c).MaxHeight(Form.ListMax).FillWidth().Role(ui.RoleGroup).Label("Documents to save").Children(func() {
@@ -67,6 +84,9 @@ func Decision(c *ui.Context, open *bool, spec DecisionSpec) ui.Element {
 						}
 					})
 				})
+			}
+			if hasSelection && checkedCount > 0 && uncheckedCount > 0 {
+				Type.Meta.Apply(ui.Text(c, "Unchecked documents will be discarded.")).TextColor(Colors.Ink2).Wrap()
 			}
 			row := ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(Form.DialogGap).FocusGroup(ui.Horizontal)
 			row.Children(func() {
@@ -99,18 +119,21 @@ func Decision(c *ui.Context, open *bool, spec DecisionSpec) ui.Element {
 						spec.OnCancel()
 					}
 				}
-				save := AccentButton(c, spec.SaveLabel, spec.SaveLabel).AutoFocus()
-				if c.Shortcut(ui.Cmd, ui.KeyS) {
+				save := AccentButton(c, spec.SaveLabel, spec.SaveLabel).Disabled(saveDisabled).AutoFocus()
+				commitSave := func() {
+					if saveDisabled {
+						return
+					}
 					*open = false
 					if spec.OnSave != nil {
 						spec.OnSave()
 					}
 				}
+				if c.Shortcut(ui.Cmd, ui.KeyS) {
+					commitSave()
+				}
 				if save.Clicked() {
-					*open = false
-					if spec.OnSave != nil {
-						spec.OnSave()
-					}
+					commitSave()
 				}
 			})
 		})
@@ -153,6 +176,10 @@ func Prompt(c *ui.Context, open *bool, spec PromptSpec) ui.Element {
 	}
 	owner := ui.Box(c.Key("prompt:"+spec.Title)).Absolute().Size(0, 0)
 	initialized := ui.Local(owner, "initialized", func() bool { return false })
+	touched := ui.Local(owner, "touched", func() bool { return false })
+	submitAttempted := ui.Local(owner, "submit attempted", func() bool { return false })
+	wasFocused := ui.Local(owner, "was focused", func() bool { return false })
+	lastValue := ui.Local(owner, "last value", func() string { return *spec.Value })
 	wasOpen := ui.Local(owner, "was open", func() bool { return false })
 	returned := ui.Local(owner, "returned", func() bool { return false })
 	if *returned {
@@ -163,6 +190,10 @@ func Prompt(c *ui.Context, open *bool, spec PromptSpec) ui.Element {
 	}
 	if !*open {
 		*initialized = false
+		*touched = false
+		*submitAttempted = false
+		*wasFocused = false
+		*lastValue = *spec.Value
 	}
 	var panel ui.Element
 	owner.Children(func() {
@@ -172,21 +203,43 @@ func Prompt(c *ui.Context, open *bool, spec PromptSpec) ui.Element {
 			if spec.Validate != nil {
 				problem = spec.Validate(*spec.Value)
 			}
-			field := TextField(c, spec.Value, FieldSpec{Label: spec.Label, Placeholder: spec.Placeholder, Invalid: problem != ""})
+			showProblem := problem != "" && (*touched || *submitAttempted)
+			field := TextField(c, spec.Value, FieldSpec{Label: spec.Label, Placeholder: spec.Placeholder, Invalid: showProblem})
 			field.Frame().FillWidth()
 			field.Input().TextColor(Colors.Ink)
+			focused := field.Frame().FocusWithin()
+			if *wasFocused && !focused {
+				*touched = true
+			}
+			*wasFocused = focused
+			changed := field.Input().Changed()
+			if changed {
+				*touched = false
+				*submitAttempted = false
+			} else if *spec.Value != *lastValue {
+				// Values supplied by the caller are already committed edits, not
+				// keystrokes whose incomplete extension should stay quiet.
+				*touched = true
+			}
+			*lastValue = *spec.Value
+			showProblem = problem != "" && (*touched || *submitAttempted)
 			if !*initialized {
 				field.Input().Focus().SetTextSelection(0, max(0, min(spec.SelectTo, len([]rune(*spec.Value)))))
 				*initialized = true
 			}
-			if problem != "" {
-				Type.Meta.Apply(ui.Text(c, problem)).TextColor(Colors.Danger).Role(ui.RoleAlert).Wrap()
+			if showProblem {
+				message := Type.Meta.Apply(ui.Text(c, problem)).TextColor(Colors.Danger).Role(ui.RoleAlert).Wrap()
+				field.Input().ErrorMessage(message)
 			}
 			ui.Row(c).Justify(ui.End).Gap(Form.DialogGap).Children(func() {
 				if QuietButton(c, spec.CancelLabel, spec.CancelLabel).Clicked() || c.Shortcut(ui.Cmd, ui.KeyPeriod) {
 					*open = false
 				}
-				if AccentButton(c, spec.SubmitLabel, spec.SubmitLabel).Disabled(problem != "").Clicked() || field.Input().Submitted() && problem == "" {
+				submitted := field.Input().Submitted()
+				if submitted {
+					*submitAttempted = true
+				}
+				if AccentButton(c, spec.SubmitLabel, spec.SubmitLabel).Disabled(problem != "").Clicked() || submitted && problem == "" {
 					*open = false
 					if spec.OnSubmit != nil {
 						spec.OnSubmit()

@@ -30,6 +30,42 @@ func TestRaisedSurfaceIsFlatPaperAndCastsAShadow(t *testing.T) {
 	}
 }
 
+func TestMaterialHairlinesRemainVisibleAtOneAndTwoX(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		surface portrait.Surface
+	}{
+		{"Raised", portrait.Materials.Raised},
+		{"Pop", portrait.Materials.Pop},
+		{"Sheet", portrait.Materials.Sheet},
+		{"Page", portrait.Materials.Page},
+		{"Sunken", portrait.Materials.Sunken},
+	} {
+		for _, scale := range []float32{1, 2} {
+			t.Run(tc.name, func(t *testing.T) {
+				tt := ui.NewTester(func(c *ui.Context) {
+					ui.Column(c).Fill().Background(portrait.Colors.Chrome).Padding(40).Children(func() {
+						tc.surface.Apply(ui.Row(c).Size(120, 60).Radius(8)).Label(tc.name)
+					})
+				}, 200, 160)
+				tt.SetScale(scale)
+				tt.Frame()
+				info, ok := tt.Access(tc.name)
+				if !ok || info.Bounds.W != 120 || info.Bounds.H != 60 {
+					t.Fatalf("surface bounds = %+v, found %v", info.Bounds, ok)
+				}
+				x, y := int(info.Bounds.X*scale), int((info.Bounds.Y+info.Bounds.H/2)*scale)
+				edge := tt.Image().RGBAAt(x, y)
+				face := tt.Image().RGBAAt(x+int(2*scale), y)
+				chrome := tt.Image().RGBAAt(int(10*scale), y)
+				if edge == face || edge == chrome {
+					t.Fatalf("scale %v: edge %v, face %v, chrome %v; hairline is not visible", scale, edge, face, chrome)
+				}
+			})
+		}
+	}
+}
+
 func TestPageIsPaperFloatingOverEveryScenery(t *testing.T) {
 	eachLook(t, func(t *testing.T, space portrait.Space, _ bool) {
 		tt := ui.NewTester(func(c *ui.Context) {

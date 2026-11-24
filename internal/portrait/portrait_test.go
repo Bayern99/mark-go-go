@@ -194,26 +194,26 @@ func TestMaterialsMatchTheirLockedValues(t *testing.T) {
 		shadows []portrait.Shadow
 	}{
 		{"raised", m.Raised, paper, []portrait.Shadow{
-			out(0, 0, 0, 0.5, black(0.12)), out(0, 1, 2, 0, black(0.05)), out(0, 2, 6, -2, black(0.04))}},
+			in(0, 0, 0, 0.5, black(0.12)), out(0, 1, 2, 0, black(0.05)), out(0, 2, 6, -2, black(0.04))}},
 		{"raised-hover", m.RaisedHover, paper, []portrait.Shadow{
-			out(0, 0, 0, 0.5, black(0.16)), out(0, 1, 3, 0, black(0.07)), out(0, 4, 10, -3, black(0.07))}},
+			in(0, 0, 0, 0.5, black(0.16)), out(0, 1, 3, 0, black(0.07)), out(0, 4, 10, -3, black(0.07))}},
 		{"raised-press", m.RaisedPress, paper.Mix(ui.Hex("#1D1B1C"), 0.07), []portrait.Shadow{
-			out(0, 0, 0, 0.5, black(0.18)), out(0, 0.5, 1, 0, black(0.03)), out(0, 0, 0, 0, ui.Transparent)}},
+			in(0, 0, 0, 0.5, black(0.18)), out(0, 0.5, 1, 0, black(0.03)), out(0, 0, 0, 0, ui.Transparent)}},
 		{"accent-raised", m.AccentRaised, accent, []portrait.Shadow{
-			in(0, 1, 0, 0, white(0.18)), out(0, 0, 0, 0.5, edge(0.5)), out(0, 1, 2, 0, glow(0.25)), out(0, 4, 12, -4, glow(0.35))}},
+			in(0, 1, 0, 0, white(0.18)), in(0, 0, 0, 0.5, edge(0.5)), out(0, 1, 2, 0, glow(0.25)), out(0, 4, 12, -4, glow(0.35))}},
 		{"accent-raised-hover", m.AccentRaisedHover, accent.Mix(paper, 0.08), []portrait.Shadow{
-			in(0, 1, 0, 0, white(0.22)), out(0, 0, 0, 0.5, edge(0.5)), out(0, 2, 4, 0, glow(0.28)), out(0, 6, 16, -4, glow(0.42))}},
+			in(0, 1, 0, 0, white(0.22)), in(0, 0, 0, 0.5, edge(0.5)), out(0, 2, 4, 0, glow(0.28)), out(0, 6, 16, -4, glow(0.42))}},
 		{"accent-raised-press", m.AccentRaisedPress, accent.Mix(ui.RGB(0, 0, 0), 0.1), []portrait.Shadow{
-			in(0, 1, 2, 0, black(0.22)), out(0, 0, 0, 0.5, edge(0.55)), out(0, 0.5, 1, 0, glow(0.2)), out(0, 0, 0, 0, ui.Transparent)}},
+			in(0, 1, 2, 0, black(0.22)), in(0, 0, 0, 0.5, edge(0.55)), out(0, 0.5, 1, 0, glow(0.2)), out(0, 0, 0, 0, ui.Transparent)}},
 		{"row", m.Row, black(0.055), nil},
 		{"sunken", m.Sunken, black(0.05), []portrait.Shadow{in(0, 0, 0, 0.5, black(0.05))}},
 		{"track", m.Track, black(0.055), nil},
 		{"sheet", m.Sheet, paper, []portrait.Shadow{
-			out(0, 0, 0, 0.5, black(0.08)), out(0, 1, 2, 0, black(0.04))}},
+			in(0, 0, 0, 0.5, black(0.08)), out(0, 1, 2, 0, black(0.04))}},
 		{"pop", m.Pop, paper, []portrait.Shadow{
-			out(0, 0, 0, 0.5, black(0.10)), out(0, 4, 14, 0, black(0.08)), out(0, 18, 44, -10, black(0.16))}},
+			in(0, 0, 0, 0.5, black(0.10)), out(0, 4, 14, 0, black(0.08)), out(0, 18, 44, -10, black(0.16))}},
 		{"page", m.Page, paper, []portrait.Shadow{
-			out(0, 0, 0, 0.5, black(0.10)), out(0, 1, 2, 0, black(0.05)), out(0, 6, 20, -6, black(0.10))}},
+			in(0, 0, 0, 0.5, black(0.10)), out(0, 1, 2, 0, black(0.05)), out(0, 6, 20, -6, black(0.10))}},
 	} {
 		g := tc.got
 		if !sameColor(g.From, tc.fill) || !sameColor(g.To, tc.fill) {

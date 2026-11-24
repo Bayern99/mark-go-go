@@ -193,6 +193,77 @@ func capsuleLeft(t *testing.T, tt *ui.Tester) float32 {
 	return 0
 }
 
+func TestTrackTabsExposeSelectionAndMoveFocusWithArrows(t *testing.T) {
+	selected := 0
+	tt := ui.NewTester(onChrome(func(c *ui.Context) {
+		portrait.Track(c, "documents", func(track *portrait.Segments) {
+			track.SegmentKey(c, "preview-key", "Preview", "Preview tab", selected == 0)
+			track.SegmentKey(c, "markdown-key", "Markdown", "Markdown tab", selected == 1)
+		})
+	}), 320, 160)
+	tt.Frame()
+	preview, ok := tt.AccessByRole(ui.RoleTab, "Preview tab")
+	if !ok || !preview.Selected {
+		t.Fatalf("selected tab = %+v, found %v", preview, ok)
+	}
+	tt.Key(0, ui.KeyTab)
+	if !tt.Focused("Preview tab") {
+		t.Fatal("Tab did not enter the track at its selected tab")
+	}
+	tt.Key(0, ui.KeyRight)
+	if !tt.Focused("Markdown tab") {
+		t.Fatal("Right did not move focus to the next tab")
+	}
+	tt.Key(0, ui.KeyLeft)
+	if !tt.Focused("Preview tab") {
+		t.Fatal("Left did not move focus back to the previous tab")
+	}
+}
+
+func TestSegmentPressHasImmediateFeedback(t *testing.T) {
+	tt := ui.NewTester(onChrome(func(c *ui.Context) {
+		portrait.Track(c, "views", func(track *portrait.Segments) {
+			track.Segment(c, "Preview", "Preview", true)
+			track.Segment(c, "Markdown", "Markdown", false)
+		})
+	}), 320, 160)
+	tt.Frame()
+	info, _ := tt.AccessByRole(ui.RoleTab, "Markdown")
+	rest := region(tt.Image(), info.Bounds)
+	tt.Press(info.Bounds.X+info.Bounds.W/2, info.Bounds.Y+info.Bounds.H/2)
+	tt.Advance(portrait.Motion.Press + 20*time.Millisecond)
+	if n := differs(rest, region(tt.Image(), info.Bounds)); n == 0 {
+		t.Fatal("holding an unselected segment changed no pixels")
+	}
+}
+
+func TestSegmentTextMeetsAAOnTrack(t *testing.T) {
+	eachLook(t, func(t *testing.T, _ portrait.Space, _ bool) {
+		paper := wcagColor(portrait.Colors.Paper)
+		track := wcagOver(wcagColor(portrait.Materials.Track.From), paper)
+		if ratio := wcagContrast(wcagColor(portrait.Colors.Ink2), track); ratio < 4.5 {
+			t.Errorf("unselected segment contrast %.3f, want >= 4.5", ratio)
+		}
+	})
+}
+
+func TestRevealForIsVisibleWithoutHover(t *testing.T) {
+	render := func(on bool, preferences ui.Preferences) []uint32 {
+		tt := ui.NewTesterWith(onChrome(func(c *ui.Context) {
+			portrait.RevealFor(c, ui.Box(c).Size(40, 40).Radius(portrait.Radii.M).Background(portrait.Colors.Accent), on)
+		}), 160, 120, ui.TesterOptions{Preferences: preferences})
+		tt.Frame()
+		return region(tt.Image(), ui.Rect{X: 40, Y: 40, W: 40, H: 40})
+	}
+	visible := render(true, ui.Preferences{})
+	if differs(visible, render(false, ui.Preferences{NoHover: true})) != 0 {
+		t.Fatal("no-hover RevealFor is not visible at rest")
+	}
+	if differs(visible, render(false, ui.Preferences{})) == 0 {
+		t.Fatal("ordinary hidden RevealFor unexpectedly paints its contents")
+	}
+}
+
 func TestCapsuleSlidesToTheNewSegment(t *testing.T) {
 	s := &segments{}
 	tt := ui.NewTester(s.view, 480, 160)

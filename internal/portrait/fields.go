@@ -108,7 +108,7 @@ func SearchField(c *ui.Context, value *string, spec SearchSpec) Field {
 		}
 	})
 	if spec.SingleFocusRing && frame.FocusWithin() {
-		Surface{Colors.Paper, Colors.Paper, Shadows{out(0, 0, 0, 3, Colors.Focus)}}.Apply(frame)
+		Surface{Colors.Paper, Colors.Paper, Shadows{out(0, 0, 0, 1, Colors.Accent), out(0, 0, 0, 3, Colors.Focus)}}.Apply(frame)
 	} else {
 		applyFieldLook(frame, false)
 	}
@@ -154,15 +154,17 @@ func TextArea(c *ui.Context, value *string, spec AreaSpec) ui.Element {
 }
 
 func FormRow(c *ui.Context, label, help string, control func()) ui.Element {
-	return ui.Column(c).FillWidth().Gap(Form.LabelGap).Children(func() {
-		if label != "" {
-			Type.Meta.Apply(ui.Text(c, label)).FontWeight(500).TextColor(Colors.Ink2)
-		}
-		if control != nil {
-			control()
-		}
+	return ui.Column(c).FillWidth().Padding(0, 0, Form.Gap, 0).Children(func() {
+		ui.Column(c).FillWidth().Gap(Form.LabelGap).Children(func() {
+			if label != "" {
+				Type.Meta.Apply(ui.Text(c, label)).FontWeight(500).TextColor(Colors.Ink2)
+			}
+			if control != nil {
+				control()
+			}
+		})
 		if help != "" {
-			Caption(c, help).Wrap()
+			Caption(c, help).Padding(Form.HelpGap, 0, 0, 0).Wrap()
 		}
 	})
 }
@@ -232,7 +234,7 @@ func Stepper(c *ui.Context, value *float32, lo, hi, step float32, format func(fl
 			*value = max(lo, *value-step)
 		}
 		ui.Row(c).Height(Form.FieldCompact).MinWidth(44).Justify(ui.Center).AlignItems(ui.Center).Children(func() {
-			Type.UI.Apply(ui.Text(c, format(*value))).TextColor(Colors.Ink)
+			Type.UI.Apply(ui.Text(c, format(*value))).TextColor(Colors.Ink).FontFeatures("tnum")
 		})
 		plus := group.Add(ButtonWith(c, "", "Increase value", ButtonSpec{Look: Raised, Size: Form.FieldCompact, Leading: IconPlus}).Disabled(*value >= hi))
 		if plus.Clicked() {

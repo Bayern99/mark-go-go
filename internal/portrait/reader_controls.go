@@ -43,14 +43,16 @@ func CompactRadio[T comparable](c *ui.Context, selected *T, value T, label strin
 }
 
 func radioWithLabel[T comparable](c *ui.Context, selected *T, value T, label string, style TypeStyle, weight int) ui.Element {
-	r := ui.RadioBase(c, selected, value).Gap(8).AlignItems(ui.Center).FocusRing(false)
+	r := ui.RadioBase(c, selected, value).Gap(8).MinHeight(Sizes.Compact).AlignItems(ui.Center).FocusRing(false)
 	chosen := *selected == value
 	r.Children(func() {
 		box := ui.Box(c).Size(16, 16).Shrink(0).AccessHidden(true)
 		box.Draw(func(p *ui.Painter, bounds ui.Rect) {
-			fill, border := Colors.Paper, Colors.LineStrong
+			fill, border := Colors.Paper, Colors.Ink3
 			if chosen {
 				border = Colors.Accent
+			} else if c.Preferences().HighContrast {
+				border = Colors.Ink2
 			} else if r.Hovered() {
 				fill, border = Colors.AccentSoft, Colors.Accent
 			}
@@ -97,8 +99,9 @@ func SegmentedWithSpec(c *ui.Context, selected *int, options []string, label str
 	spec.Track.Apply(track)
 	track.Children(func() {
 		for i, option := range options {
-			segment := parts.Segment(i).Height(Sizes.Regular-4).Padding(0, 10).Radius(Radii.Segment).AlignItems(ui.Center).Justify(ui.Center).MinWidth(0)
-			ink := Colors.Ink3
+			segment := parts.Segment(i).Height(Sizes.Regular-4).Padding(0, 10).Radius(Radii.Segment).AlignItems(ui.Center).Justify(ui.Center).MinWidth(0).FocusRing(true)
+			RowHover(segment, segment.Hovered() && i != *selected)
+			ink := Colors.Ink2
 			if i == *selected || segment.Hovered() {
 				ink = Colors.Ink
 			}

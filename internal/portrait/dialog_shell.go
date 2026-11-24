@@ -9,6 +9,7 @@ type DialogSpec struct {
 	Radius        float32
 	Glass         bool
 	PlainScrim    bool
+	Nested        bool
 	Drawer        bool
 	DrawerRight   bool
 	DrawerMotion  OverlayMotion
@@ -34,7 +35,11 @@ func DialogShell(c *ui.Context, key string, open *bool, spec DialogSpec, build f
 		spec.Role = ui.RoleDialog
 	}
 	return ui.DialogBase(c.Key(key), open, func(back, panel ui.Element) {
-		if spec.Glass {
+		if spec.Nested {
+			// A dialog above another modal needs separation, not a second
+			// full-strength backdrop blur and scrim.
+			back.Background(Colors.Scrim)
+		} else if spec.Glass {
 			Materials.Backdrop.Apply(back)
 		} else if spec.PlainScrim {
 			back.Background(Colors.Scrim)
@@ -63,7 +68,7 @@ func DialogShell(c *ui.Context, key string, open *bool, spec DialogSpec, build f
 			Radius(spec.Radius).Clip().Role(spec.Role).Label(spec.Label).
 			TransformOrigin(0.5, 0.5)
 		if !spec.Drawer {
-			panel.Transition(Overlays.Popup.Transition(c, c.KeyboardInput()))
+			back.Transition(Overlays.Scrim.Transition(c, c.KeyboardInput()))
 		}
 		if spec.Height != 0 {
 			panel.Height(min(spec.Height, max(0, windowHeight-2*spec.Margin)))

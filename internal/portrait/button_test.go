@@ -99,6 +99,52 @@ func TestButtonSpecLookSizeAndStateMatrix(t *testing.T) {
 	}
 }
 
+func TestDisabledButtonsDoNotPaintHoverFeedback(t *testing.T) {
+	looks := []struct {
+		name string
+		look portrait.Look
+	}{
+		{"raised", portrait.Raised}, {"accent", portrait.Accent}, {"quiet", portrait.Quiet},
+		{"danger", portrait.Danger}, {"danger-outline", portrait.DangerOutline}, {"link", portrait.Link},
+	}
+	for _, tc := range looks {
+		t.Run(tc.name, func(t *testing.T) {
+			tt := ui.NewTester(onChrome(func(c *ui.Context) {
+				portrait.ButtonWith(c, "Save", "Save", portrait.ButtonSpec{Look: tc.look, Disabled: true})
+			}), 240, 120)
+			tt.Frame()
+			info, _ := tt.AccessByRole(ui.RoleButton, "Save")
+			rest := region(tt.Image(), info.Bounds)
+			tt.Move(info.Bounds.X+info.Bounds.W/2, info.Bounds.Y+info.Bounds.H/2)
+			tt.Advance(300 * time.Millisecond)
+			if n := differs(rest, region(tt.Image(), info.Bounds)); n != 0 {
+				t.Fatalf("disabled hover changed %d pixels", n)
+			}
+		})
+	}
+}
+
+func TestDangerButtonsSeparateFromSimilarAccents(t *testing.T) {
+	eachLook(t, func(t *testing.T, _ portrait.Space, _ bool) {
+		wantWarning := tokenHueDistance(portrait.Colors.Accent, portrait.Colors.Danger) <= 35
+		for _, look := range []portrait.Look{portrait.Danger, portrait.DangerOutline} {
+			render := func(leading portrait.Icon) []uint32 {
+				tt := ui.NewTester(onChrome(func(c *ui.Context) {
+					portrait.ButtonWith(c, "Delete", "Delete", portrait.ButtonSpec{Look: look, Leading: leading})
+				}), 240, 120)
+				tt.Frame()
+				info, _ := tt.AccessByRole(ui.RoleButton, "Delete")
+				return region(tt.Image(), info.Bounds)
+			}
+			automatic, explicit := render(portrait.IconNone), render(portrait.IconWarning)
+			same := differs(automatic, explicit) == 0
+			if same != wantWarning {
+				t.Errorf("look %v: automatic warning = %v, want %v (hue distance %.1f)", look, same, wantWarning, tokenHueDistance(portrait.Colors.Accent, portrait.Colors.Danger))
+			}
+		}
+	})
+}
+
 func TestButtonSpecDefaultsToRegularAndSupportsBothIcons(t *testing.T) {
 	tt := ui.NewTester(onChrome(func(c *ui.Context) {
 		portrait.ButtonWith(c, "Synchronize", "Synchronize document", portrait.ButtonSpec{

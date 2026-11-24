@@ -305,11 +305,21 @@ func (p *panel) composer(c *ui.Context) {
 			text(c, portrait.Type.Meta, "Previous message was not sent:").TextColor(portrait.Colors.Ink2)
 			text(c, portrait.Type.Meta, s.failedDraft).MaxLines(2).Ellipsis("…").TextColor(portrait.Colors.Ink)
 			ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-				if smallButton(c, "Restore failed draft", "Restore unsent prompt and sources").Clicked() {
-					s.draft = s.failedDraft
-					s.sources = mergeSources(s.failedSources, s.sources)
-					s.failedDraft = ""
-					s.failedSources = nil
+				composerHasInput := s.draft != "" || len(s.sources) > 0
+				actionTitle := "Restore failed draft"
+				if composerHasInput {
+					actionTitle = "Swap with failed draft"
+				}
+				if smallButton(c, actionTitle, "Restore unsent prompt and sources").Clicked() {
+					if composerHasInput {
+						s.draft, s.failedDraft = s.failedDraft, s.draft
+						s.sources, s.failedSources = s.failedSources, s.sources
+					} else {
+						s.draft = s.failedDraft
+						s.sources = s.failedSources
+						s.failedDraft = ""
+						s.failedSources = nil
+					}
 				}
 				if portrait.QuietIconButton(c, portrait.IconX, "Dismiss failed draft").Clicked() {
 					s.failedDraft = ""
@@ -406,7 +416,7 @@ func (p *panel) composer(c *ui.Context) {
 					s.actionsOpen = true
 				} else if p.actionsFromSlash || strings.Contains(strings.TrimPrefix(s.draft, "/"), "/") {
 					if p.actionsFromSlash {
-						p.commandQuery = strings.TrimSpace(strings.TrimPrefix(s.draft, "/"))
+						p.commandQuery = ""
 					}
 					p.actionsFromSlash = false
 					s.actionsOpen = false

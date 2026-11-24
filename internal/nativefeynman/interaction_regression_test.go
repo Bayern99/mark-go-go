@@ -348,6 +348,9 @@ func TestSlashPopoverClosesWhenDraftStopsMatching(t *testing.T) {
 	if p.state.actionsOpen {
 		t.Fatal("slash popover stayed open with stale match after typing /revzzz")
 	}
+	if p.commandQuery != "" {
+		t.Fatalf("closing slash popover left stale commandQuery %q", p.commandQuery)
+	}
 }
 
 func TestAsyncSendFailurePreservesRawIndentationAndSeparatesInterveningDraft(t *testing.T) {
@@ -356,6 +359,18 @@ func TestAsyncSendFailurePreservesRawIndentationAndSeparatesInterveningDraft(t *
 	p.state.restoreDraft("    code with indentation\n", []string{"/workspace/notes/a.md"})
 	if got := p.state.draft; got != "    code with indentation\n" {
 		t.Fatalf("empty composer restored %q, want raw indented draft", got)
+	}
+
+	// Whitespace-only indentation + attachment in the composer must not be overwritten.
+	pSpace := fixtureReadyPanel()
+	pSpace.state.draft = "    "
+	pSpace.state.sources = []string{"/workspace/notes/indent.md"}
+	pSpace.state.restoreDraft("failed A", []string{"/workspace/notes/a.md"})
+	if pSpace.state.draft != "    " || len(pSpace.state.sources) != 1 || pSpace.state.sources[0] != "/workspace/notes/indent.md" {
+		t.Fatalf("whitespace composer overwritten: draft=%q sources=%v", pSpace.state.draft, pSpace.state.sources)
+	}
+	if pSpace.state.failedDraft != "failed A" || len(pSpace.state.failedSources) != 1 {
+		t.Fatalf("failed submission lost: %q %v", pSpace.state.failedDraft, pSpace.state.failedSources)
 	}
 
 	p2 := fixtureReadyPanel()
@@ -376,14 +391,27 @@ func TestAsyncSendFailurePreservesRawIndentationAndSeparatesInterveningDraft(t *
 	}, 520, 480)
 	app.Frame()
 	if err := app.Click("Restore unsent prompt and sources"); err != nil {
-		t.Fatalf("missing restore failed draft control: %v", err)
+		t.Fatalf("missing swap failed draft control: %v", err)
 	}
 	app.Frame()
-	if p2.state.draft != "    old failed prompt\n" {
-		t.Fatalf("restored draft = %q, want exact failed draft", p2.state.draft)
+	if p2.state.draft != "    old failed prompt\n" || len(p2.state.sources) != 1 || p2.state.sources[0] != "/workspace/notes/old.md" {
+		t.Fatalf("swap did not restore exact failed draft and sources: %q %v", p2.state.draft, p2.state.sources)
 	}
-	if len(p2.state.sources) != 2 {
-		t.Fatalf("restored sources = %v, want both old and current sources", p2.state.sources)
+	if p2.state.failedDraft != "new draft typed while waiting" || len(p2.state.failedSources) != 1 || p2.state.failedSources[0] != "/workspace/notes/new.md" {
+		t.Fatalf("swap lost intervening draft or sources: %q %v", p2.state.failedDraft, p2.state.failedSources)
+	}
+	// Sending the active draft must not discard the held failed draft.
+	sent := make(chan struct{}, 1)
+	p2.submitPrompt = func(string, string, string, string, []string) (string, error) {
+		sent <- struct{}{}
+		return "", nil
+	}
+	if !p2.send() {
+		t.Fatal("send() did not accept active draft")
+	}
+	<-sent
+	if p2.state.failedDraft != "new draft typed while waiting" || len(p2.state.failedSources) != 1 {
+		t.Fatalf("send() discarded held failed draft: %q %v", p2.state.failedDraft, p2.state.failedSources)
 	}
 }
 
@@ -398,10 +426,20 @@ func TestFeynmanSettingsErrorRendersDuringSearchAndRejectsEmptyHostnameURL(t *te
 	p.settingsRoot = p.state.root
 	p.state.cliError = "MCP server failed to add"
 	app := ui.NewTester(func(c *ui.Context) {
-		p.drawSettingsPage(c, "mcp", nativeui.SettingsQuery{Text: "mcp"})
-	}, 720, 600)
+		ui.Column(c).Fill().Children(func() {
+			q := nativeui.SettingsQuery{Text: "remove"}
+			ui.Column(c.Key("search-page-mcp")).FillWidth().Children(func() { p.drawSettingsPage(c, "mcp", q) })
+			ui.Column(c.Key("search-page-packages")).FillWidth().Children(func() { p.drawSettingsPage(c, "packages", q) })
+		})
+	}, 720, 900)
 	app.Frame()
-	if !app.HasText("MCP server failed to add") {
-		t.Fatalf("cliError hidden while Settings search is active; texts: %v", app.Texts())
+	alerts := 0
+	for _, txt := range app.Texts() {
+		if txt == "MCP server failed to add" {
+			alerts++
+		}
+	}
+	if alerts != 1 {
+		t.Fatalf("cliError rendered %d times during multi-page search 'remove', want exactly 1; texts: %v", alerts, app.Texts())
 	}
 }

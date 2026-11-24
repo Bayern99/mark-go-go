@@ -85,8 +85,6 @@ func (p *panel) send() bool {
 	}
 	s.draft = ""
 	s.sources = nil
-	s.failedDraft = ""
-	s.failedSources = nil
 	s.status, s.progress, s.error = statusWorking, "Working…", ""
 	p.chatFollow = true
 	if win := p.window.Native(); win != nil {
@@ -142,7 +140,6 @@ func (p *panel) queueMessage(steer bool) bool {
 	text := strings.TrimSpace(rawDraft)
 	sources := append([]string(nil), s.sources...)
 	s.draft, s.sources, s.error = "", nil, ""
-	s.failedDraft, s.failedSources = "", nil
 	p.chatFollow = true
 	if win := p.window.Native(); win != nil {
 		win.Invalidate()

@@ -101,6 +101,31 @@ func (p *panel) settingsPages() []nativeui.SettingsPage {
 	}
 }
 
+func feynmanSettingsTabMatches(tab string, q nativeui.SettingsQuery) bool {
+	switch tab {
+	case "search":
+		return q.Matches("Web search", "Provider & API key routing and saved authentication.", "web search provider api key exa brave tavily") ||
+			q.Matches("alphaXiv", "Paper search and annotation account.", "alphaxiv account papers")
+	case "mcp":
+		return q.Matches("MCP Servers", "Configured servers and tool exposure.", "mcp servers transport http stdio headers bearer command arguments environment exposure project local add remove")
+	case "packages":
+		return q.Matches("Packages", "Workflows, skills, and extensions.", "packages workflows skills extensions install remove update target")
+	case "diagnostics":
+		return q.Matches("Diagnostics", "Feynman CLI doctor, setup, and preview status.", "diagnostics feynman cli doctor setup preview status refresh")
+	default:
+		return q.Matches("Models & Providers", "Authentication, service tier, default model, and picker visibility.", "models providers authentication service tier default pin show picker sign in log out")
+	}
+}
+
+func firstMatchingFeynmanSettingsTab(q nativeui.SettingsQuery) string {
+	for _, tab := range []string{"models", "search", "mcp", "packages", "diagnostics"} {
+		if feynmanSettingsTabMatches(tab, q) {
+			return tab
+		}
+	}
+	return ""
+}
+
 func (p *panel) drawSettingsPage(c *ui.Context, tab string, q nativeui.SettingsQuery) {
 	p.syncConnection()
 	s := p.state
@@ -131,7 +156,7 @@ func (p *panel) drawSettingsPage(c *ui.Context, tab string, q nativeui.SettingsQ
 	if p.settingsRoot != s.root && !s.cliBusy {
 		p.loadSettings(s.root)
 	}
-	if s.cliError != "" {
+	if s.cliError != "" && (!q.Active() || tab == firstMatchingFeynmanSettingsTab(q)) {
 		portrait.Alert(c, portrait.Tones.Danger, "Feynman CLI", s.cliError)
 	}
 	if s.cliResult != "" && !q.Active() {
@@ -155,7 +180,9 @@ func (p *panel) drawSettingsPage(c *ui.Context, tab string, q nativeui.SettingsQ
 	if drawModels && q.Match("Models & Providers", "Authentication, service tier, default model, and picker visibility.", "models providers authentication service tier default pin show picker sign in log out") {
 		p.modelSettings(c)
 	}
-	p.drawConfirmation(c)
+	if !q.Active() || tab == firstMatchingFeynmanSettingsTab(q) {
+		p.drawConfirmation(c)
+	}
 }
 
 func (p *panel) resetSearchSettings() {

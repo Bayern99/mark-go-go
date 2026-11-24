@@ -947,14 +947,24 @@ func TestStandaloneImageTakesTheRoomOfItsOwnLines(t *testing.T) {
 }
 
 func TestPreviewSoftBreaksJoinCJKAroundInlineEmphasisWithoutASpace(t *testing.T) {
-	const src = "中文**结束**\n中文继续\n"
-	d := nativeeditor.New(src)
-	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill().AutoFocus() }, 680, 240)
-	tt.Frame()
-	tt.Key(ui.Cmd, ui.KeyA)
-	tt.Key(ui.Cmd, ui.KeyC)
-	if got, want := tt.Clipboard(), "中文结束中文继续\n"; got != want {
-		t.Fatalf("copied CJK emphasis soft break = %q, want %q", got, want)
+	for _, tc := range []struct {
+		name string
+		src  string
+		want string
+	}{
+		{"emphasis", "中文**结束**\n中文继续\n", "中文结束中文继续\n"},
+		{"literal unmatched asterisk", "中文*\n中文继续\n", "中文* 中文继续\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := nativeeditor.New(tc.src)
+			tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill().AutoFocus() }, 680, 240)
+			tt.Frame()
+			tt.Key(ui.Cmd, ui.KeyA)
+			tt.Key(ui.Cmd, ui.KeyC)
+			if got := tt.Clipboard(); got != tc.want {
+				t.Fatalf("copied CJK soft break = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

@@ -106,11 +106,9 @@ func newPaneState(root string) *paneState {
 // the user already started a new draft, the failed submission and its sources
 // stay separately available for recovery instead of being dropped or merged.
 func (s *paneState) restoreDraft(rawDraft string, sources []string) {
-	if strings.TrimSpace(s.draft) == "" {
+	if s.draft == "" && len(s.sources) == 0 {
 		s.draft = rawDraft
-		s.sources = mergeSources(sources, s.sources)
-		s.failedDraft = ""
-		s.failedSources = nil
+		s.sources = append([]string(nil), sources...)
 		return
 	}
 	s.failedDraft = rawDraft

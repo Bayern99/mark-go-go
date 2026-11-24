@@ -227,7 +227,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 		for j, in := range inlines {
 			switch in.Kind {
 			case parser.SoftBreak, parser.LineBreak:
-				p.reflowBreak(src, in, inlineFloor(b, inlines, j))
+				p.reflowBreak(src, inlines, j, inlineFloor(b, inlines, j))
 			case parser.Strong, parser.Emphasis, parser.Strikethrough:
 				if in.Next > j+1 {
 					p.replace(in.Start, inlines[j+1].Start, "")
@@ -344,7 +344,8 @@ func inlineFloor(block *parser.Block, inlines []parser.Inline, i int) int {
 // soft break reads as one space, or as nothing between two CJK runes, where
 // CommonMark and CJK typesetting join the lines; a hard break, two trailing
 // spaces or a backslash, keeps its break.
-func (p *previewLayout) reflowBreak(src string, in parser.Inline, floor int) {
+func (p *previewLayout) reflowBreak(src string, inlines []parser.Inline, index, floor int) {
+	in := inlines[index]
 	start, end := in.Start, in.End
 	for start > floor && (src[start-1] == ' ' || src[start-1] == '\t') {
 		start--
@@ -355,7 +356,7 @@ func (p *previewLayout) reflowBreak(src string, in parser.Inline, floor int) {
 	sep := "\n"
 	if in.Kind == parser.SoftBreak {
 		sep = " "
-		if joinsWithoutSpace(src, start, end) {
+		if joinsWithoutSpace(inlines, index) {
 			sep = ""
 		}
 	}
@@ -363,34 +364,18 @@ func (p *previewLayout) reflowBreak(src string, in parser.Inline, floor int) {
 	p.replace(start, end, sep)
 }
 
-// joinsWithoutSpace reports whether the visible runes around a soft break are
-// CJK, whose lines join without a word space even across inline emphasis marks.
-func joinsWithoutSpace(src string, start, end int) bool {
-	if start <= 0 || end >= len(src) {
+// joinsWithoutSpace reports whether the visible inline runes around a soft
+// break are CJK, ignoring hidden Markdown emphasis delimiters while keeping
+// literal visible punctuation such as an unmatched '*'.
+func joinsWithoutSpace(inlines []parser.Inline, index int) bool {
+	beforeText := strings.TrimRight(parser.PlainText(inlines[:index]), " \t")
+	afterText := strings.TrimLeft(parser.PlainText(inlines[index+1:]), " \t")
+	if beforeText == "" || afterText == "" {
 		return false
 	}
-	left := start
-	for left > 0 && isInlineDelimiter(src[left-1]) {
-		left--
-	}
-	right := end
-	for right < len(src) && isInlineDelimiter(src[right]) {
-		right++
-	}
-	if left <= 0 || right >= len(src) {
-		return false
-	}
-	before, _ := utf8.DecodeLastRuneInString(src[:left])
-	after, _ := utf8.DecodeRuneInString(src[right:])
+	before, _ := utf8.DecodeLastRuneInString(beforeText)
+	after, _ := utf8.DecodeRuneInString(afterText)
 	return cjkRune(before) && cjkRune(after)
-}
-
-func isInlineDelimiter(b byte) bool {
-	switch b {
-	case '*', '_', '~', '`':
-		return true
-	}
-	return false
 }
 
 // cjkRune reports whether r is CJK writing: ideographs, kana or their

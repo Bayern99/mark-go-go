@@ -21,8 +21,13 @@ var Tones ToneScale
 
 func tonesFor(p Palette) ToneScale {
 	accent := newTone(p, p.Accent, p.Accent)
+	neutral := newTone(p, p.Ink, p.Ink2)
+	// A neutral notice announces no semantic boundary: a hairline keeps it
+	// calm and lets the wash carry the edge, where the semantic tones keep
+	// the border that has to hold 3:1 on paper.
+	neutral.Border = p.Line
 	return ToneScale{
-		Neutral: newTone(p, p.Ink, p.Ink2),
+		Neutral: neutral,
 		Accent:  accent,
 		Success: newTone(p, p.Success, p.Success),
 		Info:    accent,

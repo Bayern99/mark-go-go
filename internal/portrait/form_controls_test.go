@@ -116,3 +116,43 @@ func TestPortraitDisclosureOutputAndListRow(t *testing.T) {
 		t.Fatal("list row did not activate")
 	}
 }
+
+func TestTextAreaBareHandsItsEdgeToTheContainer(t *testing.T) {
+	value := "Reply"
+	for _, tc := range []struct {
+		name       string
+		bare       bool
+		wantBorder bool
+	}{
+		{"framed", false, true},
+		{"bare", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tt := ui.NewTester(onChrome(func(c *ui.Context) {
+				portrait.TextArea(c, &value, portrait.AreaSpec{Label: "Composer", Rows: 2, Bare: tc.bare})
+			}), 320, 200)
+			tt.Frame()
+			input, ok := tt.AccessByRole(ui.RoleTextField, "Composer")
+			if !ok || !input.Multiline {
+				t.Fatalf("text area = %+v, found %v", input, ok)
+			}
+			edge := int(input.Bounds.X - portrait.Form.PadX)
+			mid := int(input.Bounds.Y + input.Bounds.H/2)
+			chrome := tt.Image().RGBAAt(1, 1)
+			got := tt.Image().RGBAAt(edge, mid)
+			if tc.wantBorder && got == chrome {
+				t.Fatal("framed text area painted no edge")
+			}
+			if !tc.wantBorder && got != chrome {
+				t.Fatalf("bare text area painted %v over the chrome behind it", got)
+			}
+			inside := tt.Image().RGBAAt(edge+1, mid)
+			if !tc.wantBorder && inside != chrome {
+				t.Fatalf("bare text area painted its own background %v", inside)
+			}
+			if tc.wantBorder && inside == chrome {
+				t.Fatal("framed text area painted no background")
+			}
+		})
+	}
+}

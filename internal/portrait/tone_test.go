@@ -15,13 +15,17 @@ func TestTonesMeetWCAGAA(t *testing.T) {
 		for _, tc := range []struct {
 			name string
 			tone portrait.Tone
+			// A hairline tone announces no semantic boundary: its wash carries
+			// the shape, so its border token is the calm line instead of a
+			// 3:1 boundary.
+			hairline bool
 		}{
-			{"Neutral", portrait.Tones.Neutral},
-			{"Accent", portrait.Tones.Accent},
-			{"Success", portrait.Tones.Success},
-			{"Info", portrait.Tones.Info},
-			{"Warning", portrait.Tones.Warning},
-			{"Danger", portrait.Tones.Danger},
+			{"Neutral", portrait.Tones.Neutral, true},
+			{"Accent", portrait.Tones.Accent, false},
+			{"Success", portrait.Tones.Success, false},
+			{"Info", portrait.Tones.Info, false},
+			{"Warning", portrait.Tones.Warning, false},
+			{"Danger", portrait.Tones.Danger, false},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				tone := tc.tone
@@ -33,7 +37,13 @@ func TestTonesMeetWCAGAA(t *testing.T) {
 
 				border := wcagContrast(wcagColor(tone.Border), paper)
 				ring := wcagContrast(wcagColor(tone.Ring), paper)
-				assertWCAGContrast(t, "Border on Paper", border, 3)
+				if tc.hairline {
+					if tone.Border != portrait.Colors.Line {
+						t.Errorf("Border = %+v, want the Line hairline %+v", tone.Border, portrait.Colors.Line)
+					}
+				} else {
+					assertWCAGContrast(t, "Border on Paper", border, 3)
+				}
 				assertWCAGContrast(t, "Ring on Paper", ring, 3)
 
 				states := []struct {

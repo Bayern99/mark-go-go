@@ -138,8 +138,10 @@ func TestTokensMatchTheirSource(t *testing.T) {
 	}
 
 	accent := expectedTone(portrait.Colors.Accent, portrait.Colors.Accent)
+	neutral := expectedTone(portrait.Colors.Ink, portrait.Colors.Ink2)
+	neutral.Border = portrait.Colors.Line
 	wantTones := portrait.ToneScale{
-		Neutral: expectedTone(portrait.Colors.Ink, portrait.Colors.Ink2),
+		Neutral: neutral,
 		Accent:  accent,
 		Success: expectedTone(portrait.Colors.Success, portrait.Colors.Success),
 		Info:    accent,

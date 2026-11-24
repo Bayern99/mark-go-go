@@ -11,12 +11,23 @@ const (
 // Checkbox creates a Portrait check box editing checked. Disable or mark it
 // invalid with the returned element's Disabled and Invalid methods.
 func Checkbox(c *ui.Context, checked *bool, label string) ui.Element {
+	return checkboxWithLabel(c, checked, label, Type.Small, 500)
+}
+
+// CompactCheckbox is the check box for toolbars and cards, where its label has
+// to sit at 13/18 like the buttons and card titles beside it. Checkbox keeps
+// the 14/22 label that Decision dialogs and reader surfaces are set in.
+func CompactCheckbox(c *ui.Context, checked *bool, label string) ui.Element {
+	return checkboxWithLabel(c, checked, label, Type.UI, 400)
+}
+
+func checkboxWithLabel(c *ui.Context, checked *bool, label string, style TypeStyle, weight int) ui.Element {
 	control := ui.CheckboxBase(c, checked).Gap(checkboxGap).AlignItems(ui.Center).FocusRing(false)
 	state := ui.CheckOff
 	if *checked {
 		state = ui.CheckOn
 	}
-	CheckboxFace(c, control, state, label)
+	checkboxFace(c, control, state, label, style, weight)
 	return control
 }
 
@@ -32,6 +43,10 @@ func CheckboxState(c *ui.Context, state *ui.CheckState, label string) ui.Element
 // Markdown Preview. The control supplies interaction state; the face owns all
 // geometry and color so every surface stays pixel-identical.
 func CheckboxFace(c *ui.Context, control ui.Element, state ui.CheckState, label string) {
+	checkboxFace(c, control, state, label, Type.Small, 500)
+}
+
+func checkboxFace(c *ui.Context, control ui.Element, state ui.CheckState, label string, style TypeStyle, weight int) {
 	control.Children(func() {
 		fill, border := Colors.Paper, Colors.LineStrong
 		if state != ui.CheckOff {
@@ -60,7 +75,7 @@ func CheckboxFace(c *ui.Context, control ui.Element, state ui.CheckState, label 
 			}
 		})
 		if label != "" {
-			Type.Small.Apply(ui.Text(c, label)).FontWeight(500).TextColor(Colors.Ink).MinWidth(0).Wrap().AccessHidden(true)
+			style.Apply(ui.Text(c, label)).FontWeight(weight).TextColor(Colors.Ink).MinWidth(0).Wrap().AccessHidden(true)
 		}
 	})
 	if label != "" {

@@ -24,7 +24,7 @@ func Alert(c *ui.Context, tone Tone, title, body string, actions ...AlertAction)
 				Type.UI.Apply(ui.Text(c, title)).FontWeight(600).TextColor(tone.Ink)
 			}
 			if body != "" {
-				Type.Small.Apply(ui.Text(c, body)).TextColor(tone.Ink)
+				Type.UI.Apply(ui.Text(c, body)).TextColor(tone.Ink)
 			}
 		})
 		if len(actions) > 0 && actions[0].Label != "" {

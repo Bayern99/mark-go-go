@@ -44,11 +44,11 @@ func Confirm(c *ui.Context, open *bool, spec ConfirmSpec) ui.Element {
 					MinWidth(0).Wrap().AccessHidden(true)
 			}
 			ui.Row(c).Justify(ui.End).AlignItems(ui.Center).Gap(Form.DialogGap).Wrap().Children(func() {
-				cancel := Button(c, spec.CancelLabel, spec.CancelLabel).AutoFocus()
+				cancel := QuietButton(c, spec.CancelLabel, spec.CancelLabel).AutoFocus()
 				if cancel.Clicked() {
 					*open = false
 				}
-				confirm := confirmToneButton(c, spec.ConfirmLabel, spec.Tone)
+				confirm := ButtonWith(c, spec.ConfirmLabel, spec.ConfirmLabel, ButtonSpec{Look: confirmLook(spec.Tone)})
 				if confirm.Clicked() {
 					*open = false
 					if spec.OnConfirm != nil {
@@ -74,13 +74,11 @@ func Confirm(c *ui.Context, open *bool, spec ConfirmSpec) ui.Element {
 	return panel
 }
 
-func confirmToneButton(c *ui.Context, label string, tone Tone) ui.Element {
-	button := ui.ButtonBase(c.Key("confirm action:"+label)).Label(label).
-		Height(Sizes.Regular).Padding(0, 11).Radius(Radii.M).
-		AlignItems(ui.Center).Justify(ui.Center).Background(tone.Solid)
-	button.Children(func() {
-		Type.Control.Apply(ui.Text(c, label)).FontWeight(500).TextColor(tone.OnSolid).
-			MaxLines(1).Ellipsis("…")
-	})
-	return button
+// confirmLook gives Confirm the same button organ as Decision, Prompt and
+// Move: a destructive tone fills with Danger, every other tone with Accent.
+func confirmLook(tone Tone) Look {
+	if tone == Tones.Danger {
+		return Danger
+	}
+	return Accent
 }

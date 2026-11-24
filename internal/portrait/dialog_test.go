@@ -181,3 +181,42 @@ func TestConfirmKeyboardOpeningSkipsPopupTransition(t *testing.T) {
 		t.Fatal("keyboard-triggered Confirm scheduled a popup transition")
 	}
 }
+
+func TestConfirmSharesDecisionButtonOrgan(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		tone portrait.Tone
+		fill ui.Color
+	}{
+		{"danger", portrait.Tones.Danger, portrait.Tones.Danger.Solid},
+		{"warning is not destructive", portrait.Tones.Warning, portrait.Colors.Accent},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			open := true
+			tt := ui.NewTester(onChrome(func(c *ui.Context) {
+				portrait.Confirm(c, &open, portrait.ConfirmSpec{Title: "Discard draft?", Body: "It cannot be undone.", ConfirmLabel: "Discard", Tone: tc.tone})
+			}), 600, 400)
+			tt.Frame()
+			tt.Advance(time.Second)
+			cancel, _ := tt.AccessByRole(ui.RoleButton, "Cancel")
+			confirm, _ := tt.AccessByRole(ui.RoleButton, "Discard")
+			img := tt.Image()
+			// Cancel is Quiet: at rest it shows the sheet behind it, where a
+			// Raised button would paint its own fill.
+			between := img.RGBAAt(int(cancel.Bounds.X)-4, int(cancel.Bounds.Y+cancel.Bounds.H/2))
+			if got := img.RGBAAt(int(cancel.Bounds.X+3), int(cancel.Bounds.Y+cancel.Bounds.H/2)); got != between {
+				t.Fatalf("Cancel painted %v over the sheet's %v", got, between)
+			}
+			px := img.RGBAAt(int(confirm.Bounds.X+4), int(confirm.Bounds.Y+confirm.Bounds.H/2))
+			if px.R != tc.fill.R || px.G != tc.fill.G || px.B != tc.fill.B {
+				t.Fatalf("Discard fill = #%02x%02x%02x, want #%02x%02x%02x", px.R, px.G, px.B, tc.fill.R, tc.fill.G, tc.fill.B)
+			}
+			if err := tt.Click("Discard"); err != nil {
+				t.Fatal(err)
+			}
+			if open {
+				t.Fatal("Discard did not close the dialog")
+			}
+		})
+	}
+}

@@ -32,6 +32,17 @@ func Slider(c *ui.Context, value *float64, lo, hi float64) ui.Element {
 
 // Radio draws the shared radio organ on MyGo's accessible radio primitive.
 func Radio[T comparable](c *ui.Context, selected *T, value T, label string) ui.Element {
+	return radioWithLabel(c, selected, value, label, Type.Small, 400)
+}
+
+// CompactRadio is the radio for toolbars and cards, where its label has to sit
+// at 13/18 like the buttons and card titles beside it. Radio keeps the 14/22
+// label that dialogs and reader surfaces are set in.
+func CompactRadio[T comparable](c *ui.Context, selected *T, value T, label string) ui.Element {
+	return radioWithLabel(c, selected, value, label, Type.UI, 400)
+}
+
+func radioWithLabel[T comparable](c *ui.Context, selected *T, value T, label string, style TypeStyle, weight int) ui.Element {
 	r := ui.RadioBase(c, selected, value).Gap(8).AlignItems(ui.Center).FocusRing(false)
 	chosen := *selected == value
 	r.Children(func() {
@@ -52,7 +63,7 @@ func Radio[T comparable](c *ui.Context, selected *T, value T, label string) ui.E
 				p.FocusRing(bounds, [4]float32{8, 8, 8, 8})
 			}
 		})
-		Type.Small.Apply(ui.Text(c, label)).TextColor(Colors.Ink).MinWidth(0).Wrap().AccessHidden(true)
+		style.Apply(ui.Text(c, label)).FontWeight(weight).TextColor(Colors.Ink).MinWidth(0).Wrap().AccessHidden(true)
 	})
 	return r.Label(label)
 }
@@ -99,7 +110,10 @@ func SegmentedWithSpec(c *ui.Context, selected *int, options []string, label str
 						capsule.Transition(Transition(c, c.KeyboardInput(), ui.ElementTransition{Match: "capsule:" + spec.Group, Duration: Motion.Switch, Ease: Motion.EaseInOut.Easing()}))
 					}
 				}
-				Type.UI.Apply(ui.Text(c, option)).FontWeight(500).TextColor(ink).ZIndex(1).MaxLines(1).Ellipsis("…")
+				text := Type.UI.Apply(ui.Text(c, option)).TextColor(ink).ZIndex(1).MaxLines(1).Ellipsis("…")
+				if i == *selected {
+					text.FontWeight(500)
+				}
 			})
 		}
 	})

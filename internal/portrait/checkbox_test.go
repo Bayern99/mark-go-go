@@ -101,3 +101,36 @@ func TestCheckboxMarksAreVisuallyDistinct(t *testing.T) {
 		t.Fatal("checked and mixed checkboxes look identical")
 	}
 }
+
+func TestCompactCheckboxSetsItsLabelAtUIscale(t *testing.T) {
+	fullText := false
+	tt := ui.NewTester(onChrome(func(c *ui.Context) {
+		portrait.CompactCheckbox(c, &fullText, "Full text")
+	}), 240, 120)
+	tt.Frame()
+	info, ok := tt.AccessByRole(ui.RoleCheckBox, "Full text")
+	if !ok {
+		t.Fatal("compact checkbox missing from the accessibility tree")
+	}
+	if info.Bounds.H != portrait.Type.UI.Leading {
+		t.Fatalf("compact checkbox is %v tall, want the 13/18 UI line %v", info.Bounds.H, portrait.Type.UI.Leading)
+	}
+	if err := tt.Click("Full text"); err != nil {
+		t.Fatal(err)
+	}
+	if !fullText {
+		t.Fatal("compact checkbox does not toggle")
+	}
+}
+
+func TestCheckboxKeepsTheReaderSizeForDialogs(t *testing.T) {
+	checked := true
+	tt := ui.NewTester(onChrome(func(c *ui.Context) {
+		portrait.Checkbox(c, &checked, "Notes.md")
+	}), 240, 120)
+	tt.Frame()
+	info, ok := tt.AccessByRole(ui.RoleCheckBox, "Notes.md")
+	if !ok || info.Bounds.H != portrait.Type.Small.Leading {
+		t.Fatalf("checkbox = %+v, want the 14/22 reader line %v", info.Bounds, portrait.Type.Small.Leading)
+	}
+}

@@ -106,7 +106,10 @@ func (s *Segments) Segment(c *ui.Context, title, label string, selected bool) ui
 	}
 	b.Children(func() {
 		s.Capsule(c, b, selected)
-		Type.UI.Apply(ui.Text(c, title)).FontWeight(500).TextColor(ink).ZIndex(1).MaxLines(1).Ellipsis("…")
+		text := Type.UI.Apply(ui.Text(c, title)).TextColor(ink).ZIndex(1).MaxLines(1).Ellipsis("…")
+		if selected {
+			text.FontWeight(500)
+		}
 	})
 	return b
 }

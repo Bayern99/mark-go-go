@@ -121,6 +121,9 @@ type AreaSpec struct {
 	MinHeight          float32
 	Mono, Invalid      bool
 	Disabled           bool
+	// Bare omits the frame's border, background and shadow so a composite
+	// container owns the edge instead of drawing a second one.
+	Bare bool
 }
 
 func TextArea(c *ui.Context, value *string, spec AreaSpec) ui.Element {
@@ -144,7 +147,9 @@ func TextArea(c *ui.Context, value *string, spec AreaSpec) ui.Element {
 		input = style.Apply(ui.TextAreaBase(c.Key("input"), value)).FocusRing(false).Grow(1).MinWidth(0).MinHeight(0).Height(max(0, height-2*Form.AreaPadY)).
 			TextColor(Colors.Ink).Label(spec.Label).Placeholder(spec.Placeholder).Invalid(spec.Invalid).Disabled(spec.Disabled)
 	})
-	applyFieldLook(frame, spec.Invalid)
+	if !spec.Bare {
+		applyFieldLook(frame, spec.Invalid)
+	}
 	return input
 }
 

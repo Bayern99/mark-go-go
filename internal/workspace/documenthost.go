@@ -166,9 +166,14 @@ func (h *Service) recordDisk(s *docSession) bool {
 	}
 	stamp := diskStamp{}
 	if path := s.currentPath(); path != "" {
-		if info, err := os.Stat(path); err == nil {
-			stamp = diskStamp{modTime: info.ModTime().UnixNano(), size: info.Size(), known: true}
+		info, err := os.Stat(path)
+		if err != nil {
+			// Never overwrite an established baseline with unknown on a failed
+			// Stat (for example, an external delete before the watcher catches
+			// up); changedOnDisk must continue reporting the missing file.
+			return false
 		}
+		stamp = diskStamp{modTime: info.ModTime().UnixNano(), size: info.Size(), known: true}
 	}
 	h.mu.Lock()
 	changed := s.disk != stamp
@@ -177,16 +182,13 @@ func (h *Service) recordDisk(s *docSession) bool {
 	return changed
 }
 
-// syncDisk keeps a session's disk stamp level with its own saves. MyGo calls
-// OnStateChange after every write, and the notification that follows an
-// autosave still reports the document as edited when the user typed while it
-// ran; a stamp recorded only for a clean state would stay behind, and the next
-// Save or Close would report the document's own autosave as a change made on
-// disk. A notification that reports no conflict and no deletion cannot be
-// another app's edit over unsaved changes, because MyGo flags that itself, so
-// the file it names is this session's own.
+// syncDisk updates a session's disk baseline ONLY on confirmed clean state
+// notifications (no unsaved edits, no conflict, no deletion). Dirty edit
+// notifications can arrive after another app writes the file and before MyGo's
+// watcher raises Conflict, so adopting disk state while Edited is true would
+// risk silently overwriting the foreign edit on Save.
 func (h *Service) syncDisk(s *docSession, state mygo.DocumentState) bool {
-	if s == nil || state.Conflict || state.Deleted {
+	if s == nil || state.Edited || state.Conflict || state.Deleted {
 		return false
 	}
 	return h.recordDisk(s)
@@ -886,6 +888,7 @@ func (h *Service) saveAsDocument(s *docSession) error {
 	if err := s.doc.SaveAs(target); err != nil {
 		return err
 	}
+	h.recordDisk(s)
 	h.migrateIfNeeded(s)
 	return nil
 }

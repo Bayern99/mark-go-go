@@ -54,6 +54,8 @@ type Shell struct {
 	checkpoints                                    bool
 	settingsOpen, workspaceMenu                    bool
 	settingsTab, settingsQuery                     string
+	settingsMatchedQuery                           string
+	settingsMatchedPages                           []string
 	settingsFocus, settingsEditing                 bool
 	settingsResetOpen                              bool
 	settingsResetID                                string

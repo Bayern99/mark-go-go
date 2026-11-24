@@ -56,7 +56,7 @@ type SettingsQuery struct {
 
 func (q SettingsQuery) Active() bool { return strings.TrimSpace(q.Text) != "" }
 
-func (q SettingsQuery) Match(title, description string, keywords ...string) bool {
+func (q SettingsQuery) Matches(title, description string, keywords ...string) bool {
 	if !q.Active() {
 		return true
 	}
@@ -64,18 +64,27 @@ func (q SettingsQuery) Match(title, description string, keywords ...string) bool
 	fields := append([]string{title, description}, keywords...)
 	for _, field := range fields {
 		for _, word := range strings.Fields(query) {
-			if !strings.Contains(strings.ToLower(field), word) {
-				continue
+			if strings.Contains(strings.ToLower(field), word) {
+				return true
 			}
-			q.state.counting()
-			return true
 		}
 	}
 	return false
 }
 
+func (q SettingsQuery) Match(title, description string, keywords ...string) bool {
+	if !q.Active() {
+		return true
+	}
+	if !q.Matches(title, description, keywords...) {
+		return false
+	}
+	q.state.counting()
+	return true
+}
+
 func (q SettingsQuery) PageMatch(page SettingsPage) bool {
-	return q.Match(page.Label, page.Section, page.Keywords...)
+	return q.Matches(page.Label, page.Section, page.Keywords...)
 }
 
 func settingsPages(slots Slots) []SettingsPage {

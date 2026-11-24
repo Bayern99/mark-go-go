@@ -126,6 +126,11 @@ func (p *panel) cliModelRow(c *ui.Context, rows *portrait.Rows, model feynman.CL
 	key := model.Provider + "/" + model.ID
 	rows.Row(portrait.RowSpec{Title: label, Description: providerLabel(model.Provider)}, func() {
 		ui.Row(c).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
+			if model.Current {
+				portrait.Badge(c, "Default", portrait.Tones.Accent)
+			} else if portrait.QuietButton(c, "Set default", "Set "+label+" as the default model").Disabled(p.state.cliBusy).Clicked() {
+				p.modelAction("set", firstNonEmpty(model.Name, model.ID))
+			}
 			pinned := p.modelPinned(key)
 			verb := "Pin "
 			if pinned {
@@ -134,11 +139,6 @@ func (p *panel) cliModelRow(c *ui.Context, rows *portrait.Rows, model feynman.CL
 			pin := portrait.ButtonWith(c.Key("pin"), "", verb+label, portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Regular, Leading: portrait.IconPushPin, Selected: pinned}).Checked(pinned)
 			if pin.Clicked() {
 				p.toggleModelPinned(key)
-			}
-			if model.Current {
-				portrait.Badge(c, "Default", portrait.Tones.Accent)
-			} else if portrait.QuietButton(c, "Set default", "Set "+label+" as the default model").Disabled(p.state.cliBusy).Clicked() {
-				p.modelAction("set", firstNonEmpty(model.Name, model.ID))
 			}
 			ui.Row(c).Gap(portrait.Form.HelpGap).AlignItems(ui.Center).Children(func() {
 				portrait.Caption(c, "In picker")

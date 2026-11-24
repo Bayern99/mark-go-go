@@ -32,9 +32,6 @@ func (s *Shell) settingsDialog(c *ui.Context, width, height float32, m Model, a 
 	}
 	searchState := &settingsSearchState{}
 	query := SettingsQuery{Text: s.settingsQuery, state: searchState}
-	// The rail decides which pages a search can reach without counting their
-	// rows: only the pane's own settings say whether a page has any.
-	filter := SettingsQuery{Text: s.settingsQuery}
 	current := settingsPageByID(visible, s.settingsTab)
 	portrait.DialogShell(c, "settings dialog", &s.settingsOpen, portrait.DialogSpec{
 		Label: "Settings", Width: portrait.Settings.Width, Height: portrait.Settings.Height,
@@ -44,8 +41,16 @@ func (s *Shell) settingsDialog(c *ui.Context, width, height float32, m Model, a 
 		root := ui.Row(c).Fill().MinWidth(0)
 		root.Children(func() {
 			if sheetWidth >= portrait.Settings.Collapse {
-				s.settingsRail(c, visible, filter)
+				railButtons := map[string]ui.Element{}
+				s.settingsRail(c, visible, railButtons)
 				s.settingsPane(c, current, visible, query, searchState, true)
+				if query.Active() {
+					for _, page := range visible {
+						if button, ok := railButtons[page.ID]; ok && searchState.hits(page.ID) == 0 {
+							button.Opacity(0.42)
+						}
+					}
+				}
 			} else {
 				ui.Column(c).Fill().MinWidth(0).Children(func() {
 					ui.Row(c).FillWidth().Height(portrait.Settings.Header).Padding(0, portrait.Form.PadX).Gap(portrait.Form.Gap).
@@ -132,6 +137,14 @@ func (s *Shell) settingsSearch(c *ui.Context, pages []SettingsPage) portrait.Fie
 			s.settingsResults.Focus(c)
 			return true
 		case ui.KeyEnter:
+			if s.settingsMatchedQuery == key.Text() {
+				if len(s.settingsMatchedPages) > 0 {
+					s.settingsTab = s.settingsMatchedPages[0]
+					key.SetText("")
+					return true
+				}
+				return false
+			}
 			for _, page := range pages {
 				if settingsPageMatchesText(page, key.Text()) {
 					s.settingsTab = page.ID
@@ -154,7 +167,7 @@ func settingsPageMatchesText(page SettingsPage, text string) bool {
 	return q.PageMatch(page)
 }
 
-func (s *Shell) settingsRail(c *ui.Context, pages []SettingsPage, query SettingsQuery) {
+func (s *Shell) settingsRail(c *ui.Context, pages []SettingsPage, buttons map[string]ui.Element) {
 	rail := ui.Column(c).Width(portrait.Settings.Rail).FillHeight().Background(portrait.Colors.Fill).
 		BorderWidth(0, 1, 0, 0).BorderColor(portrait.Colors.Line)
 	rail.Children(func() {
@@ -171,26 +184,23 @@ func (s *Shell) settingsRail(c *ui.Context, pages []SettingsPage, query Settings
 					portrait.SectionLabel(c, strings.ToUpper(page.Section)).Padding(portrait.Settings.NavSectionGap, portrait.Form.PadX, portrait.Form.HelpGap, portrait.Form.PadX)
 				}
 				lastSection = page.Section
-				s.settingsNavItem(c, pages, i, page, query)
+				buttons[page.ID] = s.settingsNavItem(c, pages, i, page)
 			}
 			ui.Spacer(c)
 			for i, page := range pages {
 				if page.Section == "Footer" {
-					s.settingsNavItem(c, pages, i, page, query)
+					buttons[page.ID] = s.settingsNavItem(c, pages, i, page)
 				}
 			}
 		})
 	})
 }
 
-func (s *Shell) settingsNavItem(c *ui.Context, pages []SettingsPage, index int, page SettingsPage, query SettingsQuery) {
+func (s *Shell) settingsNavItem(c *ui.Context, pages []SettingsPage, index int, page SettingsPage) ui.Element {
 	selected := s.settingsTab == page.ID && s.settingsQuery == ""
 	button := ui.ButtonBase(c.Key("settings-page-"+page.ID)).Role(ui.RoleTab).Label(page.Label).AccessSelected(selected).
 		FillWidth().Height(portrait.Settings.NavRow).Padding(0, portrait.Form.PadX).Gap(portrait.Form.Gap).Radius(portrait.Radii.M).AlignItems(ui.Center).Justify(ui.Start).
 		Bind(settingsHandle(s.settingsNav, page.ID))
-	if query.Active() && !query.PageMatch(page) {
-		button.Opacity(0.42)
-	}
 	ink := portrait.Colors.Ink2
 	if selected {
 		button.Background(portrait.Colors.AccentSoft)
@@ -228,6 +238,7 @@ func (s *Shell) settingsNavItem(c *ui.Context, pages []SettingsPage, index int, 
 			}
 		}
 	}
+	return button
 }
 
 func settingsHandle(handles map[string]*ui.Handle, id string) *ui.Handle {
@@ -284,13 +295,19 @@ func (s *Shell) settingsPane(c *ui.Context, current SettingsPage, pages []Settin
 		ui.Scroll(c.Key("settings-body-" + s.settingsTab)).Grow(1).MinHeight(collapsible).FillWidth().TrackScroll(scroll).
 			Label("Settings content").Bind(&s.settingsResults).Focusable().Children(func() {
 			ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() {
+				gap := portrait.Settings.GroupGap
+				if query.Active() {
+					gap = collapsible
+				}
 				ui.Column(c).FillWidth().MaxWidth(portrait.Settings.Column).Padding(portrait.Settings.ColumnPadTop, portrait.Settings.ColumnPadX, portrait.Settings.ColumnPadBottom, portrait.Settings.ColumnPadX).
-					Gap(portrait.Settings.GroupGap).Children(func() {
+					Gap(gap).Children(func() {
 					if !query.Active() {
+						s.settingsMatchedQuery, s.settingsMatchedPages = "", nil
 						current.Draw(c, query)
 						return
 					}
 					match := SettingsQuery{Text: query.Text}
+					var matchedPages []string
 					for _, page := range pages {
 						if !match.PageMatch(page) {
 							continue
@@ -298,7 +315,7 @@ func (s *Shell) settingsPane(c *ui.Context, current SettingsPage, pages []Settin
 						// A page's link is drawn above its rows, but a keyword can
 						// match the page's own name while none of its settings do.
 						// The link is therefore filled in only once the page drew a
-						// row, so a search never leaves an orphan heading.
+						// row, so a search never leaves an orphan heading or empty gap.
 						block := ui.Column(c.Key("search-page-" + page.ID)).FillWidth()
 						var heading ui.Element
 						block.Children(func() {
@@ -312,6 +329,10 @@ func (s *Shell) settingsPane(c *ui.Context, current SettingsPage, pages []Settin
 						if searchState.hits(page.ID) == 0 {
 							continue
 						}
+						if len(matchedPages) > 0 {
+							block.Padding(portrait.Settings.GroupGap, 0, 0, 0)
+						}
+						matchedPages = append(matchedPages, page.ID)
 						heading.Children(func() {
 							ui.Column(c).FillWidth().Padding(0, 0, portrait.Settings.HeadingGap, 0).Children(func() {
 								// A link's text starts at the group headings' x, not
@@ -323,6 +344,8 @@ func (s *Shell) settingsPane(c *ui.Context, current SettingsPage, pages []Settin
 							})
 						})
 					}
+					s.settingsMatchedQuery = query.Text
+					s.settingsMatchedPages = matchedPages
 					if searchState.matches == 0 {
 						portrait.Empty(c, portrait.EmptySpec{Icon: portrait.IconMagnifyingGlass, Title: "No settings match “" + query.Text + "”", Description: "Try a different setting name or keyword."})
 					}

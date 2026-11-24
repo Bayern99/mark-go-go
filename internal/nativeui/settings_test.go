@@ -204,3 +204,45 @@ func TestSettingsSearchDropsAHeadingWithNoMatchingRows(t *testing.T) {
 		t.Fatal("search did not draw the matching setting")
 	}
 }
+
+func TestSettingsSearchEnterOpensFirstDisplayedMatchWithoutPhantomGap(t *testing.T) {
+	var shell nativeui.Shell
+	model := libraryModel()
+	model.Preferences = map[string]string{}
+	slots := nativeui.Slots{Settings: []nativeui.SettingsPage{{
+		ID: "search-papers", Section: "Research", Label: "Search & Papers", Icon: portrait.IconMagnifyingGlass, Order: 110,
+		Keywords: []string{"api key", "search"},
+		Draw: func(c *ui.Context, q nativeui.SettingsQuery) {
+			if !q.Match("API key", "Saved provider authentication", "key") {
+				return
+			}
+			portrait.SettingsGroup(c, "Web search", func(rows *portrait.Rows) {
+				rows.Row(portrait.RowSpec{Title: "API key", Description: "Saved provider authentication"}, func() {})
+			})
+		},
+	}}}
+	app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, model, nativeui.Actions{}, slots) }, 1280, 820)
+	app.Frame()
+	app.Key(ui.Cmd, ui.KeyComma)
+	app.Frame()
+	app.Key(0, ui.KeySlash)
+	app.Frame()
+	app.Type("key")
+	app.Frame()
+	if _, ok := app.Access("Open Shortcuts"); ok {
+		t.Fatal("search drew an orphan Shortcuts heading")
+	}
+	link, ok := app.Access("Open Search & Papers")
+	if !ok {
+		t.Fatal("search did not draw the matching Search & Papers heading")
+	}
+	content, _ := app.Access("Settings content")
+	if delta := link.Bounds.Y - content.Bounds.Y; delta > portrait.Settings.ColumnPadTop+4 {
+		t.Fatalf("first matched heading has a phantom gap above it: delta=%v want <= %v", delta, portrait.Settings.ColumnPadTop+4)
+	}
+	app.Key(0, ui.KeyEnter)
+	app.Frame()
+	if !app.HasText("API key") || app.HasText("Keyboard shortcuts") {
+		t.Fatal("pressing Enter opened a rowless page instead of Search & Papers")
+	}
+}

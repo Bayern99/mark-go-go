@@ -525,7 +525,7 @@ func (p *panel) question(c *ui.Context, question feynman.ResearchUpdate) {
 	if confirm {
 		tone, icon = portrait.Tones.Warning, portrait.IconWarning
 	}
-	portrait.Card(c.Key("research-question")).Role(ui.RoleGroup).Label("Feynman confirmation").Padding(portrait.Form.AreaPadY, portrait.Form.PadX).Gap(portrait.Form.Gap).Radius(portrait.Radii.L).
+	portrait.Card(c.Key("research-question")).Role(ui.RoleGroup).Label("Feynman confirmation").Padding(portrait.Form.AreaPadY, portrait.Form.PadX).Margin(0, 0, portrait.Form.Gap, 0).Gap(portrait.Form.Gap).Radius(portrait.Radii.L).
 		Border(0.5, tone.Border).Children(func() {
 		ui.Row(c).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
 			portrait.Glyph(c, icon, portrait.IconSizes.M, tone.Ink).Shrink(0)

@@ -112,9 +112,9 @@ func (p *panel) drawProposals(c *ui.Context) {
 		popoverWidth := min(portrait.Form.PopoverWide, max(portrait.Form.MenuMin, width-2*portrait.Form.DialogPad))
 		maxHeight := max(portrait.Form.MenuMin, height-2*portrait.Form.DialogPad)
 		popover := portrait.PopoverWithSpec(c, button, &p.open, portrait.PopoverSpec{
-			Width: popoverWidth, MaxHeight: maxHeight, Placement: ui.AnchorBottomEnd, Opaque: true,
+			Width: popoverWidth, MaxHeight: maxHeight, Placement: ui.AnchorBottomStart, Opaque: true,
 		}, func() { p.proposalPopover(c) })
-		popover.AttachTo(button, ui.AnchorBottomEnd, ui.AnchorTopEnd)
+		popover.AttachTo(button, ui.AnchorBottomStart, ui.AnchorTopStart)
 	})
 }
 

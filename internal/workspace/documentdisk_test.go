@@ -28,31 +28,21 @@ func diskSession(t *testing.T, path string) (*Service, *docSession) {
 // app, as the file ends up on disk. Each write is larger or smaller than the
 // one before it, so its stamp differs even where the clock is coarse.
 
-func TestAutosaveDuringContinuousTypingIsNotAConflict(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "notes.md")
-	writeFile(t, path, "# Notes\n")
+func TestDirtyEditNotificationNeverAdoptsAnExternalWrite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "shared.md")
+	writeFile(t, path, "# Shared A\n")
 	host, s := diskSession(t, path)
 
-	// The user keeps typing while mygo's autosave writes the document. The
-	// notification that follows the write still reports the document as
-	// edited, which is exactly the case that used to leave the stamp behind.
-	writeFile(t, path, "# Notes\n\nA paragraph the autosave wrote.\n")
-	edited := mygo.DocumentState{Name: "notes.md", Path: path, Edited: true}
-	if !host.syncDisk(s, edited) {
-		t.Fatal("the notification after an autosave did not refresh the disk stamp")
+	// Another app writes B, and the user types in Mark Go Go before MyGo's
+	// watcher catches up: the first keystroke delivers Edited=true with
+	// Conflict=false. syncDisk must NEVER adopt B as this session's baseline,
+	// or a subsequent Save would silently overwrite B.
+	writeFile(t, path, "# Shared B from another application\n")
+	if host.syncDisk(s, mygo.DocumentState{Name: "shared.md", Path: path, Edited: true}) {
+		t.Fatal("a dirty edit notification adopted an external write as our baseline")
 	}
-	if host.changedOnDisk(s) {
-		t.Fatal("the session's own autosave reads as a change made on disk")
-	}
-
-	// Typing on, and another autosave landing on top of it, keep the stamp
-	// level: neither the write nor the edits between writes look external.
-	writeFile(t, path, "# Notes\n\nA paragraph the autosave wrote, and more text.\n")
-	if !host.syncDisk(s, edited) {
-		t.Fatal("the second autosave did not refresh the disk stamp")
-	}
-	if host.changedOnDisk(s) {
-		t.Fatal("a second autosave reads as a change made on disk")
+	if !host.changedOnDisk(s) {
+		t.Fatal("external write B went unnoticed after a dirty edit notification")
 	}
 }
 
@@ -76,13 +66,32 @@ func TestExternalEditIsStillAConflict(t *testing.T) {
 	host, s := diskSession(t, path)
 
 	writeFile(t, path, "# Shared\n\nOur own sentence.\n")
-	host.syncDisk(s, mygo.DocumentState{Name: "shared.md", Path: path, Edited: true})
+	host.syncDisk(s, mygo.DocumentState{Name: "shared.md", Path: path})
 
-	// Between two of the session's own notifications, another app writes the
-	// file: the stamp no longer matches and the session must say so.
+	// Another app writes the file, then even if a dirty notification fires
+	// before the watcher catches up, changedOnDisk must still flag conflict.
 	writeFile(t, path, "# Shared\n\nAnother app's sentence.\n")
+	host.syncDisk(s, mygo.DocumentState{Name: "shared.md", Path: path, Edited: true})
 	if !host.changedOnDisk(s) {
 		t.Fatal("an external edit went unnoticed")
+	}
+}
+
+func TestExternalDeleteBeforeWatcherPreservesKnownBaseline(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "vanished.md")
+	writeFile(t, path, "# Vanished\n")
+	host, s := diskSession(t, path)
+
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	// Even a clean notification or direct recordDisk call on a missing file
+	// must not erase the known baseline, so Save/Close still detect deletion.
+	if host.syncDisk(s, mygo.DocumentState{Name: "vanished.md", Path: path}) {
+		t.Fatal("missing file cleared the known baseline")
+	}
+	if !host.changedOnDisk(s) {
+		t.Fatal("deleted file reads as unchanged after failed stat")
 	}
 }
 

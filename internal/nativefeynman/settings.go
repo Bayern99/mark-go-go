@@ -81,43 +81,56 @@ func (p *panel) settingsPages() []nativeui.SettingsPage {
 func (p *panel) drawSettingsPage(c *ui.Context, tab string, q nativeui.SettingsQuery) {
 	p.syncConnection()
 	s := p.state
+	var drawWebSearch, drawAlpha, drawMCP, drawPackages, drawDiagnostics, drawModels bool
+	switch tab {
+	case "search":
+		drawWebSearch = q.Matches("Web search", "Provider & API key routing and saved authentication.", "web search provider api key exa brave tavily")
+		drawAlpha = q.Matches("alphaXiv", "Paper search and annotation account.", "alphaxiv account papers")
+	case "mcp":
+		drawMCP = q.Matches("MCP Servers", "Configured servers and tool exposure.", "mcp servers transport http stdio headers bearer command arguments environment exposure project local add remove")
+	case "packages":
+		drawPackages = q.Matches("Packages", "Workflows, skills, and extensions.", "packages workflows skills extensions install remove update target")
+	case "diagnostics":
+		drawDiagnostics = q.Matches("Diagnostics", "Feynman CLI doctor, setup, and preview status.", "diagnostics feynman cli doctor setup preview status refresh")
+	default:
+		drawModels = q.Matches("Models & Providers", "Authentication, service tier, default model, and picker visibility.", "models providers authentication service tier default pin show picker sign in log out")
+	}
+	if q.Active() && !(drawWebSearch || drawAlpha || drawMCP || drawPackages || drawDiagnostics || drawModels) {
+		return
+	}
 	if s.root == "" {
+		if q.Active() {
+			return
+		}
 		portrait.Empty(c, portrait.EmptySpec{Icon: portrait.IconFolderOpen, Title: "Open a workspace folder", Description: "Configure Feynman models, MCP servers, and diagnostics after opening a folder."})
 		return
 	}
 	if p.settingsRoot != s.root && !s.cliBusy {
 		p.loadSettings(s.root)
 	}
-	if s.cliError != "" {
+	if s.cliError != "" && !q.Active() {
 		portrait.Alert(c, portrait.Tones.Danger, "Feynman CLI", s.cliError)
 	}
-	if s.cliResult != "" {
+	if s.cliResult != "" && !q.Active() {
 		portrait.OutputBlock(c, "Command result", s.cliResult)
 	}
-	switch tab {
-	case "search":
-		if q.Match("Web search", "Provider & API key routing and saved authentication.", "web search provider api key exa brave tavily") {
-			p.searchSettings(c)
-		}
-		if q.Match("alphaXiv", "Paper search and annotation account.", "alphaxiv account papers") {
-			p.alphaSettings(c)
-		}
-	case "mcp":
-		if q.Match("MCP Servers", "Configured servers and tool exposure.", "mcp servers transport http stdio headers bearer command arguments environment exposure project local add remove") {
-			p.mcpSettings(c)
-		}
-	case "packages":
-		if q.Match("Packages", "Workflows, skills, and extensions.", "packages workflows skills extensions install remove update target") {
-			p.packageSettings(c)
-		}
-	case "diagnostics":
-		if q.Match("Diagnostics", "Feynman CLI doctor, setup, and preview status.", "diagnostics feynman cli doctor setup preview status refresh") {
-			p.statusSettings(c)
-		}
-	default:
-		if q.Match("Models & Providers", "Authentication, service tier, default model, and picker visibility.", "models providers authentication service tier default pin show picker sign in log out") {
-			p.modelSettings(c)
-		}
+	if drawWebSearch && q.Match("Web search", "Provider & API key routing and saved authentication.", "web search provider api key exa brave tavily") {
+		p.searchSettings(c)
+	}
+	if drawAlpha && q.Match("alphaXiv", "Paper search and annotation account.", "alphaxiv account papers") {
+		p.alphaSettings(c)
+	}
+	if drawMCP && q.Match("MCP Servers", "Configured servers and tool exposure.", "mcp servers transport http stdio headers bearer command arguments environment exposure project local add remove") {
+		p.mcpSettings(c)
+	}
+	if drawPackages && q.Match("Packages", "Workflows, skills, and extensions.", "packages workflows skills extensions install remove update target") {
+		p.packageSettings(c)
+	}
+	if drawDiagnostics && q.Match("Diagnostics", "Feynman CLI doctor, setup, and preview status.", "diagnostics feynman cli doctor setup preview status refresh") {
+		p.statusSettings(c)
+	}
+	if drawModels && q.Match("Models & Providers", "Authentication, service tier, default model, and picker visibility.", "models providers authentication service tier default pin show picker sign in log out") {
+		p.modelSettings(c)
 	}
 	p.drawConfirmation(c)
 }

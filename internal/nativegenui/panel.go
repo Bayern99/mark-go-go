@@ -378,11 +378,11 @@ func (p *panel) settingsPage() nativeui.SettingsPage {
 			p.settingsCommandEdited = false
 		},
 		Draw: func(c *ui.Context, q nativeui.SettingsQuery) {
-			if p.settingsMessage != "" {
-				portrait.Alert(c, portrait.Tones.Danger, "GenUI settings", p.settingsMessage)
-			}
-			if q.Active() && !q.Match("Generation", "Model and agent command", "genui generation") {
+			if q.Active() && !q.Matches("Model", "The model used to generate reading views.", "generation model") && !q.Matches("Agent command", "The command that runs the generation agent.", "agent command") {
 				return
+			}
+			if p.settingsMessage != "" && !q.Active() {
+				portrait.Alert(c, portrait.Tones.Danger, "GenUI settings", p.settingsMessage)
 			}
 			portrait.SettingsGroup(c, "Generation", func(rows *portrait.Rows) {
 				if q.Match("Model", "The model used to generate reading views.", "generation model") {

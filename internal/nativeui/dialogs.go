@@ -555,13 +555,17 @@ func (w *Window) drawMove(c *ui.Context, d *windowDialog) {
 		ui.Scroll(c).MaxHeight(portrait.Form.ListMax).FillWidth().Children(func() {
 			ui.Column(c).FillWidth().Gap(portrait.Form.PopoverGap).Children(func() {
 				row := func(key, path, name string, depth int) {
+					isCurrent := moveSameFile(path, current)
 					spec := portrait.ListRowSpec{Icon: portrait.IconFolder, Title: name, Label: "Move to " + path, Selected: d.dir == path, Group: "move destination"}
-					if moveSameFile(path, current) {
+					if isCurrent {
 						spec.Trailing = func() {
 							portrait.Glyph(c, portrait.IconCheck, portrait.IconSizes.S, portrait.Colors.Accent).Shrink(0).AccessHidden(true)
 						}
 					}
 					b := portrait.ListRow(c.Key(key), spec)
+					if isCurrent {
+						b.Description("Current folder")
+					}
 					if depth > 0 {
 						b.Margin(0, 0, 0, float32(depth)*portrait.Form.PadX)
 					}

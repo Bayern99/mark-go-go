@@ -289,9 +289,9 @@ func (p *panel) configPicker(c *ui.Context, picker researchPicker) {
 	width, height := c.Size()
 	currentLabel := currentResearchPickerLabel(picker)
 	description := picker.label + ": " + currentLabel
-	button := portrait.ButtonWith(c.Key("research-config-"+picker.key), currentLabel, currentLabel, portrait.ButtonSpec{
+	button := portrait.ButtonWith(c.Key("research-config-"+picker.key), currentLabel, picker.label, portrait.ButtonSpec{
 		Look: portrait.Quiet, Size: portrait.Sizes.Regular, Leading: picker.icon, Trailing: portrait.IconCaretDown,
-	}).Label(picker.label).Value(currentLabel).MinWidth(0).MaxWidth(max(float32(96), width*0.62)).Expanded(*open).Disabled(picker.disabled)
+	}).Value(currentLabel).MinWidth(0).MaxWidth(max(float32(96), width*0.62)).Expanded(*open).Disabled(picker.disabled)
 	button = portrait.Tooltip(c, button, description)
 	if button.Clicked() {
 		shouldOpen := !*open

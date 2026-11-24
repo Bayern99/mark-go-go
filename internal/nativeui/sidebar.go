@@ -565,7 +565,7 @@ func navRow(c *ui.Context, item navItem) ui.Element {
 		ui.Row(c).FillWidth().Gap(7).AlignItems(ui.Center).ZIndex(1).Children(func() {
 			portrait.Glyph(c, item.icon, portrait.Type.Small.Size, iconColor).Shrink(0)
 			ui.Column(c).MinWidth(0).Grow(1).AlignItems(ui.Start).Children(func() {
-				navTitle(c, item.title, ink, weight)
+				navTitle(c, item.title, ink, weight, item.icon == portrait.IconFileText)
 				if item.excerpt != "" {
 					portrait.Type.Meta.Apply(ui.Text(c, item.excerpt)).MaxLines(2).Ellipsis("…").TextColor(portrait.Colors.Ink2)
 				}
@@ -585,14 +585,19 @@ func navRow(c *ui.Context, item navItem) ui.Element {
 	return row
 }
 
-// navTitle draws a row's name as one truncating line, with a Markdown
-// extension in the secondary ink: a column of `.md` suffixes then recedes.
-func navTitle(c *ui.Context, title string, ink ui.Color, weight int) {
-	stem, suffix := strings.TrimSuffix(title, ".md"), ""
-	if stem == "" {
-		stem = title
-	} else if stem != title {
-		suffix = ".md"
+// navTitle draws a row's name as one truncating line, with a Markdown file
+// extension in the secondary ink so a column of `.md` suffixes recedes while
+// outline headings keep their full text uniform.
+func navTitle(c *ui.Context, title string, ink ui.Color, weight int, file bool) {
+	stem, suffix := title, ""
+	if file {
+		lower := strings.ToLower(title)
+		for _, ext := range []string{".markdown", ".md"} {
+			if strings.HasSuffix(lower, ext) && len(title) > len(ext) {
+				stem, suffix = title[:len(title)-len(ext)], title[len(title)-len(ext):]
+				break
+			}
+		}
 	}
 	text := portrait.Type.Meta.Apply(ui.Text(c, stem)).MaxLines(1).Ellipsis("…").TextColor(ink)
 	if weight != 0 {

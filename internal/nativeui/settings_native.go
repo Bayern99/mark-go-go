@@ -62,7 +62,7 @@ func (s *Shell) nativeSettingsPages(m Model, a Actions) []SettingsPage {
 				s.rightWidth = portrait.Shell.ResearchWidth
 			},
 			Draw: func(c *ui.Context, q SettingsQuery) {
-				if !q.Active() || q.Match("Sidebar", "Navigation and document browser", "sidebar files outline") {
+				if !q.Active() || q.Matches("Show sidebar", "Keep the workspace navigation visible.", "sidebar navigation") || q.Matches("Default navigation view", "Choose Files or Outline for a new window.", "files outline navigation") {
 					portrait.SettingsGroup(c, "Sidebar", func(rows *portrait.Rows) {
 						if q.Match("Show sidebar", "Keep the workspace navigation visible.", "sidebar navigation") {
 							rows.Row(portrait.RowSpec{Title: "Show sidebar", Description: "Keep the workspace navigation visible."}, func() {
@@ -90,7 +90,7 @@ func (s *Shell) nativeSettingsPages(m Model, a Actions) []SettingsPage {
 						}
 					})
 				}
-				if m.Feynman && (!q.Active() || q.Match("Research panel", "Research visibility and width", "research feynman width")) {
+				if m.Feynman && (!q.Active() || q.Matches("Show research panel", "Keep Feynman beside the document when there is room.", "research feynman") || q.Matches("Panel width", "The saved research panel width.", "research width")) {
 					portrait.SettingsGroup(c, "Research panel", func(rows *portrait.Rows) {
 						if q.Match("Show research panel", "Keep Feynman beside the document when there is room.", "research feynman") {
 							rows.Row(portrait.RowSpec{Title: "Show research panel", Description: "Keep Feynman beside the document when there is room."}, func() {
@@ -117,7 +117,7 @@ func (s *Shell) nativeSettingsPages(m Model, a Actions) []SettingsPage {
 						}
 					})
 				}
-				if !q.Active() || q.Match("Documents", "Default document view", "documents preview markdown") {
+				if !q.Active() || q.Matches("Default view", "Used when a document has no saved view.", "documents preview markdown") {
 					portrait.SettingsGroup(c, "Documents", func(rows *portrait.Rows) {
 						if q.Match("Default view", "Used when a document has no saved view.", "documents preview markdown") {
 							rows.Row(portrait.RowSpec{Title: "Default view", Description: "Used when a document has no saved view."}, func() {
@@ -157,7 +157,7 @@ func (s *Shell) nativeSettingsPages(m Model, a Actions) []SettingsPage {
 			ID: "plugins", Section: "Workspace", Label: "Plugins", Icon: portrait.IconPuzzlePiece, Order: 200,
 			Keywords: []string{"plugins feynman research git checkpoints enable disable"},
 			Draw: func(c *ui.Context, q SettingsQuery) {
-				if q.Active() && !q.Match("Optional plugins", "Feynman Research and Git Checkpoints", "plugins feynman git") {
+				if q.Active() && !q.Matches("Feynman Research", "Side-by-side AI research assistant, models, and MCP tools.", "feynman plugin") && !q.Matches("Git Checkpoints", "Save, diff, and restore local document snapshots.", "git plugin checkpoints") {
 					return
 				}
 				portrait.SettingsGroup(c, "Optional plugins", func(rows *portrait.Rows) {
@@ -184,7 +184,7 @@ func (s *Shell) nativeSettingsPages(m Model, a Actions) []SettingsPage {
 			ID: "diagnostics", Section: "Footer", Label: "Diagnostics", Icon: portrait.IconWrench, Order: 900,
 			Keywords: []string{"diagnostics application preferences file reveal finder reset all settings"},
 			Draw: func(c *ui.Context, q SettingsQuery) {
-				if q.Active() && !q.Match("Application", "Preferences and maintenance", "diagnostics preferences reset") {
+				if q.Active() && !q.Matches("Preferences file", m.PreferenceFile, "preferences path finder") && !q.Matches("Reset all settings", "Restore every application and research preference.", "reset preferences") {
 					return
 				}
 				portrait.SettingsGroup(c, "Application", func(rows *portrait.Rows) {
@@ -210,7 +210,7 @@ func (s *Shell) nativeSettingsPages(m Model, a Actions) []SettingsPage {
 }
 
 func (s *Shell) appearanceSettingsPage(c *ui.Context, m Model, a Actions, q SettingsQuery) {
-	if !q.Active() || q.Match("Theme", "Appearance System Light Dark", "theme appearance dark light") {
+	if !q.Active() || q.Matches("Appearance", "Choose Light, Dark, or follow macOS automatically.", "appearance theme dark light system") {
 		portrait.SettingsGroup(c, "Theme", func(rows *portrait.Rows) {
 			if q.Match("Appearance", "Choose Light, Dark, or follow macOS automatically.", "appearance theme dark light system") {
 				rows.Row(portrait.RowSpec{Title: "Appearance", Description: "Choose Light, Dark, or follow macOS automatically."}, func() {
@@ -226,7 +226,7 @@ func (s *Shell) appearanceSettingsPage(c *ui.Context, m Model, a Actions, q Sett
 			}
 		})
 	}
-	if q.Active() && !q.Match("Wu Xing Space", "Workspace pigment scenery and accent", "space wu xing pigment") {
+	if q.Active() && !q.Matches("Space for this workspace", m.Workspace.Name+" · each folder keeps its own pigment scenery and accent", "space wu xing") {
 		return
 	}
 	portrait.SettingsGroup(c, "Wu Xing Space", func(rows *portrait.Rows) {
@@ -260,7 +260,7 @@ func (s *Shell) appearanceSettingsPage(c *ui.Context, m Model, a Actions, q Sett
 }
 
 func (s *Shell) editorSettingsPage(c *ui.Context, m Model, a Actions, q SettingsQuery) {
-	if !q.Active() || q.Match("Reading", "Text size and line width", "reading text size width") {
+	if !q.Active() || q.Matches("Text size", "Reading text size in points.", "editor reading text size") || q.Matches("Line width", "Maximum reading column width.", "line width narrow default wide") {
 		portrait.SettingsGroup(c, "Reading", func(rows *portrait.Rows) {
 			if q.Match("Text size", "Reading text size in points.", "editor reading text size") {
 				rows.Row(portrait.RowSpec{Title: "Text size", Description: "Reading text size in points."}, func() {
@@ -289,7 +289,7 @@ func (s *Shell) editorSettingsPage(c *ui.Context, m Model, a Actions, q Settings
 			}
 		})
 	}
-	if !q.Active() || q.Match("Markdown source", "Code size and line numbers", "markdown code source") {
+	if !q.Active() || q.Matches("Code size", "Markdown source text size in points.", "code size markdown") || q.Matches("Line numbers", "Show line numbers in Markdown source.", "line numbers source") {
 		portrait.SettingsGroup(c, "Markdown source", func(rows *portrait.Rows) {
 			if q.Match("Code size", "Markdown source text size in points.", "code size markdown") {
 				rows.Row(portrait.RowSpec{Title: "Code size", Description: "Markdown source text size in points."}, func() {
@@ -315,7 +315,7 @@ func (s *Shell) editorSettingsPage(c *ui.Context, m Model, a Actions, q Settings
 			}
 		})
 	}
-	if q.Active() && !q.Match("Maintenance", "Reset reading state", "folded headings table widths") {
+	if q.Active() && !q.Matches("Reset reading state", "Reset folded headings and table widths for this document", "folded headings table widths") {
 		return
 	}
 	portrait.SettingsGroup(c, "Maintenance", func(rows *portrait.Rows) {

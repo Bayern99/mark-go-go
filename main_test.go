@@ -65,6 +65,11 @@ func TestRecentLabelsTellSameNamedFilesApart(t *testing.T) {
 			paths: []string{"/draft.md", "draft.md"},
 			want:  []string{"/draft.md", "draft.md"},
 		},
+		{
+			name:  "filesystem root preserves a visible label",
+			paths: []string{"/", "/work/notes/draft.md"},
+			want:  []string{"/", "draft.md"},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := recentLabels(tc.paths)

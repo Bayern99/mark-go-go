@@ -164,8 +164,13 @@ func recentLabels(paths []string) []string {
 	parts := make([][]string, len(paths))
 	depth := make([]int, len(paths))
 	for i, path := range paths {
-		trimmed := strings.TrimPrefix(filepath.ToSlash(filepath.Clean(path)), "/")
-		parts[i] = strings.Split(trimmed, "/")
+		cleaned := filepath.ToSlash(filepath.Clean(path))
+		trimmed := strings.TrimPrefix(cleaned, "/")
+		if trimmed == "" || strings.HasSuffix(trimmed, "/") {
+			parts[i] = []string{cleaned}
+		} else {
+			parts[i] = strings.Split(trimmed, "/")
+		}
 		depth[i] = 1
 	}
 	labels := make([]string, len(paths))

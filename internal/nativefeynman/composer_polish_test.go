@@ -196,3 +196,43 @@ func TestHistoryPopoverClearsTabsAndPanelEdgeWithOneListScroller(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigPickerKeepsFocusWhenSelectedModelChanges(t *testing.T) {
+	selected := "anthropic/claude"
+	p := &panel{collapsed: make(map[string]*bool)}
+	app := ui.NewTester(func(c *ui.Context) {
+		picker := fixtureResearchPicker(&selected)
+		picker.current = selected
+		for i := range picker.items {
+			picker.items[i].current = picker.items[i].value == selected
+		}
+		ui.Column(c).Fill().Justify(ui.End).Padding(20).Children(func() {
+			p.configPicker(c, picker)
+		})
+	}, 420, 500)
+	app.Frame()
+	if err := app.Click("Model"); err != nil {
+		t.Fatal(err)
+	}
+	app.Frame()
+	app.Type("gpt")
+	app.Frame()
+	app.Key(0, ui.KeyDown)
+	app.Frame()
+	app.Key(0, ui.KeyEnter)
+	app.Frame()
+	app.Frame()
+	if selected != "openai/gpt" {
+		t.Fatalf("selected = %q, want openai/gpt", selected)
+	}
+	trigger, ok := app.AccessByRole(ui.RoleButton, "Model")
+	if !ok {
+		t.Fatal("Model trigger missing after selection")
+	}
+	if trigger.Value != "GPT Terra" {
+		t.Fatalf("Model trigger value = %q, want GPT Terra", trigger.Value)
+	}
+	if !trigger.Focused {
+		t.Fatalf("Model trigger lost focus after value changed to %q", trigger.Value)
+	}
+}

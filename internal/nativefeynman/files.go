@@ -26,10 +26,14 @@ func (p *panel) files(c *ui.Context) {
 	}
 	ui.Scroll(c.Key("research-artifacts")).Grow(1).MinHeight(0).FillWidth().TrackScroll(&p.filesScroll).Label("Research files and recovery").Children(func() {
 		if s.filesLoading && len(s.artifacts) == 0 {
-			portrait.Empty(c, portrait.EmptySpec{Icon: portrait.IconFolderOpen, Title: "Loading research files…"})
+			ui.Column(c).Fill().AlignItems(ui.Center).Justify(ui.Center).Padding(portrait.Form.DialogPad).Children(func() {
+				portrait.Empty(c, portrait.EmptySpec{Icon: portrait.IconFolderOpen, Title: "Loading research files…"})
+			})
 		}
 		if len(s.artifacts) == 0 && !s.filesLoading {
-			portrait.Empty(c, portrait.EmptySpec{Icon: portrait.IconFileText, Title: "No research files yet", Description: "Completed research files appear here."})
+			ui.Column(c).Fill().AlignItems(ui.Center).Justify(ui.Center).Padding(portrait.Form.DialogPad).Children(func() {
+				portrait.Empty(c, portrait.EmptySpec{Icon: portrait.IconFileText, Title: "No research files yet", Description: "Completed research files appear here."})
+			})
 		}
 		if len(s.artifacts) == 0 {
 			return
@@ -69,7 +73,7 @@ func (p *panel) fileRow(c *ui.Context, file review.ResearchArtifact) {
 				if file.Missing {
 					description = "Restore the deleted research artifact"
 				}
-				button := portrait.ButtonWith(c, action, description, portrait.ButtonSpec{Look: portrait.Raised, Size: portrait.Sizes.Compact})
+				button := portrait.ButtonWith(c, action, description, portrait.ButtonSpec{Look: portrait.Raised, Size: portrait.Sizes.Regular})
 				button.Disabled(p.state.status == statusWorking && (file.Proposal || file.Missing))
 				if button.Clicked() {
 					p.openArtifact(file)

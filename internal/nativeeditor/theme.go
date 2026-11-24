@@ -21,7 +21,7 @@ func documentTheme(t *ui.Theme, mode Mode) *editor.Theme {
 		th.Tokens[editor.TokenCode].Family = portrait.FontMono
 	}
 	if mode == Markdown {
-		colorTokens(&th, portrait.Colors.Ink4, editor.TokenMeta, editor.TokenPunctuation, editor.TokenOperator)
+		colorTokens(&th, portrait.Colors.Ink3, editor.TokenMeta, editor.TokenPunctuation, editor.TokenOperator)
 		th.Tokens[editor.TokenInvalid].Color = t.Danger
 	}
 	return &th

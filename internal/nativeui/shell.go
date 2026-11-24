@@ -60,6 +60,7 @@ type Shell struct {
 	settingsTab, settingsQuery                     string
 	settingsMatchedQuery                           string
 	settingsMatchedPages                           []string
+	settingsSubmitQuery                            string
 	settingsFocus, settingsEditing                 bool
 	settingsResetOpen                              bool
 	settingsResetID                                string

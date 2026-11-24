@@ -52,6 +52,7 @@ type panel struct {
 	alphaScroll          ui.ScrollState
 	commandQuery         string
 	actionsDismissed     bool
+	actionsFromSlash     bool
 	questionText         string
 	questionPick         string
 	questionFind         string

@@ -300,6 +300,24 @@ func (p *panel) composer(c *ui.Context) {
 			})
 		}
 	}
+	if s.failedDraft != "" {
+		card(c.Key("research-failed-draft")).Gap(4).Padding(4, 8).Children(func() {
+			text(c, portrait.Type.Meta, "Previous message was not sent:").TextColor(portrait.Colors.Ink2)
+			text(c, portrait.Type.Meta, s.failedDraft).MaxLines(2).Ellipsis("…").TextColor(portrait.Colors.Ink)
+			ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+				if smallButton(c, "Restore failed draft", "Restore unsent prompt and sources").Clicked() {
+					s.draft = s.failedDraft
+					s.sources = mergeSources(s.failedSources, s.sources)
+					s.failedDraft = ""
+					s.failedSources = nil
+				}
+				if portrait.QuietIconButton(c, portrait.IconX, "Dismiss failed draft").Clicked() {
+					s.failedDraft = ""
+					s.failedSources = nil
+				}
+			})
+		})
+	}
 	if s.suggested != "" {
 		ui.Row(c.Key("research-suggestion")).Gap(4).AlignItems(ui.Center).Children(func() {
 			text(c, portrait.Type.Meta, s.suggested).MaxLines(2).Ellipsis("…").Grow(1).MinWidth(0).TextColor(portrait.Colors.Ink2)
@@ -380,22 +398,31 @@ func (p *panel) composer(c *ui.Context) {
 			if draftEditor.Changed() {
 				if !strings.HasPrefix(s.draft, "/") {
 					p.actionsDismissed = false
+					p.actionsFromSlash = false
 					s.actionsOpen = false
 				} else if !p.actionsDismissed && p.slashCommandMatches(s.draft) {
 					p.commandQuery = strings.TrimSpace(strings.TrimPrefix(s.draft, "/"))
+					p.actionsFromSlash = true
 					s.actionsOpen = true
-				} else if strings.Contains(strings.TrimPrefix(s.draft, "/"), "/") {
+				} else if p.actionsFromSlash || strings.Contains(strings.TrimPrefix(s.draft, "/"), "/") {
+					if p.actionsFromSlash {
+						p.commandQuery = strings.TrimSpace(strings.TrimPrefix(s.draft, "/"))
+					}
+					p.actionsFromSlash = false
 					s.actionsOpen = false
 				}
 			}
 			ui.Row(c).Wrap().Gap(4).AlignItems(ui.Center).Children(func() {
-				if portrait.ButtonWith(c, "", "Attach source files", portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Regular, Leading: portrait.IconPaperclip}).Disabled(s.status == statusOffline || s.status == statusConnecting).Clicked() {
+				if portrait.ButtonWith(c, "", "Attach source files", portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Regular, Leading: portrait.IconPaperclip, Disabled: s.status == statusOffline || s.status == statusConnecting}).Clicked() {
 					p.attachSources()
 				}
-				actionsBtn := portrait.ButtonWith(c, "Actions", "Browse workflows, skills and extensions", researchActionsButtonSpec(s.actionsOpen)).Disabled(len(s.commands) == 0).Expanded(s.actionsOpen)
+				actionsSpec := researchActionsButtonSpec(s.actionsOpen)
+				actionsSpec.Disabled = len(s.commands) == 0
+				actionsBtn := portrait.ButtonWith(c, "Actions", "Browse workflows, skills and extensions", actionsSpec).Expanded(s.actionsOpen)
 				if actionsBtn.Clicked() {
 					s.actionsOpen = !s.actionsOpen
 					p.actionsDismissed = false
+					p.actionsFromSlash = false
 				}
 				actionsPopover := portrait.PopoverWithSpec(c, actionsBtn, &s.actionsOpen, portrait.PopoverSpec{Width: portrait.Form.SelectMax, Title: "Research actions", Placement: ui.AnchorTopStart}, func() {
 					p.commandList(c)
@@ -403,23 +430,25 @@ func (p *panel) composer(c *ui.Context) {
 				actionsPopover.AttachTo(composer, ui.AnchorTopStart, ui.AnchorBottomStart).Label("Research actions")
 				if actionsPopover.Dismissed() && strings.HasPrefix(s.draft, "/") {
 					p.actionsDismissed = true
+					p.actionsFromSlash = false
 				}
 				if documentEligible {
 					includeDocumentButton(c, &s.includeDoc)
 				}
 				ui.Row(c).Grow(1).Justify(ui.End).Gap(4).Children(func() {
 					if s.status == statusWorking {
-						if toolButton(c, "Steer", "Send a steering message", false, false).Disabled(strings.TrimSpace(s.draft) == "").Clicked() {
+						emptyDraft := strings.TrimSpace(s.draft) == ""
+						if portrait.ButtonWith(c, "Steer", "Send a steering message", portrait.ButtonSpec{Look: portrait.Raised, Size: portrait.Sizes.Regular, Disabled: emptyDraft}).Clicked() {
 							p.steer()
 						}
-						if toolButton(c, "Follow up", "Queue a follow-up message", false, false).Disabled(strings.TrimSpace(s.draft) == "").Clicked() {
+						if portrait.ButtonWith(c, "Follow up", "Queue a follow-up message", portrait.ButtonSpec{Look: portrait.Raised, Size: portrait.Sizes.Regular, Disabled: emptyDraft}).Clicked() {
 							p.followUp()
 						}
 						if portrait.ButtonWith(c, "Stop", "Stop the current research action", portrait.ButtonSpec{Look: portrait.DangerOutline, Size: portrait.Sizes.Regular, Leading: portrait.IconStop}).Clicked() {
 							p.run(func() error { return p.host.Abort(p.window.Context(), s.root) })
 						}
 					} else {
-						if portrait.ButtonWith(c, "Send", "Send research prompt", portrait.ButtonSpec{Look: portrait.Accent, Size: portrait.Sizes.Regular, Leading: portrait.IconPaperPlaneRight}).Disabled(s.status != statusReady || strings.TrimSpace(s.draft) == "").Clicked() {
+						if portrait.ButtonWith(c, "Send", "Send research prompt", portrait.ButtonSpec{Look: portrait.Accent, Size: portrait.Sizes.Regular, Leading: portrait.IconPaperPlaneRight, Disabled: s.status != statusReady || strings.TrimSpace(s.draft) == ""}).Clicked() {
 							p.send()
 						}
 					}
@@ -518,6 +547,7 @@ func (p *panel) commandList(c *ui.Context) {
 	})
 	if filterEditor.Changed() {
 		query = p.commandQuery
+		p.actionsFromSlash = false
 	}
 	ui.Scroll(c.Key("research-actions-list")).MaxHeight(portrait.Form.ListMax).FillWidth().Label("Research actions").Children(func() {
 		count := 0

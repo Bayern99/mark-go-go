@@ -332,8 +332,12 @@ func (s *Shell) commandBar(c *ui.Context, width, height float32, m Model, a Acti
 			}
 			portrait.KbdTint(c, portrait.Colors.Ink2, portrait.Colors.Fill, "esc")
 		})
+		resultsBottom := float32(6)
+		if resultsScroll.MaxY > 0 {
+			resultsBottom = portrait.Sizes.Regular
+		}
 		ui.Scroll(c.Key("command results")).FillWidth().MaxHeight(min(portrait.Shell.Results, height-portrait.Shell.CommandTop-portrait.Shell.CommandInput-portrait.Shell.Strip)).
-			Padding(6, 6, portrait.Sizes.Regular, 6).Gap(1).BorderWidth(1, 0, 0, 0).BorderColor(portrait.Colors.Line).Role(ui.RoleListBox).Label("Results").
+			Padding(6, 6, resultsBottom, 6).Gap(1).BorderWidth(1, 0, 0, 0).BorderColor(portrait.Colors.Line).Role(ui.RoleListBox).Label("Results").
 			TrackScroll(resultsScroll).MaskLinearGradient(scrollEdgeMask(180, resultsScroll)).Children(func() {
 			for i, item := range items {
 				selected := i == bar.index

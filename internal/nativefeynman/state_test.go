@@ -39,8 +39,11 @@ func TestFailedPromptRestoresOldPromptOnlyWhenNothingNewWasTyped(t *testing.T) {
 	if state.draft != "a newer question" {
 		t.Fatalf("draft = %q, want the newer typed input preserved", state.draft)
 	}
-	if !containsSource(state.sources, "/workspace/old.md") || !containsSource(state.sources, "/workspace/new.md") {
-		t.Fatalf("sources = %#v, want failed and newly attached sources merged", state.sources)
+	if len(state.sources) != 1 || state.sources[0] != "/workspace/new.md" {
+		t.Fatalf("sources = %#v, want intervening draft sources kept clean", state.sources)
+	}
+	if state.failedDraft != "the failed prompt" || !containsSource(state.failedSources, "/workspace/old.md") {
+		t.Fatalf("failed submission = %q %#v, want failed prompt and old source preserved separately", state.failedDraft, state.failedSources)
 	}
 
 	state.draft = ""

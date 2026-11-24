@@ -199,6 +199,7 @@ func (s *Shell) settingsSearch(c *ui.Context, _ []SettingsPage) portrait.Field {
 			return true
 		case ui.KeyEnter:
 			if s.settingsMatchedQuery == key.Text() {
+				s.settingsSubmitQuery = ""
 				if len(s.settingsMatchedPages) > 0 {
 					s.settingsTab = s.settingsMatchedPages[0]
 					key.SetText("")
@@ -206,8 +207,11 @@ func (s *Shell) settingsSearch(c *ui.Context, _ []SettingsPage) portrait.Field {
 				}
 				return false
 			}
-			// The frame has not drawn this query yet. Waiting is safer than
-			// using page keywords, which can name a page with no result rows.
+			if strings.TrimSpace(key.Text()) != "" {
+				// Consume Enter once this frame computes the matching rows.
+				s.settingsSubmitQuery = key.Text()
+				return true
+			}
 			return false
 		}
 		return false
@@ -395,6 +399,14 @@ func (s *Shell) settingsPane(c *ui.Context, current SettingsPage, pages []Settin
 					}
 					s.settingsMatchedQuery = query.Text
 					s.settingsMatchedPages = matchedPages
+					if s.settingsSubmitQuery != "" {
+						pending := s.settingsSubmitQuery
+						s.settingsSubmitQuery = ""
+						if pending == query.Text && len(matchedPages) > 0 {
+							s.settingsTab, s.settingsQuery = matchedPages[0], ""
+							c.Invalidate()
+						}
+					}
 					if searchState.matches == 0 {
 						portrait.Empty(c, portrait.EmptySpec{Icon: portrait.IconMagnifyingGlass, Title: "No settings match “" + query.Text + "”", Description: "Try a different setting name or keyword."})
 					}

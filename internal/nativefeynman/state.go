@@ -53,6 +53,8 @@ type paneState struct {
 	filesRequest  uint64
 	sources       []string
 	draft         string
+	failedDraft   string
+	failedSources []string
 	includeDoc    bool
 	selectedTab   string
 	actionsOpen   bool
@@ -100,12 +102,19 @@ func newPaneState(root string) *paneState {
 }
 
 // restoreDraft returns submitted input to the composer after a failure without
-// overwriting anything the user typed while the request was in flight.
-func (s *paneState) restoreDraft(prompt string, sources []string) {
+// overwriting anything the user typed while the request was in flight. When
+// the user already started a new draft, the failed submission and its sources
+// stay separately available for recovery instead of being dropped or merged.
+func (s *paneState) restoreDraft(rawDraft string, sources []string) {
 	if strings.TrimSpace(s.draft) == "" {
-		s.draft = prompt
+		s.draft = rawDraft
+		s.sources = mergeSources(sources, s.sources)
+		s.failedDraft = ""
+		s.failedSources = nil
+		return
 	}
-	s.sources = mergeSources(sources, s.sources)
+	s.failedDraft = rawDraft
+	s.failedSources = append([]string(nil), sources...)
 }
 
 func (s *paneState) resetConversation() {
@@ -126,6 +135,8 @@ func (s *paneState) resetConversation() {
 	s.widgets = make(map[string]feynman.ResearchUpdate)
 	s.progress = ""
 	s.sources = nil
+	s.failedDraft = ""
+	s.failedSources = nil
 }
 
 func (s *paneState) receive(update feynman.ResearchUpdate) {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
+	"github.com/Bayern99/mark-go-go/internal/nativeui"
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
@@ -323,5 +324,84 @@ func TestSlashCommandsRejectPathsAndMissingCommands(t *testing.T) {
 		if !p.slashCommandMatches(draft) {
 			t.Errorf("%q should open matching research actions", draft)
 		}
+	}
+}
+
+func TestSlashPopoverClosesWhenDraftStopsMatching(t *testing.T) {
+	p := fixtureReadyPanel()
+	p.state.draft = "/"
+	p.state.commands = []feynman.ResearchCommand{{Name: "review"}, {Name: "summarize"}}
+	app := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Justify(ui.End).Children(func() { p.composer(c) })
+	}, 640, 600)
+	app.Frame()
+	if err := app.Click("Research prompt"); err != nil {
+		t.Fatal(err)
+	}
+	app.Type("rev")
+	app.Frame()
+	if !p.state.actionsOpen {
+		t.Fatal("expected /rev to open Research actions")
+	}
+	app.Type("zzz")
+	app.Frame()
+	if p.state.actionsOpen {
+		t.Fatal("slash popover stayed open with stale match after typing /revzzz")
+	}
+}
+
+func TestAsyncSendFailurePreservesRawIndentationAndSeparatesInterveningDraft(t *testing.T) {
+	p := fixtureReadyPanel()
+	p.state.draft = ""
+	p.state.restoreDraft("    code with indentation\n", []string{"/workspace/notes/a.md"})
+	if got := p.state.draft; got != "    code with indentation\n" {
+		t.Fatalf("empty composer restored %q, want raw indented draft", got)
+	}
+
+	p2 := fixtureReadyPanel()
+	p2.state.draft = "new draft typed while waiting"
+	p2.state.sources = []string{"/workspace/notes/new.md"}
+	p2.state.restoreDraft("    old failed prompt\n", []string{"/workspace/notes/old.md"})
+	if p2.state.draft != "new draft typed while waiting" {
+		t.Fatalf("intervening draft overwritten: %q", p2.state.draft)
+	}
+	if len(p2.state.sources) != 1 || p2.state.sources[0] != "/workspace/notes/new.md" {
+		t.Fatalf("old sources polluted intervening draft: %v", p2.state.sources)
+	}
+	if p2.state.failedDraft != "    old failed prompt\n" || len(p2.state.failedSources) != 1 {
+		t.Fatalf("failed submission not preserved: %q %v", p2.state.failedDraft, p2.state.failedSources)
+	}
+	app := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Children(func() { p2.composer(c) })
+	}, 520, 480)
+	app.Frame()
+	if err := app.Click("Restore unsent prompt and sources"); err != nil {
+		t.Fatalf("missing restore failed draft control: %v", err)
+	}
+	app.Frame()
+	if p2.state.draft != "    old failed prompt\n" {
+		t.Fatalf("restored draft = %q, want exact failed draft", p2.state.draft)
+	}
+	if len(p2.state.sources) != 2 {
+		t.Fatalf("restored sources = %v, want both old and current sources", p2.state.sources)
+	}
+}
+
+func TestFeynmanSettingsErrorRendersDuringSearchAndRejectsEmptyHostnameURL(t *testing.T) {
+	if err := mcpTransportValidation("http", "https://:443/mcp", ""); err == "" {
+		t.Fatal("https://:443/mcp with empty hostname should be rejected")
+	}
+	if err := mcpTransportValidation("http", "https://mcp.example.com:443/mcp", ""); err != "" {
+		t.Fatalf("valid https URL rejected: %q", err)
+	}
+	p := fixtureReadyPanel()
+	p.settingsRoot = p.state.root
+	p.state.cliError = "MCP server failed to add"
+	app := ui.NewTester(func(c *ui.Context) {
+		p.drawSettingsPage(c, "mcp", nativeui.SettingsQuery{Text: "mcp"})
+	}, 720, 600)
+	app.Frame()
+	if !app.HasText("MCP server failed to add") {
+		t.Fatalf("cliError hidden while Settings search is active; texts: %v", app.Texts())
 	}
 }

@@ -94,7 +94,11 @@ func (s *Shell) documents(c *ui.Context, m Model, a Actions) {
 	}
 	labels := tabLabels(docs)
 	scroll := s.scrollState("documents")
-	ui.Scroll(c.Key("documents")).FillWidth().MaxHeight(portrait.Shell.Documents).Shrink(0).Padding(scrollContentInset, scrollContentInset, portrait.Sizes.Regular, scrollContentInset).Role(ui.RoleTabList).Label("Documents").TrackScroll(scroll).MaskLinearGradient(scrollEdgeMask(180, scroll)).Children(func() {
+	bottomPad := scrollContentInset
+	if scroll.MaxY > 0 {
+		bottomPad = portrait.Sizes.Regular
+	}
+	ui.Scroll(c.Key("documents")).FillWidth().MaxHeight(portrait.Shell.Documents).Shrink(0).Padding(scrollContentInset, scrollContentInset, bottomPad, scrollContentInset).Role(ui.RoleTabList).Label("Documents").TrackScroll(scroll).MaskLinearGradient(scrollEdgeMask(180, scroll)).Children(func() {
 		for i, d := range docs {
 			selected := d.ID == s.activeID
 			states := documentStates(d.Edited, d.Conflict, d.Deleted, d.ReadOnly, d.Generating)
@@ -102,7 +106,6 @@ func (s *Shell) documents(c *ui.Context, m Model, a Actions) {
 			row := ui.Row(c.Key(d.ID)).FillWidth().Height(portrait.Shell.Row).Radius(portrait.Radii.M).AlignItems(ui.Center).Padding(0, 5, 0, 0).Gap(4)
 			hovered := row.Hovered()
 			portrait.RowHover(row, hovered && !selected)
-			portrait.Press(row, portrait.Quiet)
 			if selected && s.tabScroll == d.ID {
 				row.ScrollIntoView()
 				s.tabScroll = ""

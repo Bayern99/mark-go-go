@@ -49,6 +49,11 @@ func (p *panel) mcpSettings(c *ui.Context) {
 			}
 			transportError := mcpTransportValidation(transport, p.serverURL, p.serverCommand)
 			validation := mcpServerValidation(p.serverName, transportError)
+			showTransportError := transportError != "" && ((transport == "stdio" && strings.TrimSpace(p.serverCommand) != "") || (transport != "stdio" && strings.TrimSpace(p.serverURL) != ""))
+			displayedTransportError := ""
+			if showTransportError {
+				displayedTransportError = transportError
+			}
 			ui.Column(c.Key("feynman-mcp-add-form")).Gap(portrait.Form.Gap).Padding(portrait.Form.AreaPadY, 0, 0, 0).BorderWidth(portrait.Editor.Hairline, 0, 0, 0).BorderColor(portrait.Colors.Line).Children(func() {
 				portrait.FormRow(c, "Name", "", func() { input(c, "feynman-mcp-name", "Server name", &p.serverName, "Name") })
 				portrait.FormRow(c, "Transport", "", func() {
@@ -64,8 +69,8 @@ func (p *panel) mcpSettings(c *ui.Context) {
 					}
 				})
 				if transport == "stdio" {
-					portrait.FormRow(c, "Command", transportError, func() {
-						validatedInput(c, "feynman-mcp-command", "Command", &p.serverCommand, "Command path", transportError != "")
+					portrait.FormRow(c, "Command", displayedTransportError, func() {
+						validatedInput(c, "feynman-mcp-command", "Command", &p.serverCommand, "Command path", showTransportError)
 					})
 					portrait.FormRow(c, "Arguments", "", func() { input(c, "feynman-mcp-args", "Arguments", &p.serverArgs, "Space separated arguments") })
 					portrait.FormRow(c, "Environment", "One KEY=value pair per line.", func() {
@@ -73,8 +78,8 @@ func (p *panel) mcpSettings(c *ui.Context) {
 					})
 					portrait.FormRow(c, "Working folder", "", func() { input(c, "feynman-mcp-cwd", "Working folder", &p.serverCwd, "Optional working directory") })
 				} else {
-					portrait.FormRow(c, "URL", transportError, func() {
-						validatedInput(c, "feynman-mcp-url", "HTTP URL", &p.serverURL, "https://…", transportError != "")
+					portrait.FormRow(c, "URL", displayedTransportError, func() {
+						validatedInput(c, "feynman-mcp-url", "HTTP URL", &p.serverURL, "https://…", showTransportError)
 					})
 					portrait.FormRow(c, "Headers", "One Header: value pair per line.", func() {
 						area(c, "feynman-mcp-headers", "Headers", &p.serverHeaders, "Header: value, one per line", portrait.Form.AreaMin)
@@ -100,7 +105,7 @@ func (p *panel) mcpSettings(c *ui.Context) {
 					if portrait.QuietButton(c, "Cancel", "Cancel adding MCP server").Clicked() {
 						p.mcpAddOpen = false
 					}
-					if portrait.AccentButton(c, "Add server", "Add MCP server to Feynman").Disabled(s.cliBusy || validation != "").Clicked() {
+					if portrait.ButtonWith(c, "Add server", "Add MCP server to Feynman", portrait.ButtonSpec{Look: portrait.Accent, Size: portrait.Sizes.Regular, Disabled: s.cliBusy || validation != ""}).Clicked() {
 						p.addMCPServer()
 					}
 				})
@@ -123,7 +128,7 @@ func mcpTransportValidation(transport, serverURL, command string) string {
 		return ""
 	}
 	parsed, err := url.Parse(strings.TrimSpace(serverURL))
-	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return "Enter a valid http:// or https:// URL with a host."
 	}
 	return ""

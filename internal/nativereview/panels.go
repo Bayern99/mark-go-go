@@ -57,6 +57,7 @@ type panel struct {
 	decisions      map[string]review.HunkDecision
 	open           bool
 	proposalError  string
+	restoreNotice  string
 	dismissed      map[string]*dismissedProposal
 	checkpointDocs map[string]*checkpointState
 }
@@ -114,6 +115,16 @@ func (p *panel) clearComparison() {
 }
 
 func (p *panel) drawProposals(c *ui.Context) {
+	if p.restoreNotice != "" {
+		notice := p.restoreNotice
+		p.restoreNotice = ""
+		portrait.Notify(c, portrait.ToastSpec{
+			ID:      "review:restore-conflict",
+			Tone:    portrait.Tones.Danger,
+			Title:   notice,
+			Timeout: undoDismissTimeout,
+		})
+	}
 	if len(p.latest.Proposals) == 0 {
 		p.open = false
 		return
@@ -140,14 +151,16 @@ func (p *panel) proposalPopover(c *ui.Context) {
 	}
 	ui.Column(c).Gap(portrait.Form.Gap).Padding(0, portrait.Form.PadX).Children(func() {
 		var active review.ChangeProposal
+		found := false
 		p.proposalPicker(c, tabs)
-		for _, item := range p.latest.Proposals {
-			if item.ID == p.selected {
-				active = item
+		for i, tab := range tabs {
+			if tab.key == p.selected && i < len(p.latest.Proposals) {
+				active = p.latest.Proposals[i]
+				found = true
 				break
 			}
 		}
-		if active.ID == "" {
+		if !found {
 			active = p.latest.Proposals[0]
 			p.selected = tabs[0].key
 			p.clearComparison()
@@ -416,7 +429,7 @@ func (p *panel) restoreDismissed(id string) {
 	}
 	delete(p.dismissed, id)
 	proposal := dismissed.proposal
-	restored, err := p.proposals.SubmitProposal(review.ProposeInput{
+	restored, err := p.proposals.RestoreProposal(review.ProposeInput{
 		ID:            proposal.ID,
 		WorkspaceRoot: proposal.WorkspaceRoot,
 		DocumentID:    proposal.DocumentID,
@@ -429,6 +442,8 @@ func (p *panel) restoreDismissed(id string) {
 	})
 	if err != nil {
 		p.proposalError = err.Error()
+		p.restoreNotice = err.Error()
+		p.latest = p.proposals.Snapshot(p.root)
 		return
 	}
 	for id, decision := range dismissed.decisions {

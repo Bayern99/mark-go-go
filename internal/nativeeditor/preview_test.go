@@ -946,6 +946,40 @@ func TestStandaloneImageTakesTheRoomOfItsOwnLines(t *testing.T) {
 	}
 }
 
+func TestPreviewSoftBreaksJoinCJKAroundInlineEmphasisWithoutASpace(t *testing.T) {
+	const src = "中文**结束**\n中文继续\n"
+	d := nativeeditor.New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill().AutoFocus() }, 680, 240)
+	tt.Frame()
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Key(ui.Cmd, ui.KeyC)
+	if got, want := tt.Clipboard(), "中文结束中文继续\n"; got != want {
+		t.Fatalf("copied CJK emphasis soft break = %q, want %q", got, want)
+	}
+}
+
+func TestThematicBreakStaysWithinTheReadingColumn(t *testing.T) {
+	const src = "Before.\n\n---\n\nAfter.\n"
+	d := nativeeditor.New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 1200, 320)
+	tt.Frame()
+	before, _ := d.RectUTF16(0)
+	after, _ := d.RectUTF16(strings.Index(src, "After"))
+	ruleY := int(paperRuleY(t, tt, before.Y+before.H, after.Y))
+	img := tt.Image()
+	rightEdge := 0
+	for x := 1199; x >= 0; x-- {
+		px := img.RGBAAt(x, ruleY)
+		if px != (color.RGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}) {
+			rightEdge = x
+			break
+		}
+	}
+	if float32(rightEdge) > before.X+portrait.Editor.Column+2 {
+		t.Fatalf("thematic break extends to x=%d, beyond reading column %v+%v", rightEdge, before.X, portrait.Editor.Column)
+	}
+}
+
 // paperRuleY returns the row of the only ink between two paragraphs: the
 // thematic break's rule.
 func paperRuleY(t *testing.T, tt *ui.Tester, top, bottom float32) float32 {

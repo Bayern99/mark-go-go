@@ -537,7 +537,6 @@ type navItem struct {
 func navRow(c *ui.Context, item navItem) ui.Element {
 	row := ui.ButtonBase(c.Key(item.key)).FillWidth().Role(ui.RoleTreeItem).Label(item.title).Description(item.detail).AccessSelected(item.selected).MinHeight(portrait.Sizes.Regular).Padding(4, 8).Radius(portrait.Radii.M).AlignItems(ui.Center)
 	portrait.RowHover(row, !item.selected && row.Hovered())
-	portrait.Press(row, portrait.Quiet)
 	ink := item.ink
 	if ink == (ui.Color{}) {
 		ink = portrait.Colors.Ink2

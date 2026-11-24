@@ -86,7 +86,7 @@ func (p *panel) searchSettings(c *ui.Context) {
 		}
 		portrait.FormRow(c, "Provider", "", func() {
 			portrait.Select(c.Key("feynman-search-provider"), &p.searchProvider, searchProviderOptions(p.searchProvider), portrait.SelectSpec{
-				Label: "Search provider", Placeholder: "Choose a provider", Width: portrait.Form.SelectMin,
+				Label: "Search provider", Placeholder: "Choose a provider", Width: portrait.Form.SelectMax,
 			})
 		})
 		portrait.FormRow(c, "API key", "", func() {
@@ -95,10 +95,10 @@ func (p *panel) searchSettings(c *ui.Context) {
 			})
 		})
 		ui.Row(c).FillWidth().Justify(ui.End).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
-			if portrait.ButtonWith(c, "Reset to Auto", "Reset search routing to automatic", portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Regular}).Disabled(s.cliBusy).Clicked() {
+			if portrait.ButtonWith(c, "Reset to Auto", "Reset search routing to automatic", portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Regular, Disabled: s.cliBusy}).Clicked() {
 				p.resetSearchSettings()
 			}
-			if portrait.ButtonWith(c, "Save", "Set the selected web search provider and API key", portrait.ButtonSpec{Look: portrait.Accent, Size: portrait.Sizes.Regular}).Disabled(s.cliBusy || strings.TrimSpace(p.searchProvider) == "").Clicked() {
+			if portrait.ButtonWith(c, "Save", "Set the selected web search provider and API key", portrait.ButtonSpec{Look: portrait.Accent, Size: portrait.Sizes.Regular, Disabled: s.cliBusy || strings.TrimSpace(p.searchProvider) == ""}).Clicked() {
 				p.runSettingsUpdate(func() (func(), error) {
 					result, err := p.host.CLISearchAction(p.window.Context(), s.root, "set", strings.TrimSpace(p.searchProvider), strings.TrimSpace(p.searchKey))
 					status, statusErr := p.host.CLISearchStatus(p.window.Context(), s.root)

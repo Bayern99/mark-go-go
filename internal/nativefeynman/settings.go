@@ -131,7 +131,7 @@ func (p *panel) drawSettingsPage(c *ui.Context, tab string, q nativeui.SettingsQ
 	if p.settingsRoot != s.root && !s.cliBusy {
 		p.loadSettings(s.root)
 	}
-	if s.cliError != "" && !q.Active() {
+	if s.cliError != "" {
 		portrait.Alert(c, portrait.Tones.Danger, "Feynman CLI", s.cliError)
 	}
 	if s.cliResult != "" && !q.Active() {

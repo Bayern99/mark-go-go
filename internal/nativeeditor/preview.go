@@ -363,15 +363,34 @@ func (p *previewLayout) reflowBreak(src string, in parser.Inline, floor int) {
 	p.replace(start, end, sep)
 }
 
-// joinsWithoutSpace reports whether the runes around a soft break are CJK,
-// whose lines join without a word space.
+// joinsWithoutSpace reports whether the visible runes around a soft break are
+// CJK, whose lines join without a word space even across inline emphasis marks.
 func joinsWithoutSpace(src string, start, end int) bool {
 	if start <= 0 || end >= len(src) {
 		return false
 	}
-	before, _ := utf8.DecodeLastRuneInString(src[:start])
-	after, _ := utf8.DecodeRuneInString(src[end:])
+	left := start
+	for left > 0 && isInlineDelimiter(src[left-1]) {
+		left--
+	}
+	right := end
+	for right < len(src) && isInlineDelimiter(src[right]) {
+		right++
+	}
+	if left <= 0 || right >= len(src) {
+		return false
+	}
+	before, _ := utf8.DecodeLastRuneInString(src[:left])
+	after, _ := utf8.DecodeRuneInString(src[right:])
 	return cjkRune(before) && cjkRune(after)
+}
+
+func isInlineDelimiter(b byte) bool {
+	switch b {
+	case '*', '_', '~', '`':
+		return true
+	}
+	return false
 }
 
 // cjkRune reports whether r is CJK writing: ideographs, kana or their
@@ -417,8 +436,8 @@ func quoteBar(c *ui.Context, e ui.Element, _ editor.Replacement) {
 }
 
 func (p *previewLayout) thematicBreak(snap editor.Snapshot, start, end int) {
-	block := editor.Block{Line: snap.LineOf(start), Height: portrait.Type.Reading.Leading, Label: "Thematic break", Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
-		e.FillWidth().Height(portrait.Type.Reading.Leading).Justify(ui.Center).Children(func() {
+	block := editor.Block{Line: snap.LineOf(start), Height: portrait.Type.Reading.Leading, Width: portrait.Editor.Column, Label: "Thematic break", Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
+		e.Height(portrait.Type.Reading.Leading).Justify(ui.Center).Children(func() {
 			ui.Box(c).FillWidth().Height(portrait.Editor.Hairline).Background(portrait.Colors.Line).AccessHidden(true)
 		})
 	}}

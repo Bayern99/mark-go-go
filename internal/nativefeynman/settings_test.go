@@ -56,6 +56,11 @@ func TestMCPFormUsesValidatedSegmentedTransportAndCheckbox(t *testing.T) {
 	if add, ok := app.AccessByRole(ui.RoleButton, "Add MCP server to Feynman"); !ok || !add.Disabled {
 		t.Fatalf("Add server = %+v, present=%t; want disabled for an empty URL", add, ok)
 	}
+	if app.HasText("Enter a valid http:// or https:// URL with a host.") {
+		t.Fatal("untouched blank MCP URL showed a premature validation message")
+	}
+	p.serverURL = "notaurl"
+	app.Frame()
 	if !app.HasText("Enter a valid http:// or https:// URL with a host.") {
 		t.Fatal("invalid MCP URL has no inline validation message")
 	}

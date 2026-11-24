@@ -325,3 +325,61 @@ func TestGeneratingStatusIsAHollowRingInEarthLightAndDark(t *testing.T) {
 		})
 	}
 }
+
+func TestHoveringActiveTabAndFileRowSettlesWithoutPerpetualRedraw(t *testing.T) {
+	model := libraryModel()
+	model.Navigation.Entries = []workspace.NavEntry{
+		{ID: "one", Kind: "file", Name: "One.md", Path: "/library/One.md", DocumentID: "a"},
+	}
+	var shell nativeui.Shell
+	app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, model, nativeui.Actions{}, nativeui.Slots{}) }, 1280, 820)
+	app.Frame()
+	for _, tc := range []struct {
+		kind string
+		name string
+		role ui.Role
+	}{
+		{"tab", "One.md", ui.RoleTab},
+		{"tree", "One.md", ui.RoleTreeItem},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			info := mustAccess(t, app, tc.role, tc.name)
+			app.Move(info.Bounds.X+info.Bounds.W/2, info.Bounds.Y+info.Bounds.H/2)
+			app.Advance(2 * time.Second)
+			app.Frame()
+			if app.FramePending() {
+				t.Fatalf("hovering active %s keeps FramePending=true after settling", tc.kind)
+			}
+		})
+	}
+}
+
+func TestSettingsSearchRapidTypeAndEnterOpensDisplayedMatch(t *testing.T) {
+	model := libraryModel()
+	var shell nativeui.Shell
+	slots := nativeui.Slots{
+		Settings: []nativeui.SettingsPage{{
+			ID: "search", Label: "Search & Papers", Section: "Research",
+			Keywords: []string{"web search api key"},
+			Draw: func(c *ui.Context, q nativeui.SettingsQuery) {
+				if q.Match("API key", "Provider & API key", "web search api key") {
+					portrait.Label(c, "API key")
+				}
+			},
+		}},
+	}
+	app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, model, nativeui.Actions{}, slots) }, 1280, 820)
+	app.Frame()
+	shell.OpenSettings("general")
+	app.Frame()
+	app.Key(0, ui.KeySlash)
+	app.Frame()
+	// Deliver text and Enter without an intermediate frame.
+	app.Type("key")
+	app.Key(0, ui.KeyEnter)
+	app.Frame()
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RoleHeading, "Search & Papers"); !ok {
+		t.Fatalf("rapid Enter did not open matched Search & Papers page; visible texts: %v", app.Texts())
+	}
+}

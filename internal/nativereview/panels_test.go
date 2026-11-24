@@ -332,3 +332,58 @@ func TestUndoOfADismissedProposalReplaysItsHunkDecisions(t *testing.T) {
 		t.Fatalf("Undo restored hunk decision %q, want %q", got, review.HunkAccepted)
 	}
 }
+
+func TestUndoOfADismissedProposalDoesNotOverwriteANewerProposalForTheSameDocument(t *testing.T) {
+	const (
+		root = "/workspace"
+		path = root + "/Quiet Software.md"
+		base = "first line\nsecond line\n"
+	)
+	service := review.NewService()
+	oldProposal, err := service.SubmitProposal(review.ProposeInput{
+		WorkspaceRoot: root, DocumentID: "a", Path: path,
+		BaseText: base, ProposedText: "first line\nOLD proposal\n",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	win := nativeui.SceneWindow(workspace.WorkspaceSnapshot{
+		Root: root, ActiveID: "a", Documents: []workspace.DocumentInfo{{WorkspaceRoot: root, ID: "a", Path: path}},
+	}, workspace.NavSnapshot{}, nil, base, portrait.DefaultSpace, false)
+	p := &panel{
+		win: win, ctx: context.Background(), proposals: service, root: root,
+		latest: service.Snapshot(root), compared: oldProposal, open: true,
+		decisions: map[string]review.HunkDecision{}, checkpointDocs: map[string]*checkpointState{},
+		base: reading{document: win.Source(), id: "a", path: path, text: base, revision: win.Source().Version()},
+	}
+	app := ui.NewTester(func(c *ui.Context) {
+		p.drawProposals(c)
+		portrait.Toasts(c)
+	}, 900, 720)
+	app.Frame()
+	if err := app.Click("Dismiss proposal"); err != nil {
+		t.Fatal(err)
+	}
+	app.Frame()
+	newer, err := service.SubmitProposal(review.ProposeInput{
+		WorkspaceRoot: root, DocumentID: "a", Path: path,
+		BaseText: base, ProposedText: "first line\nNEWER proposal\n",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.latest = service.Snapshot(root)
+	app.Advance(portrait.Motion.Enter + 20*time.Millisecond)
+	app.Frame()
+	if err := app.Click("Undo"); err != nil {
+		t.Fatal(err)
+	}
+	app.Frame()
+	got := service.Snapshot(root).Proposals
+	if len(got) != 1 || got[0].ID != newer.ID || got[0].ProposedText != newer.ProposedText {
+		t.Fatalf("Undo overwrote newer proposal: got %+v, want %+v", got, newer)
+	}
+	if !strings.Contains(p.proposalError, "newer proposal") {
+		t.Fatalf("expected conflict notice, got %q", p.proposalError)
+	}
+}

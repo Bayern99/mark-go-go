@@ -289,6 +289,8 @@ func TestDiffMarksWhitespaceChangesItsLinesCannotShow(t *testing.T) {
 		{"trailing tab", "alpha\nbeta\t\n", "alpha\nbeta\n", "→", "1 trailing tab"},
 		{"crlf to lf", "alpha\r\nbeta\r\n", "alpha\nbeta\n", "␍", "CRLF line ending, the other side uses LF"},
 		{"missing last newline", "alpha\nbeta\n", "alpha\nbeta", "no newline at end", "no newline at end of file"},
+		{"changed body without eof newline", "old body\n", "new body", "no newline at end", "no newline at end of file"},
+		{"appended line without eof newline", "old\n", "old\nnew", "no newline at end", "no newline at end of file"},
 		{"leading space", "alpha\nbeta\n", "alpha\n beta\n", "·", "1 leading space"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

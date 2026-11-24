@@ -164,8 +164,33 @@ func hunkMarks(lines []review.DiffLine, sides diffSides) []diffMarks {
 			}
 			marks[deletes+k], marks[inserts+k] = pairMarks(deleted, inserted)
 		}
+		for k := deletes; k < i; k++ {
+			markEOFEnding(&marks[k], lines[k], before, after)
+		}
 	}
 	return marks
+}
+
+func markEOFEnding(m *diffMarks, line review.DiffLine, before, after []string) {
+	if m.eof {
+		return
+	}
+	switch line.Kind {
+	case review.DiffLineDelete:
+		if len(before) > 0 && line.OldLine == len(before) {
+			if _, end := splitEnding(before[len(before)-1]); end == "" {
+				m.eof = true
+				m.add("", "no newline at end of file")
+			}
+		}
+	case review.DiffLineInsert:
+		if len(after) > 0 && line.NewLine == len(after) {
+			if _, end := splitEnding(after[len(after)-1]); end == "" {
+				m.eof = true
+				m.add("", "no newline at end of file")
+			}
+		}
+	}
 }
 
 // rawLines splits text the way the diff does, keeping each line's terminator.

@@ -247,7 +247,7 @@ func (s *Shell) appearanceSettingsPage(c *ui.Context, m Model, a Actions, q Sett
 		}
 		rows.Row(spec, func() {
 			activeSpace := spaceOf(m)
-			grid := ui.Column(c).FillWidth()
+			grid := ui.Column(c).FillWidth().Gap(portrait.Form.PadX)
 			available := grid.Bounds().W
 			if available <= 0 {
 				available = portrait.Settings.Column

@@ -39,6 +39,10 @@ func smallButton(c *ui.Context, label, description string) ui.Element {
 	return option(c, "research-small-"+label, label, description, portrait.Raised, true, false)
 }
 
+func toolButton(c *ui.Context, label, description string, small, selected bool) ui.Element {
+	return option(c, "research-tool-"+label, label, description, portrait.Quiet, small, selected)
+}
+
 func choiceButton(c *ui.Context, key, label, description string, selected, small bool) ui.Element {
 	return option(c, key, label, description, portrait.Quiet, small, selected).Checked(selected)
 }

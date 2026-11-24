@@ -157,6 +157,82 @@ func TestNarrowUnsavedDocumentTabExposesStatusWithoutATextBadge(t *testing.T) {
 	}
 }
 
+func uniform(px []uint32) bool {
+	for _, p := range px {
+		if p != px[0] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestInactiveTabCloseButtonAppearsOnIntent(t *testing.T) {
+	var shell nativeui.Shell
+	m := nativeui.Model{Workspace: workspace.WorkspaceSnapshot{ActiveID: "a", Documents: []workspace.DocumentInfo{{ID: "a", Name: "One.md"}, {ID: "b", Name: "Two.md"}}}}
+	app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, m, nativeui.Actions{}, nativeui.Slots{}) }, 1280, 820)
+	app.Frame()
+	active, _ := app.AccessByRole(ui.RoleButton, "Close One.md")
+	inactive, ok := app.AccessByRole(ui.RoleButton, "Close Two.md")
+	if !ok {
+		t.Fatal("inactive tab lost its accessible close button")
+	}
+	if uniform(pixels(app.Image(), active.Bounds)) {
+		t.Error("the selected tab hides its close button")
+	}
+	if !uniform(pixels(app.Image(), inactive.Bounds)) {
+		t.Fatal("an inactive tab paints its close button at rest")
+	}
+	tab, _ := app.AccessByRole(ui.RoleTab, "Two.md")
+	app.Move(tab.Bounds.X+tab.Bounds.W/2, tab.Bounds.Y+tab.Bounds.H/2)
+	app.Advance(time.Second)
+	if uniform(pixels(app.Image(), inactive.Bounds)) {
+		t.Fatal("hovering the tab did not reveal its close button")
+	}
+}
+
+func TestTabTitlesGetRoomToBeRead(t *testing.T) {
+	const name = "Acoustic Study Measurements.md"
+	var shell nativeui.Shell
+	m := nativeui.Model{Workspace: workspace.WorkspaceSnapshot{ActiveID: "a", Documents: []workspace.DocumentInfo{{ID: "a", Name: "One.md"}, {ID: "b", Name: name}}}}
+	app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, m, nativeui.Actions{}, nativeui.Slots{}) }, 1280, 820)
+	app.Frame()
+	tab, ok := app.AccessByRole(ui.RoleTab, name)
+	if !ok {
+		t.Fatal("missing tab")
+	}
+	if tab.Bounds.W <= 136 {
+		t.Fatalf("tab is %v wide with room to spare; a long title should not be cut to the minimum cell", tab.Bounds.W)
+	}
+}
+
+func TestToolbarButtonsAreQuietUntilTheirPanelShows(t *testing.T) {
+	var shell nativeui.Shell
+	app := ui.NewTester(func(c *ui.Context) {
+		shell.Draw(c, nativeui.Model{Feynman: true}, nativeui.Actions{}, nativeui.Slots{})
+	}, 1280, 820)
+	app.Frame()
+	paper := pixels(app.Image(), ui.Rect{X: 300, Y: 300, W: 1, H: 1})[0]
+	corner := func(name string) uint32 {
+		t.Helper()
+		info, ok := app.Access(name)
+		if !ok {
+			t.Fatalf("missing %s", name)
+		}
+		return pixels(app.Image(), ui.Rect{X: info.Bounds.X + 3, Y: info.Bounds.Y + info.Bounds.H/2, W: 1, H: 1})[0]
+	}
+	if got := corner("Plugins"); got != paper {
+		t.Errorf("Plugins paints a fill at rest: %d vs paper %d", got, paper)
+	}
+	if got := corner("Toggle research"); got == paper {
+		t.Error("Toggle research looks the same with its panel docked")
+	}
+	app.Key(ui.Cmd|ui.Alt, ui.Key0)
+	app.Advance(time.Second)
+	if got := corner("Toggle research"); got != paper {
+		t.Errorf("Toggle research keeps its lifted look after the panel hides: %d vs paper %d", got, paper)
+	}
+}
+
 func TestTabBarButtonSinksWhilePressed(t *testing.T) {
 	var shell nativeui.Shell
 	app := ui.NewTester(func(c *ui.Context) {

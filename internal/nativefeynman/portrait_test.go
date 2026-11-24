@@ -192,3 +192,33 @@ func TestResearchSendButtonSinksWhilePressed(t *testing.T) {
 		t.Fatalf("pressing Send changed %d of %d pixels, want press feedback", changed, len(rest))
 	}
 }
+
+func TestResearchToolbarActionsAreQuietAndShowWhatIsOpen(t *testing.T) {
+	p := fixtureReadyPanel()
+	app := ui.NewTester(func(c *ui.Context) { drawWidePane(c, p) }, 1280, 820)
+	app.Frame()
+	edge := func(name string) (inside, outside uint32) {
+		t.Helper()
+		info, ok := app.AccessByRole(ui.RoleButton, name)
+		if !ok {
+			t.Fatalf("missing %s", name)
+		}
+		img := app.Image()
+		at := func(x, y float32) uint32 {
+			r, g, b, _ := img.At(int(x), int(y)).RGBA()
+			return r + g + b
+		}
+		y := info.Bounds.Y + info.Bounds.H/2
+		return at(info.Bounds.X+3, y), at(info.Bounds.X-2, y)
+	}
+	for _, name := range []string{"Workspace conversation history", "Copy Feynman response", "Attach source files", "Browse workflows, skills and extensions"} {
+		if inside, outside := edge(name); inside != outside {
+			t.Errorf("%s paints a raised fill at rest: %d vs surrounding %d", name, inside, outside)
+		}
+	}
+	p.state.sessionsOpen = true
+	app.Frame()
+	if inside, outside := edge("Workspace conversation history"); inside == outside {
+		t.Error("History looks the same while the conversation list is open")
+	}
+}

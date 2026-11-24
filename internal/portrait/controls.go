@@ -57,6 +57,13 @@ func Press(b ui.Element, look Look) ui.Color {
 	return f.ink
 }
 
+func RowHover(row ui.Element, on bool) {
+	h := row.AnimateTo(hoverKey{}, flag(on), ui.Animation{Duration: hoverShadow, Ease: Motion.EaseOut.Easing()})
+	if h > 0 {
+		Surface{ui.Transparent, ui.Transparent, nil}.Mix(Materials.Row, h).Apply(row)
+	}
+}
+
 func flag(b bool) float32 {
 	if b {
 		return 1

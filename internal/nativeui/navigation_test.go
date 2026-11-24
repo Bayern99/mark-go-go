@@ -166,6 +166,105 @@ func TestFileTreeCapsuleLandsAtOnceForKeyboardOrReducedMotion(t *testing.T) {
 	})
 }
 
+func TestFileTreeRowsAreOneLineAndOnlySpeakUpForState(t *testing.T) {
+	model := nativeui.Model{Workspace: workspace.WorkspaceSnapshot{
+		Kind: "folder", Root: "/notes",
+	}, Navigation: workspace.NavSnapshot{Entries: []workspace.NavEntry{
+		{ID: "folder:chapters", Kind: "folder", Name: "chapters", Path: "/notes/chapters", MarkdownCount: 3, FolderState: workspace.FolderOpen},
+		{ID: "file:One.md", Kind: "file", Name: "One.md", Path: "/notes/chapters/One.md", Parent: "chapters", Depth: 1},
+		{ID: "file:Draft.md", Kind: "file", Name: "Draft.md", Path: "/notes/Draft.md", Edited: true},
+	}}}
+	var shell nativeui.Shell
+	app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, model, nativeui.Actions{}, nativeui.Slots{}) }, 1280, 820)
+	app.Frame()
+	for _, name := range []string{"chapters", "One.md", "Draft.md"} {
+		row, ok := app.AccessByRole(ui.RoleTreeItem, name)
+		if !ok {
+			t.Fatalf("missing tree row %q", name)
+		}
+		if want := 2*4 + portrait.Type.UI.Leading; row.Bounds.H != want {
+			t.Errorf("%s row is %v tall, want one %v line", name, row.Bounds.H, want)
+		}
+	}
+	texts := app.Texts()
+	for _, noise := range []string{"/notes/chapters/One.md", "/notes/Draft.md", "3 files"} {
+		if slices.Contains(texts, noise) {
+			t.Errorf("tree paints %q; location detail belongs to the accessible description", noise)
+		}
+	}
+	if row, _ := app.AccessByRole(ui.RoleTreeItem, "One.md"); row.Description != "/notes/chapters/One.md" {
+		t.Errorf("One.md description = %q, want its path", row.Description)
+	}
+	if row, _ := app.AccessByRole(ui.RoleTreeItem, "chapters"); row.Description != "3 files" || !slices.Contains(texts, "3") {
+		t.Errorf("folder row description = %q with texts %v, want a trailing 3 and the 3 files description", row.Description, texts)
+	}
+	status, ok := app.Find("Unsaved")
+	if !ok {
+		t.Fatal("unsaved file does not show its state in the row")
+	}
+	if row, _ := app.AccessByRole(ui.RoleTreeItem, "Draft.md"); row.Description != "Unsaved" || status.Y < row.Bounds.Y || status.Y+status.H > row.Bounds.Y+row.Bounds.H {
+		t.Errorf("Unsaved %+v should sit on the Draft.md row %+v and describe it", status, row)
+	}
+	darkest, ink := uint32(1<<20), [3]uint32{}
+	img := app.Image()
+	for y := int(status.Y); y < int(status.Y+status.H); y++ {
+		for x := int(status.X); x < int(status.X+status.W); x++ {
+			r, g, b, _ := img.At(x, y).RGBA()
+			if r+g+b < darkest {
+				darkest, ink = r+g+b, [3]uint32{r >> 8, g >> 8, b >> 8}
+			}
+		}
+	}
+	if ink[0] < ink[2]+40 {
+		t.Errorf("Unsaved ink %v is not the warm Warning tone", ink)
+	}
+}
+
+func wideNavigationShell() (*ui.Tester, *nativeui.Shell) {
+	model := nativeui.Model{Workspace: workspace.WorkspaceSnapshot{Kind: "folder", Name: "Library", Root: "/library", ActiveID: "a",
+		Documents: []workspace.DocumentInfo{{ID: "a", Name: "Paper.md", ViewMode: "preview"}}}}
+	shell := &nativeui.Shell{}
+	app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, model, nativeui.Actions{}, nativeui.Slots{}) }, 1280, 820)
+	app.Frame()
+	return app, shell
+}
+
+func documentWidth(t *testing.T, app *ui.Tester) float32 {
+	t.Helper()
+	main, ok := app.AccessByRole(ui.RoleMain, "Document")
+	if !ok {
+		t.Fatal("missing document")
+	}
+	return main.Bounds.W
+}
+
+func TestDockedNavigationHidesToGiveThePageTheWindow(t *testing.T) {
+	app, _ := wideNavigationShell()
+	toggle, ok := app.AccessByRole(ui.RoleButton, "Toggle navigation")
+	if !ok || !toggle.Expanded || toggle.Description != "Toggle navigation" {
+		t.Fatalf("navigation toggle = %+v, found %v; want an expanded, named toolbar toggle", toggle, ok)
+	}
+	docked := documentWidth(t, app)
+	app.Key(ui.Cmd|ui.Ctrl, ui.KeyS)
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RoleNavigation, "Workspace navigation"); ok {
+		t.Fatal("Control Command S left the navigation docked")
+	}
+	if wide := documentWidth(t, app); wide < docked+190 {
+		t.Fatalf("document width %v after hiding navigation, want the sidebar's room added to %v", wide, docked)
+	}
+	if toggle, _ := app.AccessByRole(ui.RoleButton, "Toggle navigation"); toggle.Expanded {
+		t.Error("toggle still reports the hidden navigation as expanded")
+	}
+	if err := app.Click("Toggle navigation"); err != nil {
+		t.Fatal(err)
+	}
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RoleNavigation, "Workspace navigation"); !ok {
+		t.Fatal("the toolbar toggle did not dock the navigation again")
+	}
+}
+
 func TestFileTreeReopensPathAfterDocumentCloses(t *testing.T) {
 	model := nativeui.Model{Workspace: workspace.WorkspaceSnapshot{
 		Kind:     "folder",

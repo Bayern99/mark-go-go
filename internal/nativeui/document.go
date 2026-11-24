@@ -75,7 +75,7 @@ func (s *Shell) document(c *ui.Context, doc workspace.DocumentInfo, m Model, a A
 				}
 			}).Label("Document views")
 			if m.Git && slots.Checkpoints != nil {
-				b := portrait.Button(c, "Checkpoints", "Checkpoints").Expanded(s.checkpoints)
+				b := portrait.ButtonWith(c, "Checkpoints", "Checkpoints", portrait.ButtonSpec{Look: portrait.Quiet, Selected: s.checkpoints}).Expanded(s.checkpoints)
 				if b.Clicked() {
 					s.checkpoints = !s.checkpoints
 				}

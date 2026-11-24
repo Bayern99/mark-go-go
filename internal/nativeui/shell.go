@@ -38,7 +38,7 @@ type Slots struct {
 
 type Shell struct {
 	ready, outline, navFocus                         bool
-	leftOpen, rightOpen, hideResearch                bool
+	leftOpen, rightOpen, hideResearch, hideNav       bool
 	overflow, focusFilter, focusedTab                bool
 	checkpoints                                      bool
 	workspaceID, activeID, query, tabQuery, tabFocus string
@@ -104,6 +104,11 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 		s.leftKeys.Flip()
 		s.rightKeys.Flip()
 	}
+	if c.Shortcut(ui.Cmd|ui.Ctrl, ui.KeyS) {
+		s.toggleNavigation(width)
+		s.leftKeys.Flip()
+		s.rightKeys.Flip()
+	}
 	t := portrait.Theme()
 	root := ui.Themed(c, &t).Fill()
 	if paths := root.DroppedFiles(); len(paths) > 0 && a.Drop != nil {
@@ -119,7 +124,7 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 				portrait.Alert(c, portrait.Tones.Danger, m.Workspace.RestoreError, "")
 			}
 			ui.Row(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Padding(8).Gap(0).Children(func() {
-				leftDocked := width >= 641
+				leftDocked := width >= 641 && !s.hideNav
 				rightDocked := m.Feynman && !s.hideResearch && width >= 1180
 				room := width - 16
 				left := clamp(s.leftWidth, 140, min(420, room-412))
@@ -191,6 +196,15 @@ func (s *Shell) toggleResearch(width float32) {
 	}
 }
 
+func (s *Shell) toggleNavigation(width float32) {
+	if width < 641 {
+		s.leftOpen = !s.leftOpen
+		s.rightOpen = false
+	} else {
+		s.hideNav = !s.hideNav
+	}
+}
+
 func (s *Shell) drawer(c *ui.Context, left bool, width, height float32, m Model, a Actions, slots Slots) {
 	open, anchor, name, keys := &s.rightOpen, &s.rightToggle, "Research", &s.rightKeys
 	if left {
@@ -214,7 +228,7 @@ func (s *Shell) drawer(c *ui.Context, left bool, width, height float32, m Model,
 		if left {
 			w = min(width-24, s.leftWidth)
 		}
-		portrait.Materials.GlassOverlay.Apply(panel.Absolute().Top(8).Height(max(80, height-16)).Width(w).Radius(14)).Label(name)
+		portrait.Materials.GlassOverlay.Apply(panel.Absolute().Top(8).Height(max(80, height-16)).Width(w).Radius(portrait.Radii.XL)).Label(name)
 		if left {
 			panel.Left(8)
 		} else {

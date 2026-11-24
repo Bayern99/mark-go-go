@@ -97,7 +97,7 @@ func (p *panel) message(c *ui.Context, index int, item message, streaming bool) 
 				markdown.View(c.Key(key+"-markdown"), item.text, options).FillWidth()
 			}
 			p.image(c, item.image)
-			if item.text != "" && smallButton(c, "Copy", "Copy Feynman response").AlignSelf(ui.Start).Clicked() {
+			if item.text != "" && toolButton(c, "Copy", "Copy Feynman response", true, false).AlignSelf(ui.Start).Clicked() {
 				if err := mygo.Clipboard.Write(transfer.TextData(item.text)); err == nil {
 					portrait.Notify(c, portrait.ToastSpec{ID: "copy", Tone: portrait.Tones.Success, Title: "Copied"})
 				}
@@ -344,10 +344,10 @@ func (p *panel) composer(c *ui.Context) {
 				s.actionsOpen = true
 			}
 			ui.Row(c).Wrap().Gap(4).AlignItems(ui.Center).Children(func() {
-				if smallButton(c, "Attach", "Attach source files").Disabled(s.status == statusOffline || s.status == statusConnecting).Clicked() {
+				if toolButton(c, "Attach", "Attach source files", true, false).Disabled(s.status == statusOffline || s.status == statusConnecting).Clicked() {
 					p.attachSources()
 				}
-				if smallButton(c, "Actions", "Browse workflows, skills and extensions").Disabled(len(s.commands) == 0).Clicked() {
+				if toolButton(c, "Actions", "Browse workflows, skills and extensions", true, s.actionsOpen).Disabled(len(s.commands) == 0).Clicked() {
 					s.actionsOpen = !s.actionsOpen
 					if s.actionsOpen {
 						s.actionsOpen = true

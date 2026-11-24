@@ -26,11 +26,21 @@ Mark Go Go 的正式界面由 MyGo Native UI 绘制。原文居中显示，导�
 ## 窗口与阅读
 
 - 中央区域显示当前文档的 Preview、Markdown 或 GenUI 视图。顶部标签切换文档；标签过多时，溢出菜单提供搜索和键盘导航。左栏在工作区文件与当前文档大纲间切换。 [标签](internal/nativeui/tabs.go) · [导航](internal/nativeui/navigation.go) · [文档视图](internal/nativeui/document.go)
-- 641 点及以上宽度时左栏停靠，较窄时通过抽屉打开。启用 Feynman 后，研究面板在 1180 点及以上宽度时停靠，较窄时通过抽屉打开；分隔线可调整宽度。抽屉关闭或按 Esc 后，焦点返回其入口。 [窗口外壳](internal/nativeui/shell.go) · [键盘与窄窗用例](internal/nativeui/shell_test.go)
+- 641 点及以上宽度时左栏停靠，较窄时通过抽屉打开；标签栏左端的侧栏按钮与 `⌃⌘S` 在宽窗收起或停靠左栏，在窄窗打开抽屉。启用 Feynman 后，研究面板在 1180 点及以上宽度时停靠，较窄时通过抽屉打开；分隔线可调整宽度。抽屉关闭或按 Esc 后，焦点返回其入口。 [窗口外壳](internal/nativeui/shell.go) · [键盘与窄窗用例](internal/nativeui/shell_test.go)
 - Preview、Markdown 和就地块编辑共用原文缓冲及 Undo/Redo。段落、表格、公式、Mermaid、脚注和批注在原生视图中呈现；表格列宽可在任意行的列边界拖拽调整，横向滚动留在表格区域。测试检查编辑前后原文的字节保真。 [原文状态](internal/nativeeditor/source.go) · [特殊块](internal/nativeeditor/special.go) · [表格](internal/nativeeditor/table.go) · [编辑测试](internal/nativeeditor/)
 - GenUI 是只读的衍生视图。来源动作定位回原文，未知组件保持隔离并给出可读反馈。版本 3 视图由布局与文本原语组成，网格按可用宽度减少列数，末行只剩一张卡时这张卡占满整行；并排的卡片等高；行里的标题只在词间换行，放不下时其余项换到下一行。视图格式和完整示例见 [GenUI 格式](docs/genui/view-format.md)。 [原生阅读器](internal/nativegenui/) · [格式校验](internal/genui/)
 - 版本 3 的 `Title` 按声明的字号绘制，字重 600：sm 15、md 17、lg 21、xl 25、2xl 32、3xl 40 点；卡片、网格格子、列表项等紧凑位置里声明的字号保持顺序，"2xl"、"3xl" 画成 "xl" 的 25 点。卡片开头的 "sm"、"md" 标题不缩小，不小于同卡的列表项标题（15 点）和正文（15 点）。`Text` 正文 16 点，紧凑位置 15 点；声明字号时 xs 12、sm 14、md 16（紧凑位置 15）、lg 18 点。紧跟卡片开头标题的纯文字 `Text`，按副标题字号在所在宽度里排得下一行时是副标题：13 点（声明的字号更小时不放大）、次要色，与标题相距 2 点；排不下时按正文的字号和颜色绘制。同样的文字在同样的宽度下样式相同，与窗口此前的宽度无关。`Caption` 12 点、次要色，紧跟卡片开头标题时 13 点。 [字号表](internal/nativegenui/statements.go) · [字号用例](internal/nativegenui/statements_test.go)
 - Review 差异视图按段显示行号、增删符号和增删底色，行号与符号对辅助技术隐藏，每行的内容节点自述其变更与行号（Added / Removed / Unchanged）；每段可接受、拒绝或清除选择。 [差异视图](internal/nativereview/diff.go)
+
+## 外壳让位于纸面
+
+中央 Paper 是唯一的阅读面，左右栏、标签栏和工具条按下面的规则保持轻：
+
+- 不加灰色外框、底色侧栏块或整窗内框。停靠的侧栏使用 Glass，在 Paper 上只留分隔线；Arc 浏览器的整窗彩色内框用来把浏览器界面和网页内容分开，Mark Go Go 的纸面本身就是内容，不需要这层边界。
+- 工具条内的按钮一律 `Quiet`（[ADR 0012](docs/adr/0012-portrait-2-coss-reference-and-contracts.md)）：静止时只画图标或文字，悬停时浮起 Row 材质。打开面板的切换按钮在面板显示时保持 Row 材质，用来表示开启：左栏、研究栏、Checkpoints、隐藏标签 `+N`，以及 Feynman 的 History 与 Actions。Connect、Send 这类当前要做的主操作仍用 `Raised` 或 `Accent`。
+- 文件树和大纲每行只画一行标题，路径、所在文件夹与文件数写进辅助说明；文件夹在行尾以数字给出 Markdown 文件数。未保存、冲突、删除等状态以对应 Tone 的墨色文字留在行尾，有 Danger 时取 Danger。搜索结果保留摘录作为第二行。未选中的行标题用 Ink2，选中或悬停时用 Ink。
+- 次要操作在需要时出现：非当前文档标签的关闭按钮静止时透明，悬停或键盘聚焦时出现，当前标签的关闭按钮保持半透明，键盘切换标签时直接落位。行和标签的悬停用 `portrait.RowHover` 按按钮悬停的时长淡入 Row 材质。两者在减少动态效果时都直接落位。 [行悬停](internal/portrait/controls.go) · [外壳用例](internal/nativeui/controls_test.go)
+- 文档标签按可用宽度在 136 到 220 点之间伸展，空间够时显示完整文件名，放不下的标签收进 `+N` 菜单。
 
 ## 状态与可访问性
 

@@ -398,7 +398,7 @@ func (p *panel) header(c *ui.Context) {
 		}
 	}
 	history := func() ui.Element {
-		button := controlButton(c, "History", "Workspace conversation history").Expanded(s.sessionsOpen)
+		button := toolButton(c, "History", "Workspace conversation history", false, s.sessionsOpen).Expanded(s.sessionsOpen)
 		if button.Clicked() {
 			s.sessionsOpen = !s.sessionsOpen
 			if s.sessionsOpen {

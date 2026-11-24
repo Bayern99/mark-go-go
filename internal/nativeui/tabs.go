@@ -79,8 +79,7 @@ func documentStates(edited, conflict, deleted, readOnly, generating bool) []docu
 	return states
 }
 
-func stateLabel(edited, conflict, deleted, readOnly, generating bool) string {
-	states := documentStates(edited, conflict, deleted, readOnly, generating)
+func joinStates(states []documentState) string {
 	tags := make([]string, len(states))
 	for i, state := range states {
 		tags[i] = state.label
@@ -88,51 +87,68 @@ func stateLabel(edited, conflict, deleted, readOnly, generating bool) string {
 	return strings.Join(tags, " · ")
 }
 
+func stateTone(states []documentState) portrait.Tone {
+	for _, state := range states {
+		if state.tone == portrait.Tones.Danger {
+			return state.tone
+		}
+	}
+	if len(states) == 0 {
+		return portrait.Tones.Neutral
+	}
+	return states[0].tone
+}
+
+type closeRevealKey struct{}
+
+func toolbarToggle(c *ui.Context, icon portrait.Icon, label string, on bool) ui.Element {
+	return portrait.ButtonWith(c, "", label, portrait.ButtonSpec{Look: portrait.Quiet, Leading: icon, Selected: on}).Expanded(on)
+}
+
 func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions) {
 	docs := m.Workspace.Documents
 	labels := tabLabels(docs)
 	active := slices.IndexFunc(docs, func(d workspace.DocumentInfo) bool { return d.ID == s.activeID })
-	room := available - 48
-	if width < 641 {
-		room -= 42
-	}
+	room := available - 48 - 42
 	if m.Feynman {
 		room -= 38
 	}
-	const cell = 136
-	count := min(len(docs), max(1, int(room/cell)))
+	const minCell, maxCell, overflowRoom = 136, 220, 53
+	count := min(len(docs), max(1, int(room/minCell)))
+	extra := float32(0)
 	if count < len(docs) {
-		count = max(1, int((room-53)/cell))
+		count = max(1, int((room-overflowRoom)/minCell))
+		extra = overflowRoom
 	}
+	cell := clamp((room-extra)/float32(count)-3, minCell, maxCell)
 	start := max(0, active-count+1)
 	end := min(len(docs), start+count)
 	ui.Row(c).Height(42).Padding(8, 8, 2, 8).Gap(6).AlignItems(ui.Center).Children(func() {
+		navLabel, navVisible := "Toggle navigation", !s.hideNav
 		if width < 641 {
-			toggle := portrait.IconButton(c, portrait.IconSidebar, "Show navigation").Expanded(s.leftOpen).Bind(&s.leftToggle)
-			toggle.ObserveInput(func(ev ui.InputEvent) {
-				if ev.Kind == ui.InputKeyDown && (ev.Key == ui.KeyEnter || ev.Key == ui.KeySpace) {
-					s.leftKeys.Flip()
-					s.rightKeys.Flip()
-				}
-			})
-			if toggle.Clicked() {
-				s.leftOpen = !s.leftOpen
-				s.rightOpen = false
+			navLabel, navVisible = "Show navigation", s.leftOpen
+		}
+		toggle := toolbarToggle(c, portrait.IconSidebar, navLabel, navVisible).KeyShortcuts(ui.Cmd|ui.Ctrl, ui.KeyS).Bind(&s.leftToggle)
+		toggle.ObserveInput(func(ev ui.InputEvent) {
+			if ev.Kind == ui.InputKeyDown && (ev.Key == ui.KeyEnter || ev.Key == ui.KeySpace) {
+				s.leftKeys.Flip()
+				s.rightKeys.Flip()
 			}
+		})
+		if toggle.Clicked() {
+			s.toggleNavigation(width)
 		}
 		portrait.Track(c, "document tabs", func(t *portrait.Segments) {
 			for i := start; i < end; i++ {
 				d := docs[i]
 				selected := d.ID == s.activeID
 				states := documentStates(d.Edited, d.Conflict, d.Deleted, d.ReadOnly, d.Generating)
-				status := stateLabel(d.Edited, d.Conflict, d.Deleted, d.ReadOnly, d.Generating)
-				cellRow := ui.Row(c.Key(d.ID)).Radius(7).MaxWidth(cell).MinWidth(0).Height(28).AlignItems(ui.Center).Padding(0, 4, 0, 0)
+				status := joinStates(states)
+				cellRow := ui.Row(c.Key(d.ID)).Radius(portrait.Radii.Segment).MaxWidth(cell).MinWidth(0).Height(portrait.Sizes.Regular).AlignItems(ui.Center).Padding(0, 4, 0, 0)
 				hovered := cellRow.Hovered()
-				if hovered && !selected {
-					portrait.Materials.Row.Apply(cellRow)
-				}
+				portrait.RowHover(cellRow, hovered && !selected)
 				cellRow.Children(func() {
-					tab := portrait.Tooltip(c, ui.ButtonBase(c.Key("tab")).Label(labels[d.ID]).Height(28).Padding(0, 4, 0, 8).Gap(6).AlignItems(ui.Center).MinWidth(0).Shrink(1).ZIndex(1).Role(ui.RoleTab).TabStop(selected).AccessSelected(selected), d.Path)
+					tab := portrait.Tooltip(c, ui.ButtonBase(c.Key("tab")).Label(labels[d.ID]).Height(portrait.Sizes.Regular).Padding(0, 4, 0, 8).Gap(6).AlignItems(ui.Center).MinWidth(0).Shrink(1).ZIndex(1).Role(ui.RoleTab).TabStop(selected).AccessSelected(selected), d.Path)
 					if status != "" {
 						tab.Description(status)
 					}
@@ -174,10 +190,17 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 							Role(ui.RoleText).Label(state.label).Shrink(0).ZIndex(1)
 						portrait.Tooltip(c, dot, state.label)
 					}
-					closeTab := portrait.QuietIconButton(c, portrait.IconX, "Close "+labels[d.ID]).Size(20, 20).Radius(6).ZIndex(1)
-					if !hovered && !closeTab.Hovered() {
-						closeTab.Opacity(0.55)
+					closeTab := portrait.QuietIconButton(c, portrait.IconX, "Close "+labels[d.ID]).Size(20, 20).Radius(portrait.Radii.S).ZIndex(1)
+					reveal := float32(0)
+					if hovered || closeTab.Hovered() || closeTab.FocusVisible() {
+						reveal = 1
+					} else if selected {
+						reveal = 0.55
 					}
+					if eased := closeTab.AnimateTo(closeRevealKey{}, reveal, ui.Animation{Duration: portrait.Motion.Expand, Ease: portrait.Motion.EaseOut.Easing()}); portrait.Animates(c, c.KeyboardInput()) {
+						reveal = eased
+					}
+					closeTab.Opacity(reveal)
 					if closeTab.Clicked() && a.CloseDocument != nil {
 						a.CloseDocument(d.ID)
 					}
@@ -185,7 +208,7 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 				})
 			}
 			if count < len(docs) {
-				button := portrait.Button(c, fmt.Sprintf("+%d", len(docs)-count), "More documents").Height(26).Padding(0, 8).MinWidth(32).Expanded(s.overflow)
+				button := portrait.ButtonWith(c, fmt.Sprintf("+%d", len(docs)-count), "More documents", portrait.ButtonSpec{Look: portrait.Quiet, Selected: s.overflow}).Padding(0, 8).MinWidth(32).Expanded(s.overflow)
 				if button.Clicked() {
 					s.overflow = !s.overflow
 					s.tabQuery = ""
@@ -242,7 +265,7 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 			}
 		}).Label("Documents").Height(32).Gap(3).Shrink(1).MinWidth(0).Clip().MaskLinearGradient(scrollEdgeMask(90))
 		ui.Row(c).Grow(1)
-		portrait.IconButton(c, portrait.IconPlugs, "Plugins").Menu(func(menu *ui.Menu) {
+		portrait.QuietIconButton(c, portrait.IconPlugs, "Plugins").Menu(func(menu *ui.Menu) {
 			if menu.Item("Feynman").Checked(m.Feynman).Chosen() && a.SetFeynman != nil {
 				a.SetFeynman(!m.Feynman)
 			}
@@ -252,7 +275,7 @@ func (s *Shell) tabs(c *ui.Context, width, available float32, m Model, a Actions
 		})
 		if m.Feynman {
 			visible := s.rightOpen || width >= 1180 && !s.hideResearch
-			toggle := portrait.IconButton(c, portrait.IconSidebar.Mirrored(), "Toggle research").Expanded(visible).KeyShortcuts(ui.Cmd|ui.Alt, ui.Key0).Bind(&s.rightToggle)
+			toggle := toolbarToggle(c, portrait.IconSidebar.Mirrored(), "Toggle research", visible).KeyShortcuts(ui.Cmd|ui.Alt, ui.Key0).Bind(&s.rightToggle)
 			toggle.ObserveInput(func(ev ui.InputEvent) {
 				if ev.Kind == ui.InputKeyDown && (ev.Key == ui.KeyEnter || ev.Key == ui.KeySpace) {
 					s.leftKeys.Flip()

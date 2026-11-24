@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- 窗口外壳更安静：工具条按钮静止时不画底，对应面板显示时才浮起；文件树每行只画名称，路径与文件夹信息转入辅助说明，只有未保存、冲突与删除以 Tone 文字留在行尾；非当前标签的关闭按钮在悬停或键盘聚焦时出现，长文件名在空间足够时完整显示；宽窗可用工具条按钮或 `⌃⌘S` 收起左栏，让纸面占满窗口。 A quieter window shell: toolbar buttons stay flat until their panel shows, file-tree rows show one line with state only when it matters, tab close buttons appear on intent, long tab titles get room, and `⌃⌘S` hides the docked sidebar.
 - 修复 Preview 标题折叠时被折叠段的残影叠在后文上、展开时后文先跳位再被遮罩盖住的问题：折叠与展开改为直接到位，与 WebUI 一致（#96）。 Heading folds and expansions in Preview now land at once, with no ghost drawn over the following content and no veil over content that already moved.
 
 ## [0.5.0] - 2026-11-21

@@ -152,6 +152,50 @@ func TestQuietIconButtonIsFlatUntilHovered(t *testing.T) {
 	}
 }
 
+func rowHoverTester(prefs ui.Preferences) (*ui.Tester, ui.Rect) {
+	tt := ui.NewTesterWith(func(c *ui.Context) {
+		ui.Column(c).Fill().Background(portrait.Colors.Paper).Padding(40).Children(func() {
+			row := ui.ButtonBase(c.Key("row")).Label("Notes.md").Width(160).Height(portrait.Sizes.Regular).Radius(portrait.Radii.M)
+			portrait.RowHover(row, row.Hovered())
+		})
+	}, 240, 120, ui.TesterOptions{Preferences: prefs})
+	tt.Frame()
+	info, _ := tt.AccessByRole(ui.RoleButton, "Notes.md")
+	return tt, info.Bounds
+}
+
+func TestRowHoverEasesOntoTheRowMaterial(t *testing.T) {
+	tt, b := rowHoverTester(ui.Preferences{})
+	paper := luma(tt, 10, 10)
+	if mid := luma(tt, int(b.X+b.W/2), int(b.Y+1)); mid != paper {
+		t.Fatalf("row paints a fill at rest: %d vs paper %d", mid, paper)
+	}
+	tt.Move(b.X+b.W/2, b.Y+b.H/2)
+	first := region(tt.Image(), b)
+	tt.Advance(hoverStep)
+	mid := region(tt.Image(), b)
+	tt.Advance(time.Second)
+	settled := region(tt.Image(), b)
+	if differs(first, mid) == 0 || differs(mid, settled) == 0 {
+		t.Fatal("row hover did not pass through an intermediate frame")
+	}
+	if edge := luma(tt, int(b.X+b.W/2), int(b.Y+b.H)); edge == paper {
+		t.Fatal("hovered row has no hairline lift below it")
+	}
+}
+
+func TestRowHoverLandsAtOnceUnderReducedMotion(t *testing.T) {
+	tt, b := rowHoverTester(ui.Preferences{ReduceMotion: true})
+	tt.Move(b.X+b.W/2, b.Y+b.H/2)
+	first := region(tt.Image(), b)
+	tt.Advance(time.Second)
+	if n := differs(first, region(tt.Image(), b)); n != 0 {
+		t.Fatalf("row hover still animating under ReduceMotion: %d pixels changed", n)
+	}
+}
+
+const hoverStep = 40 * time.Millisecond
+
 type segments struct{ selected int }
 
 func (s *segments) view(c *ui.Context) {

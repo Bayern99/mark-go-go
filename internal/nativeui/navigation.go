@@ -18,7 +18,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 		if name == "" {
 			name = "Untitled"
 		}
-		switcher := ui.ButtonBase(c.Key("Switch workspace")).Label("Switch workspace").Value(name).FillWidth().MinHeight(26).Padding(2, 8).Gap(7).Radius(6).AlignItems(ui.Center)
+		switcher := ui.ButtonBase(c.Key("Switch workspace")).Label("Switch workspace").Value(name).FillWidth().MinHeight(26).Padding(2, 8).Gap(7).Radius(portrait.Radii.S).AlignItems(ui.Center)
 		switcher.Children(func() {
 			portrait.Shell.WorkspaceName.Apply(ui.Text(c, name)).FontWeight(600).TextColor(portrait.Colors.Ink).MaxLines(1).Ellipsis("…").MinWidth(0).Shrink(1)
 			ui.Row(c).Grow(1)
@@ -73,7 +73,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 			scroll := s.scrollState("outline:" + w.ActiveID)
 			ui.Scroll(c.Key("outline:" + w.ActiveID)).FillWidth().Grow(1).TrackScroll(scroll).Label("Document outline").MaskLinearGradient(scrollEdgeMask(180)).Children(func() {
 				for _, section := range m.Sections {
-					if navRow(c, fmt.Sprintf("heading-%d", section.Start), section.Heading, "", section.Level-1, false, portrait.IconFileText, "").Clicked() && a.Reveal != nil {
+					if navRow(c, navItem{key: fmt.Sprintf("heading-%d", section.Start), title: section.Heading, depth: section.Level - 1, icon: portrait.IconFileText}).Clicked() && a.Reveal != nil {
 						s.leftOpen = false
 						a.Reveal(section.Start)
 					}
@@ -90,7 +90,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 					s.queries[w.Root] = s.query
 					a.Filter(s.query)
 				}
-				if s.query != "" && portrait.QuietIconButton(c, portrait.IconX, "Clear filter").Size(20, 20).Radius(10).Clicked() {
+				if s.query != "" && portrait.QuietIconButton(c, portrait.IconX, "Clear filter").Size(20, 20).Radius(portrait.Radii.Pill).Clicked() {
 					s.query = ""
 					delete(s.queries, w.Root)
 					if a.Filter != nil {
@@ -110,12 +110,12 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 					return
 				}
 				for _, hit := range m.Search.Hits {
-					if navRow(c, hit.Path, hit.Name, hit.Excerpt, 0, hit.DocumentID == w.ActiveID, portrait.IconFileText, capsuleGroup).Clicked() && a.OpenPath != nil {
+					if navRow(c, navItem{key: hit.Path, title: hit.Name, description: hit.Excerpt, excerpt: hit.Excerpt, selected: hit.DocumentID == w.ActiveID, icon: portrait.IconFileText, group: capsuleGroup}).Clicked() && a.OpenPath != nil {
 						s.leftOpen = false
 						a.OpenPath(hit.Path, -1)
 					}
 					for _, heading := range hit.Headings {
-						if navRow(c, fmt.Sprintf("%s-%d", hit.Path, heading.Offset), heading.Text, "", 1, false, portrait.IconFileText, "").Clicked() && a.OpenPath != nil {
+						if navRow(c, navItem{key: fmt.Sprintf("%s-%d", hit.Path, heading.Offset), title: heading.Text, depth: 1, icon: portrait.IconFileText}).Clicked() && a.OpenPath != nil {
 							s.leftOpen = false
 							a.OpenPath(hit.Path, heading.Offset)
 						}
@@ -131,7 +131,7 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 					if d.WorkspaceRoot != "" {
 						continue
 					}
-					if navRow(c, d.ID, d.Name, stateLabel(d.Edited, d.Conflict, d.Deleted, d.ReadOnly, d.Generating), 0, d.ID == w.ActiveID, portrait.IconFileText, capsuleGroup).Clicked() && a.Activate != nil {
+					if navRow(c, navItem{key: d.ID, title: d.Name, description: d.Path, states: documentStates(d.Edited, d.Conflict, d.Deleted, d.ReadOnly, d.Generating), selected: d.ID == w.ActiveID, icon: portrait.IconFileText, group: capsuleGroup}).Clicked() && a.Activate != nil {
 						s.leftOpen = false
 						a.Activate(d.ID)
 					}
@@ -140,23 +140,15 @@ func (s *Shell) navigation(c *ui.Context, m Model, a Actions, docked bool) {
 			}
 			for _, entry := range m.Navigation.Entries {
 				folder := entry.Kind == "folder"
-				detail := entry.Parent
-				if detail == "" {
-					detail = entry.Path
-				}
-				if status := stateLabel(entry.Edited, entry.Conflict, entry.Deleted, false, false); status != "" {
-					detail = status
-				}
+				item := navItem{key: entry.ID, title: entry.Name, description: entry.Path, depth: entry.Depth, selected: entry.DocumentID != "" && entry.DocumentID == w.ActiveID, icon: portrait.IconFileText, group: capsuleGroup,
+					states: documentStates(entry.Edited, entry.Conflict, entry.Deleted, false, false)}
 				if folder {
-					detail = fmt.Sprintf("%d files", entry.MarkdownCount)
+					item.icon, item.count, item.description = portrait.IconFolder, fmt.Sprint(entry.MarkdownCount), fmt.Sprintf("%d files", entry.MarkdownCount)
+					if entry.FolderState == workspace.FolderOpen {
+						item.icon = portrait.IconFolderOpen
+					}
 				}
-				icon := portrait.IconFileText
-				if folder && entry.FolderState == workspace.FolderOpen {
-					icon = portrait.IconFolderOpen
-				} else if folder {
-					icon = portrait.IconFolder
-				}
-				button := navRow(c, entry.ID, entry.Name, detail, entry.Depth, entry.DocumentID != "" && entry.DocumentID == w.ActiveID, icon, capsuleGroup)
+				button := navRow(c, item)
 				if folder {
 					button.Expanded(entry.FolderState == workspace.FolderOpen)
 				}
@@ -197,19 +189,43 @@ func (s *Shell) scrollState(key string) *ui.ScrollState {
 	return s.scrolls[key]
 }
 
-func navRow(c *ui.Context, key, title, detail string, depth int, selected bool, icon portrait.Icon, capsuleGroup string) ui.Element {
-	row := ui.ButtonBase(c.Key(key)).FillWidth().Role(ui.RoleTreeItem).Label(title).Description(detail).AccessSelected(selected).Padding(4, 8, 4, float32(8+12*min(depth, 8))).Radius(8)
-	if !selected && row.Hovered() {
-		portrait.Materials.Row.Apply(row)
+type navItem struct {
+	key, title, description, excerpt, count string
+	states                                  []documentState
+	depth                                   int
+	selected                                bool
+	icon                                    portrait.Icon
+	group                                   string
+}
+
+func navRow(c *ui.Context, item navItem) ui.Element {
+	description := item.description
+	if status := joinStates(item.states); status != "" {
+		description = status
+	}
+	row := ui.ButtonBase(c.Key(item.key)).FillWidth().Role(ui.RoleTreeItem).Label(item.title).Description(description).AccessSelected(item.selected).Padding(4, 8, 4, float32(8+12*min(item.depth, 8))).Radius(portrait.Radii.M)
+	portrait.RowHover(row, !item.selected && row.Hovered())
+	ink := portrait.Colors.Ink2
+	if item.selected || row.Hovered() {
+		ink = portrait.Colors.Ink
 	}
 	row.Children(func() {
-		portrait.RowCapsule(c, row, selected, capsuleGroup)
+		portrait.RowCapsule(c, row, item.selected, item.group)
 		ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Start).ZIndex(1).Children(func() {
-			portrait.Glyph(c, icon, 14, portrait.Colors.Ink3).Margin(2, 0, 0, 0)
+			portrait.Glyph(c, item.icon, 14, portrait.Colors.Ink3).Margin(2, 0, 0, 0)
 			ui.Column(c).MinWidth(0).Grow(1).AlignItems(ui.Start).Children(func() {
-				portrait.Type.UI.Apply(ui.Text(c, title)).MaxLines(1).Ellipsis("…").TextColor(portrait.Colors.Ink)
-				if detail != "" {
-					portrait.Type.Meta.Apply(ui.Text(c, detail)).MaxLines(1).Ellipsis("…").TextColor(portrait.Colors.Ink3)
+				ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
+					portrait.Type.UI.Apply(ui.Text(c, item.title)).MaxLines(1).Ellipsis("…").TextColor(ink).MinWidth(0).Shrink(1)
+					ui.Row(c).Grow(1)
+					if len(item.states) > 0 {
+						status := joinStates(item.states)
+						portrait.Type.Meta.Apply(ui.Text(c, status)).MaxLines(1).TextColor(stateTone(item.states).Ink).Shrink(0)
+					} else if item.count != "" {
+						portrait.Type.Meta.Apply(ui.Text(c, item.count)).MaxLines(1).TextColor(portrait.Colors.Ink3).Shrink(0)
+					}
+				})
+				if item.excerpt != "" {
+					portrait.Type.Meta.Apply(ui.Text(c, item.excerpt)).MaxLines(1).Ellipsis("…").TextColor(portrait.Colors.Ink3)
 				}
 			})
 		})

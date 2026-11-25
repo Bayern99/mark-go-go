@@ -64,6 +64,23 @@ func TestCommandBarRunsTheResultChosenWithTheArrows(t *testing.T) {
 	if !mustAccess(t, app, ui.RoleOption, "Show Markdown").Selected {
 		t.Fatal("typing did not move the selection to the first match")
 	}
+	var options []ui.AccessInfo
+	for _, info := range app.AccessAll() {
+		if info.Role == ui.RoleOption {
+			options = append(options, info)
+		}
+	}
+	if len(options) < 2 {
+		t.Fatalf("Show query returned %d options, want at least two", len(options))
+	}
+	app.Key(0, ui.KeyUp)
+	if !mustAccess(t, app, ui.RoleOption, options[len(options)-1].Name).Selected {
+		t.Fatal("Up did not wrap the first result to the last")
+	}
+	app.Key(0, ui.KeyDown)
+	if !mustAccess(t, app, ui.RoleOption, "Show Markdown").Selected {
+		t.Fatal("Down did not wrap the last result to the first")
+	}
 	app.Key(0, ui.KeyDown)
 	if !mustAccess(t, app, ui.RoleOption, "Show Outline").Selected {
 		t.Fatal("Down did not select the next result")
@@ -82,6 +99,45 @@ func TestCommandBarRunsTheResultChosenWithTheArrows(t *testing.T) {
 	app.Frame()
 	if created != 1 || commandBarOpen(app) {
 		t.Fatalf("clicking New Document created %d and left the bar open = %v", created, commandBarOpen(app))
+	}
+}
+
+func TestCommandBarFilterIsCaseInsensitiveAndIgnoresOuterSpace(t *testing.T) {
+	var shell nativeui.Shell
+	model := libraryModel()
+	app := ui.NewTester(func(c *ui.Context) {
+		shell.Draw(c, model, nativeui.Actions{SetMode: func(string) {}}, nativeui.Slots{})
+	}, 1280, 820)
+	app.Key(ui.Cmd, ui.KeyK)
+	app.Type(" SHOW ")
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RoleOption, "Show Markdown"); !ok {
+		t.Fatalf("trimmed query has no Show Markdown result: %v", app.Texts())
+	}
+	if !mustAccess(t, app, ui.RoleOption, "Show Markdown").Selected {
+		t.Fatal("case-insensitive, trimmed filtering did not select the first visible result")
+	}
+	if _, ok := app.AccessByRole(ui.RoleOption, "New Document"); ok {
+		t.Fatal("a command that does not match the filter stayed listed")
+	}
+}
+
+func TestCommandBarEmptyResultStaysOpenAndEnterDoesNothing(t *testing.T) {
+	var shell nativeui.Shell
+	model := libraryModel()
+	created := 0
+	app := ui.NewTester(func(c *ui.Context) {
+		shell.Draw(c, model, nativeui.Actions{NewDocument: func() { created++ }}, nativeui.Slots{})
+	}, 1280, 820)
+	app.Key(ui.Cmd, ui.KeyK)
+	app.Type("no-such-document-or-command")
+	if !commandBarOpen(app) || !app.HasText("No matching documents or commands") {
+		t.Fatalf("empty Command Bar closed or omitted its empty state: %v", app.Texts())
+	}
+	app.Key(0, ui.KeyEnter)
+	app.Frame()
+	if !commandBarOpen(app) || created != 0 {
+		t.Fatalf("empty Enter closed the bar = %v or ran %d commands", !commandBarOpen(app), created)
 	}
 }
 

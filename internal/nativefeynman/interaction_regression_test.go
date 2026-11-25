@@ -304,10 +304,10 @@ func TestSlashPopoverStaysAboveComposerAndRemembersEscape(t *testing.T) {
 	if p.commandQuery != "review" {
 		t.Fatalf("explicit action filter = %q, want review", p.commandQuery)
 	}
-	if _, ok := app.AccessByRole(ui.RoleButton, "Choose research action review"); !ok {
+	if _, ok := app.AccessByRole(ui.RoleOption, "Choose research action review"); !ok {
 		t.Fatal("redraw discarded the explicitly filtered review action")
 	}
-	if _, ok := app.AccessByRole(ui.RoleButton, "Choose research action summarize"); ok {
+	if _, ok := app.AccessByRole(ui.RoleOption, "Choose research action summarize"); ok {
 		t.Fatal("redraw replaced the explicit action filter with the draft")
 	}
 }
@@ -327,7 +327,7 @@ func TestSlashCommandsRejectPathsAndMissingCommands(t *testing.T) {
 	}
 }
 
-func TestSlashPopoverClosesWhenDraftStopsMatching(t *testing.T) {
+func TestSlashPopoverShowsEmptyStateWhenDraftStopsMatching(t *testing.T) {
 	p := fixtureReadyPanel()
 	p.state.draft = "/"
 	p.state.commands = []feynman.ResearchCommand{{Name: "review"}, {Name: "summarize"}}
@@ -345,11 +345,11 @@ func TestSlashPopoverClosesWhenDraftStopsMatching(t *testing.T) {
 	}
 	app.Type("zzz")
 	app.Frame()
-	if p.state.actionsOpen {
-		t.Fatal("slash popover stayed open with stale match after typing /revzzz")
+	if !p.state.actionsOpen || !app.HasText("No matching workflows, skills or extensions.") {
+		t.Fatal("slash popover did not show its empty state after typing /revzzz")
 	}
-	if p.commandQuery != "" {
-		t.Fatalf("closing slash popover left stale commandQuery %q", p.commandQuery)
+	if p.commandQuery != "revzzz" {
+		t.Fatalf("slash popover query = %q, want revzzz", p.commandQuery)
 	}
 }
 

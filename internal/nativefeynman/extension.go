@@ -51,6 +51,8 @@ type panel struct {
 	filesScroll          ui.ScrollState
 	alphaScroll          ui.ScrollState
 	commandQuery         string
+	commandIndex         int
+	commandMoved         bool
 	actionsDismissed     bool
 	actionsFromSlash     bool
 	questionText         string

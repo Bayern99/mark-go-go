@@ -25,6 +25,6 @@ MyGo Native UI 提供窗口与控件基础，应用以纯 Go 代码绘制工作�
 ## 软件与资源
 
 - Egoist 与贡献者的 **MyGo** 提供原生桌面宿主和 UI 工具包。仓库包含 MIT 许可的 v0.10.0 源码，以及文档组与工作区生命周期补丁。[上游](https://github.com/egoist/mygo/tree/v0.10.0) · [MyGo 许可证](third_party/mygo/LICENSE) · [补丁说明](docs/mygo-document-groups.md)
-- 原生 Markdown、公式与 Mermaid 图表功能使用 [go.mod](go.mod) 中声明的 Go 模块。Feynman 插件直接连接本机的 **Feynman** CLI；GenUI 文件遵循保存于 [格式说明](docs/genui/view-format.md) 的 A2UI / OpenUI Lang 协议。
+- 原生 Markdown、公式与 Mermaid 图表功能使用 [go.mod](go.mod) 中声明的 Go 模块。Feynman 插件直接连接本机安装的 **Feynman** CLI（Companion 开发的 MIT 开源研究代理，基于 Pi 与 alphaXiv 构建，[官网](https://feynman.is)）；GenUI 视图文件采用 A2UI 1.0 信封与 OpenUI Lang 1.0 语句，见 [格式说明](docs/genui/view-format.md)。
 - **Inter** 与 **IBM Plex** 采用 SIL Open Font License，**Phosphor Icons** 采用 MIT 许可证。[字体和图标许可证](internal/portrait/fonts/) · [应用 MIT 许可证](LICENSE)
 - 随附资源中的 Go 依赖、数学字体与 Unicode CLDR 许可记录位于 [resources/licenses](resources/licenses/)。MyGo 的本地化表由 **Unicode CLDR 48.2.0** 生成。[CLDR 数据](https://github.com/unicode-org/cldr-json/tree/48.2.0) · [随附许可证](resources/licenses/Unicode-3.0-CLDR.txt)

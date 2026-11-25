@@ -24,7 +24,7 @@ cleanup() {
   rm -rf "$WORK" "$HOME/Library/Application Support/$APP_NAME"
 }
 trap cleanup EXIT
-mkdir -p "$PROJECT" "$(dirname "$SOURCE")"
+mkdir -p "$PROJECT" "$WORK/user-data" "$(dirname "$SOURCE")"
 cp "$ROOT"/go.{mod,sum} "$PROJECT/"
 ln -s "$ROOT"/third_party "$ROOT"/internal "$ROOT"/scripts "$ROOT"/cmd "$PROJECT/"
 mkdir -p "$PROJECT/resources"

@@ -877,3 +877,56 @@ func TestReadDocumentTruncatesAtALineBoundaryAndKeepsTheRangeHonest(t *testing.T
 		t.Fatalf("endLine = %d, want %d for the returned text", got, want)
 	}
 }
+
+func TestTheChannelRemembersTheLastExternalCall(t *testing.T) {
+	h, root := newSocketHarness(t)
+	srv := startExternal(t, h)
+	if !srv.Listening() {
+		t.Fatal("a started channel does not report listening")
+	}
+	if _, _, ok := srv.LastCall(); ok {
+		t.Fatal("a channel that answered nothing reports a call")
+	}
+
+	client, reply := connectExternal(t, srv, root)
+	if !reply.OK {
+		t.Fatalf("hello reply = %+v", reply)
+	}
+	// A legacy client names itself nowhere, and the page says as much.
+	if resp := client.call("tools/list", nil); resp.Error != nil {
+		t.Fatalf("tools/list: %+v", resp.Error)
+	}
+	source, at, ok := srv.LastCall()
+	if !ok || source != unknownClient || at.IsZero() {
+		t.Fatalf("last call = %q at %v, %t; want an unnamed client and a time", source, at, ok)
+	}
+
+	// A modern client names itself in the request's _meta.
+	resp := client.raw(map[string]any{
+		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+		"params": map[string]any{
+			"name": toolGetWorkspace, "arguments": map[string]any{},
+			"_meta": map[string]any{
+				ipc.MetaProtocolVersion: modernProtocolVersion,
+				ipc.MetaClientInfo:      map[string]any{"name": "markgogo-mcp", "version": "0.6.0"},
+			},
+		},
+	})
+	if resp.Error != nil {
+		t.Fatalf("tools/call: %+v", resp.Error)
+	}
+	source, called, ok := srv.LastCall()
+	if !ok || source != "markgogo-mcp 0.6.0" {
+		t.Fatalf("last call = %q (%t), want the client that named itself", source, ok)
+	}
+	if called.Before(at) {
+		t.Fatalf("the later call is stamped %v, before the earlier %v", called, at)
+	}
+
+	if err := srv.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if srv.Listening() {
+		t.Fatal("a closed channel still reports listening")
+	}
+}

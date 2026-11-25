@@ -199,7 +199,12 @@ func TestMCPRootBindingDoesNotReviveWhenAWorkspaceReopens(t *testing.T) {
 	}
 	svc.settings = &settingsStore{dir: t.TempDir()}
 	svc.addWorkspaceToWindow("ws-0", root, "", nil)
-	t.Cleanup(func() { svc.forgetWindow(nil) })
+	t.Cleanup(func() {
+		svc.forgetWindow(nil)
+		// forgetWindow persists the session in the background; let it finish
+		// before the settings folder is removed.
+		svc.sessionWG.Wait()
+	})
 	if binding() {
 		t.Fatal("reopening revived an old binding")
 	}

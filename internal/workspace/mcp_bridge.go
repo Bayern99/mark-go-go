@@ -133,6 +133,31 @@ func (h *Service) MCPOpenRoots() []string {
 	return roots
 }
 
+// MCPBindRoot ties a connection to the workspace instances open at its handshake.
+func (h *Service) MCPBindRoot(root string) func() bool {
+	h.mu.Lock()
+	var bound []*workspace
+	for _, w := range h.allWorkspacesLocked() {
+		if w.root == root {
+			bound = append(bound, w)
+		}
+	}
+	h.mu.Unlock()
+	if len(bound) == 0 {
+		return nil
+	}
+	return func() bool {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		for _, w := range bound {
+			if h.workspaceByIDLocked(w.id) == w && w.root == root {
+				return true
+			}
+		}
+		return false
+	}
+}
+
 // MCPOpenDocuments lists the open documents of one workspace root without
 // walking the folder.
 func (h *Service) MCPOpenDocuments(root string) ([]DocumentInfo, error) {

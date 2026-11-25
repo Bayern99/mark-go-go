@@ -151,6 +151,9 @@ func TestClientAnnouncesItsCanonicalWorkingDirectoryAndProtocolVersion(t *testin
 		if meta[ipc.MetaProtocolVersion] != ipc.ModernProtocolVersion {
 			t.Errorf("protocol version = %v, want %s", meta[ipc.MetaProtocolVersion], ipc.ModernProtocolVersion)
 		}
+		if _, ok := meta[ipc.MetaClientCapabilities].(map[string]any); !ok {
+			t.Errorf("client capabilities = %v", meta[ipc.MetaClientCapabilities])
+		}
 		client, _ := meta[ipc.MetaClientInfo].(map[string]any)
 		if client["name"] != "markgogo-test" {
 			t.Errorf("client info = %v", meta[ipc.MetaClientInfo])

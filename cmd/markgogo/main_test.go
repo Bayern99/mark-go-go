@@ -170,7 +170,12 @@ func TestReadAndOutlineWorkWithoutTheApp(t *testing.T) {
 }
 
 func TestWritesReportAppNotRunning(t *testing.T) {
-	t.Setenv(ipc.UserDataEnv, filepath.Join(t.TempDir(), "absent"))
+	profile, err := os.MkdirTemp("", "mgcli")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(profile) })
+	t.Setenv(ipc.UserDataEnv, profile)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "report.md")
 	if err := os.WriteFile(path, []byte("# Report\n"), 0o644); err != nil {
@@ -238,6 +243,33 @@ func TestStatusReportsTheStoppedAppWithoutFailing(t *testing.T) {
 	if out := decodeJSON(t, stdout); out["running"] != false {
 		t.Fatalf("status = %v", out)
 	}
+}
+
+func TestStatusExplainsWhyTheSocketIsUnavailable(t *testing.T) {
+	dir, err := os.MkdirTemp("", "mgcli")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	t.Setenv(ipc.UserDataEnv, dir)
+	check := func(want string) {
+		t.Helper()
+		code, out, stderr := runCLI(t, nil, "status")
+		failure, _ := decodeJSON(t, out)["error"].(map[string]any)
+		if code != exitOK || failure["reason"] != want || failure["hint"] == "" {
+			t.Errorf("status = %s, exit = %d, stderr = %q, want %s and hint", out, code, stderr, want)
+		}
+	}
+	check("socket_missing")
+	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: ipc.SocketPath(dir), Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln.SetUnlinkOnClose(false)
+	if err := ln.Close(); err != nil {
+		t.Fatal(err)
+	}
+	check("connection_refused")
 }
 
 func TestStatusReportsARunningAppWithoutAMatchingWorkspace(t *testing.T) {

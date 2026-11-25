@@ -47,11 +47,12 @@ func RunShim(opts ShimOptions) error {
 type Shim struct {
 	opts ShimOptions
 
-	mu      sync.Mutex
-	conn    net.Conn
-	gen     int
-	legacy  string
-	pending map[string]bool
+	mu         sync.Mutex
+	conn       net.Conn
+	gen        int
+	legacy     string
+	legacyInfo json.RawMessage
+	pending    map[string]bool
 
 	outMu sync.Mutex
 }
@@ -73,6 +74,15 @@ func (s *Shim) run() error {
 func (s *Shim) forward(line []byte) {
 	id, isRequest := messageID(line)
 	s.mu.Lock()
+	var hello struct {
+		Method string `json:"method"`
+		Params struct {
+			ClientInfo json.RawMessage `json:"clientInfo"`
+		} `json:"params"`
+	}
+	if isRequest && json.Unmarshal(line, &hello) == nil && hello.Method == "initialize" {
+		s.legacyInfo = hello.Params.ClientInfo
+	}
 	err := s.connectLocked()
 	conn, gen := s.conn, s.gen
 	if isRequest && conn != nil {
@@ -109,7 +119,7 @@ func (s *Shim) connectLocked() error {
 		return err
 	}
 	if legacy := s.legacy; legacy != "" {
-		echo, err := negotiateLegacy(conn, legacy, s.opts)
+		echo, err := negotiateLegacy(conn, legacy, s.legacyInfo, s.opts)
 		if err != nil {
 			conn.Close()
 			return NotRunning(s.opts.SocketPath, err)
@@ -126,7 +136,7 @@ func (s *Shim) connectLocked() error {
 
 // negotiateLegacy repeats the initialize handshake on a new connection so an
 // old client keeps the protocol revision it already agreed to.
-func negotiateLegacy(conn net.Conn, version string, opts ShimOptions) (string, error) {
+func negotiateLegacy(conn net.Conn, version string, clientInfo json.RawMessage, opts ShimOptions) (string, error) {
 	timeout := opts.DialTimeout
 	if timeout <= 0 {
 		timeout = DialTimeout
@@ -139,6 +149,9 @@ func negotiateLegacy(conn net.Conn, version string, opts ShimOptions) (string, e
 		"protocolVersion": version,
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": opts.Name, "version": opts.Version},
+	}
+	if len(clientInfo) > 0 {
+		params["clientInfo"] = clientInfo
 	}
 	if err := WriteMessage(conn, request{JSONRPC: "2.0", ID: 1, Method: "initialize", Params: params}); err != nil {
 		return "", err

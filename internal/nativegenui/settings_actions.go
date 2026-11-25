@@ -1,7 +1,8 @@
 package nativegenui
 
 import (
-	"strings"
+	"encoding/json"
+	"errors"
 
 	"github.com/Bayern99/mark-go-go/internal/genui"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
@@ -47,13 +48,30 @@ func (p *panel) editFor(id string) *backendEdit {
 		edit.command = backend.Command
 	}
 	if !edit.argumentsEdited {
-		edit.arguments = strings.Join(backend.Args, " ")
+		encoded, _ := json.Marshal(append([]string{}, backend.Args...))
+		edit.arguments = string(encoded)
 	}
 	if !edit.advancedChosen {
 		edit.advancedOpen = id == genui.BackendCustom
 		edit.advancedChosen = true
 	}
 	return edit
+}
+
+func parseArguments(text string) ([]string, error) {
+	var values []*string
+	invalid := errors.New(`Enter a JSON array of strings, for example ["--profile","My Profile"].`)
+	if err := json.Unmarshal([]byte(text), &values); err != nil || values == nil {
+		return nil, invalid
+	}
+	args := make([]string, len(values))
+	for i, value := range values {
+		if value == nil {
+			return nil, invalid
+		}
+		args[i] = *value
+	}
+	return args, nil
 }
 
 func (p *panel) selectBackend(id string) {
@@ -82,6 +100,29 @@ func (p *panel) saveBackend(id string, patch workspace.GenUIBackendPatch) {
 	}
 	p.settingsMessage = ""
 	p.settings = next
+}
+
+func (p *panel) selectBackendOption(id string, choice workspace.GenUIBackendPatch) {
+	state := p.status(id)
+	confirm := p.confirmSelection
+	if state.busy || confirm == nil {
+		return
+	}
+	state.busy = true
+	p.settingsMessage = ""
+	go func() {
+		catalog, updated, err := confirm(id, choice)
+		p.after(func() {
+			state := p.status(id)
+			state.busy = false
+			if err != nil {
+				p.settingsMessage = err.Error()
+				return
+			}
+			p.settings = updated
+			state.catalog = catalog
+		})
+	}()
 }
 
 // probeOnFocus re-tests a backend the user already tested, so a sign-in
@@ -122,7 +163,7 @@ func (p *panel) testConnection(id string, refreshModels bool) {
 			state.busy = false
 			state.tested = true
 			state.probe = result
-			if len(catalog.Models) > 0 || catalog.CurrentModel != "" {
+			if refreshModels && refresh != nil && refreshErr == nil && (catalog.Models != nil || catalog.CurrentModel != "") {
 				state.catalog = catalog
 			}
 			p.settingsMessage = message(firstError(probeErr, refreshErr))

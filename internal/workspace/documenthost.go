@@ -105,7 +105,13 @@ type generationSlot struct {
 
 func NewService() *Service {
 	dir, _ := mygo.App.Path(mygo.PathUserData)
-	settings := &settingsStore{dir: dir}
+	settings := &settingsStore{dir: dir, detect: func() string {
+		dirs := fsutil.DefaultUserBinDirs()
+		return genui.DetectBackend(func(command string) bool {
+			_, found := fsutil.ResolveExecutable(command, nil, dirs)
+			return found
+		})
+	}}
 	host := &Service{
 		byWindow:    make(map[*mygo.Window]*workspace),
 		byWorkspace: make(map[string]*workspace),

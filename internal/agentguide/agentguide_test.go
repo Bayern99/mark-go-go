@@ -102,3 +102,13 @@ func TestInstallingTheSkillWritesIntoTheAppsOwnFolder(t *testing.T) {
 		t.Fatal("installing the skill without a user data folder succeeded")
 	}
 }
+
+func TestAgentGuidesIdentifyWhichOperationsTakeEffectImmediately(t *testing.T) {
+	for _, guide := range []string{GeneralPrompt("/tmp/ipc.sock"), Skill()} {
+		for _, phrase := range []string{"review", "immediately creates", "refuses to overwrite", "immediately replaces", "immediately snapshots"} {
+			if !strings.Contains(guide, phrase) {
+				t.Errorf("agent guide lacks %q", phrase)
+			}
+		}
+	}
+}

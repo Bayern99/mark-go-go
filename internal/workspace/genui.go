@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/Bayern99/mark-go-go/internal/acp"
 	"github.com/Bayern99/mark-go-go/internal/genui"
 	"github.com/Bayern99/mark-go-go/internal/hostterm"
+	"github.com/Bayern99/mark-go-go/internal/pigenui"
 )
 
 const genuiProbeTimeout = 30 * time.Second
@@ -19,7 +21,15 @@ const genuiProbeTimeout = 30 * time.Second
 // written, so the agent keeps its own current model instead of refusing.
 func (b GenUIBackend) UsableModel() string {
 	model := strings.TrimSpace(b.Model)
-	if model == "" || len(b.Models) == 0 {
+	if len(b.ModelOptions) > 0 {
+		for _, offered := range b.ModelOptions {
+			if offered.ID == model && offered.Provider == b.Provider {
+				return model
+			}
+		}
+		return ""
+	}
+	if model == "" || b.Models == nil {
 		return model
 	}
 	for _, offered := range b.Models {
@@ -86,11 +96,11 @@ func (s *Service) RefreshGenUIModels(backendID string) (genui.ModelCatalog, erro
 	ctx, cancel := context.WithTimeout(context.Background(), genuiProbeTimeout)
 	defer cancel()
 	settings := s.genUISettings().GenUI.For(backendID)
-	catalog, err := acp.ListModels(ctx, acp.SessionConfig{ProbeConfig: cfg, Model: settings.UsableModel()})
+	catalog, err := acp.ListModels(ctx, acp.SessionConfig{ProbeConfig: cfg, Model: settings.UsableModel(), ThoughtLevel: settings.ThoughtLevel})
 	if err != nil {
 		return genui.ModelCatalog{}, err
 	}
-	if s.settings != nil {
+	if s.settings != nil && catalog.Models != nil {
 		ids := make([]string, 0, len(catalog.Models))
 		for _, model := range catalog.Models {
 			ids = append(ids, model.ID)
@@ -100,6 +110,71 @@ func (s *Service) RefreshGenUIModels(backendID string) (genui.ModelCatalog, erro
 		}
 	}
 	return catalog, nil
+}
+
+func (s *Service) ConfirmGenUISelection(id string, choice GenUIBackendPatch) (genui.ModelCatalog, Settings, error) {
+	before := s.genUISettings().GenUI.For(id)
+	model, provider, effort := before.UsableModel(), before.Provider, before.ThoughtLevel
+	if choice.Model != nil {
+		model = *choice.Model
+		effort = ""
+	}
+	if choice.Provider != nil {
+		provider = *choice.Provider
+	}
+	if choice.ThoughtLevel != nil {
+		effort = *choice.ThoughtLevel
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), genuiProbeTimeout)
+	defer cancel()
+	var catalog genui.ModelCatalog
+	var err error
+	if id == genui.BackendPi {
+		cfg := s.piConfig(before)
+		cfg.Model, cfg.Provider, cfg.ThoughtLevel = model, provider, effort
+		catalog, err = pigenui.ListModels(ctx, cfg)
+	} else {
+		cfg, configErr := s.genUIProbeConfig(id)
+		if configErr != nil {
+			return catalog, Settings{}, configErr
+		}
+		catalog, err = acp.ListModels(ctx, acp.SessionConfig{ProbeConfig: cfg, Model: model, ThoughtLevel: effort})
+	}
+	if err != nil {
+		return catalog, Settings{}, err
+	}
+	if model != "" && (catalog.CurrentModel != model || id == genui.BackendPi && catalog.CurrentProvider != provider) {
+		return catalog, Settings{}, fmt.Errorf("The backend did not confirm the selected model %q.", model)
+	}
+	if effort != "" && catalog.ThoughtLevel != effort {
+		return catalog, Settings{}, fmt.Errorf("The backend did not confirm the selected reasoning effort %q.", effort)
+	}
+	if choice.Model != nil {
+		choice.Model = &catalog.CurrentModel
+		choice.Provider = &catalog.CurrentProvider
+		choice.ThoughtLevel = &catalog.ThoughtLevel
+	}
+	if choice.ThoughtLevel != nil {
+		choice.ThoughtLevel = &catalog.ThoughtLevel
+	}
+	if catalog.Models != nil {
+		ids := make([]string, 0, len(catalog.Models))
+		for _, option := range catalog.Models {
+			ids = append(ids, option.ID)
+		}
+		choice.Models = &ids
+		if id == genui.BackendPi {
+			choice.ModelOptions = &catalog.Models
+		}
+	}
+	current := s.genUISettings().GenUI.For(id)
+	if before.Command != current.Command || !slices.Equal(before.Args, current.Args) ||
+		before.Model != current.Model || before.Provider != current.Provider || before.ThoughtLevel != current.ThoughtLevel {
+		return catalog, Settings{}, errors.New("These backend settings changed while the selection was being checked. Try it again.")
+	}
+	updated, err := s.SetSettings(SettingsPatch{GenUI: &GenUIPatch{Backends: map[string]GenUIBackendPatch{id: choice}}})
+	return catalog, updated, err
 }
 
 // OpenGenUILogin starts a backend's own sign-in command in the system Terminal.
@@ -114,11 +189,16 @@ func (s *Service) OpenGenUILogin(backendID string) error {
 		// to sign in with the agent's own command instead of running it here.
 		return errors.New(b.LoginHint)
 	}
-	command, args := b.LoginCommand, slices.Clone(b.LoginArgs)
+	settings := s.genUISettings().GenUI.For(b.ID)
+	command := strings.TrimSpace(settings.Command)
+	if command == "" {
+		command = b.LoginCommand
+	}
+	args := slices.Clone(b.LoginArgs)
 	if b.ID == genui.BackendPi {
 		// Pi signs a provider in, not a model, so the app names the provider it
 		// recorded beside the model rather than asking Pi to guess.
-		provider := strings.TrimSpace(s.genUISettings().GenUI.For(b.ID).Provider)
+		provider := strings.TrimSpace(settings.Provider)
 		if provider == "" {
 			return errors.New(b.LoginHint)
 		}

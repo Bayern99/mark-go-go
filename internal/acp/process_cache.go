@@ -116,7 +116,7 @@ func (c *ProcessCache) startLease(executable string, args []string, env []string
 	}
 	cmd := exec.Command(executable, args...)
 	cmd.Dir = dir
-	cmd.Env = env
+	cmd.Env = fsutil.WithUserBinPath(env)
 	agent, err := NewAgent(cmd, fsutil.NewLimitBuffer(4<<10))
 	if err != nil {
 		return nil, err

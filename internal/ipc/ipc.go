@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -51,6 +52,7 @@ const (
 // AppError is a failure the caller can act on, keyed by a stable code.
 type AppError struct {
 	Code    string `json:"code"`
+	Reason  string `json:"reason,omitempty"`
 	Message string `json:"message"`
 	Hint    string `json:"hint,omitempty"`
 }
@@ -265,12 +267,15 @@ func withModernMeta(params map[string]any, name, version string) map[string]any 
 		out[key] = value
 	}
 	meta, _ := out["_meta"].(map[string]any)
-	next := make(map[string]any, len(meta)+2)
+	next := make(map[string]any, len(meta)+3)
 	for key, value := range meta {
 		next[key] = value
 	}
 	if _, set := next[MetaProtocolVersion]; !set {
 		next[MetaProtocolVersion] = ModernProtocolVersion
+	}
+	if _, set := next[MetaClientCapabilities]; !set {
+		next[MetaClientCapabilities] = map[string]any{}
 	}
 	if _, set := next[MetaClientInfo]; !set && name != "" {
 		next[MetaClientInfo] = map[string]any{"name": name, "version": version}
@@ -281,22 +286,33 @@ func withModernMeta(params map[string]any, name, version string) map[string]any 
 
 // Keys of request _meta this channel reads and writes.
 const (
-	MetaProtocolVersion = "io.modelcontextprotocol/protocolVersion"
-	MetaClientInfo      = "io.modelcontextprotocol/clientInfo"
-	MetaServerInfo      = "io.modelcontextprotocol/serverInfo"
+	MetaProtocolVersion    = "io.modelcontextprotocol/protocolVersion"
+	MetaClientCapabilities = "io.modelcontextprotocol/clientCapabilities"
+	MetaClientInfo         = "io.modelcontextprotocol/clientInfo"
+	MetaServerInfo         = "io.modelcontextprotocol/serverInfo"
 )
 
 // NotRunning reports that nothing answered at the socket.
 func NotRunning(socketPath string, cause error) error {
-	message := fmt.Sprintf("Mark Go Go is not running at %s", socketPath)
-	if cause != nil && !errors.Is(cause, os.ErrNotExist) {
-		message = fmt.Sprintf("%s (%v)", message, cause)
+	reason := "unreachable"
+	hint := "Check Settings / AI Integration and the socket path. In a sandbox, try the host's markgogo mcp stdio connection."
+	var netErr net.Error
+	switch {
+	case errors.Is(cause, os.ErrNotExist):
+		reason = "socket_missing"
+		hint = "Start the Mark Go Go app and enable its local channel in Settings / AI Integration. To use another profile, set " + UserDataEnv + "."
+	case errors.Is(cause, os.ErrPermission), errors.Is(cause, syscall.EPERM):
+		reason = "permission_denied"
+	case errors.Is(cause, syscall.ECONNREFUSED):
+		reason = "connection_refused"
+	case errors.As(cause, &netErr) && netErr.Timeout():
+		reason = "timeout"
 	}
-	return &AppError{
-		Code:    CodeAppNotRunning,
-		Message: message + ".",
-		Hint:    "Start the Mark Go Go app; to use another user data directory, set " + UserDataEnv + ".",
+	message := fmt.Sprintf("Could not reach Mark Go Go at %s", socketPath)
+	if cause != nil && reason != "socket_missing" {
+		message += fmt.Sprintf(" (%v)", cause)
 	}
+	return &AppError{Code: CodeAppNotRunning, Reason: reason, Message: message + ".", Hint: hint}
 }
 
 // ToolCall runs a tool and returns its structured result, turning an app error

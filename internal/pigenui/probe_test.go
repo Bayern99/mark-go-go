@@ -2,7 +2,9 @@ package pigenui
 
 import (
 	"context"
+	"errors"
 	"os"
+
 	"path/filepath"
 	"slices"
 	"strings"
@@ -39,6 +41,9 @@ func TestProbeReadsTheExitCodeOfTheCredentialCheck(t *testing.T) {
 			}
 			if result.Status != tt.want {
 				t.Fatalf("status = %q (%s), want %q", result.Status, result.Detail, tt.want)
+			}
+			if tt.want == genui.AgentReady && result.Hint != "" {
+				t.Errorf("installed and ready Pi still displays %q", result.Hint)
 			}
 			if tt.wantDetail != "" && !strings.Contains(result.Detail, tt.wantDetail) {
 				t.Errorf("detail = %q, want it to mention %q", result.Detail, tt.wantDetail)
@@ -77,5 +82,18 @@ func TestProbeWithoutAProviderReportsAnUnknownLogin(t *testing.T) {
 	}
 	if _, err := os.Stat(logPath); !os.IsNotExist(err) {
 		t.Errorf("the probe ran a command without a provider: %v", err)
+	}
+}
+
+func TestProbeDoesNotStartAnAuthCheckAfterCancellation(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "fixture.log")
+	cfg := testConfig(t, logPath)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := Probe(ctx, cfg); !errors.Is(err, context.Canceled) {
+		t.Fatalf("probe with cancelled context = %v", err)
+	}
+	if _, err := os.Stat(logPath); !os.IsNotExist(err) {
+		t.Errorf("a cancelled probe started Pi: %v", err)
 	}
 }

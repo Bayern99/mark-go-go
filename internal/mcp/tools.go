@@ -156,7 +156,7 @@ func (s *Server) handleToolsList() any {
 				"documentId":   stringProp("Open document id from the workspace resource"),
 				"path":         stringProp("Workspace-relative or absolute path of the Markdown document"),
 				"summary":      stringProp("One sentence about the change, for the reviewer"),
-				"proposedText": stringProp("Complete proposed Markdown text"),
+				"proposedText": stringProp("Complete proposed Markdown text. Pass an empty string to propose clearing the document. Do not combine with oldText, newText or line fields."),
 				"oldText":      stringProp("Exact existing snippet to replace with newText"),
 				"newText":      stringProp("Replacement text for oldText or for startLine..endLine"),
 				"startLine":    intProp("1-based first line of the range to replace"),
@@ -175,7 +175,7 @@ func (s *Server) handleToolsList() any {
 		{
 			Name:        toolCreateDocument,
 			Title:       "Create Markdown Document",
-			Description: "Create a new Markdown document inside the workspace, refusing to overwrite an existing file.",
+			Description: "Immediately create a new Markdown document inside the workspace, refusing to overwrite an existing file.",
 			InputSchema: objectSchema(map[string]any{
 				"path":    stringProp("Workspace-relative Markdown file path (e.g. outputs/summary.md)"),
 				"content": stringProp("UTF-8 Markdown content to write"),
@@ -215,7 +215,7 @@ func (s *Server) handleToolsList() any {
 		{
 			Name:        toolWriteGenUIView,
 			Title:       "Write GenUI View",
-			Description: "Validate an A2UI 1.0 or openui-lang candidate against the GenUI catalog and atomically write the document's .genui.json view file. Returns the version actually written.",
+			Description: "Validate an A2UI 1.0 or openui-lang candidate against the GenUI catalog and immediately replace the document's .genui.json reading view. Returns the version actually written.",
 			InputSchema: objectSchema(map[string]any{
 				"documentId": stringProp("Open document id"),
 				"path":       stringProp("Workspace-relative or absolute path of the source Markdown document"),
@@ -236,7 +236,7 @@ func (s *Server) handleToolsList() any {
 		{
 			Name:        toolCreateCheckpoint,
 			Title:       "Create Checkpoint",
-			Description: "Record a labeled provenance checkpoint of a saved Markdown document, so the user can compare or restore it later.",
+			Description: "Immediately record a labeled provenance checkpoint of a saved Markdown document, so the user can compare or restore it later.",
 			InputSchema: objectSchema(map[string]any{
 				"documentId": stringProp("Open document id"),
 				"path":       stringProp("Workspace-relative or absolute path of the saved Markdown document"),
@@ -276,9 +276,11 @@ func (s *Server) handleToolsCall(ctx context.Context, binding *sessionBinding, r
 		return nil, &rpcError{Code: errCodeInvalidParams, Message: "tool name is required"}
 	}
 
+	if binding.rootOpen != nil && !binding.rootOpen() {
+		return toolFailure(classifyFailure(workspace.ErrWorkspaceNotOpen)), nil
+	}
 	var result mcpCallToolResult
 	var rpcErr *rpcError
-	target := ""
 	switch params.Name {
 	case toolReadDocument:
 		result, rpcErr = s.toolReadDocument(binding, params.Arguments)
@@ -286,19 +288,14 @@ func (s *Server) handleToolsCall(ctx context.Context, binding *sessionBinding, r
 		result, rpcErr = s.toolGetWorkspace(binding, params.Arguments)
 	case toolProposeEdit:
 		result, rpcErr = s.toolProposeEdit(binding, params.Arguments)
-		target = targetPathOf(params.Arguments)
 	case toolCreateDocument:
 		result, rpcErr = s.toolCreateDocument(ctx, binding, params.Arguments)
-		target = targetPathOf(params.Arguments)
 	case toolOpenDocument:
 		result, rpcErr = s.toolOpenDocument(ctx, binding, params.Arguments)
-		target = targetPathOf(params.Arguments)
 	case toolWriteGenUIView:
 		result, rpcErr = s.toolWriteGenUIView(ctx, binding, params.Arguments)
-		target = targetPathOf(params.Arguments)
 	case toolCreateCheckpoint:
 		result, rpcErr = s.toolCreateCheckpoint(ctx, binding, params.Arguments)
-		target = targetPathOf(params.Arguments)
 	default:
 		return nil, &rpcError{Code: errCodeInvalidParams, Message: "unknown tool: " + params.Name}
 	}
@@ -306,17 +303,9 @@ func (s *Server) handleToolsCall(ctx context.Context, binding *sessionBinding, r
 		return nil, rpcErr
 	}
 	if auditTools[params.Name] {
-		s.audit(binding, params.Name, target, result)
+		s.audit(binding, params.Name, result)
 	}
 	return result, nil
 }
 
 // targetPathOf reports what a tool call acted on, for the audit record.
-func targetPathOf(raw json.RawMessage) string {
-	var args struct {
-		Path       string `json:"path"`
-		DocumentID string `json:"documentId"`
-	}
-	_ = json.Unmarshal(raw, &args)
-	return firstNonEmpty(args.Path, args.DocumentID)
-}

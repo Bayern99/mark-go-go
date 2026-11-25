@@ -4,6 +4,7 @@
   "identifier": "dev.markgogo.editor",
   "version": "0.6.0",
   "icon": "resources/icon.png",
+  "buildCommand": "go run ./scripts/bundle-cli",
   "resources": ["third_party/mygo/LICENSE"],
   "linux": { "webview": false },
   "out": "build",

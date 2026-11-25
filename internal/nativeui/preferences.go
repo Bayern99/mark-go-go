@@ -16,6 +16,10 @@ import (
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
 )
 
+const genUIPluginPreference = "mgo.plugin.genui"
+
+var AfterGenUIPluginChange func(enabled bool)
+
 type preferenceStore struct {
 	dir       string
 	values    map[string]string
@@ -110,6 +114,9 @@ func (w *Window) resetPreferences(match func(string) bool) {
 		return
 	}
 	w.failure = ""
+	if previous[genUIPluginPreference] != p.values[genUIPluginPreference] && AfterGenUIPluginChange != nil {
+		AfterGenUIPluginChange(w.PluginEnabled("genui"))
+	}
 	for window := range p.windows {
 		if window.win != nil {
 			window.win.Invalidate()
@@ -145,6 +152,9 @@ func (w *Window) setPreference(key, value string) {
 		return
 	}
 	w.failure = ""
+	if key == genUIPluginPreference && AfterGenUIPluginChange != nil {
+		AfterGenUIPluginChange(w.PluginEnabled("genui"))
+	}
 	for window := range p.windows {
 		if window.win != nil {
 			window.win.Invalidate()

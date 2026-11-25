@@ -52,10 +52,11 @@ type Dependencies struct {
 }
 
 type sessionBinding struct {
-	token   string
-	root    string
-	work    string
-	channel string
+	token    string
+	root     string
+	work     string
+	channel  string
+	rootOpen func() bool
 }
 
 // source is the provenance tag the server writes for this channel; a caller
@@ -73,9 +74,9 @@ const instructions = "Mark Go Go edits the Markdown files of the workspace this 
 	"read_document by documentId or workspace-relative path; read_document also returns the " +
 	"version a line-range edit needs. Changes to existing text only ever enter the review " +
 	"queue through propose_edit and are applied after the user accepts them in Mark Go Go; " +
-	"create_document makes new files and refuses to overwrite. write_genui_view validates a " +
-	"GenUI candidate against the catalog before writing the document's .genui.json, and " +
-	"create_checkpoint snapshots a saved document. Errors carry a code: APP_NOT_RUNNING, " +
+	"create_document immediately makes new files and refuses to overwrite. write_genui_view validates a " +
+	"GenUI candidate against the catalog and immediately replaces the reading view, and " +
+	"create_checkpoint immediately snapshots a saved document. Errors carry a code: APP_NOT_RUNNING, " +
 	"WORKSPACE_NOT_OPEN, VERSION_CONFLICT, NOT_FOUND, PATH_DENIED or INVALID_ARGS with a hint."
 
 type Server struct {
@@ -459,26 +460,31 @@ func (s *Server) handleMCPPost(w http.ResponseWriter, r *http.Request, binding *
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// modernVersionOf reports the protocol revision a request states in its _meta.
-func modernVersionOf(params json.RawMessage) (string, bool) {
-	if len(params) == 0 {
-		return "", false
-	}
-	var envelope struct {
+func (s *Server) modernRequest(req rpcRequest) (bool, *rpcError) {
+	var params struct {
 		Meta map[string]json.RawMessage `json:"_meta"`
 	}
-	if json.Unmarshal(params, &envelope) != nil || envelope.Meta == nil {
-		return "", false
+	err := json.Unmarshal(req.Params, &params)
+	version, versionSet := params.Meta[ipc.MetaProtocolVersion]
+	capabilities, capabilitiesSet := params.Meta[ipc.MetaClientCapabilities]
+	if req.Method != "server/discover" && !versionSet && !capabilitiesSet {
+		return false, nil
 	}
-	raw, ok := envelope.Meta[ipc.MetaProtocolVersion]
-	if !ok {
-		return "", false
+	invalid := func(key string) *rpcError {
+		return &rpcError{Code: errCodeInvalidParams, Message: "A modern request requires valid _meta." + key}
 	}
-	var version string
-	if json.Unmarshal(raw, &version) != nil || version == "" {
-		return "", false
+	var value string
+	if err != nil || json.Unmarshal(version, &value) != nil || value == "" {
+		return true, invalid(ipc.MetaProtocolVersion)
 	}
-	return version, true
+	if value != modernProtocolVersion {
+		return true, unsupportedVersionResponse(req.ID, value).Error
+	}
+	var caps map[string]json.RawMessage
+	if json.Unmarshal(capabilities, &caps) != nil || caps == nil {
+		return true, invalid(ipc.MetaClientCapabilities)
+	}
+	return true, nil
 }
 
 func (s *Server) capabilities() map[string]any {
@@ -561,7 +567,7 @@ func unsupportedVersionResponse(id json.RawMessage, requested string) rpcRespons
 	}
 }
 
-func (s *Server) dispatchMessage(ctx context.Context, binding *sessionBinding, raw []byte) (rpcResponse, string, bool) {
+func (s *Server) dispatchMessage(ctx context.Context, binding *sessionBinding, raw []byte) (response rpcResponse, session string, answered bool) {
 	var req rpcRequest
 	if err := json.Unmarshal(raw, &req); err != nil {
 		return rpcResponse{
@@ -587,8 +593,30 @@ func (s *Server) dispatchMessage(ctx context.Context, binding *sessionBinding, r
 	if req.Method == "initialize" {
 		return s.handleInitialize(binding, req)
 	}
-	if version, modern := modernVersionOf(req.Params); modern && version != modernProtocolVersion {
-		return unsupportedVersionResponse(req.ID, version), "", true
+	modern, rpcErr := s.modernRequest(req)
+	if rpcErr != nil {
+		return rpcResponse{JSONRPC: "2.0", ID: req.ID, Error: rpcErr}, "", true
+	}
+	if modern {
+		defer func() {
+			if response.Error != nil {
+				return
+			}
+			switch result := response.Result.(type) {
+			case map[string]any:
+				result["resultType"] = "complete"
+				switch req.Method {
+				case "tools/list", "resources/list", "resources/templates/list":
+					result["ttlMs"] = 0
+					result["cacheScope"] = "private"
+				}
+				result["_meta"] = map[string]any{ipc.MetaServerInfo: s.serverInfo()}
+			case mcpCallToolResult:
+				result.ResultType = "complete"
+				result.Meta = map[string]any{ipc.MetaServerInfo: s.serverInfo()}
+				response.Result = result
+			}
+		}()
 	}
 
 	switch req.Method {
@@ -598,17 +626,23 @@ func (s *Server) dispatchMessage(ctx context.Context, binding *sessionBinding, r
 	case "ping":
 		return rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: map[string]any{}}, "", true
 
-	case "resources/list":
+	case "resources/list", "resources/read":
+		if binding.rootOpen != nil && !binding.rootOpen() {
+			failure := classifyFailure(workspace.ErrWorkspaceNotOpen)
+			return rpcResponse{JSONRPC: "2.0", ID: req.ID, Error: &rpcError{
+				Code: errCodeInvalidParams, Message: failure.Message, Data: failure,
+			}}, "", true
+		}
+		if req.Method == "resources/read" {
+			res, rpcErr := s.handleResourcesRead(binding, req.Params)
+			return rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: res, Error: rpcErr}, "", true
+		}
 		res, rpcErr := s.handleResourcesList(binding)
 		return rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: res, Error: rpcErr}, "", true
 
 	case "resources/templates/list":
 		res := s.handleResourceTemplatesList()
 		return rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: res}, "", true
-
-	case "resources/read":
-		res, rpcErr := s.handleResourcesRead(binding, req.Params)
-		return rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: res, Error: rpcErr}, "", true
 
 	case "tools/list":
 		res := s.handleToolsList()

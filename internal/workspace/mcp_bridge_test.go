@@ -183,3 +183,32 @@ func TestMCPWorkspaceStateBoundsItsFileList(t *testing.T) {
 		t.Fatalf("files = %d, truncated = %v, limit = %d", len(state.Files), state.Truncated, state.FilesLimit)
 	}
 }
+
+func TestMCPRootBindingDoesNotReviveWhenAWorkspaceReopens(t *testing.T) {
+	root := fsutil.CanonicalPath(t.TempDir())
+	svc := newBridgeHarness(t, root)
+	binding := svc.MCPBindRoot(root)
+	if binding == nil || !binding() {
+		t.Fatal("open workspace did not bind")
+	}
+	if _, err := svc.CloseWorkspaceRoot(context.Background(), "ws-0"); err != nil {
+		t.Fatal(err)
+	}
+	if binding() {
+		t.Fatal("closed workspace retained its binding")
+	}
+	svc.settings = &settingsStore{dir: t.TempDir()}
+	svc.addWorkspaceToWindow("ws-0", root, "", nil)
+	t.Cleanup(func() {
+		svc.forgetWindow(nil)
+		// forgetWindow persists the session in the background; let it finish
+		// before the settings folder is removed.
+		svc.sessionWG.Wait()
+	})
+	if binding() {
+		t.Fatal("reopening revived an old binding")
+	}
+	if next := svc.MCPBindRoot(root); next == nil || !next() {
+		t.Fatal("reopened workspace did not accept a new binding")
+	}
+}

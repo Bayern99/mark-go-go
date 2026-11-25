@@ -178,35 +178,41 @@ func (p *panel) drawGeneration(c *ui.Context, q nativeui.SettingsQuery, id strin
 		return
 	}
 	state := p.status(id)
-	levels := effortLevels(state.catalog, backend.Model)
+	saved := genui.ModelOption{ID: backend.Model, Provider: backend.Provider}
+	levels := effortLevels(state.catalog, saved.Key())
 	portrait.SettingsGroup(c, "Generation", func(rows *portrait.Rows) {
 		if q.Match("Model", "The model the backend uses.", modelKeywords) {
 			rows.Row(portrait.RowSpec{Title: "Model", Description: modelDescription(state.catalog, backend)}, func() {
-				options := make([]portrait.Option, 0, len(backend.Models))
-				for _, value := range offeredModels(backend, state.catalog) {
-					options = append(options, portrait.Option{Value: value, Label: modelLabel(state.catalog, value)})
+				models := offeredModels(backend, state.catalog)
+				options := make([]portrait.Option, 0, len(models))
+				for _, model := range models {
+					label := model.Name
+					if strings.TrimSpace(label) == "" {
+						label = model.ID
+					}
+					if model.Provider != "" {
+						label += " · " + model.Provider
+					}
+					options = append(options, portrait.Option{Value: model.Key(), Label: label})
 				}
 				if len(options) == 0 {
 					portrait.Caption(c, "Test & Refresh to load the models the backend offers.")
 					return
 				}
-				selected := backend.Model
-				if selected == "" && state.catalog.CurrentModel != "" {
-					selected = state.catalog.CurrentModel
+				selected := saved.Key()
+				if saved.ID == "" {
+					selected = state.catalog.CurrentModelKey()
 				}
 				before := selected
-				portrait.Select(c, &selected, options, portrait.SelectSpec{Label: "Model"})
+				portrait.Select(c, &selected, options, portrait.SelectSpec{Label: "Model"}).Disabled(state.busy)
 				if selected != before {
-					// Effort levels belong to a model; a new model starts at
-					// the agent's own default until it declares its own.
-					empty := ""
-					patch := workspace.GenUIBackendPatch{Model: &selected, ThoughtLevel: &empty}
-					// A backend that names a provider beside its models needs it
-					// for its credential check, its model write and its login.
-					if provider := state.catalog.ProviderOf(selected); provider != "" {
-						patch.Provider = &provider
+					for _, option := range models {
+						if option.Key() == selected {
+							empty := ""
+							p.selectBackendOption(id, workspace.GenUIBackendPatch{Model: &option.ID, Provider: &option.Provider, ThoughtLevel: &empty})
+							break
+						}
 					}
-					p.saveBackend(id, patch)
 				}
 			})
 		}
@@ -225,9 +231,9 @@ func (p *panel) drawGeneration(c *ui.Context, q nativeui.SettingsQuery, id strin
 					selected = state.catalog.ThoughtLevel
 				}
 				before := selected
-				portrait.Select(c, &selected, options, portrait.SelectSpec{Label: "Reasoning effort"})
+				portrait.Select(c, &selected, options, portrait.SelectSpec{Label: "Reasoning effort"}).Disabled(state.busy)
 				if selected != before {
-					p.saveBackend(id, workspace.GenUIBackendPatch{ThoughtLevel: &selected})
+					p.selectBackendOption(id, workspace.GenUIBackendPatch{ThoughtLevel: &selected})
 				}
 			})
 		}
@@ -236,49 +242,32 @@ func (p *panel) drawGeneration(c *ui.Context, q nativeui.SettingsQuery, id strin
 
 // offeredModels is the agent's latest word on its models: what the last refresh
 // declared, and the saved list until a refresh declares any.
-func offeredModels(backend workspace.GenUIBackend, catalog genui.ModelCatalog) []string {
-	if len(catalog.Models) == 0 {
-		return backend.Models
+func offeredModels(backend workspace.GenUIBackend, catalog genui.ModelCatalog) []genui.ModelOption {
+	if catalog.Models != nil {
+		return catalog.Models
 	}
-	values := make([]string, 0, len(catalog.Models))
-	for _, model := range catalog.Models {
-		values = append(values, model.ID)
+	if backend.ModelOptions != nil {
+		return backend.ModelOptions
 	}
-	return values
-}
-
-// modelLabel shows the agent's own name for a model when it sent one.
-func modelLabel(catalog genui.ModelCatalog, id string) string {
-	for _, model := range catalog.Models {
-		if model.ID == id && strings.TrimSpace(model.Name) != "" {
-			return model.Name
+	options := make([]genui.ModelOption, 0, len(backend.Models))
+	for _, id := range backend.Models {
+		option := genui.ModelOption{ID: id}
+		if id == backend.Model {
+			option.Provider = backend.Provider
 		}
+		options = append(options, option)
 	}
-	return id
+	return options
 }
 
 func modelDescription(catalog genui.ModelCatalog, backend workspace.GenUIBackend) string {
-	if len(offeredModels(backend, catalog)) == 0 {
+	models := offeredModels(backend, catalog)
+	if len(models) == 0 {
 		return "Test & Refresh to load the models the backend offers."
 	}
-	model := strings.TrimSpace(backend.Model)
-	if model == "" {
-		return "The model the backend uses."
-	}
-	// A refreshed catalog is the agent's current word on its models, so a saved
-	// choice it no longer declares is reported rather than written.
-	declared := false
-	for _, option := range catalog.Models {
-		if option.ID == model {
-			declared = true
-			break
-		}
-	}
-	if len(catalog.Models) == 0 {
-		declared = slices.Contains(backend.Models, model)
-	}
-	if !declared {
-		return fmt.Sprintf("The backend no longer offers %q; it will use its own current model.", model)
+	saved := genui.ModelOption{ID: backend.Model, Provider: backend.Provider}
+	if saved.ID != "" && !slices.ContainsFunc(models, func(model genui.ModelOption) bool { return model.Key() == saved.Key() }) {
+		return fmt.Sprintf("The backend no longer offers %q; it will use its own current model.", saved.ID)
 	}
 	return "The model the backend uses."
 }
@@ -290,7 +279,7 @@ func effortLevels(catalog genui.ModelCatalog, model string) []genui.Choice {
 	if len(catalog.ThoughtLevels) == 0 {
 		return nil
 	}
-	if model != "" && catalog.CurrentModel != "" && model != catalog.CurrentModel {
+	if model != "" && catalog.CurrentModel != "" && model != catalog.CurrentModelKey() {
 		return nil
 	}
 	return catalog.ThoughtLevels
@@ -348,8 +337,9 @@ func connectionDescription(state *backendStatus) string {
 }
 
 func (p *panel) drawAdvanced(c *ui.Context, q nativeui.SettingsQuery, id string, backend workspace.GenUIBackend) {
-	if q.Active() && !q.Match("Agent command", "The command the backend runs.", commandKeywords) &&
-		!q.Match("Arguments", "The arguments that make the command speak ACP.", argumentsKeywords) {
+	showCommand := q.Match("Agent command", "The command the backend runs.", commandKeywords)
+	showArgs := id != genui.BackendPi && q.Match("Arguments", "The arguments that make the command speak ACP.", argumentsKeywords)
+	if !showCommand && !showArgs {
 		return
 	}
 	edit := p.editFor(id)
@@ -360,7 +350,7 @@ func (p *panel) drawAdvanced(c *ui.Context, q nativeui.SettingsQuery, id string,
 	portrait.SettingsGroup(c, "Advanced", func(rows *portrait.Rows) {
 		portrait.Disclosure(c.Key("genui-advanced-"+id), "Advanced", &edit.advancedOpen, portrait.DisclosureSpec{}, func() {
 			ui.Column(c).FillWidth().Gap(portrait.Form.Gap).Children(func() {
-				if q.Match("Agent command", "The command the backend runs.", commandKeywords) {
+				if showCommand {
 					ui.Column(c).FillWidth().Gap(portrait.Form.HelpGap).Children(func() {
 						portrait.Label(c, "Agent command")
 						ui.Row(c).FillWidth().Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
@@ -371,19 +361,23 @@ func (p *panel) drawAdvanced(c *ui.Context, q nativeui.SettingsQuery, id string,
 						})
 					})
 				}
-				if q.Match("Arguments", "The arguments that make the command speak ACP.", argumentsKeywords) {
+				if showArgs {
 					ui.Column(c).FillWidth().Gap(portrait.Form.HelpGap).Children(func() {
 						portrait.Label(c, "Arguments")
 						ui.Row(c).FillWidth().Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
-							field := portrait.TextField(c, &edit.arguments, portrait.FieldSpec{Label: "Arguments", Placeholder: "acp", Size: portrait.Form.FieldCompact})
+							field := portrait.TextField(c, &edit.arguments, portrait.FieldSpec{Label: "Arguments", Placeholder: `["acp"]`, Size: portrait.Form.FieldCompact})
 							field.Frame().Grow(1).MinWidth(0)
 							field.Input().OnChange(func() { edit.argumentsEdited = true })
 							save := portrait.AccentButton(c, "Save arguments", "Save arguments")
 							save.Disabled(!edit.argumentsEdited)
 							if save.Clicked() {
-								args := strings.Fields(edit.arguments)
-								p.saveBackend(id, workspace.GenUIBackendPatch{Args: &args})
-								edit.argumentsEdited = false
+								args, err := parseArguments(edit.arguments)
+								if err != nil {
+									p.settingsMessage = err.Error()
+								} else {
+									p.saveBackend(id, workspace.GenUIBackendPatch{Args: &args})
+									edit.argumentsEdited = false
+								}
 							}
 						})
 					})

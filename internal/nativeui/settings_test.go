@@ -246,3 +246,29 @@ func TestSettingsSearchEnterOpensFirstDisplayedMatchWithoutPhantomGap(t *testing
 		t.Fatal("pressing Enter opened a rowless page instead of Search & Papers")
 	}
 }
+
+func TestClosingSettingsWhilePluginSwitchAnimates(t *testing.T) {
+	var shell nativeui.Shell
+	model := libraryModel()
+	model.GenUI = true
+	actions := nativeui.Actions{SetGenUI: func(on bool) { model.GenUI = on }}
+	app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, model, actions, nativeui.Slots{}) }, 1280, 820)
+	shell.OpenSettings("plugins")
+	app.Frame()
+	if err := app.Click("Enable GenUI"); err != nil {
+		t.Fatal(err)
+	}
+	if model.GenUI || !app.FramePending() {
+		t.Fatal("switch did not start its off animation")
+	}
+	app.Advance(portrait.Motion.Switch / 4)
+	if err := app.Click("Close settings"); err != nil {
+		t.Fatal(err)
+	}
+	app.Advance(portrait.Motion.Enter / 4)
+	app.Image()
+	app.Advance(portrait.Motion.Enter)
+	if _, ok := app.AccessByRole(ui.RoleDialog, "Settings"); ok {
+		t.Fatal("Settings did not close")
+	}
+}

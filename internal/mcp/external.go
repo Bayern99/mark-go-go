@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/appversion"
@@ -20,6 +21,8 @@ import (
 )
 
 const helloTimeout = 5 * time.Second
+
+var socketFiles sync.Mutex
 
 // unknownClient is what the channel calls a request whose _meta named no
 // client: the legacy handshake may not, and Settings says so rather than
@@ -42,12 +45,14 @@ type ExternalServer struct {
 	server *Server
 	deps   Dependencies
 
-	mu    sync.Mutex
-	ln    net.Listener
-	path  string
-	last  ExternalCall
-	conns map[net.Conn]struct{}
-	wg    sync.WaitGroup
+	lifecycle  sync.Mutex
+	mu         sync.Mutex
+	ln         net.Listener
+	path       string
+	socketInfo fs.FileInfo
+	last       ExternalCall
+	conns      map[net.Conn]struct{}
+	wg         sync.WaitGroup
 }
 
 func NewExternalServer(deps Dependencies) *ExternalServer {
@@ -86,29 +91,33 @@ func (e *ExternalServer) LastCall() (source string, at time.Time, ok bool) {
 // page never reports "an unknown client" one frame after a named one. It reads
 // only what the page shows, so a malformed message stays the dispatcher's
 // business.
-func (e *ExternalServer) note(line []byte) {
+func (e *ExternalServer) note(line []byte, legacyClient *string) {
 	var message struct {
 		ID     json.RawMessage `json:"id"`
 		Method string          `json:"method"`
 		Params struct {
-			Meta map[string]json.RawMessage `json:"_meta"`
+			Meta       map[string]json.RawMessage `json:"_meta"`
+			ClientInfo json.RawMessage            `json:"clientInfo"`
 		} `json:"params"`
 	}
 	if json.Unmarshal(line, &message) != nil || message.Method == "" || len(message.ID) == 0 || string(message.ID) == "null" {
 		return
 	}
+	if message.Method == "initialize" {
+		*legacyClient = clientName(message.Params.ClientInfo)
+	}
+	source := clientName(message.Params.Meta[ipc.MetaClientInfo])
+	if len(message.Params.Meta[ipc.MetaProtocolVersion]) == 0 && source == unknownClient && *legacyClient != "" {
+		source = *legacyClient
+	}
 	e.mu.Lock()
-	e.last = ExternalCall{Source: clientName(message.Params.Meta), At: time.Now()}
+	e.last = ExternalCall{Source: source, At: time.Now()}
 	e.mu.Unlock()
 }
 
 // clientName reads the client a request named in its _meta, or says it named
 // none.
-func clientName(meta map[string]json.RawMessage) string {
-	raw, ok := meta[ipc.MetaClientInfo]
-	if !ok {
-		return unknownClient
-	}
+func clientName(raw json.RawMessage) string {
 	var info struct {
 		Name    string `json:"name"`
 		Version string `json:"version"`
@@ -124,6 +133,8 @@ func clientName(meta map[string]json.RawMessage) string {
 
 // Start listens on the socket, cleaning up a socket a previous run left behind.
 func (e *ExternalServer) Start() error {
+	e.lifecycle.Lock()
+	defer e.lifecycle.Unlock()
 	e.mu.Lock()
 	if e.ln != nil {
 		e.mu.Unlock()
@@ -146,21 +157,30 @@ func (e *ExternalServer) Start() error {
 		return err
 	}
 	path := ipc.SocketPath(dir)
+	socketFiles.Lock()
+	defer socketFiles.Unlock()
 	if err := clearStaleSocket(path); err != nil {
 		return err
 	}
-	ln, err := net.Listen("unix", path)
+	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
 	if err != nil {
+		return err
+	}
+	ln.SetUnlinkOnClose(false)
+	info, err := os.Lstat(path)
+	if err != nil {
+		ln.Close()
 		return err
 	}
 	if err := os.Chmod(path, 0o600); err != nil {
 		ln.Close()
-		return err
+		return errors.Join(err, removeOwnedSocket(path, info))
 	}
 
 	e.mu.Lock()
 	e.ln = ln
 	e.path = path
+	e.socketInfo = info
 	e.mu.Unlock()
 
 	e.wg.Add(1)
@@ -178,12 +198,30 @@ func clearStaleSocket(path string) error {
 	if err != nil {
 		return err
 	}
-	if info.Mode()&fs.ModeSocket != 0 {
-		conn, dialErr := net.DialTimeout("unix", path, 250*time.Millisecond)
-		if dialErr == nil {
-			conn.Close()
-			return fmt.Errorf("another Mark Go Go instance is serving %s", path)
-		}
+	if info.Mode()&fs.ModeSocket == 0 {
+		return fmt.Errorf("the socket path %s is occupied by another file", path)
+	}
+	conn, dialErr := net.DialTimeout("unix", path, 250*time.Millisecond)
+	if dialErr == nil {
+		conn.Close()
+		return fmt.Errorf("another Mark Go Go instance is serving %s", path)
+	}
+	if !errors.Is(dialErr, syscall.ECONNREFUSED) {
+		return dialErr
+	}
+	return removeOwnedSocket(path, info)
+}
+
+func removeOwnedSocket(path string, owned fs.FileInfo) error {
+	current, err := os.Lstat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if current.Mode()&fs.ModeSocket == 0 || !os.SameFile(current, owned) {
+		return nil
 	}
 	return os.Remove(path)
 }
@@ -196,6 +234,11 @@ func (e *ExternalServer) accept(ln net.Listener) {
 			return
 		}
 		e.mu.Lock()
+		if e.ln != ln {
+			e.mu.Unlock()
+			conn.Close()
+			return
+		}
 		e.conns[conn] = struct{}{}
 		e.mu.Unlock()
 
@@ -232,6 +275,16 @@ func (e *ExternalServer) serve(conn net.Conn) {
 		return
 	}
 	root, rootErr := e.rootFor(hello.CWD)
+	var rootOpen func() bool
+	if rootErr == nil {
+		if workspace, ok := e.deps.Workspace.(interface{ MCPBindRoot(string) func() bool }); ok {
+			rootOpen = workspace.MCPBindRoot(root)
+		}
+		if rootOpen == nil {
+			failure := newAppError(ipc.CodeWorkspaceNotOpen, "That workspace is no longer open.")
+			rootErr = &ipc.AppError{Code: failure.Code, Message: failure.Message, Hint: failure.Hint}
+		}
+	}
 	if rootErr != nil {
 		_ = ipc.WriteMessage(conn, ipc.HelloReply{OK: false, Error: rootErr})
 		return
@@ -248,7 +301,8 @@ func (e *ExternalServer) serve(conn net.Conn) {
 		return
 	}
 
-	binding := &sessionBinding{root: root, channel: channelExternal}
+	binding := &sessionBinding{root: root, channel: channelExternal, rootOpen: rootOpen}
+	var legacyClient string
 	for {
 		line, err := ipc.ReadMessage(reader)
 		if err != nil {
@@ -262,7 +316,7 @@ func (e *ExternalServer) serve(conn net.Conn) {
 			})
 			continue
 		}
-		e.note(line)
+		e.note(line, &legacyClient)
 		resp, _, hasResp := e.server.dispatchMessage(context.Background(), binding, line)
 		if !hasResp {
 			continue
@@ -302,7 +356,7 @@ func (e *ExternalServer) rootFor(cwd string) (string, *ipc.AppError) {
 		return "", &ipc.AppError{
 			Code:    ipc.CodeWorkspaceNotOpen,
 			Message: fmt.Sprintf("No open workspace contains %s.", canonCwd),
-			Hint:    newAppError(ipc.CodeWorkspaceNotOpen, "").Hint,
+			Hint:    newAppError(ipc.CodeWorkspaceNotOpen, "That workspace is no longer open.").Hint,
 		}
 	}
 	return best, nil
@@ -310,28 +364,25 @@ func (e *ExternalServer) rootFor(cwd string) (string, *ipc.AppError) {
 
 // Close stops listening, closes the open connections, and removes the socket.
 func (e *ExternalServer) Close() error {
+	e.lifecycle.Lock()
+	defer e.lifecycle.Unlock()
+
 	e.mu.Lock()
 	ln := e.ln
-	path := e.path
-	e.ln = nil
-	conns := make([]net.Conn, 0, len(e.conns))
+	if ln == nil {
+		e.mu.Unlock()
+		return nil
+	}
+	path, info := e.path, e.socketInfo
+	e.ln, e.socketInfo = nil, nil
 	for conn := range e.conns {
-		conns = append(conns, conn)
+		conn.Close()
 	}
 	e.mu.Unlock()
 
-	for _, conn := range conns {
-		conn.Close()
-	}
-	var err error
-	if ln != nil {
-		err = ln.Close()
-	}
+	socketFiles.Lock()
+	err := errors.Join(ln.Close(), removeOwnedSocket(path, info))
+	socketFiles.Unlock()
 	e.wg.Wait()
-	if path != "" {
-		if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
-			err = errors.Join(err, removeErr)
-		}
-	}
 	return err
 }

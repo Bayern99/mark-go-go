@@ -84,29 +84,31 @@ func (i Installer) State() State {
 	return linkState(target, i.Source)
 }
 
-// linkState says whether a link's target is this app's command. A link into an
-// app bundle counts even when the bundle has moved, so an app update leaves a
-// link the reader can still install over or remove.
 func linkState(target, source string) State {
-	if source != "" && fsutil.SameFile(target, source) {
+	if source == "" {
+		return StateForeign
+	}
+	source, err := filepath.Abs(source)
+	if err != nil {
+		return StateForeign
+	}
+	target = filepath.Clean(target)
+	if target == source {
 		return StateInstalled
 	}
-	if _, err := os.Stat(target); errors.Is(err, fs.ErrNotExist) && inAppBundle(target) {
-		return StateInstalled
+	contents := filepath.Dir(filepath.Dir(source))
+	if filepath.Base(contents) == "Contents" && strings.HasSuffix(filepath.Base(filepath.Dir(contents)), ".app") {
+		for _, folder := range []string{"MacOS", "Resources"} {
+			if target == filepath.Join(contents, folder, Name) {
+				return StateInstalled
+			}
+		}
 	}
 	return StateForeign
 }
 
-// inAppBundle reports whether a path is a command inside a macOS app bundle,
-// which is where an earlier copy of this app kept its markgogo: beside the
-// executable or among the resources, the two places shippedSource looks.
-func inAppBundle(path string) bool {
-	slashed := filepath.ToSlash(path)
-	return filepath.Base(path) == Name && (strings.Contains(slashed, ".app/Contents/MacOS/") || strings.Contains(slashed, ".app/Contents/Resources/"))
-}
-
 // current reports whether the installed link already resolves to this build's
-// command; a link the app made into a bundle that has since moved does not.
+// command; a link to a previous location inside the same bundle may not.
 func (i Installer) current() bool {
 	target, err := os.Readlink(i.Path())
 	if err != nil {
@@ -127,7 +129,8 @@ func (i Installer) Install() error {
 	if !i.Shipped() {
 		return errors.New("This build of Mark Go Go does not carry the markgogo command.")
 	}
-	switch i.State() {
+	state := i.State()
+	switch state {
 	case StateInstalled:
 		if i.current() {
 			return nil
@@ -144,20 +147,22 @@ func (i Installer) Install() error {
 	if err != nil {
 		return err
 	}
-	// Link beside the destination and rename, so a reader never finds a
-	// half-written command on PATH.
-	temp := i.Path() + ".tmp"
-	if err := os.Remove(temp); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if state == StateAbsent {
+		return os.Symlink(source, i.Path())
+	}
+	tempDir, err := os.MkdirTemp(i.Dir, ".markgogo-install-")
+	if err != nil {
 		return err
 	}
+	defer os.RemoveAll(tempDir)
+	temp := filepath.Join(tempDir, Name)
 	if err := os.Symlink(source, temp); err != nil {
 		return err
 	}
-	if err := os.Rename(temp, i.Path()); err != nil {
-		os.Remove(temp)
-		return err
+	if i.State() != StateInstalled {
+		return fmt.Errorf("%s changed during installation.", i.Path())
 	}
-	return nil
+	return os.Rename(temp, i.Path())
 }
 
 // Uninstall removes the link this app made and reports a path it did not make.

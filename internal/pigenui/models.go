@@ -3,6 +3,7 @@ package pigenui
 import (
 	"context"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/Bayern99/mark-go-go/internal/genui"
@@ -18,6 +19,14 @@ func ListModels(ctx context.Context, cfg Config) (genui.ModelCatalog, error) {
 
 func (r *Runner) listModels(ctx context.Context) (genui.ModelCatalog, error) {
 	var catalog genui.ModelCatalog
+	if r.cfg.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, r.cfg.Timeout)
+		defer cancel()
+	}
+	if err := ctx.Err(); err != nil {
+		return catalog, err
+	}
 	dir, err := os.MkdirTemp("", "markgogo-pi-models-")
 	if err != nil {
 		return catalog, genui.AgentErrorf("Could not make a folder for the model list: %v.", err)
@@ -29,7 +38,12 @@ func (r *Runner) listModels(ctx context.Context) (genui.ModelCatalog, error) {
 		return catalog, err
 	}
 	defer cleanupGuard()
-	defer live.shutdown(r.cfg.abortGrace())
+	defer func() {
+		if ctx.Err() != nil {
+			live.client.Kill()
+		}
+		live.shutdown(r.cfg.abortGrace())
+	}()
 	if err := live.awaitGuard(ctx, r.cfg.guardGrace()); err != nil {
 		return catalog, err
 	}
@@ -44,6 +58,7 @@ func (r *Runner) listModels(ctx context.Context) (genui.ModelCatalog, error) {
 	if err := live.call(ctx, "get_available_models", nil, &listed); err != nil {
 		return catalog, err
 	}
+	catalog.Models = make([]genui.ModelOption, 0, len(listed.Models))
 	for _, model := range listed.Models {
 		if strings.TrimSpace(model.ID) == "" {
 			continue
@@ -55,23 +70,27 @@ func (r *Runner) listModels(ctx context.Context) (genui.ModelCatalog, error) {
 		})
 	}
 
-	// A saved model becomes the current one first, because Pi declares the
-	// thinking levels of the current model only. A saved model Pi refuses is
-	// left out: the catalog still says what Pi actually uses.
-	_ = live.applyModel(ctx, r.cfg.Provider, r.cfg.Model)
+	if slices.ContainsFunc(catalog.Models, func(option genui.ModelOption) bool {
+		return option.ID == r.cfg.Model && option.Provider == r.cfg.Provider
+	}) {
+		if err := live.applyModel(ctx, r.cfg.Provider, r.cfg.Model); err != nil {
+			return catalog, err
+		}
+	}
+	if err := live.applyThoughtLevel(ctx, r.cfg.ThoughtLevel); err != nil {
+		return catalog, err
+	}
 	var state struct {
 		Model struct {
-			ID string `json:"id"`
+			ID       string `json:"id"`
+			Provider string `json:"provider"`
 		} `json:"model"`
 		ThinkingLevel string `json:"thinkingLevel"`
 	}
-	if live.call(ctx, "get_state", nil, &state) == nil {
-		catalog.CurrentModel = state.Model.ID
-		catalog.ThoughtLevel = state.ThinkingLevel
+	if err := live.call(ctx, "get_state", nil, &state); err != nil {
+		return catalog, err
 	}
-	if applied := live.modelStamp(); applied != "" {
-		catalog.CurrentModel = applied
-	}
+	catalog.CurrentModel, catalog.CurrentProvider, catalog.ThoughtLevel = state.Model.ID, state.Model.Provider, state.ThinkingLevel
 
 	var levels struct {
 		Levels []string `json:"levels"`
@@ -82,6 +101,9 @@ func (r *Runner) listModels(ctx context.Context) (genui.ModelCatalog, error) {
 				catalog.ThoughtLevels = append(catalog.ThoughtLevels, genui.Choice{Value: level})
 			}
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return catalog, err
 	}
 	return catalog, nil
 }

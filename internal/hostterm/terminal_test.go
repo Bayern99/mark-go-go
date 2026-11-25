@@ -59,3 +59,26 @@ func TestOpenRunsTheCommandInItsOwnTerminal(t *testing.T) {
 		t.Fatal("a linux launch without any terminal emulator succeeded")
 	}
 }
+
+func TestLinuxTerminalKeepsRunningAfterTheLaunchContextEnds(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var terminalContext context.Context
+	command := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		terminalContext = ctx
+		return exec.CommandContext(ctx, "true")
+	}
+	getenv := func(key string) string {
+		if key == "TERMINAL" {
+			return "terminal-fixture"
+		}
+		return ""
+	}
+	if err := hostterm.OpenForTest(ctx, "linux", getenv, "pi auth login provider", command); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	if terminalContext == nil || terminalContext.Err() != nil {
+		t.Fatal("the spawned terminal still depends on the launch context")
+	}
+}

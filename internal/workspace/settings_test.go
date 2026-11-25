@@ -4,6 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
+	"slices"
+
 	"sync"
 	"testing"
 
@@ -308,5 +311,45 @@ func TestClearingABackendsArgumentsSticks(t *testing.T) {
 	}
 	if got := (&settingsStore{dir: dir}).get().GenUI.For(genui.BackendAntigravity).Args; len(got) != 0 {
 		t.Fatalf("args = %v, want the explicitly empty list to survive a reload", got)
+	}
+}
+
+func TestNewServiceDetectsTheFirstInstalledBackendOnAnEmptyProfile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses Unix executable fixtures")
+	}
+	t.Setenv("HOME", t.TempDir())
+	bin := t.TempDir()
+	t.Setenv("PATH", bin)
+	for _, command := range []string{"codex-acp", "agy", "pi"} {
+		if err := os.WriteFile(filepath.Join(bin, command), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, profile := range []string{"", `{"externalIPC":true}`} {
+		svc := NewService()
+		svc.settings.dir = t.TempDir()
+		if profile != "" {
+			if err := os.WriteFile(svc.settings.path(), []byte(profile), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		settings, err := svc.GetSettings()
+		if err != nil || settings.GenUI.Backend != genui.BackendCodex {
+			t.Fatalf("first backend for profile %q = %q, %v, want Codex", profile, settings.GenUI.Backend, err)
+		}
+	}
+}
+
+func TestLegacyExecutablePathWithSpacesMigratesAsOnePath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, settingsFile)
+	if err := os.WriteFile(path, []byte(`{"agentCommand":"/Applications/Agent Tools/agy"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st := &settingsStore{dir: dir}
+	backend := st.get().GenUI.For(genui.BackendAntigravity)
+	if backend.Command != "/Applications/Agent Tools/agy" || !slices.Equal(backend.Args, []string{"acp"}) {
+		t.Fatalf("migrated backend = %+v", backend)
 	}
 }

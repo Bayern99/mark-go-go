@@ -24,9 +24,11 @@ cleanup() {
   rm -rf "$WORK" "$HOME/Library/Application Support/$APP_NAME"
 }
 trap cleanup EXIT
-mkdir -p "$PROJECT" "$(dirname "$SOURCE")"
+mkdir -p "$PROJECT" "$WORK/user-data" "$(dirname "$SOURCE")"
 cp "$ROOT"/go.{mod,sum} "$PROJECT/"
-ln -s "$ROOT"/third_party "$ROOT"/resources "$ROOT"/internal "$PROJECT/"
+ln -s "$ROOT"/third_party "$ROOT"/internal "$ROOT"/scripts "$ROOT"/cmd "$PROJECT/"
+mkdir -p "$PROJECT/resources"
+cp -R "$ROOT/resources/." "$PROJECT/resources/"
 ln -s "$ROOT"/*.go "$PROJECT/"
 python3 - "$ROOT/mygo.json" "$PROJECT/mygo.json" "$APP_NAME" "$SESSION" <<'PY'
 import json, sys
@@ -44,7 +46,7 @@ APP=$(find "$WORK/build" -name '*.app' -type d -print -quit)
 EXECUTABLE=$(find -L "$APP/Contents/MacOS" -type f -perm -111 -print -quit)
 auto() { "$AUTO" "$@" --session "$SESSION"; }
 launch() {
-  MYGO_AUTOMATION="$SOCKET" "$EXECUTABLE" "$@" >"$WORK/app.log" 2>&1 &
+  MARKGOGO_USER_DATA="$WORK/user-data" MYGO_AUTOMATION="$SOCKET" "$EXECUTABLE" "$@" >"$WORK/app.log" 2>&1 &
   PROCESS=$!
   local deadline=$((SECONDS+25))
   until [[ -S "$SOCKET" ]] && auto open --socket "$SOCKET" >/dev/null 2>&1; do

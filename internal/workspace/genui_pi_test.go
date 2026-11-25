@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+
 	"strings"
 	"testing"
 	"time"
@@ -313,5 +315,21 @@ func TestRefreshingPiModelsRecordsTheCurrentModelsProvider(t *testing.T) {
 	}
 	if len(backend.Models) != 2 || backend.Models[1] != "gpt-5.4" {
 		t.Fatalf("models = %v, want the refreshed list", backend.Models)
+	}
+}
+
+func TestRefreshingPiKeepsBothProvidersForTheSameModelAfterRestart(t *testing.T) {
+	dir := t.TempDir()
+	s := &Service{settings: &settingsStore{dir: dir}}
+	options := []genui.ModelOption{{ID: "shared", Provider: "a"}, {ID: "shared", Provider: "b"}}
+	if err := s.rememberCatalog(genui.BackendPi, genui.ModelCatalog{
+		Models: options, CurrentModel: "shared", CurrentProvider: "b",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reopened := (&settingsStore{dir: dir}).get().GenUI.For(genui.BackendPi)
+	if reopened.Model != "shared" || reopened.Provider != "b" || reopened.UsableModel() != "shared" ||
+		!slices.Equal(reopened.ModelOptions, options) {
+		t.Fatalf("reopened Pi settings = %+v", reopened)
 	}
 }

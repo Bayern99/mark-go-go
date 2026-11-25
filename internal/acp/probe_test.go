@@ -3,8 +3,13 @@ package acp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
+	"os/exec"
+
 	"path/filepath"
+	"runtime"
+
 	"strings"
 	"testing"
 
@@ -251,5 +256,116 @@ func TestProbeFailsWhenTheCodexCLICannotSayItsVersion(t *testing.T) {
 	}
 	if result.Status != genui.AgentFailed || !strings.Contains(strings.ToLower(result.Hint), "update the codex cli") {
 		t.Fatalf("probe = %+v, want a failed codex CLI and its upgrade hint", result)
+	}
+}
+
+func TestProbeFindsTheInterpreterOfAnExecutableOutsideFinderPATH(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses an env shebang")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", "/usr/bin:/bin")
+	bin := filepath.Join(home, ".local", "share", "fnm", "aliases", "default", "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/bin/sh", filepath.Join(bin, "mgg-test-interpreter")); err != nil {
+		t.Fatal(err)
+	}
+	script := `#!/usr/bin/env mgg-test-interpreter
+if [ "$1" = --version ]; then
+  echo 'fixture 1.0'
+else
+  read -r request
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1}}'
+fi
+`
+	if err := os.WriteFile(filepath.Join(bin, "mgg-test-acp"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Probe(t.Context(), ProbeConfig{Command: "mgg-test-acp"})
+	if err != nil || got.Status != genui.AgentUnknown || got.Version != "fixture 1.0" {
+		t.Fatalf("probe = %+v, %v", got, err)
+	}
+}
+
+func TestProbeHonorsAnExpiredContextBeforeInitializing(t *testing.T) {
+	cfg := probeConfig(t, fakeSpec{}, nil)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := Probe(ctx, cfg); !errors.Is(err, context.Canceled) {
+		t.Fatalf("probe with cancelled context = %v", err)
+	}
+}
+
+func TestModelRefreshReadsTheAsynchronousEffectiveOptions(t *testing.T) {
+	cfg := probeConfig(t, fakeSpec{
+		Models: []string{"model-a", "model-b"}, InitialModel: "model-a",
+		ThoughtValues: []string{"low", "high"}, ThoughtID: "reasoning_effort",
+		ThoughtCurrent: "low", ThoughtModels: []string{"model-b"},
+		BareConfigResponse: true, ConfigUpdate: true,
+	}, nil)
+	catalog, err := ListModels(t.Context(), SessionConfig{ProbeConfig: cfg, Model: "model-b"})
+	if err != nil || catalog.CurrentModel != "model-b" || len(catalog.ThoughtLevels) != 2 {
+		t.Fatalf("catalog = %+v, %v", catalog, err)
+	}
+}
+
+func TestAnEmptyStandardModelOptionDoesNotUseLegacyModels(t *testing.T) {
+	options := json.RawMessage(`[{"id":"model","name":"Model","category":"model","type":"select","options":[]}]`)
+	legacy := json.RawMessage(`{"currentModelId":"obsolete","availableModels":[{"modelId":"obsolete"}]}`)
+	models, current, _, _ := readCatalog(options, legacy)
+	if models == nil || len(models) != 0 || current != "" {
+		t.Errorf("empty standard option resolved to %v, %q", models, current)
+	}
+}
+
+func TestModelRefreshReturnsTheAgentsSelectionError(t *testing.T) {
+	cfg := probeConfig(t, fakeSpec{
+		Models: []string{"model-a", "model-b"}, InitialModel: "model-a",
+		Errors: map[string]fakeRPCError{"session/set_config_option": {Code: -32602, Message: "model rejected"}},
+	}, nil)
+	if _, err := ListModels(t.Context(), SessionConfig{ProbeConfig: cfg, Model: "model-b"}); err == nil || !strings.Contains(err.Error(), "model rejected") {
+		t.Fatalf("error = %v, want the agent's rejection", err)
+	}
+}
+
+func TestCancellingProbeInterruptsAnUnansweredInitialize(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses a Unix FIFO")
+	}
+	dir := t.TempDir()
+	ready := filepath.Join(dir, "ready")
+	if out, err := exec.Command("mkfifo", ready).CombinedOutput(); err != nil {
+		t.Fatalf("make ready signal: %v %s", err, out)
+	}
+	path := filepath.Join(dir, "agent")
+	script := `#!/bin/sh
+if [ "$1" = --version ]; then
+  echo fixture
+  exit
+fi
+read -r request || exit 1
+echo ready > "$READY_FIFO"
+read -r more
+`
+	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := Probe(ctx, ProbeConfig{Command: path, Env: append(os.Environ(), "READY_FIFO="+ready)})
+		done <- err
+	}()
+	signal, err := os.ReadFile(ready)
+	if err != nil || string(signal) != "ready\n" {
+		t.Fatalf("agent did not receive initialize: %q, %v", signal, err)
+	}
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled initialize returned %v", err)
 	}
 }

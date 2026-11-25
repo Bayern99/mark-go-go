@@ -262,6 +262,7 @@ func (a *app) runStatus(args []string) int {
 		switch appErr.Code {
 		case ipc.CodeAppNotRunning:
 			info.Running = false
+			info.Error = appErr
 			return a.write(info)
 		case ipc.CodeWorkspaceNotOpen:
 			info.Running = true

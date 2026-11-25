@@ -17,7 +17,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
@@ -139,8 +138,8 @@ func guardEnv(root, token string) []string {
 	}
 }
 
-func resolvePi(command string) (string, error) {
-	if resolved, ok := fsutil.ResolveExecutable(command, nil, fsutil.DefaultUserBinDirs()); ok {
+func resolvePi(command string, env []string) (string, error) {
+	if resolved, ok := fsutil.ResolveExecutable(command, fsutil.WithUserBinPath(env), nil); ok {
 		return resolved, nil
 	}
 	return "", newStartFailure(command, errors.New("the command was not found"))
@@ -164,17 +163,13 @@ func newToken() string {
 // piCommand prepares the process for one turn: this app's own arguments, the
 // turn's folder, and the guard's environment.
 func piCommand(cfg Config, dir, guardPath, token string) (*exec.Cmd, error) {
-	resolved, err := resolvePi(cfg.Command)
+	resolved, err := resolvePi(cfg.Command, cfg.Env)
 	if err != nil {
 		return nil, err
 	}
 	cmd := exec.Command(resolved, launchArgs(guardPath)...)
 	cmd.Dir = dir
-	env := cfg.Env
-	if env == nil {
-		env = os.Environ()
-	}
-	cmd.Env = append(append([]string(nil), env...), guardEnv(dir, token)...)
+	cmd.Env = append(fsutil.WithUserBinPath(cfg.Env), guardEnv(dir, token)...)
 	return cmd, nil
 }
 

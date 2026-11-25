@@ -27,10 +27,11 @@ type GenUIBackend struct {
 	Provider string `json:"provider,omitempty"`
 	// Args has no omitempty: an explicitly empty list is how a backend's
 	// default arguments are removed, which nil still means "use the default".
-	Args         []string `json:"args"`
-	Model        string   `json:"model,omitempty"`
-	Models       []string `json:"models,omitempty"`
-	ThoughtLevel string   `json:"thoughtLevel,omitempty"`
+	Args         []string            `json:"args"`
+	Model        string              `json:"model,omitempty"`
+	Models       []string            `json:"models"`
+	ModelOptions []genui.ModelOption `json:"modelOptions,omitempty"`
+	ThoughtLevel string              `json:"thoughtLevel,omitempty"`
 }
 
 type GenUISettings struct {
@@ -47,12 +48,13 @@ type Settings struct {
 }
 
 type GenUIBackendPatch struct {
-	Command      *string   `json:"command,omitempty"`
-	Provider     *string   `json:"provider,omitempty"`
-	Args         *[]string `json:"args,omitempty"`
-	Model        *string   `json:"model,omitempty"`
-	Models       *[]string `json:"models,omitempty"`
-	ThoughtLevel *string   `json:"thoughtLevel,omitempty"`
+	Command      *string              `json:"command,omitempty"`
+	Provider     *string              `json:"provider,omitempty"`
+	Args         *[]string            `json:"args,omitempty"`
+	Model        *string              `json:"model,omitempty"`
+	Models       *[]string            `json:"models"`
+	ModelOptions *[]genui.ModelOption `json:"modelOptions,omitempty"`
+	ThoughtLevel *string              `json:"thoughtLevel,omitempty"`
 }
 
 type GenUIPatch struct {
@@ -111,7 +113,8 @@ func (g GenUISettings) For(id string) GenUIBackend {
 	settings.Model = stored.Model
 	settings.Provider = strings.TrimSpace(stored.Provider)
 	settings.ThoughtLevel = stored.ThoughtLevel
-	if len(stored.Models) > 0 {
+	settings.ModelOptions = slices.Clone(stored.ModelOptions)
+	if stored.Models != nil {
 		settings.Models = cleanModels(stored.Models)
 	}
 	return settings
@@ -128,7 +131,10 @@ func (g GenUISettings) Active() (string, GenUIBackend) {
 }
 
 func cleanModels(models []string) []string {
-	var out []string
+	if models == nil {
+		return nil
+	}
+	out := make([]string, 0, len(models))
 	seen := make(map[string]bool, len(models))
 	for _, m := range models {
 		m = strings.TrimSpace(m)
@@ -192,8 +198,14 @@ func (st *settingsStore) getLocked() Settings {
 	if len(raw) == 0 {
 		// settings.json v1 kept the agent in top-level fields; they belonged to
 		// agy, so they move to the Antigravity backend unchanged.
-		migrateV1(s.GenUI.Backends, fields)
-		s.GenUI.Backend = genui.BackendAntigravity
+		_, command := fields["agentCommand"]
+		_, model := fields["model"]
+		_, models := fields["models"]
+		if command || model || models {
+			migrateV1(s.GenUI.Backends, fields)
+		} else {
+			s.GenUI.Backend = st.firstBackend()
+		}
 		return s
 	}
 	var stored GenUISettings
@@ -235,7 +247,11 @@ func migrateV1(backends map[string]GenUIBackend, fields map[string]json.RawMessa
 	}
 	agy.Model = legacy.Model
 	if command := strings.TrimSpace(legacy.AgentCommand); command != "" {
-		agy.Command, agy.Args = genui.SplitCommand(command)
+		if filepath.IsAbs(command) {
+			agy.Command = command
+		} else {
+			agy.Command, agy.Args = genui.SplitCommand(command)
+		}
 		if len(agy.Args) == 0 {
 			agy.Args = slices.Clone(defaultBackendSettings(genui.BackendAntigravity).Args)
 		}
@@ -312,6 +328,9 @@ func applyGenUIPatch(g *GenUISettings, p GenUIPatch) error {
 		if patch.Models != nil {
 			backend.Models = cleanModels(*patch.Models)
 		}
+		if patch.ModelOptions != nil {
+			backend.ModelOptions = slices.Clone(*patch.ModelOptions)
+		}
 		if patch.ThoughtLevel != nil {
 			backend.ThoughtLevel = strings.TrimSpace(*patch.ThoughtLevel)
 		}
@@ -380,11 +399,10 @@ func (st *settingsStore) writeLocked(s Settings) (func(Settings), error) {
 	return st.onChange, nil
 }
 
-// SetModels records the models an agent declared for one backend. An empty
-// answer changes nothing, so a failed refresh never empties the menu.
+// setModels records the models an agent declared. A nil list leaves the previous list intact.
 func (st *settingsStore) setModels(backendID string, models []string) error {
 	cleaned := cleanModels(models)
-	if st == nil || len(cleaned) == 0 {
+	if st == nil || models == nil {
 		return nil
 	}
 	st.mu.Lock()

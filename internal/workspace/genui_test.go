@@ -98,9 +98,44 @@ func TestGenerationRefusesABackendWithoutACommand(t *testing.T) {
 	if _, err := h.settings.apply(SettingsPatch{GenUI: &GenUIPatch{Backend: new(genui.BackendCustom)}}); err != nil {
 		t.Fatalf("selecting Custom ACP: %v", err)
 	}
-	done := <-h.StartGeneration(context.Background(), s.id, genui.GenerateRequest{Text: "# A\n", Mode: "full"}, func(genui.GenerateProgress) error { return nil })
+	req := genui.GenerateRequest{Text: "# A\n", Mode: "full"}
+	report := func(genui.GenerateProgress) error { return nil }
+	done := <-h.StartGeneration(t.Context(), s.id, req, report)
 	failure := genui.FailureOf(done)
 	if failure.Kind != genui.FailAgentNotFound || !strings.Contains(failure.Message, "Custom ACP backend has no command") || failure.Hint == "" {
 		t.Fatalf("failure = %+v, want the Custom ACP command hint", failure)
+	}
+	if s.info().Generating {
+		t.Fatal("rejected generation left the document busy")
+	}
+	if _, err := h.SetSettings(SettingsPatch{GenUI: &GenUIPatch{Backends: map[string]GenUIBackendPatch{
+		genui.BackendCustom: {Command: new(filepath.Join(t.TempDir(), "missing-agent"))},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := genui.FailureOf(<-h.StartGeneration(t.Context(), s.id, req, report)); got.Kind == genui.FailBusy {
+		t.Fatal("the document could not retry after adding a command")
+	}
+	h.runs.Wait()
+}
+
+func TestGenUILoginUsesTheConfiguredExecutable(t *testing.T) {
+	svc := &Service{settings: &settingsStore{dir: t.TempDir()}}
+	var command string
+	svc.terminal = func(_ context.Context, line string) error {
+		command = line
+		return nil
+	}
+	path := "/opt/Agent Tools/agy"
+	if _, err := svc.SetSettings(SettingsPatch{GenUI: &GenUIPatch{Backends: map[string]GenUIBackendPatch{
+		genui.BackendAntigravity: {Command: &path},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.OpenGenUILogin(genui.BackendAntigravity); err != nil {
+		t.Fatal(err)
+	}
+	if command != "'/opt/Agent Tools/agy' acp --login" {
+		t.Fatalf("login command = %q", command)
 	}
 }

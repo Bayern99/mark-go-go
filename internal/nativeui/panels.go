@@ -85,7 +85,14 @@ func (w *Window) ToggleMode() {
 var pluginsShippedOn = map[string]bool{"genui": true}
 
 func (w *Window) PluginEnabled(name string) bool {
-	flag := w.Preference("mgo.plugin." + name)
+	return pluginEnabled(name, w.Preference("mgo.plugin."+name))
+}
+
+func ProfilePluginEnabled(dir, name string) bool {
+	return pluginEnabled(name, preferencesFor(dir).values["mgo.plugin."+name])
+}
+
+func pluginEnabled(name, flag string) bool {
 	if pluginsShippedOn[name] {
 		return flag != "off"
 	}

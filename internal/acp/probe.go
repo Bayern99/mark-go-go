@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"github.com/Bayern99/mark-go-go/internal/genui"
+	"github.com/Bayern99/mark-go-go/internal/pirpc"
 )
 
 const probeTimeout = 20 * time.Second
@@ -38,7 +39,8 @@ type SessionConfig struct {
 	Dir string
 	// Model is applied before the catalog is read, because an agent declares
 	// a model's reasoning effort only once that model is the current one.
-	Model string
+	Model        string
+	ThoughtLevel string
 }
 
 func (c ProbeConfig) backend() (genui.Backend, bool) {
@@ -62,7 +64,12 @@ func (c ProbeConfig) timeout() time.Duration {
 func Probe(ctx context.Context, cfg ProbeConfig) (genui.ProbeResult, error) {
 	backend, _ := cfg.backend()
 	result := genui.ProbeResult{Hint: backend.InstallHint}
-	resolved, err := ResolveAgentCommand(cfg.Command)
+	ctx, cancel := context.WithTimeout(ctx, cfg.timeout())
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
+	resolved, err := resolveAgentCommand(cfg.Command, cfg.Env)
 	if err != nil {
 		result.Status = genui.AgentMissing
 		result.Detail = err.Error()
@@ -78,7 +85,7 @@ func Probe(ctx context.Context, cfg ProbeConfig) (genui.ProbeResult, error) {
 		if codex == "" {
 			codex = "codex"
 		}
-		path, err := ResolveAgentCommand(codex)
+		path, err := resolveAgentCommand(codex, cfg.Env)
 		if err != nil {
 			result.Status = genui.AgentMissing
 			result.Detail = "The codex CLI behind codex-acp was not found."
@@ -86,6 +93,9 @@ func Probe(ctx context.Context, cfg ProbeConfig) (genui.ProbeResult, error) {
 			return result, nil
 		}
 		version, err := runVersion(ctx, path, env)
+		if ctx.Err() != nil {
+			return result, ctx.Err()
+		}
 		if err != nil {
 			result.Status = genui.AgentFailed
 			result.Detail = "The codex CLI at " + path + " did not answer --version: " + err.Error()
@@ -98,6 +108,9 @@ func Probe(ctx context.Context, cfg ProbeConfig) (genui.ProbeResult, error) {
 	// A missing version answer is evidence, not proof the agent is unusable:
 	// the handshake below decides that.
 	version, versionErr := runVersion(ctx, resolved, env)
+	if ctx.Err() != nil {
+		return result, ctx.Err()
+	}
 	parts := make([]string, 0, 2)
 	if versionErr != nil {
 		parts = append(parts, "version unknown: "+versionErr.Error())
@@ -111,6 +124,9 @@ func Probe(ctx context.Context, cfg ProbeConfig) (genui.ProbeResult, error) {
 	result.Detail = strings.Join(parts, " · ")
 
 	initialized, err := initialize(ctx, cfg, resolved, env)
+	if ctx.Err() != nil {
+		return result, ctx.Err()
+	}
 	if err != nil {
 		classifyProbeFailure(&result, backend, err)
 		return result, nil
@@ -199,17 +215,15 @@ func initialize(ctx context.Context, cfg ProbeConfig, resolved string, env []str
 		return handshake, err
 	}
 	defer os.RemoveAll(dir)
-	cmd := exec.Command(resolved, cfg.Args...)
+	cmd := pirpc.CommandContext(ctx, resolved, cfg.Args...)
 	cmd.Dir = dir
-	cmd.Env = env
-	agent, err := NewAgent(cmd, nil)
+	cmd.Env = fsutil.WithUserBinPath(env)
+	agent, err := NewAgent(cmd, fsutil.NewLimitBuffer(4<<10))
 	if err != nil {
 		return handshake, err
 	}
 	agent.Start()
 	defer agent.Kill()
-	ctx, cancel := context.WithTimeout(ctx, cfg.timeout())
-	defer cancel()
 	var answer struct {
 		ProtocolVersion   int             `json:"protocolVersion"`
 		AgentCapabilities json.RawMessage `json:"agentCapabilities"`
@@ -229,7 +243,12 @@ func initialize(ctx context.Context, cfg ProbeConfig, resolved string, env []str
 // ever sent and no generation runs.
 func ListModels(ctx context.Context, cfg SessionConfig) (genui.ModelCatalog, error) {
 	var catalog genui.ModelCatalog
-	resolved, err := ResolveAgentCommand(cfg.Command)
+	ctx, cancel := context.WithTimeout(ctx, cfg.timeout())
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return catalog, err
+	}
+	resolved, err := resolveAgentCommand(cfg.Command, cfg.Env)
 	if err != nil {
 		return catalog, err
 	}
@@ -242,17 +261,17 @@ func ListModels(ctx context.Context, cfg SessionConfig) (genui.ModelCatalog, err
 		defer os.RemoveAll(dir)
 	}
 	env := cfg.Env
-	cmd := exec.Command(resolved, cfg.Args...)
+	cmd := pirpc.CommandContext(ctx, resolved, cfg.Args...)
 	cmd.Dir = dir
-	cmd.Env = env
-	agent, err := NewAgent(cmd, nil)
+	cmd.Env = fsutil.WithUserBinPath(env)
+	agent, err := NewAgent(cmd, fsutil.NewLimitBuffer(4<<10))
 	if err != nil {
 		return catalog, genui.AgentErrorf("Could not start the agent command %q: %v.", cfg.Command, err)
 	}
+	updates := newCatalogUpdates()
+	agent.SetHandlers(nil, updates.notify, nil)
 	agent.Start()
 	defer agent.Kill()
-	ctx, cancel := context.WithTimeout(ctx, cfg.timeout())
-	defer cancel()
 
 	handshake, err := callBounded(ctx, func() (initializedHandshake, error) {
 		var answer struct {
@@ -289,21 +308,56 @@ func ListModels(ctx context.Context, cfg SessionConfig) (genui.ModelCatalog, err
 		return catalog, modelError(err)
 	}
 	options := opened.ConfigOptions
-	if model, _, ok := splitRequestedModel(cfg.Model); ok && model != "" {
-		if applied, err := applyCatalogModel(ctx, agent, opened.SessionID, model, options, opened.Models); err == nil && len(applied) > 0 {
-			options = applied
+	latest := updates.after(ctx, opened.SessionID, 0, !hasOptions(options) && len(legacyModelValues(opened.Models)) == 0)
+	if latest.sequence != 0 {
+		options = latest.options
+	}
+	sequence := latest.sequence
+	legacyModel, _ := legacyCurrent(opened.Models)
+	if model, _, ok := splitRequestedModel(cfg.Model); ok {
+		option, declared := findConfigOptionIn(options, []string{traceModelOption}, []string{traceModelOption})
+		switch {
+		case declared && slices.Contains(option.values(), model):
+			options, sequence, err = setCatalogOption(ctx, agent, updates, opened.SessionID, option.ID, model, options, sequence)
+		case !declared:
+			legacy := legacyModelValues(opened.Models)
+			if !slices.Contains(legacy, model) && slices.Contains(legacy, cfg.Model) {
+				model = cfg.Model
+			}
+			if slices.Contains(legacy, model) && model != legacyModel {
+				err = agent.Call("session/set_model", map[string]any{"sessionId": opened.SessionID, "modelId": model}, nil)
+				if err == nil {
+					legacyModel = model
+				}
+			}
+		}
+		if err != nil {
+			return catalog, modelError(err)
+		}
+	}
+	if option, ok := findThoughtOption(options); ok && slices.Contains(option.values(), cfg.ThoughtLevel) && cfg.ThoughtLevel != "" {
+		options, sequence, err = setCatalogOption(ctx, agent, updates, opened.SessionID, option.ID, cfg.ThoughtLevel, options, sequence)
+		if err != nil {
+			return catalog, modelError(err)
 		}
 	}
 	if opened.SessionID != "" && agentSupportsSessionClose(handshake.AgentCapabilities) {
 		_ = closeSession(ctx, agent, opened.SessionID)
 	}
-
+	if err := ctx.Err(); err != nil {
+		return catalog, err
+	}
+	if latest := updates.latest(opened.SessionID); latest.sequence > sequence {
+		options = latest.options
+	}
 	catalog.Models, catalog.CurrentModel, catalog.ThoughtLevels, catalog.ThoughtLevel = readCatalog(options, opened.Models)
+	if _, declared := findConfigOptionIn(options, []string{traceModelOption}, []string{traceModelOption}); !declared {
+		catalog.CurrentModel = legacyModel
+	}
 	return catalog, nil
 }
 
-// splitRequestedModel trims a saved model and keeps a compound id whole for a
-// legacy list, while the declared option takes only its base id.
+// splitRequestedModel separates a saved legacy compound id from its base model.
 func splitRequestedModel(model string) (base, effort string, ok bool) {
 	model = strings.TrimSpace(model)
 	if model == "" {
@@ -313,44 +367,28 @@ func splitRequestedModel(model string) (base, effort string, ok bool) {
 	return base, effort, true
 }
 
-// applyCatalogModel makes the user's model the session's current one so the
-// catalog describes that model's effort levels. A model the agent does not
-// declare is left alone.
-func applyCatalogModel(ctx context.Context, agent *Agent, sessionID, model string, options, legacy json.RawMessage) (json.RawMessage, error) {
-	if opt, found := findConfigOptionIn(options, []string{traceModelOption}, []string{traceModelOption}); found {
-		if !slices.Contains(opt.values(), model) {
-			return nil, nil
-		}
-		var answer struct {
-			ConfigOptions json.RawMessage `json:"configOptions"`
-		}
-		if err := agent.Call("session/set_config_option", map[string]any{
-			"sessionId": sessionID,
-			"configId":  opt.ID,
-			"value":     model,
-		}, &answer); err != nil {
-			return nil, err
-		}
-		if len(answer.ConfigOptions) > 0 {
-			return answer.ConfigOptions, nil
-		}
-		return nil, nil
+func setCatalogOption(ctx context.Context, agent *Agent, updates *catalogUpdates, session, id, value string, fallback json.RawMessage, sequence uint64) (json.RawMessage, uint64, error) {
+	var answer struct {
+		ConfigOptions json.RawMessage `json:"configOptions"`
 	}
-	listed := legacyModelValues(legacy)
-	if len(listed) == 0 || !slices.Contains(listed, model) {
-		return nil, nil
+	if err := agent.Call("session/set_config_option", map[string]any{
+		"sessionId": session, "configId": id, "value": value,
+	}, &answer); err != nil {
+		return nil, sequence, err
 	}
-	if err := agent.Call("session/set_model", map[string]any{
-		"sessionId": sessionID,
-		"modelId":   model,
-	}, nil); err != nil {
-		return nil, err
+	latest := updates.after(ctx, session, sequence, !hasOptions(answer.ConfigOptions))
+	if latest.sequence > sequence {
+		return latest.options, latest.sequence, nil
 	}
-	return nil, nil
+	if hasOptions(answer.ConfigOptions) {
+		return answer.ConfigOptions, sequence, nil
+	}
+	return fallback, sequence, ctx.Err()
 }
 
 func readCatalog(options, legacy json.RawMessage) (models []genui.ModelOption, current string, thoughtLevels []genui.Choice, thoughtLevel string) {
 	if opt, ok := findConfigOptionIn(options, []string{traceModelOption}, []string{traceModelOption}); ok {
+		models = make([]genui.ModelOption, 0, len(opt.Options))
 		for _, value := range opt.Options {
 			id, _ := configString(value.Value)
 			if id == "" {
@@ -361,9 +399,8 @@ func readCatalog(options, legacy json.RawMessage) (models []genui.ModelOption, c
 		if value, ok := opt.current(); ok {
 			current, _ = configString(value)
 		}
-	}
-	if len(models) == 0 {
-		for _, id := range legacyModelValues(legacy) {
+	} else if list := legacyModelValues(legacy); len(list) > 0 {
+		for _, id := range list {
 			models = append(models, genui.ModelOption{ID: id, Name: id})
 		}
 		if value, ok := legacyCurrent(legacy); ok {
@@ -443,8 +480,8 @@ func modelError(err error) error {
 func runVersion(ctx context.Context, resolved string, env []string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, versionTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, resolved, "--version")
-	cmd.Env = env
+	cmd := pirpc.CommandContext(ctx, resolved, "--version")
+	cmd.Env = fsutil.WithUserBinPath(env)
 	out, err := cmd.CombinedOutput()
 	text := strings.TrimSpace(string(out))
 	if err != nil {

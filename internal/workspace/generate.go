@@ -238,6 +238,10 @@ func (h *Service) StartGeneration(ctx context.Context, documentID string, req ge
 	if h.settings != nil {
 		settings = h.settings.get()
 	}
+	backendID, backend := settings.GenUI.Active()
+	if b, ok := genui.BackendByID(backendID); ok && strings.TrimSpace(backend.Command) == "" {
+		return refuse(genui.NewFailure(genui.FailAgentNotFound, "The "+b.Name+" backend has no command yet.", b.InstallHint))
+	}
 	h.mu.Lock()
 	if s.closed {
 		h.mu.Unlock()
@@ -265,10 +269,6 @@ func (h *Service) StartGeneration(ctx context.Context, documentID string, req ge
 	var models acp.ModelUpdater
 	if h.settings != nil {
 		models = h.settings
-	}
-	backendID, backend := settings.GenUI.Active()
-	if b, ok := genui.BackendByID(backendID); ok && strings.TrimSpace(backend.Command) == "" {
-		return refuse(genui.NewFailure(genui.FailAgentNotFound, "The "+b.Name+" backend has no command yet.", b.InstallHint))
 	}
 	job := acp.GenerationJob{
 		Req:          req,

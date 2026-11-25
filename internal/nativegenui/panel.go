@@ -52,11 +52,12 @@ type panel struct {
 
 	// Seams for the settings page: production points them at the workspace
 	// service, tests at fakes that never start an agent or a terminal.
-	save    func(workspace.SettingsPatch) (workspace.Settings, error)
-	probe   func(string) (genui.ProbeResult, error)
-	refresh func(string) (genui.ModelCatalog, error)
-	signIn  func(string) error
-	runOnUI func(func())
+	save             func(workspace.SettingsPatch) (workspace.Settings, error)
+	probe            func(string) (genui.ProbeResult, error)
+	refresh          func(string) (genui.ModelCatalog, error)
+	confirmSelection func(string, workspace.GenUIBackendPatch) (genui.ModelCatalog, workspace.Settings, error)
+	signIn           func(string) error
+	runOnUI          func(func())
 
 	edits    map[string]*backendEdit
 	backends map[string]*backendStatus
@@ -69,6 +70,7 @@ func Install(host *workspace.Service) func(*nativeui.Window) nativeui.Panels {
 		p.save = host.SetSettings
 		p.probe = host.ProbeGenUI
 		p.refresh = host.RefreshGenUIModels
+		p.confirmSelection = host.ConfirmGenUISelection
 		p.signIn = host.OpenGenUILogin
 		workspace.SettingsChanged.Listen(win.Native(), func(next workspace.Settings) {
 			p.settings = next

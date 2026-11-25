@@ -93,6 +93,7 @@ func main() {
 	research.SetBeforeStart(mcpServer.BeforeResearchStart)
 	research.SetAfterStop(mcpServer.AfterResearchStop)
 	nativeui.AfterWorkspaceChange = func() { refreshMenu(host) }
+	nativeui.AfterGenUIPluginChange = func(enabled bool) { updateGenUIMenu(mygo.App.Menu(), enabled) }
 
 	applyExternalIPC := func(s workspace.Settings) {
 		if !s.ExternalIPC {
@@ -113,7 +114,7 @@ func main() {
 	}
 
 	mygo.App.WhenReady(func() {
-		mygo.App.SetMenu(buildMenu(host))
+		mygo.App.SetMenu(buildMenu(host, nativeui.ProfilePluginEnabled(host.UserDataDir(), "genui")))
 		workspace.ApplyNativeEditMenu(false, false)
 	})
 	err := mygo.App.Run()
@@ -151,7 +152,7 @@ func refreshMenu(host *workspace.Service) {
 	if same {
 		return
 	}
-	mygo.App.SetMenu(buildMenu(host))
+	mygo.App.SetMenu(buildMenu(host, nativeui.ProfilePluginEnabled(host.UserDataDir(), "genui")))
 	nativeui.ResetAllMenuStates()
 }
 
@@ -248,7 +249,17 @@ func portraitWindow(win *mygo.Window) *nativeui.Window {
 	return nativeui.FrontWindow()
 }
 
-func buildMenu(host *workspace.Service) *mygo.Menu {
+const genUIMenuID = "view.genui"
+
+func updateGenUIMenu(menu *mygo.Menu, enabled bool) {
+	if menu != nil {
+		if item := menu.ItemByID(genUIMenuID); item != nil && item.IsEnabled() != enabled {
+			item.SetEnabled(enabled)
+		}
+	}
+}
+
+func buildMenu(host *workspace.Service, genuiEnabled bool) *mygo.Menu {
 	withWindow := func(run func(*nativeui.Window)) func(*mygo.MenuItem, *mygo.Window) {
 		return func(_ *mygo.MenuItem, win *mygo.Window) {
 			if w := portraitWindow(win); w != nil {
@@ -284,7 +295,7 @@ func buildMenu(host *workspace.Service) *mygo.Menu {
 		{Role: mygo.RoleViewMenu, Submenu: []*mygo.MenuItem{
 			{Label: "Command Bar…", Accelerator: "CmdOrCtrl+K", Click: withWindow(func(w *nativeui.Window) { w.OpenCommandBar() })}, mygo.Separator(),
 			{Label: "Toggle Preview / Markdown", Accelerator: "CmdOrCtrl+E", Click: withWindow(func(w *nativeui.Window) { w.ToggleMode() })},
-			{Label: "GenUI", Type: mygo.MenuItemRadio, Click: withWindow(func(w *nativeui.Window) { w.SetMode("genui") })},
+			{ID: genUIMenuID, Label: "GenUI", Disabled: !genuiEnabled, Type: mygo.MenuItemRadio, Click: withWindow(func(w *nativeui.Window) { w.SetMode("genui") })},
 			mygo.Separator(),
 			{Label: "Toggle Sidebar", Accelerator: "CmdOrCtrl+0", Click: withWindow(func(w *nativeui.Window) { w.ToggleSidebar() })},
 			{Label: "Toggle Research", Accelerator: "CmdOrCtrl+Alt+0", Click: withWindow(func(w *nativeui.Window) { w.ToggleResearch() })},

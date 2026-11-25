@@ -34,6 +34,7 @@ type socketHarness struct {
 
 	mu         sync.Mutex
 	stateCalls int
+	closedRoot bool
 }
 
 func (h *socketHarness) MCPWorkspaceState(root string) (workspace.WorkspaceMCPState, error) {
@@ -74,7 +75,21 @@ func (h *socketHarness) workspaceStateCalls() int {
 	return h.stateCalls
 }
 
-func (h *socketHarness) MCPOpenRoots() []string { return h.roots }
+func (h *socketHarness) MCPOpenRoots() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closedRoot {
+		return nil
+	}
+	return h.roots
+}
+
+func (h *socketHarness) MCPBindRoot(root string) func() bool {
+	if !slices.Contains(h.MCPOpenRoots(), root) {
+		return nil
+	}
+	return func() bool { return slices.Contains(h.MCPOpenRoots(), root) }
+}
 
 func (h *socketHarness) MCPOpenDocuments(root string) ([]workspace.DocumentInfo, error) {
 	canonRoot := fsutil.CanonicalPath(root)
@@ -225,7 +240,7 @@ func modernParams(params map[string]any) map[string]any {
 	for key, value := range params {
 		out[key] = value
 	}
-	out["_meta"] = map[string]any{ipc.MetaProtocolVersion: modernProtocolVersion}
+	out["_meta"] = map[string]any{ipc.MetaProtocolVersion: modernProtocolVersion, ipc.MetaClientCapabilities: map[string]any{}}
 	return out
 }
 
@@ -617,7 +632,7 @@ func TestExternalChannelAppendsAnAuditRecordForEachWrite(t *testing.T) {
 	}
 
 	if result := client.tool(toolProposeEdit, map[string]any{
-		"documentId": "doc-report", "oldText": "Generated findings.", "newText": "Revised findings.",
+		"documentId": "doc-report", "path": "closed.md", "oldText": "Generated findings.", "newText": "Revised findings.",
 	}); result.IsError {
 		t.Fatalf("propose_edit failed: %+v", result.Content)
 	}
@@ -645,13 +660,13 @@ func TestExternalChannelAppendsAnAuditRecordForEachWrite(t *testing.T) {
 	if err := json.Unmarshal([]byte(lines[1]), &second); err != nil {
 		t.Fatal(err)
 	}
-	if first.Tool != toolProposeEdit || first.Code != "OK" || first.Channel != ipc.ChannelExternal || first.Root != root || first.Target != "doc-report" {
+	if first.Tool != toolProposeEdit || first.Code != "OK" || first.Channel != ipc.ChannelExternal || first.Root != root || first.Target != filepath.Join(root, "report.md") {
 		t.Fatalf("first audit record = %+v", first)
 	}
 	if _, err := time.Parse(time.RFC3339, first.Time); err != nil {
 		t.Fatalf("audit time %q: %v", first.Time, err)
 	}
-	if second.Code != ipc.CodeVersionConflict || second.Target != "report.md" {
+	if second.Code != ipc.CodeVersionConflict || second.Target != filepath.Join(root, "report.md") {
 		t.Fatalf("second audit record = %+v", second)
 	}
 }
@@ -783,19 +798,50 @@ func TestToolsDeclareStrictSchemasAndAnnotations(t *testing.T) {
 	}
 }
 
-func TestExternalChannelClearsAResidualFileAtItsSocketPath(t *testing.T) {
-	h, root := newSocketHarness(t)
+func TestExternalChannelPreservesAnOrdinaryFileAtItsSocketPath(t *testing.T) {
+	h, _ := newSocketHarness(t)
 	path := ipc.SocketPath(h.userData)
-	if err := os.WriteFile(path, []byte("left over from a crash"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv := NewExternalServer(Dependencies{Workspace: h})
+	defer srv.Close()
+	if err := srv.Start(); err == nil {
+		t.Fatal("started over an ordinary file")
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != "keep" {
+		t.Fatalf("ordinary file = %q, %v", got, err)
+	}
+}
+
+func TestExternalChannelCanReplaceAnAbandonedSocket(t *testing.T) {
+	h, root := newSocketHarness(t)
+	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: ipc.SocketPath(h.userData), Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln.SetUnlinkOnClose(false)
+	if err := ln.Close(); err != nil {
 		t.Fatal(err)
 	}
 	srv := startExternal(t, h)
-	client, reply := connectExternal(t, srv, root)
-	if !reply.OK {
+	if _, reply := connectExternal(t, srv, root); !reply.OK {
 		t.Fatalf("hello reply = %+v", reply)
 	}
-	if resp := client.call("tools/list", nil); resp.Error != nil {
-		t.Fatalf("tools/list: %+v", resp.Error)
+}
+
+func TestClosingTheOldExternalServerAgainPreservesItsSuccessor(t *testing.T) {
+	h, root := newSocketHarness(t)
+	first := startExternal(t, h)
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	second := startExternal(t, h)
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, reply := connectExternal(t, second, root); !reply.OK {
+		t.Fatalf("hello reply = %+v", reply)
 	}
 }
 
@@ -907,8 +953,9 @@ func TestTheChannelRemembersTheLastExternalCall(t *testing.T) {
 		"params": map[string]any{
 			"name": toolGetWorkspace, "arguments": map[string]any{},
 			"_meta": map[string]any{
-				ipc.MetaProtocolVersion: modernProtocolVersion,
-				ipc.MetaClientInfo:      map[string]any{"name": "markgogo-mcp", "version": "0.6.0"},
+				ipc.MetaProtocolVersion:    modernProtocolVersion,
+				ipc.MetaClientCapabilities: map[string]any{},
+				ipc.MetaClientInfo:         map[string]any{"name": "markgogo-mcp", "version": "0.6.0"},
 			},
 		},
 	})
@@ -933,12 +980,13 @@ func TestTheChannelRemembersTheLastExternalCall(t *testing.T) {
 
 func TestANotificationOrResponseIsNotAnExternalCall(t *testing.T) {
 	srv := &ExternalServer{}
-	srv.note([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"_meta":{"io.modelcontextprotocol/clientInfo":{"name":"markgogo-mcp","version":"0.6.0"}}}}`))
+	var legacyClient string
+	srv.note([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"_meta":{"io.modelcontextprotocol/clientInfo":{"name":"markgogo-mcp","version":"0.6.0"}}}}`), &legacyClient)
 	// A client names itself in a request and then sends notifications and
 	// receives responses in the same shape; neither is a call.
-	srv.note([]byte(`{"jsonrpc":"2.0","method":"notifications/initialized","params":{"_meta":{"io.modelcontextprotocol/clientInfo":{"name":"someone else"}}}}`))
-	srv.note([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`))
-	srv.note([]byte(`not json`))
+	srv.note([]byte(`{"jsonrpc":"2.0","method":"notifications/initialized","params":{"_meta":{"io.modelcontextprotocol/clientInfo":{"name":"someone else"}}}}`), &legacyClient)
+	srv.note([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`), &legacyClient)
+	srv.note([]byte(`not json`), &legacyClient)
 
 	source, at, ok := srv.LastCall()
 	if !ok || source != "markgogo-mcp 0.6.0" || at.IsZero() {
@@ -946,5 +994,96 @@ func TestANotificationOrResponseIsNotAnExternalCall(t *testing.T) {
 	}
 	if _, _, ok := (&ExternalServer{}).LastCall(); ok {
 		t.Fatal("a server that saw nothing reports a call")
+	}
+}
+
+func TestExternalChannelRejectsRequestsAfterWorkspaceCloses(t *testing.T) {
+	h, root := newSocketHarness(t)
+	srv := startExternal(t, h)
+	client, reply := connectExternal(t, srv, root)
+	if !reply.OK {
+		t.Fatalf("hello reply = %+v", reply)
+	}
+	h.mu.Lock()
+	h.closedRoot = true
+	h.mu.Unlock()
+
+	for name, path := range map[string]string{toolReadDocument: "closed.md", toolCreateDocument: "new.md"} {
+		result := client.tool(name, map[string]any{"path": path})
+		if !result.IsError {
+			t.Fatalf("a closed workspace answered %s", name)
+		}
+		if failure := structured[ipc.AppError](t, result); failure.Code != ipc.CodeWorkspaceNotOpen {
+			t.Fatalf("%s error = %+v", name, failure)
+		}
+	}
+}
+
+func TestExternalChannelRemembersLegacyIdentityPerConnection(t *testing.T) {
+	h, root := newSocketHarness(t)
+	srv := startExternal(t, h)
+	first, reply := connectExternal(t, srv, root)
+	if !reply.OK {
+		t.Fatal(reply.Error)
+	}
+	if resp := first.raw(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{
+		"protocolVersion": latestLegacyProtocolVersion,
+		"clientInfo":      map[string]any{"name": "Legacy Inspector", "version": "2.13.0"},
+		"capabilities":    map[string]any{},
+	}}); resp.Error != nil {
+		t.Fatal(resp.Error)
+	}
+	rawList := map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/list"}
+	first.raw(rawList)
+	if source, _, _ := srv.LastCall(); source != "Legacy Inspector 2.13.0" {
+		t.Errorf("last client = %q, want the handshake identity", source)
+	}
+	second, reply := connectExternal(t, srv, root)
+	if !reply.OK {
+		t.Fatal(reply.Error)
+	}
+	second.raw(rawList)
+	if source, _, _ := srv.LastCall(); source != unknownClient {
+		t.Errorf("new connection inherited %q", source)
+	}
+}
+
+func TestFeynmanWritesAuditTheConnectedChannel(t *testing.T) {
+	h, root := newSocketHarness(t)
+	srv := NewServer(Dependencies{Workspace: h, Review: review.NewService()})
+	t.Cleanup(func() { _ = srv.Close() })
+	token, sid := initTestSession(t, srv, root, t.TempDir())
+	resp := callMCPJSON(t, srv.URL(), token, sid, "tools/call", map[string]any{
+		"name": toolProposeEdit, "arguments": map[string]any{"path": "closed.md", "proposedText": "# Updated"},
+	})
+	result, _ := resp.Result.(map[string]any)
+	if resp.Error != nil || result["isError"] == true {
+		t.Fatalf("propose failed: %+v", resp)
+	}
+	data, err := os.ReadFile(filepath.Join(h.userData, auditFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var event auditEvent
+	if err := json.Unmarshal(data, &event); err != nil || event.Channel != channelFeynman || event.Target != filepath.Join(root, "closed.md") {
+		t.Fatalf("Feynman audit = %+v, %v", event, err)
+	}
+}
+
+func TestClosingTheSocketPreservesAFileThatReplacedIt(t *testing.T) {
+	h, _ := newSocketHarness(t)
+	srv := startExternal(t, h)
+	path := srv.SocketPath()
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("keep replacement"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if text, err := os.ReadFile(path); err != nil || string(text) != "keep replacement" {
+		t.Fatalf("socket close changed its replacement: %q, %v", text, err)
 	}
 }

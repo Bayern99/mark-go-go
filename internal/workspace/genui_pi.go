@@ -53,29 +53,41 @@ func (s *Service) refreshPi(backendID string, backend GenUIBackend) (genui.Model
 	if err != nil {
 		return catalog, err
 	}
-	s.rememberCatalog(backendID, catalog)
-	return catalog, nil
+	return catalog, s.rememberCatalog(backendID, catalog)
 }
 
 // rememberCatalog records what a refresh learned about a backend: its models,
 // and the provider of its current model when none was recorded yet. The provider
 // is what Pi's credential check, model write and Terminal login are named by.
-func (s *Service) rememberCatalog(backendID string, catalog genui.ModelCatalog) {
+func (s *Service) rememberCatalog(backendID string, catalog genui.ModelCatalog) error {
 	if s.settings == nil {
-		return
+		return nil
 	}
 	ids := make([]string, 0, len(catalog.Models))
 	for _, model := range catalog.Models {
 		ids = append(ids, model.ID)
 	}
-	if err := s.settings.setModels(backendID, ids); err != nil {
-		return
+	patch := GenUIBackendPatch{Models: &ids, ModelOptions: &catalog.Models}
+	backend := s.genUISettings().GenUI.For(backendID)
+	if backend.Provider == "" && (backend.Model == "" || backend.Model == catalog.CurrentModel) {
+		provider := catalog.CurrentProvider
+		if provider == "" {
+			for _, option := range catalog.Models {
+				if option.ID != catalog.CurrentModel || option.Provider == "" {
+					continue
+				}
+				if provider != "" && provider != option.Provider {
+					provider = ""
+					break
+				}
+				provider = option.Provider
+			}
+		}
+		if provider != "" {
+			patch.Provider = &provider
+			patch.Model = &catalog.CurrentModel
+		}
 	}
-	provider := catalog.ProviderOf(catalog.CurrentModel)
-	if provider == "" || strings.TrimSpace(s.genUISettings().GenUI.For(backendID).Provider) != "" {
-		return
-	}
-	_, _ = s.settings.apply(SettingsPatch{GenUI: &GenUIPatch{Backends: map[string]GenUIBackendPatch{
-		backendID: {Provider: &provider},
-	}}})
+	_, err := s.settings.apply(SettingsPatch{GenUI: &GenUIPatch{Backends: map[string]GenUIBackendPatch{backendID: patch}}})
+	return err
 }

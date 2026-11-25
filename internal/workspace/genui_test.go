@@ -118,3 +118,24 @@ func TestGenerationRefusesABackendWithoutACommand(t *testing.T) {
 	}
 	h.runs.Wait()
 }
+
+func TestGenUILoginUsesTheConfiguredExecutable(t *testing.T) {
+	svc := &Service{settings: &settingsStore{dir: t.TempDir()}}
+	var command string
+	svc.terminal = func(_ context.Context, line string) error {
+		command = line
+		return nil
+	}
+	path := "/opt/Agent Tools/agy"
+	if _, err := svc.SetSettings(SettingsPatch{GenUI: &GenUIPatch{Backends: map[string]GenUIBackendPatch{
+		genui.BackendAntigravity: {Command: &path},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.OpenGenUILogin(genui.BackendAntigravity); err != nil {
+		t.Fatal(err)
+	}
+	if command != "'/opt/Agent Tools/agy' acp --login" {
+		t.Fatalf("login command = %q", command)
+	}
+}

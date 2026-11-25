@@ -59,6 +59,7 @@ func open(ctx context.Context, goos string, getenv func(string) string, commandL
 		cmd := command(ctx, "cmd.exe", "/c", "start", "", "cmd.exe", "/k", commandLine)
 		return start(cmd)
 	default:
+		ctx = context.WithoutCancel(ctx)
 		if term := strings.TrimSpace(getenv("TERMINAL")); term != "" {
 			if err := start(command(ctx, term, "-e", "sh", "-lc", commandLine)); err == nil {
 				return nil

@@ -114,11 +114,16 @@ func (s *Service) OpenGenUILogin(backendID string) error {
 		// to sign in with the agent's own command instead of running it here.
 		return errors.New(b.LoginHint)
 	}
-	command, args := b.LoginCommand, slices.Clone(b.LoginArgs)
+	settings := s.genUISettings().GenUI.For(b.ID)
+	command := strings.TrimSpace(settings.Command)
+	if command == "" {
+		command = b.LoginCommand
+	}
+	args := slices.Clone(b.LoginArgs)
 	if b.ID == genui.BackendPi {
 		// Pi signs a provider in, not a model, so the app names the provider it
 		// recorded beside the model rather than asking Pi to guess.
-		provider := strings.TrimSpace(s.genUISettings().GenUI.For(b.ID).Provider)
+		provider := strings.TrimSpace(settings.Provider)
 		if provider == "" {
 			return errors.New(b.LoginHint)
 		}

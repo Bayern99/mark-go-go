@@ -234,9 +234,16 @@ func (c Client) Connect() (net.Conn, *HelloReply, error) {
 
 // Call performs one request over a fresh connection and returns its result.
 func (c Client) Call(method string, params map[string]any) (json.RawMessage, error) {
-	conn, _, err := c.Connect()
+	result, _, err := c.CallWithHello(method, params)
+	return result, err
+}
+
+// CallWithHello also reports the first frame's answer, which names the
+// workspace the call was bound to.
+func (c Client) CallWithHello(method string, params map[string]any) (json.RawMessage, *HelloReply, error) {
+	conn, hello, err := c.Connect()
 	if err != nil {
-		return nil, err
+		return nil, hello, err
 	}
 	defer conn.Close()
 	if timeout := c.Timeout; timeout > 0 {
@@ -244,20 +251,20 @@ func (c Client) Call(method string, params map[string]any) (json.RawMessage, err
 	}
 	payload := request{JSONRPC: "2.0", ID: 1, Method: method, Params: WithModernMeta(params, c.Name, c.Version)}
 	if err := WriteMessage(conn, payload); err != nil {
-		return nil, NotRunning(c.SocketPath, err)
+		return nil, hello, NotRunning(c.SocketPath, err)
 	}
 	line, err := ReadMessage(bufio.NewReader(conn))
 	if err != nil {
-		return nil, NotRunning(c.SocketPath, err)
+		return nil, hello, NotRunning(c.SocketPath, err)
 	}
 	var rpcResp response
 	if err := json.Unmarshal(line, &rpcResp); err != nil {
-		return nil, &AppError{Code: CodeAppNotRunning, Message: "The app answered with a response the CLI does not understand."}
+		return nil, hello, &AppError{Code: CodeAppNotRunning, Message: "The app answered with a response the CLI does not understand."}
 	}
 	if rpcResp.Error != nil {
-		return nil, rpcResp.Error
+		return nil, hello, rpcResp.Error
 	}
-	return rpcResp.Result, nil
+	return rpcResp.Result, hello, nil
 }
 
 // WithModernMeta adds the per-request protocol version and client identity the

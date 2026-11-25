@@ -22,9 +22,21 @@ The following projects and design systems directly shaped Mark Go Go's visual di
 - **Onevra Chat**, the **MyGo Markdown chat** example, **Pi P2** and **GoRex**: Informed the research panel, composer, tool details, sidebar actions and terminal interactions. [Onevra Chat](https://github.com/oneo-me/onevra/tree/main/source/components/chat) · [MyGo example](https://github.com/egoist/mygo/tree/v0.10.0/examples/markdown-chat) · [Pi sidebar](https://github.com/earendil-works/pi/blob/main/apps/p2/src/web/SidePanel.tsx) · [GoRex](https://github.com/egoist/gorex)
 - **Awesome MyGo**: Helped us explore the MyGo ecosystem. [Awesome MyGo](https://github.com/yldm-tech/awesome-mygo)
 
+## Protocols and external tools
+
+Mark Go Go works with the following open protocols and with tools you install yourself. None of these tools ship with the app; each follows its own licence and terms of service.
+
+- **Agent Client Protocol (ACP)**: how the Codex, Antigravity, and Custom ACP GenUI backends talk to an agent. [Specification](https://agentclientprotocol.com)
+- **Model Context Protocol (MCP)**: how Feynman and external agents read documents and submit edit proposals. [Specification](https://modelcontextprotocol.io)
+- **A2UI 1.0** and **OpenUI Lang 1.0**: the message envelope and component statements of GenUI view files, described in the [format guide](docs/genui/view-format.md). [A2UI](https://github.com/google/A2UI)
+- **Feynman**: an MIT-licensed research agent by Companion, built on Pi and alphaXiv; the Feynman plugin connects to your installed CLI. [feynman.is](https://feynman.is)
+- **Pi**: the agent runtime by Earendil. The Pi GenUI backend runs your local `pi` and loads the guard extension the app ships. [Upstream](https://github.com/earendil-works/pi)
+- **Codex** and **codex-acp**: OpenAI's Codex CLI and its ACP adapter, used as a GenUI backend. [Codex](https://github.com/openai/codex) · [codex-acp](https://github.com/zed-industries/codex-acp)
+- **Antigravity**: the Antigravity CLI that provides the `agy` command, used as a GenUI backend.
+
 ## Software and assets
 
 - **MyGo** by Egoist and contributors provides the native desktop host and UI toolkit. The repository includes its MIT-licensed v0.10.0 source with document group and workspace lifecycle patches. [Upstream](https://github.com/egoist/mygo/tree/v0.10.0) · [MyGo licence](third_party/mygo/LICENSE) · [Patch notes](docs/mygo-document-groups.md)
-- Native Markdown, math and Mermaid diagram features use the Go modules declared in [go.mod](go.mod). The Feynman plugin connects directly to the local **Feynman** CLI (an MIT-licensed AI research agent by Companion, built on Pi and alphaXiv, [feynman.is](https://feynman.is)). GenUI files use an A2UI 1.0 envelope with OpenUI Lang 1.0 statements as documented in the [format guide](docs/genui/view-format.md).
+- Native Markdown, math and Mermaid diagram features use the Go modules declared in [go.mod](go.mod).
 - **Inter** and **IBM Plex** use the SIL Open Font License. **Phosphor Icons** uses the MIT licence. [Font and icon licences](internal/portrait/fonts/) · [Application MIT licence](LICENSE)
 - Licence records for bundled Go dependencies, math fonts and Unicode CLDR live in [resources/licenses](resources/licenses/). MyGo's locale tables are generated from **Unicode CLDR 48.2.0**. [CLDR data](https://github.com/unicode-org/cldr-json/tree/48.2.0) · [Local licence](resources/licenses/Unicode-3.0-CLDR.txt)

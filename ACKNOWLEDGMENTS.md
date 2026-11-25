@@ -22,9 +22,21 @@ MyGo Native UI 提供窗口与控件基础，应用以纯 Go 代码绘制工作�
 - **Onevra Chat**、**MyGo Markdown chat**、**Pi P2** 与 **GoRex**：为研究面板、输入编排器、工具详情展示、侧栏操作与终端交互提供了参考。[Onevra Chat](https://github.com/oneo-me/onevra/tree/main/source/components/chat) · [MyGo 示例](https://github.com/egoist/mygo/tree/v0.10.0/examples/markdown-chat) · [Pi 侧栏](https://github.com/earendil-works/pi/blob/main/apps/p2/src/web/SidePanel.tsx) · [GoRex](https://github.com/egoist/gorex)
 - **Awesome MyGo**：帮助我们了解和探索 MyGo 生态。[Awesome MyGo](https://github.com/yldm-tech/awesome-mygo)
 
+## 协议与外部工具
+
+Mark Go Go 通过下列开放协议与用户自行安装的工具协作。这些工具不随应用分发，各自遵循自己的许可与服务条款。
+
+- **Agent Client Protocol（ACP）**：GenUI 的 Codex、Antigravity 与 Custom ACP 后端通过它与 Agent 通信。[规范](https://agentclientprotocol.com)
+- **Model Context Protocol（MCP）**：Feynman 与外部 Agent 通过它读取文档、提交修改提案。[规范](https://modelcontextprotocol.io)
+- **A2UI 1.0** 与 **OpenUI Lang 1.0**：GenUI 视图文件的消息信封与组件语句，见 [格式说明](docs/genui/view-format.md)。[A2UI](https://github.com/google/A2UI)
+- **Feynman**：Companion 开发的 MIT 开源研究代理，基于 Pi 与 alphaXiv 构建，Feynman 插件直接连接本机安装的 CLI。[官网](https://feynman.is)
+- **Pi**：Earendil 开发的代理运行时。GenUI 的 Pi 后端直接调用本机 `pi`，并加载应用自带的守卫扩展。[上游](https://github.com/earendil-works/pi)
+- **Codex** 与 **codex-acp**：OpenAI 的 Codex CLI 及其 ACP 适配器，用作 GenUI 后端。[Codex](https://github.com/openai/codex) · [codex-acp](https://github.com/zed-industries/codex-acp)
+- **Antigravity**：提供 `agy` 命令的 Antigravity CLI，用作 GenUI 后端。
+
 ## 软件与资源
 
 - Egoist 与贡献者的 **MyGo** 提供原生桌面宿主和 UI 工具包。仓库包含 MIT 许可的 v0.10.0 源码，以及文档组与工作区生命周期补丁。[上游](https://github.com/egoist/mygo/tree/v0.10.0) · [MyGo 许可证](third_party/mygo/LICENSE) · [补丁说明](docs/mygo-document-groups.md)
-- 原生 Markdown、公式与 Mermaid 图表功能使用 [go.mod](go.mod) 中声明的 Go 模块。Feynman 插件直接连接本机安装的 **Feynman** CLI（Companion 开发的 MIT 开源研究代理，基于 Pi 与 alphaXiv 构建，[官网](https://feynman.is)）；GenUI 视图文件采用 A2UI 1.0 信封与 OpenUI Lang 1.0 语句，见 [格式说明](docs/genui/view-format.md)。
+- 原生 Markdown、公式与 Mermaid 图表功能使用 [go.mod](go.mod) 中声明的 Go 模块。
 - **Inter** 与 **IBM Plex** 采用 SIL Open Font License，**Phosphor Icons** 采用 MIT 许可证。[字体和图标许可证](internal/portrait/fonts/) · [应用 MIT 许可证](LICENSE)
 - 随附资源中的 Go 依赖、数学字体与 Unicode CLDR 许可记录位于 [resources/licenses](resources/licenses/)。MyGo 的本地化表由 **Unicode CLDR 48.2.0** 生成。[CLDR 数据](https://github.com/unicode-org/cldr-json/tree/48.2.0) · [随附许可证](resources/licenses/Unicode-3.0-CLDR.txt)

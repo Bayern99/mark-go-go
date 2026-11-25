@@ -3,7 +3,18 @@ package mcp
 import "encoding/json"
 
 const (
+	// modernProtocolVersion declares its version on every request.
+	modernProtocolVersion = "2026-07-28"
+	// latestLegacyProtocolVersion is the newest handshake-based revision the
+	// server answers when a legacy client asks for one it does not know.
+	latestLegacyProtocolVersion = "2025-11-25"
+	// defaultProtocolVersion serves a legacy client that never initializes.
 	defaultProtocolVersion = "2025-03-26"
+
+	// channelFeynman names the Feynman HTTP channel in proposal sources and
+	// audit records; channelExternal names the local socket.
+	channelFeynman  = "mcp"
+	channelExternal = "external-ipc"
 
 	errCodeParseError       = -32700
 	errCodeInvalidRequest   = -32600
@@ -11,13 +22,18 @@ const (
 	errCodeInvalidParams    = -32602
 	errCodeInternalError    = -32603
 	errCodeResourceNotFound = -32002
+	// errCodeUnsupportedProtocolVersion reports a request that states a
+	// protocol revision this server does not implement.
+	errCodeUnsupportedProtocolVersion = -32022
 )
 
+var supportedModernProtocolVersions = []string{modernProtocolVersion}
+
 var supportedProtocolVersions = map[string]bool{
-	"2025-11-25": true,
-	"2025-06-18": true,
-	"2025-03-26": true,
-	"2024-11-05": true,
+	latestLegacyProtocolVersion: true,
+	"2025-06-18":                true,
+	defaultProtocolVersion:      true,
+	"2024-11-05":                true,
 }
 
 type rpcRequest struct {
@@ -63,10 +79,12 @@ type mcpTextResourceContents struct {
 }
 
 type mcpTool struct {
-	Name        string         `json:"name"`
-	Title       string         `json:"title,omitempty"`
-	Description string         `json:"description,omitempty"`
-	InputSchema map[string]any `json:"inputSchema"`
+	Name         string         `json:"name"`
+	Title        string         `json:"title,omitempty"`
+	Description  string         `json:"description,omitempty"`
+	InputSchema  map[string]any `json:"inputSchema"`
+	OutputSchema map[string]any `json:"outputSchema,omitempty"`
+	Annotations  map[string]any `json:"annotations,omitempty"`
 }
 
 type mcpTextContent struct {

@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
-	"github.com/Bayern99/mark-go-go/internal/desktop"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -14,10 +14,24 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
 )
 
-const maxMCPDocumentBytes = 8 << 20
+const (
+	maxMCPDocumentBytes = 8 << 20
+	// MaxWorkspaceListingFiles bounds the file list an MCP client receives so
+	// that listing a large folder never becomes an unbounded transfer.
+	MaxWorkspaceListingFiles = 200
+)
+
+// Errors MCP callers map onto their stable error codes.
+var (
+	// ErrWorkspaceNotOpen reports that no workspace of this window has that root.
+	ErrWorkspaceNotOpen = errNoWorkspace
+	// ErrPathDenied reports a path outside the workspace or in an excluded folder.
+	ErrPathDenied = errors.New("markgogo: that path is outside the workspace")
+)
 
 type WorkspaceFileEntry struct {
 	RelPath    string `json:"relPath"`
@@ -36,6 +50,10 @@ type WorkspaceMCPState struct {
 	OpenDocuments    []DocumentInfo       `json:"openDocuments"`
 	Folders          []string             `json:"folders"`
 	Files            []WorkspaceFileEntry `json:"files"`
+	// Truncated reports that more files exist than the listing carries.
+	Truncated bool `json:"truncated,omitempty"`
+	// FilesLimit is the number of files a full listing may carry.
+	FilesLimit int `json:"filesLimit"`
 }
 
 type DocumentMCPState struct {
@@ -98,6 +116,41 @@ func (h *Service) openSessionsForWorkspace(root string) ([]*docSession, string) 
 	return sessions, activeID
 }
 
+// MCPOpenRoots lists the roots of the workspaces this window has open.
+func (h *Service) MCPOpenRoots() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	roots := make([]string, 0, len(h.byWorkspace)+len(h.byWindow))
+	seen := map[string]bool{}
+	for _, w := range h.allWorkspacesLocked() {
+		if w == nil || w.root == "" || seen[w.root] {
+			continue
+		}
+		seen[w.root] = true
+		roots = append(roots, w.root)
+	}
+	sort.Strings(roots)
+	return roots
+}
+
+// MCPOpenDocuments lists the open documents of one workspace root without
+// walking the folder.
+func (h *Service) MCPOpenDocuments(root string) ([]DocumentInfo, error) {
+	canonRoot := fsutil.CanonicalPath(root)
+	if canonRoot == "" {
+		return nil, ErrWorkspaceNotOpen
+	}
+	if h.workspaceByRoot(canonRoot) == nil {
+		return nil, ErrWorkspaceNotOpen
+	}
+	sessions, _ := h.openSessionsForWorkspace(canonRoot)
+	docs := make([]DocumentInfo, 0, len(sessions))
+	for _, s := range sessions {
+		docs = append(docs, s.info())
+	}
+	return docs, nil
+}
+
 func resolveWorkspaceRel(root, idOrPath string) (relSlash string, absPath string, err error) {
 	trimmed := strings.TrimSpace(idOrPath)
 	if trimmed == "" {
@@ -110,21 +163,21 @@ func resolveWorkspaceRel(root, idOrPath string) (relSlash string, absPath string
 	} else {
 		cleaned := filepath.Clean(filepath.FromSlash(trimmed))
 		if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
-			return "", "", errors.New("path escapes workspace root")
+			return "", "", fmt.Errorf("%w: path escapes workspace root", ErrPathDenied)
 		}
 		candidate = fsutil.CanonicalPath(filepath.Join(canonRoot, cleaned))
 	}
 	if !fsutil.FolderContains(canonRoot, candidate) {
-		return "", "", errors.New("path is outside workspace root")
+		return "", "", fmt.Errorf("%w: path is outside workspace root", ErrPathDenied)
 	}
 	rel, err := filepath.Rel(canonRoot, candidate)
 	if err != nil || !filepath.IsLocal(rel) || rel == "." {
-		return "", "", errors.New("invalid workspace-relative path")
+		return "", "", fmt.Errorf("%w: invalid workspace-relative path", ErrPathDenied)
 	}
 	relSlash = filepath.ToSlash(rel)
 	for _, part := range strings.Split(relSlash, "/") {
 		if part == "" || part == "." || part == ".." || fsutil.SkipDirName(strings.ToLower(part)) {
-			return "", "", errors.New("path is in an excluded directory")
+			return "", "", fmt.Errorf("%w: path is in an excluded directory", ErrPathDenied)
 		}
 	}
 	return relSlash, candidate, nil
@@ -164,11 +217,11 @@ func readMarkdownFromRoot(canonRoot, relSlash string) (string, error) {
 func (h *Service) MCPWorkspaceState(root string) (WorkspaceMCPState, error) {
 	canonRoot := fsutil.CanonicalPath(root)
 	if canonRoot == "" {
-		return WorkspaceMCPState{}, errNoWorkspace
+		return WorkspaceMCPState{}, ErrWorkspaceNotOpen
 	}
 	info, err := os.Stat(canonRoot)
 	if err != nil || !info.IsDir() {
-		return WorkspaceMCPState{}, errNoWorkspace
+		return WorkspaceMCPState{}, ErrWorkspaceNotOpen
 	}
 
 	sessions, activeID := h.openSessionsForWorkspace(canonRoot)
@@ -185,7 +238,8 @@ func (h *Service) MCPWorkspaceState(root string) (WorkspaceMCPState, error) {
 	}
 
 	folderSet := map[string]bool{}
-	fileEntries := make([]WorkspaceFileEntry, 0)
+	fileEntries := make([]WorkspaceFileEntry, 0, MaxWorkspaceListingFiles)
+	truncated := false
 
 	osRoot, err := os.OpenRoot(canonRoot)
 	if err != nil {
@@ -209,6 +263,10 @@ func (h *Service) MCPWorkspaceState(root string) (WorkspaceMCPState, error) {
 		}
 		if !entry.Type().IsRegular() || !fsutil.MarkdownName(entry.Name()) {
 			return nil
+		}
+		if len(fileEntries) >= MaxWorkspaceListingFiles {
+			truncated = true
+			return fs.SkipAll
 		}
 		relSlash := filepath.ToSlash(rel)
 		fe := WorkspaceFileEntry{
@@ -240,6 +298,8 @@ func (h *Service) MCPWorkspaceState(root string) (WorkspaceMCPState, error) {
 		OpenDocuments:    openDocs,
 		Folders:          folders,
 		Files:            fileEntries,
+		Truncated:        truncated,
+		FilesLimit:       MaxWorkspaceListingFiles,
 	}, nil
 }
 
@@ -267,7 +327,7 @@ func (s *docSession) mcpDocument(root string) DocumentMCPState {
 func (h *Service) MCPDocument(root, idOrPath string) (DocumentMCPState, error) {
 	canonRoot := fsutil.CanonicalPath(root)
 	if canonRoot == "" {
-		return DocumentMCPState{}, errNoWorkspace
+		return DocumentMCPState{}, ErrWorkspaceNotOpen
 	}
 	sessions, _ := h.openSessionsForWorkspace(canonRoot)
 	for _, s := range sessions {
@@ -287,7 +347,7 @@ func (h *Service) MCPDocument(root, idOrPath string) (DocumentMCPState, error) {
 	}
 
 	if !fsutil.MarkdownName(rel) {
-		return DocumentMCPState{}, errors.New("target is not a Markdown document")
+		return DocumentMCPState{}, fmt.Errorf("%w: target is not a Markdown document", ErrPathDenied)
 	}
 	text, err := readMarkdownFromRoot(canonRoot, rel)
 	if err != nil {
@@ -321,7 +381,7 @@ func (h *Service) RevealDocument(id string, offset int) error {
 func (h *Service) MCPOpenDocument(ctx context.Context, root, idOrPath string, revealOffset int, hasReveal bool) (DocumentInfo, error) {
 	canonRoot := fsutil.CanonicalPath(root)
 	if canonRoot == "" {
-		return DocumentInfo{}, errNoWorkspace
+		return DocumentInfo{}, ErrWorkspaceNotOpen
 	}
 	sessions, _ := h.openSessionsForWorkspace(canonRoot)
 	var targetSession *docSession
@@ -337,7 +397,7 @@ func (h *Service) MCPOpenDocument(ctx context.Context, root, idOrPath string, re
 			return DocumentInfo{}, err
 		}
 		if !fsutil.MarkdownName(rel) {
-			return DocumentInfo{}, errors.New("target is not a Markdown document")
+			return DocumentInfo{}, fmt.Errorf("%w: target is not a Markdown document", ErrPathDenied)
 		}
 		for _, s := range sessions {
 			if p := s.currentPath(); p != "" && fsutil.SameFile(p, absPath) {

@@ -19,7 +19,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Bayern99/mark-go-go/internal/appversion"
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
+	"github.com/Bayern99/mark-go-go/internal/ipc"
 	"github.com/Bayern99/mark-go-go/internal/review"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 )
@@ -27,11 +29,14 @@ import (
 const (
 	maxRequestBodyBytes = 8 << 20
 	serverName          = "mark-go-go"
-	serverVersion       = "1.0.0"
+	// discoverTTL is how long a client may cache a discover result.
+	discoverTTL = 5 * time.Minute
 )
 
 type WorkspaceBridge interface {
 	MCPWorkspaceState(root string) (workspace.WorkspaceMCPState, error)
+	MCPOpenRoots() []string
+	MCPOpenDocuments(root string) ([]workspace.DocumentInfo, error)
 	MCPDocument(root, idOrPath string) (workspace.DocumentMCPState, error)
 	MCPOpenDocument(ctx context.Context, root, idOrPath string, revealOffset int, hasReveal bool) (workspace.DocumentInfo, error)
 	UserDataDir() string
@@ -47,10 +52,36 @@ type Dependencies struct {
 }
 
 type sessionBinding struct {
-	token string
-	root  string
-	work  string
+	token   string
+	root    string
+	work    string
+	channel string
 }
+
+// source is the provenance tag the server writes for this channel; a caller
+// cannot claim another one.
+func (b *sessionBinding) source() string {
+	if b == nil || b.channel == "" {
+		return channelFeynman
+	}
+	return b.channel
+}
+
+// connState is the per-connection state of the socket channel: the legacy
+// revision an initialize negotiated there.
+type connState struct {
+	legacyVersion string
+}
+
+func (c *connState) version() string {
+	if c == nil || c.legacyVersion == "" {
+		return defaultProtocolVersion
+	}
+	return c.legacyVersion
+}
+
+// instructions is the natural-language guidance both eras return.
+const instructions = "Mark Go Go edits the Markdown files of the workspace whose root this call is bound to. Call get_workspace to see the root, the open documents and the Markdown files, then read_document by documentId or workspace-relative path; read_document also returns the version a line-range edit needs. Changes to existing text only ever enter the review queue through propose_edit and are applied after the user accepts them in Mark Go Go; create_document makes new files and refuses to overwrite. write_genui_view validates a GenUI candidate against the catalog before writing the document's .genui.json, and create_checkpoint snapshots a saved document. Errors carry a code: APP_NOT_RUNNING, WORKSPACE_NOT_OPEN, VERSION_CONFLICT, NOT_FOUND, PATH_DENIED or INVALID_ARGS with a hint."
 
 type Server struct {
 	deps Dependencies
@@ -406,7 +437,7 @@ func (s *Server) handleMCPPost(w http.ResponseWriter, r *http.Request, binding *
 		}
 		responses := make([]rpcResponse, 0, len(batch))
 		for _, item := range batch {
-			resp, newSID, hasResp := s.dispatchMessage(r.Context(), binding, item)
+			resp, newSID, hasResp := s.dispatchMessage(r.Context(), binding, nil, item)
 			if newSID != "" {
 				w.Header().Set("Mcp-Session-Id", newSID)
 			}
@@ -422,7 +453,7 @@ func (s *Server) handleMCPPost(w http.ResponseWriter, r *http.Request, binding *
 		return
 	}
 
-	resp, newSID, hasResp := s.dispatchMessage(r.Context(), binding, body)
+	resp, newSID, hasResp := s.dispatchMessage(r.Context(), binding, nil, body)
 	if newSID != "" {
 		w.Header().Set("Mcp-Session-Id", newSID)
 	}
@@ -433,7 +464,109 @@ func (s *Server) handleMCPPost(w http.ResponseWriter, r *http.Request, binding *
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (s *Server) dispatchMessage(ctx context.Context, binding *sessionBinding, raw []byte) (rpcResponse, string, bool) {
+// modernVersionOf reports the protocol revision a request states in its _meta.
+func modernVersionOf(params json.RawMessage) (string, bool) {
+	if len(params) == 0 {
+		return "", false
+	}
+	var envelope struct {
+		Meta map[string]json.RawMessage `json:"_meta"`
+	}
+	if json.Unmarshal(params, &envelope) != nil || envelope.Meta == nil {
+		return "", false
+	}
+	raw, ok := envelope.Meta[ipc.MetaProtocolVersion]
+	if !ok {
+		return "", false
+	}
+	var version string
+	if json.Unmarshal(raw, &version) != nil || version == "" {
+		return "", false
+	}
+	return version, true
+}
+
+func (s *Server) capabilities() map[string]any {
+	return map[string]any{
+		"resources": map[string]any{
+			"subscribe":   false,
+			"listChanged": false,
+		},
+		"tools": map[string]any{
+			"listChanged": false,
+		},
+	}
+}
+
+func (s *Server) serverInfo() map[string]any {
+	return map[string]any{"name": serverName, "version": appversion.Version}
+}
+
+func (s *Server) discoverResult() map[string]any {
+	return map[string]any{
+		"resultType":        "complete",
+		"supportedVersions": []string{modernProtocolVersion, latestLegacyProtocolVersion},
+		"capabilities":      s.capabilities(),
+		"instructions":      instructions,
+		"_meta":             map[string]any{ipc.MetaServerInfo: s.serverInfo()},
+		"ttlMs":             discoverTTL.Milliseconds(),
+		"cacheScope":        "private",
+	}
+}
+
+// handleInitialize answers a legacy handshake, agreeing to the requested
+// revision or, when it is unknown, to the newest one the handshake supports.
+func (s *Server) handleInitialize(binding *sessionBinding, state *connState, req rpcRequest) (rpcResponse, string, bool) {
+	var params struct {
+		ProtocolVersion string `json:"protocolVersion"`
+	}
+	if len(req.Params) > 0 {
+		_ = json.Unmarshal(req.Params, &params)
+	}
+	version := params.ProtocolVersion
+	if !supportedProtocolVersions[version] {
+		version = latestLegacyProtocolVersion
+	}
+	result := map[string]any{
+		"protocolVersion": version,
+		"capabilities":    s.capabilities(),
+		"serverInfo":      s.serverInfo(),
+		"instructions":    instructions,
+	}
+	if state != nil {
+		state.legacyVersion = version
+		return rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: result}, "", true
+	}
+	sid, err := randomHexToken(16)
+	if err != nil {
+		return rpcResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Error:   &rpcError{Code: errCodeInternalError, Message: "failed to allocate session"},
+		}, "", true
+	}
+	s.mu.Lock()
+	s.mcpSessions[sid] = binding.token
+	s.mu.Unlock()
+	return rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: result}, sid, true
+}
+
+func unsupportedVersionResponse(id json.RawMessage, requested string) rpcResponse {
+	return rpcResponse{
+		JSONRPC: "2.0",
+		ID:      id,
+		Error: &rpcError{
+			Code:    errCodeUnsupportedProtocolVersion,
+			Message: "Unsupported protocol version",
+			Data: map[string]any{
+				"supported": supportedModernProtocolVersions,
+				"requested": requested,
+			},
+		},
+	}
+}
+
+func (s *Server) dispatchMessage(ctx context.Context, binding *sessionBinding, state *connState, raw []byte) (rpcResponse, string, bool) {
 	var req rpcRequest
 	if err := json.Unmarshal(raw, &req); err != nil {
 		return rpcResponse{
@@ -452,54 +585,20 @@ func (s *Server) dispatchMessage(ctx context.Context, binding *sessionBinding, r
 			Error:   &rpcError{Code: errCodeInvalidRequest, Message: "invalid JSON-RPC 2.0 request"},
 		}, "", true
 	}
-	isNotification := len(req.ID) == 0 || string(req.ID) == "null"
-	if isNotification {
+	if len(req.ID) == 0 || string(req.ID) == "null" {
 		return rpcResponse{}, "", false
 	}
 
+	if req.Method == "initialize" {
+		return s.handleInitialize(binding, state, req)
+	}
+	if version, modern := modernVersionOf(req.Params); modern && version != modernProtocolVersion {
+		return unsupportedVersionResponse(req.ID, version), "", true
+	}
+
 	switch req.Method {
-	case "initialize":
-		var params struct {
-			ProtocolVersion string `json:"protocolVersion"`
-		}
-		if len(req.Params) > 0 {
-			_ = json.Unmarshal(req.Params, &params)
-		}
-		version := defaultProtocolVersion
-		if supportedProtocolVersions[params.ProtocolVersion] {
-			version = params.ProtocolVersion
-		}
-		sid, err := randomHexToken(16)
-		if err != nil {
-			return rpcResponse{
-				JSONRPC: "2.0",
-				ID:      req.ID,
-				Error:   &rpcError{Code: errCodeInternalError, Message: "failed to allocate session"},
-			}, "", true
-		}
-		s.mu.Lock()
-		s.mcpSessions[sid] = binding.token
-		s.mu.Unlock()
-		return rpcResponse{
-			JSONRPC: "2.0",
-			ID:      req.ID,
-			Result: map[string]any{
-				"protocolVersion": version,
-				"capabilities": map[string]any{
-					"resources": map[string]any{
-						"subscribe":   false,
-						"listChanged": false,
-					},
-					"tools": map[string]any{
-						"listChanged": false,
-					},
-				},
-				"serverInfo": map[string]any{
-					"name":    serverName,
-					"version": serverVersion,
-				},
-			},
-		}, sid, true
+	case "server/discover":
+		return rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: s.discoverResult()}, "", true
 
 	case "ping":
 		return rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: map[string]any{}}, "", true

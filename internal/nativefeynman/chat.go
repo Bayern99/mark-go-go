@@ -393,19 +393,12 @@ func (p *panel) composer(c *ui.Context) {
 						commands := p.filteredCommands(p.commandQuery)
 						switch key.Key {
 						case ui.KeyDown, ui.KeyUp:
-							if len(commands) > 0 {
-								delta := 1
-								if key.Key == ui.KeyUp {
-									delta = -1
-								}
-								p.commandIndex = (p.commandIndex + len(commands) + delta) % len(commands)
-								p.commandMoved = true
-							}
+							p.commandSelection.Move(key.Key, len(commands))
 							return true
 						case ui.KeyEnter:
 							if len(commands) > 0 {
-								p.commandIndex = max(0, min(p.commandIndex, len(commands)-1))
-								p.chooseResearchCommand(commands[p.commandIndex])
+								p.commandSelection.Clamp(len(commands))
+								p.chooseResearchCommand(commands[p.commandSelection.Index])
 								key.SetText(s.draft)
 							}
 							return true
@@ -436,13 +429,11 @@ func (p *panel) composer(c *ui.Context) {
 					s.actionsOpen = false
 				} else if p.actionsFromSlash && !strings.Contains(strings.TrimPrefix(s.draft, "/"), "/") {
 					p.commandQuery = strings.TrimSpace(strings.TrimPrefix(s.draft, "/"))
-					p.commandIndex = 0
-					p.commandMoved = false
+					p.commandSelection.Reset()
 					s.actionsOpen = true
 				} else if !p.actionsDismissed && p.slashCommandMatches(s.draft) {
 					p.commandQuery = strings.TrimSpace(strings.TrimPrefix(s.draft, "/"))
-					p.commandIndex = 0
-					p.commandMoved = false
+					p.commandSelection.Reset()
 					p.actionsFromSlash = true
 					s.actionsOpen = true
 				} else if p.actionsFromSlash || strings.Contains(strings.TrimPrefix(s.draft, "/"), "/") {
@@ -462,8 +453,7 @@ func (p *panel) composer(c *ui.Context) {
 				actionsBtn := portrait.ButtonWith(c, "Actions", "Browse workflows, skills and extensions", actionsSpec).Expanded(s.actionsOpen)
 				if actionsBtn.Clicked() {
 					s.actionsOpen = !s.actionsOpen
-					p.commandIndex = 0
-					p.commandMoved = false
+					p.commandSelection.Reset()
 					p.actionsDismissed = false
 					p.actionsFromSlash = false
 				}
@@ -589,26 +579,16 @@ func (p *panel) commandList(c *ui.Context) {
 	})
 	if filterInputEditor.Changed() {
 		query = p.commandQuery
-		p.commandIndex = 0
-		p.commandMoved = false
+		p.commandSelection.Reset()
 		p.actionsFromSlash = false
 	}
 	commands := p.filteredCommands(query)
-	p.commandIndex = max(0, min(p.commandIndex, len(commands)-1))
-	if len(commands) > 0 {
-		if filterInputEditor.Shortcut(0, ui.KeyDown) {
-			p.commandIndex, p.commandMoved = (p.commandIndex+1)%len(commands), true
-		}
-		if filterInputEditor.Shortcut(0, ui.KeyUp) {
-			p.commandIndex, p.commandMoved = (p.commandIndex+len(commands)-1)%len(commands), true
-		}
-		if filterInputEditor.Submitted() {
-			p.chooseResearchCommand(commands[p.commandIndex])
-		}
+	if p.commandSelection.Shortcuts(filterInputEditor, len(commands)) {
+		p.chooseResearchCommand(commands[p.commandSelection.Index])
 	}
 	ui.Scroll(c.Key("research-actions-list")).MaxHeight(portrait.Form.ListMax).FillWidth().Role(ui.RoleListBox).Label("Research actions").Children(func() {
 		for i, command := range commands {
-			selected := i == p.commandIndex
+			selected := i == p.commandSelection.Index
 			// The name stays whole and the description takes its own line, so
 			// a short panel never cuts an action to an ellipsis.
 			spec := portrait.ListRowSpec{
@@ -621,7 +601,7 @@ func (p *panel) commandList(c *ui.Context) {
 			row := portrait.ListRow(c.Key("research-action-"+command.Name), spec).Role(ui.RoleOption).TabStop(false)
 			if selected {
 				row.Background(portrait.Colors.AccentSoft)
-				if p.commandMoved {
+				if p.commandSelection.Moved {
 					row.ScrollIntoView()
 				}
 			}
@@ -629,7 +609,7 @@ func (p *panel) commandList(c *ui.Context) {
 				p.chooseResearchCommand(command)
 			}
 		}
-		p.commandMoved = false
+		p.commandSelection.Moved = false
 		if len(commands) == 0 {
 			mutedText(c, "No matching workflows, skills or extensions.")
 		}
@@ -652,8 +632,7 @@ func (p *panel) chooseResearchCommand(command feynman.ResearchCommand) {
 	p.state.draft = "/" + command.Name + " "
 	p.state.actionsOpen = false
 	p.commandQuery = ""
-	p.commandIndex = 0
-	p.commandMoved = false
+	p.commandSelection.Reset()
 	p.actionsDismissed = false
 	p.actionsFromSlash = false
 }

@@ -80,11 +80,13 @@ func TestResearchActionsFilterIsCaseInsensitiveAndIgnoresOuterSpace(t *testing.T
 			p.state.draft = ""
 			p.state.commands = []feynman.ResearchCommand{
 				{Name: "review", Source: "Workflow"},
+				{Name: "revise", Source: "Workflow"},
 				{Name: "summarize", Source: "Skill"},
 			}
 			app := ui.NewTester(func(c *ui.Context) { p.composer(c) }, 640, 600)
 			app.Frame()
 			openResearchActions(t, app, slash)
+			app.Key(0, ui.KeyDown)
 			app.Type(" WORKFLOW ")
 			app.Frame()
 			if !researchActionOption(t, app, "review").Selected {

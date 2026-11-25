@@ -109,6 +109,7 @@ func TestCommandBarFilterIsCaseInsensitiveAndIgnoresOuterSpace(t *testing.T) {
 		shell.Draw(c, model, nativeui.Actions{SetMode: func(string) {}}, nativeui.Slots{})
 	}, 1280, 820)
 	app.Key(ui.Cmd, ui.KeyK)
+	app.Key(0, ui.KeyDown)
 	app.Type(" SHOW ")
 	app.Frame()
 	if _, ok := app.AccessByRole(ui.RoleOption, "Show Markdown"); !ok {

@@ -269,9 +269,11 @@ func TestResearchNativeRPCStreamingAndMidTurnControls(t *testing.T) {
 		sawTurnEnd      bool
 		sawAgentEnd     bool
 	)
-	timeout := time.After(5 * time.Second)
-loop:
-	for {
+	promptDone := (<-chan error)(done)
+	promptFinished := false
+	streamSettled := false
+	hangGuard := researchTestHangGuard(t)
+	for !promptFinished || !streamSettled {
 		select {
 		case e := <-events:
 			switch e.Kind {
@@ -304,32 +306,17 @@ loop:
 				sawTurnEnd = true
 			case "agentEnd":
 				sawAgentEnd = true
+			case "agentSettled":
+				streamSettled = true
 			}
-		case err := <-done:
+		case err := <-promptDone:
 			if err != nil {
 				t.Fatalf("stream full lifecycle prompt failed: %v", err)
 			}
-			break loop
-		case <-timeout:
-			t.Fatal("timed out waiting for stream full lifecycle prompt")
-		}
-	}
-drainLoop:
-	for {
-		select {
-		case e := <-events:
-			switch e.Kind {
-			case "thought":
-				sawThought += e.Text
-			case "assistant":
-				sawAssistant += e.Text
-			case "turnEnd":
-				sawTurnEnd = true
-			case "agentEnd":
-				sawAgentEnd = true
-			}
-		default:
-			break drainLoop
+			promptFinished = true
+			promptDone = nil
+		case <-hangGuard:
+			t.Fatal("hung waiting for stream lifecycle events and prompt completion")
 		}
 	}
 	if sawThought != "Analyzing primary sources." {
@@ -402,7 +389,7 @@ drainLoop:
 		if err == nil {
 			t.Fatal("aborted prompt should return error")
 		}
-	case <-time.After(5 * time.Second):
+	case <-researchTestHangGuard(t):
 		t.Fatal("aborted prompt hung")
 	}
 }
@@ -527,8 +514,13 @@ func TestResearchAllNineExtensionUIRequests(t *testing.T) {
 	if reply.Text != "UI answers: select=Docker confirm=true input=AudioSet editor=Revised abstract" {
 		t.Fatalf("unexpected UI summary reply: %q", reply.Text)
 	}
-	if err := <-done; err != nil {
-		t.Fatalf("prompt failed: %v", err)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("prompt failed: %v", err)
+		}
+	case <-researchTestHangGuard(t):
+		t.Fatal("hung waiting for extension UI prompt completion")
 	}
 }
 
@@ -589,7 +581,7 @@ func TestResearchConnectConcurrencyAndCrashReconnect(t *testing.T) {
 			close(releaseA)
 			t.Fatalf("second workspace connect failed while first was starting: %v", err)
 		}
-	case <-time.After(3 * time.Second):
+	case <-researchTestHangGuard(t):
 		close(releaseA)
 		t.Fatal("second workspace connect blocked on global research lock while first workspace ran command startup")
 	}
@@ -606,8 +598,20 @@ func TestResearchConnectConcurrencyAndCrashReconnect(t *testing.T) {
 		t.Fatalf("reconnect failed: %v", err)
 	}
 	waitUpdate(t, events, "commands")
+	crashCleaned := make(chan struct{})
+	var crashCleanup sync.Once
+	h.SetAfterStop(func(root, _ string) {
+		if fsutil.SameRoot(root, rootA) {
+			crashCleanup.Do(func() { close(crashCleaned) })
+		}
+	})
 	if _, err := h.Prompt(context.Background(), rootA, "crash mid-turn", "", ""); err == nil {
 		t.Fatal("expected crashed turn to return error")
+	}
+	select {
+	case <-crashCleaned:
+	case <-researchTestHangGuard(t):
+		t.Fatal("hung waiting for crashed Feynman cleanup")
 	}
 	errEvt := waitUpdate(t, events, "error")
 	if !strings.Contains(errEvt.Text, "disconnected") {
@@ -840,6 +844,15 @@ func containsArgPair(args []string, flag, val string) bool {
 
 var unclaimed sync.Map
 
+// researchTestHangGuard only turns a broken wait into a failure. Tests pass
+// when their event or condition arrives, never because a duration elapsed.
+func researchTestHangGuard(t *testing.T) <-chan time.Time {
+	t.Helper()
+	timer := time.NewTimer(time.Minute)
+	t.Cleanup(func() { timer.Stop() })
+	return timer.C
+}
+
 func waitUpdate(t *testing.T, events <-chan ResearchUpdate, kind string) ResearchUpdate {
 	t.Helper()
 	held, _ := unclaimed.Load(events)
@@ -850,7 +863,7 @@ func waitUpdate(t *testing.T, events <-chan ResearchUpdate, kind string) Researc
 			return e
 		}
 	}
-	timeout := time.After(5 * time.Second)
+	hangGuard := researchTestHangGuard(t)
 	for {
 		select {
 		case e := <-events:
@@ -859,9 +872,9 @@ func waitUpdate(t *testing.T, events <-chan ResearchUpdate, kind string) Researc
 				return e
 			}
 			earlier = append(earlier, e)
-		case <-timeout:
+		case <-hangGuard:
 			unclaimed.Store(events, earlier)
-			t.Fatalf("timed out waiting for ResearchUpdate kind %q", kind)
+			t.Fatalf("hung waiting for ResearchUpdate kind %q", kind)
 		}
 	}
 }

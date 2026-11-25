@@ -26,7 +26,9 @@ cleanup() {
 trap cleanup EXIT
 mkdir -p "$PROJECT" "$(dirname "$SOURCE")"
 cp "$ROOT"/go.{mod,sum} "$PROJECT/"
-ln -s "$ROOT"/third_party "$ROOT"/resources "$ROOT"/internal "$PROJECT/"
+ln -s "$ROOT"/third_party "$ROOT"/internal "$ROOT"/scripts "$ROOT"/cmd "$PROJECT/"
+mkdir -p "$PROJECT/resources"
+ln -s "$ROOT"/resources/icon.png "$PROJECT/resources/icon.png"
 ln -s "$ROOT"/*.go "$PROJECT/"
 python3 - "$ROOT/mygo.json" "$PROJECT/mygo.json" "$APP_NAME" "$SESSION" <<'PY'
 import json, sys

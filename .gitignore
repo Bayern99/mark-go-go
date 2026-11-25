@@ -11,3 +11,5 @@ web/.vitest/
 /markgogo
 
 /docs/research/
+
+/resources/darwin-*/markgogo

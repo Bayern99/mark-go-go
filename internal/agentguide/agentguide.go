@@ -42,25 +42,25 @@ var Harnesses = []Harness{
 		ID: HarnessClaudeCode, Name: "Claude Code",
 		Summary: "A shell tool: it runs the markgogo command itself, or adds the stdio shim as an MCP server.",
 		Connect: "claude mcp add markgogo -- markgogo mcp",
-		Prompt:  "You have a shell. Run the markgogo command; if you would rather only speak MCP, the stdio server above reaches the same tools.",
+		Prompt:  "You have a shell. Run the markgogo command, or the MCP server the reader registered with `claude mcp add markgogo -- markgogo mcp`.",
 	},
 	{
 		ID: HarnessCodex, Name: "Codex",
 		Summary: "A sandboxed tool: the shim reaches the same socket, but the sandbox has to allow it.",
 		Connect: "codex mcp add markgogo -- markgogo mcp",
-		Prompt:  "You run in a sandbox. Register the stdio server above, and if the sandbox denies the app's socket, say so instead of retrying.",
+		Prompt:  "You run in a sandbox. The reader registers the stdio server with `codex mcp add markgogo -- markgogo mcp`; if the sandbox denies the app's socket, say so instead of retrying.",
 	},
 	{
 		ID: HarnessPi, Name: "Pi",
 		Summary: "A shell tool: it runs the markgogo command, or reads the SKILL.md below.",
 		Connect: "Add the prompt or the SKILL.md to what Pi reads, such as AGENTS.md.",
-		Prompt:  "You have a shell and read the project's instructions. Run the markgogo command, or follow the SKILL.md the user installed.",
+		Prompt:  "You have a shell and read this project's instructions. Run the markgogo command, or follow the SKILL.md the reader installed.",
 	},
 	{
 		ID: HarnessOther, Name: "Other",
 		Summary: "Any agent that can run a command or speak MCP over stdio.",
 		Connect: MCPConfig,
-		Prompt:  "Connect to the app the way your own tools allow: the markgogo command, or the stdio server above.",
+		Prompt:  "Connect to the app the way your own tools allow: the markgogo command, or the stdio server `" + MCPConfig + "`.",
 	},
 }
 

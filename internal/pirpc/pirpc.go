@@ -281,12 +281,7 @@ func (c *Client) Call(commandType string, fields map[string]any, result any) err
 	ch := make(chan CallResponse, 1)
 	id := c.reserve(ch)
 
-	payload := make(map[string]any, len(fields)+2)
-	maps.Copy(payload, fields)
-	payload["id"] = id
-	payload["type"] = commandType
-
-	if err := c.write(payload); err != nil {
+	if err := c.write(commandRecord(commandType, fields, id)); err != nil {
 		c.mu.Lock()
 		delete(c.pending, id)
 		c.mu.Unlock()
@@ -321,12 +316,17 @@ func (c *Client) Call(commandType string, fields map[string]any, result any) err
 // Send writes one command without waiting for its answer, for a command whose
 // reply the caller does not need, such as an abort.
 func (c *Client) Send(commandType string, fields map[string]any) error {
-	id := c.reserve(nil)
-	payload := make(map[string]any, len(fields)+2)
-	maps.Copy(payload, fields)
-	payload["id"] = id
-	payload["type"] = commandType
-	return c.write(payload)
+	return c.write(commandRecord(commandType, fields, c.reserve(nil)))
+}
+
+// commandRecord is one outgoing record: the caller's fields, its kind and the id
+// a response is matched by.
+func commandRecord(kind string, fields map[string]any, id string) map[string]any {
+	record := make(map[string]any, len(fields)+2)
+	maps.Copy(record, fields)
+	record["id"] = id
+	record["type"] = kind
+	return record
 }
 
 // reserve hands out the next id and, when a reply is expected, the channel it
@@ -344,11 +344,7 @@ func (c *Client) reserve(reply chan CallResponse) string {
 
 // SendUIResponse answers an extension_ui_request by the id it carried.
 func (c *Client) SendUIResponse(id string, fields map[string]any) error {
-	payload := make(map[string]any, len(fields)+2)
-	maps.Copy(payload, fields)
-	payload["type"] = "extension_ui_response"
-	payload["id"] = id
-	return c.write(payload)
+	return c.write(commandRecord("extension_ui_response", fields, id))
 }
 
 func (c *Client) write(v any) error {

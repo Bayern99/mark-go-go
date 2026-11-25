@@ -121,7 +121,6 @@ func runFixtureRPC() {
 			"{version}", os.Getenv("MGO_GUARD_VERSION"),
 			"{token}", os.Getenv("MGO_GUARD_TOKEN"),
 		).Replace(status)
-		appendFixtureLog(fixtureRecord{"event": "status", "text": status})
 		send(map[string]any{
 			"type": "extension_ui_request", "id": "status-1", "method": "setStatus",
 			"statusKey": "mgo-guard", "statusText": status,

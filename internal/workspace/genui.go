@@ -59,7 +59,7 @@ func (s *Service) genUIProbeConfig(backendID string) (acp.ProbeConfig, error) {
 func (s *Service) ProbeGenUI(backendID string) (genui.ProbeResult, error) {
 	b, ok := genui.BackendByID(backendID)
 	if !ok {
-		return genui.ProbeResult{Status: genui.AgentFailed, Detail: "Unknown GenUI backend."}, nil
+		return genui.ProbeResult{Status: genui.AgentMissing, Detail: "Unknown GenUI backend."}, nil
 	}
 	if b.ID == genui.BackendPi {
 		return s.probePi(s.genUISettings().GenUI.For(b.ID))

@@ -60,14 +60,12 @@ func Probe(ctx context.Context, cfg Config) (genui.ProbeResult, error) {
 		result.Hint = "Update the Pi CLI, then choose Test & Refresh."
 		return result, nil
 	}
-	result.Detail = provider
 	switch check.Status {
 	case "ready":
 		result.Status = genui.AgentReady
-		result.Hint = ""
 	case "not_ready":
 		result.Status = genui.AgentLoginRequired
-		result.Detail = "Pi has no usable credentials for " + provider + notReadyReason(check.Reason)
+		result.Detail = "Pi has no usable credentials for " + provider + "."
 		result.Hint = "Run `pi auth login " + provider + "` in Terminal, then choose Test & Refresh."
 	case "provider_not_found":
 		result.Status = genui.AgentFailed
@@ -75,30 +73,13 @@ func Probe(ctx context.Context, cfg Config) (genui.ProbeResult, error) {
 		result.Hint = "Choose a model from a provider Pi knows, then choose Test & Refresh."
 	default:
 		result.Status = genui.AgentFailed
-		result.Detail = "Pi could not check " + provider + invalidReason(check)
+		result.Detail = "Pi could not check " + provider + "."
+		if check.Reason != "" {
+			result.Detail = "Pi could not check " + provider + " (" + strings.ReplaceAll(check.Reason, "_", " ") + ")."
+		}
 		result.Hint = "Update the Pi CLI, then choose Test & Refresh."
 	}
 	return result, nil
-}
-
-func notReadyReason(reason string) string {
-	switch reason {
-	case "":
-		return "."
-	case "credentials_not_configured":
-		return "."
-	case "provider_not_found":
-		return ", and Pi does not know that provider."
-	default:
-		return " (" + strings.ReplaceAll(reason, "_", " ") + ")."
-	}
-}
-
-func invalidReason(check authCheck) string {
-	if check.Reason != "" {
-		return " (" + strings.ReplaceAll(check.Reason, "_", " ") + ")."
-	}
-	return "."
 }
 
 // runAuthCheck asks Pi whether the provider's credentials are ready. The exit

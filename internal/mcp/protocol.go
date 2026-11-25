@@ -93,6 +93,7 @@ type mcpTextContent struct {
 }
 
 type mcpCallToolResult struct {
+	auditTarget       string
 	ResultType        string           `json:"resultType,omitempty"`
 	Meta              map[string]any   `json:"_meta,omitempty"`
 	Content           []mcpTextContent `json:"content"`

@@ -632,7 +632,7 @@ func TestExternalChannelAppendsAnAuditRecordForEachWrite(t *testing.T) {
 	}
 
 	if result := client.tool(toolProposeEdit, map[string]any{
-		"documentId": "doc-report", "oldText": "Generated findings.", "newText": "Revised findings.",
+		"documentId": "doc-report", "path": "closed.md", "oldText": "Generated findings.", "newText": "Revised findings.",
 	}); result.IsError {
 		t.Fatalf("propose_edit failed: %+v", result.Content)
 	}
@@ -660,13 +660,13 @@ func TestExternalChannelAppendsAnAuditRecordForEachWrite(t *testing.T) {
 	if err := json.Unmarshal([]byte(lines[1]), &second); err != nil {
 		t.Fatal(err)
 	}
-	if first.Tool != toolProposeEdit || first.Code != "OK" || first.Channel != ipc.ChannelExternal || first.Root != root || first.Target != "doc-report" {
+	if first.Tool != toolProposeEdit || first.Code != "OK" || first.Channel != ipc.ChannelExternal || first.Root != root || first.Target != filepath.Join(root, "report.md") {
 		t.Fatalf("first audit record = %+v", first)
 	}
 	if _, err := time.Parse(time.RFC3339, first.Time); err != nil {
 		t.Fatalf("audit time %q: %v", first.Time, err)
 	}
-	if second.Code != ipc.CodeVersionConflict || second.Target != "report.md" {
+	if second.Code != ipc.CodeVersionConflict || second.Target != filepath.Join(root, "report.md") {
 		t.Fatalf("second audit record = %+v", second)
 	}
 }
@@ -1045,5 +1045,27 @@ func TestExternalChannelRemembersLegacyIdentityPerConnection(t *testing.T) {
 	second.raw(rawList)
 	if source, _, _ := srv.LastCall(); source != unknownClient {
 		t.Errorf("new connection inherited %q", source)
+	}
+}
+
+func TestFeynmanWritesAuditTheConnectedChannel(t *testing.T) {
+	h, root := newSocketHarness(t)
+	srv := NewServer(Dependencies{Workspace: h, Review: review.NewService()})
+	t.Cleanup(func() { _ = srv.Close() })
+	token, sid := initTestSession(t, srv, root, t.TempDir())
+	resp := callMCPJSON(t, srv.URL(), token, sid, "tools/call", map[string]any{
+		"name": toolProposeEdit, "arguments": map[string]any{"path": "closed.md", "proposedText": "# Updated"},
+	})
+	result, _ := resp.Result.(map[string]any)
+	if resp.Error != nil || result["isError"] == true {
+		t.Fatalf("propose failed: %+v", resp)
+	}
+	data, err := os.ReadFile(filepath.Join(h.userData, auditFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var event auditEvent
+	if err := json.Unmarshal(data, &event); err != nil || event.Channel != channelFeynman || event.Target != filepath.Join(root, "closed.md") {
+		t.Fatalf("Feynman audit = %+v, %v", event, err)
 	}
 }

@@ -281,7 +281,6 @@ func (s *Server) handleToolsCall(ctx context.Context, binding *sessionBinding, r
 	}
 	var result mcpCallToolResult
 	var rpcErr *rpcError
-	target := ""
 	switch params.Name {
 	case toolReadDocument:
 		result, rpcErr = s.toolReadDocument(binding, params.Arguments)
@@ -289,19 +288,14 @@ func (s *Server) handleToolsCall(ctx context.Context, binding *sessionBinding, r
 		result, rpcErr = s.toolGetWorkspace(binding, params.Arguments)
 	case toolProposeEdit:
 		result, rpcErr = s.toolProposeEdit(binding, params.Arguments)
-		target = targetPathOf(params.Arguments)
 	case toolCreateDocument:
 		result, rpcErr = s.toolCreateDocument(ctx, binding, params.Arguments)
-		target = targetPathOf(params.Arguments)
 	case toolOpenDocument:
 		result, rpcErr = s.toolOpenDocument(ctx, binding, params.Arguments)
-		target = targetPathOf(params.Arguments)
 	case toolWriteGenUIView:
 		result, rpcErr = s.toolWriteGenUIView(ctx, binding, params.Arguments)
-		target = targetPathOf(params.Arguments)
 	case toolCreateCheckpoint:
 		result, rpcErr = s.toolCreateCheckpoint(ctx, binding, params.Arguments)
-		target = targetPathOf(params.Arguments)
 	default:
 		return nil, &rpcError{Code: errCodeInvalidParams, Message: "unknown tool: " + params.Name}
 	}
@@ -309,17 +303,9 @@ func (s *Server) handleToolsCall(ctx context.Context, binding *sessionBinding, r
 		return nil, rpcErr
 	}
 	if auditTools[params.Name] {
-		s.audit(binding, params.Name, target, result)
+		s.audit(binding, params.Name, result)
 	}
 	return result, nil
 }
 
 // targetPathOf reports what a tool call acted on, for the audit record.
-func targetPathOf(raw json.RawMessage) string {
-	var args struct {
-		Path       string `json:"path"`
-		DocumentID string `json:"documentId"`
-	}
-	_ = json.Unmarshal(raw, &args)
-	return firstNonEmpty(args.Path, args.DocumentID)
-}

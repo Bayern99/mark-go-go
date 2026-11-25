@@ -229,7 +229,7 @@ func (s *Server) toolGetWorkspace(binding *sessionBinding, rawArgs json.RawMessa
 	})
 }
 
-func (s *Server) toolProposeEdit(binding *sessionBinding, rawArgs json.RawMessage) (mcpCallToolResult, *rpcError) {
+func (s *Server) toolProposeEdit(binding *sessionBinding, rawArgs json.RawMessage) (result mcpCallToolResult, rpcErr *rpcError) {
 	if s.deps.Review == nil {
 		return toolFailure(newAppError(ipc.CodeAppNotRunning, "The review service is unavailable.")), nil
 	}
@@ -254,6 +254,7 @@ func (s *Server) toolProposeEdit(binding *sessionBinding, rawArgs json.RawMessag
 	if err != nil {
 		return toolFailure(classifyFailure(err)), nil
 	}
+	defer func() { result.auditTarget = firstNonEmpty(doc.Path, doc.ID) }()
 	if doc.ReadOnly {
 		return toolFailure(newAppError(ipc.CodeInvalidArgs, "That document is read-only.")), nil
 	}
@@ -364,7 +365,7 @@ func validateCreateRelPath(root, rawPath string) (string, string, error) {
 	return rel, filepath.Join(fsutil.CanonicalPath(root), filepath.FromSlash(rel)), nil
 }
 
-func (s *Server) toolCreateDocument(ctx context.Context, binding *sessionBinding, rawArgs json.RawMessage) (mcpCallToolResult, *rpcError) {
+func (s *Server) toolCreateDocument(ctx context.Context, binding *sessionBinding, rawArgs json.RawMessage) (result mcpCallToolResult, rpcErr *rpcError) {
 	var args struct {
 		Path    string `json:"path"`
 		Content string `json:"content"`
@@ -380,6 +381,7 @@ func (s *Server) toolCreateDocument(ctx context.Context, binding *sessionBinding
 	if err != nil {
 		return toolFailure(classifyFailure(err)), nil
 	}
+	defer func() { result.auditTarget = absPath }()
 	if len(args.Content) > review.MaxResearchArtifactBytes {
 		return toolFailure(newAppError(ipc.CodeInvalidArgs, "The document exceeds the 8 MiB limit.")), nil
 	}
@@ -488,7 +490,7 @@ func (s *Server) toolOpenDocument(ctx context.Context, binding *sessionBinding, 
 	})
 }
 
-func (s *Server) toolWriteGenUIView(ctx context.Context, binding *sessionBinding, rawArgs json.RawMessage) (mcpCallToolResult, *rpcError) {
+func (s *Server) toolWriteGenUIView(ctx context.Context, binding *sessionBinding, rawArgs json.RawMessage) (result mcpCallToolResult, rpcErr *rpcError) {
 	var args struct {
 		DocumentID string          `json:"documentId"`
 		Path       string          `json:"path"`
@@ -504,6 +506,7 @@ func (s *Server) toolWriteGenUIView(ctx context.Context, binding *sessionBinding
 	if err != nil {
 		return toolFailure(classifyFailure(err)), nil
 	}
+	defer func() { result.auditTarget = firstNonEmpty(doc.Path, doc.ID) }()
 	if doc.Path == "" || !fsutil.MarkdownName(doc.Path) || !fsutil.FolderContains(binding.root, doc.Path) {
 		return toolFailure(newAppError(ipc.CodePathDenied, "The target must be a saved Markdown file inside the workspace.")), nil
 	}
@@ -551,7 +554,7 @@ func (s *Server) toolWriteGenUIView(ctx context.Context, binding *sessionBinding
 	})
 }
 
-func (s *Server) toolCreateCheckpoint(ctx context.Context, binding *sessionBinding, rawArgs json.RawMessage) (mcpCallToolResult, *rpcError) {
+func (s *Server) toolCreateCheckpoint(ctx context.Context, binding *sessionBinding, rawArgs json.RawMessage) (result mcpCallToolResult, rpcErr *rpcError) {
 	var args struct {
 		DocumentID string `json:"documentId"`
 		Path       string `json:"path"`
@@ -564,6 +567,7 @@ func (s *Server) toolCreateCheckpoint(ctx context.Context, binding *sessionBindi
 	if err != nil {
 		return toolFailure(classifyFailure(err)), nil
 	}
+	defer func() { result.auditTarget = firstNonEmpty(doc.Path, doc.ID) }()
 	if doc.Path == "" || !fsutil.MarkdownName(doc.Path) || !fsutil.FolderContains(binding.root, doc.Path) {
 		return toolFailure(newAppError(ipc.CodePathDenied, "Checkpoints need a saved Markdown document inside the workspace.")), nil
 	}

@@ -24,7 +24,7 @@ type auditEvent struct {
 
 var auditMu sync.Mutex
 
-func (s *Server) audit(binding *sessionBinding, tool, target string, result mcpCallToolResult) {
+func (s *Server) audit(binding *sessionBinding, tool string, result mcpCallToolResult) {
 	if s.deps.Workspace == nil {
 		return
 	}
@@ -38,10 +38,10 @@ func (s *Server) audit(binding *sessionBinding, tool, target string, result mcpC
 	}
 	line, err := json.Marshal(auditEvent{
 		Time:    time.Now().UTC().Format(time.RFC3339),
-		Channel: binding.channel,
+		Channel: binding.source(),
 		Root:    binding.root,
 		Tool:    tool,
-		Target:  target,
+		Target:  result.auditTarget,
 		Code:    code,
 	})
 	if err != nil {

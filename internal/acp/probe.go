@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -35,6 +36,9 @@ type SessionConfig struct {
 	// Dir is the short-lived session's working directory. It is never a
 	// document's folder.
 	Dir string
+	// Model is applied before the catalog is read, because an agent declares
+	// a model's reasoning effort only once that model is the current one.
+	Model string
 }
 
 func (c ProbeConfig) backend() (genui.Backend, bool) {
@@ -277,12 +281,65 @@ func ListModels(ctx context.Context, cfg SessionConfig) (genui.ModelCatalog, err
 	}); err != nil {
 		return catalog, modelError(err)
 	}
+	options := opened.ConfigOptions
+	if model, _, ok := splitRequestedModel(cfg.Model); ok && model != "" {
+		if applied, err := applyCatalogModel(ctx, agent, opened.SessionID, model, options, opened.Models); err == nil && len(applied) > 0 {
+			options = applied
+		}
+	}
 	if opened.SessionID != "" && agentSupportsSessionClose(handshake.AgentCapabilities) {
 		_ = closeSession(ctx, agent, opened.SessionID)
 	}
 
-	catalog.Models, catalog.CurrentModel, catalog.ThoughtLevels, catalog.ThoughtLevel = readCatalog(opened.ConfigOptions, opened.Models)
+	catalog.Models, catalog.CurrentModel, catalog.ThoughtLevels, catalog.ThoughtLevel = readCatalog(options, opened.Models)
 	return catalog, nil
+}
+
+// splitRequestedModel trims a saved model and keeps a compound id whole for a
+// legacy list, while the declared option takes only its base id.
+func splitRequestedModel(model string) (base, effort string, ok bool) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return "", "", false
+	}
+	base, effort = genui.SplitModelID(model)
+	return base, effort, true
+}
+
+// applyCatalogModel makes the user's model the session's current one so the
+// catalog describes that model's effort levels. A model the agent does not
+// declare is left alone.
+func applyCatalogModel(ctx context.Context, agent *Agent, sessionID, model string, options, legacy json.RawMessage) (json.RawMessage, error) {
+	if opt, found := findConfigOptionIn(options, []string{traceModelOption}, []string{traceModelOption}); found {
+		if !slices.Contains(opt.values(), model) {
+			return nil, nil
+		}
+		var answer struct {
+			ConfigOptions json.RawMessage `json:"configOptions"`
+		}
+		if err := agent.Call("session/set_config_option", map[string]any{
+			"sessionId": sessionID,
+			"configId":  opt.ID,
+			"value":     model,
+		}, &answer); err != nil {
+			return nil, err
+		}
+		if len(answer.ConfigOptions) > 0 {
+			return answer.ConfigOptions, nil
+		}
+		return nil, nil
+	}
+	listed := legacyModelValues(legacy)
+	if len(listed) == 0 || !slices.Contains(listed, model) {
+		return nil, nil
+	}
+	if err := agent.Call("session/set_model", map[string]any{
+		"sessionId": sessionID,
+		"modelId":   model,
+	}, nil); err != nil {
+		return nil, err
+	}
+	return nil, nil
 }
 
 func readCatalog(options, legacy json.RawMessage) (models []genui.ModelOption, current string, thoughtLevels []genui.Choice, thoughtLevel string) {

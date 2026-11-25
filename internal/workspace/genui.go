@@ -75,7 +75,8 @@ func (s *Service) RefreshGenUIModels(backendID string) (genui.ModelCatalog, erro
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), genuiProbeTimeout)
 	defer cancel()
-	catalog, err := acp.ListModels(ctx, acp.SessionConfig{ProbeConfig: cfg})
+	settings := s.genUISettings().GenUI.For(backendID)
+	catalog, err := acp.ListModels(ctx, acp.SessionConfig{ProbeConfig: cfg, Model: settings.UsableModel()})
 	if err != nil {
 		return genui.ModelCatalog{}, err
 	}

@@ -170,3 +170,52 @@ func TestListModelsFallsBackToTheLegacyList(t *testing.T) {
 		t.Fatalf("catalog = %+v, want the legacy availableModels list", catalog)
 	}
 }
+
+func TestListModelsDescribesTheSavedModelsEffort(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "fake.log")
+	cfg := probeConfig(t, fakeSpec{
+		Models:         []string{"gpt-6-sol", "gpt-6-luna"},
+		InitialModel:   "gpt-6-astra",
+		ThoughtValues:  []string{"low", "high"},
+		ThoughtID:      "reasoning_effort",
+		ThoughtModels:  []string{"gpt-6-sol"},
+		ThoughtCurrent: "low",
+		SessionClose:   true,
+	}, func(cfg *ProbeConfig) { cfg.Env = append(cfg.Env, fakeLogEnv+"="+logPath) })
+	catalog, err := ListModels(context.Background(), SessionConfig{ProbeConfig: cfg, Model: "gpt-6-sol"})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if catalog.CurrentModel != "gpt-6-sol" {
+		t.Fatalf("current model = %q, want the saved one it applied", catalog.CurrentModel)
+	}
+	if len(catalog.ThoughtLevels) != 2 || catalog.ThoughtLevel != "low" {
+		t.Fatalf("catalog = %+v, want the effort levels of the applied model", catalog)
+	}
+	log := readFakeLog(t, logPath)
+	if prompts := logRecv(log, "session/prompt"); len(prompts) != 0 {
+		t.Fatalf("session/prompt = %v; refreshing models must not run a turn", prompts)
+	}
+	sets := logRecv(log, "session/set_config_option")
+	if len(sets) != 1 || sets[0]["configId"] != "model" || sets[0]["value"] != "gpt-6-sol" {
+		t.Fatalf("set_config_option = %v, want the saved model", sets)
+	}
+}
+
+func TestListModelsLeavesAnUndeclaredSavedModelAlone(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "fake.log")
+	cfg := probeConfig(t, fakeSpec{
+		Models:       []string{"gpt-6-sol"},
+		InitialModel: "gpt-6-astra",
+	}, func(cfg *ProbeConfig) { cfg.Env = append(cfg.Env, fakeLogEnv+"="+logPath) })
+	catalog, err := ListModels(context.Background(), SessionConfig{ProbeConfig: cfg, Model: "gpt-6-astra"})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if catalog.CurrentModel != "gpt-6-astra" {
+		t.Fatalf("current model = %q, want the agent's own current model", catalog.CurrentModel)
+	}
+	if sets := logRecv(readFakeLog(t, logPath), "session/set_config_option"); len(sets) != 0 {
+		t.Fatalf("set_config_option = %v; an undeclared value is never written", sets)
+	}
+}

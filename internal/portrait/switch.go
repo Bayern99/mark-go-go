@@ -29,11 +29,12 @@ func Switch(c *ui.Context, on *bool) ui.Element {
 		off = Colors.Ink2
 	}
 	control.Background(off.Mix(Tones.Accent.Solid, position))
+	at := position
+	if c.Direction() == ui.RightToLeft {
+		at = 1 - at
+	}
+	focusVisible := control.FocusVisible()
 	control.DrawOver(func(p *ui.Painter, r ui.Rect) {
-		at := position
-		if c.Direction() == ui.RightToLeft {
-			at = 1 - at
-		}
 		diameter := r.H - 2*switchInset
 		thumb := ui.Rect{
 			X: r.X + switchInset + at*(r.W-r.H),
@@ -43,7 +44,7 @@ func Switch(c *ui.Context, on *bool) ui.Element {
 		}
 		p.Shadow(thumb, diameter/2, 0, 1, 3, 0, Colors.Ink.Alpha(0.25))
 		p.Fill(thumb, Colors.Paper, diameter/2)
-		if control.FocusVisible() {
+		if focusVisible {
 			p.FocusRing(r, [4]float32{Radii.Pill, Radii.Pill, Radii.Pill, Radii.Pill})
 		}
 	})

@@ -19,8 +19,9 @@ func thumbCenter(t *testing.T, tt *ui.Tester, bounds ui.Rect) float32 {
 	t.Helper()
 	y := int(bounds.Y + bounds.H/2)
 	lo, hi := float32(math.Inf(1)), float32(math.Inf(-1))
+	img := tt.Image()
 	for x := int(bounds.X + switchInsetForTest); x < int(bounds.X+bounds.W-switchInsetForTest); x++ {
-		px := tt.Image().RGBAAt(x, y)
+		px := img.RGBAAt(x, y)
 		if px.R > 245 && px.G > 245 && px.B > 245 {
 			at := float32(x) + 0.5
 			lo, hi = min(lo, at), max(hi, at)

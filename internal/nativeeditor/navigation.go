@@ -46,24 +46,30 @@ func (p *previewLayout) heading(snap editor.Snapshot, i, firstText int) {
 	}
 	p.sections = append(p.sections, foldSection{b.Start, from, end, key})
 	folded := p.owner.folded[key]
-	action, icon := "Fold ", portrait.IconCaretDown
+	action := "Fold "
 	if folded {
-		action, icon = "Expand ", portrait.IconCaretRight
+		action = "Expand "
 		p.foldUntil = end
 		p.replace(from, end, "")
 		p.hiddenRanges = append(p.hiddenRanges, [2]int{from, end})
 	}
 	p.replace(b.Start, firstText, "")
-	leading := headingStyle(0, b.Level).LineHeight * headingStyle(0, b.Level).Font.Size
+	style := headingStyle(0, b.Level)
+	leading := style.LineHeight * style.Font.Size
+	mark := foldMarkSize(style.Font.Size)
 	p.blocks = append(p.blocks, editor.Block{Line: snap.LineOf(b.Start), Above: true, Height: portrait.Editor.Hairline, Interactive: true, Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
 		e.Height(portrait.Editor.Hairline).Children(func() {
-			btn := ui.ButtonBase(c).Absolute().Left(-26).Top(1+(leading-foldToggleSize)/2).Label(action+title).Size(foldToggleSize, foldToggleSize).Radius(portrait.Radii.S).KeepFocus().AlignItems(ui.Center).Justify(ui.Center)
+			btn := ui.ButtonBase(c).Absolute().Left(-foldToggleSize-foldToggleGap).Top((leading-foldToggleSize)/2).Label(action+title).Size(foldToggleSize, foldToggleSize).Radius(portrait.Radii.S).KeepFocus().AlignItems(ui.Center).Justify(ui.Center)
 			portrait.Tooltip(c, btn, action+title)
 			ink := portrait.Press(btn, portrait.Quiet)
 			if !btn.Hovered() && !btn.Pressed() {
 				ink = portrait.Colors.Ink3
 			}
-			btn.Children(func() { portrait.Glyph(c, icon, portrait.IconSizes.S, ink) })
+			btn.Children(func() {
+				ui.Box(c).Size(mark, mark).Shrink(0).AccessHidden(true).Draw(func(p *ui.Painter, r ui.Rect) {
+					drawFoldMark(p, r, folded, ink)
+				})
+			})
 			if btn.Clicked() {
 				p.toggleFold(key)
 				c.Invalidate()
@@ -72,7 +78,32 @@ func (p *previewLayout) heading(snap editor.Snapshot, i, firstText int) {
 	}})
 }
 
-const foldToggleSize = 18
+// The fold toggle is a compact control in the reading gutter, a hair clear of
+// the heading's first glyph.
+var foldToggleSize, foldToggleGap = portrait.Sizes.Compact, portrait.Editor.Hairline * 4
+
+// foldMarkSize scales the disclosure triangle with its heading, so an H1 does
+// not wear the same small mark as body-sized headings.
+func foldMarkSize(fontSize float32) float32 {
+	return 4.5 + fontSize*0.2
+}
+
+// drawFoldMark draws a filled disclosure triangle with softened corners,
+// pointing down while the section is open and right once it is folded. Its
+// optical centre sits on the box's centre in both directions.
+func drawFoldMark(p *ui.Painter, r ui.Rect, folded bool, ink ui.Color) {
+	cx, cy := r.X+r.W/2, r.Y+r.H/2
+	long, short := r.W*0.86, r.W*0.62
+	var mark ui.Path
+	if folded {
+		mark.MoveTo(cx-short*0.42, cy-long/2).LineTo(cx+short*0.58, cy).LineTo(cx-short*0.42, cy+long/2).Close()
+	} else {
+		mark.MoveTo(cx-long/2, cy-short*0.42).LineTo(cx+long/2, cy-short*0.42).LineTo(cx, cy+short*0.58).Close()
+	}
+	mark.Join(ui.RoundJoin)
+	p.FillPath(&mark, ink)
+	p.StrokePath(&mark, r.W*0.16, ink)
+}
 
 func (p *previewLayout) toggleFold(key string) {
 	if p.owner.folded == nil {

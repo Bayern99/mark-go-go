@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 
 	"path/filepath"
 	"runtime"
@@ -327,5 +328,44 @@ func TestModelRefreshReturnsTheAgentsSelectionError(t *testing.T) {
 	}, nil)
 	if _, err := ListModels(t.Context(), SessionConfig{ProbeConfig: cfg, Model: "model-b"}); err == nil || !strings.Contains(err.Error(), "model rejected") {
 		t.Fatalf("error = %v, want the agent's rejection", err)
+	}
+}
+
+func TestCancellingProbeInterruptsAnUnansweredInitialize(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses a Unix FIFO")
+	}
+	dir := t.TempDir()
+	ready := filepath.Join(dir, "ready")
+	if out, err := exec.Command("mkfifo", ready).CombinedOutput(); err != nil {
+		t.Fatalf("make ready signal: %v %s", err, out)
+	}
+	path := filepath.Join(dir, "agent")
+	script := `#!/bin/sh
+if [ "$1" = --version ]; then
+  echo fixture
+  exit
+fi
+read -r request || exit 1
+echo ready > "$READY_FIFO"
+read -r more
+`
+	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := Probe(ctx, ProbeConfig{Command: path, Env: append(os.Environ(), "READY_FIFO="+ready)})
+		done <- err
+	}()
+	signal, err := os.ReadFile(ready)
+	if err != nil || string(signal) != "ready\n" {
+		t.Fatalf("agent did not receive initialize: %q, %v", signal, err)
+	}
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled initialize returned %v", err)
 	}
 }

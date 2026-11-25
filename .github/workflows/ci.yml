@@ -60,13 +60,21 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [nativegenui, portrait, remaining]
-        # nativeui is the longest package by far; its tests split across
-        # machines round-robin, so each shard gets a share of the slow ones.
+        # Each long package gets a machine of its own; remaining runs every
+        # package not named here, so keep its exclusions in step with the list.
         include:
-          - { suite: nativeui, shard: 1, shards: 3 }
-          - { suite: nativeui, shard: 2, shards: 3 }
-          - { suite: nativeui, shard: 3, shards: 3 }
+          - { suite: nativegenui, packages: ./internal/nativegenui }
+          - { suite: portrait, packages: ./internal/portrait }
+          - { suite: feynman, packages: ./internal/agent/feynman ./internal/nativefeynman }
+          - { suite: nativeeditor, packages: ./internal/nativeeditor }
+          - suite: remaining
+            exclude: internal/nativeui internal/nativegenui internal/portrait internal/agent/feynman internal/nativefeynman internal/nativeeditor
+          # nativeui is the longest package by far; its tests split across
+          # machines round-robin, so each shard gets a share of the slow ones.
+          - { suite: nativeui, shard: 1, shards: 4 }
+          - { suite: nativeui, shard: 2, shards: 4 }
+          - { suite: nativeui, shard: 3, shards: 4 }
+          - { suite: nativeui, shard: 4, shards: 4 }
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -77,23 +85,24 @@ jobs:
         shell: bash
         env:
           SUITE: ${{ matrix.suite }}
+          PACKAGES: ${{ matrix.packages }}
+          EXCLUDE: ${{ matrix.exclude }}
           SHARD: ${{ matrix.shard }}
           SHARDS: ${{ matrix.shards }}
         run: |
-          if [[ "$SUITE" == remaining ]]; then
+          if [[ -n "$EXCLUDE" ]]; then
             module="$(go list -m)"
-            selected="$(go list ./... | grep -Fxv \
-              -e "$module/internal/nativegenui" \
-              -e "$module/internal/nativeui" \
-              -e "$module/internal/portrait")"
-            mapfile -t packages <<< "$selected"
+            excluded=()
+            for pkg in $EXCLUDE; do excluded+=(-e "$module/$pkg"); done
+            mapfile -t packages < <(go list ./... | grep -Fxv "${excluded[@]}")
             go test -race "${packages[@]}"
-          elif [[ -n "$SHARDS" ]]; then
+          elif [[ -n "$PACKAGES" ]]; then
+            # shellcheck disable=SC2086 # PACKAGES is a space-separated list.
+            go test -race $PACKAGES
+          else
             # Listing with -race builds the same test binary the run reuses.
             mine="$(go test -race -list '.*' "./internal/$SUITE" | grep -E '^(Test|Example|Fuzz)' |
               awk -v n="$SHARDS" -v k="$SHARD" '(NR - 1) % n == k - 1' | paste -sd '|' -)"
             echo "shard $SHARD/$SHARDS runs $(tr '|' '\n' <<< "$mine" | wc -l) tests"
             go test -race -run "^($mine)\$" "./internal/$SUITE"
-          else
-            go test -race "./internal/$SUITE"
           fi

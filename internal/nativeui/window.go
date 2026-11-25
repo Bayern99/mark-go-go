@@ -282,6 +282,7 @@ func (w *Window) refresh() {
 			delete(w.documents, id)
 			delete(w.shell.scrolls, "outline:"+id)
 			delete(w.shell.openCheckpoints, id)
+			delete(w.shell.selectedOutline, id)
 		}
 	}
 	if id := next.ActiveID; id != "" && w.documents[id] == nil {
@@ -519,6 +520,9 @@ func (w *Window) View(c *ui.Context) {
 			d.outlineVersion = d.source.Version()
 		}
 		model.Sections = d.sections
+		_, head := d.source.SelectionUTF16()
+		model.DocumentOffset = head
+		model.HasDocumentOffset = true
 	}
 	slots := w.slots
 	slots.Document = func(c *ui.Context) {

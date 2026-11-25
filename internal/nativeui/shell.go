@@ -9,20 +9,22 @@ import (
 )
 
 type Model struct {
-	ReturnToGenUI   bool
-	DocumentScrollY float32
-	Crumbs          []workspace.Crumb
-	Workspace       workspace.WorkspaceSnapshot
-	Navigation      workspace.NavSnapshot
-	Sections        []workspace.Section
-	Recents         []workspace.RecentWorkspace
-	Search          workspace.NavSearchResult
-	Feynman, Git    bool
-	Message         string
-	Spaces          map[string]string
-	Appearance      portrait.Appearance
-	Preferences     map[string]string
-	PreferenceFile  string
+	ReturnToGenUI     bool
+	DocumentScrollY   float32
+	DocumentOffset    int
+	HasDocumentOffset bool
+	Crumbs            []workspace.Crumb
+	Workspace         workspace.WorkspaceSnapshot
+	Navigation        workspace.NavSnapshot
+	Sections          []workspace.Section
+	Recents           []workspace.RecentWorkspace
+	Search            workspace.NavSearchResult
+	Feynman, Git      bool
+	Message           string
+	Spaces            map[string]string
+	Appearance        portrait.Appearance
+	Preferences       map[string]string
+	PreferenceFile    string
 }
 
 type Actions struct {
@@ -78,9 +80,15 @@ type Shell struct {
 	drills                                         map[string]string
 	scrolls                                        map[string]*ui.ScrollState
 	openCheckpoints                                map[string]bool
+	selectedOutline                                map[string]int
 	sidebarDocked, researchDocked                  bool
+	sidebarShown                                   float32
+	sidebarInstant, wideReady, lastWide            bool
+	sidebarAnimating                               bool
 	settle                                         int
 }
+
+type sidebarMotionKey struct{}
 
 const (
 	sidebarDocksAt  = 641
@@ -92,6 +100,7 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 		s.queries = map[string]string{}
 		s.drills = map[string]string{}
 		s.openCheckpoints = map[string]bool{}
+		s.selectedOutline = map[string]int{}
 		s.leftWidth, s.ready = portrait.Shell.SidebarWidth, true
 		if s.rightWidth == 0 {
 			s.rightWidth = portrait.Shell.ResearchWidth
@@ -148,6 +157,7 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 	}
 	if c.Shortcut(ui.Cmd, ui.Key0) {
 		s.toggleSidebar(width)
+		s.sidebarInstant = true
 		if width >= sidebarDocksAt {
 			s.persistSidebar(a)
 		}
@@ -164,7 +174,12 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 			s.OpenSettings("")
 		}
 	}
-	sidebarDocked, researchDocked := width >= sidebarDocksAt && !s.hideSidebar, m.Feynman && !s.hideResearch && width >= researchDocksAt
+	wide := width >= sidebarDocksAt
+	if s.wideReady && wide != s.lastWide {
+		s.sidebarInstant = true
+	}
+	s.wideReady, s.lastWide = true, wide
+	sidebarDocked, researchDocked := wide && !s.hideSidebar, m.Feynman && !s.hideResearch && width >= researchDocksAt
 	if sidebarDocked != s.sidebarDocked || researchDocked != s.researchDocked {
 		s.settle = 2
 	}
@@ -189,14 +204,50 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 		scenery := ui.Column(c).Fill().TextColor(portrait.Colors.Ink).Font(portrait.FontSans)
 		spaceOf(m).Paint(scenery, translucent)
 		scenery.Children(func() {
+			target := float32(0)
+			if s.sidebarDocked {
+				target = 1
+			}
+			var progress float32
+			if s.sidebarInstant || !portrait.Animates(c, false) {
+				progress = scenery.Jump(sidebarMotionKey{}, target)
+				s.sidebarInstant = false
+			} else {
+				progress = scenery.AnimateTo(sidebarMotionKey{}, target, ui.Animation{
+					Duration: portrait.Motion.Switch,
+					Ease:     portrait.Motion.EaseInOut.Easing(),
+				})
+			}
+			settledHidden := !s.sidebarDocked && progress <= 0.001
+			settledDocked := s.sidebarDocked && progress >= 0.999
+			animating := !settledHidden && !settledDocked
+			if animating != s.sidebarAnimating {
+				s.sidebarAnimating = animating
+				if !animating {
+					s.settle = max(s.settle, 1)
+				}
+			}
+			if settledHidden {
+				progress = 0
+			} else if settledDocked {
+				progress = 1
+			}
 			room := width - 2*portrait.Shell.PageInset
 			left := clamp(s.leftWidth, portrait.Shell.SidebarMin, min(portrait.Shell.SidebarMax, room-portrait.Shell.PageMin))
 			right := clamp(s.rightWidth, portrait.Shell.ResearchMin, min(portrait.Shell.ResearchMax, width*0.56))
-			if s.sidebarDocked && s.researchDocked {
+			if (s.sidebarDocked || progress > 0) && s.researchDocked {
 				left = min(left, max(portrait.Shell.SidebarMin, room-portrait.Shell.PageMin-right-16))
 				right = min(right, max(portrait.Shell.ResearchMin, room-portrait.Shell.PageMin-left-16))
 			}
-			inset, edge := portrait.Shell.PageInset, s.stageEdge()
+			shownWidth := (left + 1) * progress
+			if settledHidden {
+				shownWidth = 0
+			} else if settledDocked {
+				shownWidth = left + 1
+			}
+			s.sidebarShown = shownWidth
+			inset := portrait.Shell.PageInset
+			edge := inset - (inset/2)*progress
 			stage := func() {
 				themed(c, &t).Fill().MinWidth(0).Children(func() {
 					if m.Message != "" || m.Workspace.RestoreError != "" {
@@ -214,10 +265,7 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 						ui.Column(c).Grow(1).MinHeight(0).FillWidth().Padding(inset, inset, inset, edge).Children(page)
 						return
 					}
-					remaining := width
-					if s.sidebarDocked {
-						remaining = width - left - 1
-					}
+					remaining := max(0, width-shownWidth)
 					first := remaining - right - 1
 					quietSplit(c, &t).Grow(1).MinHeight(0).FillWidth().Children(func() {
 						if ui.Split(c.Key("research-split"), &first,
@@ -230,8 +278,23 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 					})
 				})
 			}
-			if !s.sidebarDocked {
+			if settledHidden {
 				stage()
+				return
+			}
+			if animating {
+				ui.Row(c.Key("library-anim")).Fill().AlignItems(ui.Stretch).Children(func() {
+					slot := ui.Box(c.Key("sidebar-slot")).Width(shownWidth).FillHeight().Shrink(0).Clip()
+					if !s.sidebarDocked {
+						slot.AccessHidden(true).IgnoreInput(true)
+					}
+					slot.Children(func() {
+						themed(c, &t).Width(left).FillHeight().Absolute().Top(0).Left(min(0, shownWidth-left)).Children(func() {
+							s.sidebar(c, m, a, true)
+						})
+					})
+					ui.Box(c.Key("stage-slot")).Grow(1).MinWidth(0).FillHeight().Clip().Children(stage)
+				})
 				return
 			}
 			actual := left
@@ -283,13 +346,6 @@ func quietSplit(c *ui.Context, t *ui.Theme) ui.Element {
 	quiet := *t
 	quiet.Border = portrait.Clear
 	return themed(c, &quiet)
-}
-
-func (s *Shell) stageEdge() float32 {
-	if s.sidebarDocked {
-		return portrait.Shell.PageInset / 2
-	}
-	return portrait.Shell.PageInset
 }
 
 func spaceOf(m Model) portrait.Space { return spaceNamed(m, m.Workspace.Root) }

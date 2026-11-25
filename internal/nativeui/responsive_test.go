@@ -296,3 +296,78 @@ func TestActiveTabAndFocusedFileScrollClearOfViewportEdges(t *testing.T) {
 }
 
 const scrollEdgeFadeForTest = 0.02
+
+func TestFilesTreeFirstClickDoesNotScrollVisibleRows(t *testing.T) {
+	entries := make([]workspace.NavEntry, 60)
+	for i := range entries {
+		name := fmt.Sprintf("File %02d.md", i)
+		entries[i] = workspace.NavEntry{ID: name, Kind: "file", Name: name, Path: "/library/" + name}
+	}
+	model := fileModel(entries)
+	for i := range 10 {
+		id := fmt.Sprintf("d%d", i)
+		name := fmt.Sprintf("File %02d.md", i)
+		model.Workspace.Documents = append(model.Workspace.Documents, workspace.DocumentInfo{ID: id, Name: name, Path: "/library/" + name})
+		model.Navigation.Entries[i].DocumentID = id
+	}
+	model.Workspace.ActiveID = "d0"
+	var activated []string
+	actions := nativeui.Actions{
+		Activate: func(id string) {
+			activated = append(activated, id)
+			model.Workspace.ActiveID = id
+		},
+		OpenPath: func(path string, _ int) {
+			activated = append(activated, path)
+			id := "doc:" + path
+			model.Workspace.Documents = append(model.Workspace.Documents, workspace.DocumentInfo{ID: id, Name: path, Path: path})
+			for i := range model.Navigation.Entries {
+				if model.Navigation.Entries[i].Path == path {
+					model.Navigation.Entries[i].DocumentID = id
+				}
+			}
+			model.Workspace.ActiveID = id
+		},
+	}
+	var shell nativeui.Shell
+	app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, model, actions, nativeui.Slots{}) }, 1280, 820)
+	app.Frame()
+	tree := mustAccess(t, app, ui.RoleTree, "Workspace files").Bounds
+	app.Scroll(tree.X+tree.W/2, tree.Y+tree.H/2, 0, 320)
+	app.Frame()
+
+	var visible []ui.AccessInfo
+	for _, info := range app.AccessAll() {
+		if info.Role == ui.RoleTreeItem && !info.Offscreen && info.Bounds.Y >= tree.Y+4 && info.Bounds.Y+info.Bounds.H <= tree.Y+tree.H-4 {
+			visible = append(visible, info)
+		}
+	}
+	if len(visible) < 6 {
+		t.Fatalf("expected at least 6 visible file rows, got %d", len(visible))
+	}
+	picks := []ui.AccessInfo{visible[0], visible[len(visible)/2], visible[len(visible)-1], visible[0]}
+	for _, pick := range picks {
+		treeBefore := mustAccess(t, app, ui.RoleTree, "Workspace files").Bounds
+		before := mustAccess(t, app, ui.RoleTreeItem, pick.Name).Bounds
+		beforeRel := before.Y - treeBefore.Y
+		cx, cy := before.X+before.W/2, before.Y+before.H/2
+		countBefore := len(activated)
+		app.Press(cx, cy)
+		app.Frame()
+		mid := mustAccess(t, app, ui.RoleTreeItem, pick.Name).Bounds
+		if delta := mid.Y - before.Y; delta > 0.5 || delta < -0.5 {
+			t.Fatalf("mouseDown scrolled visible row %q from Y=%v to Y=%v", pick.Name, before.Y, mid.Y)
+		}
+		app.Release(cx, cy)
+		app.Frame()
+		treeAfter := mustAccess(t, app, ui.RoleTree, "Workspace files").Bounds
+		after := mustAccess(t, app, ui.RoleTreeItem, pick.Name).Bounds
+		afterRel := after.Y - treeAfter.Y
+		if delta := afterRel - beforeRel; delta > 0.5 || delta < -0.5 {
+			t.Fatalf("mouseUp scrolled visible row %q inside tree from relY=%v to relY=%v", pick.Name, beforeRel, afterRel)
+		}
+		if len(activated) != countBefore+1 {
+			t.Fatalf("first click on %q did not activate it (events=%v)", pick.Name, activated[countBefore:])
+		}
+	}
+}

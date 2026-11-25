@@ -29,7 +29,9 @@ func (s *Shell) sidebar(c *ui.Context, m Model, a Actions, docked bool) {
 				portrait.Tooltip(c, hide, "Hide sidebar · "+shortcutText(ui.Cmd, "0"))
 				if hide.Clicked() {
 					s.hideSidebar = true
+					s.sidebarInstant = c.KeyboardInput()
 					s.persistSidebar(a)
+					c.Invalidate()
 				}
 			})
 		}
@@ -159,11 +161,33 @@ func (s *Shell) space(c *ui.Context, m Model, a Actions) {
 	})
 }
 
+func activeSectionStart(sections []workspace.Section, offset int) (int, bool) {
+	found := false
+	active := -1
+	for _, section := range sections {
+		if section.Start <= offset && (!found || section.Start >= active) {
+			active = section.Start
+			found = true
+		}
+	}
+	return active, found
+}
+
 func (s *Shell) outlineList(c *ui.Context, m Model, a Actions) {
 	w := m.Workspace
-	scroll := s.scrollState("outline:" + w.ActiveID)
-	ui.Scroll(c.Key("outline:" + w.ActiveID)).FillWidth().Grow(1).MinHeight(collapsible).TrackScroll(scroll).Label("Document outline").MaskLinearGradient(scrollEdgeMask(180, scroll)).Children(func() {
+	activeStart, hasActive := -1, false
+	if m.HasDocumentOffset {
+		activeStart, hasActive = activeSectionStart(m.Sections, m.DocumentOffset)
+	} else if s.selectedOutline != nil {
+		if start, ok := s.selectedOutline[w.ActiveID]; ok {
+			activeStart, hasActive = start, true
+		}
+	}
+	outlineGroup := "outline:" + w.ActiveID
+	scroll := s.scrollState(outlineGroup)
+	ui.Scroll(c.Key(outlineGroup)).FillWidth().Grow(1).MinHeight(collapsible).TrackScroll(scroll).Label("Document outline").MaskLinearGradient(scrollEdgeMask(180, scroll)).Children(func() {
 		for _, section := range m.Sections {
+			selected := hasActive && section.Start == activeStart
 			weight := 400
 			ink := portrait.Colors.Ink2
 			if section.Level <= 1 {
@@ -171,15 +195,26 @@ func (s *Shell) outlineList(c *ui.Context, m Model, a Actions) {
 			} else if section.Level == 2 {
 				weight, ink = 500, portrait.Colors.Ink
 			}
+			if selected && weight < 500 {
+				weight = 500
+			}
 			if navRow(c, navItem{
-				key:    fmt.Sprintf("heading-%d", section.Start),
-				title:  section.Heading,
-				icon:   portrait.IconHash,
-				weight: weight,
-				ink:    ink,
-			}).Clicked() && a.Reveal != nil {
+				key:      fmt.Sprintf("heading-%d", section.Start),
+				title:    section.Heading,
+				selected: selected,
+				icon:     portrait.IconHash,
+				group:    outlineGroup,
+				weight:   weight,
+				ink:      ink,
+			}).Clicked() {
+				if s.selectedOutline == nil {
+					s.selectedOutline = map[string]int{}
+				}
+				s.selectedOutline[w.ActiveID] = section.Start
 				s.leftOpen = false
-				a.Reveal(section.Start)
+				if a.Reveal != nil {
+					a.Reveal(section.Start)
+				}
 			}
 		}
 		if len(m.Sections) == 0 {
@@ -579,10 +614,10 @@ func navRow(c *ui.Context, item navItem) ui.Element {
 		})
 	})
 	focusReveal := ui.Local(row, "navigation focus reveal", func() bool { return false })
-	if row.Focused() && !*focusReveal {
+	if row.FocusVisible() && c.KeyboardInput() && !*focusReveal {
 		row.ScrollIntoView(ui.ScrollIntoViewOptions{Block: ui.ScrollCenter})
 		*focusReveal = true
-	} else if !row.Focused() {
+	} else if !row.FocusVisible() {
 		*focusReveal = false
 	}
 	return row

@@ -3,6 +3,7 @@ package nativeui_test
 import (
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
 	"github.com/Bayern99/mark-go-go/internal/portrait"
@@ -107,6 +108,7 @@ func TestCommandZeroHidesTheDockedSidebarAndTheToggleBringsItBack(t *testing.T) 
 	if _, ok := app.Access("Workspace files"); !ok {
 		t.Fatal("the toggle did not dock the sidebar again")
 	}
+	app.Advance(time.Second)
 	if err := app.Click("Hide sidebar"); err != nil {
 		t.Fatal(err)
 	}

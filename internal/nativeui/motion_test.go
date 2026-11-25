@@ -434,3 +434,170 @@ func TestKeyboardFocusShowsTooltipAtOnce(t *testing.T) {
 		t.Fatal("tooltip brought by the keyboard faded in")
 	}
 }
+
+func TestDockedSidebarAnimatesOnPointerToggleAndLandsAtOnceForKeyboardAndReducedMotion(t *testing.T) {
+	t.Run("pointer collapse and expand", func(t *testing.T) {
+		var shell nativeui.Shell
+		model := libraryModel()
+		app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, model, nativeui.Actions{}, nativeui.Slots{}) }, 1280, 820)
+		app.Frame()
+		docked := mustAccess(t, app, ui.RoleMain, "Document").Bounds
+
+		if err := app.Click("Hide sidebar"); err != nil {
+			t.Fatal(err)
+		}
+		app.Frame()
+		if _, ok := app.Access("Workspace files"); ok {
+			t.Fatal("Hide sidebar kept Workspace files exposed in accessibility while collapsing")
+		}
+		var hideXs []float32
+		hideXs = append(hideXs, mustAccess(t, app, ui.RoleMain, "Document").Bounds.X)
+		for range 16 {
+			app.Advance(16 * time.Millisecond)
+			hideXs = append(hideXs, mustAccess(t, app, ui.RoleMain, "Document").Bounds.X)
+		}
+		app.Advance(time.Second)
+		hidden := mustAccess(t, app, ui.RoleMain, "Document").Bounds
+		if hidden.X != portrait.Shell.PageInset {
+			t.Fatalf("settled hidden document X = %v, want %v", hidden.X, portrait.Shell.PageInset)
+		}
+		hideDistinct := map[int]bool{}
+		for _, x := range hideXs {
+			if x > hidden.X+1 && x < docked.X-1 {
+				hideDistinct[int(x)] = true
+			}
+		}
+		if len(hideDistinct) < 3 {
+			t.Fatalf("collapse painted only %d intermediate document X positions (%v), want smooth transition", len(hideDistinct), hideXs)
+		}
+
+		if err := app.Click("Show navigation"); err != nil {
+			t.Fatal(err)
+		}
+		app.Frame()
+		var showXs []float32
+		showXs = append(showXs, mustAccess(t, app, ui.RoleMain, "Document").Bounds.X)
+		for range 16 {
+			app.Advance(16 * time.Millisecond)
+			showXs = append(showXs, mustAccess(t, app, ui.RoleMain, "Document").Bounds.X)
+		}
+		app.Advance(time.Second)
+		reopened := mustAccess(t, app, ui.RoleMain, "Document").Bounds
+		if reopened.X != docked.X {
+			t.Fatalf("settled reopened document X = %v, want %v", reopened.X, docked.X)
+		}
+		showDistinct := map[int]bool{}
+		for _, x := range showXs {
+			if x > hidden.X+1 && x < docked.X-1 {
+				showDistinct[int(x)] = true
+			}
+		}
+		if len(showDistinct) < 3 {
+			t.Fatalf("expand painted only %d intermediate document X positions (%v), want smooth transition", len(showDistinct), showXs)
+		}
+		hasSplitter := false
+		for _, info := range app.AccessAll() {
+			if info.Role == ui.RoleSplitter {
+				hasSplitter = true
+				break
+			}
+		}
+		if !hasSplitter {
+			t.Fatal("settled docked sidebar did not restore its resizable splitter")
+		}
+	})
+
+	t.Run("reduced motion lands at once", func(t *testing.T) {
+		var shell nativeui.Shell
+		model := libraryModel()
+		app := ui.NewTesterWith(func(c *ui.Context) { shell.Draw(c, model, nativeui.Actions{}, nativeui.Slots{}) }, 1280, 820, ui.TesterOptions{Preferences: ui.Preferences{ReduceMotion: true}})
+		app.Frame()
+		docked := mustAccess(t, app, ui.RoleMain, "Document").Bounds
+		if err := app.Click("Hide sidebar"); err != nil {
+			t.Fatal(err)
+		}
+		app.Frame()
+		if got := mustAccess(t, app, ui.RoleMain, "Document").Bounds.X; got != portrait.Shell.PageInset {
+			t.Fatalf("reduced-motion Hide sidebar landed at X=%v, want %v immediately", got, portrait.Shell.PageInset)
+		}
+		if err := app.Click("Show navigation"); err != nil {
+			t.Fatal(err)
+		}
+		app.Frame()
+		if got := mustAccess(t, app, ui.RoleMain, "Document").Bounds.X; got != docked.X {
+			t.Fatalf("reduced-motion Show navigation landed at X=%v, want %v immediately", got, docked.X)
+		}
+	})
+}
+
+func TestOutlineSelectionPersistsAndSlidesBetweenHeadings(t *testing.T) {
+	var shell nativeui.Shell
+	model := libraryModel()
+	model.Sections = []workspace.Section{
+		{ID: "s1", Heading: "Overview", Level: 1, Start: 0},
+		{ID: "s2", Heading: "Method", Level: 2, Start: 120},
+		{ID: "s3", Heading: "Results", Level: 2, Start: 260},
+		{ID: "s4", Heading: "Discussion", Level: 2, Start: 420},
+	}
+	model.HasDocumentOffset = true
+	model.DocumentOffset = 0
+	var revealed []int
+	actions := nativeui.Actions{
+		Reveal: func(offset int) {
+			revealed = append(revealed, offset)
+			model.DocumentOffset = offset
+		},
+	}
+	app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, model, actions, nativeui.Slots{}) }, 1280, 820)
+	app.Frame()
+	if err := app.Click("Outline"); err != nil {
+		t.Fatal(err)
+	}
+	app.Advance(time.Second)
+
+	if first := mustAccess(t, app, ui.RoleTreeItem, "Overview"); !first.Selected {
+		t.Fatal("initial active heading Overview is not selected")
+	}
+	if last := mustAccess(t, app, ui.RoleTreeItem, "Discussion"); last.Selected {
+		t.Fatal("inactive heading Discussion should not be selected")
+	}
+
+	outlineInfo, ok := app.Access("Document outline")
+	if !ok {
+		t.Fatal("missing Document outline")
+	}
+	outline := outlineInfo.Bounds
+	if err := app.Click("Discussion"); err != nil {
+		t.Fatal(err)
+	}
+	app.Frame()
+	if len(revealed) != 1 || revealed[0] != 420 {
+		t.Fatalf("clicking Discussion revealed %v, want [420]", revealed)
+	}
+	if last := mustAccess(t, app, ui.RoleTreeItem, "Discussion"); !last.Selected {
+		t.Fatal("clicked heading Discussion did not stay selected")
+	}
+	if first := mustAccess(t, app, ui.RoleTreeItem, "Overview"); first.Selected {
+		t.Fatal("previous heading Overview stayed selected")
+	}
+	var frames []*image.RGBA
+	frames = append(frames, app.Image())
+	for range 12 {
+		app.Advance(16 * time.Millisecond)
+		frames = append(frames, app.Image())
+	}
+	if n := changingFramesIn(frames, outline); n < 2 {
+		t.Fatalf("outline selection wash painted %d changing frames, want smooth slide animation", n)
+	}
+	rest := app.Image()
+	app.Advance(time.Second)
+	if changedPixelsIn(rest, app.Image(), outline) != 0 {
+		t.Fatal("outline selection kept animating after settling")
+	}
+
+	model.DocumentOffset = 280
+	app.Frame()
+	if res := mustAccess(t, app, ui.RoleTreeItem, "Results"); !res.Selected {
+		t.Fatal("moving document cursor into Results did not update Outline selection")
+	}
+}

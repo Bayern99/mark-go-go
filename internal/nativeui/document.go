@@ -61,8 +61,8 @@ func (s *Shell) pageBar(c *ui.Context, doc workspace.DocumentInfo, m Model, a Ac
 	width, _ := c.Size()
 	bar := c.TitleBar()
 	lead := float32(8)
-	if !s.sidebarDocked {
-		lead = max(lead, bar.Left-portrait.Shell.PageInset/4)
+	if bar.Left > 0 {
+		lead = max(lead, bar.Left-portrait.Shell.PageInset/4-s.sidebarShown)
 	}
 	barRow := ui.Row(c).Height(portrait.Shell.PageBar).Padding(0, 8, 0, lead).Gap(6).AlignItems(ui.Center).DragWindow()
 	if m.DocumentScrollY > 0 {
@@ -79,6 +79,11 @@ func (s *Shell) pageBar(c *ui.Context, doc workspace.DocumentInfo, m Model, a Ac
 			})
 			if toggle.Clicked() {
 				s.toggleSidebar(width)
+				if width >= sidebarDocksAt {
+					s.sidebarInstant = c.KeyboardInput()
+					s.persistSidebar(a)
+				}
+				c.Invalidate()
 			}
 		}
 		ui.Row(c).Grow(1).MinWidth(0).Clip().AlignItems(ui.Center).Gap(2).Padding(0, 0, 0, 4).Children(func() {

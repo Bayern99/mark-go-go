@@ -93,32 +93,36 @@ func TestAnotherProgramsCommandIsLeftAlone(t *testing.T) {
 }
 
 func TestALinkIntoAnAppBundleSurvivesAnUpdate(t *testing.T) {
-	dir := t.TempDir()
-	// The app has been replaced since the link was made, so its target is
-	// gone: the link still points into a bundle, and the reader can remove
-	// it or install over it.
-	bundle := filepath.Join(t.TempDir(), "Mark Go Go.app", "Contents", "MacOS", Name)
-	if err := os.Symlink(bundle, filepath.Join(dir, Name)); err != nil {
-		t.Fatal(err)
-	}
-	installer := Installer{Source: writeShipped(t, t.TempDir()), Dir: dir}
-	if state := installer.State(); state != StateInstalled {
-		t.Fatalf("state = %v, want the app's own link", state)
-	}
-	if err := installer.Install(); err != nil {
-		t.Fatalf("reinstalling over the app's link: %v", err)
-	}
-	info, err := os.Lstat(installer.Path())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode()&os.ModeSymlink == 0 {
-		t.Fatal("installing did not leave a link")
-	}
-	if state := installer.State(); state != StateInstalled {
-		t.Fatalf("state after reinstalling = %v", state)
-	}
-	if err := installer.Uninstall(); err != nil {
-		t.Fatalf("removing the app's link: %v", err)
+	for _, folder := range []string{"MacOS", "Resources"} {
+		t.Run(folder, func(t *testing.T) {
+			dir := t.TempDir()
+			// The app has been replaced since the link was made, so its target is
+			// gone: the link still points into a bundle, and the reader can remove
+			// it or install over it.
+			bundle := filepath.Join(t.TempDir(), "Mark Go Go.app", "Contents", folder, Name)
+			if err := os.Symlink(bundle, filepath.Join(dir, Name)); err != nil {
+				t.Fatal(err)
+			}
+			installer := Installer{Source: writeShipped(t, t.TempDir()), Dir: dir}
+			if state := installer.State(); state != StateInstalled {
+				t.Fatalf("state = %v, want the app's own link", state)
+			}
+			if err := installer.Install(); err != nil {
+				t.Fatalf("reinstalling over the app's link: %v", err)
+			}
+			target, err := os.Readlink(installer.Path())
+			if err != nil {
+				t.Fatalf("installing did not leave a link: %v", err)
+			}
+			if target != installer.Source {
+				t.Fatalf("the reinstalled link points at %s, want this build's %s", target, installer.Source)
+			}
+			if _, err := os.Stat(installer.Path()); err != nil {
+				t.Fatalf("the reinstalled command does not resolve: %v", err)
+			}
+			if err := installer.Uninstall(); err != nil {
+				t.Fatalf("removing the app's link: %v", err)
+			}
+		})
 	}
 }

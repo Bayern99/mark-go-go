@@ -98,9 +98,24 @@ func linkState(target, source string) State {
 }
 
 // inAppBundle reports whether a path is a command inside a macOS app bundle,
-// which is where an earlier copy of this app kept its markgogo.
+// which is where an earlier copy of this app kept its markgogo: beside the
+// executable or among the resources, the two places shippedSource looks.
 func inAppBundle(path string) bool {
-	return filepath.Base(path) == Name && strings.Contains(filepath.ToSlash(path), ".app/Contents/MacOS/")
+	slashed := filepath.ToSlash(path)
+	return filepath.Base(path) == Name && (strings.Contains(slashed, ".app/Contents/MacOS/") || strings.Contains(slashed, ".app/Contents/Resources/"))
+}
+
+// current reports whether the installed link already resolves to this build's
+// command; a link the app made into a bundle that has since moved does not.
+func (i Installer) current() bool {
+	target, err := os.Readlink(i.Path())
+	if err != nil {
+		return false
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(i.Dir, target)
+	}
+	return fsutil.SameFile(target, i.Source)
 }
 
 // Install links this build's command into Dir, creating the folder if it is
@@ -114,7 +129,9 @@ func (i Installer) Install() error {
 	}
 	switch i.State() {
 	case StateInstalled:
-		return nil
+		if i.current() {
+			return nil
+		}
 	case StateForeign:
 		return fmt.Errorf("%s already holds another program. Remove it, then install again.", i.Path())
 	}

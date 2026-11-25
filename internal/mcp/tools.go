@@ -276,6 +276,9 @@ func (s *Server) handleToolsCall(ctx context.Context, binding *sessionBinding, r
 		return nil, &rpcError{Code: errCodeInvalidParams, Message: "tool name is required"}
 	}
 
+	if binding.rootOpen != nil && !binding.rootOpen() {
+		return toolFailure(classifyFailure(workspace.ErrWorkspaceNotOpen)), nil
+	}
 	var result mcpCallToolResult
 	var rpcErr *rpcError
 	target := ""

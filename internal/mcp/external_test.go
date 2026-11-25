@@ -34,6 +34,7 @@ type socketHarness struct {
 
 	mu         sync.Mutex
 	stateCalls int
+	closedRoot bool
 }
 
 func (h *socketHarness) MCPWorkspaceState(root string) (workspace.WorkspaceMCPState, error) {
@@ -74,7 +75,21 @@ func (h *socketHarness) workspaceStateCalls() int {
 	return h.stateCalls
 }
 
-func (h *socketHarness) MCPOpenRoots() []string { return h.roots }
+func (h *socketHarness) MCPOpenRoots() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closedRoot {
+		return nil
+	}
+	return h.roots
+}
+
+func (h *socketHarness) MCPBindRoot(root string) func() bool {
+	if !slices.Contains(h.MCPOpenRoots(), root) {
+		return nil
+	}
+	return func() bool { return slices.Contains(h.MCPOpenRoots(), root) }
+}
 
 func (h *socketHarness) MCPOpenDocuments(root string) ([]workspace.DocumentInfo, error) {
 	canonRoot := fsutil.CanonicalPath(root)
@@ -977,5 +992,27 @@ func TestANotificationOrResponseIsNotAnExternalCall(t *testing.T) {
 	}
 	if _, _, ok := (&ExternalServer{}).LastCall(); ok {
 		t.Fatal("a server that saw nothing reports a call")
+	}
+}
+
+func TestExternalChannelRejectsRequestsAfterWorkspaceCloses(t *testing.T) {
+	h, root := newSocketHarness(t)
+	srv := startExternal(t, h)
+	client, reply := connectExternal(t, srv, root)
+	if !reply.OK {
+		t.Fatalf("hello reply = %+v", reply)
+	}
+	h.mu.Lock()
+	h.closedRoot = true
+	h.mu.Unlock()
+
+	for name, path := range map[string]string{toolReadDocument: "closed.md", toolCreateDocument: "new.md"} {
+		result := client.tool(name, map[string]any{"path": path})
+		if !result.IsError {
+			t.Fatalf("a closed workspace answered %s", name)
+		}
+		if failure := structured[ipc.AppError](t, result); failure.Code != ipc.CodeWorkspaceNotOpen {
+			t.Fatalf("%s error = %+v", name, failure)
+		}
 	}
 }

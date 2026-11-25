@@ -271,6 +271,16 @@ func (e *ExternalServer) serve(conn net.Conn) {
 		return
 	}
 	root, rootErr := e.rootFor(hello.CWD)
+	var rootOpen func() bool
+	if rootErr == nil {
+		if workspace, ok := e.deps.Workspace.(interface{ MCPBindRoot(string) func() bool }); ok {
+			rootOpen = workspace.MCPBindRoot(root)
+		}
+		if rootOpen == nil {
+			failure := newAppError(ipc.CodeWorkspaceNotOpen, "That workspace is no longer open.")
+			rootErr = &ipc.AppError{Code: failure.Code, Message: failure.Message, Hint: failure.Hint}
+		}
+	}
 	if rootErr != nil {
 		_ = ipc.WriteMessage(conn, ipc.HelloReply{OK: false, Error: rootErr})
 		return
@@ -287,7 +297,7 @@ func (e *ExternalServer) serve(conn net.Conn) {
 		return
 	}
 
-	binding := &sessionBinding{root: root, channel: channelExternal}
+	binding := &sessionBinding{root: root, channel: channelExternal, rootOpen: rootOpen}
 	for {
 		line, err := ipc.ReadMessage(reader)
 		if err != nil {
@@ -341,7 +351,7 @@ func (e *ExternalServer) rootFor(cwd string) (string, *ipc.AppError) {
 		return "", &ipc.AppError{
 			Code:    ipc.CodeWorkspaceNotOpen,
 			Message: fmt.Sprintf("No open workspace contains %s.", canonCwd),
-			Hint:    newAppError(ipc.CodeWorkspaceNotOpen, "").Hint,
+			Hint:    newAppError(ipc.CodeWorkspaceNotOpen, "That workspace is no longer open.").Hint,
 		}
 	}
 	return best, nil

@@ -52,10 +52,11 @@ type Dependencies struct {
 }
 
 type sessionBinding struct {
-	token   string
-	root    string
-	work    string
-	channel string
+	token    string
+	root     string
+	work     string
+	channel  string
+	rootOpen func() bool
 }
 
 // source is the provenance tag the server writes for this channel; a caller
@@ -598,17 +599,23 @@ func (s *Server) dispatchMessage(ctx context.Context, binding *sessionBinding, r
 	case "ping":
 		return rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: map[string]any{}}, "", true
 
-	case "resources/list":
+	case "resources/list", "resources/read":
+		if binding.rootOpen != nil && !binding.rootOpen() {
+			failure := classifyFailure(workspace.ErrWorkspaceNotOpen)
+			return rpcResponse{JSONRPC: "2.0", ID: req.ID, Error: &rpcError{
+				Code: errCodeInvalidParams, Message: failure.Message, Data: failure,
+			}}, "", true
+		}
+		if req.Method == "resources/read" {
+			res, rpcErr := s.handleResourcesRead(binding, req.Params)
+			return rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: res, Error: rpcErr}, "", true
+		}
 		res, rpcErr := s.handleResourcesList(binding)
 		return rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: res, Error: rpcErr}, "", true
 
 	case "resources/templates/list":
 		res := s.handleResourceTemplatesList()
 		return rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: res}, "", true
-
-	case "resources/read":
-		res, rpcErr := s.handleResourcesRead(binding, req.Params)
-		return rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: res, Error: rpcErr}, "", true
 
 	case "tools/list":
 		res := s.handleToolsList()

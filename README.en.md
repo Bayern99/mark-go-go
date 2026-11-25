@@ -6,6 +6,14 @@ Mark Go Go is a local Markdown editor. Your documents are ordinary `.md` files o
 
 Beyond the editor there are three optional features: **GenUI**, which turns a document into a structured reading view; **Feynman**, a literature research assistant; and per-document **Git checkpoints**. In addition, an AI agent you run in your terminal can read the workspace through the `markgogo` command and send edit proposals to the editor. Everything involving AI calls an agent CLI already installed on your machine. The app ships no model and stores no third-party credentials.
 
+## Design choices
+
+- **The Markdown file is the only source.** Editing rewrites only the blocks you touched and keeps every other byte as it was. Reading views and snapshots live outside the file, and deleting them leaves it unchanged. Notes are written into the file as comments, so it stays plain Markdown.
+- **GenUI: AI organizes a document without rewriting it.** What it produces is a read-only reading view; the source is never edited. Every card in the view points to the section it is based on, so you can always go back and check. When the source changes, you can see which cards are out of date and regenerate only those. The view is a plain JSON file beside the document in a documented format. With the local channel on, other agents can write a view too, with `markgogo genui write`.
+- **Feynman: research and writing in the same window.** The research conversation belongs to the folder workspace and carries on as you switch documents. Every change Feynman suggests to the text arrives as a proposal that you compare, accept, or reject. The app reuses the Feynman configuration you already have on the command line and shares sessions with it.
+- **Your own AI, no vendor lock-in.** GenUI works with Codex, Pi, Antigravity, or any ACP agent, and the four backends are equals. External agents connect through a local socket, with no network port and no token.
+- **A native interface.** The window is drawn directly by Go, with no embedded browser engine. Each workspace has its own colour scheme to tell folders apart.
+
 ## What it does
 
 - **Edit Markdown**: edit directly in the rendered **Preview**, or press `⌘E` for the raw **Markdown** source. Both views share one text buffer and one undo history. Saving rewrites only the blocks you edited and keeps the original bytes of everything else.

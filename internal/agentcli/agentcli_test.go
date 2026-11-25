@@ -92,37 +92,48 @@ func TestAnotherProgramsCommandIsLeftAlone(t *testing.T) {
 	}
 }
 
-func TestALinkIntoAnAppBundleSurvivesAnUpdate(t *testing.T) {
-	for _, folder := range []string{"MacOS", "Resources"} {
-		t.Run(folder, func(t *testing.T) {
-			dir := t.TempDir()
-			// The app has been replaced since the link was made, so its target is
-			// gone: the link still points into a bundle, and the reader can remove
-			// it or install over it.
-			bundle := filepath.Join(t.TempDir(), "Mark Go Go.app", "Contents", folder, Name)
-			if err := os.Symlink(bundle, filepath.Join(dir, Name)); err != nil {
-				t.Fatal(err)
-			}
-			installer := Installer{Source: writeShipped(t, t.TempDir()), Dir: dir}
-			if state := installer.State(); state != StateInstalled {
-				t.Fatalf("state = %v, want the app's own link", state)
-			}
-			if err := installer.Install(); err != nil {
-				t.Fatalf("reinstalling over the app's link: %v", err)
-			}
-			target, err := os.Readlink(installer.Path())
-			if err != nil {
-				t.Fatalf("installing did not leave a link: %v", err)
-			}
-			if target != installer.Source {
-				t.Fatalf("the reinstalled link points at %s, want this build's %s", target, installer.Source)
-			}
-			if _, err := os.Stat(installer.Path()); err != nil {
-				t.Fatalf("the reinstalled command does not resolve: %v", err)
-			}
-			if err := installer.Uninstall(); err != nil {
-				t.Fatalf("removing the app's link: %v", err)
-			}
-		})
+func TestReinstallReplacesAnOldLocationInsideThisBundle(t *testing.T) {
+	contents := filepath.Join(t.TempDir(), "Mark Go Go.app", "Contents")
+	resources := filepath.Join(contents, "Resources")
+	if err := os.MkdirAll(resources, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	installer := Installer{Source: writeShipped(t, resources), Dir: t.TempDir()}
+	if err := os.Symlink(filepath.Join(contents, "MacOS", Name), installer.Path()); err != nil {
+		t.Fatal(err)
+	}
+	if err := installer.Install(); err != nil {
+		t.Fatal(err)
+	}
+	if target, err := os.Readlink(installer.Path()); err != nil || target != installer.Source {
+		t.Fatalf("installed target = %q, %v", target, err)
+	}
+}
+
+func TestInstallPreservesAnUnrelatedTemporaryFile(t *testing.T) {
+	installer := Installer{Source: writeShipped(t, t.TempDir()), Dir: t.TempDir()}
+	temp := installer.Path() + ".tmp"
+	if err := os.WriteFile(temp, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := installer.Install(); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(temp); err != nil || string(got) != "keep" {
+		t.Fatalf("unrelated file = %q, %v", got, err)
+	}
+}
+
+func TestDanglingLinkToAnotherAppIsForeign(t *testing.T) {
+	installer := Installer{Source: writeShipped(t, t.TempDir()), Dir: t.TempDir()}
+	target := filepath.Join(t.TempDir(), "Another.app", "Contents", "Resources", Name)
+	if err := os.Symlink(target, installer.Path()); err != nil {
+		t.Fatal(err)
+	}
+	if installer.State() != StateForeign || installer.Install() == nil || installer.Uninstall() == nil {
+		t.Fatal("the foreign link was treated as an installed command")
+	}
+	if got, err := os.Readlink(installer.Path()); err != nil || got != target {
+		t.Fatalf("foreign target = %q, %v", got, err)
 	}
 }

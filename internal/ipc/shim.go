@@ -127,6 +127,14 @@ func (s *Shim) connectLocked() error {
 // negotiateLegacy repeats the initialize handshake on a new connection so an
 // old client keeps the protocol revision it already agreed to.
 func negotiateLegacy(conn net.Conn, version string, opts ShimOptions) (string, error) {
+	timeout := opts.DialTimeout
+	if timeout <= 0 {
+		timeout = DialTimeout
+	}
+	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
+		return "", err
+	}
+	defer conn.SetDeadline(time.Time{})
 	params := map[string]any{
 		"protocolVersion": version,
 		"capabilities":    map[string]any{},

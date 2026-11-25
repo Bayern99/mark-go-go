@@ -457,3 +457,27 @@ func TestShimRenegotiatesALegacySessionAfterReconnect(t *testing.T) {
 		}
 	}
 }
+
+func TestShimGivesUpOnALegacyRenegotiationTheAppNeverAnswers(t *testing.T) {
+	app := startFakeApp(t, func(index int, conn net.Conn, _ ipc.Hello, in *bufio.Reader) {
+		line, err := ipc.ReadMessage(in)
+		if err != nil {
+			return
+		}
+		var msg map[string]any
+		_ = json.Unmarshal(line, &msg)
+		if index == 0 {
+			_ = ipc.WriteMessage(conn, map[string]any{"jsonrpc": "2.0", "id": msg["id"], "result": map[string]any{"protocolVersion": ipc.LegacyProtocolVersion}})
+			return
+		}
+		_, _ = ipc.ReadMessage(in) // hung app: never answers the repeated handshake
+	})
+	pipe := runShim(t, app.path, t.TempDir())
+	pipe.write(t, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"old","version":"1"}}}`)
+	pipe.read(t)
+	pipe.waitForStderr(t, "connection closed")
+	pipe.write(t, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
+	if line := string(pipe.read(t)); !strings.Contains(line, `"id":2`) || !strings.Contains(line, ipc.CodeAppNotRunning) {
+		t.Fatalf("shim wrote %s, want APP_NOT_RUNNING for the request", line)
+	}
+}

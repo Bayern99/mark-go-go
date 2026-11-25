@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- **GenUI 插件开关（#192）**：`Settings / Plugins` 新增 GenUI 开关，缺省开启，仅显式关闭时生效；偏好跨窗口同步并在重启后保留。关闭后工具栏不再提供 GenUI，快捷键、已保存视图模式与窗口恢复都无法进入，正在显示 GenUI 的文档回到 `Preview`，进行中的生成被取消且视图监听解除，已保存视图仍在重新开启后读取。启用中的插件若有自己的设置页，Plugins 行显示 `Configure →` 深链。 GenUI becomes an optional plugin switch in Settings / Plugins, on by default, falling back to Preview with generation cancelled and watching stopped while off.
+
 ## [0.6.0] - 2026-11-24
 
 - **Arc 灵感空间架构与命令栏（[ADR 0013](docs/adr/0013-arc-experiment-scenery-page-command-bar.md)）**：窗口改为彩色布景（Scenery）承载悬浮不透明纸页（Page），文档标签移至侧栏竖排，原三行顶栏收敛为纸页顶部单行；新增全局命令栏（`⌘K` / `⌘T`）统一搜索打开的文档、工作区文件、标题与全部命令；字体升级为 Inter / Inter Display / IBM Plex Mono / IBM Plex Sans SC；macOS 启用隐藏标题栏与窗口控件对齐。 Arc-inspired coloured scenery and floating paper page, vertical sidebar document tabs, single-row page bar, `⌘K`/`⌘T` Command Bar, Inter typography, and hidden macOS title bar.

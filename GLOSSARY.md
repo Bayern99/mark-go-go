@@ -33,6 +33,7 @@
 | 侧栏 · Sidebar | 布景左侧的导航：命令入口、文档标签、工作区、文件或大纲。 |
 | 设置中心 · Settings Center | `⌘,` 打开的统一设置 sheet；分类导航、实时搜索、重置与深链都从这里进入。 |
 | 设置页 · Settings page | 通过 `SettingsPage` 注册的一个设置分类；拥有标签、图标、关键词、绘制、可见性与可选重置行为。 |
+| 插件 · Plugin | 可在 `Settings / Plugins` 单独开关的功能模块（Feynman、GenUI、Git Checkpoints）。GenUI 缺省开启，其余缺省关闭；开关保存在 `mgo.plugin.*`。 |
 | 命令栏 · Command Bar | `⌘K` 打开的浮层，搜索原文、文件、标题并执行命令。 |
 | 色调 · Tone | Portrait 的一组语义配色：Neutral、Accent（即 Success）、Info、Warning 或 Danger。 |
 | 托盘 · Frame | 放在纸面上、比内容外扩一圈的浅色衬底，用来把一组卡片或控件收在一起。 |

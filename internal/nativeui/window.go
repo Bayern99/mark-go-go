@@ -324,8 +324,10 @@ func (w *Window) refresh() {
 			open.source.SetReadingPreferences(w.Preference("mgo.folds:"+key), w.Preference("mgo.table-widths:"+key), func(name, value string) { w.setPreference("mgo."+name+":"+key, value) })
 		}
 	}
-	if doc := w.Active(); doc.ID != "" && w.documents[doc.ID] != nil && doc.ViewMode != "genui" {
-		w.documents[doc.ID].source.SetMode(nativeeditor.Mode(doc.ViewMode))
+	if doc := w.Active(); doc.ID != "" && w.documents[doc.ID] != nil {
+		if mode := w.viewMode(doc); mode != "genui" {
+			w.documents[doc.ID].source.SetMode(nativeeditor.Mode(mode))
+		}
 	}
 	w.applyReveal()
 	for _, notify := range w.changed {
@@ -498,11 +500,12 @@ func (w *Window) View(c *ui.Context) {
 	if w.snapshot.ID == "" {
 		w.refresh()
 	}
+	w.syncEditorMode()
 	d := w.documents[w.snapshot.ActiveID]
 	if d != nil {
 		d.source.SetLineNumbers(w.Preference(lineNumbersPreference) != "off")
 	}
-	model := Model{Workspace: w.snapshot, Navigation: w.navigation, Recents: w.recents, Search: w.search, Message: w.failure, Feynman: w.PluginEnabled("feynman"), Git: w.PluginEnabled("git"), Spaces: map[string]string{}, Appearance: portrait.AppearanceNamed(w.Preference(appearancePreference)), Preferences: w.store().values, PreferenceFile: w.store().path()}
+	model := Model{Workspace: w.snapshot, Navigation: w.navigation, Recents: w.recents, Search: w.search, Message: w.failure, Feynman: w.PluginEnabled("feynman"), Git: w.PluginEnabled("git"), GenUI: w.PluginEnabled("genui"), Spaces: map[string]string{}, Appearance: portrait.AppearanceNamed(w.Preference(appearancePreference)), Preferences: w.store().values, PreferenceFile: w.store().path()}
 	if d != nil {
 		model.DocumentScrollY = d.source.ScrollY()
 	}
@@ -516,7 +519,7 @@ func (w *Window) View(c *ui.Context) {
 			d.crumbPath, d.crumbRoot = doc.Path, doc.WorkspaceRoot
 			d.crumbs = workspace.Breadcrumbs(doc.WorkspaceRoot, doc.Path)
 		}
-		model.ReturnToGenUI = d.returnToGenUI
+		model.ReturnToGenUI = d.returnToGenUI && model.GenUI
 		model.Crumbs = d.crumbs
 	}
 	if d != nil && w.shell.wantsSections() {
@@ -587,7 +590,7 @@ func (w *Window) View(c *ui.Context) {
 				w.failure = err.Error()
 			}
 		},
-		SetFeynman: func(value bool) { w.setPlugin("feynman", value) }, SetGit: func(value bool) { w.setPlugin("git", value) },
+		SetFeynman: func(value bool) { w.setPlugin("feynman", value) }, SetGit: func(value bool) { w.setPlugin("git", value) }, SetGenUI: func(value bool) { w.setPlugin("genui", value) },
 		SaveConflict: w.saveConflict, RevertConflict: w.openRevert,
 	}
 	if !w.shell.ready {

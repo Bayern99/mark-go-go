@@ -20,6 +20,7 @@ type Model struct {
 	Recents           []workspace.RecentWorkspace
 	Search            workspace.NavSearchResult
 	Feynman, Git      bool
+	GenUI             bool
 	Message           string
 	Spaces            map[string]string
 	Appearance        portrait.Appearance
@@ -38,7 +39,7 @@ type Actions struct {
 	Save, SaveAs, Rename, Move, Revert                         func(string)
 	OpenFiles, Find, Undo                                      func()
 	CommandFocus                                               func() *ui.Handle
-	SetFeynman, SetGit                                         func(bool)
+	SetFeynman, SetGit, SetGenUI                               func(bool)
 	SetAppearance                                              func(portrait.Appearance)
 	SetPreference                                              func(key, value string)
 	ResetPreferences                                           func(keys ...string)

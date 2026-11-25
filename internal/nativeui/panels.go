@@ -35,7 +35,7 @@ func (w *Window) Reveal(offset int) {
 		w.failure = err.Error()
 		return
 	}
-	if w.Active().ViewMode == "genui" {
+	if w.viewMode(w.Active()) == "genui" {
 		w.SetMode("preview")
 		w.documents[w.snapshot.ActiveID].returnToGenUI = true
 	}
@@ -47,10 +47,13 @@ func (w *Window) SetMode(mode string) {
 	if d := w.documents[id]; d != nil {
 		d.returnToGenUI = false
 	}
-	if id == "" || w.Source() == nil || w.Active().ViewMode == mode {
+	if id == "" || w.Source() == nil || w.viewMode(w.Active()) == mode {
 		return
 	}
 	if mode != "genui" && mode != "preview" && mode != "markdown" {
+		return
+	}
+	if mode == "genui" && !w.PluginEnabled("genui") {
 		return
 	}
 	if err := w.host.SetViewMode(w.ctx, id, mode); err != nil {
@@ -70,14 +73,85 @@ func (w *Window) SetMode(mode string) {
 // editor's Command-/ comment shortcut on the window's view command.
 func (w *Window) ToggleMode() {
 	mode := "preview"
-	if w.Active().ViewMode != "markdown" {
+	if w.viewMode(w.Active()) != "markdown" {
 		mode = "markdown"
 	}
 	w.SetMode(mode)
 }
 
-func (w *Window) PluginEnabled(name string) bool { return w.Preference("mgo.plugin."+name) == "on" }
-func (w *Window) Preference(key string) string   { return w.store().values[key] }
+// pluginsShippedOn are the plugins a reader keeps until they turn them off.
+// GenUI ships on so a reader who already saved views keeps them after the
+// plugin switch arrives.
+var pluginsShippedOn = map[string]bool{"genui": true}
+
+func (w *Window) PluginEnabled(name string) bool {
+	flag := w.Preference("mgo.plugin." + name)
+	if pluginsShippedOn[name] {
+		return flag != "off"
+	}
+	return flag == "on"
+}
+
+// fallbackMode keeps GenUI out of reach while its plugin is off: a saved or
+// restored GenUI mode reads as Preview instead.
+func fallbackMode(mode string, genui bool) string {
+	if mode == "genui" && !genui {
+		return "preview"
+	}
+	return mode
+}
+
+func (w *Window) viewMode(doc workspace.DocumentInfo) string {
+	return fallbackMode(doc.ViewMode, w.PluginEnabled("genui"))
+}
+
+// syncEditorMode moves the active document's editor to the view it shows when
+// GenUI is turned off, so typing and undo work before another refresh.
+func (w *Window) syncEditorMode() {
+	doc := w.Active()
+	if doc.ID == "" {
+		return
+	}
+	mode := w.viewMode(doc)
+	if mode == doc.ViewMode {
+		return
+	}
+	if d := w.documents[doc.ID]; d != nil {
+		d.source.SetMode(nativeeditor.Mode(mode))
+	}
+}
+
+// pluginSetting is one row of Settings / Plugins. The switch writes the
+// plugin preference; Configure opens the plugin's own settings page.
+type pluginSetting struct {
+	name, title, description, keyword, configure string
+	on                                           bool
+	set                                          func(bool)
+}
+
+func pluginSettings(m Model, a Actions) []pluginSetting {
+	return []pluginSetting{
+		{"Feynman", "Feynman Research", "Side-by-side AI research assistant, models, and MCP tools.", "feynman plugin", "models", m.Feynman, a.SetFeynman},
+		{"GenUI", "GenUI", "Read-only reading views derived from the Markdown.", "genui generation view plugin", "genui", m.GenUI, a.SetGenUI},
+		{"Git", "Git Checkpoints", "Save, diff, and restore local document snapshots.", "git plugin checkpoints", "", m.Git, a.SetGit},
+	}
+}
+
+func (p pluginSetting) matches(q SettingsQuery) bool {
+	return q.Matches(p.title, p.description, p.keyword)
+}
+
+// settingsPageOpen reports whether a plugin page is registered and visible, so
+// Plugins never links to a destination the Settings Center would not show.
+func settingsPageOpen(pages []SettingsPage, id string) bool {
+	if id == "" || !settingsPageVisible(pages, id) {
+		return false
+	}
+	page := settingsPageByID(pages, id)
+	return page.Visible == nil || page.Visible()
+}
+
+func (w *Window) Preference(key string) string { return w.store().values[key] }
 
 func (w *Window) install(p Panels) {
 	if p.GenUI != nil {

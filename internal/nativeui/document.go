@@ -36,7 +36,7 @@ func (s *Shell) page(c *ui.Context, doc workspace.DocumentInfo, m Model, a Actio
 			if doc.Deleted {
 				portrait.Alert(c, portrait.Tones.Warning, "The file was deleted on disk. Edits are still available in this window.", "")
 			}
-			if m.ReturnToGenUI && slots.GenUI != nil {
+			if m.ReturnToGenUI && m.GenUI && slots.GenUI != nil {
 				ui.Row(c).Children(func() {
 					if portrait.ButtonLeadingIcon(c, portrait.IconArrowLeft, "Back to GenUI", "Back to GenUI").Clicked() && a.SetMode != nil {
 						a.SetMode("genui")
@@ -48,7 +48,7 @@ func (s *Shell) page(c *ui.Context, doc workspace.DocumentInfo, m Model, a Actio
 			slots.Review(c)
 		}
 		ui.Column(c).Grow(1).MinHeight(0).FillWidth().Children(func() {
-			if doc.ViewMode == "genui" && slots.GenUI != nil {
+			if mode := fallbackMode(doc.ViewMode, m.GenUI); mode == "genui" && slots.GenUI != nil {
 				slots.GenUI(c)
 			} else if slots.Document != nil {
 				slots.Document(c)
@@ -124,15 +124,16 @@ func (s *Shell) pageBar(c *ui.Context, doc workspace.DocumentInfo, m Model, a Ac
 			if state := documentStateText(doc); state != "" {
 				portrait.Type.Meta.Apply(ui.Text(c, state)).TextColor(portrait.Colors.Ink3).Role(ui.RoleStatus).MaxLines(1).Shrink(0)
 			}
+			mode := fallbackMode(doc.ViewMode, m.GenUI)
 			portrait.Track(c, "view modes", func(t *portrait.Segments) {
 				for i, title := range []string{"Preview", "Markdown", "GenUI"} {
-					mode := []string{"preview", "markdown", "genui"}[i]
-					if mode == "genui" && slots.GenUI == nil {
+					option := []string{"preview", "markdown", "genui"}[i]
+					if option == "genui" && (!m.GenUI || slots.GenUI == nil) {
 						continue
 					}
-					selected := doc.ViewMode == mode || (mode == "preview" && doc.ViewMode != "genui" && doc.ViewMode != "markdown")
+					selected := mode == option || (option == "preview" && mode != "genui" && mode != "markdown")
 					if t.Segment(c, title, title, selected).Role(ui.RoleTab).AccessSelected(selected).Clicked() && a.SetMode != nil {
-						a.SetMode(mode)
+						a.SetMode(option)
 					}
 				}
 			}).Label("Document views").Shrink(0)

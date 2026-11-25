@@ -30,7 +30,7 @@ var (
 	// ErrWorkspaceNotOpen reports that no workspace of this window has that root.
 	ErrWorkspaceNotOpen = errNoWorkspace
 	// ErrPathDenied reports a path outside the workspace or in an excluded folder.
-	ErrPathDenied = errors.New("markgogo: that path is outside the workspace")
+	ErrPathDenied = errors.New("the path is not inside the workspace")
 )
 
 type WorkspaceFileEntry struct {
@@ -163,21 +163,21 @@ func resolveWorkspaceRel(root, idOrPath string) (relSlash string, absPath string
 	} else {
 		cleaned := filepath.Clean(filepath.FromSlash(trimmed))
 		if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
-			return "", "", fmt.Errorf("%w: path escapes workspace root", ErrPathDenied)
+			return "", "", fmt.Errorf("%w: it escapes the workspace root", ErrPathDenied)
 		}
 		candidate = fsutil.CanonicalPath(filepath.Join(canonRoot, cleaned))
 	}
 	if !fsutil.FolderContains(canonRoot, candidate) {
-		return "", "", fmt.Errorf("%w: path is outside workspace root", ErrPathDenied)
+		return "", "", fmt.Errorf("%w: it points outside the workspace root", ErrPathDenied)
 	}
 	rel, err := filepath.Rel(canonRoot, candidate)
 	if err != nil || !filepath.IsLocal(rel) || rel == "." {
-		return "", "", fmt.Errorf("%w: invalid workspace-relative path", ErrPathDenied)
+		return "", "", fmt.Errorf("%w: the path is not workspace-relative", ErrPathDenied)
 	}
 	relSlash = filepath.ToSlash(rel)
 	for _, part := range strings.Split(relSlash, "/") {
 		if part == "" || part == "." || part == ".." || fsutil.SkipDirName(strings.ToLower(part)) {
-			return "", "", fmt.Errorf("%w: path is in an excluded directory", ErrPathDenied)
+			return "", "", fmt.Errorf("%w: it is in an excluded directory", ErrPathDenied)
 		}
 	}
 	return relSlash, candidate, nil
@@ -347,7 +347,7 @@ func (h *Service) MCPDocument(root, idOrPath string) (DocumentMCPState, error) {
 	}
 
 	if !fsutil.MarkdownName(rel) {
-		return DocumentMCPState{}, fmt.Errorf("%w: target is not a Markdown document", ErrPathDenied)
+		return DocumentMCPState{}, fmt.Errorf("%w: the target is not a Markdown document", ErrPathDenied)
 	}
 	text, err := readMarkdownFromRoot(canonRoot, rel)
 	if err != nil {
@@ -397,7 +397,7 @@ func (h *Service) MCPOpenDocument(ctx context.Context, root, idOrPath string, re
 			return DocumentInfo{}, err
 		}
 		if !fsutil.MarkdownName(rel) {
-			return DocumentInfo{}, fmt.Errorf("%w: target is not a Markdown document", ErrPathDenied)
+			return DocumentInfo{}, fmt.Errorf("%w: the target is not a Markdown document", ErrPathDenied)
 		}
 		for _, s := range sessions {
 			if p := s.currentPath(); p != "" && fsutil.SameFile(p, absPath) {

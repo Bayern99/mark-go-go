@@ -74,7 +74,7 @@ func (s *Shim) forward(line []byte) {
 	id, isRequest := messageID(line)
 	s.mu.Lock()
 	err := s.connectLocked()
-	conn := s.conn
+	conn, gen := s.conn, s.gen
 	if isRequest && conn != nil {
 		s.pending[string(id)] = true
 	}
@@ -87,17 +87,8 @@ func (s *Shim) forward(line []byte) {
 		return
 	}
 	if _, err := conn.Write(append(append([]byte{}, line...), '\n')); err != nil {
-		s.drop(conn, s.currentGen(conn), err)
+		s.drop(conn, gen, err)
 	}
-}
-
-func (s *Shim) currentGen(conn net.Conn) int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.conn == conn {
-		return s.gen
-	}
-	return -1
 }
 
 // connectLocked dials the app when no connection is open and restores the

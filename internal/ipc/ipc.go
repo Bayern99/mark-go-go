@@ -87,16 +87,6 @@ func (e *RPCError) Error() string {
 	return fmt.Sprintf("json-rpc error %d: %s", e.Code, e.Message)
 }
 
-// RPC error codes this channel uses.
-const (
-	RPCParseError     = -32700
-	RPCInvalidRequest = -32600
-	RPCMethodNotFound = -32601
-	RPCInvalidParams  = -32602
-	RPCInternalError  = -32603
-	RPCUnsupported    = -32022
-)
-
 // Hello is the first frame a caller writes to the socket.
 type Hello struct {
 	CWD string `json:"cwd"`
@@ -249,7 +239,7 @@ func (c Client) CallWithHello(method string, params map[string]any) (json.RawMes
 	if timeout := c.Timeout; timeout > 0 {
 		_ = conn.SetDeadline(time.Now().Add(timeout))
 	}
-	payload := request{JSONRPC: "2.0", ID: 1, Method: method, Params: WithModernMeta(params, c.Name, c.Version)}
+	payload := request{JSONRPC: "2.0", ID: 1, Method: method, Params: withModernMeta(params, c.Name, c.Version)}
 	if err := WriteMessage(conn, payload); err != nil {
 		return nil, hello, NotRunning(c.SocketPath, err)
 	}
@@ -267,9 +257,9 @@ func (c Client) CallWithHello(method string, params map[string]any) (json.RawMes
 	return rpcResp.Result, hello, nil
 }
 
-// WithModernMeta adds the per-request protocol version and client identity the
+// withModernMeta adds the per-request protocol version and client identity the
 // modern MCP revision requires, leaving params the caller already set alone.
-func WithModernMeta(params map[string]any, name, version string) map[string]any {
+func withModernMeta(params map[string]any, name, version string) map[string]any {
 	out := make(map[string]any, len(params)+1)
 	for key, value := range params {
 		out[key] = value
@@ -291,10 +281,9 @@ func WithModernMeta(params map[string]any, name, version string) map[string]any 
 
 // Keys of request _meta this channel reads and writes.
 const (
-	MetaProtocolVersion    = "io.modelcontextprotocol/protocolVersion"
-	MetaClientInfo         = "io.modelcontextprotocol/clientInfo"
-	MetaServerInfo         = "io.modelcontextprotocol/serverInfo"
-	MetaClientCapabilities = "io.modelcontextprotocol/clientCapabilities"
+	MetaProtocolVersion = "io.modelcontextprotocol/protocolVersion"
+	MetaClientInfo      = "io.modelcontextprotocol/clientInfo"
+	MetaServerInfo      = "io.modelcontextprotocol/serverInfo"
 )
 
 // NotRunning reports that nothing answered at the socket.

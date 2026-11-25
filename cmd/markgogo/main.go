@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,25 +38,26 @@ const (
 const usage = `markgogo reads and edits the Markdown files of a Mark Go Go workspace.
 
 Usage:
-  markgogo status [--json]
+  markgogo status
   markgogo read <document> [--sections | --notes] [--section <id> | --heading <text>]
-                            [--lines <start>:<end>] [--json]
-  markgogo propose <document> --old <text> --new <text> [--summary <text>] [--json]
+                            [--lines <start>:<end>]
+  markgogo propose <document> --old <text> --new <text> [--summary <text>]
   markgogo propose <document> --lines <start>:<end> --new <text> --base-version <n>
   markgogo propose <document> --from <file|-> [--summary <text>]
-  markgogo new <path> (--from <file|-> | --content <text>) [--open] [--json]
-  markgogo open <document> [--section <id> | --heading <text>] [--json]
+  markgogo new <path> (--from <file|-> | --content <text>) [--open]
+  markgogo open <document> [--section <id> | --heading <text>]
   markgogo genui format
-  markgogo genui write <document> --candidate <file|-> [--json]
-  markgogo checkpoint <document> [--label <text>] [--json]
+  markgogo genui write <document> --candidate <file|->
+  markgogo checkpoint <document> [--label <text>]
   markgogo agent-prompt
   markgogo mcp
   markgogo --version
 
-<document> is an open document id or a workspace-relative path. Every command
-that needs the app returns APP_NOT_RUNNING while Mark Go Go is closed, except
-read and genui format, which read from disk. The app's local channel is off
-until it is enabled in Mark Go Go.`
+Every command but genui format and agent-prompt answers with JSON. <document> is
+an open document id or a workspace-relative path. Every command that needs the
+app returns APP_NOT_RUNNING while Mark Go Go is closed, except read and genui
+format, which read from disk. The app's local channel is off until it is
+enabled in Mark Go Go.`
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -190,13 +192,13 @@ func (a *app) deliverPayload(result json.RawMessage) int {
 	return a.write(payload)
 }
 
-// flags builds a flag set that stops at the first positional argument, so
-// `read doc.md --sections` reads the way it is written in the help.
-func (a *app) flags(name string) (*flag.FlagSet, *bool) {
+// flags builds a quiet flag set; parse then keeps reading flags that follow
+// positional arguments, so `read doc.md --sections` reads the way the help
+// writes it.
+func (a *app) flags(name string) *flag.FlagSet {
 	set := flag.NewFlagSet(name, flag.ContinueOnError)
 	set.SetOutput(io.Discard)
-	jsonOut := set.Bool("json", true, "print JSON (the default)")
-	return set, jsonOut
+	return set
 }
 
 // parse splits flags from positionals and stops at "--".
@@ -216,7 +218,7 @@ func parse(set *flag.FlagSet, args []string) ([]string, error) {
 }
 
 func (a *app) version(args []string) int {
-	set, _ := a.flags("version")
+	set := a.flags("version")
 	if _, err := parse(set, args); err != nil {
 		a.fail(err)
 		return exitUsage
@@ -225,17 +227,18 @@ func (a *app) version(args []string) int {
 }
 
 type discovery struct {
-	Running           bool     `json:"running"`
-	Socket            string   `json:"socket"`
-	UserDataDir       string   `json:"userDataDir"`
-	Root              string   `json:"root,omitempty"`
-	AppVersion        string   `json:"appVersion,omitempty"`
-	SupportedVersions []string `json:"supportedVersions,omitempty"`
-	Instructions      string   `json:"instructions,omitempty"`
+	Running           bool          `json:"running"`
+	Socket            string        `json:"socket"`
+	UserDataDir       string        `json:"userDataDir"`
+	Root              string        `json:"root,omitempty"`
+	AppVersion        string        `json:"appVersion,omitempty"`
+	SupportedVersions []string      `json:"supportedVersions,omitempty"`
+	Instructions      string        `json:"instructions,omitempty"`
+	Error             *ipc.AppError `json:"error,omitempty"`
 }
 
 func (a *app) runStatus(args []string) int {
-	set, _ := a.flags("status")
+	set := a.flags("status")
 	if _, err := parse(set, args); err != nil {
 		a.fail(err)
 		return exitUsage
@@ -245,23 +248,30 @@ func (a *app) runStatus(args []string) int {
 		UserDataDir: filepath.Dir(a.client.SocketPath),
 	}
 	result, hello, err := a.client.CallWithHello("server/discover", nil)
-	if err != nil {
-		info.Running = false
-		if code := ipc.CodeOf(err); code != ipc.CodeAppNotRunning && code != ipc.CodeWorkspaceNotOpen {
-			a.fail(err)
-			return exitCodeFor(err)
-		}
-		if hello != nil && hello.Root != "" {
-			info.Root = hello.Root
-		}
-		return a.write(info)
-	}
-	info.Running = true
 	if hello != nil {
 		info.Root = hello.Root
 		info.AppVersion = hello.AppVersion
 		info.SupportedVersions = hello.ProtocolVersions
 	}
+	if err != nil {
+		var appErr *ipc.AppError
+		if !errors.As(err, &appErr) {
+			appErr = &ipc.AppError{Code: ipc.CodeAppNotRunning, Message: err.Error()}
+		}
+		switch appErr.Code {
+		case ipc.CodeAppNotRunning:
+			info.Running = false
+			return a.write(info)
+		case ipc.CodeWorkspaceNotOpen:
+			info.Running = true
+			info.Error = appErr
+			return a.write(info)
+		default:
+			a.fail(err)
+			return exitCodeFor(err)
+		}
+	}
+	info.Running = true
 	var found struct {
 		Instructions string `json:"instructions"`
 	}
@@ -271,7 +281,7 @@ func (a *app) runStatus(args []string) int {
 }
 
 func (a *app) runRead(args []string) int {
-	set, _ := a.flags("read")
+	set := a.flags("read")
 	sections := set.Bool("sections", false, "print the heading outline instead of the text")
 	notes := set.Bool("notes", false, "print the reader notes instead of the text")
 	section := set.String("section", "", "read the section with this id")
@@ -358,7 +368,7 @@ func (a *app) readFromDisk(document, kind, heading string, startLine, endLine in
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			a.fail(ipc.Errorf(ipc.CodeNotFound, "No file at %s.", path))
+			a.fail(ipc.Errorf(ipc.CodeNotFound, "No file at %s, and the app is not running to look the document up by id.", path))
 			return exitNotFound
 		}
 		a.fail(ipc.Errorf(ipc.CodePathDenied, "Cannot read %s: %v.", path, err))
@@ -429,7 +439,7 @@ func (a *app) deliverResource(result json.RawMessage) int {
 }
 
 func (a *app) runPropose(args []string) int {
-	set, _ := a.flags("propose")
+	set := a.flags("propose")
 	oldText := set.String("old", "", "the exact text to replace")
 	newText := set.String("new", "", "the replacement text")
 	from := set.String("from", "", "read the complete proposed text from a file, or - for stdin")
@@ -483,7 +493,7 @@ func (a *app) runPropose(args []string) int {
 }
 
 func (a *app) runNew(args []string) int {
-	set, _ := a.flags("new")
+	set := a.flags("new")
 	content := set.String("content", "", "the Markdown to write")
 	from := set.String("from", "", "read the Markdown from a file, or - for stdin")
 	openIt := set.Bool("open", false, "open the document in the app")
@@ -510,7 +520,7 @@ func (a *app) runNew(args []string) int {
 }
 
 func (a *app) runOpen(args []string) int {
-	set, _ := a.flags("open")
+	set := a.flags("open")
 	section := set.String("section", "", "scroll to the section with this id")
 	heading := set.String("heading", "", "scroll to the section with this heading")
 	positional, err := parse(set, args)
@@ -545,7 +555,7 @@ func (a *app) runGenUI(args []string) int {
 		fmt.Fprintln(a.stdout, genuikit.Format())
 		return exitOK
 	case "write":
-		set, _ := a.flags("genui write")
+		set := a.flags("genui write")
 		candidate := set.String("candidate", "", "the JSON candidate to write, or - for stdin")
 		positional, err := parse(set, args[1:])
 		if err != nil {
@@ -594,7 +604,7 @@ func (a *app) runGenUI(args []string) int {
 }
 
 func (a *app) runCheckpoint(args []string) int {
-	set, _ := a.flags("checkpoint")
+	set := a.flags("checkpoint")
 	label := set.String("label", "", "the checkpoint label")
 	positional, err := parse(set, args)
 	if err != nil {
@@ -613,7 +623,7 @@ func (a *app) runCheckpoint(args []string) int {
 }
 
 func (a *app) runAgentPrompt(args []string) int {
-	set, _ := a.flags("agent-prompt")
+	set := a.flags("agent-prompt")
 	if _, err := parse(set, args); err != nil {
 		a.fail(err)
 		return exitUsage
@@ -623,7 +633,7 @@ func (a *app) runAgentPrompt(args []string) int {
 }
 
 func (a *app) runMCP(args []string) int {
-	set, _ := a.flags("mcp")
+	set := a.flags("mcp")
 	if _, err := parse(set, args); err != nil {
 		a.fail(err)
 		return exitUsage
@@ -674,11 +684,12 @@ func parseLines(raw string) (int, int, error) {
 	if !ok {
 		return 0, 0, ipc.Errorf(ipc.CodeInvalidArgs, "Write a line range as start:end, not %q.", raw)
 	}
-	var first, last int
-	if _, err := fmt.Sscanf(start, "%d", &first); err != nil {
+	first, err := strconv.Atoi(strings.TrimSpace(start))
+	if err != nil {
 		return 0, 0, ipc.Errorf(ipc.CodeInvalidArgs, "The line range %q has no start line.", raw)
 	}
-	if _, err := fmt.Sscanf(end, "%d", &last); err != nil {
+	last, err := strconv.Atoi(strings.TrimSpace(end))
+	if err != nil {
 		return 0, 0, ipc.Errorf(ipc.CodeInvalidArgs, "The line range %q has no end line.", raw)
 	}
 	if first < 1 || last < first {

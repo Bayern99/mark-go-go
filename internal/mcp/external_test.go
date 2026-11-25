@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Bayern99/mark-go-go/internal/appversion"
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
@@ -123,6 +125,8 @@ func (h *socketHarness) UserDataDir() string { return h.userData }
 // disk, plus a user data folder the test owns.
 func newSocketHarness(t *testing.T) (*socketHarness, string) {
 	t.Helper()
+	// Keep the app's real user data folder out of these tests.
+	t.Setenv("HOME", t.TempDir())
 	root := fsutil.CanonicalPath(t.TempDir())
 	path := filepath.Join(root, "report.md")
 	text := "# Report\n\n## Summary\n\nGenerated findings.\n"
@@ -776,5 +780,100 @@ func TestToolsDeclareStrictSchemasAndAnnotations(t *testing.T) {
 	slices.Sort(names)
 	if !slices.Equal(names, want) {
 		t.Fatalf("tools = %v, want %v", names, want)
+	}
+}
+
+func TestExternalChannelClearsAResidualFileAtItsSocketPath(t *testing.T) {
+	h, root := newSocketHarness(t)
+	path := ipc.SocketPath(h.userData)
+	if err := os.WriteFile(path, []byte("left over from a crash"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv := startExternal(t, h)
+	client, reply := connectExternal(t, srv, root)
+	if !reply.OK {
+		t.Fatalf("hello reply = %+v", reply)
+	}
+	if resp := client.call("tools/list", nil); resp.Error != nil {
+		t.Fatalf("tools/list: %+v", resp.Error)
+	}
+}
+
+func TestExternalChannelRefusesToTakeOverALiveSocket(t *testing.T) {
+	h, root := newSocketHarness(t)
+	first := startExternal(t, h)
+	second := NewExternalServer(Dependencies{Workspace: h, Review: review.NewService()})
+	t.Cleanup(func() { _ = second.Close() })
+	if err := second.Start(); err == nil {
+		t.Fatal("a second listener took over the socket of the first")
+	}
+	client, reply := connectExternal(t, first, root)
+	if !reply.OK {
+		t.Fatalf("the first listener stopped answering: %+v", reply)
+	}
+	if resp := client.call("tools/list", nil); resp.Error != nil {
+		t.Fatalf("tools/list: %+v", resp.Error)
+	}
+}
+
+func TestExternalChannelCanBeTurnedOffAndOnAgain(t *testing.T) {
+	h, root := newSocketHarness(t)
+	srv := startExternal(t, h)
+	if err := srv.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if err := srv.Start(); err != nil {
+		t.Fatalf("Start after Close: %v", err)
+	}
+	client, reply := connectExternal(t, srv, root)
+	if !reply.OK {
+		t.Fatalf("hello reply = %+v", reply)
+	}
+	if resp := client.call("tools/list", nil); resp.Error != nil {
+		t.Fatalf("tools/list: %+v", resp.Error)
+	}
+}
+
+func TestReadDocumentTruncatesAtALineBoundaryAndKeepsTheRangeHonest(t *testing.T) {
+	h, root := newSocketHarness(t)
+	long := &strings.Builder{}
+	long.WriteString("# Long\n\n")
+	for i := 1; i <= 30000; i++ {
+		fmt.Fprintf(long, "line %05d é\n", i)
+	}
+	if err := os.WriteFile(filepath.Join(root, "long.md"), []byte(long.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	srv := startExternal(t, h)
+	client, reply := connectExternal(t, srv, root)
+	if !reply.OK {
+		t.Fatalf("hello reply = %+v", reply)
+	}
+
+	result := client.tool(toolReadDocument, map[string]any{"path": "long.md"})
+	if result.IsError {
+		t.Fatalf("read_document failed: %+v", result.Content)
+	}
+	var doc struct {
+		Text      string `json:"text"`
+		Truncated bool   `json:"truncated"`
+		StartLine int    `json:"startLine"`
+		EndLine   int    `json:"endLine"`
+	}
+	raw, _ := json.Marshal(result.StructuredContent)
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if !doc.Truncated {
+		t.Fatal("a 30000 line document was returned whole")
+	}
+	if len(doc.Text) > maxReadDocumentBytes {
+		t.Fatalf("truncated text is %d bytes", len(doc.Text))
+	}
+	if !utf8.ValidString(doc.Text) {
+		t.Fatal("truncation split a rune")
+	}
+	if got, want := doc.EndLine, doc.StartLine+len(documentLines(doc.Text))-1; got != want {
+		t.Fatalf("endLine = %d, want %d for the returned text", got, want)
 	}
 }

@@ -76,13 +76,19 @@ func lineRangeText(text string, startLine, endLine int) (string, error) {
 	return strings.Join(lines[startLine-1:endLine], "\n"), nil
 }
 
+// truncateAtLine cuts a read at a line boundary without breaking a rune, and
+// reports whether anything was dropped.
 func truncateAtLine(text string) (string, bool) {
 	if len(text) <= maxReadDocumentBytes {
 		return text, false
 	}
 	cut := text[:maxReadDocumentBytes]
-	if next := strings.LastIndexByte(cut, '\n'); next > 0 {
+	if next := strings.LastIndexByte(cut, '\n'); next >= 0 {
 		cut = cut[:next]
+	} else {
+		for len(cut) > 0 && !utf8.ValidString(cut) {
+			cut = cut[:len(cut)-1]
+		}
 	}
 	return cut, true
 }
@@ -116,6 +122,7 @@ func (s *Server) toolReadDocument(binding *sessionBinding, rawArgs json.RawMessa
 	if err != nil {
 		return toolFailure(classifyFailure(err)), nil
 	}
+	lines := documentLines(doc.Text)
 
 	out := map[string]any{
 		"documentId": doc.ID,
@@ -128,7 +135,7 @@ func (s *Server) toolReadDocument(binding *sessionBinding, rawArgs json.RawMessa
 		"readOnly":   doc.ReadOnly,
 		"text":       doc.Text,
 		"startLine":  1,
-		"endLine":    len(documentLines(doc.Text)),
+		"endLine":    len(lines),
 		"truncated":  false,
 	}
 	switch {
@@ -138,13 +145,14 @@ func (s *Server) toolReadDocument(binding *sessionBinding, rawArgs json.RawMessa
 		if !ok {
 			return toolFailure(newAppError(ipc.CodeNotFound, "That heading or section is not in the document.")), nil
 		}
-		text, err := lineRangeText(doc.Text, section.StartLine, section.EndLine)
+		endLine := min(section.EndLine, len(lines))
+		text, err := lineRangeText(doc.Text, section.StartLine, endLine)
 		if err != nil {
 			return toolFailure(newAppError(ipc.CodeInvalidArgs, err.Error())), nil
 		}
 		out["text"] = text
 		out["startLine"] = section.StartLine
-		out["endLine"] = section.EndLine
+		out["endLine"] = endLine
 		out["heading"] = section.Heading
 		out["sectionId"] = section.ID
 		out["hash"] = section.Hash
@@ -158,12 +166,19 @@ func (s *Server) toolReadDocument(binding *sessionBinding, rawArgs json.RawMessa
 		out["endLine"] = args.EndLine
 	}
 	text, truncated := truncateAtLine(out["text"].(string))
-	out["text"] = text
-	out["truncated"] = truncated
+	if truncated {
+		out["text"] = text
+		out["truncated"] = true
+		out["endLine"] = out["startLine"].(int) + max(len(documentLines(text)), 1) - 1
+	}
 	return toolJSON(out)
 }
 
-func (s *Server) toolGetWorkspace(binding *sessionBinding) (mcpCallToolResult, *rpcError) {
+func (s *Server) toolGetWorkspace(binding *sessionBinding, rawArgs json.RawMessage) (mcpCallToolResult, *rpcError) {
+	var args struct{}
+	if failure := decodeArgs(rawArgs, &args); failure != nil {
+		return toolFailure(failure), nil
+	}
 	if s.deps.Workspace == nil {
 		return toolFailure(newAppError(ipc.CodeWorkspaceNotOpen, "The workspace bridge is unavailable.")), nil
 	}
@@ -308,26 +323,26 @@ func validateCreateRelPath(root, rawPath string) (string, string, error) {
 		canonRoot := fsutil.CanonicalPath(root)
 		canonTarget := fsutil.CanonicalPath(trimmed)
 		if !fsutil.FolderContains(canonRoot, canonTarget) {
-			return "", "", fmt.Errorf("%w: path escapes workspace root", workspace.ErrPathDenied)
+			return "", "", fmt.Errorf("%w: it escapes the workspace root", workspace.ErrPathDenied)
 		}
 		r, err := filepath.Rel(canonRoot, canonTarget)
 		if err != nil || !filepath.IsLocal(r) {
-			return "", "", fmt.Errorf("%w: path escapes workspace root", workspace.ErrPathDenied)
+			return "", "", fmt.Errorf("%w: it escapes the workspace root", workspace.ErrPathDenied)
 		}
 		rel = filepath.ToSlash(r)
 	} else {
 		rel = path.Clean(trimmed)
 	}
 	if rel == "." || rel == ".." || strings.HasPrefix(rel, "../") || strings.HasPrefix(rel, "/") || !fs.ValidPath(rel) {
-		return "", "", fmt.Errorf("%w: path escapes workspace root", workspace.ErrPathDenied)
+		return "", "", fmt.Errorf("%w: it escapes the workspace root", workspace.ErrPathDenied)
 	}
 	if !fsutil.MarkdownName(rel) {
-		return "", "", fmt.Errorf("%w: new document must have a .md or .markdown extension", workspace.ErrPathDenied)
+		return "", "", fmt.Errorf("%w: a new document needs a .md or .markdown name", workspace.ErrPathDenied)
 	}
 	for dir := rel; dir != "."; dir = path.Dir(dir) {
 		name := strings.ToLower(path.Base(dir))
 		if fsutil.SkipDirName(name) && dir != "outputs/.plans" && dir != "outputs/.drafts" {
-			return "", "", fmt.Errorf("%w: cannot create a document inside an excluded or hidden directory", workspace.ErrPathDenied)
+			return "", "", fmt.Errorf("%w: it is in an excluded or hidden directory", workspace.ErrPathDenied)
 		}
 	}
 	return rel, filepath.Join(fsutil.CanonicalPath(root), filepath.FromSlash(rel)), nil

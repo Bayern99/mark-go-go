@@ -171,6 +171,9 @@ func initTestSession(t *testing.T, srv *Server, root, work string) (token string
 }
 
 func TestMCPResourcesEndToEnd(t *testing.T) {
+	// Keep the app's real user data folder, where write tools log their
+	// audit records, out of these tests.
+	t.Setenv("HOME", t.TempDir())
 	root := fsutil.CanonicalPath(t.TempDir())
 	work := review.WorkDir(t.TempDir(), root)
 	if err := os.MkdirAll(filepath.Join(root, "papers"), 0o755); err != nil {

@@ -28,12 +28,11 @@ type ExternalServer struct {
 	server *Server
 	deps   Dependencies
 
-	mu     sync.Mutex
-	ln     net.Listener
-	path   string
-	conns  map[net.Conn]struct{}
-	closed bool
-	wg     sync.WaitGroup
+	mu    sync.Mutex
+	ln    net.Listener
+	path  string
+	conns map[net.Conn]struct{}
+	wg    sync.WaitGroup
 }
 
 func NewExternalServer(deps Dependencies) *ExternalServer {
@@ -54,10 +53,6 @@ func (e *ExternalServer) SocketPath() string {
 // Start listens on the socket, cleaning up a socket a previous run left behind.
 func (e *ExternalServer) Start() error {
 	e.mu.Lock()
-	if e.closed {
-		e.mu.Unlock()
-		return errors.New("the external MCP channel is closed")
-	}
 	if e.ln != nil {
 		e.mu.Unlock()
 		return nil
@@ -92,12 +87,6 @@ func (e *ExternalServer) Start() error {
 	}
 
 	e.mu.Lock()
-	if e.closed {
-		e.mu.Unlock()
-		ln.Close()
-		_ = os.Remove(path)
-		return errors.New("the external MCP channel is closed")
-	}
 	e.ln = ln
 	e.path = path
 	e.mu.Unlock()
@@ -135,11 +124,6 @@ func (e *ExternalServer) accept(ln net.Listener) {
 			return
 		}
 		e.mu.Lock()
-		if e.closed {
-			e.mu.Unlock()
-			conn.Close()
-			return
-		}
 		e.conns[conn] = struct{}{}
 		e.mu.Unlock()
 
@@ -193,7 +177,6 @@ func (e *ExternalServer) serve(conn net.Conn) {
 	}
 
 	binding := &sessionBinding{root: root, channel: channelExternal}
-	state := &connState{}
 	for {
 		line, err := ipc.ReadMessage(reader)
 		if err != nil {
@@ -207,7 +190,7 @@ func (e *ExternalServer) serve(conn net.Conn) {
 			})
 			continue
 		}
-		resp, _, hasResp := e.server.dispatchMessage(context.Background(), binding, state, line)
+		resp, _, hasResp := e.server.dispatchMessage(context.Background(), binding, line)
 		if !hasResp {
 			continue
 		}
@@ -255,11 +238,6 @@ func (e *ExternalServer) rootFor(cwd string) (string, *ipc.AppError) {
 // Close stops listening, closes the open connections, and removes the socket.
 func (e *ExternalServer) Close() error {
 	e.mu.Lock()
-	if e.closed {
-		e.mu.Unlock()
-		return nil
-	}
-	e.closed = true
 	ln := e.ln
 	path := e.path
 	e.ln = nil

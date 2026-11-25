@@ -21,6 +21,7 @@ import (
 type fakeApp struct {
 	t       *testing.T
 	path    string
+	refuse  *ipc.AppError
 	handler func(method string, params map[string]any) map[string]any
 }
 
@@ -57,10 +58,14 @@ func (a *fakeApp) serve(conn net.Conn) {
 	if _, err := ipc.ReadMessage(in); err != nil {
 		return
 	}
-	if err := ipc.WriteMessage(conn, ipc.HelloReply{
+	reply := ipc.HelloReply{
 		OK: true, Root: "/tmp/workspace", AppVersion: appversion.Version,
 		ProtocolVersions: []string{ipc.ModernProtocolVersion, ipc.LegacyProtocolVersion},
-	}); err != nil {
+	}
+	if a.refuse != nil {
+		reply = ipc.HelloReply{OK: false, Error: a.refuse}
+	}
+	if err := ipc.WriteMessage(conn, reply); err != nil || !reply.OK {
 		return
 	}
 	for {
@@ -232,6 +237,27 @@ func TestStatusReportsTheStoppedAppWithoutFailing(t *testing.T) {
 	}
 	if out := decodeJSON(t, stdout); out["running"] != false {
 		t.Fatalf("status = %v", out)
+	}
+}
+
+func TestStatusReportsARunningAppWithoutAMatchingWorkspace(t *testing.T) {
+	app := startFakeApp(t, func(method string, _ map[string]any) map[string]any { return result(method, nil) })
+	app.refuse = &ipc.AppError{
+		Code:    ipc.CodeWorkspaceNotOpen,
+		Message: "No open workspace contains this folder.",
+		Hint:    "Open the folder in Mark Go Go first.",
+	}
+	code, stdout, stderr := runCLI(t, nil, "status")
+	if code != exitOK {
+		t.Fatalf("exit = %d, stderr = %s", code, stderr)
+	}
+	out := decodeJSON(t, stdout)
+	if out["running"] != true {
+		t.Fatalf("status = %v", out)
+	}
+	failure, _ := out["error"].(map[string]any)
+	if failure["code"] != ipc.CodeWorkspaceNotOpen {
+		t.Fatalf("status error = %v", out["error"])
 	}
 }
 

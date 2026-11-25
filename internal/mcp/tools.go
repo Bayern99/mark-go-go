@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Bayern99/mark-go-go/internal/ipc"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 )
 
@@ -284,7 +283,7 @@ func (s *Server) handleToolsCall(ctx context.Context, binding *sessionBinding, r
 	case toolReadDocument:
 		result, rpcErr = s.toolReadDocument(binding, params.Arguments)
 	case toolGetWorkspace:
-		result, rpcErr = s.toolGetWorkspace(binding)
+		result, rpcErr = s.toolGetWorkspace(binding, params.Arguments)
 	case toolProposeEdit:
 		result, rpcErr = s.toolProposeEdit(binding, params.Arguments)
 		target = targetPathOf(params.Arguments)
@@ -320,15 +319,4 @@ func targetPathOf(raw json.RawMessage) string {
 	}
 	_ = json.Unmarshal(raw, &args)
 	return firstNonEmpty(args.Path, args.DocumentID)
-}
-
-// appErrorOf reports the app error a tool result carries, if any.
-func appErrorOf(result mcpCallToolResult) *appError {
-	if !result.IsError {
-		return nil
-	}
-	if failure, ok := result.StructuredContent.(*appError); ok && failure != nil {
-		return failure
-	}
-	return &appError{Code: ipc.CodeInvalidArgs, Message: "The tool failed."}
 }

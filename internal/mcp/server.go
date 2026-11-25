@@ -67,21 +67,16 @@ func (b *sessionBinding) source() string {
 	return b.channel
 }
 
-// connState is the per-connection state of the socket channel: the legacy
-// revision an initialize negotiated there.
-type connState struct {
-	legacyVersion string
-}
-
-func (c *connState) version() string {
-	if c == nil || c.legacyVersion == "" {
-		return defaultProtocolVersion
-	}
-	return c.legacyVersion
-}
-
 // instructions is the natural-language guidance both eras return.
-const instructions = "Mark Go Go edits the Markdown files of the workspace whose root this call is bound to. Call get_workspace to see the root, the open documents and the Markdown files, then read_document by documentId or workspace-relative path; read_document also returns the version a line-range edit needs. Changes to existing text only ever enter the review queue through propose_edit and are applied after the user accepts them in Mark Go Go; create_document makes new files and refuses to overwrite. write_genui_view validates a GenUI candidate against the catalog before writing the document's .genui.json, and create_checkpoint snapshots a saved document. Errors carry a code: APP_NOT_RUNNING, WORKSPACE_NOT_OPEN, VERSION_CONFLICT, NOT_FOUND, PATH_DENIED or INVALID_ARGS with a hint."
+const instructions = "Mark Go Go edits the Markdown files of the workspace this call is bound to. " +
+	"Call get_workspace to see the root, the open documents and the Markdown files, then " +
+	"read_document by documentId or workspace-relative path; read_document also returns the " +
+	"version a line-range edit needs. Changes to existing text only ever enter the review " +
+	"queue through propose_edit and are applied after the user accepts them in Mark Go Go; " +
+	"create_document makes new files and refuses to overwrite. write_genui_view validates a " +
+	"GenUI candidate against the catalog before writing the document's .genui.json, and " +
+	"create_checkpoint snapshots a saved document. Errors carry a code: APP_NOT_RUNNING, " +
+	"WORKSPACE_NOT_OPEN, VERSION_CONFLICT, NOT_FOUND, PATH_DENIED or INVALID_ARGS with a hint."
 
 type Server struct {
 	deps Dependencies
@@ -437,7 +432,7 @@ func (s *Server) handleMCPPost(w http.ResponseWriter, r *http.Request, binding *
 		}
 		responses := make([]rpcResponse, 0, len(batch))
 		for _, item := range batch {
-			resp, newSID, hasResp := s.dispatchMessage(r.Context(), binding, nil, item)
+			resp, newSID, hasResp := s.dispatchMessage(r.Context(), binding, item)
 			if newSID != "" {
 				w.Header().Set("Mcp-Session-Id", newSID)
 			}
@@ -453,7 +448,7 @@ func (s *Server) handleMCPPost(w http.ResponseWriter, r *http.Request, binding *
 		return
 	}
 
-	resp, newSID, hasResp := s.dispatchMessage(r.Context(), binding, nil, body)
+	resp, newSID, hasResp := s.dispatchMessage(r.Context(), binding, body)
 	if newSID != "" {
 		w.Header().Set("Mcp-Session-Id", newSID)
 	}
@@ -516,7 +511,7 @@ func (s *Server) discoverResult() map[string]any {
 
 // handleInitialize answers a legacy handshake, agreeing to the requested
 // revision or, when it is unknown, to the newest one the handshake supports.
-func (s *Server) handleInitialize(binding *sessionBinding, state *connState, req rpcRequest) (rpcResponse, string, bool) {
+func (s *Server) handleInitialize(binding *sessionBinding, req rpcRequest) (rpcResponse, string, bool) {
 	var params struct {
 		ProtocolVersion string `json:"protocolVersion"`
 	}
@@ -533,8 +528,8 @@ func (s *Server) handleInitialize(binding *sessionBinding, state *connState, req
 		"serverInfo":      s.serverInfo(),
 		"instructions":    instructions,
 	}
-	if state != nil {
-		state.legacyVersion = version
+	if binding.channel == channelExternal {
+		// The socket carries one MCP session per connection.
 		return rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: result}, "", true
 	}
 	sid, err := randomHexToken(16)
@@ -566,7 +561,7 @@ func unsupportedVersionResponse(id json.RawMessage, requested string) rpcRespons
 	}
 }
 
-func (s *Server) dispatchMessage(ctx context.Context, binding *sessionBinding, state *connState, raw []byte) (rpcResponse, string, bool) {
+func (s *Server) dispatchMessage(ctx context.Context, binding *sessionBinding, raw []byte) (rpcResponse, string, bool) {
 	var req rpcRequest
 	if err := json.Unmarshal(raw, &req); err != nil {
 		return rpcResponse{
@@ -590,7 +585,7 @@ func (s *Server) dispatchMessage(ctx context.Context, binding *sessionBinding, s
 	}
 
 	if req.Method == "initialize" {
-		return s.handleInitialize(binding, state, req)
+		return s.handleInitialize(binding, req)
 	}
 	if version, modern := modernVersionOf(req.Params); modern && version != modernProtocolVersion {
 		return unsupportedVersionResponse(req.ID, version), "", true

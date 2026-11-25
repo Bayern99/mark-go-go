@@ -75,6 +75,17 @@ func toolJSON(payload any) (mcpCallToolResult, *rpcError) {
 	}, nil
 }
 
+// appErrorOf reports the app error a tool result carries, if any.
+func appErrorOf(result mcpCallToolResult) *appError {
+	if !result.IsError {
+		return nil
+	}
+	if failure, ok := result.StructuredContent.(*appError); ok && failure != nil {
+		return failure
+	}
+	return newAppError(ipc.CodeInvalidArgs, "The tool failed.")
+}
+
 func decodeArgs(raw json.RawMessage, into any) *appError {
 	if len(raw) == 0 {
 		raw = json.RawMessage("{}")

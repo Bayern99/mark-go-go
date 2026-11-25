@@ -242,6 +242,7 @@ func (b *BaseView) deletingUnreferenced(message json.RawMessage, envelope map[st
 }
 
 func statementPrompt(b *strings.Builder, base *BaseView) {
+	b.WriteString(`Write one strict JSON object, without Markdown fences. A component is a JSON string, so the quotes inside the OpenUI statement must be escaped in the file. Use " for embedded quotes, for example "root = Col([Text("Title")])". Raw quotes inside a component string make the file invalid JSON.` + "\n\n")
 	if base == nil {
 		b.WriteString("Make a complete view for the reader's request, using all relevant sections; when no request is supplied, represent the document's substance. out.json is a JSON object with \"sources\", the source references by id, and \"a2ui\", a list holding exactly one A2UI 1.0 createSurface message for the surface \"view\" with the catalog \"" + StatementCatalogID + "\". Its \"components\" is a list of strings, each one openui-lang statement, and the tree starts at the statement \"root\". Use only the components and functions in the format definition. Leave out the top-level version, language, generatedAt, model and the sources' hash: the app writes them. Every message in a2ui must include \"version\": \"1.0\" beside its operation.\n")
 		fmt.Fprintf(b, "New view example: %s\n\n", `{"sources":{},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"view","catalogId":"`+StatementCatalogID+`","components":["root = Col([Text(\"Title\")])"]}}]}`)

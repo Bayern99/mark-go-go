@@ -26,9 +26,13 @@ type ProbeResult struct {
 	Hint        string      `json:"hint,omitempty"`
 }
 
+// ModelOption is one model an agent offers. Provider is set by backends that
+// name a provider beside the model, such as Pi, whose credential checks, model
+// writes and Terminal login all take a provider rather than a model.
 type ModelOption struct {
-	ID   string `json:"id"`
-	Name string `json:"name,omitempty"`
+	ID       string `json:"id"`
+	Name     string `json:"name,omitempty"`
+	Provider string `json:"provider,omitempty"`
 }
 
 type Choice struct {

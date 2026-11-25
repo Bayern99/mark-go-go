@@ -278,12 +278,8 @@ func (c *Client) dispatch(line []byte) {
 // Call sends one command and decodes its response data into result when result
 // is not nil.
 func (c *Client) Call(commandType string, fields map[string]any, result any) error {
-	c.mu.Lock()
-	c.nextID++
-	id := fmt.Sprintf("req-%d", c.nextID)
 	ch := make(chan CallResponse, 1)
-	c.pending[id] = ch
-	c.mu.Unlock()
+	id := c.reserve(ch)
 
 	payload := make(map[string]any, len(fields)+2)
 	maps.Copy(payload, fields)
@@ -320,6 +316,30 @@ func (c *Client) Call(commandType string, fields map[string]any, result any) err
 		return fmt.Errorf("malformed response for %s: %w", commandType, err)
 	}
 	return nil
+}
+
+// Send writes one command without waiting for its answer, for a command whose
+// reply the caller does not need, such as an abort.
+func (c *Client) Send(commandType string, fields map[string]any) error {
+	id := c.reserve(nil)
+	payload := make(map[string]any, len(fields)+2)
+	maps.Copy(payload, fields)
+	payload["id"] = id
+	payload["type"] = commandType
+	return c.write(payload)
+}
+
+// reserve hands out the next id and, when a reply is expected, the channel it
+// will arrive on.
+func (c *Client) reserve(reply chan CallResponse) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.nextID++
+	id := fmt.Sprintf("req-%d", c.nextID)
+	if reply != nil {
+		c.pending[id] = reply
+	}
+	return id
 }
 
 // SendUIResponse answers an extension_ui_request by the id it carried.

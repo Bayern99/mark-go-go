@@ -81,7 +81,11 @@ type GenerationJob struct {
 }
 
 func ResolveAgentCommand(command string) (string, error) {
-	if resolved, ok := fsutil.ResolveExecutable(command, nil, fsutil.DefaultUserBinDirs()); ok {
+	return resolveAgentCommand(command, nil)
+}
+
+func resolveAgentCommand(command string, env []string) (string, error) {
+	if resolved, ok := fsutil.ResolveExecutable(command, fsutil.WithUserBinPath(env), nil); ok {
 		return resolved, nil
 	}
 	return "", genui.NewFailure(genui.FailAgentNotFound, fmt.Sprintf("Could not find the agent command %q.", command), genui.HintAgentNotFound)
@@ -129,7 +133,7 @@ func (r *turnRunner) startAgent(dir string) error {
 	if r.agent != nil {
 		return nil
 	}
-	resolved, err := ResolveAgentCommand(r.job.AgentCommand)
+	resolved, err := resolveAgentCommand(r.job.AgentCommand, r.job.Env)
 	if err != nil {
 		return err
 	}
@@ -149,7 +153,7 @@ func (r *turnRunner) startAgent(dir string) error {
 	} else {
 		cmd := exec.Command(resolved, r.job.Args...)
 		cmd.Dir = dir
-		cmd.Env = r.job.Env
+		cmd.Env = fsutil.WithUserBinPath(r.job.Env)
 		r.agent, err = NewAgent(cmd, fsutil.NewLimitBuffer(4<<10))
 		if err != nil {
 			return genui.NewFailure(genui.FailAgentNotFound, fmt.Sprintf("Could not start the agent command %q: %v.", r.job.AgentCommand, err), genui.HintAgentNotFound)

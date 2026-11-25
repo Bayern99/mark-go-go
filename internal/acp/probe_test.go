@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+
 	"path/filepath"
+	"runtime"
+
 	"strings"
 	"testing"
 
@@ -251,5 +254,36 @@ func TestProbeFailsWhenTheCodexCLICannotSayItsVersion(t *testing.T) {
 	}
 	if result.Status != genui.AgentFailed || !strings.Contains(strings.ToLower(result.Hint), "update the codex cli") {
 		t.Fatalf("probe = %+v, want a failed codex CLI and its upgrade hint", result)
+	}
+}
+
+func TestProbeFindsTheInterpreterOfAnExecutableOutsideFinderPATH(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses an env shebang")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", "/usr/bin:/bin")
+	bin := filepath.Join(home, ".local", "share", "fnm", "aliases", "default", "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/bin/sh", filepath.Join(bin, "mgg-test-interpreter")); err != nil {
+		t.Fatal(err)
+	}
+	script := `#!/usr/bin/env mgg-test-interpreter
+if [ "$1" = --version ]; then
+  echo 'fixture 1.0'
+else
+  read -r request
+  printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1}}'
+fi
+`
+	if err := os.WriteFile(filepath.Join(bin, "mgg-test-acp"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Probe(t.Context(), ProbeConfig{Command: "mgg-test-acp"})
+	if err != nil || got.Status != genui.AgentUnknown || got.Version != "fixture 1.0" {
+		t.Fatalf("probe = %+v, %v", got, err)
 	}
 }

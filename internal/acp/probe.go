@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"github.com/Bayern99/mark-go-go/internal/genui"
 )
 
@@ -62,7 +63,7 @@ func (c ProbeConfig) timeout() time.Duration {
 func Probe(ctx context.Context, cfg ProbeConfig) (genui.ProbeResult, error) {
 	backend, _ := cfg.backend()
 	result := genui.ProbeResult{Hint: backend.InstallHint}
-	resolved, err := ResolveAgentCommand(cfg.Command)
+	resolved, err := resolveAgentCommand(cfg.Command, cfg.Env)
 	if err != nil {
 		result.Status = genui.AgentMissing
 		result.Detail = err.Error()
@@ -78,7 +79,7 @@ func Probe(ctx context.Context, cfg ProbeConfig) (genui.ProbeResult, error) {
 		if codex == "" {
 			codex = "codex"
 		}
-		path, err := ResolveAgentCommand(codex)
+		path, err := resolveAgentCommand(codex, cfg.Env)
 		if err != nil {
 			result.Status = genui.AgentMissing
 			result.Detail = "The codex CLI behind codex-acp was not found."
@@ -201,8 +202,8 @@ func initialize(ctx context.Context, cfg ProbeConfig, resolved string, env []str
 	defer os.RemoveAll(dir)
 	cmd := exec.Command(resolved, cfg.Args...)
 	cmd.Dir = dir
-	cmd.Env = env
-	agent, err := NewAgent(cmd, nil)
+	cmd.Env = fsutil.WithUserBinPath(env)
+	agent, err := NewAgent(cmd, fsutil.NewLimitBuffer(4<<10))
 	if err != nil {
 		return handshake, err
 	}
@@ -229,7 +230,7 @@ func initialize(ctx context.Context, cfg ProbeConfig, resolved string, env []str
 // ever sent and no generation runs.
 func ListModels(ctx context.Context, cfg SessionConfig) (genui.ModelCatalog, error) {
 	var catalog genui.ModelCatalog
-	resolved, err := ResolveAgentCommand(cfg.Command)
+	resolved, err := resolveAgentCommand(cfg.Command, cfg.Env)
 	if err != nil {
 		return catalog, err
 	}
@@ -244,8 +245,8 @@ func ListModels(ctx context.Context, cfg SessionConfig) (genui.ModelCatalog, err
 	env := cfg.Env
 	cmd := exec.Command(resolved, cfg.Args...)
 	cmd.Dir = dir
-	cmd.Env = env
-	agent, err := NewAgent(cmd, nil)
+	cmd.Env = fsutil.WithUserBinPath(env)
+	agent, err := NewAgent(cmd, fsutil.NewLimitBuffer(4<<10))
 	if err != nil {
 		return catalog, genui.AgentErrorf("Could not start the agent command %q: %v.", cfg.Command, err)
 	}
@@ -444,7 +445,7 @@ func runVersion(ctx context.Context, resolved string, env []string) (string, err
 	ctx, cancel := context.WithTimeout(ctx, versionTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, resolved, "--version")
-	cmd.Env = env
+	cmd.Env = fsutil.WithUserBinPath(env)
 	out, err := cmd.CombinedOutput()
 	text := strings.TrimSpace(string(out))
 	if err != nil {

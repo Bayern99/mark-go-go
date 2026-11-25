@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
 
+	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"github.com/Bayern99/mark-go-go/internal/genui"
 	"github.com/Bayern99/mark-go-go/internal/pirpc"
 )
@@ -34,7 +34,7 @@ type authCheck struct {
 func Probe(ctx context.Context, cfg Config) (genui.ProbeResult, error) {
 	backend, _ := genui.BackendByID(genui.BackendPi)
 	result := genui.ProbeResult{Hint: backend.InstallHint}
-	resolved, err := resolvePi(cfg.Command)
+	resolved, err := resolvePi(cfg.Command, cfg.Env)
 	if err != nil {
 		var ge *genui.GenError
 		if errors.As(err, &ge) {
@@ -89,10 +89,7 @@ func runAuthCheck(ctx context.Context, cfg Config, resolved, provider string) (a
 	ctx, cancel := context.WithTimeout(ctx, authCheckTimeout)
 	defer cancel()
 	cmd := exec.Command(resolved, "auth", "check", "--provider", provider, "--json", "--no-refresh")
-	cmd.Env = cfg.Env
-	if cmd.Env == nil {
-		cmd.Env = os.Environ()
-	}
+	cmd.Env = fsutil.WithUserBinPath(cfg.Env)
 	pirpc.Configure(cmd)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout

@@ -172,6 +172,24 @@ func StableUserBinDirsFor(home string, system ...string) []string {
 	return append(dirs, system...)
 }
 
+func WithUserBinPath(env []string) []string {
+	if env == nil {
+		env = os.Environ()
+	}
+	out := make([]string, 0, len(env)+1)
+	var path string
+	for _, entry := range env {
+		key, value, _ := strings.Cut(entry, "=")
+		if key == "PATH" || runtime.GOOS == "windows" && strings.EqualFold(key, "PATH") {
+			path = value
+			continue
+		}
+		out = append(out, entry)
+	}
+	dirs := append(filepath.SplitList(path), DefaultUserBinDirs()...)
+	return append(out, "PATH="+strings.Join(dirs, string(os.PathListSeparator)))
+}
+
 func ResolveExecutable(command string, env []string, extraDirs []string) (string, bool) {
 	if command == "" {
 		return "", false

@@ -11,6 +11,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf16"
 
 	"github.com/Bayern99/mark-go-go/internal/genui"
@@ -36,11 +37,22 @@ type documentView struct {
 	failure                            *genui.GenerateFailure
 	lastIDs                            []string
 	cancel                             context.CancelFunc
+	previewSource                      sourcePreviewState
 }
 type headingKey struct {
 	name       string
 	occurrence int
 }
+
+type sourcePreviewState struct {
+	key                    string
+	open, dismissed        bool
+	byPointer, overPreview bool
+	hideAt                 time.Time
+}
+
+const sourceExcerptLimit = 600
+
 type panel struct {
 	win             *nativeui.Window
 	host            *workspace.Service
@@ -472,7 +484,9 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 				if ref.Occurrence > 1 {
 					label = fmt.Sprintf("%s (%d)", label, ref.Occurrence)
 				}
-				if sourceHeading(c.Key(i), label, !ok).Clicked() {
+				heading := sourceHeading(c.Key(i), label, !ok)
+				v.drawSourcePreview(c, heading, fmt.Sprintf("%s/%d/%s", n.ID, i, id), label, ref, s, ok)
+				if heading.Clicked() {
 					highlightCard(v.reader(), n)
 					p.win.Reveal(s.Start)
 					_ = p.win.Source().SelectUTF16(s.Start, s.End)
@@ -528,6 +542,68 @@ func highlightCard(reader *Reading, n Node) {
 		id = n.ID
 	}
 	reader.Highlight(id)
+}
+
+func (v *documentView) drawSourcePreview(c *ui.Context, anchor ui.Element, key, label string, ref Reference, section workspace.Section, found bool) {
+	hovered, focused := anchor.Hovered() && c.Preferences().Hover(), anchor.Focused()
+	engaged := hovered || focused
+	state := &v.previewSource
+	if state.key != key {
+		if engaged {
+			*state = sourcePreviewState{key: key, open: true, byPointer: hovered && !focused}
+		}
+	} else if engaged || state.overPreview {
+		if !state.dismissed {
+			state.open = true
+			state.hideAt = time.Time{}
+		}
+	} else if state.open && !state.byPointer {
+		*state = sourcePreviewState{}
+	} else if state.open {
+		if state.hideAt.IsZero() {
+			state.hideAt = c.Now().Add(300 * time.Millisecond)
+		}
+		if wait := state.hideAt.Sub(c.Now()); wait > 0 {
+			c.After(wait)
+		} else {
+			*state = sourcePreviewState{}
+		}
+	} else {
+		*state = sourcePreviewState{}
+	}
+	if !state.open || state.key != key {
+		return
+	}
+	panel := portrait.PopoverWithSpec(c, anchor, &state.open, portrait.PopoverSpec{
+		Width: portrait.Form.PopoverWide,
+		Title: "Source preview: " + label,
+	}, func() {
+		switch {
+		case !found:
+			portrait.Alert(c, portrait.Tones.Danger, "Source missing", "This section is no longer in the document.")
+		case ref.Hash != "" && !section.UnchangedSince(ref.Hash):
+			portrait.Alert(c, portrait.Tones.Warning, "Source changed", "This section changed after the view was generated. Open the source to read its current text.")
+		default:
+			portrait.Type.Small.Apply(ui.Text(c, sourceExcerpt(v.sourceText, section))).TextColor(portrait.Colors.Ink2).Selectable()
+		}
+	})
+	state.overPreview = panel.Hovered()
+	panel.KeepFocus().Label("Source preview: " + label)
+	if !state.open {
+		state.dismissed = true
+	}
+}
+
+func sourceExcerpt(raw string, section workspace.Section) string {
+	excerpt := strings.TrimSpace(raw[byteAt(raw, section.Start):byteAt(raw, section.End)])
+	runes := 0
+	for i := range excerpt {
+		if runes == sourceExcerptLimit {
+			return strings.TrimSpace(excerpt[:i]) + "…"
+		}
+		runes++
+	}
+	return excerpt
 }
 
 func sourceHeading(c *ui.Context, label string, disabled bool) ui.Element {

@@ -3,7 +3,7 @@ package pigenui
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -69,7 +69,7 @@ func (r *Runner) ExecuteTurn(ctx context.Context, turn genui.Turn) (genui.TurnRe
 	defer cleanupGuard()
 
 	token := newToken()
-	cmd, err := command(r.cfg, turn.Dir, guardPath, token)
+	cmd, err := piCommand(r.cfg, turn.Dir, guardPath, token)
 	if err != nil {
 		return none, err
 	}
@@ -166,8 +166,7 @@ func (r *Runner) awaitGuard(ctx context.Context, client *pirpc.Client, token str
 	case <-timer.C:
 		client.Kill()
 		return genui.NewFailure(genui.FailAgentError,
-			"The guard that restricts Pi's file access did not report in, so nothing was generated.",
-			"Nothing ran unguarded. Report this if it keeps happening.")
+			"The guard that restricts Pi's file access did not report in, so nothing was generated.", guardHint)
 	case <-ctx.Done():
 		client.Kill()
 		return genui.ErrCancelled
@@ -177,8 +176,7 @@ func (r *Runner) awaitGuard(ctx context.Context, client *pirpc.Client, token str
 func (r *Runner) guardFailure(client *pirpc.Client) error {
 	tail := strings.TrimSpace(client.StderrTail())
 	failure := genui.NewFailure(genui.FailAgentError,
-		"Pi stopped before the guard that restricts its file access loaded, so nothing was generated.",
-		"Nothing ran unguarded. Reinstall Mark Go Go if this keeps happening.")
+		"Pi stopped before the guard that restricts its file access loaded, so nothing was generated.", guardHint)
 	if tail != "" {
 		failure.Detail = genui.CutRunes(tail, genui.MaxDetailRunes)
 	}
@@ -201,26 +199,26 @@ func readGuardStatus(text string) guardState {
 	return guardState{state: parts[0], version: parts[1], token: parts[2]}
 }
 
+// guardHint is what a reader is told when nothing ran: the refusal is the safe
+// outcome, and only a broken installation can explain it.
+const guardHint = "Nothing was generated. Reinstall Mark Go Go if this keeps happening."
+
 func (g guardState) accept(token string) error {
 	switch {
 	case g.state == "ready" && g.version == GuardVersion && g.token == token:
 		return nil
 	case g.state == "ready":
 		return genui.NewFailure(genui.FailAgentError,
-			"The guard that restricts Pi's file access is not the version this app expects, so nothing was generated.",
-			"Nothing ran unguarded. Reinstall Mark Go Go.")
+			"The guard that restricts Pi's file access is not the version this app expects, so nothing was generated.", guardHint)
 	case g.state == "mismatch":
 		return genui.NewFailure(genui.FailAgentError,
-			"The guard that restricts Pi's file access reported version "+g.version+", which this app does not speak, so nothing was generated.",
-			"Nothing ran unguarded. Reinstall Mark Go Go.")
+			fmt.Sprintf("The guard that restricts Pi's file access reported version %q, which this app does not speak, so nothing was generated.", g.version), guardHint)
 	case g.state == "unconfigured":
 		return genui.NewFailure(genui.FailAgentError,
-			"The guard that restricts Pi's file access started without the paths this turn allows, so nothing was generated.",
-			"Nothing ran unguarded. Report this if it keeps happening.")
+			"The guard that restricts Pi's file access started without the paths this turn allows, so nothing was generated.", guardHint)
 	default:
 		return genui.NewFailure(genui.FailAgentError,
-			"The guard that restricts Pi's file access did not report a known state, so nothing was generated.",
-			"Nothing ran unguarded. Report this if it keeps happening.")
+			"The guard that restricts Pi's file access did not report a known state, so nothing was generated.", guardHint)
 	}
 }
 
@@ -239,10 +237,6 @@ func (r *Runner) applyModel(ctx context.Context) error {
 		"provider": r.cfg.Provider,
 		"modelId":  model,
 	}, &applied); err != nil {
-		var ge *genui.GenError
-		if errors.As(err, &ge) {
-			return ge
-		}
 		return err
 	}
 	r.mu.Lock()
@@ -300,10 +294,6 @@ func (r *Runner) call(ctx context.Context, command string, fields map[string]any
 	case err := <-ch:
 		if err == nil {
 			return nil
-		}
-		var ge *genui.GenError
-		if errors.As(err, &ge) {
-			return ge
 		}
 		return genui.AgentError(err.Error())
 	case <-ctx.Done():

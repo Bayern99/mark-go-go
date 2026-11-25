@@ -32,7 +32,7 @@ func (r *Runner) listModels(ctx context.Context) (genui.ModelCatalog, error) {
 	defer cleanupGuard()
 
 	token := newToken()
-	cmd, err := command(r.cfg, dir, guardPath, token)
+	cmd, err := piCommand(r.cfg, dir, guardPath, token)
 	if err != nil {
 		return catalog, err
 	}

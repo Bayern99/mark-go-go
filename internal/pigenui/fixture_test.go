@@ -59,6 +59,12 @@ func runPiFixture() {
 		runFixtureAuthCheck(args)
 		return
 	}
+	if os.Getenv("MGO_FIXTURE_BROKEN_GUARD") == "1" {
+		// What Pi itself does when an explicit -e fails to load: it says why on
+		// stderr and exits before any session starts.
+		_, _ = os.Stderr.WriteString(`Error: Failed to load extension: ParseError: Unexpected token`)
+		os.Exit(1)
+	}
 	defer appendFixtureLog(fixtureRecord{"event": "exit", "pid": os.Getpid()})
 	runFixtureRPC()
 }

@@ -161,7 +161,9 @@ func newToken() string {
 	return hex.EncodeToString(buf)
 }
 
-func command(cfg Config, dir, guardPath, token string) (*exec.Cmd, error) {
+// piCommand prepares the process for one turn: this app's own arguments, the
+// turn's folder, and the guard's environment.
+func piCommand(cfg Config, dir, guardPath, token string) (*exec.Cmd, error) {
 	resolved, err := resolvePi(cfg.Command)
 	if err != nil {
 		return nil, err

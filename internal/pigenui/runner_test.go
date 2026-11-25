@@ -206,6 +206,27 @@ func TestAGuardOfAnotherVersionStopsTheTurn(t *testing.T) {
 	}
 }
 
+func TestAGuardPiCouldNotLoadStopsTheTurnWithItsOwnMessage(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "fixture.log")
+	cfg := testConfig(t, logPath)
+	cfg.Env = append(cfg.Env, "MGO_FIXTURE_BROKEN_GUARD=1")
+
+	_, _, err := runTurn(t, cfg, genui.Turn{Dir: turnDir(t), Prompt: "Write the view."})
+	if err == nil {
+		t.Fatal("a turn whose guard extension failed to load must not generate")
+	}
+	if !strings.Contains(err.Error(), "guard") {
+		t.Errorf("error = %q, want it to name the guard", err)
+	}
+	failure := genui.FailureOf(err)
+	if !strings.Contains(failure.Detail, "Failed to load extension") {
+		t.Errorf("detail = %q, want Pi's own explanation", failure.Detail)
+	}
+	if commands := fixtureCommands(fixtureLog(t, logPath)); slices.Contains(commands, "prompt") {
+		t.Fatalf("commands = %s, want no prompt", describe(commands))
+	}
+}
+
 func TestADialogThisAppCannotShowIsDeclinedAndTheRunAborts(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "fixture.log")
 	cfg := testConfig(t, logPath)

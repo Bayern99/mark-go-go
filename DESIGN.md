@@ -26,7 +26,7 @@ Mark Go Go 的原生桌面界面由 MyGo Native UI 绘制，[internal/portrait](
 
 `⌘,` 打开统一设置中心。默认 sheet 为 1040×720、圆角 16，左侧 224 点分类栏带 `/` 搜索，右侧为 `Settings / Category` 面包屑、按需 Reset 与 Close；内容列最大 720 点，组标题下是一张带发丝行分隔的圆角卡片。宽度不足 720 点时分类栏变成 Select。第一次 Esc 清空搜索，第二次关闭，搜索结果仍是可立即操作的真实设置行。
 
-设置页由 `SettingsPage` 注册而不是硬编码：General、Appearance、Editor、Shortcuts、Plugins、Diagnostics 属于外壳；Feynman 与 GenUI 各自注册研究和工作区页面。`OpenSettings` 是唯一深链入口，空值恢复上次分类，`tools` 兼容到 `mcp`。每个偏好只有 Settings Center 一个编辑器；chrome 仅保留高频一键切换或深链。General 持久化导航与研究可见性，Editor 持久化阅读和源码偏好，Plugins 保存各插件的 `mgo.plugin.*` 开关并深链到插件自己的设置页，Diagnostics 可定位偏好文件或经确认重置全部设置。GenUI 缺省开启，关闭时文档回到 `Preview` 且不再监听或生成，已保存的视图留在磁盘上。 [设置中心](internal/nativeui/settings.go) · [外壳设置页](internal/nativeui/settings_native.go) · [ADR 0015](docs/adr/0015-unified-settings-center.md)
+设置页由 `SettingsPage` 注册而不是硬编码：General、Appearance、Editor、Shortcuts、Plugins、Diagnostics 属于外壳；Feynman 与 GenUI 各自注册研究和工作区页面。`OpenSettings` 是唯一深链入口，空值恢复上次分类，`tools` 兼容到 `mcp`。每个偏好只有 Settings Center 一个编辑器；chrome 仅保留高频一键切换或深链。General 持久化导航与研究可见性，Editor 持久化阅读和源码偏好，Plugins 保存各插件的 `mgo.plugin.*` 开关并深链到插件自己的设置页，Diagnostics 可定位偏好文件或经确认重置全部设置。GenUI 缺省开启，关闭时文档回到 `Preview` 且不再监听或生成，已保存的视图留在磁盘上。GenUI 页是后端的唯一编辑器：2×2 卡片带状态点与 `Test & Refresh`，Codex 与 Antigravity 各自在 Terminal 登录，模型与按能力出现的思考等级在 `Generation`，命令与参数在 `Advanced`（仅 Custom ACP 默认展开）；面板只保留后端与模型的只读摘要与 `Configure…`。 [设置中心](internal/nativeui/settings.go) · [外壳设置页](internal/nativeui/settings_native.go) · [ADR 0015](docs/adr/0015-unified-settings-center.md) · [ADR 0018](docs/adr/0018-genui-backends-and-orchestrator.md) · [GenUI 设置页](internal/nativegenui/settings.go)
 
 ## Portrait 模块
 

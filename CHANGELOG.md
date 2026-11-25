@@ -9,11 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- **GenUI 多后端与编排层拆分（[ADR 0018](docs/adr/0018-genui-backends-and-orchestrator.md)）**：生成拆成协议无关的 Orchestrator 与 Runner，`Settings / GenUI` 提供 Codex、Antigravity、Custom ACP 的 2×2 后端卡片、状态点、`Test & Refresh` 与 Terminal 登录；命令与参数分开，Codex 以无参数的 `codex-acp` 启动，Antigravity 用 `agy acp`；模型与思考等级以 `configOptions` 为主路径、legacy 模型列表只在缺少 `model` 选项时兜底，选项以每次响应为准；`settings.json` 升到 `schemaVersion: 2`，v1 配置迁到 Antigravity；Finder 启动也能找到 fnm/nvm/volta/bun 安装的命令。 GenUI gains protocol-neutral orchestration with per-backend settings, Codex and Custom ACP backends, declared-option model/effort selection, `Probe`/`ListModels`, settings v2 migration, and Finder-safe executable discovery. Pi arrives in #194.
+## [0.6.0] - 2026-11-25
 
-- **GenUI 插件开关（#192）**：`Settings / Plugins` 新增 GenUI 开关，缺省开启，仅显式关闭时生效；偏好跨窗口同步并在重启后保留。关闭后工具栏不再提供 GenUI，快捷键、已保存视图模式与窗口恢复都无法进入，正在显示 GenUI 的文档回到 `Preview`，进行中的生成被取消且视图监听解除，已保存视图仍在重新开启后读取。启用中的插件若有自己的设置页，Plugins 行显示 `Configure →` 深链。 GenUI becomes an optional plugin switch in Settings / Plugins, on by default, falling back to Preview with generation cancelled and watching stopped while off.
-
-## [0.6.0] - 2026-11-24
+### 界面与编辑 · Interface and editing
 
 - **Arc 灵感空间架构与命令栏（[ADR 0013](docs/adr/0013-arc-experiment-scenery-page-command-bar.md)）**：窗口改为彩色布景（Scenery）承载悬浮不透明纸页（Page），文档标签移至侧栏竖排，原三行顶栏收敛为纸页顶部单行；新增全局命令栏（`⌘K` / `⌘T`）统一搜索打开的文档、工作区文件、标题与全部命令；字体升级为 Inter / Inter Display / IBM Plex Mono / IBM Plex Sans SC；macOS 启用隐藏标题栏与窗口控件对齐。 Arc-inspired coloured scenery and floating paper page, vertical sidebar document tabs, single-row page bar, `⌘K`/`⌘T` Command Bar, Inter typography, and hidden macOS title bar.
 - **五行八境（Wu Xing Spaces）与完整深色外观（[ADR 0014](docs/adr/0014-wuxing-spaces-per-space-accent-and-dark-mode.md)）**：八个工作区 Space（Five Elements、Metal–Water、Wood–Fire、Earth、Metal、Wood、Water、Fire）各自拥有取自五行 742 色表的布景、纸页、强调色与语义色，提供完整的 System / Light / Dark 外观，16 套浅深配色全部通过 WCAG AA 对比度自动化契约校验。 Eight Wu Xing Spaces with per-Space WCAG AA accents and complete System / Light / Dark appearance.
@@ -21,6 +19,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Portrait 2.0 升级与 65 项双轴 UI/UX 审查修复（[ADR 0012](docs/adr/0012-portrait-2-coss-reference-and-contracts.md)）**：吸收 `cosscom/ui` 组件语义与状态矩阵，补齐破坏性确认弹窗、多文档关闭安全、发送失败草稿与纯附件无损互换恢复、原子提案撤销、高对比度焦点环与 1×/2× 发丝线、基于 inline AST 的 CJK 软换行复制、中文多行表格自适应行高、GenUI 卡片/横线宽度收敛，并移除侧栏文件行、文档标签与路径面包屑上遮挡视线的完整路径悬浮提示。 Portrait 2.0 component system and 65-item dual-axis UI/UX polish across data safety, contrast, typography, CJK wrapping/copy, Feynman draft recovery, and GenUI/Review surfaces.
 - **侧栏点击、大纲定位与收放动效实机精修**：修复 Files 文件树鼠标按下即居中滚走导致首次点击失效的问题（仅键盘可见焦点自动滚入）；Outline 标题跳转改为顶部留白定位并等待冷开 Preview 文末表格测量收敛（残余位移 0 pt），同时提供持久化高亮、共享胶囊滑动与原生 macOS `AXSelected` / `AXSelectedRows` 语义；停靠侧栏指针收放加入 160 ms 平滑防挤压滑动并全程避让标题栏窗口控件，`⌘0` 保持单帧瞬切。 Fixed Files first-click scroll jump, added top-aligned Outline jumps with lazy EOF table convergence and native macOS `AXSelected`/`AXSelectedRows`, and animated docked sidebar pointer collapse/expand with titlebar clearance while keeping `⌘0` instant.
 - 修复 Preview 标题折叠时被折叠段的残影叠在后文上、展开时后文先跳位再被遮罩盖住的问题：折叠与展开改为直接到位（#96）。 Heading folds and expansions in Preview now land at once (#96).
+- **Preview 标题折叠标记（#202）**：折叠标记改为随标题字号缩放的圆角实心三角，展开朝下、收起朝右，点击行为与可访问名称不变。 The heading fold marker is now a rounded solid triangle that scales with the heading size.
+- **命令栏与 Feynman Actions 的键盘行为（#175）**：`⌘K` 命令栏与 Feynman `/` Actions 共用选择移动、越界与提交逻辑；Actions 按钮打开后可直接用方向键与 Enter 选择，补全后光标停在命令末尾；Esc 按打开入口归还焦点，点击外部时焦点留在被点控件；无匹配时保持空态，Esc 后 Enter 发送原文。差异表见 [docs/command-keyboard-contract.md](docs/command-keyboard-contract.md)。 The Command Bar and Feynman Actions share keyboard selection, return focus to where they were opened on Escape, and keep focus where the reader clicked.
+- **GenUI 来源摘录预览（#177）**：悬停或键盘聚焦来源按钮时显示原文摘录（最多 600 字符），来源已改或缺失时显示状态而不显示旧内容；缺失来源可用 Tab 聚焦，窄窗内摘录可滚动；没有章节哈希的旧视图注明无法核验生成时的版本。 Hovering or focusing a GenUI source shows its excerpt, or its changed or missing state instead of stale text.
+
+### GenUI 与 AI 集成 · GenUI and AI integration
+
+- **GenUI 多后端与编排层拆分（[ADR 0018](docs/adr/0018-genui-backends-and-orchestrator.md)）**：生成拆成协议无关的 Orchestrator 与 Runner，`Settings / GenUI` 提供 Codex、Antigravity、Custom ACP 的 2×2 后端卡片、状态点、`Test & Refresh` 与 Terminal 登录；命令与参数分开，Codex 以无参数的 `codex-acp` 启动，Antigravity 用 `agy acp`；模型与思考等级以 `configOptions` 为主路径、legacy 模型列表只在缺少 `model` 选项时兜底，选项以每次响应为准；`settings.json` 升到 `schemaVersion: 2`，v1 配置迁到 Antigravity；Finder 启动也能找到 fnm/nvm/volta/bun 安装的命令。 GenUI gains protocol-neutral orchestration with per-backend settings, Codex and Custom ACP backends, declared-option model/effort selection, `Probe`/`ListModels`, settings v2 migration, and Finder-safe executable discovery.
+- **GenUI 插件开关（#192）**：`Settings / Plugins` 新增 GenUI 开关，缺省开启，仅显式关闭时生效；偏好跨窗口同步并在重启后保留。关闭后工具栏不再提供 GenUI，快捷键、已保存视图模式与窗口恢复都无法进入，正在显示 GenUI 的文档回到 `Preview`，进行中的生成被取消且视图监听解除，已保存视图仍在重新开启后读取。启用中的插件若有自己的设置页，Plugins 行显示 `Configure →` 深链。 GenUI becomes an optional plugin switch in Settings / Plugins, on by default, falling back to Preview with generation cancelled and watching stopped while off.
+- **Pi 后端（#194，[ADR 0018](docs/adr/0018-genui-backends-and-orchestrator.md)）**：GenUI 新增 Pi 后端，直接连接 `pi --mode rpc`，每次生成启动新进程并加载随应用分发的守卫扩展，读取限于本次生成的临时目录、写入限于其 `out.json`；守卫未确认加载时不生成。Pi 的 RPC 层与 Feynman 共用。 A Pi GenUI backend talks to `pi --mode rpc` with an app-shipped guard extension that confines reads and writes to the generation.
+- **外部 Agent 通道与 `markgogo` 命令（#195，[ADR 0017](docs/adr/0017-external-ipc-channel.md)）**：默认关闭的本机 Unix socket（目录 `0700`、socket `0600`，无网络端口与 Token）把工作区交给终端里的 Agent；`markgogo` 提供 `status`、`read`、`propose`、`new`、`open`、`genui`、`checkpoint`、`agent-prompt` 与 `mcp`（stdio 垫片）。通道使用 MCP `2026-07-28`，兼容 `2025-11-25` 握手。只有修改提案进入审阅队列，新建文档、写入视图与检查点立即生效。 An opt-in local socket and the `markgogo` CLI let terminal agents read the workspace and propose edits over MCP.
+- **Settings / AI Integration（#196，[ADR 0016](docs/adr/0016-ai-integration-faces.md)）**：设置页可安装或卸载 `markgogo` 到 `~/.local/bin`（只管理本应用创建的链接）、开关本机通道、查看最近一次外部调用，并为 Codex、Pi 与其他 Agent 提供提示词与 `SKILL.md`。 A settings page installs the CLI, toggles the channel, and gives each agent a prompt and skill.
+- **随应用打包 `markgogo` 与验收修复（#203、#204）**：安装包在 `Contents/Resources/markgogo` 带有对应架构的 CLI；修复真机验收发现的问题，包括关闭设置时的崩溃、现代 MCP 请求校验、生成说明中的消息版本、首启后端探测、外部通道的工作区绑定与 socket 清理、Pi 的提供商与模型组合保存，以及带空格的命令路径迁移；外部 Agent 指引不再包含 Claude Code。 The app now bundles `markgogo`; machine-acceptance findings are fixed.
+
+### 测试与文档 · Tests and documentation
+
+- **测试与 CI（#205、#206）**：CI 把原生界面测试拆成四个分片并单独调度耗时最长的包，单次运行中位耗时从约 257 秒降到约 115 秒；Feynman 测试改为等待事件而不依赖墙钟期限，修复 CI 上偶发的失败。 CI wall time drops from about 257 s to about 115 s, and flaky Feynman tests now wait for events.
+- **文档（#209）**：README 改为先说明产品是什么、做什么、不做什么，致谢补充所用协议与外部工具，[docs/acceptance.md](docs/acceptance.md) 记录 0.6.0 的真机验收。 The READMEs describe the product plainly, and 0.6.0 machine acceptance is recorded.
 
 ## [0.5.0] - 2026-11-21
 

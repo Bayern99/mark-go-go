@@ -20,8 +20,10 @@ const settingsSchemaVersion = 2
 // the registry defaults, so an untouched backend still knows how its CLI is
 // launched.
 type GenUIBackend struct {
-	Command      string   `json:"command,omitempty"`
-	Args         []string `json:"args,omitempty"`
+	Command string `json:"command,omitempty"`
+	// Args has no omitempty: an explicitly empty list is how a backend's
+	// default arguments are removed, which nil still means "use the default".
+	Args         []string `json:"args"`
 	Model        string   `json:"model,omitempty"`
 	Models       []string `json:"models,omitempty"`
 	ThoughtLevel string   `json:"thoughtLevel,omitempty"`

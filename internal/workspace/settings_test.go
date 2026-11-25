@@ -296,3 +296,17 @@ func TestSettingsV2KeepsBackendsApart(t *testing.T) {
 		t.Fatal("selecting an unknown backend succeeded")
 	}
 }
+
+func TestClearingABackendsArgumentsSticks(t *testing.T) {
+	dir := t.TempDir()
+	st := &settingsStore{dir: dir}
+	empty := []string{}
+	if _, err := st.apply(SettingsPatch{GenUI: &GenUIPatch{Backends: map[string]GenUIBackendPatch{
+		genui.BackendAntigravity: {Args: &empty},
+	}}}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if got := (&settingsStore{dir: dir}).get().GenUI.For(genui.BackendAntigravity).Args; len(got) != 0 {
+		t.Fatalf("args = %v, want the explicitly empty list to survive a reload", got)
+	}
+}

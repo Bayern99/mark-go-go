@@ -39,18 +39,6 @@ func quote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// SetCreateTempForTest makes the macOS script land in a test's folder.
-func SetCreateTempForTest(fn func(pattern string) (*os.File, error)) func() {
-	previous := createTemp
-	createTemp = fn
-	return func() { createTemp = previous }
-}
-
-// OpenForTest runs Open for another platform with an injected environment.
-func OpenForTest(ctx context.Context, goos string, getenv func(string) string, commandLine string, command Command) error {
-	return open(ctx, goos, getenv, commandLine, command)
-}
-
 // Open starts commandLine in the system Terminal. commandLine is a single line
 // the user can also run by hand; the error says so when no terminal is found.
 func Open(ctx context.Context, commandLine string, command Command) error {

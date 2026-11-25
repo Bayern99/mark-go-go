@@ -33,7 +33,8 @@ func (p *panel) settingsPage() nativeui.SettingsPage {
 		Dirty: func() bool {
 			id, backend := p.settings.GenUI.Active()
 			defaults := workspace.DefaultSettings().GenUI.For(id)
-			return backend.Model != defaults.Model || backend.Command != defaults.Command || backend.ThoughtLevel != defaults.ThoughtLevel
+			return backend.Model != defaults.Model || backend.Command != defaults.Command ||
+				backend.ThoughtLevel != defaults.ThoughtLevel || !slices.Equal(backend.Args, defaults.Args)
 		},
 		Reset: func() {
 			id, _ := p.settings.GenUI.Active()
@@ -41,6 +42,7 @@ func (p *panel) settingsPage() nativeui.SettingsPage {
 			p.saveBackend(id, workspace.GenUIBackendPatch{
 				Model:        &defaults.Model,
 				Command:      &defaults.Command,
+				Args:         &defaults.Args,
 				ThoughtLevel: &defaults.ThoughtLevel,
 			})
 			if edit := p.edits[id]; edit != nil {

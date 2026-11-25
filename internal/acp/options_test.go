@@ -242,3 +242,24 @@ func TestLaunchKeepsArgumentsOutOfTheExecutable(t *testing.T) {
 		t.Fatalf("argv = %v, want no version entry point", args)
 	}
 }
+
+func TestAnEffortTheAgentDoesNotApplyIsNotRecorded(t *testing.T) {
+	selection := &fakeSelection{}
+	err, _, _ := driveGeneration(t, fakeSpec{
+		Out:            minimalOut,
+		ThoughtValues:  []string{"low", "high"},
+		ThoughtCurrent: "low",
+		ThoughtStuck:   true,
+	}, nil, func(job *GenerationJob) {
+		job.Backend = genui.BackendCodex
+		job.Model = "gemini-3.8-flash"
+		job.ThoughtLevel = "high"
+		job.Selection = selection
+	})
+	if err != nil {
+		t.Fatalf("RunGeneration: %v", err)
+	}
+	if selection.model != "gemini-3.8-flash" || selection.thought != "" {
+		t.Fatalf("selection = %+v, want the model but not the unapplied effort", selection)
+	}
+}

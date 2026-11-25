@@ -56,6 +56,9 @@ func TestProbeRecordsTheVersionAndLeavesLoginUnknown(t *testing.T) {
 	if !strings.Contains(result.Version, "fake-agent 1.2.3") || result.Executable == "" {
 		t.Fatalf("probe = %+v, want the version and executable", result)
 	}
+	if result.Hint != "" {
+		t.Fatalf("probe hint = %q, want no install advice for an agent that works", result.Hint)
+	}
 }
 
 func TestProbeSeesADeclaredLoginAndOutdatedAgent(t *testing.T) {

@@ -117,6 +117,7 @@ func Probe(ctx context.Context, cfg ProbeConfig) (genui.ProbeResult, error) {
 		return result, nil
 	}
 	result.Status = genui.AgentUnknown
+	result.Hint = ""
 	return result, nil
 }
 
@@ -424,7 +425,9 @@ func modelError(err error) error {
 	var rpc *RPCError
 	if errors.As(err, &rpc) {
 		if genui.IsAuthError(rpc.Code, rpc.Message) {
-			return genui.AuthRequired("", rpc.Message)
+			e := genui.NewFailure(genui.FailAuthRequired, "The agent is not signed in.", "Sign in with the agent's own command in Terminal, then choose Test & Refresh.")
+			e.Detail = genui.CutRunes(rpc.Message, genui.MaxDetailRunes)
+			return e
 		}
 		return genui.AgentErrorf("The agent answered with an error: %s", rpc.Message)
 	}

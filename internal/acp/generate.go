@@ -28,7 +28,7 @@ var acpInitializeParams = map[string]any{
 	},
 }
 
-const defaultGenerationTimeout = 5 * time.Minute
+const defaultGenerationTimeout = genui.DefaultGenerationTimeout
 
 const acpPromptCancelAckTimeout = time.Second
 
@@ -466,7 +466,16 @@ func (r *turnRunner) confirmedSelection() error {
 	if mismatch != "" || !confirmed || model == "" {
 		return nil
 	}
-	_ = r.job.Selection.SetSelection(r.job.Backend, model, r.job.ThoughtLevel)
+	// Only the effort the agent reports back is recorded; an effort it did not
+	// confirm leaves the saved one alone.
+	thought := ""
+	requested := strings.TrimSpace(r.turn.ThoughtLevel)
+	if requested != "" {
+		if actual, ok := r.thoughtActual(); ok && actual == requested {
+			thought = actual
+		}
+	}
+	_ = r.job.Selection.SetSelection(r.job.Backend, model, thought)
 	return nil
 }
 
@@ -729,6 +738,20 @@ func (r *turnRunner) markModelRequested(requested string) {
 	r.modelRequested = true
 	r.modelTarget = requested
 	r.modelMu.Unlock()
+}
+
+// thoughtActual reads the effort the agent currently reports, from the latest
+// options it sent or its update notification.
+func (r *turnRunner) thoughtActual() (string, bool) {
+	opt, ok := findThoughtOption(r.currentOptions())
+	if !ok {
+		return "", false
+	}
+	current, ok := opt.current()
+	if !ok {
+		return "", false
+	}
+	return configString(current)
 }
 
 func (r *turnRunner) modelProblem() error {

@@ -70,6 +70,7 @@ type fakeSpec struct {
 	ThoughtCurrent       string                  `json:"thoughtCurrent"`
 	ThoughtModels        []string                `json:"thoughtModels"`
 	ThoughtID            string                  `json:"thoughtId"`
+	ThoughtStuck         bool                    `json:"thoughtStuck"`
 	ThoughtCategory      string                  `json:"thoughtCategory"`
 	ConfigUpdate         bool                    `json:"configUpdate"`
 	Out                  string                  `json:"out"`
@@ -203,7 +204,9 @@ func runFakeAgent() {
 		if !slices.Contains(thoughtValues, value) {
 			return false
 		}
-		thoughtCurrent = value
+		if !spec.ThoughtStuck {
+			thoughtCurrent = value
+		}
 		return true
 	}
 

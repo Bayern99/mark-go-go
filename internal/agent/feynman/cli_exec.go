@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
+	"github.com/Bayern99/mark-go-go/internal/pirpc"
 	"github.com/Bayern99/mark-go-go/internal/review"
 )
 
@@ -38,9 +39,9 @@ func feynmanCLICommand(ctx context.Context, work string, args ...string) (*exec.
 		"NO_COLOR=1",
 		"TERM=dumb",
 	)
-	configureResearchProcess(cmd)
+	pirpc.Configure(cmd)
 	cmd.Cancel = func() error {
-		stopResearchProcess(cmd)
+		pirpc.Stop(cmd)
 		return nil
 	}
 	return cmd, nil

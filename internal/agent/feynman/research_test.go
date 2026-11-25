@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
+	"github.com/Bayern99/mark-go-go/internal/pirpc"
 	"github.com/Bayern99/mark-go-go/internal/review"
 	"github.com/egoist/mygo"
 )
@@ -823,7 +824,7 @@ func fixtureCommand(home string) func(root, work string) (*exec.Cmd, error) {
 			"HOME="+home,
 			"FEYNMAN_HOME="+home,
 		)
-		configureResearchProcess(cmd)
+		pirpc.Configure(cmd)
 		return cmd, nil
 	}
 }

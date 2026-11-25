@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
+	"github.com/Bayern99/mark-go-go/internal/pirpc"
 )
 
 func cliFixtureCommand(home, mode string) func(ctx context.Context, work string, args ...string) (*exec.Cmd, error) {
@@ -29,9 +30,9 @@ func cliFixtureCommand(home, mode string) func(ctx context.Context, work string,
 			"HOME="+home,
 			"FEYNMAN_HOME="+home,
 		)
-		configureResearchProcess(cmd)
+		pirpc.Configure(cmd)
 		cmd.Cancel = func() error {
-			stopResearchProcess(cmd)
+			pirpc.Stop(cmd)
 			return nil
 		}
 		return cmd, nil

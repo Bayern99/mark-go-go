@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
+	"github.com/Bayern99/mark-go-go/internal/pirpc"
 	"github.com/Bayern99/mark-go-go/internal/review"
 )
 
@@ -94,6 +95,6 @@ func (h *ResearchManager) researchCommand(root, work string) (*exec.Cmd, error) 
 		"TMPDIR="+temp,
 		pathEnv,
 	)
-	configureResearchProcess(cmd)
+	pirpc.Configure(cmd)
 	return cmd, nil
 }

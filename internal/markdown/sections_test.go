@@ -1,4 +1,4 @@
-package workspace
+package markdown
 
 import (
 	"encoding/json"
@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/Bayern99/mark-go-go/internal/genui"
 )
 
 type sectionVectorFixture struct {
@@ -65,7 +63,7 @@ func TestSectionVectorsParity(t *testing.T) {
 	fx := loadSectionVectors(t)
 
 	for _, tc := range fx.Hashes {
-		if got := genui.SectionHashAsWritten(tc.Text); got != tc.Hash {
+		if got := SectionHashAsWritten(tc.Text); got != tc.Hash {
 			t.Errorf("SectionHashAsWritten(%q) = %q, want %q", tc.Text, got, tc.Hash)
 		}
 	}
@@ -106,7 +104,7 @@ func TestSectionVectorsParity(t *testing.T) {
 		if want.HashAsWritten != "" {
 			earlierRule++
 			saved = want.HashAsWritten
-			if written := genui.SectionHashAsWritten(want.TextAsWritten); written != saved || saved == want.Hash {
+			if written := SectionHashAsWritten(want.TextAsWritten); written != saved || saved == want.Hash {
 				t.Errorf("notes.section[%d]: the text as written hashes to %q, the vector says %q and %q under the current rule", i, written, saved, want.Hash)
 			}
 		}

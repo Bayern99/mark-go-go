@@ -595,6 +595,7 @@ func (v *documentView) drawSourcePreview(c *ui.Context, anchor ui.Element, key, 
 	panel.KeepFocus().Label("Source preview: " + label)
 	if !state.open {
 		state.dismissed = true
+		state.overPreview = false
 	}
 }
 

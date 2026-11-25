@@ -117,6 +117,12 @@ func TestSourcePreviewStaysOpenWhilePointerMovesIntoIt(t *testing.T) {
 	if _, ok := app.AccessByRole(ui.RolePopup, "Source preview: Overview"); !ok {
 		t.Fatal("the preview closed while the pointer rested inside it")
 	}
+
+	app.Key(0, ui.KeyEscape)
+	app.Frame()
+	app.Move(600, 340)
+	app.Frame()
+	hoverSourcePreview(t, app)
 }
 
 func TestSourcePreviewReportsChangedAndMissingSectionsInsteadOfStaleExcerpts(t *testing.T) {

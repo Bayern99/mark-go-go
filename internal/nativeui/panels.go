@@ -35,7 +35,7 @@ func (w *Window) Reveal(offset int) {
 		w.failure = err.Error()
 		return
 	}
-	if w.Active().ViewMode == "genui" {
+	if w.viewMode(w.Active()) == "genui" {
 		w.SetMode("preview")
 		w.documents[w.snapshot.ActiveID].returnToGenUI = true
 	}

@@ -102,8 +102,7 @@ func TestGenUISettingsOffersFourBackendsAndKeepsPiUnavailable(t *testing.T) {
 func TestTestAndRefreshReportsTheBackendAndLoadsItsModels(t *testing.T) {
 	p, _ := settingsPanel(t, workspace.DefaultSettings())
 	started, release := make(chan struct{}), make(chan struct{})
-	done := make(chan struct{})
-	p.runOnUI = func(fn func()) { fn(); close(done) }
+	work := syncedUI(p)
 	p.probe = func(id string) (genui.ProbeResult, error) {
 		close(started)
 		<-release
@@ -124,7 +123,7 @@ func TestTestAndRefreshReportsTheBackendAndLoadsItsModels(t *testing.T) {
 		t.Fatal("the card does not show that the test is running")
 	}
 	close(release)
-	<-done
+	runUI(t, work)
 	app.Frame()
 
 	state := p.status(genui.BackendAntigravity)
@@ -208,15 +207,14 @@ func TestAdvancedHoldsTheCommandAndArgumentsAndIsOpenForCustomACP(t *testing.T) 
 func TestSignInInTerminalRunsTheChosenBackendAndIsUnavailableForCustomACP(t *testing.T) {
 	p, _ := settingsPanel(t, workspace.DefaultSettings())
 	signed := make(chan string, 1)
-	done := make(chan struct{})
-	p.runOnUI = func(fn func()) { fn(); close(done) }
+	work := syncedUI(p)
 	p.signIn = func(id string) error {
 		signed <- id
 		return nil
 	}
 	app := pageTester(p, "")
 	clickButton(t, app, "Sign in in Terminal")
-	<-done
+	runUI(t, work)
 	if got := <-signed; got != genui.BackendAntigravity {
 		t.Fatalf("signed in %q, want the active backend", got)
 	}
@@ -242,8 +240,7 @@ func TestASaveErrorShowsAboveTheBackendCards(t *testing.T) {
 
 func TestTheRefreshFailureKeepsThePreviousModels(t *testing.T) {
 	p, _ := settingsPanel(t, workspace.DefaultSettings())
-	done := make(chan struct{})
-	p.runOnUI = func(fn func()) { fn(); close(done) }
+	work := syncedUI(p)
 	p.status(genui.BackendAntigravity).catalog = genui.ModelCatalog{
 		Models:       []genui.ModelOption{{ID: "gpt-6-sol"}},
 		CurrentModel: "gpt-6-sol",
@@ -256,7 +253,7 @@ func TestTheRefreshFailureKeepsThePreviousModels(t *testing.T) {
 	}
 	app := pageTester(p, "")
 	clickButton(t, app, "Test & Refresh")
-	<-done
+	runUI(t, work)
 	app.Frame()
 	if !app.HasText("The agent did not answer.") {
 		t.Fatalf("the refresh error is hidden: %q", app.Texts())
@@ -294,6 +291,20 @@ func TestTheRefreshNotePromisesOnlyWhatTheAppCanKeep(t *testing.T) {
 	}
 }
 
+// syncedUI hands work started off the UI thread back to the test's thread, so a
+// test never touches panel state while the test frame is drawing.
+func syncedUI(p *panel) chan func() {
+	work := make(chan func(), 8)
+	p.runOnUI = func(fn func()) { work <- fn }
+	return work
+}
+
+func runUI(t *testing.T, work chan func()) {
+	t.Helper()
+	fn := <-work
+	fn()
+}
+
 // clickButton clicks a button whose name is also a row title.
 func clickButton(t *testing.T, app *ui.Tester, name string) {
 	t.Helper()
@@ -325,8 +336,7 @@ func clickField(t *testing.T, app *ui.Tester, name string) {
 func TestAFocusRecheckKeepsTheModelsAndOnlyRetestsTheLogin(t *testing.T) {
 	p, _ := settingsPanel(t, workspace.DefaultSettings())
 	probes, refreshes := 0, 0
-	done := make(chan struct{}, 2)
-	p.runOnUI = func(fn func()) { fn(); done <- struct{}{} }
+	work := syncedUI(p)
 	p.probe = func(string) (genui.ProbeResult, error) {
 		probes++
 		return genui.ProbeResult{Status: genui.AgentReady, Version: "codex-acp 1.13.1"}, nil
@@ -345,7 +355,7 @@ func TestAFocusRecheckKeepsTheModelsAndOnlyRetestsTheLogin(t *testing.T) {
 	p.status(genui.BackendAntigravity).tested = true
 	p.status(genui.BackendAntigravity).catalog = genui.ModelCatalog{Models: []genui.ModelOption{{ID: "gpt-6-sol"}}}
 	p.probeOnFocus()
-	<-done
+	runUI(t, work)
 	if probes != 1 || refreshes != 0 {
 		t.Fatalf("focus probes=%d refreshes=%d, want one probe and no model session", probes, refreshes)
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"github.com/Bayern99/mark-go-go/internal/ipc"
 	"github.com/Bayern99/mark-go-go/internal/mcp"
+	"github.com/Bayern99/mark-go-go/internal/nativeai"
 	"github.com/Bayern99/mark-go-go/internal/nativefeynman"
 	"github.com/Bayern99/mark-go-go/internal/nativegenui"
 	"github.com/Bayern99/mark-go-go/internal/nativereview"
@@ -78,18 +79,21 @@ func main() {
 	adapter := workspaceAdapter{svc: host}
 	reviewSvc := review.NewService()
 	research := feynman.NewResearchManager(adapter)
+	externalServer := mcp.NewExternalServer(mcp.Dependencies{
+		Workspace: host,
+		Review:    reviewSvc,
+	})
 	host.CreateWindow = func(opts mygo.WindowOptions) *mygo.Window {
-		return nativeui.NewWindow(host, opts, nativegenui.Install(host), nativereview.Install(host, reviewSvc, review.NewCheckpointHost(adapter)), nativefeynman.NewExtension(research.Host(), reviewSvc))
+		return nativeui.NewWindow(host, opts, nativegenui.Install(host), nativereview.Install(host, reviewSvc, review.NewCheckpointHost(adapter)), nativefeynman.NewExtension(research.Host(), reviewSvc), nativeai.Install(host, nativeai.Channel{
+			Listening: externalServer.Listening,
+			LastCall:  externalServer.LastCall,
+		}))
 	}
 	mcpServer := mcp.NewServer(mcp.Dependencies{Workspace: host, Review: reviewSvc})
 	research.SetBeforeStart(mcpServer.BeforeResearchStart)
 	research.SetAfterStop(mcpServer.AfterResearchStop)
 	nativeui.AfterWorkspaceChange = func() { refreshMenu(host) }
 
-	externalServer := mcp.NewExternalServer(mcp.Dependencies{
-		Workspace: host,
-		Review:    reviewSvc,
-	})
 	applyExternalIPC := func(s workspace.Settings) {
 		if !s.ExternalIPC {
 			if err := externalServer.Close(); err != nil {

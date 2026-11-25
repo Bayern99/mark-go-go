@@ -21,6 +21,20 @@ import (
 
 const helloTimeout = 5 * time.Second
 
+// unknownClient is what the channel calls a request whose _meta named no
+// client: the legacy handshake may not, and Settings says so rather than
+// inventing a name.
+const unknownClient = "An unknown client"
+
+// ExternalCall is one request the local channel answered: which client sent
+// it and when. It is what Settings / AI Integration shows as the last external
+// call, so a reader can tell whether the agent they connected is the one
+// talking to the app.
+type ExternalCall struct {
+	Source string
+	At     time.Time
+}
+
 // ExternalServer is the opt-in local socket channel: newline-delimited
 // JSON-RPC at <UserData>/ipc.sock, opened by a first frame that names the
 // caller's working directory.
@@ -31,6 +45,7 @@ type ExternalServer struct {
 	mu    sync.Mutex
 	ln    net.Listener
 	path  string
+	last  ExternalCall
 	conns map[net.Conn]struct{}
 	wg    sync.WaitGroup
 }
@@ -48,6 +63,63 @@ func (e *ExternalServer) SocketPath() string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.path
+}
+
+// Listening reports whether the socket is being served now.
+func (e *ExternalServer) Listening() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.ln != nil
+}
+
+// LastCall reports the most recent request the socket answered. A server that
+// has answered none reports false, and the page says no agent has called yet.
+func (e *ExternalServer) LastCall() (source string, at time.Time, ok bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.last.Source, e.last.At, e.last.Source != ""
+}
+
+// note records the request in line as the last thing the channel saw. A
+// notification carries a method but no id, and a client that names itself in
+// one request rarely repeats the name in the next: only requests count, so the
+// page never reports "an unknown client" one frame after a named one. It reads
+// only what the page shows, so a malformed message stays the dispatcher's
+// business.
+func (e *ExternalServer) note(line []byte) {
+	var message struct {
+		ID     json.RawMessage `json:"id"`
+		Method string          `json:"method"`
+		Params struct {
+			Meta map[string]json.RawMessage `json:"_meta"`
+		} `json:"params"`
+	}
+	if json.Unmarshal(line, &message) != nil || message.Method == "" || len(message.ID) == 0 || string(message.ID) == "null" {
+		return
+	}
+	e.mu.Lock()
+	e.last = ExternalCall{Source: clientName(message.Params.Meta), At: time.Now()}
+	e.mu.Unlock()
+}
+
+// clientName reads the client a request named in its _meta, or says it named
+// none.
+func clientName(meta map[string]json.RawMessage) string {
+	raw, ok := meta[ipc.MetaClientInfo]
+	if !ok {
+		return unknownClient
+	}
+	var info struct {
+		Name    string `json:"name"`
+		Version string `json:"version"`
+	}
+	if json.Unmarshal(raw, &info) != nil || strings.TrimSpace(info.Name) == "" {
+		return unknownClient
+	}
+	if version := strings.TrimSpace(info.Version); version != "" {
+		return strings.TrimSpace(info.Name) + " " + version
+	}
+	return strings.TrimSpace(info.Name)
 }
 
 // Start listens on the socket, cleaning up a socket a previous run left behind.
@@ -190,6 +262,7 @@ func (e *ExternalServer) serve(conn net.Conn) {
 			})
 			continue
 		}
+		e.note(line)
 		resp, _, hasResp := e.server.dispatchMessage(context.Background(), binding, line)
 		if !hasResp {
 			continue

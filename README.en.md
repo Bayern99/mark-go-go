@@ -7,7 +7,7 @@ Mark Go Go is a local Markdown editor for macOS written in Go with MyGo Native U
 ## Core capabilities
 
 - **Byte-preserving in-place Markdown editing**: Editable **Preview** and raw **Markdown** share one text buffer and Undo/Redo history (`⌘E` toggles between them). Saving rewrites only modified blocks and preserves untouched Markdown bytes. Supports heading section folds, math, Mermaid diagrams, footnotes, in-place block editing, and resizable tables with wrapped rows.
-- **GenUI derived reading views**: Generates read-only views (cards, tables, charts, and local-state controls) stored beside the document as `.<name>.genui.json`, with source links back to the original headings. Version 3 keeps the **A2UI 1.0** message envelope and section hashes for partial updates (version 2 files remain readable) while expressing `components` as **OpenUI Lang 1.0** statements parsed, evaluated, and rendered natively in Go. Switch to **GenUI** in the centre, use **Request** at the top right to generate, update changed sections, or restore the previous view, and use the gear icon to pick a model in Settings.
+- **GenUI derived reading views**: Generates read-only views (cards, tables, charts, and local-state controls) stored beside the document as `.<name>.genui.json`, with source links back to the original headings. Version 3 keeps the **A2UI 1.0** message envelope and section hashes for partial updates (version 2 files remain readable) while expressing `components` as **OpenUI Lang 1.0** statements parsed, evaluated, and rendered natively in Go. Switch to **GenUI** in the centre and use **Request** at the top right to generate, update changed sections, or restore the previous view; the backend, model, and reasoning effort live in `Settings / GenUI` (`⌘,`), which the gear icon links to.
 - **Multi-workspace window & navigation**: Folder workspaces share one window and vertical document tabs (`Ctrl+Tab` cycles recent documents). The sidebar provides **Files / Outline** switching, zero-indent directory drill-down, and top-aligned outline jumps. `⌘K` / `⌘T` opens the Command Bar for open documents, workspace files, headings, and commands; `⌘,` opens the unified Settings Center. Each workspace can choose Light/Dark appearance and a colour theme (from the Wu Xing traditional palette) to tell workspaces apart.
 
 ## Shortcuts
@@ -36,6 +36,35 @@ Enable **Feynman**, **GenUI**, and **Git** independently from **Settings / Plugi
 
 Stores document snapshots as local Git refs keyed by repository path. Outside Git repositories, the app keeps up to 50 local snapshots per document, which stay accessible if you later run `git init`. Save a document, then use **Checkpoints** in the page bar to create, diff, or restore snapshots. Renamed documents start a new history.
 
+## Bring your own local agent
+
+Mark Go Go ships no model and holds no third-party credentials: it runs the agent CLIs already installed on your machine, unmodified, under your own accounts, and each provider's terms govern how you use them. There are two separate things here, and two separate places for them: a **GenUI backend** only writes a document's reading view, while an **external harness** reads and edits the workspace over the local channel.
+
+### GenUI backends: Codex, Pi, Antigravity, Custom ACP
+
+`Settings / GenUI` is the one place a backend is chosen: 2×2 cards with a status dot and `Test & Refresh` (which reads the command, its version, and its models without submitting your document), `Model` and whatever `Reasoning effort` the backend declares under `Generation`, and the command and arguments under `Advanced` (open by default only for Custom ACP). All four are equals; no vendor is the built-in default, and a first run probes `codex-acp` → `pi` → `agy`.
+
+| Backend | Install | Sign in | Notes |
+|---|---|---|---|
+| Codex | `codex-acp` (it runs the underlying `codex`; point `CODEX_PATH` at that binary; check with `codex-acp --version`) | `codex login`, or `Sign in in Terminal` in `Settings / GenUI`, which runs `codex-acp login` | Starts as an argument-free ACP adapter; the model and reasoning effort come from the `configOptions` the session declares |
+| Pi | Install `pi` so your terminal can run it | Choose a model so the app knows its `provider`, then run `pi auth login <provider>` in Terminal | Talks to `pi --mode rpc` directly, without ACP: every turn starts its own process and loads the guard extension this app ships, so reads stay in that turn's isolated folder and writes in its `out.json`; without a confirmed guard it does not generate |
+| Antigravity | Install the Antigravity CLI that provides `agy` | `agy acp --login` | An optional preset, no longer the hard-coded default |
+| Custom ACP | Any agent that speaks ACP over stdio, including two-hop setups such as `pi-acp` | Sign in with that agent's own command | Set the command and arguments under `Advanced` |
+
+The Pi backend ships in this release; its automated coverage uses a fake Pi, so streaming and denied out-of-bounds writes under a real Pi account still want a machine test. Model refresh, sign-in, and streaming for Codex and Antigravity likewise need a machine that has those CLIs.
+
+### External harnesses: Claude Code, Codex, Pi, anything else
+
+`Settings / AI Integration` hands one window's workspace to an agent you run in your own terminal:
+
+- **The `markgogo` command**: a standalone binary. `Install` links it into `~/.local/bin` and `Uninstall` removes only the link this app made. Nothing goes into `/usr/local/bin`, no sudo is needed, no shell profile is rewritten, and a file another program put there is left alone. A build that does not carry the binary says so and gives the manual route: in a checkout of this repository, run `go build -o ~/.local/bin/markgogo ./cmd/markgogo` (`go.mod` points MyGo at the bundled copy with `replace`, so `go install …@latest` cannot build it).
+- **The local channel**: off by default. Turning it on makes the app speak newline-delimited JSON-RPC on `ipc.sock` in its user data folder (folder `0700`, socket `0600`), reachable only by your own user on your own machine. The page shows whether it is listening and the source and time of the most recent external call. Turning it off stops listening and removes the socket.
+- **Connecting**: the page offers a prompt (`Copy prompt`) and a static `SKILL.md` for Claude Code, Codex, Pi, and anything else. The skill is written into the app's own folder for you to copy where your harness reads skills. A shell harness just runs `markgogo`; a client that only speaks MCP over stdio registers the folded `MCP (stdio)` configuration, `{"command":"markgogo","args":["mcp"]}`, which forwards to the same socket and carries no port and no token. A sandboxed client such as Codex may deny the Unix socket; grant the access it needs rather than weakening the app.
+- **CLI commands**: `status`, `read` (sections, line ranges, notes), `propose`, `new`, `open`, `genui format`, `genui write`, `checkpoint`, `agent-prompt`, `mcp`. Only `read`, `genui format`, and `agent-prompt` work without the app running; every change goes to the review queue for you to accept or reject in the editor.
+- **Protocol**: the external channel speaks MCP `2026-07-28` (`server/discover` and a per-request `_meta` version) and falls back to the `2025-11-25` `initialize` handshake for older clients. This repository's socket and stdio shim tests cover both versions; end-to-end records for specific harnesses and for the MCP Inspector belong to the release checklist.
+
+**Keep the two apart:** connecting an external harness means it reads and edits the workspace from your terminal under its own account. Signing in a GenUI backend means it only writes this document's reading view. The first is in `Settings / AI Integration`, the second in `Settings / GenUI`.
+
 ## Development and verification
 
 Requires the Go version declared in [go.mod](go.mod); no Node.js required:
@@ -52,4 +81,5 @@ scripts/verify.sh     # gofmt, mygo vet, full -race tests, Windows amd64 cross-b
 - [DESIGN.md](DESIGN.md): Read before changing layout, colours, controls, motion, or accessibility (Portrait 2.0 rules and contracts).
 - [docs/genui/view-format.md](docs/genui/view-format.md): Read when authoring, debugging, or validating `.genui.json` views and OpenUI Lang v3 statements.
 - [docs/agents/native-automation.md](docs/agents/native-automation.md): Use when verifying macOS native windows, menus, or session recovery.
+- [docs/adr/0016-ai-integration-faces.md](docs/adr/0016-ai-integration-faces.md): Read when asking why AI integration splits into a GenUI plugin, swappable backends, and an external agent channel.
 - [CHANGELOG.md](CHANGELOG.md) · [docs/acceptance.md](docs/acceptance.md) · [LICENSE](LICENSE)

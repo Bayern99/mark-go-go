@@ -190,13 +190,18 @@ func (s *Shell) commandItems(m Model, a Actions, slots Slots, width float32) []c
 		}
 	}
 	if doc.ID != "" && a.SetMode != nil {
+		viewMode := fallbackMode(doc.ViewMode, m.GenUI)
 		for _, mode := range []struct {
 			id, title string
 			icon      portrait.Icon
 			keys      []string
-		}{{"preview", "Show Preview", portrait.IconEye, shortcutKeys(ui.Cmd, "E")}, {"markdown", "Show Markdown", portrait.IconCode, shortcutKeys(ui.Cmd, "E")}, {"genui", "Show GenUI", portrait.IconSparkle, nil}} {
-			current := doc.ViewMode == mode.id || mode.id == "preview" && doc.ViewMode != "markdown" && doc.ViewMode != "genui"
-			if current || mode.id == "genui" && slots.GenUI == nil {
+		}{
+			{"preview", "Show Preview", portrait.IconEye, shortcutKeys(ui.Cmd, "E")},
+			{"markdown", "Show Markdown", portrait.IconCode, shortcutKeys(ui.Cmd, "E")},
+			{"genui", "Show GenUI", portrait.IconSparkle, nil},
+		} {
+			current := viewMode == mode.id || mode.id == "preview" && viewMode != "markdown" && viewMode != "genui"
+			if current || mode.id == "genui" && (!m.GenUI || slots.GenUI == nil) {
 				continue
 			}
 			add(commandItem{icon: mode.icon, title: mode.title, detail: "View mode", keys: mode.keys, run: func() { a.SetMode(mode.id) }})
@@ -259,7 +264,7 @@ func (s *Shell) commandItems(m Model, a Actions, slots Slots, width float32) []c
 		}
 	}
 	if needle != "" {
-		pages := mergeSettingsPages(append(s.nativeSettingsPages(m, a), settingsPages(slots)...))
+		pages := mergeSettingsPages(append(s.nativeSettingsPages(m, a, slots), settingsPages(slots)...))
 		for _, page := range pages {
 			page := page
 			if page.Visible == nil || page.Visible() {

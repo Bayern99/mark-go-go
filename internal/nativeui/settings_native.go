@@ -2,6 +2,7 @@ package nativeui
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -39,7 +40,7 @@ func resetPreferences(a Actions, keys ...string) {
 	}
 }
 
-func (s *Shell) nativeSettingsPages(m Model, a Actions) []SettingsPage {
+func (s *Shell) nativeSettingsPages(m Model, a Actions, slots Slots) []SettingsPage {
 	generalKeys := []string{sidebarHiddenPreference, sidebarViewPreference, researchHiddenPreference, "mgo.researchWidth", defaultViewPreference}
 	editorKeys := []string{readingSizePreference, readingWidthPreference, codeSizePreference, lineNumbersPreference}
 	dirtyKeys := func(keys ...string) func() bool {
@@ -157,25 +158,28 @@ func (s *Shell) nativeSettingsPages(m Model, a Actions) []SettingsPage {
 		},
 		{
 			ID: "plugins", Section: "Workspace", Label: "Plugins", Icon: portrait.IconPuzzlePiece, Order: 200,
-			Keywords: []string{"plugins feynman research git checkpoints enable disable"},
+			Keywords: []string{"plugins feynman research genui generation view git checkpoints enable disable configure"},
 			Draw: func(c *ui.Context, q SettingsQuery) {
-				if q.Active() && !q.Matches("Feynman Research", "Side-by-side AI research assistant, models, and MCP tools.", "feynman plugin") && !q.Matches("Git Checkpoints", "Save, diff, and restore local document snapshots.", "git plugin checkpoints") {
+				settings := pluginSettings(m, a)
+				if q.Active() && !slices.ContainsFunc(settings, func(setting pluginSetting) bool { return setting.matches(q) }) {
 					return
 				}
 				portrait.SettingsGroup(c, "Optional plugins", func(rows *portrait.Rows) {
-					if q.Match("Feynman Research", "Side-by-side AI research assistant, models, and MCP tools.", "feynman plugin") {
-						rows.Row(portrait.RowSpec{Title: "Feynman Research", Description: "Side-by-side AI research assistant, models, and MCP tools."}, func() {
-							on := m.Feynman
-							if portrait.Switch(c.Key("settings-plugin-feynman"), &on).Label("Enable Feynman").Changed() && a.SetFeynman != nil {
-								a.SetFeynman(on)
+					for _, setting := range settings {
+						if !q.Match(setting.title, setting.description, setting.keyword) {
+							continue
+						}
+						rows.Row(portrait.RowSpec{Title: setting.title, Description: setting.description}, func() {
+							on := setting.on
+							if portrait.Switch(c.Key("settings-plugin-"+strings.ToLower(setting.name)), &on).Label("Enable "+setting.name).Changed() && setting.set != nil {
+								setting.set(on)
 							}
-						})
-					}
-					if q.Match("Git Checkpoints", "Save, diff, and restore local document snapshots.", "git plugin checkpoints") {
-						rows.Row(portrait.RowSpec{Title: "Git Checkpoints", Description: "Save, diff, and restore local document snapshots."}, func() {
-							on := m.Git
-							if portrait.Switch(c.Key("settings-plugin-git"), &on).Label("Enable Git").Changed() && a.SetGit != nil {
-								a.SetGit(on)
+							// A plugin is configured where its own page lives, and only
+							// while it is on: a hidden page is no destination.
+							if setting.on && settingsPageOpen(settingsPages(slots), setting.configure) {
+								if portrait.ButtonWith(c, "Configure →", "Configure "+setting.title, portrait.ButtonSpec{Look: portrait.Link, Size: portrait.Sizes.Regular}).Clicked() {
+									s.OpenSettings(setting.configure)
+								}
 							}
 						})
 					}
@@ -348,6 +352,36 @@ func (s *Shell) editorSettingsPage(c *ui.Context, m Model, a Actions, q Settings
 			}
 		})
 	})
+}
+
+// pluginSetting is one row of Settings / Plugins. The switch writes the
+// plugin preference; Configure opens the plugin's own settings page.
+type pluginSetting struct {
+	name, title, description, keyword, configure string
+	on                                           bool
+	set                                          func(bool)
+}
+
+func pluginSettings(m Model, a Actions) []pluginSetting {
+	return []pluginSetting{
+		{"Feynman", "Feynman Research", "Side-by-side AI research assistant, models, and MCP tools.", "feynman plugin", "models", m.Feynman, a.SetFeynman},
+		{"GenUI", "GenUI", "Read-only reading views derived from the Markdown.", "genui generation view plugin", "genui", m.GenUI, a.SetGenUI},
+		{"Git", "Git Checkpoints", "Save, diff, and restore local document snapshots.", "git plugin checkpoints", "", m.Git, a.SetGit},
+	}
+}
+
+func (p pluginSetting) matches(q SettingsQuery) bool {
+	return q.Matches(p.title, p.description, p.keyword)
+}
+
+// settingsPageOpen reports whether a plugin page is registered and visible, so
+// Plugins never links to a destination the Settings Center would not show.
+func settingsPageOpen(pages []SettingsPage, id string) bool {
+	if id == "" || !settingsPageVisible(pages, id) {
+		return false
+	}
+	page := settingsPageByID(pages, id)
+	return page.Visible == nil || page.Visible()
 }
 
 func preferenceInt(m Model, key string, fallback int) int {

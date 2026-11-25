@@ -38,7 +38,7 @@ var placeholderIcons = []string{"×", "▾", "▸", "✕", "☰", "⋯", "…", 
 
 func TestShellIconsArePhosphorGlyphsWithNamesAndTooltips(t *testing.T) {
 	var shell nativeui.Shell
-	model := nativeui.Model{Feynman: true, ReturnToGenUI: true, Workspace: workspace.WorkspaceSnapshot{Kind: "folder", Name: "Library", Root: "/library", ActiveID: "a",
+	model := nativeui.Model{Feynman: true, GenUI: true, ReturnToGenUI: true, Workspace: workspace.WorkspaceSnapshot{Kind: "folder", Name: "Library", Root: "/library", ActiveID: "a",
 		Documents: []workspace.DocumentInfo{{ID: "a", Name: "Paper.md"}}}}
 	app := ui.NewTester(func(c *ui.Context) {
 		shell.Draw(c, model, nativeui.Actions{}, nativeui.Slots{GenUI: func(*ui.Context) {}})

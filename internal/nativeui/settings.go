@@ -9,7 +9,7 @@ import (
 )
 
 func (s *Shell) settingsDialog(c *ui.Context, width, height float32, m Model, a Actions, slots Slots) {
-	pages := mergeSettingsPages(append(s.nativeSettingsPages(m, a), settingsPages(slots)...))
+	pages := mergeSettingsPages(append(s.nativeSettingsPages(m, a, slots), settingsPages(slots)...))
 	visible := make([]SettingsPage, 0, len(pages))
 	for _, page := range pages {
 		if page.Visible == nil || page.Visible() {

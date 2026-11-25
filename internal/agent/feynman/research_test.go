@@ -151,9 +151,11 @@ func TestDirectFeynmanCommandAndFraming(t *testing.T) {
 		_, err := h.Prompt(ctx, root, "large payload test", "", "")
 		done <- err
 	}()
-	var gotLarge bool
-	timeout := time.After(5 * time.Second)
-	for !gotLarge {
+	// The prompt's result and the large update can arrive in either order, so
+	// each is received exactly once; the guard only turns a hang into a failure.
+	var gotLarge, prompted bool
+	guard := time.After(time.Minute)
+	for !gotLarge || !prompted {
 		select {
 		case e := <-events:
 			if e.Kind == "assistant" && len(e.Text) > 1<<20 {
@@ -163,12 +165,10 @@ func TestDirectFeynmanCommandAndFraming(t *testing.T) {
 			if err != nil {
 				t.Fatalf("large payload prompt failed: %v", err)
 			}
-		case <-timeout:
-			t.Fatal("timed out waiting for >1 MiB assistant update")
+			prompted = true
+		case <-guard:
+			t.Fatalf("large payload prompt: update received %v, prompt returned %v", gotLarge, prompted)
 		}
-	}
-	if err := <-done; err != nil {
-		t.Fatalf("large payload prompt returned error: %v", err)
 	}
 }
 
@@ -1663,7 +1663,6 @@ func runFeynmanRPCFixture() {
 						"method":  "select",
 						"title":   "Choose environment",
 						"options": []string{"Local", "Docker"},
-						"timeout": 10000,
 					})
 					r1 := <-uiResponses
 					val1, _ := r1["value"].(string)
@@ -1674,7 +1673,6 @@ func runFeynmanRPCFixture() {
 						"method":  "confirm",
 						"title":   "Run benchmark?",
 						"message": "Takes 2 minutes.",
-						"timeout": 5000,
 					})
 					r2 := <-uiResponses
 					conf2, _ := r2["confirmed"].(bool)

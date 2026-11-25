@@ -99,10 +99,9 @@ func (s *Shell) pageBar(c *ui.Context, doc workspace.DocumentInfo, m Model, a Ac
 					if showAncestors {
 						name.MinWidth(portrait.Form.SelectMin)
 					}
-					portrait.Tooltip(c, name, doc.Path)
 					continue
 				}
-				b := portrait.Tooltip(c, ui.ButtonBase(c.Key(crumb.Path)).Label("Reveal "+crumb.Name), crumb.Path).Padding(2, 4).Radius(portrait.Radii.S).MinWidth(0).Shrink(1)
+				b := ui.ButtonBase(c.Key(crumb.Path)).Label("Reveal "+crumb.Name).Padding(2, 4).Radius(portrait.Radii.S).MinWidth(0).Shrink(1)
 				ink := portrait.Press(b, portrait.Quiet)
 				if !b.Hovered() {
 					ink = portrait.Colors.Ink3

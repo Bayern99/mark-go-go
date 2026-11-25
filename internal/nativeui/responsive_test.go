@@ -63,8 +63,8 @@ func TestNavigationTitlesMiddleTruncateWithoutCoveringStatusOrChevron(t *testing
 	row := mustAccess(t, app, ui.RoleTreeItem, hash)
 	app.Move(row.Bounds.X+row.Bounds.W/2, row.Bounds.Y+row.Bounds.H/2)
 	app.Advance(time.Second)
-	if _, ok := app.AccessByRole(ui.RoleTooltip, "/library/"+hash); !ok {
-		t.Fatal("file row does not expose its full path as a tooltip")
+	if _, ok := app.AccessByRole(ui.RoleTooltip, "/library/"+hash); ok {
+		t.Fatal("hovering a sidebar file row should not pop up a full-path tooltip")
 	}
 }
 

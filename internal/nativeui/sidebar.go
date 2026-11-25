@@ -310,7 +310,7 @@ func (s *Shell) files(c *ui.Context, m Model, a Actions) {
 				return
 			}
 			for _, hit := range m.Search.Hits {
-				if navRow(c, navItem{key: hit.Path, path: hit.Path, title: hit.Name, detail: hit.Excerpt, excerpt: hit.Excerpt, selected: hit.DocumentID == w.ActiveID, icon: portrait.IconFileText, group: capsuleGroup}).Clicked() && a.OpenPath != nil {
+				if navRow(c, navItem{key: hit.Path, title: hit.Name, detail: hit.Excerpt, excerpt: hit.Excerpt, selected: hit.DocumentID == w.ActiveID, icon: portrait.IconFileText, group: capsuleGroup}).Clicked() && a.OpenPath != nil {
 					s.leftOpen = false
 					a.OpenPath(hit.Path, -1)
 				}
@@ -373,7 +373,6 @@ func (s *Shell) files(c *ui.Context, m Model, a Actions) {
 			}
 			button := navRow(c, navItem{
 				key:           entry.ID,
-				path:          entry.Path,
 				title:         entry.Name,
 				detail:        detail,
 				trailing:      trailing,
@@ -521,14 +520,14 @@ func (s *Shell) scrollState(key string) *ui.ScrollState {
 }
 
 type navItem struct {
-	key, path, title, detail, trailing, excerpt string
-	trailingColor                               ui.Color
-	chevron                                     bool
-	selected                                    bool
-	icon                                        portrait.Icon
-	group                                       string
-	weight                                      int
-	ink                                         ui.Color
+	key, title, detail, trailing, excerpt string
+	trailingColor                         ui.Color
+	chevron                               bool
+	selected                              bool
+	icon                                  portrait.Icon
+	group                                 string
+	weight                                int
+	ink                                   ui.Color
 }
 
 // navRow is one row of the file tree or the outline: a 28pt row whose 12pt
@@ -585,9 +584,6 @@ func navRow(c *ui.Context, item navItem) ui.Element {
 		*focusReveal = true
 	} else if !row.Focused() {
 		*focusReveal = false
-	}
-	if item.path != "" {
-		row = portrait.Tooltip(c, row, item.path)
 	}
 	return row
 }

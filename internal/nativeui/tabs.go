@@ -112,7 +112,7 @@ func (s *Shell) documents(c *ui.Context, m Model, a Actions) {
 			}
 			row.Children(func() {
 				portrait.RowCapsule(c, row, selected, "documents")
-				tab := portrait.Tooltip(c, ui.ButtonBase(c.Key("tab")).Label(labels[d.ID]).Height(portrait.Shell.Row).Padding(0, 2, 0, 8).Gap(8).AlignItems(ui.Center).Justify(ui.Start).MinWidth(0).Grow(1).Shrink(1).ZIndex(1).Role(ui.RoleTab).TabStop(selected).AccessSelected(selected), d.Path)
+				tab := ui.ButtonBase(c.Key("tab")).Label(labels[d.ID]).Height(portrait.Shell.Row).Padding(0, 2, 0, 8).Gap(8).AlignItems(ui.Center).Justify(ui.Start).MinWidth(0).Grow(1).Shrink(1).ZIndex(1).Role(ui.RoleTab).TabStop(selected).AccessSelected(selected)
 				if status != "" {
 					tab.Description(status)
 				}

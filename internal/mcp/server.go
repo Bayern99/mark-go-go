@@ -74,9 +74,9 @@ const instructions = "Mark Go Go edits the Markdown files of the workspace this 
 	"read_document by documentId or workspace-relative path; read_document also returns the " +
 	"version a line-range edit needs. Changes to existing text only ever enter the review " +
 	"queue through propose_edit and are applied after the user accepts them in Mark Go Go; " +
-	"create_document makes new files and refuses to overwrite. write_genui_view validates a " +
-	"GenUI candidate against the catalog before writing the document's .genui.json, and " +
-	"create_checkpoint snapshots a saved document. Errors carry a code: APP_NOT_RUNNING, " +
+	"create_document immediately makes new files and refuses to overwrite. write_genui_view validates a " +
+	"GenUI candidate against the catalog and immediately replaces the reading view, and " +
+	"create_checkpoint immediately snapshots a saved document. Errors carry a code: APP_NOT_RUNNING, " +
 	"WORKSPACE_NOT_OPEN, VERSION_CONFLICT, NOT_FOUND, PATH_DENIED or INVALID_ARGS with a hint."
 
 type Server struct {

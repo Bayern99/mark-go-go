@@ -175,7 +175,7 @@ func (s *Server) handleToolsList() any {
 		{
 			Name:        toolCreateDocument,
 			Title:       "Create Markdown Document",
-			Description: "Create a new Markdown document inside the workspace, refusing to overwrite an existing file.",
+			Description: "Immediately create a new Markdown document inside the workspace, refusing to overwrite an existing file.",
 			InputSchema: objectSchema(map[string]any{
 				"path":    stringProp("Workspace-relative Markdown file path (e.g. outputs/summary.md)"),
 				"content": stringProp("UTF-8 Markdown content to write"),
@@ -215,7 +215,7 @@ func (s *Server) handleToolsList() any {
 		{
 			Name:        toolWriteGenUIView,
 			Title:       "Write GenUI View",
-			Description: "Validate an A2UI 1.0 or openui-lang candidate against the GenUI catalog and atomically write the document's .genui.json view file. Returns the version actually written.",
+			Description: "Validate an A2UI 1.0 or openui-lang candidate against the GenUI catalog and immediately replace the document's .genui.json reading view. Returns the version actually written.",
 			InputSchema: objectSchema(map[string]any{
 				"documentId": stringProp("Open document id"),
 				"path":       stringProp("Workspace-relative or absolute path of the source Markdown document"),
@@ -236,7 +236,7 @@ func (s *Server) handleToolsList() any {
 		{
 			Name:        toolCreateCheckpoint,
 			Title:       "Create Checkpoint",
-			Description: "Record a labeled provenance checkpoint of a saved Markdown document, so the user can compare or restore it later.",
+			Description: "Immediately record a labeled provenance checkpoint of a saved Markdown document, so the user can compare or restore it later.",
 			InputSchema: objectSchema(map[string]any{
 				"documentId": stringProp("Open document id"),
 				"path":       stringProp("Workspace-relative or absolute path of the saved Markdown document"),

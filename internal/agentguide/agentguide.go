@@ -108,7 +108,7 @@ Read before you write:
 
 Every change to existing text goes through propose_edit (or ` + "`markgogo propose`" + `): pass exactly one of proposedText, oldText with newText, or startLine with endLine and newText plus the baseVersion you read. The user reviews the proposal in the app and applies it; the tool only returns its id, revision, hunk count and a one-line summary.
 
-create_document (or ` + "`markgogo new`" + `) creates a new file and refuses to overwrite. write_genui_view validates a GenUI candidate against the catalog before writing the document's .genui.json and returns the version it wrote (2 for A2UI, 3 for openui-lang; get the format with ` + "`markgogo genui format`" + `). create_checkpoint snapshots a saved document.
+create_document (or ` + "`markgogo new`" + `) immediately creates a new file and refuses to overwrite. write_genui_view validates a candidate against the GenUI catalog, immediately replaces the reading view and returns the version it wrote (2 for A2UI, 3 for openui-lang; get the format with ` + "`markgogo genui format`" + `). create_checkpoint immediately snapshots a saved document.
 
 Errors carry a stable code: APP_NOT_RUNNING, WORKSPACE_NOT_OPEN, VERSION_CONFLICT, NOT_FOUND, PATH_DENIED or INVALID_ARGS, with a hint. When APP_NOT_RUNNING says the connection closed mid-request, the write may or may not have happened: read the document again instead of retrying blindly.
 `
@@ -127,7 +127,7 @@ description: Read and edit the Markdown workspace that Mark Go Go has open.
 ` + "`markgogo`" + ` is Mark Go Go's command for an external agent. It reaches the running
 app over the local socket the reader opens in Settings / AI Integration. Run
 ` + "`markgogo status`" + ` first: it names the workspace your working directory resolves
-to, or says the app is not running.
+to, or explains why the socket could not be reached.
 
 ## Read before you write
 
@@ -152,12 +152,10 @@ panel. Pass exactly one of:
 
 ## Make and annotate documents
 
-- ` + "`markgogo new <path> --from <file|->`" + ` creates a file and refuses to
-  overwrite.
+- ` + "`markgogo new <path> --from <file|->`" + ` immediately creates a file and refuses to overwrite.
 - ` + "`markgogo genui format`" + ` prints the GenUI view format;
-  ` + "`markgogo genui write <document> --candidate <file|->`" + ` validates and saves a
-  reading view.
-- ` + "`markgogo checkpoint <document> --label <text>`" + ` snapshots a saved document.
+  ` + "`markgogo genui write <document> --candidate <file|->`" + ` validates the candidate and immediately replaces the reading view.
+- ` + "`markgogo checkpoint <document> --label <text>`" + ` immediately snapshots a saved document.
 
 ## What failures mean
 

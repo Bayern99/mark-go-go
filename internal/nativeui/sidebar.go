@@ -25,13 +25,16 @@ func (s *Shell) sidebar(c *ui.Context, m Model, a Actions, docked bool) {
 		if docked {
 			ui.Row(c).Height(portrait.Shell.PageBar).Padding(0, 0, 0, c.TitleBar().Left).AlignItems(ui.Center).DragWindow().Children(func() {
 				ui.Row(c).Grow(1)
-				hide := portrait.QuietIconButton(c, portrait.IconSidebar, "Hide sidebar").KeyShortcuts(ui.Cmd, ui.Key0)
-				portrait.Tooltip(c, hide, "Hide sidebar · "+shortcutText(ui.Cmd, "0"))
-				if hide.Clicked() {
-					s.hideSidebar = true
-					s.sidebarInstant = c.KeyboardInput()
-					s.persistSidebar(a)
-					c.Invalidate()
+				showHide := s.sidebarDocked && (!s.sidebarAnimating || s.sidebarShown >= c.TitleBar().Left+portrait.Sizes.Regular+portrait.Shell.PageInset)
+				if showHide {
+					hide := portrait.QuietIconButton(c, portrait.IconSidebar, "Hide sidebar").KeyShortcuts(ui.Cmd, ui.Key0)
+					portrait.Tooltip(c, hide, "Hide sidebar · "+shortcutText(ui.Cmd, "0"))
+					if hide.Clicked() {
+						s.hideSidebar = true
+						s.sidebarInstant = c.KeyboardInput()
+						s.persistSidebar(a)
+						c.Invalidate()
+					}
 				}
 			})
 		}
@@ -185,7 +188,7 @@ func (s *Shell) outlineList(c *ui.Context, m Model, a Actions) {
 	}
 	outlineGroup := "outline:" + w.ActiveID
 	scroll := s.scrollState(outlineGroup)
-	ui.Scroll(c.Key(outlineGroup)).FillWidth().Grow(1).MinHeight(collapsible).TrackScroll(scroll).Label("Document outline").MaskLinearGradient(scrollEdgeMask(180, scroll)).Children(func() {
+	ui.Scroll(c.Key(outlineGroup)).FillWidth().Grow(1).MinHeight(collapsible).Role(ui.RoleTree).FocusGroup(ui.Vertical).TrackScroll(scroll).Label("Document outline").MaskLinearGradient(scrollEdgeMask(180, scroll)).Children(func() {
 		for _, section := range m.Sections {
 			selected := hasActive && section.Start == activeStart
 			weight := 400
@@ -198,6 +201,10 @@ func (s *Shell) outlineList(c *ui.Context, m Model, a Actions) {
 			if selected && weight < 500 {
 				weight = 500
 			}
+			current := ui.CurrentNone
+			if selected {
+				current = ui.CurrentLocation
+			}
 			if navRow(c, navItem{
 				key:      fmt.Sprintf("heading-%d", section.Start),
 				title:    section.Heading,
@@ -206,6 +213,8 @@ func (s *Shell) outlineList(c *ui.Context, m Model, a Actions) {
 				group:    outlineGroup,
 				weight:   weight,
 				ink:      ink,
+				role:     ui.RoleRow,
+				current:  current,
 			}).Clicked() {
 				if s.selectedOutline == nil {
 					s.selectedOutline = map[string]int{}
@@ -563,13 +572,22 @@ type navItem struct {
 	group                                 string
 	weight                                int
 	ink                                   ui.Color
+	role                                  ui.Role
+	current                               ui.Current
 }
 
 // navRow is one row of the file tree or the outline: a 28pt row whose 12pt
 // title sits under the workspace name's 14pt and the open tabs' 13pt, so a
 // folder reads as a hierarchy rather than a list of the same weight.
 func navRow(c *ui.Context, item navItem) ui.Element {
-	row := ui.ButtonBase(c.Key(item.key)).FillWidth().Role(ui.RoleTreeItem).Label(item.title).Description(item.detail).AccessSelected(item.selected).MinHeight(portrait.Sizes.Regular).Padding(4, 8).Radius(portrait.Radii.M).AlignItems(ui.Center)
+	role := item.role
+	if role == 0 {
+		role = ui.RoleTreeItem
+	}
+	row := ui.ButtonBase(c.Key(item.key)).FillWidth().Role(role).Label(item.title).Description(item.detail).AccessSelected(item.selected).MinHeight(portrait.Sizes.Regular).Padding(4, 8).Radius(portrait.Radii.M).AlignItems(ui.Center)
+	if item.current != ui.CurrentNone {
+		row.Current(item.current)
+	}
 	portrait.RowHover(row, !item.selected && row.Hovered())
 	ink := item.ink
 	if ink == (ui.Color{}) {

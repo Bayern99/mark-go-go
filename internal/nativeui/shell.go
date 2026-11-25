@@ -82,7 +82,7 @@ type Shell struct {
 	openCheckpoints                                map[string]bool
 	selectedOutline                                map[string]int
 	sidebarDocked, researchDocked                  bool
-	sidebarShown                                   float32
+	sidebarShown, sidebarEdge                      float32
 	sidebarInstant, wideReady, lastWide            bool
 	sidebarAnimating                               bool
 	settle                                         int
@@ -248,6 +248,7 @@ func (s *Shell) Draw(c *ui.Context, m Model, a Actions, slots Slots) {
 			s.sidebarShown = shownWidth
 			inset := portrait.Shell.PageInset
 			edge := inset - (inset/2)*progress
+			s.sidebarEdge = edge
 			stage := func() {
 				themed(c, &t).Fill().MinWidth(0).Children(func() {
 					if m.Message != "" || m.Workspace.RestoreError != "" {

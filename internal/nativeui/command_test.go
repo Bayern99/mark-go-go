@@ -104,7 +104,7 @@ func TestCommandBarNavigationResultsMoveTheSidebar(t *testing.T) {
 	app.Type("show outline")
 	app.Key(0, ui.KeyEnter)
 	app.Frame()
-	if _, ok := app.AccessByRole(ui.RoleTreeItem, "Principles"); !ok {
+	if _, ok := app.AccessByRole(ui.RoleRow, "Principles"); !ok {
 		t.Fatal("Show Outline did not bring back the sidebar on the document outline")
 	}
 	app.Key(ui.Cmd, ui.KeyK)

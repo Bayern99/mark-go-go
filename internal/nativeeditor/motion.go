@@ -28,7 +28,7 @@ func (d *Document) Reveal(offset int) error {
 	}
 	head := d.state.Selection().Head
 	d.landing = jumpHighlight{active: true, at: head, version: d.Version()}
-	d.revealScroll = revealScroll{active: true, at: head, version: d.Version(), passes: 2}
+	d.revealScroll = revealScroll{active: true, at: head, version: d.Version(), passes: 3}
 	return nil
 }
 

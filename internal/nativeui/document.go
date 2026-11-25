@@ -62,7 +62,7 @@ func (s *Shell) pageBar(c *ui.Context, doc workspace.DocumentInfo, m Model, a Ac
 	bar := c.TitleBar()
 	lead := float32(8)
 	if bar.Left > 0 {
-		lead = max(lead, bar.Left-portrait.Shell.PageInset/4-s.sidebarShown)
+		lead = max(lead, bar.Left+portrait.Shell.PageInset*3/4-s.sidebarEdge-s.sidebarShown)
 	}
 	barRow := ui.Row(c).Height(portrait.Shell.PageBar).Padding(0, 8, 0, lead).Gap(6).AlignItems(ui.Center).DragWindow()
 	if m.DocumentScrollY > 0 {

@@ -209,10 +209,11 @@ func (s *Shell) commandItems(m Model, a Actions, slots Slots, width float32) []c
 	if !s.sidebarDocked && !s.leftOpen {
 		sidebar = "Show Sidebar"
 	}
-	add(commandItem{icon: portrait.IconSidebar, title: sidebar, detail: "Navigation", keys: shortcutKeys(ui.Cmd, "0"), run: func() { s.toggleSidebar(width); s.persistSidebar(a) }})
+	add(commandItem{icon: portrait.IconSidebar, title: sidebar, detail: "Navigation", keys: shortcutKeys(ui.Cmd, "0"), run: func() { s.toggleSidebar(width); s.sidebarInstant = true; s.persistSidebar(a) }})
 	show := func(outline bool) func() {
 		return func() {
 			s.outline = outline
+			s.sidebarInstant = true
 			if width < sidebarDocksAt {
 				s.leftOpen, s.rightOpen = true, false
 			} else {

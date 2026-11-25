@@ -135,6 +135,9 @@ func (w *Window) ToggleSidebar() {
 	}
 	width, _ := w.win.ContentSize()
 	w.shell.toggleSidebar(float32(width))
+	w.shell.sidebarInstant = true
+	w.shell.leftKeys.Flip()
+	w.shell.rightKeys.Flip()
 	if float32(width) >= sidebarDocksAt {
 		if w.shell.hideSidebar {
 			w.setPreference(sidebarHiddenPreference, "on")
@@ -153,6 +156,8 @@ func (w *Window) ToggleResearch() {
 	}
 	width, _ := w.win.ContentSize()
 	w.shell.toggleResearch(float32(width))
+	w.shell.leftKeys.Flip()
+	w.shell.rightKeys.Flip()
 	if float32(width) >= researchDocksAt {
 		if w.shell.hideResearch {
 			w.setPreference(researchHiddenPreference, "on")

@@ -440,8 +440,20 @@ func TestDockedSidebarAnimatesOnPointerToggleAndLandsAtOnceForKeyboardAndReduced
 		var shell nativeui.Shell
 		model := libraryModel()
 		app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, model, nativeui.Actions{}, nativeui.Slots{}) }, 1280, 820)
+		bar := ui.TitleBar{Height: 56, Left: 78, Bottom: 35}
+		app.SetTitleBar(bar)
 		app.Frame()
 		docked := mustAccess(t, app, ui.RoleMain, "Document").Bounds
+
+		checkHeaderClear := func(phase string) {
+			for _, name := range []string{"Hide sidebar", "Show navigation"} {
+				if info, ok := app.AccessByRole(ui.RoleButton, name); ok && !info.Offscreen && info.Bounds.W > 0 {
+					if info.Bounds.X < bar.Left {
+						t.Fatalf("%s: %s at %v overlapped window controls ending at %v", phase, name, info.Bounds, bar.Left)
+					}
+				}
+			}
+		}
 
 		if err := app.Click("Hide sidebar"); err != nil {
 			t.Fatal(err)
@@ -452,9 +464,11 @@ func TestDockedSidebarAnimatesOnPointerToggleAndLandsAtOnceForKeyboardAndReduced
 		}
 		var hideXs []float32
 		hideXs = append(hideXs, mustAccess(t, app, ui.RoleMain, "Document").Bounds.X)
+		checkHeaderClear("collapse frame 0")
 		for range 16 {
 			app.Advance(16 * time.Millisecond)
 			hideXs = append(hideXs, mustAccess(t, app, ui.RoleMain, "Document").Bounds.X)
+			checkHeaderClear("collapse")
 		}
 		app.Advance(time.Second)
 		hidden := mustAccess(t, app, ui.RoleMain, "Document").Bounds
@@ -477,9 +491,11 @@ func TestDockedSidebarAnimatesOnPointerToggleAndLandsAtOnceForKeyboardAndReduced
 		app.Frame()
 		var showXs []float32
 		showXs = append(showXs, mustAccess(t, app, ui.RoleMain, "Document").Bounds.X)
+		checkHeaderClear("expand frame 0")
 		for range 16 {
 			app.Advance(16 * time.Millisecond)
 			showXs = append(showXs, mustAccess(t, app, ui.RoleMain, "Document").Bounds.X)
+			checkHeaderClear("expand")
 		}
 		app.Advance(time.Second)
 		reopened := mustAccess(t, app, ui.RoleMain, "Document").Bounds
@@ -555,18 +571,14 @@ func TestOutlineSelectionPersistsAndSlidesBetweenHeadings(t *testing.T) {
 	}
 	app.Advance(time.Second)
 
-	if first := mustAccess(t, app, ui.RoleTreeItem, "Overview"); !first.Selected {
-		t.Fatal("initial active heading Overview is not selected")
+	if first := mustAccess(t, app, ui.RoleRow, "Overview"); !first.Selectable || !first.Selected {
+		t.Fatalf("initial active heading Overview selectable=%v selected=%v, want both true", first.Selectable, first.Selected)
 	}
-	if last := mustAccess(t, app, ui.RoleTreeItem, "Discussion"); last.Selected {
-		t.Fatal("inactive heading Discussion should not be selected")
+	if last := mustAccess(t, app, ui.RoleRow, "Discussion"); !last.Selectable || last.Selected {
+		t.Fatalf("inactive heading Discussion selectable=%v selected=%v, want true/false", last.Selectable, last.Selected)
 	}
 
-	outlineInfo, ok := app.Access("Document outline")
-	if !ok {
-		t.Fatal("missing Document outline")
-	}
-	outline := outlineInfo.Bounds
+	outline := mustAccess(t, app, ui.RoleTree, "Document outline").Bounds
 	if err := app.Click("Discussion"); err != nil {
 		t.Fatal(err)
 	}
@@ -574,10 +586,10 @@ func TestOutlineSelectionPersistsAndSlidesBetweenHeadings(t *testing.T) {
 	if len(revealed) != 1 || revealed[0] != 420 {
 		t.Fatalf("clicking Discussion revealed %v, want [420]", revealed)
 	}
-	if last := mustAccess(t, app, ui.RoleTreeItem, "Discussion"); !last.Selected {
-		t.Fatal("clicked heading Discussion did not stay selected")
+	if last := mustAccess(t, app, ui.RoleRow, "Discussion"); !last.Selectable || !last.Selected {
+		t.Fatalf("clicked heading Discussion selectable=%v selected=%v, want both true", last.Selectable, last.Selected)
 	}
-	if first := mustAccess(t, app, ui.RoleTreeItem, "Overview"); first.Selected {
+	if first := mustAccess(t, app, ui.RoleRow, "Overview"); first.Selected {
 		t.Fatal("previous heading Overview stayed selected")
 	}
 	var frames []*image.RGBA
@@ -597,7 +609,7 @@ func TestOutlineSelectionPersistsAndSlidesBetweenHeadings(t *testing.T) {
 
 	model.DocumentOffset = 280
 	app.Frame()
-	if res := mustAccess(t, app, ui.RoleTreeItem, "Results"); !res.Selected {
-		t.Fatal("moving document cursor into Results did not update Outline selection")
+	if res := mustAccess(t, app, ui.RoleRow, "Results"); !res.Selectable || !res.Selected {
+		t.Fatalf("moving document cursor into Results gave selectable=%v selected=%v, want both true", res.Selectable, res.Selected)
 	}
 }

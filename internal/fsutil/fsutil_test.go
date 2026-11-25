@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -155,4 +157,70 @@ func TestLimitBufferRetainsTailAndIsConcurrencySafe(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func writeTestExecutable(t *testing.T, dir, name string) string {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%s): %v", dir, err)
+	}
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile(%s): %v", path, err)
+	}
+	return path
+}
+
+// TestStableUserBinDirsFindToolsWithoutShellInitialization covers a Finder
+// launch: the process PATH has no shell additions, so the app has to look in
+// the places Node version managers and package managers install the CLIs it
+// starts.
+func TestStableUserBinDirsFindToolsWithoutShellInitialization(t *testing.T) {
+	home := t.TempDir()
+	fnmBin := filepath.Join(home, ".local", "share", "fnm", "aliases", "default", "bin")
+	writeTestExecutable(t, fnmBin, "codex-acp")
+	writeTestExecutable(t, fnmBin, "node")
+
+	nodeV24 := filepath.Join(home, ".nvm", "versions", "node", "v24.20.0", "bin")
+	writeTestExecutable(t, nodeV24, "codex")
+	nodeV22 := filepath.Join(home, ".nvm", "versions", "node", "v22.11.0", "bin")
+	writeTestExecutable(t, nodeV22, "codex")
+
+	transient := filepath.Join(home, ".local", "state", "fnm_multishells", "4242_1", "bin")
+	writeTestExecutable(t, transient, "agy")
+
+	barePath := []string{"PATH=/usr/bin:/bin"}
+	dirs := StableUserBinDirsFor(home, "/opt/homebrew/bin", "/usr/local/bin")
+	for _, want := range []string{
+		filepath.Join(home, ".local", "bin"),
+		fnmBin,
+		nodeV24,
+		nodeV22,
+		filepath.Join(home, ".volta", "bin"),
+		filepath.Join(home, ".bun", "bin"),
+		"/opt/homebrew/bin",
+		"/usr/local/bin",
+	} {
+		if !slices.Contains(dirs, want) {
+			t.Errorf("StableUserBinDirsFor is missing %q; got %v", want, dirs)
+		}
+	}
+	for _, dir := range dirs {
+		if strings.Contains(dir, "fnm_multishells") {
+			t.Fatalf("StableUserBinDirsFor keeps the transient fnm directory %q", dir)
+		}
+	}
+
+	if found, ok := ResolveExecutable("codex-acp", barePath, dirs); !ok || found != filepath.Join(fnmBin, "codex-acp") {
+		t.Fatalf("codex-acp resolved to %q, %t; want %q", found, ok, filepath.Join(fnmBin, "codex-acp"))
+	}
+	if found, ok := ResolveExecutable("node", barePath, dirs); !ok || found != filepath.Join(fnmBin, "node") {
+		t.Fatalf("node resolved to %q, %t; want the fnm default alias %q", found, ok, filepath.Join(fnmBin, "node"))
+	}
+	if found, ok := ResolveExecutable("codex", barePath, dirs); !ok || !strings.HasPrefix(found, filepath.Join(home, ".nvm", "versions", "node")) {
+		t.Fatalf("codex resolved to %q, %t; want an nvm node directory", found, ok)
+	}
+	if _, ok := ResolveExecutable("agy", barePath, dirs); ok {
+		t.Fatal("a transient fnm_multishells directory served agy")
+	}
 }

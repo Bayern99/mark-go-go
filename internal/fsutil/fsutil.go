@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 )
 
@@ -144,13 +145,31 @@ func DeepestRoot(file string, roots []string) string {
 func DefaultUserBinDirs() []string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil
+		home = ""
 	}
-	return []string{
-		filepath.Join(home, ".local", "bin"),
-		"/opt/homebrew/bin",
-		"/usr/local/bin",
+	return StableUserBinDirsFor(home, "/opt/homebrew/bin", "/usr/local/bin")
+}
+
+// StableUserBinDirsFor lists where a user's CLI tools live when the app was
+// started from Finder: its PATH holds no shell initialization, so the Node
+// version manager directories have to be named here. fnm's default alias is a
+// stable path; the fnm_multishells directories are per-shell and never used.
+func StableUserBinDirsFor(home string, system ...string) []string {
+	var dirs []string
+	if home != "" {
+		dirs = append(dirs,
+			filepath.Join(home, ".local", "bin"),
+			filepath.Join(home, ".local", "share", "fnm", "aliases", "default", "bin"),
+		)
+		versions, _ := filepath.Glob(filepath.Join(home, ".nvm", "versions", "node", "*", "bin"))
+		sort.Sort(sort.Reverse(sort.StringSlice(versions)))
+		dirs = append(dirs, versions...)
+		dirs = append(dirs,
+			filepath.Join(home, ".volta", "bin"),
+			filepath.Join(home, ".bun", "bin"),
+		)
 	}
+	return append(dirs, system...)
 }
 
 func ResolveExecutable(command string, env []string, extraDirs []string) (string, bool) {

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Bayern99/mark-go-go/internal/agentguide"
 	"github.com/Bayern99/mark-go-go/internal/appversion"
 	"github.com/Bayern99/mark-go-go/internal/genuikit"
 	"github.com/Bayern99/mark-go-go/internal/ipc"
@@ -628,7 +629,7 @@ func (a *app) runAgentPrompt(args []string) int {
 		a.fail(err)
 		return exitUsage
 	}
-	fmt.Fprint(a.stdout, agentPrompt(a.client.SocketPath))
+	fmt.Fprint(a.stdout, agentguide.GeneralPrompt(a.client.SocketPath))
 	return exitOK
 }
 
@@ -652,23 +653,6 @@ func (a *app) runMCP(args []string) int {
 		return exitFailure
 	}
 	return exitOK
-}
-
-func agentPrompt(socketPath string) string {
-	return fmt.Sprintf(`You are reading and editing the Markdown workspace that Mark Go Go has open.
-
-The app listens at %s. Use the markgogo CLI, or `+"`markgogo mcp`"+` as an MCP stdio server when your client only speaks MCP. Both bind to the workspace that contains your working directory.
-
-Read before you write:
-- get_workspace lists the root, the open documents and a bounded list of Markdown files, with a truncated flag.
-- read_document (or `+"`markgogo read <document>`"+`) takes a documentId or a workspace-relative path, and may return one heading section or a line range. It always returns the document version.
-
-Every change to existing text goes through propose_edit (or `+"`markgogo propose`"+`): pass exactly one of proposedText, oldText with newText, or startLine with endLine and newText plus the baseVersion you read. The user reviews the proposal in the app and applies it; the tool only returns its id, revision, hunk count and a one-line summary.
-
-create_document (or `+"`markgogo new`"+`) creates a new file and refuses to overwrite. write_genui_view validates a GenUI candidate against the catalog before writing the document's .genui.json and returns the version it wrote (2 for A2UI, 3 for openui-lang; get the format with `+"`markgogo genui format`"+`). create_checkpoint snapshots a saved document.
-
-Errors carry a stable code: APP_NOT_RUNNING, WORKSPACE_NOT_OPEN, VERSION_CONFLICT, NOT_FOUND, PATH_DENIED or INVALID_ARGS, with a hint. When APP_NOT_RUNNING says the connection closed mid-request, the write may or may not have happened: read the document again instead of retrying blindly.
-`, socketPath)
 }
 
 func isPath(document string) bool {

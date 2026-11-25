@@ -50,6 +50,18 @@ type ModelCatalog struct {
 	ThoughtLevel  string        `json:"thoughtLevel,omitempty"`
 }
 
+// ProviderOf is the provider a model belongs to, as the catalog last reported
+// it. Backends that name a provider beside the model use it for their
+// credential check, their model write and their Terminal login.
+func (c ModelCatalog) ProviderOf(model string) string {
+	for _, option := range c.Models {
+		if option.ID == model {
+			return option.Provider
+		}
+	}
+	return ""
+}
+
 type Turn struct {
 	Dir          string
 	Prompt       string

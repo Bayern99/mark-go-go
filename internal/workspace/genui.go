@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -56,9 +57,15 @@ func (s *Service) genUIProbeConfig(backendID string) (acp.ProbeConfig, error) {
 // ProbeGenUI confirms whether a backend can be started and what it answered.
 // It never sends a generation request.
 func (s *Service) ProbeGenUI(backendID string) (genui.ProbeResult, error) {
-	cfg, err := s.genUIProbeConfig(backendID)
+	b, ok := genui.BackendByID(backendID)
+	if !ok {
+		return genui.ProbeResult{Status: genui.AgentFailed, Detail: "Unknown GenUI backend."}, nil
+	}
+	if b.ID == genui.BackendPi {
+		return s.probePi(s.genUISettings().GenUI.For(b.ID))
+	}
+	cfg, err := s.genUIProbeConfig(b.ID)
 	if err != nil {
-		b, _ := genui.BackendByID(backendID)
 		return genui.ProbeResult{Status: genui.AgentMissing, Detail: err.Error(), Hint: b.InstallHint}, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), genuiProbeTimeout)
@@ -69,6 +76,9 @@ func (s *Service) ProbeGenUI(backendID string) (genui.ProbeResult, error) {
 // RefreshGenUIModels reads a backend's models through a short-lived session and
 // records the list. It submits no generation request and no document text.
 func (s *Service) RefreshGenUIModels(backendID string) (genui.ModelCatalog, error) {
+	if b, ok := genui.BackendByID(backendID); ok && b.ID == genui.BackendPi {
+		return s.refreshPi(b.ID, s.genUISettings().GenUI.For(b.ID))
+	}
 	cfg, err := s.genUIProbeConfig(backendID)
 	if err != nil {
 		return genui.ModelCatalog{}, err
@@ -104,7 +114,16 @@ func (s *Service) OpenGenUILogin(backendID string) error {
 		// to sign in with the agent's own command instead of running it here.
 		return errors.New(b.LoginHint)
 	}
-	command, args := b.LoginCommand, b.LoginArgs
+	command, args := b.LoginCommand, slices.Clone(b.LoginArgs)
+	if b.ID == genui.BackendPi {
+		// Pi signs a provider in, not a model, so the app names the provider it
+		// recorded beside the model rather than asking Pi to guess.
+		provider := strings.TrimSpace(s.genUISettings().GenUI.For(b.ID).Provider)
+		if provider == "" {
+			return errors.New(b.LoginHint)
+		}
+		args = append(args, provider)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), genuiProbeTimeout)
 	defer cancel()
 	launch := hostterm.CommandLine(command, args...)

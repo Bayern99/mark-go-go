@@ -69,7 +69,7 @@ func pageTester(p *panel, query string) *ui.Tester {
 	return app
 }
 
-func TestGenUISettingsOffersFourBackendsAndKeepsPiUnavailable(t *testing.T) {
+func TestGenUISettingsOffersFourChoosableBackends(t *testing.T) {
 	p, saved := settingsPanel(t, workspace.DefaultSettings())
 	app := pageTester(p, "")
 
@@ -78,11 +78,14 @@ func TestGenUISettingsOffersFourBackendsAndKeepsPiUnavailable(t *testing.T) {
 			t.Fatalf("the backend cards are missing %q: %q", name, app.Texts())
 		}
 	}
-	if !app.HasText("Coming soon") {
-		t.Fatalf("Pi is offered as usable before it has a runner: %q", app.Texts())
+	if app.HasText("Coming soon") {
+		t.Fatalf("a backend is still offered as coming soon: %q", app.Texts())
 	}
-	if info, ok := app.Access("Pi backend"); !ok || !info.Disabled {
-		t.Fatalf("Pi card = %+v, %t; want a disabled card", info, ok)
+	if info, ok := app.Access("Pi backend"); !ok || info.Disabled {
+		t.Fatalf("Pi card = %+v, %t; want a card the reader can choose", info, ok)
+	}
+	if !app.HasText("pi --mode rpc") {
+		t.Fatalf("the Pi card does not say what it runs: %q", app.Texts())
 	}
 	if err := app.Click("Codex backend"); err != nil {
 		t.Fatalf("clicking the Codex card: %v", err)
@@ -94,8 +97,16 @@ func TestGenUISettingsOffersFourBackendsAndKeepsPiUnavailable(t *testing.T) {
 	if id, _ := p.settings.GenUI.Active(); id != genui.BackendCodex {
 		t.Fatalf("active backend = %q, want codex", id)
 	}
-	if err := app.Click("Pi backend"); err == nil && len(*saved) != 1 {
-		t.Fatalf("clicking Pi saved a patch: %+v", *saved)
+	if err := app.Click("Pi backend"); err != nil {
+		t.Fatalf("clicking the Pi card: %v", err)
+	}
+	app.Frame()
+	last := (*saved)[len(*saved)-1]
+	if last.GenUI == nil || last.GenUI.Backend == nil || *last.GenUI.Backend != genui.BackendPi {
+		t.Fatalf("saved patches = %+v, want the Pi backend selected last", *saved)
+	}
+	if id, _ := p.settings.GenUI.Active(); id != genui.BackendPi {
+		t.Fatalf("active backend = %q, want pi", id)
 	}
 }
 

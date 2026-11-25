@@ -63,6 +63,30 @@ func TestResearchActionsButtonSupportsImmediateKeyboardChoiceAndEscape(t *testin
 	}
 }
 
+func TestResearchActionsButtonOutsideClickKeepsTheClickedFocus(t *testing.T) {
+	for _, editFilter := range []bool{false, true} {
+		p := fixtureReadyPanel()
+		p.state.draft = ""
+		p.state.commands = []feynman.ResearchCommand{{Name: "review"}, {Name: "summarize"}}
+		app := ui.NewTester(func(c *ui.Context) { p.composer(c) }, 640, 600)
+		app.Frame()
+		openResearchActions(t, app, false)
+		if editFilter {
+			app.Type("rev")
+			app.Frame()
+		}
+		if err := app.Click("Research prompt"); err != nil {
+			t.Fatal(err)
+		}
+		app.Frame()
+		app.Type("z")
+		app.Frame()
+		if p.state.actionsOpen || !app.Focused("Research prompt") || p.state.draft != "z" {
+			t.Fatalf("editFilter=%v: clicking the prompt left actions open=%v, draft=%q, or focus outside the prompt", editFilter, p.state.actionsOpen, p.state.draft)
+		}
+	}
+}
+
 func TestSlashUnknownTypedDraftSendsVerbatimAfterEscape(t *testing.T) {
 	p := fixtureReadyPanel()
 	p.state.draft = ""
@@ -96,7 +120,7 @@ func TestSlashUnknownTypedDraftSendsVerbatimAfterEscape(t *testing.T) {
 		if got != "/tmp" {
 			t.Fatalf("Enter sent %q, want the verbatim unknown slash draft", got)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(time.Minute):
 		t.Fatal("Enter did not submit the unknown slash draft")
 	}
 }

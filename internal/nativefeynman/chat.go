@@ -476,7 +476,9 @@ func (p *panel) composer(c *ui.Context) {
 					p.actionsFocusFilter = false
 					if p.actionsFromButton {
 						p.actionsFromButton = false
-						actionsBtn.Focus()
+						if actionsPopover.FocusWithin() {
+							actionsBtn.Focus()
+						}
 					} else {
 						p.actionsDismissed = true
 						p.actionsFromSlash = false

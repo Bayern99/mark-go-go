@@ -671,6 +671,32 @@ func (t *generationTrace) phase(phase, text string) {
 	t.emit(TracePhase, &tracePhasePayload{Phase: phase, Text: text})
 }
 
+// artifactOrView sends an orchestrator artifact to the trace, routing the
+// committed view to the event that marks the run as having written one.
+func (t *generationTrace) artifactOrView(name, path, content string) {
+	if name == "view" {
+		t.viewWritten(path, []byte(content))
+		return
+	}
+	t.artifact(name, path, content)
+}
+
+// phases reports progress steps to the trace's phase event before handing them
+// to the reader, so the trace keeps one phase entry per change.
+func (t *generationTrace) phases(send func(genui.GenerateProgress) error) func(genui.GenerateProgress) error {
+	var mu sync.Mutex
+	phase, text := "", ""
+	return func(p genui.GenerateProgress) error {
+		mu.Lock()
+		if p.Phase != phase || p.Text != text {
+			phase, text = p.Phase, p.Text
+			t.phase(p.Phase, p.Text)
+		}
+		mu.Unlock()
+		return send(p)
+	}
+}
+
 func (t *generationTrace) artifact(name, path, content string) {
 	if t == nil {
 		return

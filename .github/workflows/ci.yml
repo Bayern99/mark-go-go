@@ -63,21 +63,18 @@ jobs:
         # Each long package gets a machine of its own; remaining runs every
         # package not named here, so keep its exclusions in step with the list.
         include:
+          - { suite: nativegenui, packages: ./internal/nativegenui }
           - { suite: portrait, packages: ./internal/portrait }
           - { suite: feynman, packages: ./internal/agent/feynman ./internal/nativefeynman }
           - { suite: nativeeditor, packages: ./internal/nativeeditor }
           - suite: remaining
             exclude: internal/nativeui internal/nativegenui internal/portrait internal/agent/feynman internal/nativefeynman internal/nativeeditor
-          # nativeui and nativegenui are the longest packages; their tests split
-          # across machines round-robin, so each shard gets a share of the slow
-          # ones.
-          - { suite: nativeui, shard: 1, shards: 5 }
-          - { suite: nativeui, shard: 2, shards: 5 }
-          - { suite: nativeui, shard: 3, shards: 5 }
-          - { suite: nativeui, shard: 4, shards: 5 }
-          - { suite: nativeui, shard: 5, shards: 5 }
-          - { suite: nativegenui, shard: 1, shards: 2 }
-          - { suite: nativegenui, shard: 2, shards: 2 }
+          # nativeui is the longest package by far; its tests split across
+          # machines round-robin, so each shard gets a share of the slow ones.
+          - { suite: nativeui, shard: 1, shards: 4 }
+          - { suite: nativeui, shard: 2, shards: 4 }
+          - { suite: nativeui, shard: 3, shards: 4 }
+          - { suite: nativeui, shard: 4, shards: 4 }
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7

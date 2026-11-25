@@ -12,7 +12,6 @@ import (
 // the given settings by the same code, for the acceptance scenes.
 func SceneSettingsPage(settings workspace.Settings) nativeui.SettingsPage {
 	p := &panel{settings: settings}
-	p.settingsCommand = p.activeBackend().Command
 	return p.settingsPage()
 }
 

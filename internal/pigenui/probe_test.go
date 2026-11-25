@@ -42,6 +42,9 @@ func TestProbeReadsTheExitCodeOfTheCredentialCheck(t *testing.T) {
 			if result.Status != tt.want {
 				t.Fatalf("status = %q (%s), want %q", result.Status, result.Detail, tt.want)
 			}
+			if tt.want == genui.AgentReady && result.Hint != "" {
+				t.Errorf("installed and ready Pi still displays %q", result.Hint)
+			}
 			if tt.wantDetail != "" && !strings.Contains(result.Detail, tt.wantDetail) {
 				t.Errorf("detail = %q, want it to mention %q", result.Detail, tt.wantDetail)
 			}

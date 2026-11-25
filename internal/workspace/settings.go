@@ -235,7 +235,11 @@ func migrateV1(backends map[string]GenUIBackend, fields map[string]json.RawMessa
 	}
 	agy.Model = legacy.Model
 	if command := strings.TrimSpace(legacy.AgentCommand); command != "" {
-		agy.Command, agy.Args = genui.SplitCommand(command)
+		if filepath.IsAbs(command) {
+			agy.Command = command
+		} else {
+			agy.Command, agy.Args = genui.SplitCommand(command)
+		}
 		if len(agy.Args) == 0 {
 			agy.Args = slices.Clone(defaultBackendSettings(genui.BackendAntigravity).Args)
 		}

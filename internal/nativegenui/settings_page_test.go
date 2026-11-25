@@ -2,6 +2,7 @@ package nativegenui
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -375,5 +376,48 @@ func TestAFocusRecheckKeepsTheModelsAndOnlyRetestsTheLogin(t *testing.T) {
 	}
 	if got := p.status(genui.BackendAntigravity).catalog.Models; len(got) != 1 {
 		t.Fatalf("focus dropped the known models: %+v", got)
+	}
+}
+
+func TestAdvancedArgumentsRoundTripIndividualValues(t *testing.T) {
+	settings := workspace.DefaultSettings()
+	id := genui.BackendCustom
+	settings.GenUI.Backend = id
+	backend := settings.GenUI.For(id)
+	backend.Args = []string{"--profile", "a b", ""}
+	settings.GenUI.Backends[id] = backend
+	p, saved := settingsPanel(t, settings)
+	app := pageTester(p, "")
+	field, ok := app.AccessByRole(ui.RoleTextField, "Arguments")
+	if !ok || field.Value != `["--profile","a b",""]` {
+		t.Errorf("arguments field = %+v", field)
+	}
+	clickField(t, app, "Arguments")
+	app.Key(ui.Cmd, ui.KeyA)
+	app.Type(`["--profile","a different profile","", "C:\\Agent"]`)
+	app.Frame()
+	clickButton(t, app, "Save arguments")
+	if len(*saved) == 0 {
+		t.Fatal("no argument patch was saved")
+	}
+	patch := (*saved)[len(*saved)-1].GenUI.Backends[id]
+	if patch.Args == nil || !slices.Equal(*patch.Args, []string{"--profile", "a different profile", "", `C:\Agent`}) {
+		t.Fatalf("saved arguments = %+v", patch)
+	}
+}
+
+func TestPiAdvancedDoesNotOfferACPArguments(t *testing.T) {
+	settings := workspace.DefaultSettings()
+	settings.GenUI.Backend = genui.BackendPi
+	p, _ := settingsPanel(t, settings)
+	app := pageTester(p, "agent command")
+	if _, ok := app.AccessByRole(ui.RoleTextField, "Agent command"); !ok {
+		t.Fatal("Pi command field is missing")
+	}
+	if app.HasText("Arguments") {
+		t.Fatal("Pi offered unused ACP arguments")
+	}
+	if app = pageTester(p, "arguments"); app.HasText("Arguments") {
+		t.Fatal("search exposes an ACP arguments field for Pi")
 	}
 }

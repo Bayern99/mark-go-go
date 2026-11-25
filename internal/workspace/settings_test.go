@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
+
 	"sync"
 	"testing"
 
@@ -329,5 +331,18 @@ func TestNewServiceDetectsTheFirstInstalledBackendOnAnEmptyProfile(t *testing.T)
 	settings, err := svc.GetSettings()
 	if err != nil || settings.GenUI.Backend != genui.BackendCodex {
 		t.Fatalf("first backend = %q, %v, want Codex", settings.GenUI.Backend, err)
+	}
+}
+
+func TestLegacyExecutablePathWithSpacesMigratesAsOnePath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, settingsFile)
+	if err := os.WriteFile(path, []byte(`{"agentCommand":"/Applications/Agent Tools/agy"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st := &settingsStore{dir: dir}
+	backend := st.get().GenUI.For(genui.BackendAntigravity)
+	if backend.Command != "/Applications/Agent Tools/agy" || !slices.Equal(backend.Args, []string{"acp"}) {
+		t.Fatalf("migrated backend = %+v", backend)
 	}
 }

@@ -1,7 +1,8 @@
 package nativegenui
 
 import (
-	"strings"
+	"encoding/json"
+	"errors"
 
 	"github.com/Bayern99/mark-go-go/internal/genui"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
@@ -47,13 +48,30 @@ func (p *panel) editFor(id string) *backendEdit {
 		edit.command = backend.Command
 	}
 	if !edit.argumentsEdited {
-		edit.arguments = strings.Join(backend.Args, " ")
+		encoded, _ := json.Marshal(append([]string{}, backend.Args...))
+		edit.arguments = string(encoded)
 	}
 	if !edit.advancedChosen {
 		edit.advancedOpen = id == genui.BackendCustom
 		edit.advancedChosen = true
 	}
 	return edit
+}
+
+func parseArguments(text string) ([]string, error) {
+	var values []*string
+	invalid := errors.New(`Enter a JSON array of strings, for example ["--profile","My Profile"].`)
+	if err := json.Unmarshal([]byte(text), &values); err != nil || values == nil {
+		return nil, invalid
+	}
+	args := make([]string, len(values))
+	for i, value := range values {
+		if value == nil {
+			return nil, invalid
+		}
+		args[i] = *value
+	}
+	return args, nil
 }
 
 func (p *panel) selectBackend(id string) {

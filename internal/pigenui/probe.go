@@ -50,6 +50,7 @@ func Probe(ctx context.Context, cfg Config) (genui.ProbeResult, error) {
 		return result, nil
 	}
 	result.Executable = resolved
+	result.Hint = ""
 	provider := strings.TrimSpace(cfg.Provider)
 	if provider == "" {
 		result.Status = genui.AgentUnknown

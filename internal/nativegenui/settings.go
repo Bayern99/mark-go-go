@@ -348,8 +348,9 @@ func connectionDescription(state *backendStatus) string {
 }
 
 func (p *panel) drawAdvanced(c *ui.Context, q nativeui.SettingsQuery, id string, backend workspace.GenUIBackend) {
-	if q.Active() && !q.Match("Agent command", "The command the backend runs.", commandKeywords) &&
-		!q.Match("Arguments", "The arguments that make the command speak ACP.", argumentsKeywords) {
+	showCommand := q.Match("Agent command", "The command the backend runs.", commandKeywords)
+	showArgs := id != genui.BackendPi && q.Match("Arguments", "The arguments that make the command speak ACP.", argumentsKeywords)
+	if !showCommand && !showArgs {
 		return
 	}
 	edit := p.editFor(id)
@@ -360,7 +361,7 @@ func (p *panel) drawAdvanced(c *ui.Context, q nativeui.SettingsQuery, id string,
 	portrait.SettingsGroup(c, "Advanced", func(rows *portrait.Rows) {
 		portrait.Disclosure(c.Key("genui-advanced-"+id), "Advanced", &edit.advancedOpen, portrait.DisclosureSpec{}, func() {
 			ui.Column(c).FillWidth().Gap(portrait.Form.Gap).Children(func() {
-				if q.Match("Agent command", "The command the backend runs.", commandKeywords) {
+				if showCommand {
 					ui.Column(c).FillWidth().Gap(portrait.Form.HelpGap).Children(func() {
 						portrait.Label(c, "Agent command")
 						ui.Row(c).FillWidth().Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
@@ -371,19 +372,23 @@ func (p *panel) drawAdvanced(c *ui.Context, q nativeui.SettingsQuery, id string,
 						})
 					})
 				}
-				if q.Match("Arguments", "The arguments that make the command speak ACP.", argumentsKeywords) {
+				if showArgs {
 					ui.Column(c).FillWidth().Gap(portrait.Form.HelpGap).Children(func() {
 						portrait.Label(c, "Arguments")
 						ui.Row(c).FillWidth().Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
-							field := portrait.TextField(c, &edit.arguments, portrait.FieldSpec{Label: "Arguments", Placeholder: "acp", Size: portrait.Form.FieldCompact})
+							field := portrait.TextField(c, &edit.arguments, portrait.FieldSpec{Label: "Arguments", Placeholder: `["acp"]`, Size: portrait.Form.FieldCompact})
 							field.Frame().Grow(1).MinWidth(0)
 							field.Input().OnChange(func() { edit.argumentsEdited = true })
 							save := portrait.AccentButton(c, "Save arguments", "Save arguments")
 							save.Disabled(!edit.argumentsEdited)
 							if save.Clicked() {
-								args := strings.Fields(edit.arguments)
-								p.saveBackend(id, workspace.GenUIBackendPatch{Args: &args})
-								edit.argumentsEdited = false
+								args, err := parseArguments(edit.arguments)
+								if err != nil {
+									p.settingsMessage = err.Error()
+								} else {
+									p.saveBackend(id, workspace.GenUIBackendPatch{Args: &args})
+									edit.argumentsEdited = false
+								}
 							}
 						})
 					})

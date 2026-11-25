@@ -166,12 +166,12 @@ func (e *ExternalServer) Start() error {
 	if err != nil {
 		return err
 	}
+	ln.SetUnlinkOnClose(false)
 	info, err := os.Lstat(path)
 	if err != nil {
 		ln.Close()
 		return err
 	}
-	ln.SetUnlinkOnClose(false)
 	if err := os.Chmod(path, 0o600); err != nil {
 		ln.Close()
 		return errors.Join(err, removeOwnedSocket(path, info))

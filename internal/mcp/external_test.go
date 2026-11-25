@@ -1069,3 +1069,21 @@ func TestFeynmanWritesAuditTheConnectedChannel(t *testing.T) {
 		t.Fatalf("Feynman audit = %+v, %v", event, err)
 	}
 }
+
+func TestClosingTheSocketPreservesAFileThatReplacedIt(t *testing.T) {
+	h, _ := newSocketHarness(t)
+	srv := startExternal(t, h)
+	path := srv.SocketPath()
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("keep replacement"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if text, err := os.ReadFile(path); err != nil || string(text) != "keep replacement" {
+		t.Fatalf("socket close changed its replacement: %q, %v", text, err)
+	}
+}

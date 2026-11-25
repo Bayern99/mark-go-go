@@ -613,14 +613,11 @@ func (v *documentView) drawSourcePreview(c *ui.Context, targets []sourcePreviewT
 	if focused != nil {
 		focusedKey = focused.key
 	}
-	if state.dismissed {
-		if dismissedTarget := sourcePreviewTargetForKey(targets, state.key); dismissedTarget != nil {
-			anchor := c.Resolve(*dismissedTarget.anchor)
-			if anchor.Valid() {
-				x, y, _ := anchor.PointerPosition()
-				if [2]float32{x, y} != state.dismissedPointer {
-					state.pointerMoved = true
-				}
+	if state.dismissed && !state.pointerMoved {
+		for _, target := range targets {
+			if anchor := c.Resolve(*target.anchor); anchor.Valid() {
+				state.pointerMoved = windowPointer(anchor) != state.dismissedPointer
+				break
 			}
 		}
 	}
@@ -707,9 +704,14 @@ func (v *documentView) drawSourcePreview(c *ui.Context, targets []sourcePreviewT
 		state.dismissed = true
 		state.overPreview = false
 		state.pointerMoved = false
-		x, y, _ := anchor.PointerPosition()
-		state.dismissedPointer = [2]float32{x, y}
+		state.dismissedPointer = windowPointer(anchor)
 	}
+}
+
+func windowPointer(anchor ui.Element) [2]float32 {
+	x, y, _ := anchor.PointerPosition()
+	b := anchor.Bounds()
+	return [2]float32{b.X + x, b.Y + y}
 }
 
 func sourcePreviewTargetForKey(targets []sourcePreviewTarget, key string) *sourcePreviewTarget {

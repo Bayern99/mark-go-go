@@ -480,3 +480,34 @@ func TestSourcePreviewCapsTheExcerptLength(t *testing.T) {
 		t.Errorf("the long excerpt is not visibly truncated before its ending: %q", excerpt)
 	}
 }
+
+func TestSourcePreviewReopensOnHoverAfterTheDismissedSourceLeavesTheView(t *testing.T) {
+	v := newSourcePreviewView(t)
+	v.index("# Overview\n\nAn overview.\n\n# Other\n\nAnother excerpt.\n")
+	app := sourcePreviewTester(v)
+	app.Frame()
+	hoverSourcePreview(t, app)
+	app.Key(0, ui.KeyEscape)
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RolePopup, ""); ok {
+		t.Fatal("Escape did not close the preview")
+	}
+
+	view, err := Open(`{"version":2,"sources":{"other":{"heading":"Other"}},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"v","catalogId":"markgogo.dev:genui/v1","components":[{"id":"root","component":"KeyPoints","title":"Details","items":["Another derived point"],"sources":["other"]}]}}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v.reading.Load(view)
+	app.Frame()
+	app.Move(600, 340)
+	app.Frame()
+	other, ok := app.Access("Other")
+	if !ok {
+		t.Fatalf("the updated view has no Other source: %v", app.Texts())
+	}
+	app.Move(other.Bounds.X+other.Bounds.W/2, other.Bounds.Y+other.Bounds.H/2)
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RolePopup, "Source preview: Other"); !ok {
+		t.Fatalf("hovering Other after the dismissed source left the view did not open its preview: %v", app.Texts())
+	}
+}

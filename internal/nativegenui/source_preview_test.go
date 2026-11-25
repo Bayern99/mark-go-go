@@ -139,6 +139,52 @@ func TestSourcePreviewHasOneActiveSourceWhenFocusAndHoverDiffer(t *testing.T) {
 	}
 }
 
+func TestSourcePreviewEscapeDoesNotRevealSourceUnderStationaryPointer(t *testing.T) {
+	v := newTwoSourcePreviewView(t, true)
+	app := sourcePreviewTester(v)
+	app.Frame()
+
+	app.Key(0, ui.KeyTab)
+	app.Frame()
+	if !app.Focused("Overview") {
+		t.Fatal("Tab did not focus Overview")
+	}
+	popup, ok := app.AccessByRole(ui.RolePopup, "Source preview: Overview")
+	if !ok {
+		t.Fatalf("focusing Overview did not open its preview: %v", app.Texts())
+	}
+	other, ok := app.Access("Other")
+	if !ok {
+		t.Fatal("the GenUI view has no Other source")
+	}
+	otherX, otherY := other.Bounds.X+other.Bounds.W/2, other.Bounds.Y+other.Bounds.H/2
+	if otherX < popup.Bounds.X || otherX > popup.Bounds.X+popup.Bounds.W || otherY < popup.Bounds.Y || otherY > popup.Bounds.Y+popup.Bounds.H {
+		t.Fatalf("Other at (%v, %v) is not covered by Overview's popup %+v", otherX, otherY, popup.Bounds)
+	}
+
+	app.Move(otherX, otherY)
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RolePopup, "Source preview: Overview"); !ok {
+		t.Fatal("moving into Overview's popup closed it before Escape")
+	}
+	app.Key(0, ui.KeyEscape)
+	app.Frame()
+	if popup, ok := app.AccessByRole(ui.RolePopup, ""); ok {
+		t.Fatalf("Escape revealed %q under the stationary pointer", popup.Name)
+	}
+	if !app.Focused("Overview") {
+		t.Fatal("Escape moved focus away from Overview")
+	}
+
+	app.Move(600, 340)
+	app.Frame()
+	app.Move(otherX, otherY)
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RolePopup, "Source preview: Other"); !ok {
+		t.Fatal("moving the pointer onto Other did not reopen its preview after Escape")
+	}
+}
+
 func TestSourcePreviewKeepsHoveredSourceWhenPointerEntersPopup(t *testing.T) {
 	v := newTwoSourcePreviewView(t, false)
 	app := sourcePreviewTester(v)

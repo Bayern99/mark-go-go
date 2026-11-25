@@ -53,6 +53,8 @@ type sourcePreviewState struct {
 	hoveredKey, focusedKey string
 	open, dismissed        bool
 	byPointer, overPreview bool
+	pointerMoved           bool
+	dismissedPointer       [2]float32
 	hideAt                 time.Time
 }
 
@@ -611,9 +613,24 @@ func (v *documentView) drawSourcePreview(c *ui.Context, targets []sourcePreviewT
 	if focused != nil {
 		focusedKey = focused.key
 	}
+	if state.dismissed {
+		if dismissedTarget := sourcePreviewTargetForKey(targets, state.key); dismissedTarget != nil {
+			anchor := c.Resolve(*dismissedTarget.anchor)
+			if anchor.Valid() {
+				x, y, _ := anchor.PointerPosition()
+				if [2]float32{x, y} != state.dismissedPointer {
+					state.pointerMoved = true
+				}
+			}
+		}
+	}
 	newHover := hoveredKey != "" && hoveredKey != state.hoveredKey
 	newFocus := focusedKey != "" && focusedKey != state.focusedKey
 	state.hoveredKey, state.focusedKey = hoveredKey, focusedKey
+	// Closing the popup can expose another source without a pointer move.
+	if state.dismissed && !state.pointerMoved {
+		newHover = false
+	}
 	if state.dismissed && !newHover && !newFocus {
 		state.open, state.overPreview = false, false
 		state.hideAt = time.Time{}
@@ -689,6 +706,9 @@ func (v *documentView) drawSourcePreview(c *ui.Context, targets []sourcePreviewT
 	if !state.open {
 		state.dismissed = true
 		state.overPreview = false
+		state.pointerMoved = false
+		x, y, _ := anchor.PointerPosition()
+		state.dismissedPointer = [2]float32{x, y}
 	}
 }
 

@@ -2,6 +2,7 @@ package acp
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/Bayern99/mark-go-go/internal/genui"
@@ -261,5 +262,16 @@ func TestAnEffortTheAgentDoesNotApplyIsNotRecorded(t *testing.T) {
 	}
 	if selection.model != "gemini-3.8-flash" || selection.thought != "" {
 		t.Fatalf("selection = %+v, want the model but not the unapplied effort", selection)
+	}
+}
+
+func TestAnAuthFailureNamesTheBackendsOwnSignIn(t *testing.T) {
+	err, _, _ := driveGeneration(t, fakeSpec{
+		Out:    minimalOut,
+		Errors: map[string]fakeRPCError{"session/prompt": {Code: -32000, Message: "Authentication required"}},
+	}, nil, func(job *GenerationJob) { job.Backend = genui.BackendCodex })
+	failure := failureFrom(t, err)
+	if failure.Kind != genui.FailAuthRequired || !strings.Contains(failure.Hint, "codex-acp login") {
+		t.Fatalf("failure = %+v, want the Codex sign-in", failure)
 	}
 }

@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -88,5 +89,18 @@ func TestGenUIProbeConfigCarriesTheBackendCommandAndArguments(t *testing.T) {
 	}
 	if cfg.Command != "codex-acp" || len(cfg.Args) != 0 {
 		t.Fatalf("codex config = %+v, want codex-acp without arguments", cfg)
+	}
+}
+
+func TestGenerationRefusesABackendWithoutACommand(t *testing.T) {
+	h := &Service{settings: &settingsStore{dir: t.TempDir()}}
+	s := hostSession(t, h, "doc-1", filepath.Join(t.TempDir(), "doc.md"))
+	if _, err := h.settings.apply(SettingsPatch{GenUI: &GenUIPatch{Backend: new(genui.BackendCustom)}}); err != nil {
+		t.Fatalf("selecting Custom ACP: %v", err)
+	}
+	done := <-h.StartGeneration(context.Background(), s.id, genui.GenerateRequest{Text: "# A\n", Mode: "full"}, func(genui.GenerateProgress) error { return nil })
+	failure := genui.FailureOf(done)
+	if failure.Kind != genui.FailAgentNotFound || !strings.Contains(failure.Message, "Custom ACP backend has no command") || failure.Hint == "" {
+		t.Fatalf("failure = %+v, want the Custom ACP command hint", failure)
 	}
 }

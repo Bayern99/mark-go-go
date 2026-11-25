@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/Bayern99/mark-go-go/internal/desktop"
+	"strings"
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/acp"
@@ -266,6 +267,9 @@ func (h *Service) StartGeneration(ctx context.Context, documentID string, req ge
 		models = h.settings
 	}
 	backendID, backend := settings.GenUI.Active()
+	if b, ok := genui.BackendByID(backendID); ok && strings.TrimSpace(backend.Command) == "" {
+		return refuse(genui.NewFailure(genui.FailAgentNotFound, "The "+b.Name+" backend has no command yet.", b.InstallHint))
+	}
 	job := acp.GenerationJob{
 		Req:          req,
 		Backend:      backendID,

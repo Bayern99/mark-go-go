@@ -30,6 +30,7 @@ const (
 	fakeLogEnv        = "MARKGOGO_FAKE_LOG"
 	fakePipeHolderEnv = "MARKGOGO_FAKE_PIPE_HOLDER"
 	fakeFolderInTitle = "{folder}"
+	fakeNoVersionEnv  = "MARKGOGO_FAKE_NO_VERSION"
 )
 
 func TestMain(m *testing.M) {
@@ -104,6 +105,10 @@ type fakeRPCError struct {
 func runFakeAgent() {
 	for _, arg := range os.Args[1:] {
 		if arg == "--version" {
+			if os.Getenv(fakeNoVersionEnv) != "" {
+				fmt.Fprintln(os.Stderr, "fake agent: unknown option --version")
+				os.Exit(3)
+			}
 			fmt.Println("fake-agent 1.2.3")
 			return
 		}

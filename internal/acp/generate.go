@@ -548,13 +548,13 @@ func (r *turnRunner) agentCallResult(method string, err error) error {
 	var rpc *RPCError
 	if !errors.As(err, &rpc) {
 		if genui.IsAuthError(0, err.Error()) {
-			return genui.AuthRequired(r.job.AgentCommand, err.Error())
+			return r.authRequired(err.Error())
 		}
 		return genui.AgentError(err.Error())
 	}
 	switch {
 	case genui.IsAuthError(rpc.Code, rpc.Message):
-		return genui.AuthRequired(r.job.AgentCommand, rpc.Message)
+		return r.authRequired(rpc.Message)
 	case method == "session/prompt":
 		stopped := genui.NewFailure(genui.FailAgentMessage, "The agent stopped with an error.", genui.HintAgentMessage)
 		stopped.Detail = genui.CutRunes(rpc.Message, genui.MaxDetailRunes)
@@ -562,6 +562,16 @@ func (r *turnRunner) agentCallResult(method string, err error) error {
 	default:
 		return genui.AgentErrorf("The agent answered %s with an error: %s", method, rpc.Message)
 	}
+}
+
+// authRequired names the sign-in the backend actually has, not always agy's.
+func (r *turnRunner) authRequired(detail string) error {
+	if b, ok := genui.BackendByID(r.job.Backend); ok && b.LoginHint != "" {
+		e := genui.NewFailure(genui.FailAuthRequired, "The agent is not signed in.", b.LoginHint)
+		e.Detail = genui.CutRunes(detail, genui.MaxDetailRunes)
+		return e
+	}
+	return genui.AuthRequired(r.job.AgentCommand, detail)
 }
 
 func (r *turnRunner) cancelPromptTurn(method string, done <-chan error) {

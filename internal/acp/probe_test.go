@@ -222,3 +222,34 @@ func TestListModelsLeavesAnUndeclaredSavedModelAlone(t *testing.T) {
 		t.Fatalf("set_config_option = %v; an undeclared value is never written", sets)
 	}
 }
+
+func TestProbeTreatsAMissingVersionAnswerAsEvidenceOnly(t *testing.T) {
+	cfg := probeConfig(t, fakeSpec{}, func(cfg *ProbeConfig) {
+		cfg.Env = append(cfg.Env, "MARKGOGO_FAKE_NO_VERSION=1")
+	})
+	result, err := Probe(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+	if result.Status != genui.AgentUnknown {
+		t.Fatalf("status = %q, want the working handshake to decide, not the version", result.Status)
+	}
+	if result.Version != "" || !strings.Contains(result.Detail, "version unknown") {
+		t.Fatalf("probe = %+v, want an unknown version in its detail", result)
+	}
+}
+
+func TestProbeFailsWhenTheCodexCLICannotSayItsVersion(t *testing.T) {
+	cfg := probeConfig(t, fakeSpec{}, func(cfg *ProbeConfig) {
+		cfg.Backend = genui.BackendCodex
+		cfg.CodexCommand = os.Args[0]
+		cfg.Env = append(cfg.Env, "MARKGOGO_FAKE_NO_VERSION=1")
+	})
+	result, err := Probe(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+	if result.Status != genui.AgentFailed || !strings.Contains(strings.ToLower(result.Hint), "update the codex cli") {
+		t.Fatalf("probe = %+v, want a failed codex CLI and its upgrade hint", result)
+	}
+}

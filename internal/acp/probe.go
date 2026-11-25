@@ -19,7 +19,7 @@ const probeTimeout = 20 * time.Second
 const versionTimeout = 10 * time.Second
 
 // ProbeConfig names one backend's executables. Args are what makes the command
-// speak ACP over stdio; VersionArgs are its separate version entry point.
+// speak ACP over stdio; its version entry point is always --version.
 type ProbeConfig struct {
 	Backend string
 	Command string
@@ -78,31 +78,37 @@ func Probe(ctx context.Context, cfg ProbeConfig) (genui.ProbeResult, error) {
 		if codex == "" {
 			codex = "codex"
 		}
-		path, version, err := versionOf(ctx, codex, env)
-		switch {
-		case err != nil:
+		path, err := ResolveAgentCommand(codex)
+		if err != nil {
 			result.Status = genui.AgentMissing
 			result.Detail = "The codex CLI behind codex-acp was not found."
 			result.Hint = "Install the Codex CLI, or set CODEX_PATH to its executable, then try again."
 			return result, nil
-		default:
-			result.Detail = "codex " + version + " at " + path
 		}
+		version, err := runVersion(ctx, path, env)
+		if err != nil {
+			result.Status = genui.AgentFailed
+			result.Detail = "The codex CLI at " + path + " did not answer --version: " + err.Error()
+			result.Hint = "Update the Codex CLI, then try again."
+			return result, nil
+		}
+		result.Detail = "codex " + version + " at " + path
 	}
 
-	version, err := runVersion(ctx, resolved, env)
-	if err != nil {
-		result.Status = genui.AgentFailed
-		result.Detail = "The agent's version check failed: " + err.Error()
-		result.Hint = genui.HintAgentError
-		return result, nil
-	}
-	result.Version = version
-	if result.Detail != "" {
-		result.Detail = result.Version + " · " + result.Detail
+	// A missing version answer is evidence, not proof the agent is unusable:
+	// the handshake below decides that.
+	version, versionErr := runVersion(ctx, resolved, env)
+	parts := make([]string, 0, 2)
+	if versionErr != nil {
+		parts = append(parts, "version unknown: "+versionErr.Error())
 	} else {
-		result.Detail = result.Version
+		result.Version = version
+		parts = append(parts, version)
 	}
+	if result.Detail != "" {
+		parts = append(parts, result.Detail)
+	}
+	result.Detail = strings.Join(parts, " · ")
 
 	initialized, err := initialize(ctx, cfg, resolved, env)
 	if err != nil {
@@ -432,15 +438,6 @@ func modelError(err error) error {
 		return genui.AgentErrorf("The agent answered with an error: %s", rpc.Message)
 	}
 	return genui.AgentError(err.Error())
-}
-
-func versionOf(ctx context.Context, command string, env []string) (string, string, error) {
-	resolved, err := ResolveAgentCommand(command)
-	if err != nil {
-		return "", "", err
-	}
-	version, err := runVersion(ctx, resolved, env)
-	return resolved, version, err
 }
 
 func runVersion(ctx context.Context, resolved string, env []string) (string, error) {

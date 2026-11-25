@@ -21,7 +21,7 @@
 | 生成要求 · Generation request | 读者随 GenUI 保存并可沿用的生成偏好。 |
 | 批注 · Note | 与原文一同保存的读者文字意见。 |
 | 研究会话 · Research session | 同一文件夹工作区内跨文档续接的研究对话（内置支持 Feynman，不绑死核心编辑模型）。 |
-| 外部 Agent · External agent | 用户在自己的终端里运行、经 `markgogo` 命令或 stdio 垫片读写当前工作区的 Harness（Codex、Pi 等；不接入 Claude Code）；它不生成阅读视图，与 GenUI 后端是两件事。 |
+| 外部 Agent · External agent | 用户在自己的终端里运行、经 `markgogo` 命令或 stdio 垫片读写当前工作区的 Harness（Codex、Pi 等）；它不生成阅读视图，与 GenUI 后端是两件事。 |
 | 外部通道 · External IPC | 应用在用户数据目录里的 `ipc.sock` 上按行接收 JSON-RPC 的本机通道，默认关闭；外部 Agent 与 `markgogo` CLI 经它读写当前工作区。 |
 | stdio 垫片 · stdio shim | `markgogo mcp`：把 MCP 客户端的标准输入输出按行接到外部通道，客户端不需要非标准字段。 |
 | 守卫扩展 · Guard extension | 随应用分发、由 GenUI 的 Pi 后端在每轮生成时以 `-e` 显式加载的扩展；把读取限制在本轮隔离目录、写入限制在本轮 `out.json`，未确认加载时不生成。 |

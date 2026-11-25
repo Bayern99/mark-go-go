@@ -6,6 +6,53 @@ CI 以 [工作流](../.github/workflows/ci.yml) 为准。原生窗口、菜单�
 
 macOS 正式构建的窗口、编辑、滚动、切换与内存对照见 [Portrait 性能基线](agents/portrait-performance.md)。
 
+## 0.6.0
+
+2026-11-24 至 25 日在 macOS 27.2（26B123）arm64、Go 1.27.3、MyGo 0.10.0 上验收，应用与 `markgogo` 均为 0.6.0。测试包使用独立的应用标识、临时用户数据目录和合成文稿，不读取正式配置。发现的问题由 [PR #203](https://github.com/Bayern99/mark-go-go/pull/203) 修复后复验，汇总见 [#191](https://github.com/Bayern99/mark-go-go/issues/191)。
+
+### GenUI 后端
+
+四种后端都在真实账户下完成了模型刷新、思考等级选择、一次完整生成与一次局部更新，最终视图都通过校验并保存为 v3 文件。
+
+| 后端 | 版本 | 说明 |
+|---|---|---|
+| Codex | codex-acp 1.13.1，Codex CLI 0.172.0 | 读到 7 个模型和六档思考等级。生成期间只在本轮临时目录写入 `out.json`，工作区原文哈希不变 |
+| Antigravity | agy 1.5.9 | 读到 11 个模型。生成中卡片逐张出现；局部更新只改一张卡片，退回操作逐字节还原更新前的视图 |
+| Pi | Pi 1.6.0 | 读到 42 个模型，每轮生成前完成守卫握手 |
+| Custom ACP | 以 codex-acp 1.13.1 配置 | 与 Codex 使用同一适配器，经自定义命令入口验收 |
+
+0.5 的 v1 设置迁移到 `schemaVersion: 2` 后保留了原有的非默认模型和模型列表。
+
+### Pi 守卫
+
+在 `ba0601b` 上用真实 Pi 1.6.0 验证守卫扩展。
+
+- **正常生成**：把诱导越界的文字分别放进文稿正文和生成请求，经产品生成路径运行 7 次，7 次都保存了视图。模型只写 `out.json`，视图中没有诱饵内容。
+- **直接驱动**：使用相同参数和守卫环境，明确要求模型越界调用工具。9 种越界读写全部被拦截：用绝对路径、`~/`、`@`、`file://`、`..` 读取目录外文件，写目录外文件，写 HOME，写本轮目录内 `out.json` 以外的文件，以及编辑 `source.md`。RPC 记录中没有诱饵内容，诱饵写入路径没有生成，`source.md` 未变。
+
+### 外部 Agent 与 MCP
+
+- **本机通道**：默认显示 Not listening。开启后目录为 `0700`、socket 为 `0600`，页面显示最近一次调用的来源和时间。关闭后 socket 被删除。
+- **CLI**：`status`、`read --sections` 和 `propose` 返回正确的工作区与章节，提案出现在原生审阅队列中，接受前原文不变。
+- **MCP Inspector 2.13.0**：在 `2026-07-28`（`server/discover`）和 `2025-11-25`（`initialize`）两个协议版本下都列出 7 个工具，读取文档和提交提案成功。
+- **Pi 1.6.0（shell 型 Agent）**：加载 `markgogo agent-prompt` 生成的说明后，用 shell 调用 `markgogo` 读到正确的工作区、标题、行范围和章节 ID。
+- **Codex CLI 0.172.0（沙箱型 Agent）**：在 `read-only` 和 `workspace-write` 两种沙箱下，由 Codex 启动的 stdio MCP 都取得正确的工作区；从沙箱内直接运行 `markgogo status` 无法连接 socket，返回 `permission_denied`。因此对 Codex 推荐 stdio 方式。
+- **安装包中的 CLI**：arm64、x86_64 与 Universal 安装包的 `Contents/Resources/markgogo` 架构正确，严格验签通过。在独立副本上实测了 Install、升级后重新安装和 Uninstall。
+
+### 界面
+
+- 设置中心的 Plugins、GenUI、AI Integration 三页在 1280 × 820 窗口中的浅色与深色外观下均检查通过。
+- 关闭 GenUI 插件后，活动文档回到 Preview，GenUI 入口和 macOS View 菜单中的 GenUI 项被禁用，两个窗口状态一致；重新开启后恢复。
+- 从 GenUI 来源按钮跳到原文，再返回 GenUI，插件关闭与重开后均正确。
+- 命令栏与 Feynman Actions 的键盘行为（[#175](https://github.com/Bayern99/mark-go-go/issues/175)）和 GenUI 来源摘录预览（[#177](https://github.com/Bayern99/mark-go-go/issues/177)）由无窗口的 `ui.Tester` 用例覆盖，未做真机检查。
+
+### 未覆盖
+
+- Codex 生成期间每一次写入与宿主权限回调的逐一对应，没有做全机文件事件跟踪。
+- Windows 运行时，包括 Feynman 配置的符号链接，只有交叉编译和单元测试。
+
+以下为 0.5.0 及更早版本的记录。
+
 ## Feynman 与 Git 插件
 
 2026-11-19 在隔离的 macOS arm64 应用中，使用 Feynman 0.5.71、pi-acp 0.0.33 和本地固定响应模型验证了工作区对话。空文件夹可以发起研究；同一窗口内两个工作区各自保留对话和产物。生成文件可打开为文档标签，重启后可恢复文档和对话。

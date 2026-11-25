@@ -44,6 +44,7 @@ type headingKey struct {
 type panel struct {
 	win                              *nativeui.Window
 	host                             *workspace.Service
+	watch, unwatch                   func(context.Context, string) error
 	views                            map[string]*documentView
 	closed                           bool
 	settings                         workspace.Settings
@@ -53,7 +54,7 @@ type panel struct {
 
 func Install(host *workspace.Service) func(*nativeui.Window) nativeui.Panels {
 	return func(win *nativeui.Window) nativeui.Panels {
-		p := &panel{win: win, host: host, views: make(map[string]*documentView)}
+		p := &panel{win: win, host: host, views: make(map[string]*documentView), watch: host.WatchView, unwatch: host.UnwatchView}
 		p.settings, _ = host.GetSettings()
 		p.settingsCommand = p.settings.AgentCommand
 		workspace.SettingsChanged.Listen(win.Native(), func(next workspace.Settings) {
@@ -80,6 +81,10 @@ func (p *panel) close() {
 	}
 }
 func (p *panel) changed() {
+	if !p.win.PluginEnabled("genui") {
+		p.suspend()
+		return
+	}
 	open := map[string]bool{}
 	for _, d := range p.win.Workspace().Documents {
 		open[d.ID] = true
@@ -93,6 +98,41 @@ func (p *panel) changed() {
 		}
 	}
 }
+
+// suspend drops every watched view while GenUI is off: a generation in flight
+// is cancelled before it can write, and its listener stops. The saved view
+// stays on disk, so turning GenUI back on reads it again.
+func (p *panel) suspend() {
+	for id, v := range p.views {
+		if v.cancel != nil {
+			v.cancel()
+		}
+		if p.unwatch != nil {
+			_ = p.unwatch(p.win.Context(), id)
+		}
+		delete(p.views, id)
+	}
+}
+
+// viewFor is the document's view, opened and watched on first use. It reports
+// nil while GenUI is off, so a document never reaches the reader then.
+func (p *panel) viewFor(d workspace.DocumentInfo) *documentView {
+	if !p.win.PluginEnabled("genui") {
+		return nil
+	}
+	v := p.views[d.ID]
+	if v != nil {
+		return v
+	}
+	v = &documentView{command: p.settings.AgentCommand}
+	p.views[d.ID] = v
+	if err := p.watch(p.win.Context(), d.ID); err != nil {
+		v.loaded = true
+		v.snapshot.Error = err.Error()
+	}
+	return v
+}
+
 func (p *panel) updated(ev genui.ViewEvent) {
 	v := p.views[ev.ID]
 	if v == nil {
@@ -119,14 +159,9 @@ func (p *panel) updated(ev genui.ViewEvent) {
 }
 func (p *panel) draw(c *ui.Context) {
 	d := p.win.Active()
-	v := p.views[d.ID]
+	v := p.viewFor(d)
 	if v == nil {
-		v = &documentView{command: p.settings.AgentCommand}
-		p.views[d.ID] = v
-		if err := p.host.WatchView(p.win.Context(), d.ID); err != nil {
-			v.loaded = true
-			v.snapshot.Error = err.Error()
-		}
+		return
 	}
 	if p.win.Source() == nil {
 		portrait.Empty(c, portrait.EmptySpec{Title: "Loading document…"})

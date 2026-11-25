@@ -234,15 +234,15 @@ func (s *Server) toolProposeEdit(binding *sessionBinding, rawArgs json.RawMessag
 		return toolFailure(newAppError(ipc.CodeAppNotRunning, "The review service is unavailable.")), nil
 	}
 	var args struct {
-		DocumentID   string `json:"documentId"`
-		Path         string `json:"path"`
-		Summary      string `json:"summary"`
-		ProposedText string `json:"proposedText"`
-		OldText      string `json:"oldText"`
-		NewText      string `json:"newText"`
-		StartLine    int    `json:"startLine"`
-		EndLine      int    `json:"endLine"`
-		BaseVersion  *int64 `json:"baseVersion"`
+		DocumentID   string            `json:"documentId"`
+		Path         string            `json:"path"`
+		Summary      string            `json:"summary"`
+		ProposedText editField[string] `json:"proposedText"`
+		OldText      editField[string] `json:"oldText"`
+		NewText      editField[string] `json:"newText"`
+		StartLine    editField[int]    `json:"startLine"`
+		EndLine      editField[int]    `json:"endLine"`
+		BaseVersion  *int64            `json:"baseVersion"`
 	}
 	if failure := decodeArgs(rawArgs, &args); failure != nil {
 		return toolFailure(failure), nil
@@ -260,7 +260,7 @@ func (s *Server) toolProposeEdit(binding *sessionBinding, rawArgs json.RawMessag
 	if doc.Deleted {
 		return toolFailure(newAppError(ipc.CodeNotFound, "That document has been deleted.")), nil
 	}
-	if args.StartLine != 0 {
+	if args.StartLine.value != 0 {
 		if args.BaseVersion == nil {
 			return toolFailure(newAppError(ipc.CodeVersionConflict, "baseVersion is required for a line-range edit; read the document first.")), nil
 		}
@@ -277,11 +277,11 @@ func (s *Server) toolProposeEdit(binding *sessionBinding, rawArgs json.RawMessag
 		Summary:       strings.TrimSpace(args.Summary),
 		BaseVersion:   doc.EditorVersion,
 		BaseText:      doc.Text,
-		ProposedText:  args.ProposedText,
-		OldText:       args.OldText,
-		NewText:       args.NewText,
-		StartLine:     args.StartLine,
-		EndLine:       args.EndLine,
+		ProposedText:  args.ProposedText.value,
+		OldText:       args.OldText.value,
+		NewText:       args.NewText.value,
+		StartLine:     args.StartLine.value,
+		EndLine:       args.EndLine.value,
 	})
 	if err != nil {
 		return toolFailure(newAppError(ipc.CodeInvalidArgs, err.Error())), nil
@@ -295,22 +295,38 @@ func (s *Server) toolProposeEdit(binding *sessionBinding, rawArgs json.RawMessag
 	})
 }
 
-// validateEditModes keeps the three proposal shapes apart: a whole document, an
-// exact snippet replacement, or a line range.
-func validateEditModes(proposedText, oldText, newText string, startLine, endLine int) *appError {
-	rangeEdit := startLine != 0 || endLine != 0
-	snippetEdit := oldText != ""
-	switch {
-	case proposedText != "" && (snippetEdit || rangeEdit):
-		return newAppError(ipc.CodeInvalidArgs, "Pass proposedText on its own, without oldText, newText, startLine or endLine.")
-	case proposedText == "" && !snippetEdit && !rangeEdit:
-		return newAppError(ipc.CodeInvalidArgs, "Pass proposedText, oldText with newText, or startLine and endLine with newText.")
-	case rangeEdit && oldText != "":
-		return newAppError(ipc.CodeInvalidArgs, "Pass a line range or an oldText snippet, not both.")
-	case rangeEdit && (startLine < 1 || endLine < startLine):
-		return newAppError(ipc.CodeInvalidArgs, "startLine must be 1 or more and endLine must not be before it.")
+type editField[T string | int] struct {
+	value   T
+	present bool
+}
+
+func (f *editField[T]) UnmarshalJSON(raw []byte) error {
+	if string(raw) == "null" {
+		return errors.New("edit fields cannot be null")
 	}
-	return nil
+	f.present = true
+	return json.Unmarshal(raw, &f.value)
+}
+
+func validateEditModes(full, old, replacement editField[string], start, end editField[int]) *appError {
+	invalid := func(message string) *appError { return newAppError(ipc.CodeInvalidArgs, message) }
+	switch {
+	case full.present && (old.present || replacement.present || start.present || end.present):
+		return invalid("Pass proposedText on its own, without oldText, newText, startLine or endLine.")
+	case full.present:
+		return nil
+	case old.present && (start.present || end.present):
+		return invalid("Pass an oldText snippet or a line range, not both.")
+	case old.present && old.value != "" && replacement.present:
+		return nil
+	case start.present && end.present && replacement.present:
+		if start.value < 1 || end.value < start.value {
+			return invalid("startLine must be 1 or more and endLine must not be before it.")
+		}
+		return nil
+	default:
+		return invalid("Pass proposedText, non-empty oldText with newText, or startLine and endLine with newText.")
+	}
 }
 
 func validateCreateRelPath(root, rawPath string) (string, string, error) {

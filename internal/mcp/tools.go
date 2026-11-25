@@ -156,7 +156,7 @@ func (s *Server) handleToolsList() any {
 				"documentId":   stringProp("Open document id from the workspace resource"),
 				"path":         stringProp("Workspace-relative or absolute path of the Markdown document"),
 				"summary":      stringProp("One sentence about the change, for the reviewer"),
-				"proposedText": stringProp("Complete proposed Markdown text"),
+				"proposedText": stringProp("Complete proposed Markdown text. Pass an empty string to propose clearing the document. Do not combine with oldText, newText or line fields."),
 				"oldText":      stringProp("Exact existing snippet to replace with newText"),
 				"newText":      stringProp("Replacement text for oldText or for startLine..endLine"),
 				"startLine":    intProp("1-based first line of the range to replace"),

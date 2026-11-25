@@ -16,11 +16,15 @@ type Settings struct {
 	Model        string   `json:"model"`
 	AgentCommand string   `json:"agentCommand"`
 	Models       []string `json:"models,omitempty"`
+	// ExternalIPC opens the local socket external agents and the markgogo CLI
+	// use. It is off until the user turns it on.
+	ExternalIPC bool `json:"externalIPC,omitempty"`
 }
 
 type SettingsPatch struct {
 	Model        *string `json:"model,omitempty"`
 	AgentCommand *string `json:"agentCommand,omitempty"`
+	ExternalIPC  *bool   `json:"externalIPC,omitempty"`
 }
 
 var SettingsChanged = desktop.Event[Settings]{}
@@ -82,6 +86,9 @@ func (st *settingsStore) getLocked() Settings {
 	if raw, ok := fields["agentCommand"]; ok {
 		_ = json.Unmarshal(raw, &s.AgentCommand)
 	}
+	if raw, ok := fields["externalIPC"]; ok {
+		_ = json.Unmarshal(raw, &s.ExternalIPC)
+	}
 	if s.AgentCommand == "" {
 		s.AgentCommand = defaultSettings().AgentCommand
 	}
@@ -114,6 +121,9 @@ func (st *settingsStore) apply(p SettingsPatch) (Settings, error) {
 	}
 	if p.AgentCommand != nil {
 		s.AgentCommand = *p.AgentCommand
+	}
+	if p.ExternalIPC != nil {
+		s.ExternalIPC = *p.ExternalIPC
 	}
 	if s.AgentCommand == "" {
 		s.AgentCommand = defaultSettings().AgentCommand

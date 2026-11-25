@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
 	"github.com/Bayern99/mark-go-go/internal/desktop"
+	"github.com/Bayern99/mark-go-go/internal/ipc"
 	"github.com/Bayern99/mark-go-go/internal/mcp"
 	"github.com/Bayern99/mark-go-go/internal/nativefeynman"
 	"github.com/Bayern99/mark-go-go/internal/nativegenui"
@@ -47,6 +49,11 @@ func (a workspaceAdapter) CheckpointDocument(ctx context.Context, documentID, pa
 }
 
 func main() {
+	// The markgogo CLI resolves the same user data folder, so an override has
+	// to move the app with it.
+	if dir := strings.TrimSpace(os.Getenv(ipc.UserDataEnv)); dir != "" {
+		mygo.App.SetPath(mygo.PathUserData, dir)
+	}
 	host := workspace.NewService()
 	host.SetAutosave(documentAutosave)
 	configureReadBench(host)
@@ -78,6 +85,29 @@ func main() {
 	research.SetBeforeStart(mcpServer.BeforeResearchStart)
 	research.SetAfterStop(mcpServer.AfterResearchStop)
 	nativeui.AfterWorkspaceChange = func() { refreshMenu(host) }
+
+	externalServer := mcp.NewExternalServer(mcp.Dependencies{
+		Workspace: host,
+		Review:    reviewSvc,
+	})
+	applyExternalIPC := func(s workspace.Settings) {
+		if !s.ExternalIPC {
+			if err := externalServer.Close(); err != nil {
+				log.Printf("markgogo: stop the local MCP channel: %v", err)
+			}
+			return
+		}
+		if err := externalServer.Start(); err != nil {
+			log.Printf("markgogo: start the local MCP channel: %v", err)
+			return
+		}
+		log.Printf("markgogo: the local MCP channel listens at %s", externalServer.SocketPath())
+	}
+	host.OnSettingsChanged(applyExternalIPC)
+	if settings, err := host.GetSettings(); err == nil {
+		applyExternalIPC(settings)
+	}
+
 	mygo.App.WhenReady(func() {
 		mygo.App.SetMenu(buildMenu(host))
 		workspace.ApplyNativeEditMenu(false, false)
@@ -85,6 +115,7 @@ func main() {
 	err := mygo.App.Run()
 	research.Close()
 	_ = mcpServer.Close()
+	_ = externalServer.Close()
 	host.WaitForGenerations(5 * time.Second)
 	host.WaitForSessionWrites(2 * time.Second)
 	host.CloseAgentCache()

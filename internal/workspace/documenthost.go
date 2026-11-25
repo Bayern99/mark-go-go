@@ -57,6 +57,8 @@ type Service struct {
 
 	agentCache *acp.ProcessCache
 
+	settingsHooks []func(Settings)
+
 	openDocument      func(string) (*docSession, error)
 	navigationChanged func(*mygo.Window, NavSnapshot) error
 	searchReady       func(*mygo.Window, NavSearchResult) error
@@ -103,10 +105,7 @@ type generationSlot struct {
 func NewService() *Service {
 	dir, _ := mygo.App.Path(mygo.PathUserData)
 	settings := &settingsStore{dir: dir}
-	settings.onChange = func(s Settings) {
-		_ = SettingsChanged.Broadcast(s)
-	}
-	return &Service{
+	host := &Service{
 		byWindow:    make(map[*mygo.Window]*workspace),
 		byWorkspace: make(map[string]*workspace),
 		byID:        make(map[string]*docSession),
@@ -114,6 +113,28 @@ func NewService() *Service {
 		settings:    settings,
 		agentCache:  acp.NewProcessCache(),
 		restoring:   true,
+	}
+	settings.onChange = func(s Settings) {
+		host.notifySettingsChanged(s)
+		_ = SettingsChanged.Broadcast(s)
+	}
+	return host
+}
+
+// OnSettingsChanged listens for committed settings without needing a window,
+// so the composition root can start and stop the local MCP channel.
+func (h *Service) OnSettingsChanged(fn func(Settings)) {
+	h.mu.Lock()
+	h.settingsHooks = append(h.settingsHooks, fn)
+	h.mu.Unlock()
+}
+
+func (h *Service) notifySettingsChanged(s Settings) {
+	h.mu.Lock()
+	hooks := append([]func(Settings){}, h.settingsHooks...)
+	h.mu.Unlock()
+	for _, fn := range hooks {
+		fn(s)
 	}
 }
 

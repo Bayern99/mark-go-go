@@ -2,6 +2,8 @@ package workspace
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -120,5 +122,64 @@ func TestWorkspaceMCPStateAndDocumentLookup(t *testing.T) {
 	}
 	if opened.ID != "doc-a" {
 		t.Fatalf("opened.ID = %q, want doc-a", opened.ID)
+	}
+}
+
+func newBridgeHarness(t *testing.T, roots ...string) *Service {
+	t.Helper()
+	svc := &Service{
+		byWindow:    make(map[*mygo.Window]*workspace),
+		byWorkspace: make(map[string]*workspace),
+		byID:        make(map[string]*docSession),
+		claims:      make(map[string]string),
+	}
+	for i, root := range roots {
+		ws := &workspace{id: fmt.Sprintf("ws-%d", i), root: fsutil.CanonicalPath(root)}
+		svc.byWorkspace[ws.id] = ws
+		svc.workspaceOrder = append(svc.workspaceOrder, ws.id)
+	}
+	return svc
+}
+
+func TestMCPOpenRootsAndOpenDocumentsStayInsideOpenWorkspaces(t *testing.T) {
+	outer := t.TempDir()
+	inner := filepath.Join(outer, "inner")
+	if err := os.MkdirAll(inner, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	closed := t.TempDir()
+	svc := newBridgeHarness(t, outer, inner)
+
+	if got := svc.MCPOpenRoots(); !slices.Equal(got, []string{fsutil.CanonicalPath(outer), fsutil.CanonicalPath(inner)}) {
+		t.Fatalf("MCPOpenRoots() = %v", got)
+	}
+
+	docs, err := svc.MCPOpenDocuments(inner)
+	if err != nil {
+		t.Fatalf("MCPOpenDocuments(inner): %v", err)
+	}
+	if len(docs) != 0 {
+		t.Fatalf("open documents = %+v, want none", docs)
+	}
+	if _, err := svc.MCPOpenDocuments(closed); !errors.Is(err, ErrWorkspaceNotOpen) {
+		t.Fatalf("MCPOpenDocuments(closed) = %v, want ErrWorkspaceNotOpen", err)
+	}
+}
+
+func TestMCPWorkspaceStateBoundsItsFileList(t *testing.T) {
+	root := t.TempDir()
+	for i := range MaxWorkspaceListingFiles + 5 {
+		name := filepath.Join(root, fmt.Sprintf("doc-%03d.md", i))
+		if err := os.WriteFile(name, []byte("# Doc\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := newBridgeHarness(t, root)
+	state, err := svc.MCPWorkspaceState(root)
+	if err != nil {
+		t.Fatalf("MCPWorkspaceState: %v", err)
+	}
+	if len(state.Files) != MaxWorkspaceListingFiles || !state.Truncated || state.FilesLimit != MaxWorkspaceListingFiles {
+		t.Fatalf("files = %d, truncated = %v, limit = %d", len(state.Files), state.Truncated, state.FilesLimit)
 	}
 }

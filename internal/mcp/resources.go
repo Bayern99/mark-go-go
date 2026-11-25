@@ -28,8 +28,8 @@ func (s *Server) handleResourcesList(binding *sessionBinding) (any, *rpcError) {
 		},
 	}
 	if s.deps.Workspace != nil {
-		if state, err := s.deps.Workspace.MCPWorkspaceState(binding.root); err == nil {
-			for _, doc := range state.OpenDocuments {
+		if openDocs, err := s.deps.Workspace.MCPOpenDocuments(binding.root); err == nil {
+			for _, doc := range openDocs {
 				escaped := url.PathEscape(doc.ID)
 				resources = append(resources,
 					mcpResource{

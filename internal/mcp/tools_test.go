@@ -38,6 +38,9 @@ func callTool(t *testing.T, urlStr, token, sid, name string, args map[string]any
 }
 
 func TestConcurrentMCPCheckpointCallsReturnTheirOwnSnapshot(t *testing.T) {
+	// Keep the app's real user data folder, where write tools log their
+	// audit records, out of these tests.
+	t.Setenv("HOME", t.TempDir())
 	root := fsutil.CanonicalPath(t.TempDir())
 	if out, err := exec.Command("git", "init", "--quiet", root).CombinedOutput(); err != nil {
 		t.Fatalf("git init: %s: %v", out, err)
@@ -84,6 +87,9 @@ func TestConcurrentMCPCheckpointCallsReturnTheirOwnSnapshot(t *testing.T) {
 }
 
 func TestMCPToolsEndToEnd(t *testing.T) {
+	// Keep the app's real user data folder, where write tools log their
+	// audit records, out of these tests.
+	t.Setenv("HOME", t.TempDir())
 	root := fsutil.CanonicalPath(t.TempDir())
 	userData := t.TempDir()
 	work := review.WorkDir(userData, root)

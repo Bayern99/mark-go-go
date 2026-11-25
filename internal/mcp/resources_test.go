@@ -56,6 +56,36 @@ func (h *testWorkspaceHarness) MCPWorkspaceState(root string) (workspace.Workspa
 	return state, nil
 }
 
+func (h *testWorkspaceHarness) MCPOpenRoots() []string {
+	return []string{fsutil.CanonicalPath(h.root)}
+}
+
+func (h *testWorkspaceHarness) MCPOpenDocuments(root string) ([]workspace.DocumentInfo, error) {
+	if !fsutil.SameFile(h.root, root) {
+		return nil, workspace.ErrWorkspaceNotOpen
+	}
+	ids := make([]string, 0, len(h.openDocs))
+	for id := range h.openDocs {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	docs := make([]workspace.DocumentInfo, 0, len(ids))
+	for _, id := range ids {
+		d := h.openDocs[id]
+		docs = append(docs, workspace.DocumentInfo{
+			WorkspaceRoot: fsutil.CanonicalPath(root),
+			ID:            d.ID,
+			Name:          d.Name,
+			Path:          d.Path,
+			Edited:        d.Edited,
+			Conflict:      d.Conflict,
+			Deleted:       d.Deleted,
+			ReadOnly:      d.ReadOnly,
+		})
+	}
+	return docs, nil
+}
+
 func (h *testWorkspaceHarness) MCPDocument(root, idOrPath string) (workspace.DocumentMCPState, error) {
 	for _, d := range h.openDocs {
 		if d.ID == idOrPath || d.RelPath == idOrPath || fsutil.SameFile(d.Path, idOrPath) {
@@ -141,6 +171,9 @@ func initTestSession(t *testing.T, srv *Server, root, work string) (token string
 }
 
 func TestMCPResourcesEndToEnd(t *testing.T) {
+	// Keep the app's real user data folder, where write tools log their
+	// audit records, out of these tests.
+	t.Setenv("HOME", t.TempDir())
 	root := fsutil.CanonicalPath(t.TempDir())
 	work := review.WorkDir(t.TempDir(), root)
 	if err := os.MkdirAll(filepath.Join(root, "papers"), 0o755); err != nil {

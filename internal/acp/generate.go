@@ -1027,52 +1027,28 @@ func (r *genRun) collect(ctx context.Context) error {
 	return r.writeView(ctx, sources, a2ui)
 }
 
-type sourceOut struct {
-	Heading    string `json:"heading"`
-	Occurrence int    `json:"occurrence"`
-	Hash       string `json:"hash,omitempty"`
-}
-
-type viewOut struct {
-	Version     int                  `json:"version"`
-	Language    string               `json:"language,omitempty"`
-	GeneratedAt string               `json:"generatedAt"`
-	Model       string               `json:"model,omitempty"`
-	Request     string               `json:"request,omitempty"`
-	Sources     map[string]sourceOut `json:"sources"`
-	A2UI        json.RawMessage      `json:"a2ui"`
-}
-
 func (r *genRun) writeView(ctx context.Context, sources map[string]genui.AgentSource, a2ui json.RawMessage) error {
 	if err := r.modelProblem(); err != nil {
 		return err
 	}
-	view := viewOut{
-		Version:     2,
-		GeneratedAt: r.job.Now().UTC().Format(time.RFC3339),
+	kept := r.base.KeptHashes(a2ui)
+	content, _, err := genui.AssembleView(genui.ViewOptions{
+		A2UI:        a2ui,
+		Sources:     sources,
 		Model:       r.viewModel(),
 		Request:     r.job.Req.Request,
-		Sources:     make(map[string]sourceOut, len(sources)),
-		A2UI:        a2ui,
-	}
-	if genui.WritesStatements(a2ui) {
-		view.Version, view.Language = genui.StatementViewVersion, genui.StatementLanguage
-	}
-	kept := r.base.KeptHashes(a2ui)
-	for key, src := range sources {
-		entry := sourceOut{Heading: src.Heading, Occurrence: src.Occurrence}
-		if hash, keep := kept[key]; keep {
-			entry.Hash = hash
-		} else {
-			entry.Hash, _ = r.sectionHash(src)
-		}
-		view.Sources[key] = entry
-	}
-	data, err := json.MarshalIndent(view, "", "  ")
+		GeneratedAt: r.job.Now(),
+		Hash: func(key string, src genui.AgentSource) string {
+			if hash, keep := kept[key]; keep {
+				return hash
+			}
+			hash, _ := r.sectionHash(src)
+			return hash
+		},
+	})
 	if err != nil {
 		return r.outputError("The agent's out.json could not be turned into a view.")
 	}
-	content := append(data, '\n')
 	if ctx.Err() != nil {
 		return genui.ErrCancelled
 	}

@@ -11,6 +11,7 @@
 | GenUI 格式校验、生成与原生阅读 | [格式与生成](internal/genui/) · [原生阅读器](internal/nativegenui/) · [格式说明和示例](docs/genui/view-format.md) · [版本 3 决策](docs/adr/0011-openui-lang-statements-in-a2ui.md) |
 | OpenUI Lang 解析与求值 | [语言模块](internal/openuilang/) · [一致性用例来源](internal/openuilang/testdata/SOURCE.md) |
 | Feynman、应用内 MCP、提案和检查点 | [Feynman RPC](internal/agent/feynman/) · [MCP](internal/mcp/) · [提案](internal/review/) · [原生审阅面板](internal/nativereview/) |
+| 外部 CLI 与本地通道 | [markgogo 命令](cmd/markgogo/) · [socket 客户端与 stdio 垫片](internal/ipc/) · [本地通道服务](internal/mcp/external.go) · [无 GUI 的章节解析](internal/markdown/) |
 | Portrait 设计系统、字体与图标 | [Portrait 模块](internal/portrait/) · [外壳表面辅助](internal/nativeui/portrait.go) · [打包字体和许可](internal/portrait/fonts/) |
 | MyGo 版本与项目补丁 | [MyGo 文档组记录](docs/mygo-document-groups.md) · [MyGo 源码](third_party/mygo/) |
 

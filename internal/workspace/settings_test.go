@@ -136,3 +136,29 @@ func TestSettingsPatchesFromTwoWindowsBothSurvive(t *testing.T) {
 		t.Errorf("after concurrent patches = %+v", got)
 	}
 }
+
+func TestExternalIPCIsOffUntilItIsTurnedOn(t *testing.T) {
+	dir := t.TempDir()
+	st := &settingsStore{dir: dir}
+	if st.get().ExternalIPC {
+		t.Fatal("the external IPC channel is on by default")
+	}
+	if _, err := st.apply(SettingsPatch{ExternalIPC: new(true)}); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	if !(&settingsStore{dir: dir}).get().ExternalIPC {
+		t.Fatal("the external IPC channel did not stay enabled")
+	}
+	if _, err := st.apply(SettingsPatch{Model: new("m-2")}); err != nil {
+		t.Fatalf("apply model: %v", err)
+	}
+	if !(&settingsStore{dir: dir}).get().ExternalIPC {
+		t.Fatal("a model change turned the external IPC channel off")
+	}
+	if _, err := st.apply(SettingsPatch{ExternalIPC: new(false)}); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	if (&settingsStore{dir: dir}).get().ExternalIPC {
+		t.Fatal("the external IPC channel did not stay disabled")
+	}
+}

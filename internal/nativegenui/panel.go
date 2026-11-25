@@ -73,6 +73,7 @@ func Install(host *workspace.Service) func(*nativeui.Window) nativeui.Panels {
 		workspace.SettingsChanged.Listen(win.Native(), func(next workspace.Settings) {
 			p.settings = next
 		})
+		win.Native().OnFocus(p.probeOnFocus)
 		genui.ViewChanged.Listen(win.Native(), p.updated)
 		return nativeui.Panels{GenUI: p.draw, Settings: []nativeui.SettingsPage{p.settingsPage()}, Changed: p.changed, Closed: p.close}
 	}

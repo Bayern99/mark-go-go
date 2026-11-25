@@ -782,6 +782,7 @@ func (r *turnRunner) handleNotification(method string, params json.RawMessage) {
 			opts = upd.Update.ConfigOptions
 		}
 		r.trace.configOptionUpdate(method, params, opts)
+		r.noteOptions(opts)
 		r.noteModelOptions(opts)
 		return
 	}
@@ -822,6 +823,7 @@ func (r *turnRunner) handleNotification(method string, params json.RawMessage) {
 			opts = configOptionsField(params)
 		}
 		r.trace.configOptionUpdate(method, params, opts)
+		r.noteOptions(opts)
 		r.noteModelOptions(opts)
 	case "tool_call", "tool_call_update":
 		r.handleToolCall(u.ToolCallID, u.Kind, u.Title, u.Name, u.Locations)

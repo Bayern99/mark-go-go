@@ -14,24 +14,18 @@ import (
 
 const (
 	backendDescription = "The agent that makes a document's reading view."
-	refreshNote        = "Test & Refresh reads the agent's model list. It does not submit a generation request or your document text."
+	refreshNote        = "Test & Refresh reads the agent's model list. It does not submit a generation request or your document text, though the agent may record the session in its own state."
+	backendKeywords    = "backend codex antigravity custom pi"
+	refreshKeywords    = "test refresh models"
+	loginKeywords      = "sign in login terminal"
+	modelKeywords      = "model"
+	effortKeywords     = "reasoning effort thought level"
+	commandKeywords    = "agent command arguments"
+	argumentsKeywords  = "arguments agent command"
 )
 
 // backendEdit is the half-typed state of one backend's fields, so switching
 // backends or redrawing does not lose what the user was writing.
-type backendEdit struct {
-	command, arguments             string
-	commandEdited, argumentsEdited bool
-	advancedOpen, advancedChosen   bool
-}
-
-// backendStatus is what the last Test & Refresh learned about one backend.
-type backendStatus struct {
-	probe   genui.ProbeResult
-	catalog genui.ModelCatalog
-	busy    bool
-}
-
 func (p *panel) settingsPage() nativeui.SettingsPage {
 	return nativeui.SettingsPage{
 		ID: "genui", Section: "Workspace", Label: "GenUI", Icon: portrait.IconSparkle, Order: 210,
@@ -59,11 +53,13 @@ func (p *panel) settingsPage() nativeui.SettingsPage {
 
 func (p *panel) drawSettingsPage(c *ui.Context, q nativeui.SettingsQuery) {
 	id, backend := p.settings.GenUI.Active()
-	if q.Active() && !q.Matches("Agent backend", backendDescription, "backend codex antigravity custom pi") &&
-		!q.Matches("Model", "The model the backend uses.", "model") &&
-		!q.Matches("Reasoning effort", "How long the model may think before answering.", "reasoning effort thought level") &&
-		!q.Matches("Agent command", "The command the backend runs.", "agent command arguments") &&
-		!q.Matches("Arguments", "The arguments that make the command speak ACP.", "arguments") {
+	if q.Active() && !q.Matches("Agent backend", backendDescription, backendKeywords) &&
+		!q.Matches("Test & Refresh", refreshNote, refreshKeywords) &&
+		!q.Matches("Sign in in Terminal", loginHint(genui.Backend{ID: genui.BackendCustom}), loginKeywords) &&
+		!q.Matches("Model", "The model the backend uses.", modelKeywords) &&
+		!q.Matches("Reasoning effort", "How long the model may think before answering.", effortKeywords) &&
+		!q.Matches("Agent command", "The command the backend runs.", commandKeywords) &&
+		!q.Matches("Arguments", "The arguments that make the command speak ACP.", argumentsKeywords) {
 		return
 	}
 	if p.settingsMessage != "" {
@@ -75,20 +71,8 @@ func (p *panel) drawSettingsPage(c *ui.Context, q nativeui.SettingsQuery) {
 	p.drawAdvanced(c, q, id, backend)
 }
 
-func (p *panel) status(id string) *backendStatus {
-	if p.backends == nil {
-		p.backends = map[string]*backendStatus{}
-	}
-	s := p.backends[id]
-	if s == nil {
-		s = &backendStatus{}
-		p.backends[id] = s
-	}
-	return s
-}
-
 func (p *panel) drawBackendCards(c *ui.Context, q nativeui.SettingsQuery, active string) {
-	if q.Active() && !q.Match("Agent backend", backendDescription, "backend codex antigravity custom pi") {
+	if q.Active() && !q.Match("Agent backend", backendDescription, backendKeywords) {
 		return
 	}
 	portrait.SettingsGroup(c, "Backend", func(rows *portrait.Rows) {
@@ -184,14 +168,14 @@ func (p *panel) drawBackendStatus(c *ui.Context, id string) {
 }
 
 func (p *panel) drawGeneration(c *ui.Context, q nativeui.SettingsQuery, id string, backend workspace.GenUIBackend) {
-	if q.Active() && !q.Match("Model", "The model the backend uses.", "model") &&
-		!q.Match("Reasoning effort", "How long the model may think before answering.", "reasoning effort thought level") {
+	if q.Active() && !q.Match("Model", "The model the backend uses.", modelKeywords) &&
+		!q.Match("Reasoning effort", "How long the model may think before answering.", effortKeywords) {
 		return
 	}
 	state := p.status(id)
 	levels := effortLevels(state.catalog, backend.Model)
 	portrait.SettingsGroup(c, "Generation", func(rows *portrait.Rows) {
-		if q.Match("Model", "The model the backend uses.", "model") {
+		if q.Match("Model", "The model the backend uses.", modelKeywords) {
 			rows.Row(portrait.RowSpec{Title: "Model", Description: modelDescription(state.catalog, backend)}, func() {
 				options := make([]portrait.Option, 0, len(backend.Models))
 				for _, value := range offeredModels(backend, state.catalog) {
@@ -215,7 +199,7 @@ func (p *panel) drawGeneration(c *ui.Context, q nativeui.SettingsQuery, id strin
 				}
 			})
 		}
-		if len(levels) > 0 && q.Match("Reasoning effort", "How long the model may think before answering.", "reasoning effort thought level") {
+		if len(levels) > 0 && q.Match("Reasoning effort", "How long the model may think before answering.", effortKeywords) {
 			rows.Row(portrait.RowSpec{Title: "Reasoning effort", Description: "How long the model may think before answering."}, func() {
 				options := make([]portrait.Option, 0, len(levels))
 				for _, level := range levels {
@@ -294,16 +278,13 @@ func effortLevels(catalog genui.ModelCatalog, model string) []genui.Choice {
 func (p *panel) drawConnection(c *ui.Context, q nativeui.SettingsQuery, id string) {
 	backend, _ := genui.BackendByID(id)
 	state := p.status(id)
-	login := backend.LoginHint
-	if backend.LoginCommand == "" {
-		login = "This agent signs in with its own command."
-	}
-	if q.Active() && !q.Match("Test & Refresh", refreshNote, "test refresh models") &&
-		!q.Match("Sign in in Terminal", login, "sign in login terminal") {
+	login := loginHint(backend)
+	if q.Active() && !q.Match("Test & Refresh", refreshNote, refreshKeywords) &&
+		!q.Match("Sign in in Terminal", login, loginKeywords) {
 		return
 	}
 	portrait.SettingsGroup(c, "Connection", func(rows *portrait.Rows) {
-		if q.Match("Test & Refresh", refreshNote, "test refresh models") {
+		if q.Match("Test & Refresh", refreshNote, refreshKeywords) {
 			rows.Row(portrait.RowSpec{Title: "Test & Refresh", Description: connectionDescription(state)}, func() {
 				button := portrait.AccentButton(c, "Test & Refresh", "Test & Refresh")
 				button.Disabled(state.busy)
@@ -312,7 +293,7 @@ func (p *panel) drawConnection(c *ui.Context, q nativeui.SettingsQuery, id strin
 				}
 			})
 		}
-		if q.Match("Sign in in Terminal", login, "sign in login terminal") {
+		if q.Match("Sign in in Terminal", login, loginKeywords) {
 			rows.Row(portrait.RowSpec{Title: "Sign in in Terminal", Description: login}, func() {
 				button := portrait.Button(c, "Sign in in Terminal", "Sign in in Terminal")
 				button.Disabled(backend.LoginCommand == "")
@@ -322,6 +303,13 @@ func (p *panel) drawConnection(c *ui.Context, q nativeui.SettingsQuery, id strin
 			})
 		}
 	})
+}
+
+func loginHint(backend genui.Backend) string {
+	if backend.LoginCommand == "" {
+		return "The agent signs in with its own command."
+	}
+	return backend.LoginHint
 }
 
 // connectionDescription is what the last test learned, or what the test does.
@@ -339,8 +327,8 @@ func connectionDescription(state *backendStatus) string {
 }
 
 func (p *panel) drawAdvanced(c *ui.Context, q nativeui.SettingsQuery, id string, backend workspace.GenUIBackend) {
-	if q.Active() && !q.Match("Agent command", "The command the backend runs.", "agent command arguments") &&
-		!q.Match("Arguments", "The arguments that make the command speak ACP.", "arguments agent command") {
+	if q.Active() && !q.Match("Agent command", "The command the backend runs.", commandKeywords) &&
+		!q.Match("Arguments", "The arguments that make the command speak ACP.", argumentsKeywords) {
 		return
 	}
 	edit := p.editFor(id)
@@ -351,7 +339,7 @@ func (p *panel) drawAdvanced(c *ui.Context, q nativeui.SettingsQuery, id string,
 	portrait.SettingsGroup(c, "Advanced", func(rows *portrait.Rows) {
 		portrait.Disclosure(c.Key("genui-advanced-"+id), "Advanced", &edit.advancedOpen, portrait.DisclosureSpec{}, func() {
 			ui.Column(c).FillWidth().Gap(portrait.Form.Gap).Children(func() {
-				if q.Match("Agent command", "The command the backend runs.", "agent command") {
+				if q.Match("Agent command", "The command the backend runs.", commandKeywords) {
 					ui.Column(c).FillWidth().Gap(portrait.Form.HelpGap).Children(func() {
 						portrait.Label(c, "Agent command")
 						ui.Row(c).FillWidth().Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
@@ -362,7 +350,7 @@ func (p *panel) drawAdvanced(c *ui.Context, q nativeui.SettingsQuery, id string,
 						})
 					})
 				}
-				if q.Match("Arguments", "The arguments that make the command speak ACP.", "arguments") {
+				if q.Match("Arguments", "The arguments that make the command speak ACP.", argumentsKeywords) {
 					ui.Column(c).FillWidth().Gap(portrait.Form.HelpGap).Children(func() {
 						portrait.Label(c, "Arguments")
 						ui.Row(c).FillWidth().Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
@@ -394,121 +382,4 @@ func (p *panel) drawSaveCommand(c *ui.Context, id string, edit *backendEdit) {
 		p.saveBackend(id, workspace.GenUIBackendPatch{Command: &edit.command})
 		edit.commandEdited = false
 	}
-}
-
-func (p *panel) editFor(id string) *backendEdit {
-	if p.edits == nil {
-		p.edits = map[string]*backendEdit{}
-	}
-	edit := p.edits[id]
-	if edit == nil {
-		edit = &backendEdit{}
-		p.edits[id] = edit
-	}
-	backend := p.settings.GenUI.For(id)
-	if !edit.commandEdited {
-		edit.command = backend.Command
-	}
-	if !edit.argumentsEdited {
-		edit.arguments = strings.Join(backend.Args, " ")
-	}
-	if !edit.advancedChosen {
-		edit.advancedOpen = id == genui.BackendCustom
-		edit.advancedChosen = true
-	}
-	return edit
-}
-
-func (p *panel) selectBackend(id string) {
-	if p.save == nil {
-		return
-	}
-	next, err := p.save(workspace.SettingsPatch{GenUI: &workspace.GenUIPatch{Backend: &id}})
-	if err != nil {
-		p.settingsMessage = err.Error()
-		return
-	}
-	p.settingsMessage = ""
-	p.settings = next
-}
-
-func (p *panel) saveBackend(id string, patch workspace.GenUIBackendPatch) {
-	if p.save == nil {
-		return
-	}
-	next, err := p.save(workspace.SettingsPatch{GenUI: &workspace.GenUIPatch{Backends: map[string]workspace.GenUIBackendPatch{
-		id: patch,
-	}}})
-	if err != nil {
-		p.settingsMessage = err.Error()
-		return
-	}
-	p.settingsMessage = ""
-	p.settings = next
-}
-
-func (p *panel) testAndRefresh(id string) {
-	state := p.status(id)
-	if state.busy {
-		return
-	}
-	state.busy = true
-	p.settingsMessage = ""
-	probe, refresh := p.probe, p.refresh
-	go func() {
-		var result genui.ProbeResult
-		var probeErr error
-		if probe != nil {
-			result, probeErr = probe(id)
-		}
-		var catalog genui.ModelCatalog
-		var refreshErr error
-		if probeErr == nil && result.Status != genui.AgentMissing && result.Status != genui.AgentOutdated && refresh != nil {
-			catalog, refreshErr = refresh(id)
-		}
-		p.after(func() {
-			state := p.status(id)
-			state.busy = false
-			state.probe = result
-			if len(catalog.Models) > 0 || catalog.CurrentModel != "" {
-				state.catalog = catalog
-			}
-			p.settingsMessage = message(firstError(probeErr, refreshErr))
-		})
-	}()
-}
-
-func (p *panel) signInInTerminal(id string) {
-	signIn := p.signIn
-	if signIn == nil {
-		return
-	}
-	go func() {
-		err := signIn(id)
-		p.after(func() { p.settingsMessage = message(err) })
-	}()
-}
-
-func firstError(errs ...error) error {
-	for _, err := range errs {
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// after returns work to the UI thread, or runs it inline when no window exists.
-func (p *panel) after(fn func()) {
-	if p.runOnUI != nil {
-		p.runOnUI(fn)
-		return
-	}
-	if p.win != nil {
-		if native := p.win.Native(); native != nil {
-			native.Update(fn)
-			return
-		}
-	}
-	fn()
 }

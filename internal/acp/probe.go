@@ -302,9 +302,9 @@ func readCatalog(options, legacy json.RawMessage) (models []genui.ModelOption, c
 		for _, id := range legacyModelValues(legacy) {
 			models = append(models, genui.ModelOption{ID: id, Name: id})
 		}
-	}
-	if value, ok := legacyCurrent(legacy); ok {
-		current = value
+		if value, ok := legacyCurrent(legacy); ok {
+			current = value
+		}
 	}
 	if opt, ok := findThoughtOption(options); ok {
 		for _, value := range opt.Options {

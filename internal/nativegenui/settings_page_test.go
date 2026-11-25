@@ -318,3 +318,41 @@ func clickField(t *testing.T, app *ui.Tester, name string) {
 	}
 	t.Fatalf("no focusable field %q; texts: %q", name, app.Texts())
 }
+
+// TestAFocusRecheckKeepsTheModelsAndOnlyRetestsTheLogin covers the window's
+// OnFocus refresh: a sign-in finished in Terminal shows up, but coming back to
+// the window never opens a model session on its own.
+func TestAFocusRecheckKeepsTheModelsAndOnlyRetestsTheLogin(t *testing.T) {
+	p, _ := settingsPanel(t, workspace.DefaultSettings())
+	probes, refreshes := 0, 0
+	done := make(chan struct{}, 2)
+	p.runOnUI = func(fn func()) { fn(); done <- struct{}{} }
+	p.probe = func(string) (genui.ProbeResult, error) {
+		probes++
+		return genui.ProbeResult{Status: genui.AgentReady, Version: "codex-acp 1.13.1"}, nil
+	}
+	p.refresh = func(string) (genui.ModelCatalog, error) {
+		refreshes++
+		return genui.ModelCatalog{Models: []genui.ModelOption{{ID: "gpt-6-sol"}}, CurrentModel: "gpt-6-sol"}, nil
+	}
+
+	// A backend nobody tested is not probed on focus.
+	p.probeOnFocus()
+	if probes != 0 || refreshes != 0 {
+		t.Fatalf("focus probed an untested backend: probes=%d refreshes=%d", probes, refreshes)
+	}
+
+	p.status(genui.BackendAntigravity).tested = true
+	p.status(genui.BackendAntigravity).catalog = genui.ModelCatalog{Models: []genui.ModelOption{{ID: "gpt-6-sol"}}}
+	p.probeOnFocus()
+	<-done
+	if probes != 1 || refreshes != 0 {
+		t.Fatalf("focus probes=%d refreshes=%d, want one probe and no model session", probes, refreshes)
+	}
+	if got := p.status(genui.BackendAntigravity).probe.Status; got != genui.AgentReady {
+		t.Fatalf("status after focus = %q, want the sign-in it found", got)
+	}
+	if got := p.status(genui.BackendAntigravity).catalog.Models; len(got) != 1 {
+		t.Fatalf("focus dropped the known models: %+v", got)
+	}
+}

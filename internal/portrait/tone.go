@@ -17,22 +17,29 @@ type ToneScale struct {
 	Neutral, Accent, Success, Info, Warning, Danger Tone
 }
 
-var Tones = func() ToneScale {
-	accent := newTone(Colors.Accent, Colors.Accent)
-	return ToneScale{
-		Neutral: newTone(Colors.Ink, Colors.Ink2),
-		Accent:  accent,
-		Success: accent,
-		Info:    newTone(ui.Hex("#2b6cb0"), ui.Hex("#1e4e8c")),
-		Warning: newTone(Colors.Warn, Colors.Warn),
-		Danger:  newTone(Colors.Danger, Colors.Danger),
-	}
-}()
+var Tones ToneScale
 
-func newTone(solid, ink ui.Color) Tone {
+func tonesFor(p Palette) ToneScale {
+	accent := newTone(p, p.Accent, p.Accent)
+	neutral := newTone(p, p.Ink, p.Ink2)
+	// A neutral notice announces no semantic boundary: a hairline keeps it
+	// calm and lets the wash carry the edge, where the semantic tones keep
+	// the border that has to hold 3:1 on paper.
+	neutral.Border = p.Line
+	return ToneScale{
+		Neutral: neutral,
+		Accent:  accent,
+		Success: newTone(p, p.Success, p.Success),
+		Info:    accent,
+		Warning: newTone(p, p.Warn, p.Warn),
+		Danger:  newTone(p, p.Danger, p.Danger),
+	}
+}
+
+func newTone(p Palette, solid, ink ui.Color) Tone {
 	return Tone{
 		Solid:   solid,
-		OnSolid: Colors.OnAccent,
+		OnSolid: p.OnAccent,
 		Ink:     ink,
 		Soft:    colorWithAlpha(solid, toneSoftAlpha),
 		Wash:    colorWithAlpha(solid, toneWashAlpha),

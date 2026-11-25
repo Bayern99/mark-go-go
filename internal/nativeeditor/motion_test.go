@@ -334,3 +334,108 @@ func TestCopiedCheckLandsAtOnceWithReducedMotion(t *testing.T) {
 		t.Fatalf("the copied check drew %d then %d accent pixels under reduced motion", first, settled)
 	}
 }
+
+func TestOutlineRevealPositionsHeadingNearTopInPreviewAndMarkdown(t *testing.T) {
+	var sb strings.Builder
+	for i := range 10 {
+		sb.WriteString("# Section ")
+		sb.WriteByte(byte('0' + i))
+		sb.WriteString("\n\n")
+		for range 8 {
+			sb.WriteString("A paragraph of prose under this heading so the document scrolls across several viewports.\n\n")
+		}
+	}
+	src := sb.String()
+	midOff := utf16At(t, src, "# Section 5")
+	lastOff := utf16At(t, src, "# Section 9")
+	firstOff := utf16At(t, src, "# Section 0")
+
+	for _, mode := range []nativeeditor.Mode{nativeeditor.Preview, nativeeditor.Markdown} {
+		t.Run(string(mode), func(t *testing.T) {
+			d := nativeeditor.New(src)
+			d.SetMode(mode)
+			tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 800, 400)
+			tt.Frame()
+
+			if err := d.Reveal(midOff); err != nil {
+				t.Fatal(err)
+			}
+			tt.Frame()
+			tt.Frame()
+			r, ok := d.RectUTF16(midOff)
+			if !ok {
+				t.Fatal("middle heading not laid out after Reveal")
+			}
+			maxTop := float32(portrait.Sizes.Large) + 24
+			if r.Y < 0 || r.Y > maxTop {
+				t.Fatalf("%s downward Reveal landed Section 5 at Y=%v, want near top [0, %v]", mode, r.Y, maxTop)
+			}
+
+			if err := d.Reveal(lastOff); err != nil {
+				t.Fatal(err)
+			}
+			tt.Frame()
+			tt.Frame()
+			lastRect, ok := d.RectUTF16(lastOff)
+			if !ok || lastRect.Y < 0 || lastRect.Y+lastRect.H > 400 {
+				t.Fatalf("%s EOF Reveal put Section 9 at %v (ok=%v), want visible inside 400pt viewport", mode, lastRect, ok)
+			}
+
+			if err := d.Reveal(firstOff); err != nil {
+				t.Fatal(err)
+			}
+			tt.Frame()
+			tt.Frame()
+			if y := d.ScrollY(); y != 0 {
+				t.Fatalf("%s Reveal to Section 0 left ScrollY=%v, want 0", mode, y)
+			}
+		})
+	}
+}
+
+func TestOutlineRevealColdPreviewEOFTableSettlesToScrollLimit(t *testing.T) {
+	var sb strings.Builder
+	for i := range 8 {
+		sb.WriteString("# Section ")
+		sb.WriteByte(byte('0' + i))
+		sb.WriteString("\n\n")
+		for range 8 {
+			sb.WriteString("A paragraph of prose long enough to keep the end-of-file table well outside the initial viewport.\n\n")
+		}
+	}
+	sb.WriteString("# Final Table\n\n")
+	sb.WriteString("| Page | Summary | Notes |\n")
+	sb.WriteString("| --- | --- | --- |\n")
+	for i := range 3 {
+		sb.WriteString("| p. ")
+		sb.WriteByte(byte('0' + i))
+		sb.WriteString(" | Wrapped summary text spanning multiple lines inside a preview table cell so its measured height exceeds the default estimate. | Detailed editorial notes on evidence and citations. |\n")
+	}
+	src := sb.String()
+	eofOff := utf16At(t, src, "# Final Table")
+
+	d := nativeeditor.New(src)
+	d.SetMode(nativeeditor.Preview)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 800, 800)
+	tt.Frame()
+
+	if err := d.Reveal(eofOff); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	tt.Advance(500 * time.Millisecond)
+	r, ok := d.RectUTF16(eofOff)
+	if !ok {
+		t.Fatal("EOF heading not laid out")
+	}
+	if r.Y <= float32(portrait.Sizes.Large)+4 {
+		t.Fatalf("test fixture heading Y=%v did not hit EOF clamp; shorten EOF table", r.Y)
+	}
+	landed := d.ScrollY()
+	d.SetScrollY(landed + 1000)
+	tt.Frame()
+	limit := d.ScrollY()
+	if limit-landed > 1 {
+		t.Fatalf("cold EOF table Reveal stopped at ScrollY=%v (heading Y=%v), %v pt short of scroll limit %v", landed, r.Y, limit-landed, limit)
+	}
+}

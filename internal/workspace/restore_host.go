@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -240,6 +241,25 @@ func (h *Service) showQuitFailure(win *mygo.Window, err error) {
 	if err != nil {
 		detail = err.Error() + "\n\n" + detail
 	}
+	failure := QuitFailure{Title: "Could not quit Mark Go Go", Body: "Mark Go Go could not safely prepare all open documents for quitting.\n\n" + detail}
+	targets := []*mygo.Window{win}
+	if focused := mygo.FocusedWindow(); focused != nil && focused != win {
+		targets = append(targets, focused)
+	}
+	for _, target := range targets {
+		if target == nil {
+			continue
+		}
+		if err := QuitFailed.Emit(target, failure); err == nil {
+			return
+		}
+	}
+	if win != nil {
+		// A window exists, so the Portrait shell owns its alerts: keep the
+		// failure in-window rather than raising a native one above it.
+		log.Printf("markgogo: quit: %s", detail)
+		return
+	}
 	go func() {
 		_, _ = mygo.Dialog.Message(mygo.MessageOptions{
 			Parent:  win,
@@ -253,6 +273,17 @@ func (h *Service) showQuitFailure(win *mygo.Window, err error) {
 }
 
 func (h *Service) OnBeforeQuit(e *mygo.QuitEvent) {
+	if e.SessionEnding {
+		// The OS ends the session: the quit cannot be canceled, the process
+		// may exit as soon as this returns, and no sheet or alert could still
+		// be answered. Keep the session and let MyGo write each document in
+		// place on its way out.
+		h.persistSession()
+		h.mu.Lock()
+		h.quitting = true
+		h.mu.Unlock()
+		return
+	}
 	attempt, wins, started := h.beginQuitAttempt()
 	if !started {
 		h.mu.Lock()

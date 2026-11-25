@@ -7,6 +7,7 @@ import (
 	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"github.com/Bayern99/mark-go-go/internal/genui"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -38,7 +39,8 @@ type Service struct {
 	workspaceOrder []string
 	claims         map[string]string
 
-	docs *mygo.Documents[string]
+	docs     *mygo.Documents[string]
+	autosave mygo.Autosave
 
 	settings     *settingsStore
 	runs         sync.WaitGroup
@@ -86,6 +88,8 @@ type docSession struct {
 	scrollRestore   uint64
 	restoreError    string
 	actionError     string
+	saveError       string
+	disk            diskStamp
 
 	view *genui.ViewFollower
 }
@@ -143,6 +147,71 @@ func (s *docSession) documentState() mygo.DocumentState {
 		name = "untitled.md"
 	}
 	return mygo.DocumentState{Name: name, Path: path, Edited: s.edited}
+}
+
+// diskStamp is the file a session last read or wrote: its modification time
+// and size, the pair MyGo compares to know whether another app changed it.
+type diskStamp struct {
+	modTime int64
+	size    int64
+	known   bool
+}
+
+// recordDisk remembers the file a session's document now has, so a close can
+// see an external change even when MyGo's watch has not looked yet. It reports
+// whether the file is a different one than the session last saw.
+func (h *Service) recordDisk(s *docSession) bool {
+	if s == nil {
+		return false
+	}
+	stamp := diskStamp{}
+	if path := s.currentPath(); path != "" {
+		info, err := os.Stat(path)
+		if err != nil {
+			// Never overwrite an established baseline with unknown on a failed
+			// Stat (for example, an external delete before the watcher catches
+			// up); changedOnDisk must continue reporting the missing file.
+			return false
+		}
+		stamp = diskStamp{modTime: info.ModTime().UnixNano(), size: info.Size(), known: true}
+	}
+	h.mu.Lock()
+	changed := s.disk != stamp
+	s.disk = stamp
+	h.mu.Unlock()
+	return changed
+}
+
+// syncDisk updates a session's disk baseline ONLY on confirmed clean state
+// notifications (no unsaved edits, no conflict, no deletion). Dirty edit
+// notifications can arrive after another app writes the file and before MyGo's
+// watcher raises Conflict, so adopting disk state while Edited is true would
+// risk silently overwriting the foreign edit on Save.
+func (h *Service) syncDisk(s *docSession, state mygo.DocumentState) bool {
+	if s == nil || state.Edited || state.Conflict || state.Deleted {
+		return false
+	}
+	return h.recordDisk(s)
+}
+
+// changedOnDisk reports whether the file at the session's path differs from
+// what the session last read or wrote.
+func (h *Service) changedOnDisk(s *docSession) bool {
+	if s == nil {
+		return false
+	}
+	h.mu.Lock()
+	known := s.disk
+	h.mu.Unlock()
+	path := s.currentPath()
+	if path == "" || !known.known {
+		return false
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return true
+	}
+	return info.ModTime().UnixNano() != known.modTime || info.Size() != known.size
 }
 
 func (s *docSession) currentText() string {
@@ -352,7 +421,13 @@ func (h *Service) adopt(doc *mygo.Document[string], win *mygo.Window) {
 			_ = DocumentReloaded.Emit(currentWin, s.snapshot())
 		}
 	})
+	h.recordDisk(s)
 	offState := doc.OnStateChange(func(state mygo.DocumentState) {
+		if h.syncDisk(s, state) && !state.Edited {
+			// A write landed and nothing was typed over it: any save that
+			// failed before it is settled.
+			h.noteSaveError(s, nil)
+		}
 		h.mu.Lock()
 		currentWin := s.win
 		h.mu.Unlock()
@@ -756,6 +831,7 @@ func (h *Service) Save(ctx context.Context, documentID string) error {
 		return err
 	}
 	err = h.saveDocument(s)
+	h.noteSaveError(s, err)
 	h.noteAction(s, err)
 	return err
 }
@@ -768,12 +844,24 @@ func (h *Service) saveDocument(s *docSession) error {
 			return err
 		}
 	}
+	if readOnly {
+		return ErrSaveReadOnly
+	}
+	if s.doc != nil && s.doc.HasConflict() {
+		return ErrSaveConflict
+	}
 	if path == "" {
 		return h.saveAsDocument(s)
 	}
-	if err := s.doc.Save(); err != nil {
+	if h.changedOnDisk(s) {
+		return ErrSaveConflict
+	}
+	// SaveAnyway, not Save: Save opens MyGo's own conflict and permission
+	// alerts, and this path has already decided which Portrait sheet answers.
+	if err := s.doc.SaveAnyway(); err != nil {
 		return err
 	}
+	h.recordDisk(s)
 	h.migrateIfNeeded(s)
 	return nil
 }
@@ -784,6 +872,7 @@ func (h *Service) SaveAs(ctx context.Context, documentID string) error {
 		return err
 	}
 	err = h.saveAsDocument(s)
+	h.noteSaveError(s, err)
 	h.noteAction(s, err)
 	return err
 }
@@ -799,6 +888,7 @@ func (h *Service) saveAsDocument(s *docSession) error {
 	if err := s.doc.SaveAs(target); err != nil {
 		return err
 	}
+	h.recordDisk(s)
 	h.migrateIfNeeded(s)
 	return nil
 }
@@ -827,54 +917,15 @@ func (h *Service) askSavePath(s *docSession) (string, error) {
 	return target, nil
 }
 
-func (h *Service) Rename(ctx context.Context, documentID string) error {
-	s, err := h.docSession(documentID)
-	if err != nil {
-		return err
-	}
-	err = h.renameDocument(s)
-	h.noteAction(s, err)
-	return err
-}
-
-func (h *Service) renameDocument(s *docSession) error {
-	if err := h.rejectPathChange(s); err != nil {
-		return err
-	}
-	if err := s.doc.Rename(""); err != nil {
-		return err
-	}
-	h.migrateIfNeeded(s)
-	return nil
-}
-
-func (h *Service) MoveTo(ctx context.Context, documentID string) error {
-	s, err := h.docSession(documentID)
-	if err != nil {
-		return err
-	}
-	err = h.moveDocument(s)
-	h.noteAction(s, err)
-	return err
-}
-
-func (h *Service) moveDocument(s *docSession) error {
-	if err := h.rejectPathChange(s); err != nil {
-		return err
-	}
-	if err := s.doc.MoveTo(""); err != nil {
-		return err
-	}
-	h.migrateIfNeeded(s)
-	return nil
-}
-
 func (h *Service) Revert(ctx context.Context, documentID string) error {
 	s, err := h.docSession(documentID)
 	if err != nil {
 		return err
 	}
 	err = s.doc.Revert()
+	if err == nil {
+		h.recordDisk(s)
+	}
 	h.noteAction(s, err)
 	return err
 }

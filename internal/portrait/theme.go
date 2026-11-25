@@ -3,7 +3,12 @@ package portrait
 import "github.com/egoist/mygo/ui"
 
 func Theme() ui.Theme {
-	t := *ui.LightTheme()
+	base, selection, scrollbar := ui.LightTheme(), Colors.Accent.Alpha(0.24), black(0.32)
+	if active.dark {
+		base, selection, scrollbar = ui.DarkTheme(), Colors.Accent.Alpha(0.32), white(0.30)
+	}
+	t := *base
+	t.Selection, t.Scrollbar, t.Success = selection, scrollbar, Colors.Success
 	t.Font, t.FontSize = FontSans, Type.UI.Size
 	t.Background, t.Surface, t.SurfaceHover, t.SurfacePressed = Colors.Paper, Colors.Paper, Colors.Code, Colors.Chrome
 	t.Text, t.TextMuted, t.Border = Colors.Ink, Colors.Ink3, Colors.LineStrong
@@ -14,11 +19,37 @@ func Theme() ui.Theme {
 }
 
 type ShellTokens struct {
-	WorkspaceName TypeStyle
+	WorkspaceName, Section                  TypeStyle
+	PageInset, PageRadius, PageBar          float32
+	Strip, Row, SidebarWidth, DrawerEdge    float32
+	CommandWidth, CommandTop, CommandRow    float32
+	Documents, Results, Swatch              float32
+	CommandInput                            float32
+	SpaceDotButton, SpaceDotCircle          float32
+	ResearchWidth, ResearchMin, ResearchMax float32
+	SidebarMin, SidebarMax, PageMin         float32
 }
 
 var Shell = ShellTokens{
-	WorkspaceName: TypeStyle{FontSans, Type.Small.Size, Type.UI.Leading, -0.005 * Type.Small.Size},
+	WorkspaceName:  TypeStyle{FontSans, Type.Small.Size, Type.UI.Leading, -0.005 * Type.Small.Size},
+	Section:        TypeStyle{FontSans, Type.Meta.Size, Type.Meta.Leading, 0.02 * Type.Meta.Size},
+	PageInset:      8,
+	PageRadius:     Radii.L,
+	PageBar:        40,
+	Strip:          40,
+	Row:            Sizes.Large,
+	SidebarWidth:   248,
+	DrawerEdge:     8,
+	CommandWidth:   620,
+	CommandTop:     96,
+	CommandRow:     36,
+	Documents:      8 * Sizes.Large,
+	Results:        10 * 36,
+	Swatch:         16,
+	CommandInput:   52,
+	SpaceDotButton: Sizes.Compact, SpaceDotCircle: 10,
+	ResearchWidth: 376, ResearchMin: 310, ResearchMax: 800,
+	SidebarMin: 180, SidebarMax: 420, PageMin: 412,
 }
 
 var Clear = white(0)

@@ -8,6 +8,19 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+func TestFocusRingInnerEdgeMeetsNonTextContrast(t *testing.T) {
+	eachLook(t, func(t *testing.T, space portrait.Space, dark bool) {
+		ring := portrait.Rings.Field[0]
+		if ring.Spread != 1 || ring.Color != portrait.Colors.Accent {
+			t.Fatalf("inner focus ring = %+v, want the one-point Accent edge", ring)
+		}
+		contrast := wcagContrast(wcagColor(ring.Color), wcagColor(portrait.Colors.Paper))
+		if contrast < 3 {
+			t.Errorf("%s/%s focus contrast %.3f, want >= 3", space.Name, appearanceName(dark), contrast)
+		}
+	})
+}
+
 func TestRingsMatchTheirBaseline(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -18,16 +31,16 @@ func TestRingsMatchTheirBaseline(t *testing.T) {
 			name: "field",
 			got:  portrait.Rings.Field,
 			want: portrait.Shadows{
-				{Inset: false, X: 0, Y: 0, Blur: 0, Spread: 0.5, Color: ui.RGBA(0, 0, 0, 0.16)},
-				{Inset: false, X: 0, Y: 0, Blur: 0, Spread: 3, Color: ui.RGBA(47, 111, 98, 0.34)},
+				{Inset: false, X: 0, Y: 0, Blur: 0, Spread: 1, Color: ui.Hex("#2E5D8C")},
+				{Inset: false, X: 0, Y: 0, Blur: 0, Spread: 3, Color: ui.Hex("#2E5D8C").Alpha(0.28)},
 			},
 		},
 		{
 			name: "editing",
 			got:  portrait.Rings.Editing,
 			want: portrait.Shadows{
-				{Inset: false, X: 0, Y: 0, Blur: 0, Spread: 1, Color: ui.Hex("#2f6f62")},
-				{Inset: false, X: 0, Y: 0, Blur: 0, Spread: 3, Color: ui.RGBA(47, 111, 98, 0.34)},
+				{Inset: false, X: 0, Y: 0, Blur: 0, Spread: 1, Color: ui.Hex("#2E5D8C")},
+				{Inset: false, X: 0, Y: 0, Blur: 0, Spread: 3, Color: ui.Hex("#2E5D8C").Alpha(0.28)},
 			},
 		},
 	} {

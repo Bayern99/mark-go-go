@@ -1076,6 +1076,44 @@ func containsFold(hay, needle string) bool {
 	return needle != "" && strings.Contains(strings.ToLower(hay), needle)
 }
 
+// Folders returns every folder of the active workspace, sorted by path. It is
+// the move picker's list: moving may target a folder the sidebar collapsed or
+// one that holds no Markdown yet, so the navigation snapshot's visible
+// entries are not enough.
+func (h *Service) Folders(ctx context.Context) ([]NavEntry, error) {
+	w, err := h.workspaceOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	idx := h.indexOf(w)
+	if idx == nil {
+		return nil, nil
+	}
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	keys := make([]string, 0, len(idx.folders))
+	for rel := range idx.folders {
+		keys = append(keys, rel)
+	}
+	sort.Strings(keys)
+	out := make([]NavEntry, 0, len(keys))
+	for _, rel := range keys {
+		folder := idx.folders[rel]
+		if folder == nil {
+			continue
+		}
+		state := FolderOpen
+		if idx.collapsed[rel] {
+			state = FolderCollapsed
+		}
+		out = append(out, NavEntry{
+			ID: "folder:" + rel, Kind: "folder", Name: folder.name, Path: folder.path,
+			Parent: folder.parent, Depth: depthOf(rel), MarkdownCount: folder.mdCount, FolderState: state,
+		})
+	}
+	return out, nil
+}
+
 func (h *Service) NavSnapshot(ctx context.Context) (NavSnapshot, error) {
 	w, err := h.workspaceOf(ctx)
 	if err != nil {

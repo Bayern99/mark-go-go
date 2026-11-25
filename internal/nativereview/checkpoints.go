@@ -16,6 +16,8 @@ type checkpointState struct {
 	base                                 reading
 	original                             string
 	diff                                 []review.DiffHunk
+	confirmOpen                          bool
+	restoreReturn                        ui.Handle
 }
 
 func checkpointEmpty(c *ui.Context, title, description string) ui.Element {
@@ -35,12 +37,14 @@ func (p *panel) drawCheckpoints(c *ui.Context) {
 		p.checkpointDocs[active.ID] = s
 		p.loadCheckpoints(s)
 	}
-	ui.Column(c).Width(min(470, max(260, width-40))).Padding(8).Gap(8).Children(func() {
-		ui.Text(c, "Checkpoints").Bold()
-		ui.Row(c).Gap(6).Children(func() {
-			label := ui.TextInput(c, &s.label).Label("Checkpoint label").Placeholder("Optional label").Grow(1)
+	ui.Column(c).Width(min(portrait.Form.PopoverWide, max(portrait.Form.MenuMin, width-40))).Padding(portrait.Form.AreaPadY).Gap(portrait.Form.Gap).Children(func() {
+		portrait.Type.UI.Apply(ui.Text(c, "Checkpoints")).FontWeight(600).TextColor(portrait.Colors.Ink)
+		ui.Row(c).Gap(portrait.Form.Gap).Children(func() {
+			field := portrait.TextField(c, &s.label, portrait.FieldSpec{Label: "Checkpoint label", Placeholder: "Optional label", Size: portrait.Form.FieldCompact})
+			field.Frame().Grow(1)
+			label := field.Input()
 			canCreate := !s.busy && !active.Edited && !active.Conflict && !active.Deleted
-			if ui.Button(c, "Create checkpoint").Disabled(!canCreate).Clicked() || label.Submitted() && canCreate {
+			if portrait.ButtonWith(c, "Create checkpoint", "Create checkpoint", portrait.ButtonSpec{Look: portrait.Raised, Size: portrait.Form.FieldCompact}).Disabled(!canCreate).Clicked() || label.Submitted() && canCreate {
 				if err := p.win.Publish(); err != nil {
 					s.errorText = err.Error()
 				} else {
@@ -49,10 +53,10 @@ func (p *panel) drawCheckpoints(c *ui.Context) {
 			}
 		})
 		if active.Edited || active.Conflict || active.Deleted {
-			ui.Text(c, "Save the current document and resolve any conflicts to create a checkpoint.").Wrap()
+			portrait.Caption(c, "Save the current document and resolve any conflicts to create a checkpoint.").Wrap()
 		}
 		if !s.loaded && s.busy {
-			ui.Text(c, "Loading checkpoints…")
+			portrait.Caption(c, "Loading checkpoints…")
 		}
 		if s.loaded && len(s.items) == 0 {
 			checkpointEmpty(c, "No checkpoints for this document.", "Create a checkpoint to save a version for comparison or restoration.")
@@ -61,34 +65,41 @@ func (p *panel) drawCheckpoints(c *ui.Context) {
 			p.drawCheckpointList(c, s)
 		}
 		if s.comparing {
-			drawDiff(c, s.diff, nil)
+			drawDiffSides(c, s.diff, nil, diffSides{before: s.base.text, after: s.original})
 			valid := s.base.current(p.win)
 			if !valid {
-				ui.Text(c, "The document changed. Compare again before restoring.").Wrap().Role(ui.RoleStatus)
+				portrait.Alert(c, portrait.Tones.Warning, "Document changed", "The document changed. Compare again before restoring.")
 			}
-			if ui.Button(c, "Restore shown version").Disabled(s.busy || !valid || active.ReadOnly || s.base.text == s.original).Clicked() {
-				err := s.base.apply(p.win, s.original)
-				if err == nil {
-					s.comparing = false
-					err = p.win.Publish()
-				}
-				if err != nil {
-					s.errorText = err.Error()
-				}
+			if portrait.AccentButton(c, "Restore shown version", "Restore shown version").AlignSelf(ui.Start).Disabled(s.busy || !valid || active.ReadOnly || s.base.text == s.original).Bind(&s.restoreReturn).Clicked() {
+				s.confirmOpen = true
 			}
 		}
 		if s.errorText != "" {
-			ui.Text(c, s.errorText).Role(ui.RoleAlert).Wrap()
-			if ui.Button(c, "Refresh checkpoints").Disabled(s.busy).Clicked() {
+			portrait.Alert(c, portrait.Tones.Danger, "Checkpoints", s.errorText)
+			if portrait.QuietButton(c, "Refresh checkpoints", "Refresh checkpoints").AlignSelf(ui.Start).Disabled(s.busy).Clicked() {
 				p.loadCheckpoints(s)
 			}
 		}
 	})
+	portrait.Confirm(c, &s.confirmOpen, portrait.ConfirmSpec{
+		Title: "Restore checkpoint?", Body: "Replace the current document text with the shown version?", ConfirmLabel: "Restore shown version", Return: &s.restoreReturn,
+		OnConfirm: func() {
+			err := s.base.apply(p.win, s.original)
+			if err == nil {
+				s.comparing = false
+				err = p.win.Publish()
+			}
+			if err != nil {
+				s.errorText = err.Error()
+			}
+		},
+	})
 }
 
 func (p *panel) drawCheckpointList(c *ui.Context, s *checkpointState) {
-	ui.Scroll(c).Height(108).Label("Saved checkpoints").Children(func() {
-		ui.Column(c).Gap(4).Children(func() {
+	ui.Scroll(c).MaxHeight(portrait.Form.ListMax).Label("Saved checkpoints").Children(func() {
+		// The inset keeps a row's focus ring inside the scroll viewport.
+		ui.Column(c).Gap(4).Padding(3).Children(func() {
 			for _, item := range s.items {
 				when := time.UnixMilli(item.CreatedAt).Local().Format("2006-01-02 15:04")
 				backend := "Git ref"
@@ -99,14 +110,23 @@ func (p *panel) drawCheckpointList(c *ui.Context, s *checkpointState) {
 				if name == "" {
 					name = "Snapshot"
 				}
-				if ui.Button(c.Key(item.ID), name+" · "+backend+" · "+when).Selected(s.selected == item.ID).Disabled(s.busy).Tooltip(item.Source).Clicked() {
+				selected := s.selected == item.ID
+				row := ui.ButtonBase(c.Key(item.ID)).Label(name+" · "+backend+" · "+when).FillWidth().Height(portrait.Sizes.Regular).Padding(0, 8).Gap(6).Radius(portrait.Radii.M).AlignItems(ui.Center).Selected(selected).Disabled(s.busy)
+				portrait.Tooltip(c, row, item.Source)
+				portrait.RowHover(row, row.Hovered() && !selected)
+				row.Children(func() {
+					portrait.RowCapsule(c, row, selected, "checkpoints:"+s.id)
+					portrait.Type.UI.Apply(ui.Text(c, name)).FontWeight(500).TextColor(portrait.Colors.Ink).ZIndex(1).MaxLines(1).Ellipsis("…").Grow(1).MinWidth(0)
+					portrait.Type.Meta.Apply(ui.Text(c, backend+" · "+when)).FontFeatures("tnum").TextColor(portrait.Colors.Ink3).ZIndex(1).MaxLines(1).Shrink(0)
+				})
+				if row.Clicked() {
 					s.selected = item.ID
 					s.comparing = false
 				}
 			}
 		})
 	})
-	if ui.Button(c, "Compare").Disabled(s.busy || s.selected == "").Clicked() {
+	if portrait.Button(c, "Compare", "Compare the selected checkpoint").AlignSelf(ui.Start).Disabled(s.busy || s.selected == "").Clicked() {
 		p.compareCheckpoint(s)
 	}
 }

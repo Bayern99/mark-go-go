@@ -1,6 +1,7 @@
 package nativeeditor
 
 import (
+	"math"
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/portrait"
@@ -15,12 +16,88 @@ type jumpHighlight struct {
 	start   time.Time
 }
 
+type revealScroll struct {
+	active         bool
+	applied        bool
+	at             int
+	version        uint64
+	budget         int
+	stable         int
+	lastTotal      float64
+	lastRectY      float64
+	appliedScrollY float64
+}
+
 func (d *Document) Reveal(offset int) error {
 	if err := d.SelectUTF16(offset, offset); err != nil {
 		return err
 	}
-	d.landing = jumpHighlight{active: true, at: d.state.Selection().Head, version: d.Version()}
+	head := d.state.Selection().Head
+	d.landing = jumpHighlight{active: true, at: head, version: d.Version()}
+	d.revealScroll = revealScroll{active: true, at: head, version: d.Version(), budget: 24}
 	return nil
+}
+
+func (d *Document) applyRevealScroll(c *ui.Context) {
+	r := &d.revealScroll
+	if !r.active {
+		return
+	}
+	if r.version != d.Version() || d.state.Selection().Head != r.at {
+		r.active = false
+		return
+	}
+	vh := d.state.ViewportHeight()
+	if vh <= 0 {
+		c.Invalidate()
+		return
+	}
+	snap := d.state.Buffer.Snapshot()
+	total := d.state.LineTop(snap.LineCount())
+	if r.applied && math.Abs(total-r.lastTotal) <= 0.5 && math.Abs(d.state.ScrollY()-r.appliedScrollY) > 1.0 {
+		r.active = false
+		return
+	}
+	rect, ok := d.state.Rect(r.at)
+	if !ok {
+		r.budget--
+		if r.budget <= 0 {
+			r.active = false
+		} else {
+			c.Invalidate()
+		}
+		return
+	}
+	line := snap.LineOf(min(r.at, snap.Len()))
+	target := 0.0
+	if line > 0 {
+		inset := min(float64(portrait.Sizes.Large), vh/4)
+		target = max(0, d.state.ScrollY()+float64(rect.Y)-inset)
+	}
+	d.state.SetScrollY(target)
+	gotScroll := d.state.ScrollY()
+	rectY := float64(rect.Y)
+	if settledRect, ok := d.state.Rect(r.at); ok {
+		rectY = float64(settledRect.Y)
+	}
+	if r.applied &&
+		math.Abs(total-r.lastTotal) <= 0.5 &&
+		math.Abs(gotScroll-r.appliedScrollY) <= 0.5 &&
+		math.Abs(rectY-r.lastRectY) <= 0.5 {
+		r.stable++
+	} else {
+		r.stable = 0
+	}
+	r.applied = true
+	r.lastTotal = total
+	r.lastRectY = rectY
+	r.appliedScrollY = gotScroll
+	r.budget--
+	if r.stable >= 3 || r.budget <= 0 {
+		r.active = false
+		return
+	}
+	c.Invalidate()
 }
 
 // decorate gives the editor the line backgrounds it paints in its own text

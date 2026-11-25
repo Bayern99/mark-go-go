@@ -55,15 +55,15 @@ func (p *previewLayout) heading(snap editor.Snapshot, i, firstText int) {
 	}
 	p.replace(b.Start, firstText, "")
 	leading := headingStyle(0, b.Level).LineHeight * headingStyle(0, b.Level).Font.Size
-	p.blocks = append(p.blocks, editor.Block{Line: snap.LineOf(b.Start), Above: true, Height: 1, Interactive: true, Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
-		e.Height(1).Children(func() {
-			btn := ui.ButtonBase(c).Absolute().Left(-26).Top(1+(leading-foldToggleSize)/2).Label(action+title).Size(foldToggleSize, foldToggleSize).Radius(5).KeepFocus().AlignItems(ui.Center).Justify(ui.Center)
+	p.blocks = append(p.blocks, editor.Block{Line: snap.LineOf(b.Start), Above: true, Height: portrait.Editor.Hairline, Interactive: true, Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
+		e.Height(portrait.Editor.Hairline).Children(func() {
+			btn := ui.ButtonBase(c).Absolute().Left(-26).Top(1+(leading-foldToggleSize)/2).Label(action+title).Size(foldToggleSize, foldToggleSize).Radius(portrait.Radii.S).KeepFocus().AlignItems(ui.Center).Justify(ui.Center)
 			portrait.Tooltip(c, btn, action+title)
 			ink := portrait.Press(btn, portrait.Quiet)
 			if !btn.Hovered() && !btn.Pressed() {
 				ink = portrait.Colors.Ink3
 			}
-			btn.Children(func() { portrait.Glyph(c, icon, 14, ink) })
+			btn.Children(func() { portrait.Glyph(c, icon, portrait.IconSizes.S, ink) })
 			if btn.Clicked() {
 				p.toggleFold(key)
 				c.Invalidate()
@@ -138,7 +138,7 @@ func (p *previewLayout) footnote(in parser.Inline) {
 		e.Children(func() {
 			ref := ui.ButtonBase(c).Label(label).KeepFocus().Padding(0, 2).AlignItems(ui.Center)
 			ref.Children(func() {
-				portrait.Type.Meta.In(portrait.FontDisplay).Apply(ui.Text(c, shown)).FontFeatures("tnum").TextColor(portrait.Colors.Accent)
+				portrait.Type.Meta.Apply(ui.Text(c, shown)).FontFeatures("tnum").TextColor(portrait.Colors.Accent)
 			})
 			if ref.Clicked() {
 				d := p.owner

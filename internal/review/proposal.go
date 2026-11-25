@@ -156,14 +156,20 @@ func sameProposalTarget(p ChangeProposal, input ProposeInput) bool {
 }
 
 func (s *Service) SubmitProposal(input ProposeInput) (ChangeProposal, error) {
-	return s.submitProposal(input, nil, input.BaseText)
+	return s.submitProposal(input, nil, input.BaseText, false)
+}
+
+// RestoreProposal restores a previously dismissed proposal only when its target
+// document has no newer proposal queued, so Undo never overwrites newer work.
+func (s *Service) RestoreProposal(input ProposeInput) (ChangeProposal, error) {
+	return s.submitProposal(input, nil, input.BaseText, true)
 }
 
 func (s *Service) ReviseProposal(input ProposeInput, expectedText, liveText string) (ChangeProposal, error) {
-	return s.submitProposal(input, &expectedText, liveText)
+	return s.submitProposal(input, &expectedText, liveText, false)
 }
 
-func (s *Service) submitProposal(input ProposeInput, expectedText *string, liveText string) (ChangeProposal, error) {
+func (s *Service) submitProposal(input ProposeInput, expectedText *string, liveText string, requireVacant bool) (ChangeProposal, error) {
 	if strings.TrimSpace(input.Path) == "" && strings.TrimSpace(input.DocumentID) == "" {
 		return ChangeProposal{}, errors.New("A target document path or ID is required.")
 	}
@@ -181,6 +187,10 @@ func (s *Service) submitProposal(input ProposeInput, expectedText *string, liveT
 			existingMatch = existing
 			break
 		}
+	}
+	if requireVacant && existingMatch != nil {
+		s.mu.Unlock()
+		return ChangeProposal{}, errors.New("Cannot undo dismiss: a newer proposal already exists for this document.")
 	}
 	if expectedText != nil && (existingMatch == nil || existingMatch.proposal.ProposedText != *expectedText) {
 		s.mu.Unlock()

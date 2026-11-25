@@ -67,17 +67,88 @@ func (p *preferenceStore) save() error {
 	return fsutil.WriteFileAtomic(p.path(), append(data, '\n'))
 }
 func (w *Window) SetPreference(key, value string) { w.setPreference(key, value) }
+func (w *Window) ResetPreferences(keys ...string) {
+	w.resetPreferences(func(key string) bool {
+		for _, reset := range keys {
+			if key == reset {
+				return true
+			}
+		}
+		return false
+	})
+}
+func (w *Window) ResetPreferencePrefixes(prefixes ...string) {
+	w.resetPreferences(func(key string) bool {
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(key, prefix) {
+				return true
+			}
+		}
+		return false
+	})
+}
+func (w *Window) resetPreferences(match func(string) bool) {
+	p := w.store()
+	previous := make(map[string]string, len(p.values))
+	changed := false
+	for key, value := range p.values {
+		previous[key] = value
+		if match(key) {
+			delete(p.values, key)
+			changed = true
+		}
+	}
+	if !changed {
+		return
+	}
+	if err := p.save(); err != nil {
+		p.values = previous
+		w.failure = err.Error()
+		if w.win != nil {
+			w.win.Invalidate()
+		}
+		return
+	}
+	w.failure = ""
+	for window := range p.windows {
+		if window.win != nil {
+			window.win.Invalidate()
+		}
+		for _, notify := range window.changed {
+			notify()
+		}
+	}
+}
+func (w *Window) store() *preferenceStore {
+	if w.preferences == nil {
+		w.preferences = &preferenceStore{values: map[string]string{}, windows: map[*Window]bool{}}
+	}
+	return w.preferences
+}
 func (w *Window) setPreference(key, value string) {
-	p := w.preferences
+	p := w.store()
 	if p.values[key] == value {
 		return
 	}
+	previous, existed := p.values[key]
 	p.values[key] = value
 	if err := p.save(); err != nil {
+		if existed {
+			p.values[key] = previous
+		} else {
+			delete(p.values, key)
+		}
 		w.failure = err.Error()
+		if w.win != nil {
+			w.win.Invalidate()
+		}
+		return
 	}
+	w.failure = ""
 	for window := range p.windows {
-		window.win.Invalidate()
+		if window.win != nil {
+			window.win.Invalidate()
+		}
 	}
 }
 func (w *Window) setPlugin(name string, value bool) {

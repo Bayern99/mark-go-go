@@ -24,6 +24,8 @@ type previewLayout struct {
 	refs          map[string][]int
 	frontEnd      int
 	version       uint64
+	space         string
+	dark          bool
 	applied       bool
 	replacements  []editor.Replacement
 	readable      map[int]string
@@ -44,30 +46,37 @@ func (p *previewLayout) replace(start, end int, text string) {
 	}
 }
 
-func previewTaskCheckbox(c *ui.Context, checked *bool) ui.Element {
-	t := c.Theme()
-	control := ui.CheckboxBase(c, checked).FocusRing(false)
-	control.Children(func() {
-		fill, border := t.Background, t.Border.Mix(t.Text, 0.25)
-		if *checked {
-			fill, border = portrait.Colors.Ink3, portrait.Colors.Ink3
-		}
-		radius := t.Space(1)
-		box := ui.Box(c).Size(t.Space(4), t.Space(4)).Radius(radius).Shrink(0).Background(fill).Border(1, border)
-		box.DrawOver(func(p *ui.Painter, r ui.Rect) {
-			if !*checked && control.Hovered() {
-				p.Stroke(r, t.Accent, radius, 1)
-			}
-			if *checked {
-				var mark ui.Path
-				mark.MoveTo(r.X+r.W*0.22, r.Y+r.H*0.52).LineTo(r.X+r.W*0.42, r.Y+r.H*0.71).LineTo(r.X+r.W*0.78, r.Y+r.H*0.31)
-				p.StrokePath(&mark, t.Space(0.5), portrait.Colors.Paper)
-			}
-			if control.FocusVisible() {
-				p.FocusRing(r, [4]float32{radius, radius, radius, radius})
-			}
-		})
+// markerWidth is the column a list marker occupies. Bullets and task
+// checkboxes share it, so their text starts at the same x.
+const markerWidth = 20
+
+// bulletMarker puts an ordinary bullet in the shared marker column, centered
+// as a task's checkbox is, so both their texts start at the same x. The
+// display text keeps the bullet: readable says what the projection shows in
+// place of an element.
+func (p *previewLayout) bulletMarker(start, end int) {
+	if end <= start {
+		return
+	}
+	p.readable[start] = "•"
+	p.replacements = append(p.replacements, editor.Replacement{
+		Start: start, End: end, Width: markerWidth,
+		Content: func(c *ui.Context, e ui.Element, _ editor.Replacement) {
+			e.AlignItems(ui.Center).Justify(ui.Center)
+			e.Children(func() {
+				portrait.Editor.Body.Apply(ui.Text(c, "•")).TextColor(portrait.Colors.Ink)
+			})
+		},
 	})
+}
+
+func previewTaskCheckbox(c *ui.Context, checked *bool) ui.Element {
+	control := ui.CheckboxBase(c, checked).FocusRing(false).AlignItems(ui.Center)
+	state := ui.CheckOff
+	if *checked {
+		state = ui.CheckOn
+	}
+	portrait.CheckboxFace(c, control, state, "")
 	return control
 }
 
@@ -112,6 +121,8 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 		switch b.Kind {
 		case parser.CodeBlock:
 			p.codeBlock(snap, i)
+		case parser.ThematicBreak:
+			p.thematicBreak(snap, b.Start, b.End)
 		case parser.Heading:
 			line := snap.LineOf(b.Start)
 			p.styles = append(p.styles, headingStyle(line, b.Level))
@@ -162,9 +173,10 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 					p.replacements = append(p.replacements, editor.Replacement{
 						Start:       task,
 						End:         task + 3,
-						Width:       20,
+						Width:       markerWidth,
 						Interactive: true,
 						Content: func(c *ui.Context, e ui.Element, _ editor.Replacement) {
+							e.AlignItems(ui.Center).Justify(ui.Center)
 							e.Children(func() {
 								value := checked
 								control := previewTaskCheckbox(c, &value).Label(description).Disabled(p.owner.state.ReadOnly)
@@ -184,7 +196,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 					})
 				}
 			} else if !parent.Ordered {
-				p.replace(b.Start, markerEnd, "•")
+				p.bulletMarker(b.Start, markerEnd)
 			}
 		}
 		if b.Kind != parser.Paragraph && b.Kind != parser.Heading {
@@ -204,6 +216,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 			}
 			if quoteDepth > 0 {
 				p.addIndent(line, float32(quoteDepth*quoteBarInset), 0)
+				p.backgrounds = append(p.backgrounds, editor.LineBackground{First: line, Last: line, Color: portrait.Colors.AccentSoft, ReadingColumn: true})
 			}
 		}
 		inlines := p.document.Inlines(i)
@@ -213,6 +226,8 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 		}
 		for j, in := range inlines {
 			switch in.Kind {
+			case parser.SoftBreak, parser.LineBreak:
+				p.reflowBreak(src, inlines, j, inlineFloor(b, inlines, j))
 			case parser.Strong, parser.Emphasis, parser.Strikethrough:
 				if in.Next > j+1 {
 					p.replace(in.Start, inlines[j+1].Start, "")
@@ -301,7 +316,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	}
 	p.referenceDefinitions(snap, frontEnd)
 	if draft := p.owner.draft; draft != nil && (draft.kind == "new note" || !p.draftAnchored) {
-		p.blocks = append(p.blocks, editor.Block{Line: snap.LineOf(min(snap.Len(), draft.anchor)), Height: 140, Interactive: true, Label: "Note composer", Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
+		p.blocks = append(p.blocks, editor.Block{Line: snap.LineOf(min(snap.Len(), draft.anchor)), Height: 140, Interactive: true, Label: draftLabel(draft), Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
 			if p.owner.draft == draft {
 				e.Children(func() { p.owner.drawDraft(c, draft) })
 			}
@@ -315,6 +330,76 @@ const (
 	quoteBarWidth = 2
 	quoteBarInset = 14
 )
+
+// inlineFloor is the offset a break's line ending and indentation may be
+// hidden back to: the end of the inline before it, or the block's start.
+func inlineFloor(block *parser.Block, inlines []parser.Inline, i int) int {
+	if i > 0 {
+		return inlines[i-1].End
+	}
+	return block.Start
+}
+
+// reflowBreak hides a paragraph's line ending with the spaces around it. A
+// soft break reads as one space, or as nothing between two CJK runes, where
+// CommonMark and CJK typesetting join the lines; a hard break, two trailing
+// spaces or a backslash, keeps its break.
+func (p *previewLayout) reflowBreak(src string, inlines []parser.Inline, index, floor int) {
+	in := inlines[index]
+	start, end := in.Start, in.End
+	for start > floor && (src[start-1] == ' ' || src[start-1] == '\t') {
+		start--
+	}
+	for end < len(src) && (src[end] == ' ' || src[end] == '\t') {
+		end++
+	}
+	sep := "\n"
+	if in.Kind == parser.SoftBreak {
+		sep = " "
+		if joinsWithoutSpace(inlines, index) {
+			sep = ""
+		}
+	}
+	p.readable[start] = sep
+	p.replace(start, end, sep)
+}
+
+// joinsWithoutSpace reports whether the visible inline runes around a soft
+// break are CJK, ignoring hidden Markdown emphasis delimiters while keeping
+// literal visible punctuation such as an unmatched '*'.
+func joinsWithoutSpace(inlines []parser.Inline, index int) bool {
+	beforeText := strings.TrimRight(parser.PlainText(inlines[:index]), " \t")
+	afterText := strings.TrimLeft(parser.PlainText(inlines[index+1:]), " \t")
+	if beforeText == "" || afterText == "" {
+		return false
+	}
+	before, _ := utf8.DecodeLastRuneInString(beforeText)
+	after, _ := utf8.DecodeRuneInString(afterText)
+	return cjkRune(before) && cjkRune(after)
+}
+
+// cjkRune reports whether r is CJK writing: ideographs, kana or their
+// punctuation. Portrait's contract keeps the Unicode script tables out of
+// the native surfaces, so the ranges are written here.
+func cjkRune(r rune) bool {
+	switch {
+	case r >= 0x2E80 && r <= 0x33FF: // radicals, symbols and punctuation
+		return true
+	case r >= 0x3400 && r <= 0x4DBF: // Unified Ideographs Extension A
+		return true
+	case r >= 0x4E00 && r <= 0x9FFF: // Unified Ideographs
+		return true
+	case r >= 0xF900 && r <= 0xFAFF: // Compatibility Ideographs
+		return true
+	case r >= 0xFE30 && r <= 0xFE4F: // Compatibility Forms
+		return true
+	case r >= 0xFF00 && r <= 0xFF65: // Halfwidth and Fullwidth Forms
+		return true
+	case r >= 0x20000 && r <= 0x3FFFF: // Extensions B and on
+		return true
+	}
+	return false
+}
 
 // addIndent adds horizontal insets to a line's existing font style, or
 // gives it a style of its own. Quoted headings need both.
@@ -331,8 +416,47 @@ func (p *previewLayout) addIndent(line int, left, right float32) {
 
 func quoteBar(c *ui.Context, e ui.Element, _ editor.Replacement) {
 	e.Children(func() {
-		ui.Box(c).Absolute().Left(0).Top(0).Bottom(0).Width(2).Background(portrait.Colors.LineStrong)
+		ui.Box(c).Absolute().Left(0).Top(0).Bottom(0).Width(3).Background(portrait.Colors.Accent)
 	})
+}
+
+func (p *previewLayout) thematicBreak(snap editor.Snapshot, start, end int) {
+	block := editor.Block{Line: snap.LineOf(start), Height: portrait.Type.Reading.Leading, Width: portrait.Editor.Column, Label: "Thematic break", Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
+		e.Height(portrait.Type.Reading.Leading).Justify(ui.Center).Children(func() {
+			ui.Box(c).FillWidth().Height(portrait.Editor.Hairline).Background(portrait.Colors.Line).AccessHidden(true)
+		})
+	}}
+	// The rule takes the room of its own Markdown line, vertically
+	// centered in it: an emptied line keeps its height below the rule
+	// otherwise, doubling the space under it.
+	p.hideLines(snap, start, end, "", block)
+}
+
+// draftLabel names the block a draft without a block of its own is
+// composed in.
+func draftLabel(draft *blockDraft) string {
+	switch draft.kind {
+	case "link":
+		return "Link editor"
+	case "note", "new note":
+		return "Note composer"
+	}
+	return "Block editor"
+}
+
+// hideLines hides the lines start through end belong to, with the newline
+// that ends them, and puts block in their place: the block then takes the
+// room the lines had, rather than standing above lines left empty.
+func (p *previewLayout) hideLines(snap editor.Snapshot, start, end int, visible string, block editor.Block) {
+	first := snap.LineStart(snap.LineOf(start))
+	last := snap.LineEnd(snap.LineOf(max(start, end-1)))
+	if last < snap.Len() {
+		last++
+	}
+	p.replace(first, last, "")
+	p.readable[first] = visible + "\n"
+	block.Line = snap.LineOf(first)
+	p.blocks = append(p.blocks, block)
 }
 
 func previewImageURLs(doc *parser.Document) map[string]struct{} {
@@ -375,39 +499,28 @@ func imageOnlyParagraph(inlines []parser.Inline) bool {
 
 func (p *previewLayout) standaloneImages(snap editor.Snapshot, blockIndex int, inlines []parser.Inline) {
 	images := make([]previewImage, 0, len(inlines))
+	labels := make([]string, 0, len(inlines))
 	for i := 0; i < len(inlines); {
 		in := inlines[i]
-		switch in.Kind {
-		case parser.Image:
+		if in.Kind == parser.Image {
 			label := parser.PlainText(inlines[i+1 : in.Next])
 			if label == "" {
 				label = "Image"
 			}
-			p.readable[in.Start] = label
-			p.replace(in.Start, in.End, "")
 			images = append(images, previewImage{destination: in.Dest, title: in.Title, label: label})
-		case parser.Text:
-			if strings.TrimSpace(in.Text) == "" {
-				p.readable[in.Start] = " "
-				p.replace(in.Start, in.End, "")
-			}
-		case parser.SoftBreak, parser.LineBreak:
-			p.readable[in.Start] = " "
-			p.replace(in.Start, in.End, "")
+			labels = append(labels, label)
 		}
 		i = max(i+1, in.Next)
 	}
 	block := p.document.Block(blockIndex)
-	p.blocks = append(p.blocks, editor.Block{
-		Line:   snap.LineOf(block.Start),
-		Above:  true,
+	p.hideLines(snap, block.Start, block.End, strings.Join(labels, "\n"), editor.Block{
 		Height: 180,
-		Width:  624,
+		Width:  portrait.Editor.Column,
 		Label:  "Markdown image",
 		Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
 			maxWidth := e.LayoutBounds().W
-			if maxWidth <= 0 || maxWidth > 624 {
-				maxWidth = 624
+			if maxWidth <= 0 || maxWidth > portrait.Editor.Column {
+				maxWidth = portrait.Editor.Column
 			}
 			e.Children(func() {
 				ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Justify(ui.Center).Gap(8).Children(func() {
@@ -419,7 +532,8 @@ func (p *previewLayout) standaloneImages(snap editor.Snapshot, blockIndex int, i
 						}
 						w, h := ui.ImageSize(src)
 						scale := min(float32(1), maxWidth/max(1, w), float32(420)/max(1, h))
-						img := ui.Image(c, src).Size(max(1, w*scale), max(1, h*scale)).Label(figure.label).AlignSelf(ui.Center)
+						img := ui.Image(c, src).Size(max(1, w*scale), max(1, h*scale)).Label(figure.label).AlignSelf(ui.Center).
+							Radius(portrait.Radii.M).Clip().Border(portrait.Editor.Hairline, portrait.Colors.Line)
 						if figure.title != "" {
 							img.Tooltip(figure.title)
 						}
@@ -444,12 +558,12 @@ func headingStyle(line, level int) editor.LineStyle {
 	style := [6]portrait.TypeStyle{
 		portrait.Type.Display.In(portrait.FontDisplay),
 		portrait.Type.Title.In(portrait.FontDisplay),
-		portrait.Type.Reading,
-		portrait.Type.H4,
-		portrait.Type.H5,
-		portrait.Type.H6,
+		portrait.Type.H3,
+		portrait.Editor.Body,
+		portrait.Type.Small,
+		portrait.Type.UI,
 	}[level-1]
-	style.Leading = max(style.Leading, portrait.Type.Reading.Leading)
+	style.Leading = max(style.Leading, portrait.Editor.Body.Leading)
 	return editor.LineStyle{Line: line, Font: style.Font(600), LineHeight: style.LineHeight()}
 }
 
@@ -538,20 +652,30 @@ func (p *previewLayout) sourceOffset(runes int) int {
 	return last.to + off - last.shownTo
 }
 
-func (d *Document) prepareView() {
+func (d *Document) prepareView(c *ui.Context) {
 	st, p := &d.state, &d.preview
 	p.owner = d
 	st.NoActiveLine = d.mode == Preview
+	st.RenderFindBar = renderFindBar
+	st.RenderGoToLine = renderGoToLine
+	st.RenderHover = renderHover
 	if d.mode == Markdown {
 		st.ContextMenu = nil
 		st.OnInput = nil
 		st.OnHover = nil
 		st.Label = "Markdown source"
-		st.Font = portrait.Type.Code.Font(400)
+		st.Font = portrait.Editor.Code.Font(400)
+		// Markdown source shows ##, -> and :== as written: no ligatures or
+		// contextual alternates fuse them into one glyph.
+		st.Font.Features = "liga=0, calt=0"
+
 		st.ReadingColumn = editor.ReadingColumn{}
 		st.LineBackgrounds = nil
 		st.LineNumbers = editor.LineNumbersOn
-		st.LineHeight = portrait.Type.Code.LineHeight()
+		if !d.lineNumbers {
+			st.LineNumbers = editor.LineNumbersOff
+		}
+		st.LineHeight = portrait.Editor.Code.LineHeight()
 		if st.Projection != nil {
 			st.SetReplacements(nil)
 			st.SetBlocks(nil)
@@ -562,21 +686,33 @@ func (d *Document) prepareView() {
 		return
 	}
 	st.ContextMenu = func(m *ui.Menu) {
-		if !d.state.ReadOnly && m.Item("Add note").Chosen() {
-			d.beginNote()
+		// The pointer's hover card keeps its link actions; these are the
+		// same ones, where the keyboard's caret is in the link too.
+		links := d.previewLinkMenu(c.Services(), m)
+		if !d.state.ReadOnly {
+			if links {
+				m.Separator()
+			}
+			if m.Item("Add note").Chosen() {
+				d.beginNote()
+			}
 		}
 	}
 	st.OnInput = d.previewInput
 	st.OnHover = d.previewHover
 	st.Label = "Markdown Preview"
-	st.Font = portrait.Type.Reading.Font(400)
-	st.LineHeight = portrait.Type.Reading.LineHeight()
+	st.Font = portrait.Editor.Body.Font(400)
+	st.LineHeight = portrait.Editor.Body.LineHeight()
 	st.LineNumbers = editor.LineNumbersOff
-	st.ReadingColumn = editor.ReadingColumn{Width: 624, Left: 56, Right: 40}
-	if p.applied && !p.dirty && p.version == d.Version() {
+	st.ReadingColumn = editor.ReadingColumn{Width: portrait.Editor.Column, Left: portrait.Editor.GutterLeft, Right: portrait.Editor.GutterRight}
+	space, dark := portrait.ActiveSpace()
+	if p.applied && !p.dirty && p.version == d.Version() && p.space == space.Name && p.dark == dark {
 		return
 	}
-	if p.dirty || p.document == nil || p.version != d.Version() {
+	if p.dirty || p.document == nil || p.version != d.Version() || p.space != space.Name || p.dark != dark {
+		// Quote, code, table and callout backgrounds come from the Space's
+		// tokens, so a content, Space or appearance change rebuilds once.
+		p.space, p.dark = space.Name, dark
 		p.build(st.Buffer)
 	}
 	st.SetBlocks(p.blocks)

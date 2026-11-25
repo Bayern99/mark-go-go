@@ -53,6 +53,8 @@ type paneState struct {
 	filesRequest  uint64
 	sources       []string
 	draft         string
+	failedDraft   string
+	failedSources []string
 	includeDoc    bool
 	selectedTab   string
 	actionsOpen   bool
@@ -100,12 +102,17 @@ func newPaneState(root string) *paneState {
 }
 
 // restoreDraft returns submitted input to the composer after a failure without
-// overwriting anything the user typed while the request was in flight.
-func (s *paneState) restoreDraft(prompt string, sources []string) {
-	if strings.TrimSpace(s.draft) == "" {
-		s.draft = prompt
+// overwriting anything the user typed while the request was in flight. When
+// the user already started a new draft, the failed submission and its sources
+// stay separately available for recovery instead of being dropped or merged.
+func (s *paneState) restoreDraft(rawDraft string, sources []string) {
+	if s.draft == "" && len(s.sources) == 0 {
+		s.draft = rawDraft
+		s.sources = append([]string(nil), sources...)
+		return
 	}
-	s.sources = mergeSources(sources, s.sources)
+	s.failedDraft = rawDraft
+	s.failedSources = append([]string(nil), sources...)
 }
 
 func (s *paneState) resetConversation() {
@@ -126,6 +133,8 @@ func (s *paneState) resetConversation() {
 	s.widgets = make(map[string]feynman.ResearchUpdate)
 	s.progress = ""
 	s.sources = nil
+	s.failedDraft = ""
+	s.failedSources = nil
 }
 
 func (s *paneState) receive(update feynman.ResearchUpdate) {
@@ -240,6 +249,11 @@ func (s *paneState) receive(update feynman.ResearchUpdate) {
 	case "agentSettled":
 		s.progress = ""
 		s.status = statusReady
+		status := "interrupted"
+		if update.Aborted {
+			status = "cancelled"
+		}
+		s.reconcilePendingSteps(status)
 	case "commands":
 		s.commands = append([]feynman.ResearchCommand(nil), update.Commands...)
 	case "setStatus":
@@ -292,6 +306,34 @@ func (s *paneState) receive(update feynman.ResearchUpdate) {
 		s.permission = nil
 		s.statuses = make(map[string]string)
 		s.error = text
+		s.reconcilePendingSteps("interrupted")
+	}
+}
+
+func (s *paneState) reconcilePendingSteps(status string) {
+	for i := range s.messages {
+		item := &s.messages[i]
+		switch item.kind {
+		case "tool":
+			if !terminalResearchStep(item.tool.Status) {
+				item.tool.Status = status
+			}
+		case "plan":
+			for j := range item.steps {
+				if !terminalResearchStep(item.steps[j].Status) {
+					item.steps[j].Status = status
+				}
+			}
+		}
+	}
+}
+
+func terminalResearchStep(status string) bool {
+	switch status {
+	case "completed", "failed", "error", "cancelled", "canceled", "interrupted":
+		return true
+	default:
+		return false
 	}
 }
 

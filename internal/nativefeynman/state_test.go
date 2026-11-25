@@ -39,8 +39,11 @@ func TestFailedPromptRestoresOldPromptOnlyWhenNothingNewWasTyped(t *testing.T) {
 	if state.draft != "a newer question" {
 		t.Fatalf("draft = %q, want the newer typed input preserved", state.draft)
 	}
-	if !containsSource(state.sources, "/workspace/old.md") || !containsSource(state.sources, "/workspace/new.md") {
-		t.Fatalf("sources = %#v, want failed and newly attached sources merged", state.sources)
+	if len(state.sources) != 1 || state.sources[0] != "/workspace/new.md" {
+		t.Fatalf("sources = %#v, want intervening draft sources kept clean", state.sources)
+	}
+	if state.failedDraft != "the failed prompt" || !containsSource(state.failedSources, "/workspace/old.md") {
+		t.Fatalf("failed submission = %q %#v, want failed prompt and old source preserved separately", state.failedDraft, state.failedSources)
 	}
 
 	state.draft = ""
@@ -51,6 +54,40 @@ func TestFailedPromptRestoresOldPromptOnlyWhenNothingNewWasTyped(t *testing.T) {
 	}
 	if !containsSource(state.sources, "/workspace/old.md") {
 		t.Fatalf("sources = %#v, want failed attachments restored", state.sources)
+	}
+}
+
+func TestSettledAndDisconnectedSessionsReconcilePendingSteps(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		update feynman.ResearchUpdate
+		want   string
+	}{
+		{name: "abort", update: feynman.ResearchUpdate{Root: "/workspace", Kind: "agentSettled", Aborted: true}, want: "cancelled"},
+		{name: "settled", update: feynman.ResearchUpdate{Root: "/workspace", Kind: "agentSettled"}, want: "interrupted"},
+		{name: "disconnect", update: feynman.ResearchUpdate{Root: "/workspace", Kind: "error", Text: "disconnected"}, want: "interrupted"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state := newPaneState("/workspace")
+			state.messages = []message{
+				{kind: "tool", tool: feynman.ResearchTool{ToolCallID: "pending", Status: "in_progress"}},
+				{kind: "tool", tool: feynman.ResearchTool{ToolCallID: "done", Status: "completed"}},
+				{kind: "plan", steps: []feynman.ResearchPlanEntry{{Content: "Wait", Status: "pending"}, {Content: "Done", Status: "completed"}}},
+			}
+			state.receive(tc.update)
+			if got := state.messages[0].tool.Status; got != tc.want {
+				t.Fatalf("pending tool status = %q, want %q", got, tc.want)
+			}
+			if got := state.messages[1].tool.Status; got != "completed" {
+				t.Fatalf("completed tool changed to %q", got)
+			}
+			if got := state.messages[2].steps[0].Status; got != tc.want {
+				t.Fatalf("pending plan status = %q, want %q", got, tc.want)
+			}
+			if got := state.messages[2].steps[1].Status; got != "completed" {
+				t.Fatalf("completed plan step changed to %q", got)
+			}
+		})
 	}
 }
 

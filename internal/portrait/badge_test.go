@@ -54,7 +54,7 @@ func TestBadgesPaintDistinctToneSoftBackgrounds(t *testing.T) {
 	}{
 		{"neutral", portrait.Tones.Neutral},
 		{"accent", portrait.Tones.Accent},
-		{"info", portrait.Tones.Info},
+		{"success", portrait.Tones.Success},
 		{"warning", portrait.Tones.Warning},
 		{"danger", portrait.Tones.Danger},
 	}

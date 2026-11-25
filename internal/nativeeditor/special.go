@@ -184,7 +184,7 @@ func (p *previewLayout) codeBlock(snap editor.Snapshot, i int) {
 		_, last := p.document.Line(i, n-1)
 		p.backgrounds = append(p.backgrounds, editor.LineBackground{
 			First: headerLine, Last: snap.LineOf(last),
-			Color: portrait.Colors.Code, Radius: 8,
+			Color: portrait.Colors.Code, Radius: portrait.Radii.M,
 			Stroke: 0.5, StrokeColor: portrait.Colors.Line,
 			ReadingColumn: true,
 			PaddingTop:    codeHeaderHeight, PaddingBottom: 12,
@@ -219,7 +219,7 @@ func codeHeader(label, body string) func(*ui.Context, ui.Element, editor.Block) 
 			ui.Row(c).Height(codeHeaderHeight).AlignItems(ui.Center).Gap(8).Children(func() {
 				codeKicker(c, label, portrait.Colors.Ink3)
 				ui.Spacer(c)
-				copyButton(c, body)
+				copyButton(c, body, e)
 			})
 		})
 	}
@@ -232,8 +232,12 @@ type copiedState struct {
 	notify bool
 }
 
-func copyButton(c *ui.Context, body string) {
-	b := ui.ButtonBase(c.Key("copy")).Label("Copy code").KeepFocus().Size(24, 24).Radius(6).AlignItems(ui.Center).Justify(ui.Center)
+func copyButton(c *ui.Context, body string, owners ...ui.Element) {
+	b := ui.ButtonBase(c.Key("copy")).Label("Copy code").KeepFocus().Size(portrait.Sizes.Compact, portrait.Sizes.Compact).Radius(portrait.Radii.S).AlignItems(ui.Center).Justify(ui.Center)
+	if len(owners) > 0 {
+		owner := owners[0]
+		portrait.Reveal(b, owner.Hovered() || owner.FocusWithin() || b.FocusVisible() || !c.Preferences().Hover())
+	}
 	portrait.Tooltip(c, b, "Copy code")
 	ink := portrait.Press(b, portrait.Quiet)
 	copied := ui.Local(b, copiedKey{}, func() copiedState { return copiedState{} })
@@ -253,17 +257,17 @@ func copyButton(c *ui.Context, body string) {
 	icon := portrait.IconCopy
 	morphing := false
 	if !copied.at.IsZero() && c.Now().Sub(copied.at) < copiedFor {
-		icon, ink, morphing = portrait.IconCheck, portrait.Colors.Accent, true
+		icon, ink, morphing = portrait.IconCheck, portrait.Colors.Success, true
 		c.After(copiedFor - c.Now().Sub(copied.at))
 	}
 	b.Children(func() {
 		if !morphing {
-			portrait.Glyph(c, icon, 14, ink)
+			portrait.Glyph(c, icon, portrait.IconSizes.S, ink)
 			return
 		}
 		from := ui.Motion{Opacity: 0.25, Scale: 0.76, Blur: 1.5}
 		ui.Box(c.Key("check")).Transition(portrait.Transition(c, false, ui.ElementTransition{Duration: portrait.Motion.Morph, Ease: portrait.Motion.EaseOut.Easing(), Enter: &from})).Children(func() {
-			portrait.Glyph(c, icon, 14, ink)
+			portrait.Glyph(c, icon, portrait.IconSizes.S, ink)
 		})
 	})
 }
@@ -275,7 +279,7 @@ func kicker(c *ui.Context, label string, ink ui.Color) ui.Element {
 }
 
 func codeKicker(c *ui.Context, label string, ink ui.Color) ui.Element {
-	return portrait.Type.Meta.In(portrait.FontDisplay).Apply(ui.Text(c, label)).FontWeight(500).LetterSpacing(0.04 * portrait.Type.Meta.Size).TextColor(ink).MaxLines(1).Ellipsis("…")
+	return portrait.Type.Meta.Apply(ui.Text(c, label)).FontWeight(500).LetterSpacing(0.04 * portrait.Type.Meta.Size).TextColor(ink).MaxLines(1).Ellipsis("…")
 }
 
 type blockLook struct {
@@ -287,17 +291,17 @@ type blockLook struct {
 }
 
 func lookOf(kind string) blockLook {
-	paper := blockLook{fill: portrait.Colors.Code, ink: portrait.Colors.Ink, kickerInk: portrait.Colors.Ink3, rim: true, padY: 10, padX: 14, text: portrait.Type.Code}
+	paper := blockLook{fill: portrait.Colors.Code, ink: portrait.Colors.Ink, kickerInk: portrait.Colors.Ink3, rim: true, padY: portrait.Editor.BlockPadY, padX: portrait.Editor.BlockPadX, text: portrait.Editor.Code}
 	switch kind = strings.ToLower(kind); kind {
 	case "note alert", "tip alert", "important alert", "warning alert", "caution alert":
-		l := blockLook{fill: portrait.Colors.NoteSoft, ink: portrait.Colors.Ink, kickerInk: portrait.Colors.Note, padY: 10, padX: 14, text: portrait.Type.Reading}
+		l := blockLook{fill: portrait.Colors.NoteSoft, ink: portrait.Colors.Ink, kickerInk: portrait.Colors.Note, padY: portrait.Editor.BlockPadY, padX: portrait.Editor.BlockPadX, text: portrait.Editor.Body}
 		switch kind {
 		case "note alert":
 			l.icon = portrait.IconNote
 		case "tip alert":
-			l.icon = portrait.IconLightbulb
+			l.icon, l.fill, l.kickerInk = portrait.IconLightbulb, portrait.Colors.TipSoft, portrait.Colors.Tip
 		case "important alert":
-			l.icon = portrait.IconInfo
+			l.icon, l.fill, l.kickerInk = portrait.IconInfo, portrait.Colors.ImportantSoft, portrait.Colors.Important
 		case "warning alert":
 			l.icon, l.fill, l.kickerInk = portrait.IconWarning, portrait.Colors.WarningSoft, portrait.Colors.Warning
 		case "caution alert":
@@ -305,9 +309,9 @@ func lookOf(kind string) blockLook {
 		}
 		return l
 	case "note":
-		return blockLook{fill: portrait.Colors.Fill, ink: portrait.Colors.Ink2, kickerInk: portrait.Colors.Accent, icon: portrait.IconNote, padY: 8, padX: 10, text: portrait.Type.Small}
+		return blockLook{fill: portrait.Colors.Fill, ink: portrait.Colors.Ink2, kickerInk: portrait.Colors.Accent, icon: portrait.IconNote, padY: portrait.Editor.BlockPadY, padX: portrait.Editor.BlockPadX, text: portrait.Type.Small}
 	case "footnote":
-		return blockLook{fill: portrait.Colors.Fill, ink: portrait.Colors.Ink2, kickerInk: portrait.Colors.Accent, padY: 8, padX: 10, text: portrait.Type.Small}
+		return blockLook{fill: portrait.Colors.Fill, ink: portrait.Colors.Ink2, kickerInk: portrait.Colors.Accent, padY: portrait.Editor.BlockPadY, padX: portrait.Editor.BlockPadX, text: portrait.Type.Small}
 	case "html", "frontmatter", "reference definition":
 		paper.fill, paper.stripes, paper.ink = ui.Transparent, true, portrait.Colors.Ink2
 		if kind == "frontmatter" {
@@ -319,7 +323,7 @@ func lookOf(kind string) blockLook {
 }
 
 func (l blockLook) paint(e ui.Element) ui.Element {
-	e.Radius(8).Padding(l.padY, l.padX).Gap(4).Clip()
+	e.Radius(portrait.Editor.BlockRadius).Padding(l.padY, l.padX).Gap(4).Clip()
 	if l.fill.A > 0 {
 		e.Background(l.fill)
 	}
@@ -353,7 +357,7 @@ func (p *previewLayout) specialBlock(snap editor.Snapshot, start, end int, kind,
 				heading := func() {
 					ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
 						if look.icon.Glyph != "" {
-							portrait.Glyph(c, look.icon, 14, look.kickerInk)
+							portrait.Glyph(c, look.icon, portrait.IconSizes.S, look.kickerInk)
 						}
 						name := strings.TrimSuffix(label, " alert")
 						kickerForKind := kicker
@@ -396,9 +400,9 @@ func (p *previewLayout) specialBlock(snap editor.Snapshot, start, end int, kind,
 				case kind == "footnote" || kind == "note":
 					ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Start).Children(func() {
 						if kind == "note" {
-							portrait.Glyph(c, look.icon, 15, look.kickerInk).Margin(3, 0, 0, 0)
+							portrait.Glyph(c, look.icon, portrait.IconSizes.M, look.kickerInk).Margin(3, 0, 0, 0)
 						} else {
-							portrait.Type.Meta.In(portrait.FontDisplay).Apply(ui.Text(c, label)).FontFeatures("tnum").TextColor(look.kickerInk).Margin(3, 0, 0, 0)
+							portrait.Type.Meta.Apply(ui.Text(c, label)).FontFeatures("tnum").TextColor(look.kickerInk).Margin(3, 0, 0, 0)
 						}
 						look.text.Apply(ui.Text(c, body)).TextColor(look.ink).Wrap().Selectable().Grow(1).Shrink(1).MinWidth(0)
 						d.blockActions(c, e, snap, start, end, kind, label)
@@ -499,22 +503,31 @@ func (d *Document) composer(c *ui.Context, draft *blockDraft) {
 	} else if draft.kind == "note" || draft.kind == "new note" {
 		name = "Note"
 	}
-	entry := ui.TextArea(c, &draft.text).Label(name).Height(100).FillWidth().Radius(8).Background(portrait.Colors.Paper)
-	portrait.Rings.Editing.Apply(entry)
+	var entry ui.Element
+	if draft.kind == "link" {
+		field := portrait.TextField(c, &draft.text, portrait.FieldSpec{Label: name, Placeholder: "Link destination"})
+		field.Frame().FillWidth()
+		entry = field.Input()
+	} else {
+		kind := strings.ToLower(draft.kind)
+		mono := kind == "code" || kind == "html" || kind == "frontmatter"
+		entry = portrait.TextArea(c, &draft.text, portrait.AreaSpec{Label: name, Placeholder: name, Rows: 4, Mono: mono})
+	}
 	if draft.focus {
 		entry.Focus()
 		draft.focus = false
 	}
 	composing := entry.Composing()
 	save, cancel := entry.Shortcut(ui.Cmd, ui.KeyEnter) && !composing, entry.Shortcut(0, ui.KeyEscape) && !composing
-	ui.Row(c).Gap(6).Margin(8, 0, 0, 0).Children(func() {
+	ui.Row(c).Gap(6).Margin(8, 0, 0, 0).Justify(ui.End).Children(func() {
 		emptyLink := draft.kind == "link" && strings.TrimSpace(draft.text) == ""
 		emptyNote := (draft.kind == "note" || draft.kind == "new note") && strings.TrimSpace(draft.text) == ""
+		// Cancel sits left of the primary action, as in every Portrait dialog.
+		if portrait.QuietButton(c, "Cancel", "Cancel").Clicked() {
+			cancel = true
+		}
 		if portrait.AccentButton(c, "Save", "Save").Disabled(d.state.ReadOnly || emptyLink || emptyNote).Clicked() {
 			save = true
-		}
-		if portrait.Button(c, "Cancel", "Cancel").Clicked() {
-			cancel = true
 		}
 	})
 	if cancel {
@@ -547,6 +560,6 @@ func (d *Document) composer(c *ui.Context, draft *blockDraft) {
 		c.Invalidate()
 	}
 	if draft.err != nil {
-		ui.Text(c, draft.err.Error()).Role(ui.RoleAlert).TextColor(c.Theme().Danger)
+		portrait.Alert(c, portrait.Tones.Danger, "Unable to save block", draft.err.Error())
 	}
 }

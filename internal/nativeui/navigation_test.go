@@ -11,7 +11,7 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-func TestWorkspaceMenuDiscardsCloseWhenSelectionChanges(t *testing.T) {
+func TestWorkspaceMenuClosesTheCurrentlySelectedWorkspace(t *testing.T) {
 	a := workspace.WorkspaceSummary{ID: "workspace-a", Root: "/a", Name: "A", Kind: "folder"}
 	b := workspace.WorkspaceSummary{ID: "workspace-b", Root: "/b", Name: "B", Kind: "folder"}
 	model := nativeui.Model{Workspace: workspace.WorkspaceSnapshot{
@@ -27,20 +27,11 @@ func TestWorkspaceMenuDiscardsCloseWhenSelectionChanges(t *testing.T) {
 	}
 	model.Workspace.Root, model.Workspace.Name = a.Root, a.Name
 	app.Frame()
-	if err := app.ChooseMenuItem("Close Workspace"); err != nil {
-		t.Fatal(err)
-	}
-	if len(closed) > 0 {
-		t.Fatalf("a choice from B's menu closed %v after A became selected", closed)
-	}
-	if err := app.Click("Switch workspace"); err != nil {
-		t.Fatal(err)
-	}
-	if err := app.ChooseMenuItem("Close Workspace"); err != nil {
+	if err := app.Click("Close Workspace"); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(closed, []string{a.ID}) {
-		t.Fatalf("closing A from its own menu closed %v", closed)
+		t.Fatalf("the redrawn menu closed %v, want current workspace A", closed)
 	}
 }
 
@@ -62,8 +53,11 @@ func TestWorkspaceMenuKeepsSwitchTargetWhenEarlierRootDisappears(t *testing.T) {
 	}
 	model.Workspace.Workspaces = model.Workspace.Workspaces[1:]
 	app.Frame()
-	if err := app.ChooseMenuItem("Notes"); err != nil {
-		t.Fatal(err)
+	for _, info := range app.AccessAll() {
+		if info.Name == "Notes" && info.Role == ui.RoleMenuItemCheckBox && !info.Checked {
+			app.ClickAt(info.Bounds.X+info.Bounds.W/2, info.Bounds.Y+info.Bounds.H/2)
+			break
+		}
 	}
 	if !slices.Equal(activated, []string{firstNotes.ID}) {
 		t.Fatalf("choosing the first Notes workspace activated %v", activated)

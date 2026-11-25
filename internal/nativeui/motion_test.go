@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
 )
@@ -173,12 +174,19 @@ func TestReducedMotionDrawersLandAtOnce(t *testing.T) {
 	}
 }
 
-func overflowModel() nativeui.Model {
-	return nativeui.Model{Workspace: workspace.WorkspaceSnapshot{ActiveID: "a", Documents: []workspace.DocumentInfo{{ID: "a", Name: "One.md"}, {ID: "b", Name: "Two.md"}, {ID: "c", Name: "Three.md"}, {ID: "d", Name: "Four.md"}, {ID: "e", Name: "Five.md"}}}}
-}
-
-func overflowShell(prefs ui.Preferences) *ui.Tester {
-	return narrowShell(prefs, overflowModel())
+func checkpointsShell(prefs ui.Preferences, restore func()) *ui.Tester {
+	var shell nativeui.Shell
+	var label string
+	model := nativeui.Model{Git: true, Workspace: workspace.WorkspaceSnapshot{ActiveID: "a", Documents: []workspace.DocumentInfo{{ID: "a", Name: "One.md", ViewMode: "preview"}}}}
+	slots := nativeui.Slots{Checkpoints: func(c *ui.Context) {
+		ui.Column(c).Width(240).Gap(6).Children(func() {
+			ui.TextInputBase(c, &label).Label("Checkpoint label")
+			if portrait.Button(c, "Restore checkpoint", "Restore checkpoint").Clicked() && restore != nil {
+				restore()
+			}
+		})
+	}}
+	return ui.NewTesterWith(func(c *ui.Context) { shell.Draw(c, model, nativeui.Actions{}, slots) }, 480, 360, ui.TesterOptions{Preferences: prefs})
 }
 
 func changingFramesIn(frames []*image.RGBA, r ui.Rect) int {
@@ -210,14 +218,14 @@ func changedPixelsIn(a, b *image.RGBA, r ui.Rect) int {
 }
 
 func TestPopoverEntersThroughIntermediateStatesThenSettles(t *testing.T) {
-	app := overflowShell(ui.Preferences{})
-	if err := app.Click("More documents"); err != nil {
+	app := checkpointsShell(ui.Preferences{}, nil)
+	if err := app.Click("Checkpoints"); err != nil {
 		t.Fatal(err)
 	}
 	popup := func() ui.Rect {
 		p, ok := app.AccessByRole(ui.RolePopup, "")
 		if !ok {
-			t.Fatal("overflow popover is not open")
+			t.Fatal("checkpoints popover is not open")
 		}
 		return p.Bounds
 	}
@@ -253,19 +261,18 @@ func TestPopoverEntersThroughIntermediateStatesThenSettles(t *testing.T) {
 
 func TestPopoverPointerCloseLeavesThroughAnExitThenTakesNoInput(t *testing.T) {
 	var activated []string
-	actions := nativeui.Actions{Activate: func(id string) { activated = append(activated, id) }}
-	app := narrowShellActions(ui.Preferences{}, overflowModel(), actions)
-	if err := app.Click("More documents"); err != nil {
+	app := checkpointsShell(ui.Preferences{}, func() { activated = append(activated, "restore") })
+	if err := app.Click("Checkpoints"); err != nil {
 		t.Fatal(err)
 	}
 	app.Advance(time.Second)
 	pop, ok := app.AccessByRole(ui.RolePopup, "")
 	if !ok {
-		t.Fatal("overflow popover is not open")
+		t.Fatal("checkpoints popover is not open")
 	}
-	item, ok := app.Access("Five.md")
+	item, ok := app.Access("Restore checkpoint")
 	if !ok {
-		t.Fatal("Five.md is not in the overflow popover")
+		t.Fatal("Restore checkpoint is not in the popover")
 	}
 	cx, cy := item.Bounds.X+item.Bounds.W/2, item.Bounds.Y+item.Bounds.H/2
 	app.ClickAt(240, 300)
@@ -289,50 +296,50 @@ func TestPopoverPointerCloseLeavesThroughAnExitThenTakesNoInput(t *testing.T) {
 	activated = nil
 	app.ClickAt(cx, cy)
 	if len(activated) != 0 {
-		t.Fatalf("clicking where Five.md was activated %v", activated)
+		t.Fatalf("clicking where Restore checkpoint was activated %v", activated)
 	}
 	if _, ok := app.AccessByRole(ui.RolePopup, ""); ok {
 		t.Fatal("clicking where the popover was reopened it")
 	}
 	t.Run("during the exit", func(t *testing.T) {
 		var hits []string
-		fresh := narrowShellActions(ui.Preferences{}, overflowModel(), nativeui.Actions{Activate: func(id string) { hits = append(hits, id) }})
-		if err := fresh.Click("More documents"); err != nil {
+		fresh := checkpointsShell(ui.Preferences{}, func() { hits = append(hits, "restore") })
+		if err := fresh.Click("Checkpoints"); err != nil {
 			t.Fatal(err)
 		}
 		fresh.Advance(time.Second)
-		item, ok := fresh.Access("Five.md")
+		item, ok := fresh.Access("Restore checkpoint")
 		if !ok {
-			t.Fatal("Five.md is not in the overflow popover")
+			t.Fatal("Restore checkpoint is not in the popover")
 		}
 		fresh.ClickAt(240, 300)
 		fresh.Advance(16 * time.Millisecond)
 		fresh.ClickAt(item.Bounds.X+item.Bounds.W/2, item.Bounds.Y+item.Bounds.H/2)
 		if len(hits) != 0 {
-			t.Fatalf("clicking where Five.md was during its exit activated %v", hits)
+			t.Fatalf("clicking where Restore checkpoint was during its exit activated %v", hits)
 		}
 	})
 }
 
 func TestPopoverLandsAtOnceForKeyboard(t *testing.T) {
-	app := overflowShell(ui.Preferences{})
-	focus(t, app, "More documents")
+	app := checkpointsShell(ui.Preferences{}, nil)
+	focus(t, app, "Checkpoints")
 	app.Key(0, ui.KeyEnter)
-	f, ok := app.Access("Filter open tabs")
+	f, ok := app.Access("Checkpoint label")
 	if !ok {
-		t.Fatal("overflow popover is not open")
+		t.Fatal("checkpoints popover is not open")
 	}
 	start := f.Bounds
 	app.Advance(time.Second)
-	g, ok := app.Access("Filter open tabs")
+	g, ok := app.Access("Checkpoint label")
 	if !ok {
-		t.Fatal("overflow popover closed")
+		t.Fatal("checkpoints popover closed")
 	}
 	if start != g.Bounds {
 		t.Fatalf("keyboard-opened popover animated in: %v then %v", start, g.Bounds)
 	}
 	app.Key(0, ui.KeyEscape)
-	if !app.Focused("More documents") {
+	if !app.Focused("Checkpoints") {
 		t.Fatal("closing the popover should return focus to its opener")
 	}
 	app.Advance(50 * time.Millisecond)
@@ -344,15 +351,15 @@ func TestPopoverLandsAtOnceForKeyboard(t *testing.T) {
 }
 
 func TestReducedMotionPopoverLandsAtOnce(t *testing.T) {
-	app := overflowShell(ui.Preferences{ReduceMotion: true})
-	if err := app.Click("More documents"); err != nil {
+	app := checkpointsShell(ui.Preferences{ReduceMotion: true}, nil)
+	if err := app.Click("Checkpoints"); err != nil {
 		t.Fatal(err)
 	}
-	f, opened := app.Access("Filter open tabs")
+	f, opened := app.Access("Checkpoint label")
 	app.Advance(time.Second)
-	g, stayed := app.Access("Filter open tabs")
+	g, stayed := app.Access("Checkpoint label")
 	if !opened || !stayed {
-		t.Fatal("overflow popover is not open")
+		t.Fatal("checkpoints popover is not open")
 	}
 	if f.Bounds != g.Bounds {
 		t.Fatalf("popover moved with reduced motion: %v then %v", f.Bounds, g.Bounds)
@@ -425,5 +432,184 @@ func TestKeyboardFocusShowsTooltipAtOnce(t *testing.T) {
 	app.Advance(100 * time.Millisecond)
 	if changedPixels(shown, app.Image()) != 0 {
 		t.Fatal("tooltip brought by the keyboard faded in")
+	}
+}
+
+func TestDockedSidebarAnimatesOnPointerToggleAndLandsAtOnceForKeyboardAndReducedMotion(t *testing.T) {
+	t.Run("pointer collapse and expand", func(t *testing.T) {
+		var shell nativeui.Shell
+		model := libraryModel()
+		app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, model, nativeui.Actions{}, nativeui.Slots{}) }, 1280, 820)
+		bar := ui.TitleBar{Height: 56, Left: 78, Bottom: 35}
+		app.SetTitleBar(bar)
+		app.Frame()
+		docked := mustAccess(t, app, ui.RoleMain, "Document").Bounds
+
+		checkHeaderClear := func(phase string) {
+			for _, name := range []string{"Hide sidebar", "Show navigation"} {
+				if info, ok := app.AccessByRole(ui.RoleButton, name); ok && !info.Offscreen && info.Bounds.W > 0 {
+					if info.Bounds.X < bar.Left {
+						t.Fatalf("%s: %s at %v overlapped window controls ending at %v", phase, name, info.Bounds, bar.Left)
+					}
+				}
+			}
+		}
+
+		if err := app.Click("Hide sidebar"); err != nil {
+			t.Fatal(err)
+		}
+		app.Frame()
+		if _, ok := app.Access("Workspace files"); ok {
+			t.Fatal("Hide sidebar kept Workspace files exposed in accessibility while collapsing")
+		}
+		var hideXs []float32
+		hideXs = append(hideXs, mustAccess(t, app, ui.RoleMain, "Document").Bounds.X)
+		checkHeaderClear("collapse frame 0")
+		for range 16 {
+			app.Advance(16 * time.Millisecond)
+			hideXs = append(hideXs, mustAccess(t, app, ui.RoleMain, "Document").Bounds.X)
+			checkHeaderClear("collapse")
+		}
+		app.Advance(time.Second)
+		hidden := mustAccess(t, app, ui.RoleMain, "Document").Bounds
+		if hidden.X != portrait.Shell.PageInset {
+			t.Fatalf("settled hidden document X = %v, want %v", hidden.X, portrait.Shell.PageInset)
+		}
+		hideDistinct := map[int]bool{}
+		for _, x := range hideXs {
+			if x > hidden.X+1 && x < docked.X-1 {
+				hideDistinct[int(x)] = true
+			}
+		}
+		if len(hideDistinct) < 3 {
+			t.Fatalf("collapse painted only %d intermediate document X positions (%v), want smooth transition", len(hideDistinct), hideXs)
+		}
+
+		if err := app.Click("Show navigation"); err != nil {
+			t.Fatal(err)
+		}
+		app.Frame()
+		var showXs []float32
+		showXs = append(showXs, mustAccess(t, app, ui.RoleMain, "Document").Bounds.X)
+		checkHeaderClear("expand frame 0")
+		for range 16 {
+			app.Advance(16 * time.Millisecond)
+			showXs = append(showXs, mustAccess(t, app, ui.RoleMain, "Document").Bounds.X)
+			checkHeaderClear("expand")
+		}
+		app.Advance(time.Second)
+		reopened := mustAccess(t, app, ui.RoleMain, "Document").Bounds
+		if reopened.X != docked.X {
+			t.Fatalf("settled reopened document X = %v, want %v", reopened.X, docked.X)
+		}
+		showDistinct := map[int]bool{}
+		for _, x := range showXs {
+			if x > hidden.X+1 && x < docked.X-1 {
+				showDistinct[int(x)] = true
+			}
+		}
+		if len(showDistinct) < 3 {
+			t.Fatalf("expand painted only %d intermediate document X positions (%v), want smooth transition", len(showDistinct), showXs)
+		}
+		hasSplitter := false
+		for _, info := range app.AccessAll() {
+			if info.Role == ui.RoleSplitter {
+				hasSplitter = true
+				break
+			}
+		}
+		if !hasSplitter {
+			t.Fatal("settled docked sidebar did not restore its resizable splitter")
+		}
+	})
+
+	t.Run("reduced motion lands at once", func(t *testing.T) {
+		var shell nativeui.Shell
+		model := libraryModel()
+		app := ui.NewTesterWith(func(c *ui.Context) { shell.Draw(c, model, nativeui.Actions{}, nativeui.Slots{}) }, 1280, 820, ui.TesterOptions{Preferences: ui.Preferences{ReduceMotion: true}})
+		app.Frame()
+		docked := mustAccess(t, app, ui.RoleMain, "Document").Bounds
+		if err := app.Click("Hide sidebar"); err != nil {
+			t.Fatal(err)
+		}
+		app.Frame()
+		if got := mustAccess(t, app, ui.RoleMain, "Document").Bounds.X; got != portrait.Shell.PageInset {
+			t.Fatalf("reduced-motion Hide sidebar landed at X=%v, want %v immediately", got, portrait.Shell.PageInset)
+		}
+		if err := app.Click("Show navigation"); err != nil {
+			t.Fatal(err)
+		}
+		app.Frame()
+		if got := mustAccess(t, app, ui.RoleMain, "Document").Bounds.X; got != docked.X {
+			t.Fatalf("reduced-motion Show navigation landed at X=%v, want %v immediately", got, docked.X)
+		}
+	})
+}
+
+func TestOutlineSelectionPersistsAndSlidesBetweenHeadings(t *testing.T) {
+	var shell nativeui.Shell
+	model := libraryModel()
+	model.Sections = []workspace.Section{
+		{ID: "s1", Heading: "Overview", Level: 1, Start: 0},
+		{ID: "s2", Heading: "Method", Level: 2, Start: 120},
+		{ID: "s3", Heading: "Results", Level: 2, Start: 260},
+		{ID: "s4", Heading: "Discussion", Level: 2, Start: 420},
+	}
+	model.HasDocumentOffset = true
+	model.DocumentOffset = 0
+	var revealed []int
+	actions := nativeui.Actions{
+		Reveal: func(offset int) {
+			revealed = append(revealed, offset)
+			model.DocumentOffset = offset
+		},
+	}
+	app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, model, actions, nativeui.Slots{}) }, 1280, 820)
+	app.Frame()
+	if err := app.Click("Outline"); err != nil {
+		t.Fatal(err)
+	}
+	app.Advance(time.Second)
+
+	if first := mustAccess(t, app, ui.RoleRow, "Overview"); !first.Selectable || !first.Selected {
+		t.Fatalf("initial active heading Overview selectable=%v selected=%v, want both true", first.Selectable, first.Selected)
+	}
+	if last := mustAccess(t, app, ui.RoleRow, "Discussion"); !last.Selectable || last.Selected {
+		t.Fatalf("inactive heading Discussion selectable=%v selected=%v, want true/false", last.Selectable, last.Selected)
+	}
+
+	outline := mustAccess(t, app, ui.RoleTree, "Document outline").Bounds
+	if err := app.Click("Discussion"); err != nil {
+		t.Fatal(err)
+	}
+	app.Frame()
+	if len(revealed) != 1 || revealed[0] != 420 {
+		t.Fatalf("clicking Discussion revealed %v, want [420]", revealed)
+	}
+	if last := mustAccess(t, app, ui.RoleRow, "Discussion"); !last.Selectable || !last.Selected {
+		t.Fatalf("clicked heading Discussion selectable=%v selected=%v, want both true", last.Selectable, last.Selected)
+	}
+	if first := mustAccess(t, app, ui.RoleRow, "Overview"); first.Selected {
+		t.Fatal("previous heading Overview stayed selected")
+	}
+	var frames []*image.RGBA
+	frames = append(frames, app.Image())
+	for range 12 {
+		app.Advance(16 * time.Millisecond)
+		frames = append(frames, app.Image())
+	}
+	if n := changingFramesIn(frames, outline); n < 2 {
+		t.Fatalf("outline selection wash painted %d changing frames, want smooth slide animation", n)
+	}
+	rest := app.Image()
+	app.Advance(time.Second)
+	if changedPixelsIn(rest, app.Image(), outline) != 0 {
+		t.Fatal("outline selection kept animating after settling")
+	}
+
+	model.DocumentOffset = 280
+	app.Frame()
+	if res := mustAccess(t, app, ui.RoleRow, "Results"); !res.Selectable || !res.Selected {
+		t.Fatalf("moving document cursor into Results gave selectable=%v selected=%v, want both true", res.Selectable, res.Selected)
 	}
 }

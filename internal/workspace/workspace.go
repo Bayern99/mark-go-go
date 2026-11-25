@@ -61,9 +61,14 @@ type NativeCommand struct {
 	Attempt int    `json:"attempt,omitempty"`
 }
 
+type QuitFailure struct {
+	Title, Body string
+}
+
 var (
 	WorkspaceChanged = desktop.Event[WorkspaceSnapshot]{}
 	CommandRequested = desktop.Event[NativeCommand]{}
+	QuitFailed       = desktop.Event[QuitFailure]{}
 )
 
 const (
@@ -509,11 +514,17 @@ func (h *Service) closeWorkspace(w *workspace) (CloseResult, error) {
 }
 
 func (h *Service) CloseWorkspaceRoot(ctx context.Context, workspaceID string) (CloseResult, error) {
+	return h.CloseWorkspaceRootIDs(ctx, workspaceID, nil)
+}
+
+func (h *Service) CloseWorkspaceRootIDs(ctx context.Context, workspaceID string, ids []string) (CloseResult, error) {
 	caller, callerErr := h.workspaceOf(ctx)
 	h.mu.Lock()
 	w := h.workspaceByIDLocked(workspaceID)
 	var tabIDs []string
-	if w != nil {
+	if len(ids) > 0 {
+		tabIDs = slices.Clone(ids)
+	} else if w != nil {
 		tabIDs = slices.Clone(w.tabs)
 	}
 	h.mu.Unlock()

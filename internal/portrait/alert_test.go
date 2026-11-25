@@ -65,3 +65,23 @@ func TestAlertAction(t *testing.T) {
 		t.Fatal("adding an action removed the alert semantics")
 	}
 }
+
+func TestAlertKeepsTitleAndBodyInProportion(t *testing.T) {
+	tt := ui.NewTester(onChrome(func(c *ui.Context) {
+		portrait.Alert(c, portrait.Tones.Neutral, "File changed", "Choose which version to keep.")
+	}), 420, 180)
+	tt.Frame()
+	body, ok := tt.Find("Choose which version to keep.")
+	if !ok {
+		t.Fatal("body is missing")
+	}
+	// A 14/22 body under a 13/18 title read upside down: both lines belong to
+	// the UI style so the title's weight, not its size, leads.
+	if body.H != portrait.Type.UI.Leading {
+		t.Fatalf("body leading %v, want the title's %v", body.H, portrait.Type.UI.Leading)
+	}
+	alert, _ := tt.AccessByRole(ui.RoleAlert, "File changed")
+	if body.Y <= alert.Bounds.Y+alert.Bounds.H/2 {
+		t.Fatalf("body at %v is not below the title inside %+v", body.Y, alert.Bounds)
+	}
+}

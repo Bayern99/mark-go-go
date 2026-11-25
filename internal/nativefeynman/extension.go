@@ -9,6 +9,7 @@ import (
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/review"
+	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -28,69 +29,82 @@ func (e Extension) Attach(window *nativeui.Window) nativeui.Panels {
 	review.ResearchFilePublished.Listen(window.Native(), p.filePublished)
 	return nativeui.Panels{
 		Research: p.draw,
+		Settings: p.settingsPages(),
 		Changed:  p.syncConnection,
 		Closed:   p.close,
 	}
 }
 
 type panel struct {
-	window              *nativeui.Window
-	host                *feynman.ResearchHost
-	review              *review.Service
-	state               *paneState
-	connected           string
-	settingsRoot        string
-	closed              bool
-	chatScroll          ui.ScrollState
-	filesScroll         ui.ScrollState
-	settingsScr         ui.ScrollState
-	alphaScroll         ui.ScrollState
-	commandQuery        string
-	questionText        string
-	questionPick        string
-	questionFind        string
-	permissionID        string
-	questionPending     bool
-	collapsed           map[string]*bool
-	pickerStates        map[string]*researchPickerState
-	pickerFocus         string
-	cliPassword         string
-	searchKey           string
-	serverLocal         bool
-	serverArgs          string
-	serverEnv           string
-	serverHeaders       string
-	serverTransport     string
-	serverExposure      string
-	serverName          string
-	serverURL           string
-	serverCommand       string
-	serverCwd           string
-	serverDescription   string
-	serverBearerEnv     string
-	sessionView         string
-	forkMessages        []feynman.ResearchForkMessage
-	researchTree        *feynman.ResearchTree
-	loginProvider       string
-	tierValue           string
-	searchProvider      string
-	packageTarget       string
-	modelTarget         string
-	alphaQuery          string
-	alphaMode           string
-	alphaPaperID        string
-	alphaQuestion       string
-	alphaRepoURL        string
-	alphaFilePath       string
-	alphaNoteInput      string
-	alphaFullText       bool
-	alphaAnnotation     *feynman.CLIAlphaAnnotateResult
-	alphaAskResult      *feynman.CLICommandResult
-	alphaCodeResult     *feynman.CLICommandResult
-	decodedImages       map[string]decodedDataImage
-	confirmationOpen    bool
-	confirmationSpec    portrait.ConfirmSpec
-	confirmationReturns map[string]*ui.Handle
+	window               *nativeui.Window
+	host                 *feynman.ResearchHost
+	review               *review.Service
+	state                *paneState
+	connected            string
+	settingsRoot         string
+	closed               bool
+	chatScroll           ui.ScrollState
+	chatFollow           bool
+	chatReady            bool
+	chatLastY            float32
+	chatLastMaxY         float32
+	filesScroll          ui.ScrollState
+	alphaScroll          ui.ScrollState
+	commandQuery         string
+	actionsDismissed     bool
+	actionsFromSlash     bool
+	questionText         string
+	questionPick         string
+	questionFind         string
+	permissionID         string
+	questionPending      bool
+	collapsed            map[string]*bool
+	pickerStates         map[string]*researchPickerState
+	pickerFocus          string
+	localPrefs           map[string]string
+	cliPassword          string
+	searchKey            string
+	mcpAddOpen           bool
+	sessionMenu          bool
+	serverLocal          bool
+	serverArgs           string
+	serverEnv            string
+	serverHeaders        string
+	serverTransport      string
+	serverExposure       string
+	serverName           string
+	serverURL            string
+	serverCommand        string
+	serverCwd            string
+	serverDescription    string
+	serverBearerEnv      string
+	sessionView          string
+	forkMessages         []feynman.ResearchForkMessage
+	researchTree         *feynman.ResearchTree
+	loginProvider        string
+	tierValue            string
+	tierLoaded           bool
+	searchProvider       string
+	packageTarget        string
+	modelTarget          string
+	alphaQuery           string
+	alphaMode            string
+	alphaPaperID         string
+	alphaQuestion        string
+	alphaRepoURL         string
+	alphaFilePath        string
+	alphaNoteInput       string
+	alphaFullText        bool
+	alphaAnnotation      *feynman.CLIAlphaAnnotateResult
+	alphaAskResult       *feynman.CLICommandResult
+	alphaCodeResult      *feynman.CLICommandResult
+	decodedImages        map[string]decodedDataImage
+	confirmationOpen     bool
+	confirmationSpec     portrait.ConfirmSpec
+	confirmationReturns  map[string]*ui.Handle
+	activeDocument       func() workspace.DocumentInfo
+	loadResearchDocument func(string) (workspace.Snapshot, error)
+	submitPrompt         func(root, prompt, documentID, base string, sources []string) (string, error)
 }
 
 func (p *panel) collapsibleState(key string) *bool {
@@ -248,6 +262,7 @@ func (p *panel) researchUpdated(update feynman.ResearchUpdate) {
 	}
 	if update.Kind == "reset" {
 		p.resetSessionViews()
+		p.chatFollow = true
 	}
 	p.state.receive(update)
 	if update.Kind == "agentSettled" {
@@ -281,9 +296,6 @@ func (p *panel) focusRequested(event feynman.ResearchFocusEvent) {
 	}
 	if p.state.status == statusReady || p.state.status == statusWorking {
 		go func() { _, _ = p.host.RefreshModels(p.window.Context(), root) }()
-	}
-	if p.state.selectedTab == "settings" {
-		p.loadSettings(root)
 	}
 }
 
@@ -337,24 +349,16 @@ func (p *panel) draw(c *ui.Context) {
 	ui.Column(c.Key("feynman-pane")).Fill().MinWidth(0).Children(func() {
 		p.header(c)
 		if s.root == "" {
-			text(c, portrait.Type.UI, "Open a workspace folder to start research.").TextColor(portrait.Colors.Ink3).Padding(8, 10)
+			portrait.Empty(c, portrait.EmptySpec{Icon: portrait.IconFolderOpen, Title: "Open a workspace folder", Description: "Open a workspace folder to start research."})
 			return
 		}
 		p.tabs(c)
 		if s.error != "" {
-			ui.Row(c).Role(ui.RoleAlert).Margin(0, 0, 6, 0).Padding(6, 9).Gap(6).Radius(8).Background(portrait.Colors.DangerSoft).AlignItems(ui.Center).Children(func() {
-				portrait.Glyph(c, portrait.IconWarningCircle, 15, portrait.Colors.Danger)
-				text(c, portrait.Type.Meta, s.error).Grow(1).MinWidth(0).Wrap().TextColor(portrait.Colors.Danger)
-				if portrait.QuietIconButton(c, portrait.IconX, "Dismiss research error").Clicked() {
-					s.error = ""
-				}
-			})
+			portrait.Alert(c, portrait.Tones.Danger, "Research error", s.error, portrait.AlertAction{Label: "Dismiss", OnAction: func() { s.error = "" }})
 		}
 		switch s.selectedTab {
 		case "files":
 			p.files(c)
-		case "settings":
-			p.settings(c)
 		case "alpha":
 			p.alphaXiv(c)
 		default:
@@ -364,98 +368,108 @@ func (p *panel) draw(c *ui.Context) {
 	p.drawConfirmation(c)
 }
 
+func (p *panel) openSettings(tab string) {
+	if p.state != nil && p.state.root != "" && p.settingsRoot != p.state.root {
+		p.loadSettings(p.state.root)
+	}
+	if p.window != nil {
+		p.window.OpenSettings(tab)
+	}
+}
+
 func (p *panel) heading(c *ui.Context) {
 	s := p.state
-	portrait.Glyph(c, portrait.IconAtom, 20, portrait.Colors.Accent)
-	ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-		text(c, portrait.Type.Small, "Feynman").FontWeight(600).TextColor(portrait.Colors.Ink)
-		name := s.root
-		if i := strings.LastIndex(name, "/"); i >= 0 && i+1 < len(name) {
-			name = name[i+1:]
-		}
-		if s.title != "" {
-			name += " · " + s.title
-		}
-		portrait.Tooltip(c, text(c, portrait.Type.Meta, name).MaxLines(1).Ellipsis("…").TextColor(portrait.Colors.Ink3), s.root)
-	})
-	if s.status == statusWorking {
-		portrait.Spinner(c, "Feynman is working")
+	portrait.Glyph(c, portrait.IconAtom, portrait.IconSizes.M, portrait.Colors.Accent).Shrink(0)
+	name := s.root
+	if i := strings.LastIndex(name, "/"); i >= 0 && i+1 < len(name) {
+		name = name[i+1:]
+	}
+	if s.title != "" {
+		name += " · " + s.title
 	}
 	status := string(s.status)
 	if status == "" {
 		status = string(statusOffline)
 	}
-	portrait.Badge(c, status, statusTone(s.status)).Label("Feynman connection status")
+	tip := status
+	if name != "" {
+		tip = name + " · " + status
+	}
+	portrait.Tooltip(c, text(c, portrait.Type.Small, "Research").FontWeight(600).TextColor(portrait.Colors.Ink).MaxLines(1), tip)
+	if s.status == statusWorking {
+		portrait.Spinner(c, "Feynman is working")
+		text(c, portrait.Type.Meta, status).TextColor(portrait.Colors.Ink3).Label("Feynman connection status").MaxLines(1)
+	} else {
+		dot := ui.Box(c.Key("feynman-status-dot")).Size(6, 6).Radius(portrait.Radii.Pill).
+			Background(statusTone(s.status).Solid).Role(ui.RoleStatus).Label("Feynman connection status").Value(status).Shrink(0)
+		portrait.Tooltip(c, dot, tip)
+	}
+	ui.Row(c).Grow(1)
 }
 
 func (p *panel) header(c *ui.Context) {
 	s := p.state
-	compact := compactResearchLayout(c)
-	width, height := c.Size()
+	_, height := c.Size()
+	var heading ui.Element
 	connect := func() {
-		if p.connected == "" && s.root != "" && controlButton(c, "Connect", "Connect Feynman to this workspace").Clicked() {
+		if p.connected == "" && s.root != "" && s.status == statusOffline && toolButton(c, "Connect", "Connect Feynman to this workspace", true, false).Clicked() {
 			p.syncConnection()
 		}
 	}
 	history := func() ui.Element {
-		button := controlButton(c, "History", "Workspace conversation history").Expanded(s.sessionsOpen)
+		button := portrait.ButtonWith(c.Key("research-tool-History"), "", "Workspace conversation history", portrait.ButtonSpec{
+			Look:     portrait.Quiet,
+			Size:     portrait.Sizes.Regular,
+			Leading:  portrait.IconClockCounterClockwise,
+			Selected: s.sessionsOpen,
+		}).Expanded(s.sessionsOpen)
 		if button.Clicked() {
 			s.sessionsOpen = !s.sessionsOpen
 			if s.sessionsOpen {
 				p.loadSessions(s.root)
 			}
 		}
-		if compact {
-			portrait.Popover(c, button, &s.sessionsOpen, func() {
-				popoverWidth := min(float32(352), max(float32(280), width-128))
-				maxHeight := max(float32(120), height-170)
-				ui.Column(c).Width(popoverWidth).Children(func() {
-					ui.Scroll(c.Key("feynman-history-popover-scroll")).MaxHeight(maxHeight).FillWidth().Label("Workspace conversation history").Children(func() {
-						p.sessions(c)
-					})
-				})
-			})
+		// Leave room for Settings at the popover's end and begin below the tabs.
+		popoverWidth := portrait.Form.MenuMin
+		if panelWidth := heading.Bounds().W; panelWidth > 0 {
+			popoverWidth = min(portrait.Form.MenuMax, panelWidth-portrait.Sizes.Regular-portrait.Form.Gap-2*portrait.Shell.PageInset)
 		}
+		maxHeight := max(portrait.Form.AreaCompact, min(portrait.Form.ListMax, height-2*portrait.Shell.PageBar-2*portrait.Form.PopoverPad))
+		popover := portrait.PopoverWithSpec(c, button, &s.sessionsOpen, portrait.PopoverSpec{Width: popoverWidth, MaxHeight: maxHeight}, func() {
+			p.sessions(c)
+		})
+		popover.Label("Workspace conversation history").Margin(portrait.Shell.PageBar, 0, 0, 0).AttachTo(button, ui.AnchorBottomEnd, ui.AnchorTopEnd)
 		return button
 	}
-	if compact {
-		ui.Column(c.Key("feynman-heading")).Padding(2, 6).Children(func() {
-			ui.Row(c.Key("feynman-heading-title")).MinHeight(30).Gap(6).AlignItems(ui.Center).Children(func() {
-				history()
-				p.heading(c)
-				connect()
-			})
-		})
-		return
+	settingsBtn := func() {
+		if portrait.QuietIconButton(c, portrait.IconGear, "Feynman settings").Clicked() {
+			p.openSettings("models")
+		}
 	}
-	ui.Row(c.Key("feynman-heading")).MinHeight(38).Gap(8).AlignItems(ui.Center).Padding(4, 6).Children(func() {
+	heading = ui.Row(c.Key("feynman-heading")).Height(portrait.Shell.PageBar).Gap(6).AlignItems(ui.Center).Padding(0, 4)
+	heading.Children(func() {
 		p.heading(c)
 		connect()
 		history()
+		settingsBtn()
 	})
-	if s.sessionsOpen {
-		p.sessions(c)
-	}
 }
 
 func (p *panel) tabs(c *ui.Context) {
 	s := p.state
 	portrait.Track(c, "feynman tabs", func(t *portrait.Segments) {
-		for _, tab := range []struct{ id, label string }{{"chat", "Chat"}, {"files", "Files"}, {"settings", "Settings"}, {"alpha", "alphaXiv"}} {
-			selected := s.selectedTab == tab.id
+		for _, tab := range []struct{ id, label string }{{"chat", "Chat"}, {"files", "Files"}, {"alpha", "alphaXiv"}} {
+			selected := s.selectedTab == tab.id || (tab.id == "chat" && s.selectedTab != "files" && s.selectedTab != "alpha")
 			button := t.Segment(c, tab.label, tab.label, selected).Grow(1).Role(ui.RoleTab).AccessSelected(selected)
 			if button.Clicked() {
 				s.selectedTab = tab.id
 				if tab.id == "files" {
 					p.refreshFiles(s.root)
 				}
-				if tab.id == "settings" && p.settingsRoot != s.root {
-					p.loadSettings(s.root)
-				}
 				if tab.id == "alpha" && s.cliStatus == nil {
 					p.loadSettings(s.root)
 				}
 			}
 		}
-	}).Margin(2, 0, 6, 0)
+	}).Label("Research sections").Margin(2, 0, 6, 0)
 }

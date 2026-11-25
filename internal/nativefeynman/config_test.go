@@ -1,7 +1,9 @@
 package nativefeynman
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
 	"github.com/Bayern99/mark-go-go/internal/portrait"
@@ -98,8 +100,13 @@ func TestResearchPickerOpensAboveAndFiltersThenSelects(t *testing.T) {
 	}
 	app.Key(0, ui.KeyDown)
 	app.Frame()
-	if !app.Focused("Use openai model gpt") {
-		t.Fatal("ArrowDown did not move focus from the filter to the matching option")
+	if !app.Focused("Find Model") {
+		t.Fatal("ArrowDown moved focus out of the model filter")
+	}
+	app.Type(" terra")
+	app.Frame()
+	if !app.Focused("Find Model") || p.pickerState("model").query != "gpt terra" {
+		t.Fatal("continued typing after ArrowDown did not update the model filter")
 	}
 	app.Key(0, ui.KeyEnter)
 	app.Frame()
@@ -114,10 +121,41 @@ func TestResearchPickerOpensAboveAndFiltersThenSelects(t *testing.T) {
 	}
 }
 
-func TestResearchPickerArrowKeysWrapThroughOptions(t *testing.T) {
+func TestResearchPickerPaintsProviderRows(t *testing.T) {
 	selected := ""
 	p := &panel{collapsed: make(map[string]*bool)}
 	app := newResearchPickerTester(p, fixtureResearchPicker(&selected))
+	app.SetScale(2)
+	app.Frame()
+	if err := app.Click("Model"); err != nil {
+		t.Fatal(err)
+	}
+	app.Advance(time.Second)
+	app.Frame()
+	row, ok := app.AccessByRole(ui.RoleButton, "Show Anthropic models")
+	if !ok {
+		t.Fatal("provider row is missing")
+	}
+	ink := 0
+	img := app.Image()
+	for y := int(row.Bounds.Y * 2); y < int((row.Bounds.Y+row.Bounds.H)*2); y++ {
+		for x := int(row.Bounds.X * 2); x < int((row.Bounds.X+row.Bounds.W)*2); x++ {
+			px := img.RGBAAt(x, y)
+			if int(px.R)+int(px.G)+int(px.B) < 450 {
+				ink++
+			}
+		}
+	}
+	if ink < 10 {
+		t.Fatalf("provider row has only %d dark pixels; bounds=%+v", ink, row.Bounds)
+	}
+}
+
+func TestResearchPickerArrowKeysWrapThroughOptions(t *testing.T) {
+	selected := ""
+	p := &panel{collapsed: make(map[string]*bool)}
+	picker := fixtureResearchPicker(&selected)
+	app := newResearchPickerTester(p, picker)
 	app.Frame()
 	if err := app.Click("Model"); err != nil {
 		t.Fatalf("open Model picker: %v", err)
@@ -127,16 +165,21 @@ func TestResearchPickerArrowKeysWrapThroughOptions(t *testing.T) {
 		key  ui.Key
 		want string
 	}{
-		{ui.KeyDown, "Use openai model gpt"},
-		{ui.KeyDown, "Use local model hold"},
-		{ui.KeyDown, "Use anthropic model claude"},
-		{ui.KeyUp, "Use local model hold"},
-		{ui.KeyUp, "Use openai model gpt"},
+		{ui.KeyDown, "Show Local models"},
+		{ui.KeyDown, "Show OpenAI models"},
+		{ui.KeyDown, "Show Anthropic models"},
+		{ui.KeyUp, "Show OpenAI models"},
+		{ui.KeyUp, "Show Local models"},
 	} {
 		app.Key(0, step.key)
 		app.Frame()
-		if !app.Focused(step.want) {
-			t.Fatalf("after %v, focused option is not %q", step.key, step.want)
+		if !app.Focused("Find Model") {
+			t.Fatalf("after %v, focus left the model filter", step.key)
+		}
+		state := p.pickerState("model")
+		rows := p.pickerRows(picker, state)
+		if got := rows[state.cursor].label(); got != step.want {
+			t.Fatalf("after %v, cursor row = %q, want %q", step.key, got, step.want)
 		}
 	}
 }
@@ -167,10 +210,92 @@ func TestResearchPickerEscapeRestoresTriggerAndResetsFilter(t *testing.T) {
 		t.Fatalf("reopen Model picker: %v", err)
 	}
 	app.Frame()
-	if _, ok := app.AccessByRole(ui.RoleButton, "Use anthropic model claude"); !ok {
+	if _, ok := app.AccessByRole(ui.RoleButton, "Show OpenAI models"); !ok {
 		t.Fatal("reopening the picker retained the previous filter")
 	}
 	if filter, ok := app.AccessByRole(ui.RoleTextField, "Find Model"); !ok || filter.Value != "" {
 		t.Fatalf("reopened filter = %+v, present=%t; want an empty query", filter, ok)
+	}
+}
+
+func TestModelPickerGroupsByProviderWithPinnedAndRecent(t *testing.T) {
+	selected := ""
+	p := &panel{collapsed: make(map[string]*bool)}
+	p.toggleModelPinned("local/hold")
+	p.rememberModel("openai/gpt")
+	app := newResearchPickerTester(p, fixtureResearchPicker(&selected))
+	app.Frame()
+	if err := app.Click("Model"); err != nil {
+		t.Fatal(err)
+	}
+	app.Frame()
+	for _, want := range []string{"Pinned", "Recent", "Providers"} {
+		if _, ok := app.AccessByRole(ui.RoleHeading, want); !ok {
+			t.Errorf("empty query has no %q section", want)
+		}
+	}
+	for _, name := range []string{"Use local model hold", "Use openai model gpt", "Show Anthropic models", "Show OpenAI models", "Show Local models"} {
+		if _, ok := app.AccessByRole(ui.RoleButton, name); !ok {
+			t.Errorf("missing %q", name)
+		}
+	}
+	for _, noise := range []string{"◇", "◉", "$", "200000", "tokens"} {
+		for _, text := range app.Texts() {
+			if strings.Contains(text, noise) {
+				t.Errorf("picker shows %q in %q", noise, text)
+			}
+		}
+	}
+	if err := app.Click("Show Anthropic models"); err != nil {
+		t.Fatal(err)
+	}
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RoleButton, "Back to providers"); !ok || !app.HasText("Back") {
+		t.Fatal("drilling into a provider has no Back row")
+	}
+	if _, ok := app.AccessByRole(ui.RoleButton, "Use openai model gpt"); ok {
+		t.Fatal("drilling into Anthropic still lists OpenAI models")
+	}
+	if claude, ok := app.AccessByRole(ui.RoleButton, "Use anthropic model claude"); !ok || !claude.Checked {
+		t.Fatalf("drilled list lost the current model or its check: %+v", claude)
+	}
+	if err := app.Click("Back to providers"); err != nil {
+		t.Fatal(err)
+	}
+	app.Frame()
+	app.Type("o")
+	app.Frame()
+	if !app.HasText("OpenAI") || !app.HasText("Local") {
+		t.Errorf("cross-provider search does not name each match's provider: %v", app.Texts())
+	}
+	if _, ok := app.AccessByRole(ui.RoleButton, "Show OpenAI models"); ok {
+		t.Error("search still shows provider rows instead of flat matches")
+	}
+	app.Key(0, ui.KeyEnter)
+	app.Frame()
+	if selected == "" || p.modelList(recentModelsPreference)[0] != selected {
+		t.Fatalf("selected %q, recent %v; want the choice remembered first", selected, p.modelList(recentModelsPreference))
+	}
+}
+
+func TestHiddenModelsLeaveThePickerButNotTheCurrentOne(t *testing.T) {
+	selected := ""
+	p := &panel{collapsed: make(map[string]*bool)}
+	p.setModelShown("openai/gpt", false)
+	p.setModelShown("anthropic/claude", false)
+	app := newResearchPickerTester(p, fixtureResearchPicker(&selected))
+	app.Frame()
+	_ = app.Click("Model")
+	app.Frame()
+	app.Type("a")
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RoleButton, "Use local model hold"); !ok {
+		t.Error("search lost a shown model")
+	}
+	if _, ok := app.AccessByRole(ui.RoleButton, "Use openai model gpt"); ok {
+		t.Error("a model hidden from the picker is still listed")
+	}
+	if _, ok := app.AccessByRole(ui.RoleButton, "Use anthropic model claude"); !ok {
+		t.Error("the current model disappeared because it was hidden")
 	}
 }

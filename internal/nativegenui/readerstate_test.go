@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Bayern99/mark-go-go/internal/nativegenui"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -164,7 +165,9 @@ func TestTheCardBeingUpdatedShowsAPlaceholderInItsPlaceWhileTheOthersStayReadabl
 		`risks = Source(["s"], [Card([Title("Risks", "md"), Text("Lead costs may rise."), Text("The venue may slip."), Text("The budget lapses in December.")])])`,
 		`after = Card([Text("Next quarter")])`,
 	})))
-	reader.Sources = func(c *ui.Context, n nativegenui.Node) { ui.Button(c, "Update "+n.ComponentID) }
+	reader.Sources = func(c *ui.Context, n nativegenui.Node) {
+		portrait.Button(c, "Update "+n.ComponentID, "Update "+n.ComponentID)
+	}
 	for _, width := range []int{760, 360} {
 		reader.Replacing = nil
 		tt := ui.NewTester(reader.View, width, 900)
@@ -219,7 +222,9 @@ func TestAConditionalSourceBelongsToItsOwnStatementDuringAnUpdate(t *testing.T) 
 		`qdrant_details = Source(["s"], [Text("Qdrant details")])`,
 		`milvus_details = Source(["s"], [Text("Milvus details")])`,
 	})))
-	reader.Sources = func(c *ui.Context, n nativegenui.Node) { ui.Button(c, "Update "+n.ComponentID) }
+	reader.Sources = func(c *ui.Context, n nativegenui.Node) {
+		portrait.Button(c, "Update "+n.ComponentID, "Update "+n.ComponentID)
+	}
 	tt := ui.NewTester(reader.View, 640, 600)
 	before := texts(tt)
 	if !strings.Contains(before, "Update qdrant_details") || strings.Contains(before, "Update option_card") || strings.Contains(before, "Update option_notes") {

@@ -2,6 +2,8 @@
 
 Status: accepted (amends ADR 0010's single WebUI baseline)
 
+> Note: 分支 `t3/arc-inspired-editor-redesign` 上的 [ADR 0013](0013-arc-experiment-scenery-page-command-bar.md) 是一次未合并的实验：五类契约照旧，锁定的取值、色调别名与圆角阶梯按该 ADR 更新，并新增来源 `arc@adr-0013`。
+
 Portrait 的设计变量不再只以退役 WebUI 为唯一基准。每个导出变量登记三种来源之一，并由五类自动化测试守护；WebUI 来源的变量仍锁定 c6504af，新增的组件语义参考 coss ui，Portrait 自行推导的变量以不变量约束。整体仍是纯 Go 与 MyGo Native UI，[internal/portrait](../../internal/portrait/) 仍是设计变量的唯一来源。 PRD 见 #169。
 
 ## 设计变量来源

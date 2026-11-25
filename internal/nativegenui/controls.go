@@ -264,32 +264,32 @@ func named(el ui.Element, label, fallback string, required bool) ui.Element {
 }
 
 func (r *Reading) button(c *ui.Context, p props, at place) {
-	theme := c.Theme()
-	tone := theme.Accent
-	switch p.text("color") {
-	case "danger":
-		tone = theme.Danger
-	case "success":
-		tone = portrait.Reader.Success
-	}
-	height, size, pad := float32(controlHeight), float32(15), float32(16)
+	look, size := portrait.Accent, portrait.Sizes.Regular
 	switch p.text("size") {
 	case "sm":
-		height, size, pad = 32, 14, 12
+		size = portrait.Sizes.Compact
 	case "lg":
-		height, size, pad = 48, 16, 20
+		size = portrait.Sizes.Large
 	}
-	back, front, border := tone, portrait.Colors.OnAccent, ui.Color{}
 	switch p.text("variant") {
 	case "outline":
-		back, front, border = ui.Color{}, tone, tone.Alpha(0.45)
+		look = portrait.Raised
 	case "soft":
-		back, front = tone.Alpha(0.12), tone
+		look = portrait.Raised
 	case "ghost":
-		back, front = ui.Color{}, tone
+		look = portrait.Quiet
+	}
+	if p.text("color") == "danger" {
+		look = portrait.Danger
+		if p.text("variant") == "outline" {
+			look = portrait.DangerOutline
+		}
 	}
 	label, disabled := p.text("label"), p.on("disabled")
-	button := ui.Button(c, "").Label(label).Height(height).Padding(0, pad).Radius(controlRadius).Background(back).Border(1, border).Disabled(disabled).Shrink(0)
+	button := portrait.ButtonWith(c, label, label, portrait.ButtonSpec{Look: look, Size: size}).Disabled(disabled).Shrink(0)
+	if p.text("color") == "success" && look == portrait.Accent {
+		button.Background(portrait.Colors.Success)
+	}
 	if p.on("block") {
 		button.AlignSelf(ui.Stretch)
 		if at.row {
@@ -298,12 +298,15 @@ func (r *Reading) button(c *ui.Context, p props, at place) {
 	} else if !at.row {
 		button.AlignSelf(ui.Start)
 	}
-	button.Children(func() {
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
-			r.glyph(c, p.text("icon"), size+2, front)
-			ui.Text(c, label).FontSize(size).FontWeight(500).TextColor(front).AccessHidden(true)
-		})
-	})
+	if name := p.text("icon"); name != "" {
+		iconInk := portrait.Colors.OnAccent
+		if look == portrait.Raised || look == portrait.Quiet {
+			iconInk = portrait.Colors.Ink
+		} else if look == portrait.DangerOutline {
+			iconInk = portrait.Colors.Danger
+		}
+		button.Children(func() { r.glyph(c, name, portrait.IconSizes.M, iconInk) })
+	}
 	if button.Clicked() && !disabled {
 		r.press(label, p.value("action"))
 	}
@@ -320,17 +323,19 @@ func (r *Reading) control(c *ui.Context, e *openuilang.Element, p props, path st
 		if label == "" {
 			label = p.text("icon")
 		}
-		back, front, border := ui.Color{}, theme.Text, theme.Text.Alpha(0.14)
+		look := portrait.Raised
 		switch p.text("variant") {
 		case "ghost":
-			border = ui.Color{}
+			look = portrait.Quiet
 		case "solid":
-			back, front, border = theme.Accent, portrait.Colors.OnAccent, ui.Color{}
+			look = portrait.Accent
 		}
-		button := ui.Button(c, "").Label(label).Tooltip(p.text("label")).Width(controlHeight).Height(controlHeight).Padding(0).Radius(999).Background(back).Border(1, border).Shrink(0).AlignSelf(ui.Start)
-		button.Children(func() {
-			ui.Row(c).Grow(1).AlignItems(ui.Center).Justify(ui.Center).Children(func() { r.glyph(c, p.text("icon"), 18, front) })
-		})
+		button := portrait.ButtonWith(c, "", label, portrait.ButtonSpec{Look: look, Size: portrait.Sizes.Regular}).Tooltip(p.text("label")).Radius(portrait.Radii.Pill).Shrink(0).AlignSelf(ui.Start)
+		iconInk := portrait.Colors.Ink
+		if look == portrait.Accent {
+			iconInk = portrait.Colors.OnAccent
+		}
+		button.Children(func() { r.glyph(c, p.text("icon"), portrait.IconSizes.L, iconInk) })
 		if button.Clicked() {
 			r.press(label, p.value("action"))
 		}
@@ -387,7 +392,9 @@ func (r *Reading) control(c *ui.Context, e *openuilang.Element, p props, path st
 			state.text, state.shown = shown, shown
 		}
 		r.labelled(c, p.text("label"), required, problem, func() {
-			input := named(ui.TextInput(c, &state.text), p.text("label"), p.text("placeholder"), required).Placeholder(p.text("placeholder")).Height(controlHeight).Radius(controlRadius).MinWidth(0).Invalid(problem != "")
+			portraitField := portrait.TextField(c, &state.text, portrait.FieldSpec{Label: p.text("label"), Placeholder: p.text("placeholder"), Invalid: problem != ""})
+			input := named(portraitField.Input(), p.text("label"), p.text("placeholder"), required).MinWidth(0)
+			portraitField.Frame().MinWidth(0)
 			state.editing = input.Focused()
 			if state.text != state.shown {
 				state.shown = state.text
@@ -418,7 +425,7 @@ func (r *Reading) control(c *ui.Context, e *openuilang.Element, p props, path st
 			rows = 4
 		}
 		r.labelled(c, p.text("label"), required, problem, func() {
-			area := named(ui.TextArea(c, &state.text), p.text("label"), p.text("placeholder"), required).Placeholder(p.text("placeholder")).Height(min(rows, 20)*22 + 18).Radius(controlRadius).MinWidth(0).Invalid(problem != "")
+			area := named(portrait.TextArea(c, &state.text, portrait.AreaSpec{Label: p.text("label"), Placeholder: p.text("placeholder"), Rows: min(int(rows), 20), Invalid: problem != ""}), p.text("label"), p.text("placeholder"), required).MinWidth(0)
 			if state.text != state.shown {
 				state.shown = state.text
 				field.set(state.text)
@@ -433,26 +440,19 @@ func (r *Reading) control(c *ui.Context, e *openuilang.Element, p props, path st
 		value := words(field.get())
 		required, problem := field.check(p.value("rules"), value)
 		options := choices(p.value("options"))
-		labels := make([]string, len(options))
-		current := ""
-		for i, option := range options {
-			labels[i] = option.label
-			if option.value == value {
-				current = option.label
-			}
-		}
-		state.text = current
 		r.labelled(c, p.text("label"), required, problem, func() {
 			placeholder := p.text("placeholder")
 			if placeholder == "" {
 				placeholder = "Choose…"
 			}
-			named(ui.Select(c, &state.text, labels), p.text("label"), placeholder, required).Placeholder(placeholder).Height(controlHeight).Radius(controlRadius).MinWidth(0).Invalid(problem != "")
-			for _, option := range options {
-				if state.text != current && option.label == state.text {
-					field.set(option.value)
-					break
-				}
+			selected := value
+			portraitOptions := make([]portrait.Option, len(options))
+			for i, option := range options {
+				portraitOptions[i] = portrait.Option{Value: option.value, Label: option.label}
+			}
+			named(portrait.Select(c, &selected, portraitOptions, portrait.SelectSpec{Label: p.text("label"), Placeholder: placeholder}), p.text("label"), placeholder, required).MinWidth(0).Invalid(problem != "")
+			if selected != value {
+				field.set(selected)
 			}
 		})
 	case "SegmentedControl":
@@ -513,7 +513,7 @@ func (r *Reading) control(c *ui.Context, e *openuilang.Element, p props, path st
 		if state.flipped {
 			side, other = other, side
 		}
-		card := ui.Column(c).MinWidth(0).MinHeight(160).Padding(20).Gap(8).Radius(14).Border(1, theme.Text.Alpha(0.08)).Background(theme.Surface).AlignItems(ui.Center).Justify(ui.Center).Focusable().Role(ui.RoleButton).Cursor(ui.CursorPointer).Label(strings.TrimSpace(p.text(side) + " Flashcard, " + side + " side. Press to show the " + other + "."))
+		card := ui.Column(c).MinWidth(0).MinHeight(160).Padding(20).Gap(8).Radius(portrait.Radii.L).Border(1, theme.Text.Alpha(0.08)).Background(theme.Surface).AlignItems(ui.Center).Justify(ui.Center).Focusable().Role(ui.RoleButton).Cursor(ui.CursorPointer).Label(strings.TrimSpace(p.text(side) + " Flashcard, " + side + " side. Press to show the " + other + "."))
 		if at.row {
 			card.Grow(1).Basis(rowShare)
 		}
@@ -571,7 +571,7 @@ func (r *Reading) slider(c *ui.Context, field bound, p props, state *componentSt
 			ui.Text(c, label).FontSize(portrait.Reader.Field).FontWeight(500).TextColor(theme.Text).MinWidth(0).Wrap()
 			ui.Text(c, measure(current, p.text("unit"))).FontSize(portrait.Reader.Field).FontWeight(600).FontFeatures("tnum").TextColor(theme.Text).Shrink(0)
 		})
-		slider := ui.Slider(c, &state.number, lo, hi).MinWidth(0)
+		slider := portrait.Slider(c, &state.number, lo, hi).MinWidth(0)
 		if label != "" {
 			slider.Label(label)
 		} else {
@@ -610,26 +610,11 @@ type chosenSegment string
 
 func segments(c *ui.Context, chosen *int, labels []string, block bool, group chosenSegment) {
 	theme := c.Theme()
-	parts := ui.SegmentedBase(c, chosen, len(labels))
-	track := parts.Track.Label("Choice").MinWidth(0).AlignItems(ui.Stretch).Padding(2).Gap(2).Radius(9).Background(theme.Text.Alpha(0.08)).InsetShadow(0, 1, 2, 0, portrait.Reader.TrackShade)
-	track.Children(func() {
-		for i, label := range labels {
-			segment := parts.Segment(i).MinWidth(0).MinHeight(28).Padding(4, 12).Radius(7).Cursor(ui.CursorPointer)
-			ink := theme.TextMuted
-			if i == *chosen || segment.Hovered() {
-				ink = theme.Text
-			}
-			segment.Children(func() {
-				if i == *chosen {
-					raised := ui.Row(c.Key("chosen")).Absolute().Top(0).Left(0).Right(0).Bottom(0).Radius(7).Background(theme.Background).Border(0.5, theme.Text.Alpha(0.10)).Shadow(0, 1, 2, 0, portrait.Reader.RaisedShade).AccessHidden(true)
-					if !segment.FocusVisible() && !c.Preferences().ReduceMotion {
-						raised.Transition(ui.ElementTransition{Match: group, Duration: 160 * time.Millisecond})
-					}
-				}
-				ui.Text(c, label).ZIndex(1).Font(typeface(label)).FontSize(portrait.Reader.Label).FontWeight(500).TextColor(ink).MaxLines(1).Ellipsis("…")
-			})
-		}
-	})
+	track := portrait.SegmentedWithSpec(c, chosen, labels, "Choice", portrait.SegmentedSpec{
+		Group:   string(group),
+		Track:   portrait.Surface{From: theme.Text.Alpha(0.08), To: theme.Text.Alpha(0.08), Shadows: portrait.Shadows{{Inset: true, Y: 1, Blur: 2, Color: portrait.Reader.TrackShade}}},
+		Capsule: portrait.Surface{From: theme.Background, To: theme.Background, Shadows: portrait.Shadows{{Y: 1, Blur: 2, Color: portrait.Reader.RaisedShade}, {Spread: 0.5, Color: theme.Text.Alpha(0.10)}}},
+	}).MinWidth(0).AlignItems(ui.Stretch)
 	if block {
 		track.FillEqually()
 	} else {
@@ -721,7 +706,7 @@ func (r *Reading) radios(c *ui.Context, field bound, p props, state *componentSt
 			for i, option := range options {
 				key := c.Key("option" + strconv.Itoa(i))
 				if variant != "pills" && variant != "cards" {
-					ui.Radio(key, &state.text, option.value, option.label)
+					portrait.Radio(key, &state.text, option.value, option.label)
 					continue
 				}
 				chosen := option.value == value
@@ -782,7 +767,7 @@ func (r *Reading) date(c *ui.Context, field bound, p props, state *componentStat
 	}
 	picked := false
 	r.labelled(c, p.text("label"), required, problem, func() {
-		picked = named(ui.DateInput(c, &state.date), p.text("label"), "Date", required).Height(controlHeight).Radius(controlRadius).MinWidth(0).Invalid(problem != "").Changed()
+		picked = named(portrait.DateField(c, &state.date, p.text("label")), p.text("label"), "Date", required).MinWidth(0).Invalid(problem != "").Changed()
 	})
 	if !picked {
 		return
@@ -836,12 +821,12 @@ func (r *Reading) timer(c *ui.Context, field bound, p props, state *componentSta
 			if state.running {
 				toggle = "Pause"
 			}
-			if ui.Button(c.Key("toggle"), toggle).Disabled(left == 0).Clicked() && left > 0 {
+			if portrait.ButtonWith(c.Key("toggle"), toggle, toggle, portrait.ButtonSpec{Look: portrait.Raised}).Disabled(left == 0).Clicked() && left > 0 {
 				state.running = !state.running
 				state.date = c.Now()
 				c.Services().Invalidate()
 			}
-			if ui.Button(c.Key("reset"), "Reset").Disabled(left == state.number && !state.running).Clicked() {
+			if portrait.ButtonWith(c.Key("reset"), "Reset", "Reset timer", portrait.ButtonSpec{Look: portrait.Raised}).Disabled(left == state.number && !state.running).Clicked() {
 				state.running = false
 				field.set(state.number)
 			}

@@ -27,10 +27,11 @@ type GenUIBackend struct {
 	Provider string `json:"provider,omitempty"`
 	// Args has no omitempty: an explicitly empty list is how a backend's
 	// default arguments are removed, which nil still means "use the default".
-	Args         []string `json:"args"`
-	Model        string   `json:"model,omitempty"`
-	Models       []string `json:"models,omitempty"`
-	ThoughtLevel string   `json:"thoughtLevel,omitempty"`
+	Args         []string            `json:"args"`
+	Model        string              `json:"model,omitempty"`
+	Models       []string            `json:"models,omitempty"`
+	ModelOptions []genui.ModelOption `json:"modelOptions,omitempty"`
+	ThoughtLevel string              `json:"thoughtLevel,omitempty"`
 }
 
 type GenUISettings struct {
@@ -47,12 +48,13 @@ type Settings struct {
 }
 
 type GenUIBackendPatch struct {
-	Command      *string   `json:"command,omitempty"`
-	Provider     *string   `json:"provider,omitempty"`
-	Args         *[]string `json:"args,omitempty"`
-	Model        *string   `json:"model,omitempty"`
-	Models       *[]string `json:"models,omitempty"`
-	ThoughtLevel *string   `json:"thoughtLevel,omitempty"`
+	Command      *string              `json:"command,omitempty"`
+	Provider     *string              `json:"provider,omitempty"`
+	Args         *[]string            `json:"args,omitempty"`
+	Model        *string              `json:"model,omitempty"`
+	Models       *[]string            `json:"models,omitempty"`
+	ModelOptions *[]genui.ModelOption `json:"modelOptions,omitempty"`
+	ThoughtLevel *string              `json:"thoughtLevel,omitempty"`
 }
 
 type GenUIPatch struct {
@@ -111,6 +113,7 @@ func (g GenUISettings) For(id string) GenUIBackend {
 	settings.Model = stored.Model
 	settings.Provider = strings.TrimSpace(stored.Provider)
 	settings.ThoughtLevel = stored.ThoughtLevel
+	settings.ModelOptions = slices.Clone(stored.ModelOptions)
 	if len(stored.Models) > 0 {
 		settings.Models = cleanModels(stored.Models)
 	}
@@ -315,6 +318,9 @@ func applyGenUIPatch(g *GenUISettings, p GenUIPatch) error {
 		}
 		if patch.Models != nil {
 			backend.Models = cleanModels(*patch.Models)
+		}
+		if patch.ModelOptions != nil {
+			backend.ModelOptions = slices.Clone(*patch.ModelOptions)
 		}
 		if patch.ThoughtLevel != nil {
 			backend.ThoughtLevel = strings.TrimSpace(*patch.ThoughtLevel)

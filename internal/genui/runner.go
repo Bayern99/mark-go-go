@@ -35,6 +35,13 @@ type ModelOption struct {
 	Provider string `json:"provider,omitempty"`
 }
 
+func (m ModelOption) Key() string {
+	if m.Provider == "" {
+		return m.ID
+	}
+	return m.Provider + "\x1f" + m.ID
+}
+
 type Choice struct {
 	Value string `json:"value"`
 	Name  string `json:"name,omitempty"`
@@ -44,22 +51,15 @@ type Choice struct {
 // request. ThoughtLevels are the levels the current model offers, because an
 // ACP agent only declares that option once a model is applied.
 type ModelCatalog struct {
-	Models        []ModelOption `json:"models"`
-	CurrentModel  string        `json:"currentModel,omitempty"`
-	ThoughtLevels []Choice      `json:"thoughtLevels,omitempty"`
-	ThoughtLevel  string        `json:"thoughtLevel,omitempty"`
+	Models          []ModelOption `json:"models"`
+	CurrentProvider string        `json:"currentProvider,omitempty"`
+	CurrentModel    string        `json:"currentModel,omitempty"`
+	ThoughtLevels   []Choice      `json:"thoughtLevels,omitempty"`
+	ThoughtLevel    string        `json:"thoughtLevel,omitempty"`
 }
 
-// ProviderOf is the provider a model belongs to, as the catalog last reported
-// it. Backends that name a provider beside the model use it for their
-// credential check, their model write and their Terminal login.
-func (c ModelCatalog) ProviderOf(model string) string {
-	for _, option := range c.Models {
-		if option.ID == model {
-			return option.Provider
-		}
-	}
-	return ""
+func (c ModelCatalog) CurrentModelKey() string {
+	return ModelOption{ID: c.CurrentModel, Provider: c.CurrentProvider}.Key()
 }
 
 type Turn struct {

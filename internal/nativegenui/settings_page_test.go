@@ -421,3 +421,36 @@ func TestPiAdvancedDoesNotOfferACPArguments(t *testing.T) {
 		t.Fatal("search exposes an ACP arguments field for Pi")
 	}
 }
+
+func TestPiModelMenuCanChooseBetweenProvidersWithTheSameModelID(t *testing.T) {
+	const id = genui.BackendPi
+	settings := workspace.DefaultSettings()
+	settings.GenUI.Backend = id
+	p, saved := settingsPanel(t, settings)
+	p.status(id).catalog = genui.ModelCatalog{Models: []genui.ModelOption{
+		{ID: "shared", Name: "Shared Model", Provider: "alpha"},
+		{ID: "shared", Name: "Shared Model", Provider: "beta"},
+	}}
+	app := pageTester(p, "")
+	trigger, ok := app.AccessByRole(ui.RoleMenuButton, "Model")
+	if !ok {
+		t.Fatal("model selector is missing")
+	}
+	app.ClickAt(trigger.Bounds.X+trigger.Bounds.W/2, trigger.Bounds.Y+trigger.Bounds.H/2)
+	app.Frame()
+	for _, provider := range []string{"alpha", "beta"} {
+		if !app.HasText("Shared Model · " + provider) {
+			t.Errorf("menu has no distinct choice for %s", provider)
+		}
+	}
+	if err := app.Click("Shared Model · beta"); err != nil {
+		t.Fatal(err)
+	}
+	if len(*saved) == 0 {
+		t.Fatal("selection was not recorded")
+	}
+	patch := (*saved)[len(*saved)-1].GenUI.Backends[id]
+	if patch.Provider == nil || *patch.Provider != "beta" || patch.Model == nil || *patch.Model != "shared" {
+		t.Fatalf("selection = %+v", patch)
+	}
+}

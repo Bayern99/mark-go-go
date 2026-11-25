@@ -69,16 +69,21 @@ func (r *Runner) listModels(ctx context.Context) (genui.ModelCatalog, error) {
 	_ = live.applyModel(ctx, r.cfg.Provider, r.cfg.Model)
 	var state struct {
 		Model struct {
-			ID string `json:"id"`
+			ID       string `json:"id"`
+			Provider string `json:"provider"`
 		} `json:"model"`
 		ThinkingLevel string `json:"thinkingLevel"`
 	}
 	if live.call(ctx, "get_state", nil, &state) == nil {
 		catalog.CurrentModel = state.Model.ID
+		catalog.CurrentProvider = state.Model.Provider
 		catalog.ThoughtLevel = state.ThinkingLevel
 	}
-	if applied := live.modelStamp(); applied != "" {
-		catalog.CurrentModel = applied
+	if catalog.CurrentModel == "" {
+		catalog.CurrentModel = live.modelStamp()
+		if catalog.CurrentModel == r.cfg.Model {
+			catalog.CurrentProvider = r.cfg.Provider
+		}
 	}
 
 	var levels struct {

@@ -19,6 +19,14 @@ const genuiProbeTimeout = 30 * time.Second
 // written, so the agent keeps its own current model instead of refusing.
 func (b GenUIBackend) UsableModel() string {
 	model := strings.TrimSpace(b.Model)
+	if len(b.ModelOptions) > 0 {
+		for _, offered := range b.ModelOptions {
+			if offered.ID == model && offered.Provider == b.Provider {
+				return model
+			}
+		}
+		return ""
+	}
 	if model == "" || len(b.Models) == 0 {
 		return model
 	}

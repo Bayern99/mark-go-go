@@ -56,7 +56,9 @@ type panel struct {
 	commandCaret         int
 	actionsDismissed     bool
 	actionsFromSlash     bool
+	actionsFromButton    bool
 	actionsFocusFilter   bool
+	actionsFocusDraft    bool
 	questionText         string
 	questionPick         string
 	questionFind         string

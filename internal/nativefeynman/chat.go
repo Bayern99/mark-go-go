@@ -419,6 +419,10 @@ func (p *panel) composer(c *ui.Context) {
 					return true
 				})
 			})
+			if p.actionsFocusDraft {
+				draftEditor.Focus()
+				p.actionsFocusDraft = false
+			}
 			if p.commandCaret > 0 {
 				draftEditor.SetTextSelection(p.commandCaret, p.commandCaret)
 				p.commandCaret = 0
@@ -439,6 +443,7 @@ func (p *panel) composer(c *ui.Context) {
 					p.commandQuery = strings.TrimSpace(strings.TrimPrefix(s.draft, "/"))
 					p.commandSelection.Reset()
 					p.actionsFromSlash = true
+					p.actionsFromButton = false
 					s.actionsOpen = true
 				} else if p.actionsFromSlash || strings.Contains(strings.TrimPrefix(s.draft, "/"), "/") {
 					if p.actionsFromSlash {
@@ -460,6 +465,7 @@ func (p *panel) composer(c *ui.Context) {
 					p.commandSelection.Reset()
 					p.actionsDismissed = false
 					p.actionsFromSlash = false
+					p.actionsFromButton = s.actionsOpen
 					p.actionsFocusFilter = s.actionsOpen
 				}
 				actionsPopover := portrait.PopoverWithSpec(c, actionsBtn, &s.actionsOpen, portrait.PopoverSpec{Width: portrait.Form.SelectMax, Title: "Research actions", Placement: ui.AnchorTopStart}, func() {
@@ -468,11 +474,15 @@ func (p *panel) composer(c *ui.Context) {
 				actionsPopover.AttachTo(composer, ui.AnchorTopStart, ui.AnchorBottomStart).Label("Research actions")
 				if actionsPopover.Dismissed() {
 					p.actionsFocusFilter = false
-					if p.actionsFromSlash {
+					if p.actionsFromButton {
+						p.actionsFromButton = false
+						actionsBtn.Focus()
+					} else {
 						p.actionsDismissed = true
 						p.actionsFromSlash = false
-					} else {
-						actionsBtn.Focus()
+						if actionsPopover.FocusWithin() {
+							draftEditor.Focus()
+						}
 					}
 				}
 				if documentEligible {
@@ -645,11 +655,13 @@ func (p *panel) filteredCommands(query string) []feynman.ResearchCommand {
 func (p *panel) chooseResearchCommand(command feynman.ResearchCommand) {
 	p.state.draft = "/" + command.Name + " "
 	p.commandCaret = len([]rune(p.state.draft))
+	p.actionsFocusDraft = true
 	p.state.actionsOpen = false
 	p.commandQuery = ""
 	p.commandSelection.Reset()
 	p.actionsDismissed = false
 	p.actionsFromSlash = false
+	p.actionsFromButton = false
 }
 
 func (p *panel) matchingCommand(query string) *feynman.ResearchCommand {

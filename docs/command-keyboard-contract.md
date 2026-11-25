@@ -22,6 +22,8 @@
 - 过滤忽略大小写与首尾空白；已打开的列表在无匹配时显示各自领域空态。
 - `internal/nativekit.CommandSelection` 只承载两处共用的选中索引、循环移动、越界收敛、重置与输入框提交。overlay 开关、取消记忆、焦点归还、过滤内容域和执行动作仍属于各原生包。
 
+Actions 打开时记录入口（Actions 按钮或斜杠草稿），编辑过滤词不改变入口：Esc 关闭后按入口把焦点还给 Actions 按钮或 Research prompt，斜杠入口仍记住本次取消。无论入口，选中命令后焦点都回到 Research prompt，光标位于插入的命令之后，直接输入参数即可（例如按钮入口 ↓/Enter 选中 `/summarize` 后输入 `abc` 得到 `/summarize abc`）。
+
 保留命令栏的工作区搜索与侧栏过滤词恢复，以及 Actions 的草稿插入和路径不误认。一次性把未知 `/unknown` 放入草稿不会自动打开 Actions；逐字输入时，第一个 `/` 会先打开 Actions，继续输入到无匹配时列表保留空态，此时 Esc 关闭列表并把焦点还给 Research prompt，随后 Enter 发送未改动的原文（例如逐字输入 `/tmp` → Esc → Enter 发送 `/tmp`）。`/tmp/input.md` 等包含后续 `/` 的草稿不触发 Actions。模型选择器、会话管理与 MCP 设置不在此契约内。
 
 ## ui.Tester 对照用例
@@ -29,7 +31,7 @@
 | 用例 | 全局命令栏 | Feynman Actions |
 | --- | --- | --- |
 | 移动、循环与 Enter | `TestCommandBarRunsTheResultChosenWithTheArrows` | `TestResearchActionsChooseWithTheSameArrowsAndEnterAsCommandBar` |
-| 取消与焦点归还 | `TestCommandBarRestoresEditorFocusOnEscapeDismissAndRun`、`TestCommandBarRestoresSidebarFilterFocus` | `TestResearchActionsEscapeReturnsFocusToItsOrigin` |
+| 取消与焦点归还 | `TestCommandBarRestoresEditorFocusOnEscapeDismissAndRun`、`TestCommandBarRestoresSidebarFilterFocus` | `TestResearchActionsEscapeReturnsFocusToItsOrigin`、`TestResearchActionsEscapeReturnsFocusToItsOriginAfterFiltering` |
 | 空态与空结果 Enter | `TestCommandBarEmptyResultStaysOpenAndEnterDoesNothing` | `TestResearchActionsEmptyResultStaysOpenAndEnterDoesNotSend` |
 | 过滤大小写、首尾空白与结果 | `TestCommandBarFilterIsCaseInsensitiveAndIgnoresOuterSpace` | `TestResearchActionsFilterIsCaseInsensitiveAndIgnoresOuterSpace` |
 | 按钮焦点与补全光标 | 不适用 | `TestResearchActionsButtonSupportsImmediateKeyboardChoiceAndEscape`、`TestResearchActionsCompletionPlacesCaretAfterCommand` |

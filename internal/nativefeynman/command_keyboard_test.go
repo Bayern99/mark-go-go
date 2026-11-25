@@ -2,6 +2,7 @@ package nativefeynman
 
 import (
 	"testing"
+	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
 	"github.com/egoist/mygo/ui"
@@ -48,6 +49,11 @@ func TestResearchActionsButtonSupportsImmediateKeyboardChoiceAndEscape(t *testin
 	if p.state.draft != "/summarize " || p.state.actionsOpen {
 		t.Fatalf("immediate Down and Enter left draft %q and actions open = %v", p.state.draft, p.state.actionsOpen)
 	}
+	app.Type("abc")
+	app.Frame()
+	if p.state.draft != "/summarize abc" {
+		t.Fatalf("typing an argument after button completion left draft %q, want %q", p.state.draft, "/summarize abc")
+	}
 
 	openResearchActions(t, app, false)
 	app.Key(0, ui.KeyEscape)
@@ -85,8 +91,13 @@ func TestSlashUnknownTypedDraftSendsVerbatimAfterEscape(t *testing.T) {
 	}
 	app.Key(0, ui.KeyEnter)
 	app.Frame()
-	if got := <-sent; got != "/tmp" {
-		t.Fatalf("Enter sent %q, want the verbatim unknown slash draft", got)
+	select {
+	case got := <-sent:
+		if got != "/tmp" {
+			t.Fatalf("Enter sent %q, want the verbatim unknown slash draft", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Enter did not submit the unknown slash draft")
 	}
 }
 
@@ -170,6 +181,38 @@ func TestResearchActionsEscapeReturnsFocusToItsOrigin(t *testing.T) {
 			app.Frame()
 			if p.state.actionsOpen || !app.Focused(origin) {
 				t.Fatalf("Escape left actions open=%v without focus on %q", p.state.actionsOpen, origin)
+			}
+		})
+	}
+}
+
+func TestResearchActionsEscapeReturnsFocusToItsOriginAfterFiltering(t *testing.T) {
+	for _, slash := range []bool{false, true} {
+		name := "Actions button"
+		origin := "Browse workflows, skills and extensions"
+		if slash {
+			name = "slash draft"
+			origin = "Research prompt"
+		}
+		t.Run(name, func(t *testing.T) {
+			p := fixtureReadyPanel()
+			p.state.draft = ""
+			p.state.commands = []feynman.ResearchCommand{{Name: "review"}, {Name: "summarize"}}
+			app := ui.NewTester(func(c *ui.Context) { p.composer(c) }, 640, 600)
+			app.Frame()
+			openResearchActions(t, app, slash)
+			if err := app.Click("Filter research actions"); err != nil {
+				t.Fatal(err)
+			}
+			app.Type("rev")
+			app.Frame()
+			if _, ok := app.AccessByRole(ui.RoleOption, "Choose research action summarize"); ok {
+				t.Fatal("the filter edit did not narrow the research actions")
+			}
+			app.Key(0, ui.KeyEscape)
+			app.Frame()
+			if p.state.actionsOpen || !app.Focused(origin) {
+				t.Fatalf("Escape after filtering left actions open=%v without focus on %q", p.state.actionsOpen, origin)
 			}
 		})
 	}

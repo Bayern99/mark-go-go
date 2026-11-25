@@ -2,50 +2,62 @@ package workspace
 
 import (
 	"os"
+	"path/filepath"
 	"reflect"
 	"sync"
 	"testing"
+
+	"github.com/Bayern99/mark-go-go/internal/genui"
 )
 
 func TestSettingsStore(t *testing.T) {
 	dir := t.TempDir()
 	st := &settingsStore{dir: dir}
-	wantDefaults := Settings{
-		Model:        "gemini-4-hydrogen",
-		AgentCommand: "agy",
-		Models:       []string{"gemini-4-hydrogen", "gemini-4-argon", "claude-opus-5-5"},
+	wantDefaults := GenUIBackend{
+		Command: "agy",
+		Args:    []string{"acp"},
+		Model:   "gemini-4-hydrogen",
+		Models:  []string{"gemini-4-hydrogen", "gemini-4-argon", "claude-opus-5-5"},
 	}
-	if got := st.get(); !reflect.DeepEqual(got, wantDefaults) {
-		t.Errorf("defaults = %+v, want %+v", got, wantDefaults)
+	if id, settings := st.get().GenUI.Active(); id != genui.BackendAntigravity || !reflect.DeepEqual(settings, wantDefaults) {
+		t.Errorf("defaults = %q %+v, want antigravity %+v", id, settings, wantDefaults)
 	}
-	if _, err := st.apply(SettingsPatch{Model: new("m-1"), AgentCommand: new("/usr/bin/agy")}); err != nil {
+	backend := GenUIBackend{Model: "m-1", Command: "/usr/bin/agy", Args: []string{"acp"}, Models: wantDefaults.Models}
+	if _, err := st.apply(SettingsPatch{GenUI: &GenUIPatch{Backends: map[string]GenUIBackendPatch{
+		genui.BackendAntigravity: {Model: &backend.Model, Command: &backend.Command},
+	}}}); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	if got := (&settingsStore{dir: dir}).get(); !reflect.DeepEqual(got, Settings{
-		Model:        "m-1",
-		AgentCommand: "/usr/bin/agy",
-		Models:       wantDefaults.Models,
-	}) {
-		t.Errorf("round trip = %+v", got)
+	got := (&settingsStore{dir: dir}).get()
+	if id, settings := got.GenUI.Active(); id != genui.BackendAntigravity || !reflect.DeepEqual(settings, backend) {
+		t.Errorf("round trip = %+v, want %+v", settings, backend)
 	}
-	if err := st.SetModels([]string{"claude-opus-5-5", "gemini-3.8-flash", "claude-opus-5-5", ""}); err != nil {
+	if got.SchemaVersion != 2 {
+		t.Errorf("stored schemaVersion = %d, want 2", got.SchemaVersion)
+	}
+	if err := st.SetModels(genui.BackendAntigravity, []string{"claude-opus-5-5", "gemini-3.8-flash", "claude-opus-5-5", ""}); err != nil {
 		t.Fatalf("SetModels: %v", err)
 	}
-	if got := (&settingsStore{dir: dir}).get(); !reflect.DeepEqual(got.Models, []string{"claude-opus-5-5", "gemini-3.8-flash"}) {
+	if got := (&settingsStore{dir: dir}).get().GenUI.For(genui.BackendAntigravity); !reflect.DeepEqual(got.Models, []string{"claude-opus-5-5", "gemini-3.8-flash"}) {
 		t.Errorf("cached models = %+v", got.Models)
 	}
-	if _, err := st.apply(SettingsPatch{Model: new(""), AgentCommand: new("")}); err != nil {
+	empty := ""
+	command := ""
+	if _, err := st.apply(SettingsPatch{GenUI: &GenUIPatch{Backends: map[string]GenUIBackendPatch{
+		genui.BackendAntigravity: {Model: &empty, Command: &command},
+	}}}); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	if got := (&settingsStore{dir: dir}).get(); got.Model != "" || got.AgentCommand != "agy" || !reflect.DeepEqual(got.Models, []string{"claude-opus-5-5", "gemini-3.8-flash"}) {
-		t.Errorf("empty model and command with stale frontend models = %+v", got)
+	got = (&settingsStore{dir: dir}).get()
+	if id, settings := got.GenUI.Active(); id != genui.BackendAntigravity || settings.Model != "" || settings.Command != "agy" || !reflect.DeepEqual(settings.Models, []string{"claude-opus-5-5", "gemini-3.8-flash"}) {
+		t.Errorf("empty model and command with stale frontend models = %+v", settings)
 	}
 
-	empty := &settingsStore{}
-	if got := empty.get(); !reflect.DeepEqual(got, defaultSettings()) {
+	noDir := &settingsStore{}
+	if got := noDir.get(); !reflect.DeepEqual(got, defaultSettings()) {
 		t.Errorf("store without a directory = %+v", got)
 	}
-	if _, err := empty.apply(SettingsPatch{Model: new("m-1")}); err == nil {
+	if _, err := noDir.apply(SettingsPatch{ExternalIPC: new(true)}); err == nil {
 		t.Errorf("apply without a directory succeeded")
 	}
 
@@ -65,50 +77,52 @@ func TestSettingsPatchKeepsUntouchedFields(t *testing.T) {
 	var announced []Settings
 	st := &settingsStore{dir: dir, onChange: func(s Settings) { announced = append(announced, s) }}
 
-	if _, err := st.apply(SettingsPatch{Model: new("claude-opus-5-5")}); err != nil {
+	model := "claude-opus-5-5"
+	if _, err := st.apply(SettingsPatch{GenUI: &GenUIPatch{Backends: map[string]GenUIBackendPatch{
+		genui.BackendAntigravity: {Model: &model},
+	}}}); err != nil {
 		t.Fatalf("apply model: %v", err)
 	}
-	committed, err := st.apply(SettingsPatch{AgentCommand: new("/opt/homebrew/bin/agy")})
+	command := "/opt/homebrew/bin/agy"
+	committed, err := st.apply(SettingsPatch{GenUI: &GenUIPatch{Backends: map[string]GenUIBackendPatch{
+		genui.BackendAntigravity: {Command: &command},
+	}}})
 	if err != nil {
 		t.Fatalf("apply command: %v", err)
 	}
-	want := Settings{
-		Model:        "claude-opus-5-5",
-		AgentCommand: "/opt/homebrew/bin/agy",
-		Models:       defaultModels,
+	want := GenUIBackend{Command: command, Args: []string{"acp"}, Model: model, Models: defaultBackendSettings(genui.BackendAntigravity).Models}
+	if id, settings := committed.GenUI.Active(); id != genui.BackendAntigravity || !reflect.DeepEqual(settings, want) {
+		t.Errorf("committed = %+v, want %+v", settings, want)
 	}
-	if !reflect.DeepEqual(committed, want) {
-		t.Errorf("committed = %+v, want %+v", committed, want)
-	}
-	if got := (&settingsStore{dir: dir}).get(); !reflect.DeepEqual(got, want) {
-		t.Errorf("stored = %+v, want %+v", got, want)
+	if got := (&settingsStore{dir: dir}).get(); !reflect.DeepEqual(got.GenUI.For(genui.BackendAntigravity), want) {
+		t.Errorf("stored = %+v, want %+v", got.GenUI.For(genui.BackendAntigravity), want)
 	}
 	if len(announced) != 2 {
 		t.Fatalf("announcements = %d, want 2: %+v", len(announced), announced)
 	}
-	if !reflect.DeepEqual(announced[1], want) {
-		t.Errorf("last announcement = %+v, want %+v", announced[1], want)
-	}
 
-	if err := st.SetModels([]string{"model-alpha", "model-beta"}); err != nil {
+	if err := st.SetModels(genui.BackendAntigravity, []string{"model-alpha", "model-beta"}); err != nil {
 		t.Fatalf("SetModels: %v", err)
 	}
-	if _, err := st.apply(SettingsPatch{Model: new("model-beta")}); err != nil {
+	beta := "model-beta"
+	if _, err := st.apply(SettingsPatch{GenUI: &GenUIPatch{Backends: map[string]GenUIBackendPatch{
+		genui.BackendAntigravity: {Model: &beta},
+	}}}); err != nil {
 		t.Fatalf("apply model: %v", err)
 	}
-	last := announced[len(announced)-1]
+	last := announced[len(announced)-1].GenUI.For(genui.BackendAntigravity)
 	if last.Model != "model-beta" || !reflect.DeepEqual(last.Models, []string{"model-alpha", "model-beta"}) {
 		t.Errorf("after handshake and model change = %+v", last)
 	}
-	empty, err := st.apply(SettingsPatch{Model: new(""), AgentCommand: new("")})
-	if err != nil {
+	empty := ""
+	if _, err := st.apply(SettingsPatch{GenUI: &GenUIPatch{Backends: map[string]GenUIBackendPatch{
+		genui.BackendAntigravity: {Model: &empty, Command: &empty},
+	}}}); err != nil {
 		t.Fatalf("apply empties: %v", err)
 	}
-	if empty.Model != "" || empty.AgentCommand != "agy" {
-		t.Errorf("empties = %+v", empty)
-	}
-	if last := announced[len(announced)-1]; last.Model != "" || last.AgentCommand != "agy" {
-		t.Errorf("announced empties = %+v", last)
+	emptied := announced[len(announced)-1].GenUI.For(genui.BackendAntigravity)
+	if emptied.Model != "" || emptied.Command != "agy" {
+		t.Errorf("announced empties = %+v", emptied)
 	}
 }
 
@@ -119,20 +133,26 @@ func TestSettingsPatchesFromTwoWindowsBothSurvive(t *testing.T) {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			if _, err := st.apply(SettingsPatch{Model: new("claude-opus-5-5")}); err != nil {
+			model := "claude-opus-5-5"
+			if _, err := st.apply(SettingsPatch{GenUI: &GenUIPatch{Backends: map[string]GenUIBackendPatch{
+				genui.BackendAntigravity: {Model: &model},
+			}}}); err != nil {
 				t.Errorf("apply model: %v", err)
 			}
 		}()
 		go func() {
 			defer wg.Done()
-			if _, err := st.apply(SettingsPatch{AgentCommand: new("/opt/bin/agy")}); err != nil {
+			command := "/opt/bin/agy"
+			if _, err := st.apply(SettingsPatch{GenUI: &GenUIPatch{Backends: map[string]GenUIBackendPatch{
+				genui.BackendAntigravity: {Command: &command},
+			}}}); err != nil {
 				t.Errorf("apply command: %v", err)
 			}
 		}()
 	}
 	wg.Wait()
-	got := st.get()
-	if got.Model != "claude-opus-5-5" || got.AgentCommand != "/opt/bin/agy" {
+	got := st.get().GenUI.For(genui.BackendAntigravity)
+	if got.Model != "claude-opus-5-5" || got.Command != "/opt/bin/agy" {
 		t.Errorf("after concurrent patches = %+v", got)
 	}
 }
@@ -149,7 +169,10 @@ func TestExternalIPCIsOffUntilItIsTurnedOn(t *testing.T) {
 	if !(&settingsStore{dir: dir}).get().ExternalIPC {
 		t.Fatal("the external IPC channel did not stay enabled")
 	}
-	if _, err := st.apply(SettingsPatch{Model: new("m-2")}); err != nil {
+	model := "m-2"
+	if _, err := st.apply(SettingsPatch{GenUI: &GenUIPatch{Backends: map[string]GenUIBackendPatch{
+		genui.BackendAntigravity: {Model: &model},
+	}}}); err != nil {
 		t.Fatalf("apply model: %v", err)
 	}
 	if !(&settingsStore{dir: dir}).get().ExternalIPC {
@@ -160,5 +183,116 @@ func TestExternalIPCIsOffUntilItIsTurnedOn(t *testing.T) {
 	}
 	if (&settingsStore{dir: dir}).get().ExternalIPC {
 		t.Fatal("the external IPC channel did not stay disabled")
+	}
+}
+
+func TestSettingsV1MigratesToTheAntigravityBackend(t *testing.T) {
+	dir := t.TempDir()
+	legacy := `{
+  "model": "claude-opus-5-5",
+  "agentCommand": "/opt/homebrew/bin/agy",
+  "models": ["claude-opus-5-5", "gemini-3.8-flash"],
+  "externalIPC": true
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, settingsFile), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := (&settingsStore{dir: dir, detect: func() string { return genui.BackendCodex }}).get()
+	id, settings := got.GenUI.Active()
+	if id != genui.BackendAntigravity {
+		t.Fatalf("v1 settings picked %q, want the agy backend", id)
+	}
+	want := GenUIBackend{
+		Command: "/opt/homebrew/bin/agy",
+		Args:    []string{"acp"},
+		Model:   "claude-opus-5-5",
+		Models:  []string{"claude-opus-5-5", "gemini-3.8-flash"},
+	}
+	if !reflect.DeepEqual(settings, want) {
+		t.Fatalf("migrated = %+v, want %+v", settings, want)
+	}
+	if !got.ExternalIPC {
+		t.Error("migration dropped the external IPC switch")
+	}
+}
+
+func TestSettingsV1CommandKeepsItsArguments(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, settingsFile), []byte(`{"agentCommand": "agy acp --debug"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, settings := (&settingsStore{dir: dir}).get().GenUI.Active()
+	if settings.Command != "agy" || !reflect.DeepEqual(settings.Args, []string{"acp", "--debug"}) {
+		t.Fatalf("migrated command = %q %v", settings.Command, settings.Args)
+	}
+}
+
+func TestFirstRunPicksTheFirstInstalledBackendWithARunner(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		detect func() string
+		want   string
+	}{
+		{name: "codex", detect: func() string { return genui.BackendCodex }, want: genui.BackendCodex},
+		{name: "nothing installed", detect: func() string { return "" }, want: genui.BackendAntigravity},
+		{name: "no probe", detect: nil, want: genui.BackendAntigravity},
+		{name: "pi has no runner yet", detect: func() string { return genui.BackendPi }, want: genui.BackendAntigravity},
+		{name: "legacy alias", detect: func() string { return "agy" }, want: genui.BackendAntigravity},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := (&settingsStore{dir: t.TempDir(), detect: tt.detect}).get()
+			if id, _ := got.GenUI.Active(); id != tt.want {
+				t.Fatalf("first run picked %q, want %q", id, tt.want)
+			}
+			if tt.want == genui.BackendCodex {
+				if _, settings := got.GenUI.Active(); settings.Command != "codex-acp" || len(settings.Args) != 0 {
+					t.Fatalf("codex defaults = %q %v, want codex-acp with no arguments", settings.Command, settings.Args)
+				}
+			}
+		})
+	}
+}
+
+func TestSettingsV2KeepsBackendsApart(t *testing.T) {
+	dir := t.TempDir()
+	stored := `{
+  "schemaVersion": 2,
+  "genui": {
+    "backend": "codex",
+    "backends": {
+      "codex": {"command": "codex-acp", "model": "gpt-6-sol", "thoughtLevel": "high"},
+      "agy": {"command": "/custom/agy", "args": ["acp"], "model": "gemini-4-argon"},
+      "unknown": {"command": "/nope"}
+    }
+  }
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, settingsFile), []byte(stored), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := (&settingsStore{dir: dir}).get()
+	if got.GenUI.Backend != genui.BackendCodex {
+		t.Fatalf("backend = %q, want codex", got.GenUI.Backend)
+	}
+	if _, settings := got.GenUI.Active(); settings.Model != "gpt-6-sol" || settings.ThoughtLevel != "high" || len(settings.Args) != 0 {
+		t.Fatalf("codex settings = %+v", settings)
+	}
+	if agy := got.GenUI.For("agy"); agy.Command != "/custom/agy" || agy.Model != "gemini-4-argon" {
+		t.Fatalf("agy alias = %+v", agy)
+	}
+	for id := range got.GenUI.Backends {
+		if id == "unknown" {
+			t.Fatal("an unknown backend id survived the read")
+		}
+	}
+	store := &settingsStore{dir: dir}
+	pi := genui.BackendPi
+	if _, err := store.apply(SettingsPatch{GenUI: &GenUIPatch{Backend: &pi}}); err == nil {
+		t.Fatal("selecting Pi succeeded before it has a runner")
+	}
+	nonsense := "nonsense"
+	if _, err := store.apply(SettingsPatch{GenUI: &GenUIPatch{Backend: &nonsense}}); err == nil {
+		t.Fatal("selecting an unknown backend succeeded")
 	}
 }

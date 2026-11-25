@@ -56,15 +56,16 @@ func Install(host *workspace.Service) func(*nativeui.Window) nativeui.Panels {
 	return func(win *nativeui.Window) nativeui.Panels {
 		p := &panel{win: win, host: host, views: make(map[string]*documentView), watch: host.WatchView, unwatch: host.UnwatchView}
 		p.settings, _ = host.GetSettings()
-		p.settingsCommand = p.settings.AgentCommand
+		p.settingsCommand = p.activeBackend().Command
 		workspace.SettingsChanged.Listen(win.Native(), func(next workspace.Settings) {
 			p.settings = next
+			command := p.activeBackend().Command
 			if !p.settingsCommandEdited {
-				p.settingsCommand = next.AgentCommand
+				p.settingsCommand = command
 			}
 			for _, v := range p.views {
 				if !v.commandEdited {
-					v.command = next.AgentCommand
+					v.command = command
 				}
 			}
 		})
@@ -124,7 +125,7 @@ func (p *panel) viewFor(d workspace.DocumentInfo) *documentView {
 	if v != nil {
 		return v
 	}
-	v = &documentView{command: p.settings.AgentCommand}
+	v = &documentView{command: p.activeBackend().Command}
 	p.views[d.ID] = v
 	if err := p.watch(p.win.Context(), d.ID); err != nil {
 		v.loaded = true
@@ -397,19 +398,28 @@ func (v *documentView) changedIDs() []string {
 	return ids
 }
 
+func (p *panel) activeBackend() workspace.GenUIBackend {
+	_, backend := p.settings.GenUI.Active()
+	return backend
+}
+
 func (p *panel) settingsPage() nativeui.SettingsPage {
 	return nativeui.SettingsPage{
 		ID: "genui", Section: "Workspace", Label: "GenUI", Icon: portrait.IconSparkle, Order: 210,
 		Keywords: []string{"genui generation model agent command save"},
 		Dirty: func() bool {
-			defaults := workspace.DefaultSettings()
-			return p.settings.Model != defaults.Model || p.settings.AgentCommand != defaults.AgentCommand
+			backend := p.activeBackend()
+			defaults := activeDefaults(p.settings)
+			return backend.Model != defaults.Model || backend.Command != defaults.Command
 		},
 		Reset: func() {
-			defaults := workspace.DefaultSettings()
-			_, err := p.host.SetSettings(workspace.SettingsPatch{Model: &defaults.Model, AgentCommand: &defaults.AgentCommand})
+			defaults := activeDefaults(p.settings)
+			id, _ := p.settings.GenUI.Active()
+			_, err := p.host.SetSettings(workspace.SettingsPatch{GenUI: &workspace.GenUIPatch{Backends: map[string]workspace.GenUIBackendPatch{
+				id: {Model: &defaults.Model, Command: &defaults.Command},
+			}}})
 			p.settingsMessage = message(err)
-			p.settingsCommand = defaults.AgentCommand
+			p.settingsCommand = defaults.Command
 			p.settingsCommandEdited = false
 		},
 		Draw: func(c *ui.Context, q nativeui.SettingsQuery) {
@@ -422,15 +432,19 @@ func (p *panel) settingsPage() nativeui.SettingsPage {
 			portrait.SettingsGroup(c, "Generation", func(rows *portrait.Rows) {
 				if q.Match("Model", "The model used to generate reading views.", "generation model") {
 					rows.Row(portrait.RowSpec{Title: "Model", Description: "The model used to generate reading views."}, func() {
-						model := p.settings.Model
-						options := make([]portrait.Option, 0, len(p.settings.Models))
-						for _, value := range p.settings.Models {
+						backend := p.activeBackend()
+						id, _ := p.settings.GenUI.Active()
+						model := backend.Model
+						options := make([]portrait.Option, 0, len(backend.Models))
+						for _, value := range backend.Models {
 							options = append(options, portrait.Option{Value: value, Label: value})
 						}
 						before := model
 						portrait.Select(c, &model, options, portrait.SelectSpec{Label: "Model"})
 						if model != before {
-							_, err := p.host.SetSettings(workspace.SettingsPatch{Model: &model})
+							_, err := p.host.SetSettings(workspace.SettingsPatch{GenUI: &workspace.GenUIPatch{Backends: map[string]workspace.GenUIBackendPatch{
+								id: {Model: &model},
+							}}})
 							p.settingsMessage = message(err)
 						}
 					})
@@ -445,7 +459,10 @@ func (p *panel) settingsPage() nativeui.SettingsPage {
 							save.Disabled(!p.settingsCommandEdited || strings.TrimSpace(p.settingsCommand) == "")
 							if save.Clicked() {
 								command := strings.TrimSpace(p.settingsCommand)
-								_, err := p.host.SetSettings(workspace.SettingsPatch{AgentCommand: &command})
+								id, _ := p.settings.GenUI.Active()
+								_, err := p.host.SetSettings(workspace.SettingsPatch{GenUI: &workspace.GenUIPatch{Backends: map[string]workspace.GenUIBackendPatch{
+									id: {Command: &command},
+								}}})
 								p.settingsMessage = message(err)
 								if err == nil {
 									p.settingsCommandEdited = false
@@ -626,6 +643,12 @@ func loading(c *ui.Context, title, detail string) {
 		})
 		viewSkeleton(c)
 	})
+}
+
+func activeDefaults(settings workspace.Settings) workspace.GenUIBackend {
+	defaults := workspace.DefaultSettings()
+	id, _ := settings.GenUI.Active()
+	return defaults.GenUI.For(id)
 }
 
 func message(err error) string {

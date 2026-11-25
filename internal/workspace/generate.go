@@ -130,8 +130,8 @@ func (s *Service) checkpointDocument(win *mygo.Window, documentID, path string) 
 	}, nil
 }
 
-func (st *settingsStore) SetModels(models []string) error {
-	return st.setModels(models)
+func (st *settingsStore) SetModels(backend string, models []string) error {
+	return st.setModels(backend, models)
 }
 
 func (s *docSession) viewFollower() *genui.ViewFollower {
@@ -265,10 +265,14 @@ func (h *Service) StartGeneration(ctx context.Context, documentID string, req ge
 	if h.settings != nil {
 		models = h.settings
 	}
+	backendID, backend := settings.GenUI.Active()
 	job := acp.GenerationJob{
 		Req:          req,
-		AgentCommand: settings.AgentCommand,
-		Model:        settings.Model,
+		Backend:      backendID,
+		AgentCommand: backend.Command,
+		Args:         backend.Args,
+		Model:        backend.Model,
+		ThoughtLevel: backend.ThoughtLevel,
 		ViewPath:     genui.ViewPath(docPath),
 		Now:          time.Now,
 		Models:       models,

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
+	"github.com/Bayern99/mark-go-go/internal/genui"
 	"github.com/Bayern99/mark-go-go/internal/nativeeditor"
 	"github.com/Bayern99/mark-go-go/internal/nativegenui"
 	"github.com/Bayern99/mark-go-go/internal/nativereview"
@@ -244,9 +245,12 @@ func TestShellScenes(t *testing.T) {
 				}
 			case strings.HasPrefix(sc.name, "settings_genui_"):
 				settings := workspace.DefaultSettings()
-				settings.Models = []string{"claude-sonnet-4-5", "gpt-5.4", "gemini-3-pro"}
-				settings.Model = "claude-sonnet-4-5"
-				settings.AgentCommand = "feynman genui --json"
+				settings.GenUI.Backends[genui.BackendAntigravity] = workspace.GenUIBackend{
+					Command: "feynman",
+					Args:    []string{"genui", "--json"},
+					Model:   "claude-sonnet-4-5",
+					Models:  []string{"claude-sonnet-4-5", "gpt-5.4", "gemini-3-pro"},
+				}
 				slots.Settings = append(slots.Settings, nativegenui.SceneSettingsPage(settings))
 			}
 			app := ui.NewTester(func(c *ui.Context) {

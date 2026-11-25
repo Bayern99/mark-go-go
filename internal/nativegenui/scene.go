@@ -11,7 +11,8 @@ import (
 // SceneSettingsPage is the GenUI settings page the reader installs, drawn from
 // the given settings by the same code, for the acceptance scenes.
 func SceneSettingsPage(settings workspace.Settings) nativeui.SettingsPage {
-	p := &panel{settings: settings, settingsCommand: settings.AgentCommand}
+	p := &panel{settings: settings}
+	p.settingsCommand = p.activeBackend().Command
 	return p.settingsPage()
 }
 

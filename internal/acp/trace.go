@@ -253,6 +253,8 @@ func configString(raw json.RawMessage) (string, bool) {
 
 type acpConfigOption struct {
 	ID           string          `json:"id"`
+	Name         string          `json:"name"`
+	Category     string          `json:"category"`
 	CurrentValue json.RawMessage `json:"currentValue"`
 	Options      []struct {
 		Value json.RawMessage `json:"value"`
@@ -300,6 +302,36 @@ func findConfigOption(raw json.RawMessage, ids ...string) (acpConfigOption, bool
 	for _, id := range ids {
 		for _, o := range opts {
 			if o.ID == id {
+				return o, true
+			}
+		}
+	}
+	return acpConfigOption{}, false
+}
+
+func configOptionList(raw json.RawMessage) []acpConfigOption {
+	if len(raw) == 0 {
+		return nil
+	}
+	var opts []acpConfigOption
+	if json.Unmarshal(raw, &opts) != nil {
+		return nil
+	}
+	return opts
+}
+
+func findConfigOptionIn(raw json.RawMessage, ids, categories []string) (acpConfigOption, bool) {
+	opts := configOptionList(raw)
+	for _, id := range ids {
+		for _, o := range opts {
+			if o.ID == id {
+				return o, true
+			}
+		}
+	}
+	for _, category := range categories {
+		for _, o := range opts {
+			if o.Category == category {
 				return o, true
 			}
 		}

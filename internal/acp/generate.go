@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -40,18 +41,34 @@ const acpSessionCloseTimeout = time.Second
 
 const statementPreviewInterval = 25 * time.Millisecond
 
+// thoughtOptionIDs and thoughtOptionCategories are the names agents use for the
+// reasoning-effort option: agy spells it thought_level, Codex reasoning_effort.
+var thoughtOptionIDs = []string{traceThoughtID, "thoughtLevel", "reasoning_effort"}
+
+var thoughtOptionCategories = []string{traceThoughtID, "thoughtLevel", "reasoning_effort", "reasoning"}
+
 type ModelUpdater interface {
-	SetModels(models []string) error
+	SetModels(backend string, models []string) error
+}
+
+// SelectionUpdater records the model and thought level the agent confirmed.
+type SelectionUpdater interface {
+	SetSelection(backend, model, thoughtLevel string) error
 }
 
 type GenerationJob struct {
 	Req          genui.GenerateRequest
+	Backend      string
 	AgentCommand string
-	Model        string
-	ViewPath     string
-	Now          func() time.Time
-	Models       ModelUpdater
-	Timeout      time.Duration
+	// Args are the arguments that make the command speak ACP over stdio;
+	// they are empty for codex-acp and ["acp"] for agy.
+	Args      []string
+	Model     string
+	ViewPath  string
+	Now       func() time.Time
+	Models    ModelUpdater
+	Selection SelectionUpdater
+	Timeout   time.Duration
 
 	Env []string
 
@@ -168,7 +185,7 @@ func RunGeneration(ctx context.Context, job GenerationJob, progress func(genui.G
 	}
 	var agent *Agent
 	if job.AgentCache != nil {
-		lease, err := job.AgentCache.lease(resolved, job.Env)
+		lease, err := job.AgentCache.lease(resolved, job.Args, job.Env)
 		if err != nil {
 			return genui.NewFailure(genui.FailAgentNotFound, fmt.Sprintf("Could not start the agent command %q: %v.", job.AgentCommand, err), genui.HintAgentNotFound)
 		}
@@ -180,7 +197,7 @@ func RunGeneration(ctx context.Context, job GenerationJob, progress func(genui.G
 			trace.agentStart(resolved, lease.args, agent.PID(), lease.cwd)
 		}
 	} else {
-		cmd := exec.Command(resolved, "acp")
+		cmd := exec.Command(resolved, job.Args...)
 		cmd.Dir = dir
 		cmd.Env = job.Env
 		agent, err = NewAgent(cmd, fsutil.NewLimitBuffer(4<<10))
@@ -268,6 +285,7 @@ func (r *genRun) execute(ctx context.Context) error {
 	var opened struct {
 		SessionID     string          `json:"sessionId"`
 		ConfigOptions json.RawMessage `json:"configOptions"`
+		Models        json.RawMessage `json:"models"`
 	}
 	var openedRaw json.RawMessage
 	var openedRawPtr *json.RawMessage
@@ -287,38 +305,27 @@ func (r *genRun) execute(ctx context.Context) error {
 	}
 	r.setSessionID(opened.SessionID)
 	r.trace.sessionNew(openedRaw, opened.SessionID)
+	r.noteOptions(opened.ConfigOptions)
+	r.legacyModels = legacyModelValues(opened.Models)
 	if models := configValues(opened.ConfigOptions, "model"); len(models) > 0 && r.job.Models != nil {
-		_ = r.job.Models.SetModels(models)
+		_ = r.job.Models.SetModels(r.job.Backend, models)
 	}
 	if err := r.send.step("starting", "Agent ready"); err != nil {
 		return err
 	}
 
-	if r.job.Model != "" {
-		var setRaw json.RawMessage
-		r.markModelRequested()
-		if err := r.callAgent(ctx, "session/set_config_option", map[string]any{
-			"sessionId": r.session(),
-			"configId":  traceModelOption,
-			"value":     r.job.Model,
-		}, nil, &setRaw); err != nil {
-			r.trace.configSetError(traceModelOption, r.job.Model, err)
-			var ge *genui.GenError
-			if models := configValues(opened.ConfigOptions, "model"); len(models) > 0 && errors.As(err, &ge) && ge.Kind == genui.FailAgentError {
-				invalid := genui.NewFailure(genui.FailModelInvalid, fmt.Sprintf("The agent does not know the model %q.", r.job.Model), genui.HintModelInvalid)
-				invalid.Models = models
-				return invalid
-			}
-			return err
-		}
-		r.trace.configSetResponse(traceModelOption, r.job.Model, setRaw)
-		r.noteModelOptions(configOptionsField(setRaw))
-		if err := r.modelProblem(); err != nil {
-			return err
-		}
+	requestedModel, effortFromID := genui.SplitModelID(r.job.Model)
+	requestedThought := r.job.ThoughtLevel
+	if requestedThought == "" {
+		requestedThought = effortFromID
 	}
-
-	if err := r.applyThoughtLevel(ctx, opened.ConfigOptions); err != nil {
+	if err := r.applyModel(ctx, requestedModel); err != nil {
+		return err
+	}
+	if err := r.applyThoughtLevel(ctx, requestedThought); err != nil {
+		return err
+	}
+	if err := r.confirmedSelection(); err != nil {
 		return err
 	}
 
@@ -386,42 +393,114 @@ func (r *genRun) execute(ctx context.Context) error {
 	return r.collect(ctx)
 }
 
-func (r *genRun) applyThoughtLevel(ctx context.Context, optionsRaw json.RawMessage) error {
-	requested := r.job.ThoughtLevel
+// applyModel writes the requested model through the declared model option and
+// only falls back to the legacy model list when that option is missing. A
+// failed write on the main path is reported as is: it never becomes a legacy
+// write, because the agent already said which values it accepts.
+func (r *genRun) applyModel(ctx context.Context, requested string) error {
 	if requested == "" {
 		return nil
 	}
-	opt, ok := findConfigOption(optionsRaw, traceThoughtID, "thoughtLevel")
+	if opt, ok := findConfigOptionIn(r.currentOptions(), []string{traceModelOption}, []string{traceModelOption}); ok {
+		r.markModelRequested(requested)
+		var setRaw json.RawMessage
+		if err := r.callAgent(ctx, "session/set_config_option", map[string]any{
+			"sessionId": r.session(),
+			"configId":  opt.ID,
+			"value":     requested,
+		}, nil, &setRaw); err != nil {
+			r.trace.configSetError(opt.ID, requested, err)
+			offered := opt.values()
+			var ge *genui.GenError
+			if len(offered) > 0 && errors.As(err, &ge) && ge.Kind == genui.FailAgentError {
+				invalid := genui.NewFailure(genui.FailModelInvalid, fmt.Sprintf("The agent does not know the model %q.", requested), genui.HintModelInvalid)
+				invalid.Models = offered
+				return invalid
+			}
+			return err
+		}
+		r.trace.configSetResponse(opt.ID, requested, setRaw)
+		r.noteOptions(configOptionsField(setRaw))
+		r.noteModelOptions(configOptionsField(setRaw))
+		return r.modelProblem()
+	}
+	if len(r.legacyModels) == 0 {
+		r.trace.configSetSkipped(traceModelOption, requested, "the agent's session/new declared no model option and no legacy model list")
+		return nil
+	}
+	value := requested
+	if !slices.Contains(r.legacyModels, value) && slices.Contains(r.legacyModels, r.job.Model) {
+		// The legacy model list is the only place a compound id may be used.
+		value = r.job.Model
+	}
+	r.markModelRequested(value)
+	if err := r.callAgent(ctx, "session/set_model", map[string]any{
+		"sessionId": r.session(),
+		"modelId":   value,
+	}, nil, nil); err != nil {
+		r.trace.configSetError(traceModelOption, value, err)
+		var ge *genui.GenError
+		if !slices.Contains(r.legacyModels, value) && errors.As(err, &ge) && ge.Kind == genui.FailAgentError {
+			invalid := genui.NewFailure(genui.FailModelInvalid, fmt.Sprintf("The agent does not know the model %q.", value), genui.HintModelInvalid)
+			invalid.Models = r.legacyModels
+			return invalid
+		}
+		return err
+	}
+	r.trace.configSetSkipped(traceModelOption, value, "the agent declared no model option, so the model was set through the legacy session/set_model")
+	r.confirmModel(value)
+	return nil
+}
+
+// applyThoughtLevel writes the reasoning effort only when the current options
+// declare an option for it and offer the requested value. A backend that knows
+// neither is not a failure: the session simply runs at its own default.
+func (r *genRun) applyThoughtLevel(ctx context.Context, requested string) error {
+	if requested == "" {
+		return nil
+	}
+	opt, ok := findThoughtOption(r.currentOptions())
 	if !ok {
-		r.trace.configSetSkipped(traceThoughtID, requested, "the agent's session/new configOptions have no thought_level option")
+		r.trace.configSetSkipped(traceThoughtID, requested, "the agent's current configOptions have no thought_level option")
 		return nil
 	}
 	offered := opt.values()
-	supported := false
-	for _, v := range offered {
-		if v == requested {
-			supported = true
-			break
-		}
-	}
-	if !supported {
+	if !slices.Contains(offered, requested) {
 		r.trace.configSetSkipped(opt.ID, requested, fmt.Sprintf("the agent's %s option does not offer %q; it offers %s", opt.ID, requested, strings.Join(genui.QuoteAll(offered), ", ")))
 		return nil
 	}
 	var setRaw json.RawMessage
-	var setRawPtr *json.RawMessage
-	if r.trace != nil {
-		setRawPtr = &setRaw
-	}
 	if err := r.callAgent(ctx, "session/set_config_option", map[string]any{
 		"sessionId": r.session(),
 		"configId":  opt.ID,
 		"value":     requested,
-	}, nil, setRawPtr); err != nil {
+	}, nil, &setRaw); err != nil {
 		r.trace.configSetError(opt.ID, requested, err)
 		return err
 	}
 	r.trace.configSetResponse(opt.ID, requested, setRaw)
+	r.noteOptions(configOptionsField(setRaw))
+	return nil
+}
+
+func findThoughtOption(raw json.RawMessage) (acpConfigOption, bool) {
+	return findConfigOptionIn(raw, thoughtOptionIDs, thoughtOptionCategories)
+}
+
+// confirmedSelection records what the agent reported, so the settings page and
+// the next run use the values that took effect rather than the ones asked for.
+func (r *genRun) confirmedSelection() error {
+	if r.job.Selection == nil {
+		return nil
+	}
+	r.modelMu.Lock()
+	model, confirmed := r.modelActual, r.modelConfirmed
+	mismatch := r.modelMismatch
+	r.modelMu.Unlock()
+	if mismatch != "" || !confirmed || model == "" {
+		return nil
+	}
+	_ = r.job.Selection.SetSelection(r.job.Backend, model, r.job.ThoughtLevel)
 	return nil
 }
 
@@ -448,9 +527,15 @@ type genRun struct {
 
 	modelMu        sync.Mutex
 	modelRequested bool
+	modelTarget    string
 	modelActual    string
 	modelConfirmed bool
 	modelMismatch  string
+
+	optionsMu sync.Mutex
+	options   json.RawMessage
+
+	legacyModels []string
 
 	toolCalls map[string]toolCallState
 
@@ -661,6 +746,30 @@ func (r *genRun) session() string {
 	return r.sessionID
 }
 
+func (r *genRun) noteOptions(options json.RawMessage) {
+	if len(options) == 0 {
+		return
+	}
+	r.optionsMu.Lock()
+	r.options = cloneRaw(options)
+	r.optionsMu.Unlock()
+}
+
+func (r *genRun) currentOptions() json.RawMessage {
+	r.optionsMu.Lock()
+	defer r.optionsMu.Unlock()
+	return cloneRaw(r.options)
+}
+
+func (r *genRun) confirmModel(model string) {
+	r.modelMu.Lock()
+	defer r.modelMu.Unlock()
+	if r.modelMismatch == "" {
+		r.modelActual = model
+		r.modelConfirmed = true
+	}
+}
+
 func (r *genRun) noteModelOptions(options json.RawMessage) {
 	if r.job.Model == "" || len(options) == 0 {
 		return
@@ -685,9 +794,13 @@ func (r *genRun) noteModelOptions(options json.RawMessage) {
 	}
 	r.modelMu.Lock()
 	defer r.modelMu.Unlock()
-	if actual != r.job.Model {
+	target := r.modelTarget
+	if target == "" {
+		target = r.job.Model
+	}
+	if actual != target {
 		if r.modelMismatch == "" {
-			r.modelMismatch = fmt.Sprintf("The agent reports the model %q, not the requested %q, so the view was not changed.", actual, r.job.Model)
+			r.modelMismatch = fmt.Sprintf("The agent reports the model %q, not the requested %q, so the view was not changed.", actual, target)
 		}
 		return
 	}
@@ -697,9 +810,10 @@ func (r *genRun) noteModelOptions(options json.RawMessage) {
 	}
 }
 
-func (r *genRun) markModelRequested() {
+func (r *genRun) markModelRequested(requested string) {
 	r.modelMu.Lock()
 	r.modelRequested = true
+	r.modelTarget = requested
 	r.modelMu.Unlock()
 }
 
@@ -718,7 +832,7 @@ func (r *genRun) modelProblem() error {
 func (r *genRun) modelStamp() string {
 	r.modelMu.Lock()
 	defer r.modelMu.Unlock()
-	if r.modelConfirmed && r.modelActual == r.job.Model {
+	if r.modelConfirmed && r.modelActual != "" {
 		return r.modelActual
 	}
 	return ""
@@ -929,6 +1043,31 @@ func choosePermissionOption(options []PermissionOption, allowed bool) string {
 		}
 	}
 	return fallback
+}
+
+// legacyModelValues reads the pre-configOptions model list an agent may still
+// declare. It is consulted only when session/new had no model option.
+func legacyModelValues(raw json.RawMessage) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var listed struct {
+		AvailableModels []struct {
+			ModelID string `json:"modelId"`
+			ID      string `json:"id"`
+		} `json:"availableModels"`
+	}
+	if json.Unmarshal(raw, &listed) != nil {
+		return nil
+	}
+	values := make([]string, 0, len(listed.AvailableModels))
+	for _, m := range listed.AvailableModels {
+		id := cmp.Or(strings.TrimSpace(m.ModelID), strings.TrimSpace(m.ID))
+		if id != "" {
+			values = append(values, id)
+		}
+	}
+	return values
 }
 
 func configValues(raw json.RawMessage, id string) []string {

@@ -18,6 +18,7 @@ const (
 	backendKeywords    = "backend codex antigravity custom pi"
 	refreshKeywords    = "test refresh models"
 	loginKeywords      = "sign in login terminal"
+	customLoginNote    = "The agent signs in with its own command."
 	modelKeywords      = "model"
 	effortKeywords     = "reasoning effort thought level"
 	commandKeywords    = "agent command arguments"
@@ -57,7 +58,7 @@ func (p *panel) drawSettingsPage(c *ui.Context, q nativeui.SettingsQuery) {
 	id, backend := p.settings.GenUI.Active()
 	if q.Active() && !q.Matches("Agent backend", backendDescription, backendKeywords) &&
 		!q.Matches("Test & Refresh", refreshNote, refreshKeywords) &&
-		!q.Matches("Sign in in Terminal", loginHint(genui.Backend{ID: genui.BackendCustom}), loginKeywords) &&
+		!q.Matches("Sign in in Terminal", customLoginNote, loginKeywords) &&
 		!q.Matches("Model", "The model the backend uses.", modelKeywords) &&
 		!q.Matches("Reasoning effort", "How long the model may think before answering.", effortKeywords) &&
 		!q.Matches("Agent command", "The command the backend runs.", commandKeywords) &&
@@ -301,7 +302,7 @@ func (p *panel) drawConnection(c *ui.Context, q nativeui.SettingsQuery, id strin
 				button := portrait.AccentButton(c, "Test & Refresh", "Test & Refresh")
 				button.Disabled(state.busy)
 				if button.Clicked() {
-					p.testAndRefresh(id)
+					p.testConnection(id, true)
 				}
 			})
 		}
@@ -319,7 +320,7 @@ func (p *panel) drawConnection(c *ui.Context, q nativeui.SettingsQuery, id strin
 
 func loginHint(backend genui.Backend) string {
 	if backend.LoginCommand == "" {
-		return "The agent signs in with its own command."
+		return customLoginNote
 	}
 	return backend.LoginHint
 }

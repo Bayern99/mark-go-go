@@ -84,10 +84,6 @@ func (p *panel) saveBackend(id string, patch workspace.GenUIBackendPatch) {
 	p.settings = next
 }
 
-func (p *panel) testAndRefresh(id string) {
-	p.startConnectionWork(id, true)
-}
-
 // probeOnFocus re-tests a backend the user already tested, so a sign-in
 // finished in Terminal shows up when the window comes back. It never opens a
 // session for models: that stays behind Test & Refresh.
@@ -96,10 +92,13 @@ func (p *panel) probeOnFocus() {
 	if state := p.status(id); !state.tested || state.busy {
 		return
 	}
-	p.startConnectionWork(id, false)
+	p.testConnection(id, false)
 }
 
-func (p *panel) startConnectionWork(id string, refreshModels bool) {
+// testConnection probes a backend, and refreshes its models when asked. The
+// window's OnFocus only probes, so returning to the window never opens a model
+// session on its own.
+func (p *panel) testConnection(id string, refreshModels bool) {
 	state := p.status(id)
 	if state.busy {
 		return

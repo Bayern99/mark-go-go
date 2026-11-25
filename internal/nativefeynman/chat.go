@@ -474,15 +474,16 @@ func (p *panel) composer(c *ui.Context) {
 				actionsPopover.AttachTo(composer, ui.AnchorTopStart, ui.AnchorBottomStart).Label("Research actions")
 				if actionsPopover.Dismissed() {
 					p.actionsFocusFilter = false
+					escaped := !actionsPopover.PressedInside() && !actionsPopover.PressedOutside()
 					if p.actionsFromButton {
 						p.actionsFromButton = false
-						if !actionsPopover.PressedInside() && !actionsPopover.PressedOutside() {
+						if escaped {
 							actionsBtn.Focus()
 						}
 					} else {
 						p.actionsDismissed = true
 						p.actionsFromSlash = false
-						if actionsPopover.FocusWithin() {
+						if escaped {
 							draftEditor.Focus()
 						}
 					}

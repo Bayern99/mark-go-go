@@ -108,6 +108,35 @@ func TestResearchActionsButtonEscapeAfterTabbingOutReturnsToTheButton(t *testing
 	}
 }
 
+func TestSlashActionsEscapeAfterTabbingOutReturnsToThePrompt(t *testing.T) {
+	p := fixtureReadyPanel()
+	p.state.draft = ""
+	p.state.commands = []feynman.ResearchCommand{{Name: "review"}, {Name: "summarize"}}
+	app := ui.NewTester(func(c *ui.Context) { p.composer(c) }, 640, 600)
+	app.Frame()
+	if err := app.Click("Research prompt"); err != nil {
+		t.Fatal(err)
+	}
+	app.Type("/")
+	app.Frame()
+	if err := app.Click("Filter research actions"); err != nil {
+		t.Fatal(err)
+	}
+	app.Frame()
+	app.Key(ui.Shift, ui.KeyTab)
+	app.Frame()
+	if app.Focused("Research prompt") || app.Focused("Filter research actions") || !p.state.actionsOpen {
+		t.Fatalf("Shift+Tab did not move focus out of the filter with actions open (open=%v)", p.state.actionsOpen)
+	}
+	for i := 0; i < 3 && p.state.actionsOpen; i++ {
+		app.Key(0, ui.KeyEscape)
+		app.Frame()
+	}
+	if p.state.actionsOpen || !app.Focused("Research prompt") {
+		t.Fatalf("Escape after tabbing out left actions open=%v without focus on the prompt", p.state.actionsOpen)
+	}
+}
+
 func TestSlashUnknownTypedDraftSendsVerbatimAfterEscape(t *testing.T) {
 	p := fixtureReadyPanel()
 	p.state.draft = ""

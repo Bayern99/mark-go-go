@@ -9,11 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- 五行 Space（在 Arc 实验之上，未合并）：八个 Space（Five Elements、Metal–Water、Wood–Fire、Earth、Metal、Wood、Water、Fire）各有自己的强调色、纸页与元素色，并新增完整的深色外观（System / Light / Dark，命令栏与工作区菜单可切换）；16 套配色逐套通过 WCAG AA。纸页顶行去掉版本号；Feynman 的模型选择器按 Pinned、Recent、Providers 组织，设置页按提供方分组并把诊断收进折叠区；中文多行表格不再被裁切。见 [ADR 0014](docs/adr/0014-wuxing-spaces-per-space-accent-and-dark-mode.md)。 Wu Xing Spaces with per-Space accents and a complete dark appearance; calmer Feynman model picker and settings; CJK table rows grow to their wrapped lines.
+## [0.6.0] - 2026-11-24
 
-- Arc 实验（分支 `t3/arc-inspired-editor-redesign`，未合并）：窗口改为彩色布景上的一张纸页，文档标签移到侧栏竖排，三行文档界面合为一行；新增命令栏（`⌘K` / `⌘T`）、侧栏开关（`⌘0`）和按工作区选择的布景；字体换为 Inter，强调色换为蓝 `#3139fb`，成功色独立为绿；macOS 隐藏系统标题栏。见 [DESIGN.md](DESIGN.md) 与 [ADR 0013](docs/adr/0013-arc-experiment-scenery-page-command-bar.md)。 Arc experiment: a coloured scenery with one paper page, vertical document tabs in the sidebar, a Command Bar, per-workspace sceneries, Inter, and a hidden title bar on macOS.
-
-- 修复 Preview 标题折叠时被折叠段的残影叠在后文上、展开时后文先跳位再被遮罩盖住的问题：折叠与展开改为直接到位，与 WebUI 一致（#96）。 Heading folds and expansions in Preview now land at once, with no ghost drawn over the following content and no veil over content that already moved.
+- **Arc 灵感空间架构与命令栏（[ADR 0013](docs/adr/0013-arc-experiment-scenery-page-command-bar.md)）**：窗口改为彩色布景（Scenery）承载悬浮不透明纸页（Page），文档标签移至侧栏竖排，原三行顶栏收敛为纸页顶部单行；新增全局命令栏（`⌘K` / `⌘T`）统一搜索打开的文档、工作区文件、标题与全部命令；字体升级为 Inter / Inter Display / IBM Plex Mono / IBM Plex Sans SC；macOS 启用隐藏标题栏与窗口控件对齐。 Arc-inspired coloured scenery and floating paper page, vertical sidebar document tabs, single-row page bar, `⌘K`/`⌘T` Command Bar, Inter typography, and hidden macOS title bar.
+- **五行八境（Wu Xing Spaces）与完整深色外观（[ADR 0014](docs/adr/0014-wuxing-spaces-per-space-accent-and-dark-mode.md)）**：八个工作区 Space（Five Elements、Metal–Water、Wood–Fire、Earth、Metal、Wood、Water、Fire）各自拥有取自五行 742 色表的布景、纸页、强调色与语义色，提供完整的 System / Light / Dark 外观，16 套浅深配色全部通过 WCAG AA 对比度自动化契约校验。 Eight Wu Xing Spaces with per-Space WCAG AA accents and complete System / Light / Dark appearance.
+- **统一设置中心（[ADR 0015](docs/adr/0015-unified-settings-center.md)）**：新增 `⌘,` 统一设置中心，整合 General、Appearance、Editor、Shortcuts、Plugins、Diagnostics 以及 Feynman / GenUI 插件设置页，支持 `/` 实时搜索、深链直达与确认重置；侧栏与 Feynman / GenUI 面板收拢为高频入口与深链。 Unified Settings Center (`⌘,`) with live `/` search, deep links, and plugin-registered pages.
+- **Portrait 2.0 升级与 65 项双轴 UI/UX 审查修复（[ADR 0012](docs/adr/0012-portrait-2-coss-reference-and-contracts.md)）**：吸收 `cosscom/ui` 组件语义与状态矩阵，补齐破坏性确认弹窗、多文档关闭安全、发送失败草稿与纯附件无损互换恢复、原子提案撤销、高对比度焦点环与 1×/2× 发丝线、基于 inline AST 的 CJK 软换行复制、中文多行表格自适应行高、GenUI 卡片/横线宽度收敛，并移除侧栏文件行、文档标签与路径面包屑上遮挡视线的完整路径悬浮提示。 Portrait 2.0 component system and 65-item dual-axis UI/UX polish across data safety, contrast, typography, CJK wrapping/copy, Feynman draft recovery, and GenUI/Review surfaces.
+- **侧栏点击、大纲定位与收放动效实机精修**：修复 Files 文件树鼠标按下即居中滚走导致首次点击失效的问题（仅键盘可见焦点自动滚入）；Outline 标题跳转改为顶部留白定位并等待冷开 Preview 文末表格测量收敛（残余位移 0 pt），同时提供持久化高亮、共享胶囊滑动与原生 macOS `AXSelected` / `AXSelectedRows` 语义；停靠侧栏指针收放加入 160 ms 平滑防挤压滑动并全程避让标题栏窗口控件，`⌘0` 保持单帧瞬切。 Fixed Files first-click scroll jump, added top-aligned Outline jumps with lazy EOF table convergence and native macOS `AXSelected`/`AXSelectedRows`, and animated docked sidebar pointer collapse/expand with titlebar clearance while keeping `⌘0` instant.
+- 修复 Preview 标题折叠时被折叠段的残影叠在后文上、展开时后文先跳位再被遮罩盖住的问题：折叠与展开改为直接到位（#96）。 Heading folds and expansions in Preview now land at once (#96).
 
 ## [0.5.0] - 2026-11-21
 

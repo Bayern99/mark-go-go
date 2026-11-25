@@ -2,7 +2,7 @@
   "name": "Mark Go Go",
   "slug": "mark-go-go",
   "identifier": "dev.markgogo.editor",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "icon": "resources/icon.png",
   "resources": ["third_party/mygo/LICENSE"],
   "linux": { "webview": false },

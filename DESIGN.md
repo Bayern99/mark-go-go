@@ -1,6 +1,6 @@
-# Portrait 界面设计 · Arc 实验
+# Portrait 2.0 界面设计
 
-这是一次隔离的重设计实验：假设由 Arc 浏览器的设计团队从头设计 Mark Go Go。界面仍由 MyGo Native UI 绘制，[internal/portrait](internal/portrait/) 仍是设计变量的唯一来源；变的是窗口构成、导航方式、材质和字体。取舍与来源见 [ADR 0013](docs/adr/0013-arc-experiment-scenery-page-command-bar.md)；五行 Space、每个 Space 自有的强调色与深色外观见 [ADR 0014](docs/adr/0014-wuxing-spaces-per-space-accent-and-dark-mode.md)；统一设置中心见 [ADR 0015](docs/adr/0015-unified-settings-center.md)，实现入口见 [原生窗口外壳](internal/nativeui/shell.go) 和 [原生编辑器](internal/nativeeditor/)。
+Mark Go Go 的原生桌面界面由 MyGo Native UI 绘制，[internal/portrait](internal/portrait/) 是全部设计变量与共用控件的唯一来源。窗口采用受 Arc 启发的彩色布景与悬浮纸页结构，结合中国传统色五行八境与统一设置中心：组件语义与契约见 [ADR 0012](docs/adr/0012-portrait-2-coss-reference-and-contracts.md)；布景、纸页与命令栏见 [ADR 0013](docs/adr/0013-arc-experiment-scenery-page-command-bar.md)；五行 Space、每个 Space 自有的强调色与深色外观见 [ADR 0014](docs/adr/0014-wuxing-spaces-per-space-accent-and-dark-mode.md)；统一设置中心见 [ADR 0015](docs/adr/0015-unified-settings-center.md)；实现入口见 [原生窗口外壳](internal/nativeui/shell.go) 和 [原生编辑器](internal/nativeeditor/)。
 
 ## 设计立场
 
@@ -14,7 +14,7 @@
 
 - **布景 Scenery**：窗口底色是取自所在 Space 当前外观的 160° Oklab 三段渐变。八种 Space 按工作区根路径保存；侧栏底栏色点是唯一高频快速切换，完整选择在 `Settings / Appearance`，命令栏保留 `Space: …` 命令。外观 System / Light / Dark 同样由侧栏昼夜按钮、Settings 或命令栏切换。工作区菜单和 macOS View 不再维护第二套编辑器，View 的 `Appearance…` 直接深链。主窗口布景保持不透明传统色，玻璃只用于浮层。 [布景](internal/portrait/space.go) · [设置中心](internal/nativeui/settings.go)
 - **侧栏**：自上而下是窗口控件行、工作区切换器（应用内主题菜单，仅含工作区、Open Folder、Close Workspace 与 `Settings…`）、命令入口（`⌘K` 键帽）、打开的原文、`Files / Outline` 与按需 SearchField、零缩进目录钻取与祖先栈。底部保留八境五行色点、昼夜切换、多工作区色点、Settings 与新建原文；Plugins 菜单已迁入 `Settings / Plugins`。641 点及以上停靠，较窄时使用抽屉。 [侧栏](internal/nativeui/sidebar.go) · [设置页注册](internal/nativeui/settings_pages.go)
-- **纸页 Page**：所在 Space 的纸色（浅色为白，深色为各 Space 的深色纸）、圆角 12、带一圈发丝线和柔和投影，距窗口边缘 8 点。顶部一行依次是侧栏开关（侧栏未停靠时）、可点击定位的路径、编辑状态、Preview / Markdown / GenUI 切换、检查点和研究面板开关；其下只有内容。完整路径在文件名的提示里，不再有底部状态行。 [纸页](internal/nativeui/document.go)
+- **纸页 Page**：所在 Space 的纸色（浅色为白，深色为各 Space 的深色纸）、圆角 12、带一圈发丝线和柔和投影，距窗口边缘 8 点。顶部一行依次是侧栏开关（侧栏未停靠时）、可点击定位的祖先路径与当前文件名、编辑状态、Preview / Markdown / GenUI 切换、检查点和研究面板开关；其下只有内容，不再有底部状态行。侧栏文件行、文档标签与纸页路径不弹出遮挡内容的完整路径悬浮提示。 [纸页](internal/nativeui/document.go)
 - **研究面板**：启用 Feynman 后，1180 点及以上宽度时是并排的第二张纸，像 Arc 的分屏；两张纸之间的空隙可拖动调宽。较窄时是从右侧滑出的玻璃抽屉。抽屉关闭或按 Esc 后，焦点返回其入口。 [窗口外壳](internal/nativeui/shell.go) · [键盘与窄窗用例](internal/nativeui/shell_test.go)
 - **窗口控件**：macOS 隐藏系统标题栏，红绿灯落在侧栏顶部；侧栏开关、路径和视图切换与红绿灯同处一条水平线，这一行可以拖动窗口。侧栏收起时纸页顶行让出红绿灯的位置。Linux 与 Windows 保留系统标题栏。 [窗口适配](internal/nativeui/window.go) · [窗口控件用例](internal/nativeui/sidebar_test.go)
 
@@ -34,10 +34,10 @@
 
 - **字体**：界面与正文 Inter，一级和二级标题 Inter Display，代码 IBM Plex Mono，图标 Phosphor；汉字按字形回退到 IBM Plex Sans SC。字体和许可证随应用打包。 [字号与颜色](internal/portrait/portrait.go) · [字体资源](internal/portrait/fonts/)
 - **字号阶梯**保持封闭：display 28/36、title 20/28、reading 16/28、small 14/22、ui 13/18、control 13/20、meta 12/16、code 13/22，新增 H3 18/28 与 mono CodeSmall 12/18；没有小于 12 的界面文字。Preview 标题为 H1 28、H2 20、H3 18、H4 16、H5 14、H6 13。编辑器阅读字号 15–18、源码字号 12–14 与行宽 560/624/720 由独立 `EditorTokens` 派生，不改变界面 Type 阶梯。 [字号与颜色](internal/portrait/portrait.go) · [编辑器变量](internal/portrait/editor.go)
-- **颜色**：每个 Space 在浅色与深色下各有布景两端、纸页、代码面、强调色、标记色和 Success / Warn / Danger，全部取自五行 742 色表的具名颜色（纸页与代码面为派生中性面）。浅色墨色 `#1D1B1C` / `#48484D` / `#6E6E73`，强调色上的字为白；深色墨色 `#F2F3F4` / `#CDD1D3` / `#959DA2`，强调色上的字为玄黑 `#0E100F`。焦点环是强调色的 28%（深色 40%）；`Info` 与 `Note` 是强调色的别名。深色下发丝线与填充是白色薄层，凸起与弹层比纸亮，凹面比纸暗，选中的侧栏标签是 85% 的纸色。差异视图的新增行、复制成功的对勾和上升趋势用 `Success`。 [Space](internal/portrait/space.go) · [色调](internal/portrait/tone.go) · [五行契约](internal/portrait/wuxing_test.go)
-- **材质**是平的：没有渐变面和多层内阴影。凸起是白纸加发丝线和一层浅投影，悬停与按下只改变投影和底色；强调按钮是纯色加同色光晕；行悬停、凹面和分段控件的轨道是 5% 左右的黑色薄层；`Sheet`、`Pop`、`Page` 是白纸加由浅到深的三档投影。 [材质](internal/portrait/material.go) · [控件](internal/portrait/controls.go)
+- **颜色**：每个 Space 在浅色与深色下各有布景两端、纸页、代码面、强调色、标记色和 Success / Warn / Danger，全部取自五行 742 色表的具名颜色（纸页与代码面为派生中性面）。浅色墨色 `#1D1B1C` / `#48484D` / `#6E6E73`，强调色上的字为白；深色墨色 `#F2F3F4` / `#CDD1D3` / `#959DA2`，强调色上的字为玄黑 `#0E100F`。焦点环是强调色的 28%（深色 40%）；`Info` 与 `Note` 是强调色的别名。深色下发丝线与填充是白色薄层，凸起与弹层由 `lift(...)` 略亮于纸面，凹面比纸暗；多工作区色点选中态使用 `GlassSelected`（85% 纸色），文档标签选中胶囊使用 `Materials.Raised`。差异视图的新增行、复制成功的对勾和上升趋势用 `Success`。 [Space](internal/portrait/space.go) · [色调](internal/portrait/tone.go) · [五行契约](internal/portrait/wuxing_test.go)
+- **材质**是平的：没有渐变面和多层内阴影。浅色下凸起是白纸加发丝线和一层浅投影，深色下以纸面提亮并配深色投影，悬停与按下只改变投影和底色；强调按钮是纯色加同色光晕；行悬停、凹面和分段控件的轨道是 5% 左右的薄层；`Sheet`、`Pop`、`Page` 是纸面加由浅到深的三档投影。 [材质](internal/portrait/material.go) · [控件](internal/portrait/controls.go)
 - **圆角**只有 4、6、8、12、16 与胶囊形，外加嵌套的轨道 10 与分段 8。行与按钮 8，纸页、卡片与弹层 12，抽屉与命令栏 16。控件高度仍是 22、28、32；侧栏的行高是阶梯的：打开的标签行 32，文件树行 28。字号同样分层，工作区名 14、打开的标签 13、文件树与大纲行 12，只有选中的标签或文件行加粗到 500。 [阶梯](internal/portrait/scale.go) · [外壳尺寸](internal/portrait/theme.go) · [文件树](internal/nativeui/sidebar.go)
-- **动效**沿用原有时长与曲线：按下、切换、展开、进入、菜单和跳转；键盘操作或减少动态效果偏好下，过渡直接落位。选中的标签是一张在行间滑动的白色胶囊。Preview 的标题折叠与展开直接到位，见 issue #96。 [动效](internal/portrait/motion.go)
+- **动效**沿用原有时长与曲线：按下、切换、展开、进入、菜单和跳转；键盘操作或减少动态效果偏好下，过渡直接落位。选中的文档标签、文件行与大纲行通过共享胶囊在行间平滑滑动；指针点击收放停靠侧栏平滑过渡宽度并避让标题栏窗口控件，`⌘0` 则单帧瞬切；大纲点击将目标标题定位到编辑区顶部附近并同步原生选中态；Preview 的标题折叠与展开直接到位，见 issue #96。 [动效](internal/portrait/motion.go)
 - **共用控件**：六种按钮、图标按钮、分段控件、TextField、SearchField、TextArea、Select、Stepper、Slider、Radio、DateField、Menu、ContextMenu、Popover、DialogShell、SettingsGroup/Row、Disclosure、OutputBlock、Chip、ListRow、Tooltip、Alert、Badge、Toast、Decision、Prompt、Confirm、Card、Frame、Skeleton 与 Phosphor 图标。图标尺寸只取 XS 12、S 14、M 16、L 20；除 GenUI 文档内容阅读器外，原生表面不直接调用框架的 Button/TextInput/TextArea/Select/Popover/Collapsible。 [控件](internal/portrait/controls.go) · [表单](internal/portrait/fields.go) · [设置行](internal/portrait/settings_controls.go)
 
 ## 玻璃材质
@@ -64,7 +64,7 @@
 4. 要看整窗效果时导出 2× 场景图：`MGG_SCENES_DIR=/tmp/mgg MGG_SCENES_PREFIX=v2_ MGG_SCENES_SET=wuxing go test ./internal/nativefeynman -run TestShellScenes -v`。除八个 Space 的浅色/深色回归外，矩阵覆盖设置分类、搜索与窄窗、工作区菜单、研究弹层、检查点、提案、链接 hover、查找栏和 GenUI request。 [场景](internal/nativefeynman/scenes_list_test.go)
 5. 涉及原生菜单、Finder、输入法或辅助技术时，在 macOS 应用中执行 [原生 Automation 流程](docs/agents/native-automation.md)，并记录对应构建和实测结果。
 
-## 实验的已知缺口
+## 已知边界
 
 - 没有 Arc 的悬停滑出侧栏、两篇原文并排的分屏和标签自动归档。
 - macOS 的系统侧栏材质跟随系统外观；所选外观与系统不同时布景改为不透明，桌面不再透出。

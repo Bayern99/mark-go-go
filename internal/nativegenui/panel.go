@@ -484,8 +484,11 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 				if ref.Occurrence > 1 {
 					label = fmt.Sprintf("%s (%d)", label, ref.Occurrence)
 				}
-				heading := sourceHeading(c.Key(i), label, !ok)
-				v.drawSourcePreview(c, heading, fmt.Sprintf("%s/%d/%s", n.ID, i, id), label, ref, s, ok)
+				var heading ui.Element
+				anchor := ui.Box(c.Key(i)).Children(func() {
+					heading = sourceHeading(c, label, !ok)
+				})
+				v.drawSourcePreview(c, anchor, fmt.Sprintf("%s/%d/%s", n.ID, i, id), label, ref, s, ok)
 				if heading.Clicked() {
 					highlightCard(v.reader(), n)
 					p.win.Reveal(s.Start)
@@ -545,7 +548,7 @@ func highlightCard(reader *Reading, n Node) {
 }
 
 func (v *documentView) drawSourcePreview(c *ui.Context, anchor ui.Element, key, label string, ref Reference, section workspace.Section, found bool) {
-	hovered, focused := anchor.Hovered() && c.Preferences().Hover(), anchor.Focused()
+	hovered, focused := anchor.Hovered() && c.Preferences().Hover(), anchor.FocusWithin()
 	engaged := hovered || focused
 	state := &v.previewSource
 	if state.key != key {
@@ -574,8 +577,9 @@ func (v *documentView) drawSourcePreview(c *ui.Context, anchor ui.Element, key, 
 	if !state.open || state.key != key {
 		return
 	}
+	windowWidth, _ := c.Size()
 	panel := portrait.PopoverWithSpec(c, anchor, &state.open, portrait.PopoverSpec{
-		Width: portrait.Form.PopoverWide,
+		Width: min(portrait.Form.PopoverWide, max(0, windowWidth-2*portrait.Shell.PageInset)),
 		Title: "Source preview: " + label,
 	}, func() {
 		switch {

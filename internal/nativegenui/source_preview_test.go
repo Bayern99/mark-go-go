@@ -137,11 +137,39 @@ func TestSourcePreviewReportsChangedAndMissingSectionsInsteadOfStaleExcerpts(t *
 	if !app.HasText("This section changed after the view was generated.") || app.HasText("Old paragraph.") || app.HasText("New paragraph.") {
 		t.Fatalf("a changed source did not replace its excerpt with the changed state: %v", app.Texts())
 	}
+	app.Move(600, 340)
+	app.Advance(400 * time.Millisecond)
+	hoverSourcePreview(t, app)
+	if !app.HasText("This section changed after the view was generated.") || app.HasText("New paragraph.") {
+		t.Fatalf("reopening a changed source did not show only its changed state: %v", app.Texts())
+	}
 
 	v.index("# Another section\n\nOther text.\n")
 	app.Frame()
 	if !app.HasText("This section is no longer in the document.") || app.HasText("Old paragraph.") || app.HasText("New paragraph.") {
 		t.Fatalf("a missing source did not replace its excerpt with the missing state: %v", app.Texts())
+	}
+	app.Move(600, 340)
+	app.Advance(400 * time.Millisecond)
+	hoverSourcePreview(t, app)
+	if !app.HasText("This section is no longer in the document.") || app.HasText("Old paragraph.") {
+		t.Fatalf("reopening a missing source did not show only its missing state: %v", app.Texts())
+	}
+}
+
+func TestSourcePreviewFitsANarrowReader(t *testing.T) {
+	v := newSourcePreviewView(t)
+	v.index("# Overview\n\nAn overview.\n")
+	app := sourcePreviewTester(v)
+	app.SetSize(320, 360)
+	app.Key(0, ui.KeyTab)
+	app.Frame()
+	popup, ok := app.AccessByRole(ui.RolePopup, "Source preview: Overview")
+	if !ok {
+		t.Fatal("the narrow reader did not open its source preview")
+	}
+	if popup.Bounds.X < 0 || popup.Bounds.X+popup.Bounds.W > 320 {
+		t.Errorf("the preview extends outside the narrow reader: %+v", popup.Bounds)
 	}
 }
 

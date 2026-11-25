@@ -102,7 +102,7 @@ func TestRecentLabelsTellSameNamedFilesApart(t *testing.T) {
 }
 
 func TestViewMenuUsesCommandEForPreviewMarkdownToggle(t *testing.T) {
-	menu := buildMenu(workspace.NewService())
+	menu := buildMenu(workspace.NewService(), true)
 	var toggle *mygo.MenuItem
 	var walk func([]*mygo.MenuItem)
 	walk = func(items []*mygo.MenuItem) {
@@ -123,7 +123,7 @@ func TestViewMenuUsesCommandEForPreviewMarkdownToggle(t *testing.T) {
 }
 
 func TestBuildMenuUsesSettingsCenterDeepLinks(t *testing.T) {
-	menu := buildMenu(workspace.NewService())
+	menu := buildMenu(workspace.NewService(), true)
 	labels := map[string]bool{}
 	var walk func([]*mygo.MenuItem)
 	walk = func(items []*mygo.MenuItem) {
@@ -140,5 +140,24 @@ func TestBuildMenuUsesSettingsCenterDeepLinks(t *testing.T) {
 		if !labels[label] {
 			t.Errorf("menu is missing %q", label)
 		}
+	}
+}
+
+func TestViewMenuGenUIItemTracksThePluginPreference(t *testing.T) {
+	menu := buildMenu(nil, false)
+	item := menu.ItemByID("view.genui")
+	if item == nil {
+		t.Fatal("View is missing the GenUI item")
+	}
+	if item.IsEnabled() {
+		t.Fatal("GenUI remained available while the plugin was off")
+	}
+	updateGenUIMenu(menu, true)
+	if !item.IsEnabled() {
+		t.Fatal("GenUI remained unavailable after the plugin was enabled")
+	}
+	updateGenUIMenu(menu, false)
+	if item.IsEnabled() {
+		t.Fatal("GenUI remained available after the plugin was disabled")
 	}
 }

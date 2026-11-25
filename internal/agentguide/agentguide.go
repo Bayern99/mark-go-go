@@ -15,10 +15,9 @@ import (
 
 // Harness IDs. Each one names an external agent the page writes a prompt for.
 const (
-	HarnessClaudeCode = "claude-code"
-	HarnessCodex      = "codex"
-	HarnessPi         = "pi"
-	HarnessOther      = "other"
+	HarnessCodex = "codex"
+	HarnessPi    = "pi"
+	HarnessOther = "other"
 )
 
 // Harness is one external agent: what it is like to connect, and the line the
@@ -38,12 +37,6 @@ type Harness struct {
 // Harnesses are the agents Settings / AI Integration offers, in the order it
 // shows them.
 var Harnesses = []Harness{
-	{
-		ID: HarnessClaudeCode, Name: "Claude Code",
-		Summary: "A shell tool: it runs the markgogo command itself, or adds the stdio shim as an MCP server.",
-		Connect: "claude mcp add markgogo -- markgogo mcp",
-		Prompt:  "You have a shell. Run the markgogo command, or the MCP server the reader registered with `claude mcp add markgogo -- markgogo mcp`.",
-	},
 	{
 		ID: HarnessCodex, Name: "Codex",
 		Summary: "A sandboxed tool: the shim reaches the same socket, but the sandbox has to allow it.",

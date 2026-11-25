@@ -25,8 +25,8 @@ func TestEveryHarnessIsToldWhereTheAppListens(t *testing.T) {
 
 func TestAHarnessPromptSaysWhatThatHostHasToDo(t *testing.T) {
 	cases := map[string]string{
-		HarnessClaudeCode: "shell",
-		HarnessCodex:      "sandbox",
+		HarnessPi:    "shell",
+		HarnessCodex: "sandbox",
 	}
 	for id, want := range cases {
 		if prompt := Prompt(id, "/tmp/ipc.sock"); !strings.Contains(prompt, want) {

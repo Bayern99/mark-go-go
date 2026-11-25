@@ -28,7 +28,7 @@ func testPanel(t *testing.T) (*panel, *[]workspace.SettingsPatch) {
 		install:  agentcli.Installer{Source: source, Dir: filepath.Join(t.TempDir(), ".local", "bin")},
 		userData: t.TempDir(),
 		settings: workspace.DefaultSettings(),
-		harness:  agentguide.HarnessClaudeCode,
+		harness:  agentguide.HarnessCodex,
 	}
 	p.save = func(patch workspace.SettingsPatch) (workspace.Settings, error) {
 		*saved = append(*saved, patch)
@@ -62,7 +62,7 @@ func TestThePageShowsEveryWayAnAgentReachesTheWindow(t *testing.T) {
 	for _, want := range []string{
 		"External Agent Capabilities", "Command Line Tool", "Agent Prompt",
 		"Agent Skill", "MCP (stdio)", "Allow external agents", "Last external call",
-		"Claude Code", "Codex", "Pi", "Other",
+		"Codex", "Pi", "Other",
 	} {
 		if !app.HasText(want) {
 			t.Errorf("the page lacks %q: %q", want, app.Texts())
@@ -187,15 +187,15 @@ func TestABuildWithoutTheCommandSaysHowToGetOne(t *testing.T) {
 func TestCopyingAPromptCopiesTheSelectedHarness(t *testing.T) {
 	p, _ := testPanel(t)
 	app := pageTester(p, "")
-	if err := app.Click("Claude Code harness"); err != nil {
-		t.Fatalf("selecting Claude Code: %v", err)
+	if err := app.Click("Pi harness"); err != nil {
+		t.Fatalf("selecting Pi: %v", err)
 	}
 	app.Frame()
-	if err := app.Click("Copy the prompt for Claude Code"); err != nil {
+	if err := app.Click("Copy the prompt for Pi"); err != nil {
 		t.Fatalf("copying the prompt: %v", err)
 	}
-	if got := app.Clipboard(); !strings.Contains(got, "claude mcp add markgogo -- markgogo mcp") || !strings.Contains(got, "ipc.sock") {
-		t.Fatalf("copied %q, want the Claude Code prompt", got)
+	if got := app.Clipboard(); !strings.Contains(got, "SKILL.md") || !strings.Contains(got, "ipc.sock") {
+		t.Fatalf("copied %q, want the Pi prompt", got)
 	}
 
 	if err := app.Click("Codex harness"); err != nil {

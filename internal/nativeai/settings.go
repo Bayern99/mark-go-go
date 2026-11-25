@@ -23,7 +23,7 @@ const (
 
 	agentTitle       = "Agent"
 	agentDescription = "Pick the harness you are connecting. The prompt and the connection follow the card you choose."
-	agentKeywords    = "agent harness claude code claude-code codex pi other"
+	agentKeywords    = "agent harness codex pi other"
 
 	promptTitle     = "Prompt"
 	promptKeywords  = "prompt instructions copy"
@@ -81,7 +81,7 @@ func Install(host *workspace.Service, channel Channel) func(*nativeui.Window) na
 			install:  agentcli.Default(),
 			channel:  channel,
 			userData: host.UserDataDir(),
-			harness:  agentguide.HarnessClaudeCode,
+			harness:  agentguide.HarnessCodex,
 		}
 		p.settings, _ = host.GetSettings()
 		p.save = host.SetSettings
@@ -96,7 +96,7 @@ func (p *panel) settingsPage() nativeui.SettingsPage {
 	return nativeui.SettingsPage{
 		ID: "ai-integration", Section: "Workspace", Label: "AI Integration",
 		Icon: portrait.IconPlugs, Order: 220,
-		Keywords: []string{"ai integration external agent cli markgogo install ipc socket mcp skill prompt claude code codex pi"},
+		Keywords: []string{"ai integration external agent cli markgogo install ipc socket mcp skill prompt codex pi"},
 		Dirty:    func() bool { return p.settings.ExternalIPC },
 		Reset:    func() { p.setExternalIPC(false) },
 		Draw:     p.drawSettingsPage,

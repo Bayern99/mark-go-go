@@ -53,13 +53,13 @@ Mark Go Go 不内置模型，也不代管第三方凭证：它调用你本机已
 
 Pi 后端随本版本提供；它的自动化覆盖使用 Fake Pi，真实 Pi 账户下的流式生成与越界写入拦截仍待实测。Antigravity 与 Codex 的模型刷新、登录与流式生成同样需要在装有对应 CLI 的机器上验证。
 
-### 外部 Harness：Claude Code、Codex、Pi、其他
+### 外部 Harness：Codex、Pi、其他
 
 `Settings / AI Integration` 把一个窗口的工作区交给你自己在终端里跑的 Agent：
 
 - **`markgogo` 命令**：独立二进制，`Install` 把它链接到 `~/.local/bin`，`Uninstall` 只删除本应用做的那个链接。不写 `/usr/local/bin`、不需要 sudo、不改 shell 配置；路径上别人的文件一律不动。若这个构建没有随应用提供该二进制，页面会把状态标成 `Not in this build`，并给出从源码构建的方法：在本仓库的检出目录里运行 `go build -o ~/.local/bin/markgogo ./cmd/markgogo`（仓库的 `go.mod` 用 `replace` 指向内置的 MyGo，所以不能用 `go install …@latest`）。
 - **本机通道**：默认关闭。打开后应用在用户数据目录的 `ipc.sock` 上按行收发 JSON-RPC（目录 `0700`、socket `0600`），只接受你本机、你自己的用户；页面显示是否正在监听，以及最近一次外部调用的来源和时间。关闭时停止监听并删除 socket。
-- **接法**：页面为 Claude Code、Codex、Pi 与其他 Agent 各给一份提示词（`Copy prompt`）与一份静态 `SKILL.md`（写进应用自己的目录，或复制到你的 Harness 读取技能的位置）。shell 型 Harness 直接运行 `markgogo`；只讲 MCP 的客户端可以在折叠的 `MCP (stdio)` 区取用 `{"command":"markgogo","args":["mcp"]}` 注册 stdio 垫片，它转发到同一个 socket，没有端口也没有 Token。沙箱型客户端（如 Codex）可能拒绝访问 Unix socket；这时请给客户端所需的权限，而不是关掉应用里的边界。
+- **接法**：页面为 Codex、Pi 与其他 Agent 各给一份提示词（`Copy prompt`）与一份静态 `SKILL.md`（写进应用自己的目录，或复制到你的 Harness 读取技能的位置）。shell 型 Harness 直接运行 `markgogo`；只讲 MCP 的客户端可以在折叠的 `MCP (stdio)` 区取用 `{"command":"markgogo","args":["mcp"]}` 注册 stdio 垫片，它转发到同一个 socket，没有端口也没有 Token。沙箱型客户端（如 Codex）可能拒绝访问 Unix socket；这时请给客户端所需的权限，而不是关掉应用里的边界。Mark Go Go 不接入 Claude Code。
 - **CLI 命令**：`status`、`read`（章节、行范围、批注）、`propose`、`new`、`open`、`genui format`、`genui write`、`checkpoint`、`agent-prompt`、`mcp`。只有 `read`、`genui format` 与 `agent-prompt` 不依赖运行中的应用。
 - **何时生效**：只有 `propose_edit`（`markgogo propose`）进入审阅队列，接受后才修改原文。`create_document`（`markgogo new`）立即新建文稿并拒绝覆盖。`write_genui_view`（`markgogo genui write`）校验后立即替换阅读视图。`create_checkpoint`（`markgogo checkpoint`）立即为已保存的原文创建快照。
 - **协议**：外部通道说 MCP `2026-07-28`（`server/discover` 与逐请求 `_meta` 版本），并对旧客户端回退 `2025-11-25` 的 `initialize` 握手。这两个版本由本仓库的 socket 与 stdio 垫片测试覆盖；具体 Harness 与 MCP Inspector 的端到端记录见发布前的验收。

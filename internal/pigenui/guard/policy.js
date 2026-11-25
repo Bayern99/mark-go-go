@@ -3,9 +3,34 @@
 // every call before the call runs. These are the decisions only: keeping them
 // free of Pi's API is what lets this file's tests run under plain Node.
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 export const GUARD_VERSION = "1";
+
+const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
+
+// asPiReadsIt rewrites a tool's path the way Pi's file tools do before they
+// touch the disk (utils/paths.js normalizePath): unicode spaces, a leading @,
+// ~ for the home folder and file:// URLs. Judging the raw text instead would
+// let "~/x" or "@/x" pass as a file inside the turn's folder.
+export function asPiReadsIt(target) {
+  let normalized = target.replace(UNICODE_SPACES, " ");
+  if (normalized.startsWith("@")) {
+    normalized = normalized.slice(1);
+  }
+  if (normalized === "~") {
+    return os.homedir();
+  }
+  if (normalized.startsWith("~/") || (process.platform === "win32" && normalized.startsWith("~\\"))) {
+    return path.join(os.homedir(), normalized.slice(2));
+  }
+  if (/^file:\/\//.test(normalized)) {
+    return fileURLToPath(normalized);
+  }
+  return normalized;
+}
 
 // canonical resolves the part of a path that exists and keeps the rest, so a
 // symbolic link cannot move a read or a write away from the paths the host
@@ -47,7 +72,12 @@ export function blockedReason(toolName, input, allowed) {
   if (target === "") {
     return "This tool call names no file, so it was blocked.";
   }
-  const resolved = canonical(target);
+  let resolved;
+  try {
+    resolved = canonical(asPiReadsIt(target));
+  } catch {
+    return "This tool call names a path the guard cannot read, so it was blocked.";
+  }
   if (toolName === "read") {
     if (isInside(canonical(allowed.root), resolved)) {
       return "";

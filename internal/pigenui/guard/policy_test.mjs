@@ -25,6 +25,8 @@ fs.symlinkSync(outside, path.join(root, "escape-dir"));
 // Pi runs with the turn's folder as its working directory, which is what makes
 // a relative path resolve inside the folder.
 process.chdir(root);
+// Pi expands ~ to the home folder; point it outside the turn.
+process.env.HOME = outside;
 
 const allowed = { root, out: path.join(root, "out.json") };
 const resolvedRoot = canonical(root);
@@ -45,6 +47,13 @@ const cases = [
   ["a write to another file in the folder is blocked", "write", { path: path.join(root, "extra.md") }, "write"],
   ["a write to another out.json below the folder is blocked", "write", { path: path.join(root, "notes", "out.json") }, "write"],
   ["a write that climbs out is blocked", "write", { path: path.join(outside, "out.json") }, "write"],
+  ["a read of the home folder through ~ is blocked", "read", { path: "~/secret.md" }, "read"],
+  ["a read of the home folder itself is blocked", "read", { path: "~" }, "read"],
+  ["a read whose @ prefix Pi strips is blocked outside", "read", { path: "@" + path.join(outside, "secret.md") }, "read"],
+  ["a read whose @ prefix Pi strips stays allowed inside", "read", { path: "@source.md" }, ""],
+  ["a read by file URL outside the folder is blocked", "read", { path: "file://" + path.join(outside, "secret.md") }, "read"],
+  ["a write of out.json through Pi's @ prefix is allowed", "write", { path: "@out.json" }, ""],
+  ["a write to the home folder through ~ is blocked", "write", { path: "~/out.json" }, "write"],
   ["a call without a path is blocked", "read", {}, "no file"],
   ["a shell call is blocked", "bash", { command: "ls" }, "may only read"],
 ];

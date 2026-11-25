@@ -271,8 +271,9 @@ func (h *Service) StartGeneration(ctx context.Context, documentID string, req ge
 		Backend:      backendID,
 		AgentCommand: backend.Command,
 		Args:         backend.Args,
-		Model:        backend.Model,
+		Model:        backend.UsableModel(),
 		ThoughtLevel: backend.ThoughtLevel,
+		Selection:    settingsSelection(h.settings),
 		ViewPath:     genui.ViewPath(docPath),
 		Now:          time.Now,
 		Models:       models,
@@ -293,6 +294,15 @@ func (h *Service) StartGeneration(ctx context.Context, documentID string, req ge
 		result <- err
 	}()
 	return result
+}
+
+// settingsSelection records what the agent confirmed, so the next run uses the
+// values that took effect rather than the ones asked for.
+func settingsSelection(st *settingsStore) acp.SelectionUpdater {
+	if st == nil {
+		return nil
+	}
+	return st
 }
 
 func (h *Service) commitGenerationWrite(s *docSession, slot *generationSlot) error {

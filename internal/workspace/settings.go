@@ -201,8 +201,10 @@ func (st *settingsStore) getLocked() Settings {
 			s.GenUI.Backends[id] = backend
 		}
 	}
-	if s.GenUI.Backend == "" {
+	if b, ok := genui.BackendByID(s.GenUI.Backend); !ok || !b.Ready {
 		s.GenUI.Backend = st.firstBackend()
+	} else {
+		s.GenUI.Backend = b.ID
 	}
 	return s
 }
@@ -258,17 +260,11 @@ func (st *settingsStore) apply(p SettingsPatch) (Settings, error) {
 			return Settings{}, err
 		}
 	}
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		st.mu.Unlock()
-		return Settings{}, err
-	}
-	if err := fsutil.WriteFileAtomic(st.path(), append(data, '\n')); err != nil {
-		st.mu.Unlock()
-		return Settings{}, err
-	}
-	onChange := st.onChange
+	onChange, err := st.writeLocked(s)
 	st.mu.Unlock()
+	if err != nil {
+		return Settings{}, err
+	}
 	if onChange != nil {
 		onChange(s)
 	}
@@ -316,6 +312,63 @@ func applyGenUIPatch(g *GenUISettings, p GenUIPatch) error {
 	return nil
 }
 
+// SetSelection records the model and effort an agent confirmed. Empty values
+// are left as they are, so an agent that applies only the model does not erase
+// the effort the user chose.
+func (st *settingsStore) SetSelection(backendID, model, thoughtLevel string) error {
+	st.mu.Lock()
+	if st.dir == "" {
+		st.mu.Unlock()
+		return nil
+	}
+	s := st.getLocked()
+	id := genui.NormalizeBackendID(backendID)
+	if _, ok := genui.BackendByID(id); !ok {
+		st.mu.Unlock()
+		return nil
+	}
+	current := s.GenUI.For(id)
+	changed := false
+	if model = strings.TrimSpace(model); model != "" && current.Model != model {
+		current.Model = model
+		changed = true
+	}
+	if thoughtLevel = strings.TrimSpace(thoughtLevel); thoughtLevel != "" && current.ThoughtLevel != thoughtLevel {
+		current.ThoughtLevel = thoughtLevel
+		changed = true
+	}
+	if !changed {
+		st.mu.Unlock()
+		return nil
+	}
+	if s.GenUI.Backends == nil {
+		s.GenUI.Backends = map[string]GenUIBackend{}
+	}
+	s.GenUI.Backends[id] = current
+	onChange, err := st.writeLocked(s)
+	st.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if onChange != nil {
+		onChange(s)
+	}
+	return nil
+}
+
+// writeLocked persists committed settings and returns the listener to call
+// after the lock is released.
+func (st *settingsStore) writeLocked(s Settings) (func(Settings), error) {
+	data, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	if err := fsutil.WriteFileAtomic(st.path(), append(data, '\n')); err != nil {
+		return nil, err
+	}
+	return st.onChange, nil
+}
+
 // SetModels records the models an agent declared for one backend. An empty
 // answer changes nothing, so a failed refresh never empties the menu.
 func (st *settingsStore) setModels(backendID string, models []string) error {
@@ -340,17 +393,11 @@ func (st *settingsStore) setModels(backendID string, models []string) error {
 		s.GenUI.Backends = map[string]GenUIBackend{}
 	}
 	s.GenUI.Backends[id] = backend
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		st.mu.Unlock()
-		return err
-	}
-	if err := fsutil.WriteFileAtomic(st.path(), append(data, '\n')); err != nil {
-		st.mu.Unlock()
-		return err
-	}
-	onChange := st.onChange
+	onChange, err := st.writeLocked(s)
 	st.mu.Unlock()
+	if err != nil {
+		return err
+	}
 	if onChange != nil {
 		onChange(s)
 	}

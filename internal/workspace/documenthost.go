@@ -63,6 +63,7 @@ type Service struct {
 	navigationChanged func(*mygo.Window, NavSnapshot) error
 	searchReady       func(*mygo.Window, NavSearchResult) error
 	prepareJob        func(*acp.GenerationJob)
+	terminal          func(context.Context, string) error
 }
 
 type docSession struct {

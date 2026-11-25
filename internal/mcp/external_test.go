@@ -980,12 +980,13 @@ func TestTheChannelRemembersTheLastExternalCall(t *testing.T) {
 
 func TestANotificationOrResponseIsNotAnExternalCall(t *testing.T) {
 	srv := &ExternalServer{}
-	srv.note([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"_meta":{"io.modelcontextprotocol/clientInfo":{"name":"markgogo-mcp","version":"0.6.0"}}}}`))
+	var legacyClient string
+	srv.note([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"_meta":{"io.modelcontextprotocol/clientInfo":{"name":"markgogo-mcp","version":"0.6.0"}}}}`), &legacyClient)
 	// A client names itself in a request and then sends notifications and
 	// receives responses in the same shape; neither is a call.
-	srv.note([]byte(`{"jsonrpc":"2.0","method":"notifications/initialized","params":{"_meta":{"io.modelcontextprotocol/clientInfo":{"name":"someone else"}}}}`))
-	srv.note([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`))
-	srv.note([]byte(`not json`))
+	srv.note([]byte(`{"jsonrpc":"2.0","method":"notifications/initialized","params":{"_meta":{"io.modelcontextprotocol/clientInfo":{"name":"someone else"}}}}`), &legacyClient)
+	srv.note([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`), &legacyClient)
+	srv.note([]byte(`not json`), &legacyClient)
 
 	source, at, ok := srv.LastCall()
 	if !ok || source != "markgogo-mcp 0.6.0" || at.IsZero() {
@@ -1015,5 +1016,34 @@ func TestExternalChannelRejectsRequestsAfterWorkspaceCloses(t *testing.T) {
 		if failure := structured[ipc.AppError](t, result); failure.Code != ipc.CodeWorkspaceNotOpen {
 			t.Fatalf("%s error = %+v", name, failure)
 		}
+	}
+}
+
+func TestExternalChannelRemembersLegacyIdentityPerConnection(t *testing.T) {
+	h, root := newSocketHarness(t)
+	srv := startExternal(t, h)
+	first, reply := connectExternal(t, srv, root)
+	if !reply.OK {
+		t.Fatal(reply.Error)
+	}
+	if resp := first.raw(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{
+		"protocolVersion": latestLegacyProtocolVersion,
+		"clientInfo":      map[string]any{"name": "Legacy Inspector", "version": "2.13.0"},
+		"capabilities":    map[string]any{},
+	}}); resp.Error != nil {
+		t.Fatal(resp.Error)
+	}
+	rawList := map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/list"}
+	first.raw(rawList)
+	if source, _, _ := srv.LastCall(); source != "Legacy Inspector 2.13.0" {
+		t.Errorf("last client = %q, want the handshake identity", source)
+	}
+	second, reply := connectExternal(t, srv, root)
+	if !reply.OK {
+		t.Fatal(reply.Error)
+	}
+	second.raw(rawList)
+	if source, _, _ := srv.LastCall(); source != unknownClient {
+		t.Errorf("new connection inherited %q", source)
 	}
 }

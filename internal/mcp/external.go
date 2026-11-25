@@ -91,29 +91,33 @@ func (e *ExternalServer) LastCall() (source string, at time.Time, ok bool) {
 // page never reports "an unknown client" one frame after a named one. It reads
 // only what the page shows, so a malformed message stays the dispatcher's
 // business.
-func (e *ExternalServer) note(line []byte) {
+func (e *ExternalServer) note(line []byte, legacyClient *string) {
 	var message struct {
 		ID     json.RawMessage `json:"id"`
 		Method string          `json:"method"`
 		Params struct {
-			Meta map[string]json.RawMessage `json:"_meta"`
+			Meta       map[string]json.RawMessage `json:"_meta"`
+			ClientInfo json.RawMessage            `json:"clientInfo"`
 		} `json:"params"`
 	}
 	if json.Unmarshal(line, &message) != nil || message.Method == "" || len(message.ID) == 0 || string(message.ID) == "null" {
 		return
 	}
+	if message.Method == "initialize" {
+		*legacyClient = clientName(message.Params.ClientInfo)
+	}
+	source := clientName(message.Params.Meta[ipc.MetaClientInfo])
+	if len(message.Params.Meta[ipc.MetaProtocolVersion]) == 0 && source == unknownClient && *legacyClient != "" {
+		source = *legacyClient
+	}
 	e.mu.Lock()
-	e.last = ExternalCall{Source: clientName(message.Params.Meta), At: time.Now()}
+	e.last = ExternalCall{Source: source, At: time.Now()}
 	e.mu.Unlock()
 }
 
 // clientName reads the client a request named in its _meta, or says it named
 // none.
-func clientName(meta map[string]json.RawMessage) string {
-	raw, ok := meta[ipc.MetaClientInfo]
-	if !ok {
-		return unknownClient
-	}
+func clientName(raw json.RawMessage) string {
 	var info struct {
 		Name    string `json:"name"`
 		Version string `json:"version"`
@@ -298,6 +302,7 @@ func (e *ExternalServer) serve(conn net.Conn) {
 	}
 
 	binding := &sessionBinding{root: root, channel: channelExternal, rootOpen: rootOpen}
+	var legacyClient string
 	for {
 		line, err := ipc.ReadMessage(reader)
 		if err != nil {
@@ -311,7 +316,7 @@ func (e *ExternalServer) serve(conn net.Conn) {
 			})
 			continue
 		}
-		e.note(line)
+		e.note(line, &legacyClient)
 		resp, _, hasResp := e.server.dispatchMessage(context.Background(), binding, line)
 		if !hasResp {
 			continue

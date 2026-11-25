@@ -11,6 +11,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf16"
 
 	"github.com/Bayern99/mark-go-go/internal/genui"
@@ -31,16 +32,47 @@ type documentView struct {
 	loaded, settings, requestEdited    bool
 	request, message, note, noteTarget string
 	sourceText, imagesFor              string
+	excerptSource                      func(string, workspace.Section) string
+	excerpts                           map[sourceExcerptKey]string
 	sections                           map[headingKey]workspace.Section
 	notes                              []workspace.Note
 	failure                            *genui.GenerateFailure
 	lastIDs                            []string
 	cancel                             context.CancelFunc
+	previewSource                      sourcePreviewState
+	previewTargets                     []sourcePreviewTarget
+	previewAnchors                     map[string]*ui.Handle
 }
 type headingKey struct {
 	name       string
 	occurrence int
 }
+
+type sourcePreviewState struct {
+	key                    string
+	hoveredKey, focusedKey string
+	open, dismissed        bool
+	byPointer, overPreview bool
+	pointerMoved           bool
+	dismissedPointer       [2]float32
+	hideAt                 time.Time
+}
+
+type sourceExcerptKey struct {
+	source     string
+	start, end int
+}
+
+type sourcePreviewTarget struct {
+	anchor     *ui.Handle
+	key, label string
+	ref        Reference
+	section    workspace.Section
+	found      bool
+}
+
+const sourceExcerptLimit = 600
+
 type panel struct {
 	win             *nativeui.Window
 	host            *workspace.Service
@@ -315,7 +347,7 @@ func (p *panel) drawView(c *ui.Context, v *documentView, d workspace.DocumentInf
 			_ = p.win.Source().SelectUTF16(start, end)
 		}
 		reader.Sources = func(c *ui.Context, n Node) { p.drawSources(c, v, d, n, busy) }
-		reader.View(c)
+		v.drawReading(c)
 	}
 }
 
@@ -324,6 +356,7 @@ func (v *documentView) index(raw string) {
 		return
 	}
 	v.sourceText = raw
+	v.excerpts = nil
 	v.sections = map[headingKey]workspace.Section{}
 	for _, s := range workspace.ExtractSections(raw) {
 		v.sections[headingKey{workspace.NormalizeHeadingText(s.Heading), s.Occurrence}] = s
@@ -472,7 +505,28 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 				if ref.Occurrence > 1 {
 					label = fmt.Sprintf("%s (%d)", label, ref.Occurrence)
 				}
-				if sourceHeading(c.Key(i), label, !ok).Clicked() {
+				var heading ui.Element
+				anchor := ui.Box(c.Key(i)).Children(func() {
+					heading = sourceHeading(c, label, !ok)
+				})
+				if !ok {
+					anchor.Focusable().Role(ui.RoleStatus).Label(label + ", source missing").Radius(portrait.Radii.S)
+				}
+				key := fmt.Sprintf("%s/%d/%s", n.ID, i, id)
+				if v.previewAnchors == nil {
+					v.previewAnchors = map[string]*ui.Handle{}
+				}
+				handle := v.previewAnchors[key]
+				if handle == nil {
+					handle = new(ui.Handle)
+					v.previewAnchors[key] = handle
+				}
+				anchor.Bind(handle)
+				v.previewTargets = append(v.previewTargets, sourcePreviewTarget{
+					anchor: handle, key: key, label: label,
+					ref: ref, section: s, found: ok,
+				})
+				if heading.Clicked() {
 					highlightCard(v.reader(), n)
 					p.win.Reveal(s.Start)
 					_ = p.win.Source().SelectUTF16(s.Start, s.End)
@@ -528,6 +582,184 @@ func highlightCard(reader *Reading, n Node) {
 		id = n.ID
 	}
 	reader.Highlight(id)
+}
+
+func (v *documentView) drawReading(c *ui.Context) {
+	v.previewTargets = v.previewTargets[:0]
+	v.reader().View(c)
+	v.drawSourcePreview(c, v.previewTargets)
+}
+
+func (v *documentView) drawSourcePreview(c *ui.Context, targets []sourcePreviewTarget) {
+	state := &v.previewSource
+	var hovered, focused *sourcePreviewTarget
+	for i := range targets {
+		target := &targets[i]
+		anchor := c.Resolve(*target.anchor)
+		if !anchor.Valid() {
+			continue
+		}
+		if hovered == nil && anchor.Hovered() && c.Preferences().Hover() {
+			hovered = target
+		}
+		if focused == nil && anchor.FocusWithin() {
+			focused = target
+		}
+	}
+	hoveredKey, focusedKey := "", ""
+	if hovered != nil {
+		hoveredKey = hovered.key
+	}
+	if focused != nil {
+		focusedKey = focused.key
+	}
+	if state.dismissed && !state.pointerMoved {
+		for _, target := range targets {
+			if anchor := c.Resolve(*target.anchor); anchor.Valid() {
+				state.pointerMoved = pointerTravelled(windowPointer(anchor), state.dismissedPointer)
+				break
+			}
+		}
+	}
+	newHover := hoveredKey != "" && hoveredKey != state.hoveredKey
+	newFocus := focusedKey != "" && focusedKey != state.focusedKey
+	state.focusedKey = focusedKey
+	// Closing the popup can expose another source without a pointer move.
+	if state.dismissed && !state.pointerMoved {
+		newHover = false
+	} else {
+		state.hoveredKey = hoveredKey
+	}
+	if state.dismissed && !newHover && !newFocus {
+		state.open, state.overPreview = false, false
+		state.hideAt = time.Time{}
+		return
+	}
+	state.dismissed = false
+	state.hoveredKey = hoveredKey
+
+	var target *sourcePreviewTarget
+	gracing := false
+	switch {
+	case newFocus:
+		target = focused
+		state.byPointer = false
+	case newHover:
+		target = hovered
+		state.byPointer = true
+	case state.open && state.overPreview:
+		target = sourcePreviewTargetForKey(targets, state.key)
+	case state.open && state.byPointer && hovered == nil:
+		target = sourcePreviewTargetForKey(targets, state.key)
+		gracing = true
+		if state.hideAt.IsZero() {
+			state.hideAt = c.Now().Add(300 * time.Millisecond)
+		}
+		if wait := state.hideAt.Sub(c.Now()); wait > 0 {
+			c.After(wait)
+		} else {
+			target = nil
+		}
+	case !state.byPointer && focused != nil:
+		target = focused
+	case hovered != nil:
+		target = hovered
+	default:
+		target = focused
+	}
+	if target != nil {
+		if state.key != target.key {
+			state.byPointer = target == hovered && target != focused
+		}
+		state.key, state.open = target.key, true
+		if !gracing {
+			state.hideAt = time.Time{}
+		}
+	}
+	if target == nil {
+		state.key, state.open, state.overPreview = "", false, false
+		state.hideAt = time.Time{}
+		return
+	}
+
+	windowWidth, windowHeight := c.Size()
+	anchor := c.Resolve(*target.anchor)
+	panel := portrait.PopoverWithSpec(c, anchor, &state.open, portrait.PopoverSpec{
+		Width:     min(portrait.Form.PopoverWide, max(0, windowWidth-2*portrait.Shell.PageInset)),
+		MaxHeight: max(0, windowHeight-2*portrait.Shell.PageInset),
+		Title:     "Source preview: " + target.label,
+	}, func() {
+		switch {
+		case !target.found:
+			portrait.Alert(c, portrait.Tones.Danger, "Source missing", "This section is no longer in the document.")
+		case target.ref.Hash != "" && !target.section.UnchangedSince(target.ref.Hash):
+			portrait.Alert(c, portrait.Tones.Warning, "Source changed", "This section changed after the view was generated. Open the source to read its current text.")
+		default:
+			if target.ref.Hash == "" {
+				portrait.Type.Meta.Apply(ui.Text(c, "Source version at generation time cannot be verified.")).TextColor(portrait.Colors.Ink3)
+			}
+			portrait.Type.Small.Apply(ui.Text(c, v.excerpt(target.key, target.section))).TextColor(portrait.Colors.Ink2).Selectable()
+		}
+	})
+	state.overPreview = panel.Hovered()
+	panel.KeepFocus().Label("Source preview: " + target.label)
+	if !state.open {
+		state.dismissed = true
+		state.overPreview = false
+		state.pointerMoved = false
+		state.dismissedPointer = windowPointer(anchor)
+	}
+}
+
+func windowPointer(anchor ui.Element) [2]float32 {
+	x, y, _ := anchor.PointerPosition()
+	b := anchor.Bounds()
+	return [2]float32{b.X + x, b.Y + y}
+}
+
+func pointerTravelled(now, then [2]float32) bool {
+	const slop = 0.5
+	dx, dy := now[0]-then[0], now[1]-then[1]
+	return dx > slop || dx < -slop || dy > slop || dy < -slop
+}
+
+func sourcePreviewTargetForKey(targets []sourcePreviewTarget, key string) *sourcePreviewTarget {
+	for i := range targets {
+		if targets[i].key == key {
+			return &targets[i]
+		}
+	}
+	return nil
+}
+
+func (v *documentView) excerpt(source string, section workspace.Section) string {
+	key := sourceExcerptKey{source: source, start: section.Start, end: section.End}
+	if excerpt, ok := v.excerpts[key]; ok {
+		return excerpt
+	}
+	excerpt := ""
+	if v.excerptSource != nil {
+		excerpt = v.excerptSource(v.sourceText, section)
+	} else {
+		excerpt = sourceExcerpt(v.sourceText, section)
+	}
+	if v.excerpts == nil {
+		v.excerpts = map[sourceExcerptKey]string{}
+	}
+	v.excerpts[key] = excerpt
+	return excerpt
+}
+
+func sourceExcerpt(raw string, section workspace.Section) string {
+	excerpt := strings.TrimSpace(raw[byteAt(raw, section.Start):byteAt(raw, section.End)])
+	runes := 0
+	for i := range excerpt {
+		if runes == sourceExcerptLimit {
+			return strings.TrimSpace(excerpt[:i]) + "…"
+		}
+		runes++
+	}
+	return excerpt
 }
 
 func sourceHeading(c *ui.Context, label string, disabled bool) ui.Element {

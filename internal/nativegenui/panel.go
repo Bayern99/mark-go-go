@@ -32,12 +32,16 @@ type documentView struct {
 	loaded, settings, requestEdited    bool
 	request, message, note, noteTarget string
 	sourceText, imagesFor              string
+	excerptSource                      func(string, workspace.Section) string
+	excerpts                           map[sourceExcerptKey]string
 	sections                           map[headingKey]workspace.Section
 	notes                              []workspace.Note
 	failure                            *genui.GenerateFailure
 	lastIDs                            []string
 	cancel                             context.CancelFunc
 	previewSource                      sourcePreviewState
+	previewTargets                     []sourcePreviewTarget
+	previewAnchors                     map[string]*ui.Handle
 }
 type headingKey struct {
 	name       string
@@ -46,9 +50,23 @@ type headingKey struct {
 
 type sourcePreviewState struct {
 	key                    string
+	hoveredKey, focusedKey string
 	open, dismissed        bool
 	byPointer, overPreview bool
 	hideAt                 time.Time
+}
+
+type sourceExcerptKey struct {
+	source     string
+	start, end int
+}
+
+type sourcePreviewTarget struct {
+	anchor     *ui.Handle
+	key, label string
+	ref        Reference
+	section    workspace.Section
+	found      bool
 }
 
 const sourceExcerptLimit = 600
@@ -327,7 +345,7 @@ func (p *panel) drawView(c *ui.Context, v *documentView, d workspace.DocumentInf
 			_ = p.win.Source().SelectUTF16(start, end)
 		}
 		reader.Sources = func(c *ui.Context, n Node) { p.drawSources(c, v, d, n, busy) }
-		reader.View(c)
+		v.drawReading(c)
 	}
 }
 
@@ -336,6 +354,7 @@ func (v *documentView) index(raw string) {
 		return
 	}
 	v.sourceText = raw
+	v.excerpts = nil
 	v.sections = map[headingKey]workspace.Section{}
 	for _, s := range workspace.ExtractSections(raw) {
 		v.sections[headingKey{workspace.NormalizeHeadingText(s.Heading), s.Occurrence}] = s
@@ -488,7 +507,23 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 				anchor := ui.Box(c.Key(i)).Children(func() {
 					heading = sourceHeading(c, label, !ok)
 				})
-				v.drawSourcePreview(c, anchor, fmt.Sprintf("%s/%d/%s", n.ID, i, id), label, ref, s, ok)
+				if !ok {
+					anchor.Focusable().Role(ui.RoleStatus).Label(label + ", source missing").Radius(portrait.Radii.S)
+				}
+				key := fmt.Sprintf("%s/%d/%s", n.ID, i, id)
+				if v.previewAnchors == nil {
+					v.previewAnchors = map[string]*ui.Handle{}
+				}
+				handle := v.previewAnchors[key]
+				if handle == nil {
+					handle = new(ui.Handle)
+					v.previewAnchors[key] = handle
+				}
+				anchor.Bind(handle)
+				v.previewTargets = append(v.previewTargets, sourcePreviewTarget{
+					anchor: handle, key: key, label: label,
+					ref: ref, section: s, found: ok,
+				})
 				if heading.Clicked() {
 					highlightCard(v.reader(), n)
 					p.win.Reveal(s.Start)
@@ -547,56 +582,127 @@ func highlightCard(reader *Reading, n Node) {
 	reader.Highlight(id)
 }
 
-func (v *documentView) drawSourcePreview(c *ui.Context, anchor ui.Element, key, label string, ref Reference, section workspace.Section, found bool) {
-	hovered, focused := anchor.Hovered() && c.Preferences().Hover(), anchor.FocusWithin()
-	engaged := hovered || focused
+func (v *documentView) drawReading(c *ui.Context) {
+	v.previewTargets = v.previewTargets[:0]
+	v.reader().View(c)
+	v.drawSourcePreview(c, v.previewTargets)
+}
+
+func (v *documentView) drawSourcePreview(c *ui.Context, targets []sourcePreviewTarget) {
 	state := &v.previewSource
-	if state.key != key {
-		if engaged {
-			*state = sourcePreviewState{key: key, open: true, byPointer: hovered && !focused}
+	var hovered, focused *sourcePreviewTarget
+	for i := range targets {
+		target := &targets[i]
+		anchor := c.Resolve(*target.anchor)
+		if !anchor.Valid() {
+			continue
 		}
-	} else if engaged || state.overPreview {
-		if !state.dismissed {
-			state.open = true
-			state.hideAt = time.Time{}
+		if hovered == nil && anchor.Hovered() && c.Preferences().Hover() {
+			hovered = target
 		}
-	} else if state.open && !state.byPointer {
-		*state = sourcePreviewState{}
-	} else if state.open {
+		if focused == nil && anchor.FocusWithin() {
+			focused = target
+		}
+	}
+	hoveredKey, focusedKey := "", ""
+	if hovered != nil {
+		hoveredKey = hovered.key
+	}
+	if focused != nil {
+		focusedKey = focused.key
+	}
+	newHover := hoveredKey != "" && hoveredKey != state.hoveredKey
+	newFocus := focusedKey != "" && focusedKey != state.focusedKey
+	state.hoveredKey, state.focusedKey = hoveredKey, focusedKey
+	if state.dismissed && !newHover && !newFocus {
+		state.open, state.overPreview = false, false
+		state.hideAt = time.Time{}
+		return
+	}
+	state.dismissed = false
+
+	target := hovered
+	if target == nil {
+		target = focused
+	}
+	if target != nil {
+		if state.key != target.key {
+			state.byPointer = target == hovered && target != focused
+		}
+		state.key, state.open = target.key, true
+		state.hideAt = time.Time{}
+	} else if state.open && state.overPreview {
+		target = sourcePreviewTargetForKey(targets, state.key)
+		state.hideAt = time.Time{}
+	} else if state.open && state.byPointer {
+		target = sourcePreviewTargetForKey(targets, state.key)
 		if state.hideAt.IsZero() {
 			state.hideAt = c.Now().Add(300 * time.Millisecond)
 		}
 		if wait := state.hideAt.Sub(c.Now()); wait > 0 {
 			c.After(wait)
 		} else {
-			*state = sourcePreviewState{}
+			target = nil
 		}
-	} else {
-		*state = sourcePreviewState{}
 	}
-	if !state.open || state.key != key {
+	if target == nil {
+		state.key, state.open, state.overPreview = "", false, false
+		state.hideAt = time.Time{}
 		return
 	}
-	windowWidth, _ := c.Size()
+
+	windowWidth, windowHeight := c.Size()
+	anchor := c.Resolve(*target.anchor)
 	panel := portrait.PopoverWithSpec(c, anchor, &state.open, portrait.PopoverSpec{
-		Width: min(portrait.Form.PopoverWide, max(0, windowWidth-2*portrait.Shell.PageInset)),
-		Title: "Source preview: " + label,
+		Width:     min(portrait.Form.PopoverWide, max(0, windowWidth-2*portrait.Shell.PageInset)),
+		MaxHeight: max(0, windowHeight-2*portrait.Shell.PageInset),
+		Title:     "Source preview: " + target.label,
 	}, func() {
 		switch {
-		case !found:
+		case !target.found:
 			portrait.Alert(c, portrait.Tones.Danger, "Source missing", "This section is no longer in the document.")
-		case ref.Hash != "" && !section.UnchangedSince(ref.Hash):
+		case target.ref.Hash != "" && !target.section.UnchangedSince(target.ref.Hash):
 			portrait.Alert(c, portrait.Tones.Warning, "Source changed", "This section changed after the view was generated. Open the source to read its current text.")
 		default:
-			portrait.Type.Small.Apply(ui.Text(c, sourceExcerpt(v.sourceText, section))).TextColor(portrait.Colors.Ink2).Selectable()
+			if target.ref.Hash == "" {
+				portrait.Type.Meta.Apply(ui.Text(c, "Source version at generation time cannot be verified.")).TextColor(portrait.Colors.Ink3)
+			}
+			portrait.Type.Small.Apply(ui.Text(c, v.excerpt(target.key, target.section))).TextColor(portrait.Colors.Ink2).Selectable()
 		}
 	})
 	state.overPreview = panel.Hovered()
-	panel.KeepFocus().Label("Source preview: " + label)
+	panel.KeepFocus().Label("Source preview: " + target.label)
 	if !state.open {
 		state.dismissed = true
 		state.overPreview = false
 	}
+}
+
+func sourcePreviewTargetForKey(targets []sourcePreviewTarget, key string) *sourcePreviewTarget {
+	for i := range targets {
+		if targets[i].key == key {
+			return &targets[i]
+		}
+	}
+	return nil
+}
+
+func (v *documentView) excerpt(source string, section workspace.Section) string {
+	key := sourceExcerptKey{source: source, start: section.Start, end: section.End}
+	if excerpt, ok := v.excerpts[key]; ok {
+		return excerpt
+	}
+	excerpt := ""
+	if v.excerptSource != nil {
+		excerpt = v.excerptSource(v.sourceText, section)
+	} else {
+		excerpt = sourceExcerpt(v.sourceText, section)
+	}
+	if v.excerpts == nil {
+		v.excerpts = map[sourceExcerptKey]string{}
+	}
+	v.excerpts[key] = excerpt
+	return excerpt
 }
 
 func sourceExcerpt(raw string, section workspace.Section) string {

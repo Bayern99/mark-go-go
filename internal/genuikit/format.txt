@@ -2,6 +2,8 @@ A view is written in openui-lang, one statement per entry of "components".
 
 ## Message
 
+Each message inside "a2ui" needs "version": "1.0" beside its operation. The app adds the separate, numeric version of the saved view file. Do not include that version at the top level of out.json.
+
 out.json for a new view:
 
 {"sources": {"overview": {"heading": "Overview", "occurrence": 1}}, "a2ui": [{"version": "1.0", "createSurface": {"surfaceId": "view", "catalogId": "markgogo.dev:genui/v3", "components": ["root = Col([title, lead])", "title = Title(\"Block-preserving edits\", \"xl\")", "lead = Source([\"overview\"], [Text(\"Edits keep untouched blocks byte for byte.\")])"]}}]}

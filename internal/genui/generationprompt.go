@@ -26,11 +26,11 @@ func GenerationPrompt(req GenerateRequest, base *BaseView, dir string) string {
 	if statements {
 		statementPrompt(&b, base)
 	} else if base == nil {
-		b.WriteString("Make a complete view for the reader's request, using all relevant sections; when no request is supplied, represent the document's substance. out.json is a JSON object with \"sources\", the source references by id, and \"a2ui\", a non-empty list holding exactly one A2UI 1.0 createSurface message for the one surface, whose component tree starts at \"root\". Use only the catalog components in the format definition. Leave out version, generatedAt, model and the sources' hash: the app writes them.\n\n")
+		b.WriteString("Make a complete view for the reader's request, using all relevant sections; when no request is supplied, represent the document's substance. out.json is a JSON object with \"sources\", the source references by id, and \"a2ui\", a non-empty list holding exactly one A2UI 1.0 createSurface message for the one surface, whose component tree starts at \"root\". Use only the catalog components in the format definition. Leave out the top-level version, generatedAt, model and the sources' hash: the app writes them. Every message in a2ui must still include the string field \"version\": \"1.0\" beside its operation.\n\n")
 	} else {
 		fmt.Fprintf(&b, "The document changed since its view was made. Make an update for the current view below. out.json is a JSON object with \"a2ui\", a list holding exactly one A2UI 1.0 updateComponents message for the surface %q with only the keys \"version\" and \"updateComponents\", and \"sources\", the source references it uses. Replace only these components, whose sources changed: %s. Keep the ids of the components you replace. ", base.surfaceID, strings.Join(QuoteAll(base.ReplaceIDs()), ", "))
 		b.WriteString("The message may hold only those components, each still following the format's schemas and nesting rules, and new components they refer to, with ids the current view does not use yet; every other component of the view, with its id and its references, stays exactly as it is. ")
-		b.WriteString("Sources may reuse the current view's sources with exactly their existing heading and occurrence, or add new ids. Leave out version, generatedAt, model and the sources' hash: the app writes them.\n\n")
+		b.WriteString("Sources may reuse the current view's sources with exactly their existing heading and occurrence, or add new ids. Leave out the top-level version, generatedAt, model and the sources' hash: the app writes them. Every message in a2ui must still include the string field \"version\": \"1.0\" beside its operation.\n\n")
 	}
 
 	b.WriteString("Content rules:\n")

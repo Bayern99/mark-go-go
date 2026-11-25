@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/Bayern99/mark-go-go/internal/genuikit"
@@ -242,10 +243,12 @@ func (b *BaseView) deletingUnreferenced(message json.RawMessage, envelope map[st
 
 func statementPrompt(b *strings.Builder, base *BaseView) {
 	if base == nil {
-		b.WriteString("Make a complete view for the reader's request, using all relevant sections; when no request is supplied, represent the document's substance. out.json is a JSON object with \"sources\", the source references by id, and \"a2ui\", a list holding exactly one A2UI 1.0 createSurface message for the surface \"view\" with the catalog \"" + StatementCatalogID + "\". Its \"components\" is a list of strings, each one openui-lang statement, and the tree starts at the statement \"root\". Use only the components and functions in the format definition. Leave out version, language, generatedAt, model and the sources' hash: the app writes them.\n\n")
+		b.WriteString("Make a complete view for the reader's request, using all relevant sections; when no request is supplied, represent the document's substance. out.json is a JSON object with \"sources\", the source references by id, and \"a2ui\", a list holding exactly one A2UI 1.0 createSurface message for the surface \"view\" with the catalog \"" + StatementCatalogID + "\". Its \"components\" is a list of strings, each one openui-lang statement, and the tree starts at the statement \"root\". Use only the components and functions in the format definition. Leave out the top-level version, language, generatedAt, model and the sources' hash: the app writes them. Every message in a2ui must include \"version\": \"1.0\" beside its operation.\n")
+		fmt.Fprintf(b, "New view example: %s\n\n", `{"sources":{},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"view","catalogId":"`+StatementCatalogID+`","components":["root = Col([Text(\"Title\")])"]}}]}`)
 		return
 	}
 	fmt.Fprintf(b, "The document changed since its view was made. Make an update for the current view below. out.json is a JSON object with \"a2ui\", a list holding exactly one A2UI 1.0 updateComponents message for the surface %q with only the keys \"version\" and \"updateComponents\", and \"sources\", the source references it uses. Its \"components\" is a list of strings, each one openui-lang statement. Replace only these statements, whose sources changed: %s. Keep the names of the statements you replace. ", base.surfaceID, strings.Join(QuoteAll(base.ReplaceIDs()), ", "))
 	b.WriteString("The message may hold only those statements and new statements they refer to, with names the current view does not use yet; every other statement of the view stays exactly as it is, and the replaced statements may still refer to it. ")
-	b.WriteString("Sources may reuse the current view's sources with exactly their existing heading and occurrence, or add new ids. Leave out version, language, generatedAt, model and the sources' hash: the app writes them.\n\n")
+	b.WriteString("Sources may reuse the current view's sources with exactly their existing heading and occurrence, or add new ids. Leave out the top-level version, language, generatedAt, model and the sources' hash: the app writes them. Every message in a2ui must include \"version\": \"1.0\" beside its operation.\n")
+	fmt.Fprintf(b, "Update message shape: %s\n\n", `{"version":"1.0","updateComponents":{"surfaceId":`+strconv.Quote(base.surfaceID)+`,"components":[...]}}`)
 }

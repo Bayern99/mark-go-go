@@ -105,7 +105,7 @@ func TestAStatementUpdateKeepsTheStatementsItDoesNotName(t *testing.T) {
 
 func TestThePromptForStatementsAsksForTheStatementFormat(t *testing.T) {
 	full := GenerationPrompt(GenerateRequest{Text: "# Doc", Mode: "full", Format: "FORMAT", Language: StatementLanguage}, nil, "/tmp/x")
-	for _, want := range []string{StatementCatalogID, `Text("Title")`, `"version":"1.0","createSurface"`, "top-level version", "openui-lang statement", "Do not use the network", "Preserve facts exactly", "use a Table"} {
+	for _, want := range []string{StatementCatalogID, `Text(\u0022Title\u0022)`, `"version":"1.0","createSurface"`, "top-level version", "openui-lang statement", "Do not use the network", "Preserve facts exactly", "use a Table"} {
 		if !strings.Contains(full, want) {
 			t.Errorf("the prompt lacks %q", want)
 		}

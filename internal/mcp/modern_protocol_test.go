@@ -15,6 +15,11 @@ func TestModernResultsAreDiscriminatedAndRequireRequestCapabilities(t *testing.T
 	for _, kind := range []string{"server/discover", "tools/list", "tools/call", "resources/list", "ping"} {
 		resp := client.call(kind, map[string]any{"name": toolReadDocument, "arguments": map[string]any{"path": "closed.md"}})
 		result, _ := resp.Result.(map[string]any)
+		if kind == "tools/list" || kind == "resources/list" {
+			if result["ttlMs"] != float64(0) || result["cacheScope"] != "private" {
+				t.Errorf("%s did not declare its cache policy", kind)
+			}
+		}
 		if resp.Error != nil || result["resultType"] != "complete" {
 			t.Errorf("%s resultType = %v, error = %+v", kind, result["resultType"], resp.Error)
 		}

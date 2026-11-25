@@ -605,6 +605,11 @@ func (s *Server) dispatchMessage(ctx context.Context, binding *sessionBinding, r
 			switch result := response.Result.(type) {
 			case map[string]any:
 				result["resultType"] = "complete"
+				switch req.Method {
+				case "tools/list", "resources/list", "resources/templates/list":
+					result["ttlMs"] = 0
+					result["cacheScope"] = "private"
+				}
 				result["_meta"] = map[string]any{ipc.MetaServerInfo: s.serverInfo()}
 			case mcpCallToolResult:
 				result.ResultType = "complete"

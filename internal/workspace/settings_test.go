@@ -326,11 +326,18 @@ func TestNewServiceDetectsTheFirstInstalledBackendOnAnEmptyProfile(t *testing.T)
 			t.Fatal(err)
 		}
 	}
-	svc := NewService()
-	svc.settings.dir = t.TempDir()
-	settings, err := svc.GetSettings()
-	if err != nil || settings.GenUI.Backend != genui.BackendCodex {
-		t.Fatalf("first backend = %q, %v, want Codex", settings.GenUI.Backend, err)
+	for _, profile := range []string{"", `{"externalIPC":true}`} {
+		svc := NewService()
+		svc.settings.dir = t.TempDir()
+		if profile != "" {
+			if err := os.WriteFile(svc.settings.path(), []byte(profile), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		settings, err := svc.GetSettings()
+		if err != nil || settings.GenUI.Backend != genui.BackendCodex {
+			t.Fatalf("first backend for profile %q = %q, %v, want Codex", profile, settings.GenUI.Backend, err)
+		}
 	}
 }
 

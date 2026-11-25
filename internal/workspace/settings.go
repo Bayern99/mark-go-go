@@ -198,8 +198,14 @@ func (st *settingsStore) getLocked() Settings {
 	if len(raw) == 0 {
 		// settings.json v1 kept the agent in top-level fields; they belonged to
 		// agy, so they move to the Antigravity backend unchanged.
-		migrateV1(s.GenUI.Backends, fields)
-		s.GenUI.Backend = genui.BackendAntigravity
+		_, command := fields["agentCommand"]
+		_, model := fields["model"]
+		_, models := fields["models"]
+		if command || model || models {
+			migrateV1(s.GenUI.Backends, fields)
+		} else {
+			s.GenUI.Backend = st.firstBackend()
+		}
 		return s
 	}
 	var stored GenUISettings

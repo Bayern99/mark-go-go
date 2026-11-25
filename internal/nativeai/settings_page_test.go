@@ -176,7 +176,7 @@ func TestABuildWithoutTheCommandSaysHowToGetOne(t *testing.T) {
 	if !app.HasText("Not in this build") {
 		t.Fatalf("the page does not report a build without markgogo: %q", app.Texts())
 	}
-	if !app.HasText("go install github.com/Bayern99/mark-go-go/cmd/markgogo@latest") {
+	if !app.HasText("go build -o ~/.local/bin/markgogo ./cmd/markgogo") {
 		t.Fatalf("the page does not say how to install the command: %q", app.Texts())
 	}
 	if info, ok := app.Access("Install the markgogo command"); !ok || !info.Disabled {

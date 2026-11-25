@@ -179,7 +179,7 @@ func (p *panel) command() commandState {
 	case !p.install.Shipped():
 		return commandState{
 			status: "Not in this build", tone: portrait.Tones.Warning,
-			description: "This build does not carry the markgogo command. Build it from the source with `go install github.com/Bayern99/mark-go-go/cmd/markgogo@latest` and keep ~/.local/bin on your PATH.",
+			description: "This build does not carry the markgogo command. Build it from a checkout of github.com/Bayern99/mark-go-go with `go build -o ~/.local/bin/markgogo ./cmd/markgogo` and keep ~/.local/bin on your PATH.",
 		}
 	case state == agentcli.StateInstalled:
 		return commandState{

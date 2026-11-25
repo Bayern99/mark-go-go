@@ -426,7 +426,13 @@ func TestPiModelMenuCanChooseBetweenProvidersWithTheSameModelID(t *testing.T) {
 	const id = genui.BackendPi
 	settings := workspace.DefaultSettings()
 	settings.GenUI.Backend = id
-	p, saved := settingsPanel(t, settings)
+	p, _ := settingsPanel(t, settings)
+	saved := make(chan workspace.GenUIBackendPatch, 1)
+	work := syncedUI(p)
+	p.confirmSelection = func(_ string, patch workspace.GenUIBackendPatch) (genui.ModelCatalog, workspace.Settings, error) {
+		saved <- patch
+		return genui.ModelCatalog{}, settings, nil
+	}
 	p.status(id).catalog = genui.ModelCatalog{Models: []genui.ModelOption{
 		{ID: "shared", Name: "Shared Model", Provider: "alpha"},
 		{ID: "shared", Name: "Shared Model", Provider: "beta"},
@@ -446,11 +452,36 @@ func TestPiModelMenuCanChooseBetweenProvidersWithTheSameModelID(t *testing.T) {
 	if err := app.Click("Shared Model · beta"); err != nil {
 		t.Fatal(err)
 	}
-	if len(*saved) == 0 {
-		t.Fatal("selection was not recorded")
-	}
-	patch := (*saved)[len(*saved)-1].GenUI.Backends[id]
+	runUI(t, work)
+	patch := <-saved
 	if patch.Provider == nil || *patch.Provider != "beta" || patch.Model == nil || *patch.Model != "shared" {
 		t.Fatalf("selection = %+v", patch)
+	}
+}
+
+func TestARejectedModelChoiceDoesNotSaveTheRequestedModel(t *testing.T) {
+	settings := workspace.DefaultSettings()
+	backend := settings.GenUI.For(genui.BackendAntigravity)
+	backend.Model = "model-a"
+	backend.Models = []string{"model-a", "model-b"}
+	settings.GenUI.Backends[genui.BackendAntigravity] = backend
+	p, saved := settingsPanel(t, settings)
+	work := syncedUI(p)
+	p.confirmSelection = func(_ string, _ workspace.GenUIBackendPatch) (genui.ModelCatalog, workspace.Settings, error) {
+		return genui.ModelCatalog{}, workspace.Settings{}, errors.New("The agent rejected the model.")
+	}
+	app := pageTester(p, "")
+	trigger, ok := app.AccessByRole(ui.RoleMenuButton, "Model")
+	if !ok {
+		t.Fatal("model selector is missing")
+	}
+	app.ClickAt(trigger.Bounds.X+trigger.Bounds.W/2, trigger.Bounds.Y+trigger.Bounds.H/2)
+	app.Frame()
+	if err := app.Click("model-b"); err != nil {
+		t.Fatal(err)
+	}
+	runUI(t, work)
+	if len(*saved) != 0 || p.settings.GenUI.For(genui.BackendAntigravity).Model != "model-a" || p.settingsMessage != "The agent rejected the model." {
+		t.Fatal("the requested model was saved without agent confirmation")
 	}
 }

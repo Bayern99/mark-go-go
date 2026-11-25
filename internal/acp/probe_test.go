@@ -297,3 +297,35 @@ func TestProbeHonorsAnExpiredContextBeforeInitializing(t *testing.T) {
 		t.Fatalf("probe with cancelled context = %v", err)
 	}
 }
+
+func TestModelRefreshReadsTheAsynchronousEffectiveOptions(t *testing.T) {
+	cfg := probeConfig(t, fakeSpec{
+		Models: []string{"model-a", "model-b"}, InitialModel: "model-a",
+		ThoughtValues: []string{"low", "high"}, ThoughtID: "reasoning_effort",
+		ThoughtCurrent: "low", ThoughtModels: []string{"model-b"},
+		BareConfigResponse: true, ConfigUpdate: true,
+	}, nil)
+	catalog, err := ListModels(t.Context(), SessionConfig{ProbeConfig: cfg, Model: "model-b"})
+	if err != nil || catalog.CurrentModel != "model-b" || len(catalog.ThoughtLevels) != 2 {
+		t.Fatalf("catalog = %+v, %v", catalog, err)
+	}
+}
+
+func TestAnEmptyStandardModelOptionDoesNotUseLegacyModels(t *testing.T) {
+	options := json.RawMessage(`[{"id":"model","name":"Model","category":"model","type":"select","options":[]}]`)
+	legacy := json.RawMessage(`{"currentModelId":"obsolete","availableModels":[{"modelId":"obsolete"}]}`)
+	models, current, _, _ := readCatalog(options, legacy)
+	if models == nil || len(models) != 0 || current != "" {
+		t.Errorf("empty standard option resolved to %v, %q", models, current)
+	}
+}
+
+func TestModelRefreshReturnsTheAgentsSelectionError(t *testing.T) {
+	cfg := probeConfig(t, fakeSpec{
+		Models: []string{"model-a", "model-b"}, InitialModel: "model-a",
+		Errors: map[string]fakeRPCError{"session/set_config_option": {Code: -32602, Message: "model rejected"}},
+	}, nil)
+	if _, err := ListModels(t.Context(), SessionConfig{ProbeConfig: cfg, Model: "model-b"}); err == nil || !strings.Contains(err.Error(), "model rejected") {
+		t.Fatalf("error = %v, want the agent's rejection", err)
+	}
+}

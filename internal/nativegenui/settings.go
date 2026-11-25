@@ -204,12 +204,12 @@ func (p *panel) drawGeneration(c *ui.Context, q nativeui.SettingsQuery, id strin
 					selected = state.catalog.CurrentModelKey()
 				}
 				before := selected
-				portrait.Select(c, &selected, options, portrait.SelectSpec{Label: "Model"})
+				portrait.Select(c, &selected, options, portrait.SelectSpec{Label: "Model"}).Disabled(state.busy)
 				if selected != before {
 					for _, option := range models {
 						if option.Key() == selected {
 							empty := ""
-							p.saveBackend(id, workspace.GenUIBackendPatch{Model: &option.ID, Provider: &option.Provider, ThoughtLevel: &empty})
+							p.selectBackendOption(id, workspace.GenUIBackendPatch{Model: &option.ID, Provider: &option.Provider, ThoughtLevel: &empty})
 							break
 						}
 					}
@@ -231,9 +231,9 @@ func (p *panel) drawGeneration(c *ui.Context, q nativeui.SettingsQuery, id strin
 					selected = state.catalog.ThoughtLevel
 				}
 				before := selected
-				portrait.Select(c, &selected, options, portrait.SelectSpec{Label: "Reasoning effort"})
+				portrait.Select(c, &selected, options, portrait.SelectSpec{Label: "Reasoning effort"}).Disabled(state.busy)
 				if selected != before {
-					p.saveBackend(id, workspace.GenUIBackendPatch{ThoughtLevel: &selected})
+					p.selectBackendOption(id, workspace.GenUIBackendPatch{ThoughtLevel: &selected})
 				}
 			})
 		}

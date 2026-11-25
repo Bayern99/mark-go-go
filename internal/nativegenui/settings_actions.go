@@ -102,6 +102,29 @@ func (p *panel) saveBackend(id string, patch workspace.GenUIBackendPatch) {
 	p.settings = next
 }
 
+func (p *panel) selectBackendOption(id string, choice workspace.GenUIBackendPatch) {
+	state := p.status(id)
+	confirm := p.confirmSelection
+	if state.busy || confirm == nil {
+		return
+	}
+	state.busy = true
+	p.settingsMessage = ""
+	go func() {
+		catalog, updated, err := confirm(id, choice)
+		p.after(func() {
+			state := p.status(id)
+			state.busy = false
+			if err != nil {
+				p.settingsMessage = err.Error()
+				return
+			}
+			p.settings = updated
+			state.catalog = catalog
+		})
+	}()
+}
+
 // probeOnFocus re-tests a backend the user already tested, so a sign-in
 // finished in Terminal shows up when the window comes back. It never opens a
 // session for models: that stays behind Test & Refresh.
@@ -140,7 +163,7 @@ func (p *panel) testConnection(id string, refreshModels bool) {
 			state.busy = false
 			state.tested = true
 			state.probe = result
-			if len(catalog.Models) > 0 || catalog.CurrentModel != "" {
+			if refreshModels && refresh != nil && refreshErr == nil && (catalog.Models != nil || catalog.CurrentModel != "") {
 				state.catalog = catalog
 			}
 			p.settingsMessage = message(firstError(probeErr, refreshErr))

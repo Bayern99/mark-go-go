@@ -29,7 +29,7 @@ type GenUIBackend struct {
 	// default arguments are removed, which nil still means "use the default".
 	Args         []string            `json:"args"`
 	Model        string              `json:"model,omitempty"`
-	Models       []string            `json:"models,omitempty"`
+	Models       []string            `json:"models"`
 	ModelOptions []genui.ModelOption `json:"modelOptions,omitempty"`
 	ThoughtLevel string              `json:"thoughtLevel,omitempty"`
 }
@@ -52,7 +52,7 @@ type GenUIBackendPatch struct {
 	Provider     *string              `json:"provider,omitempty"`
 	Args         *[]string            `json:"args,omitempty"`
 	Model        *string              `json:"model,omitempty"`
-	Models       *[]string            `json:"models,omitempty"`
+	Models       *[]string            `json:"models"`
 	ModelOptions *[]genui.ModelOption `json:"modelOptions,omitempty"`
 	ThoughtLevel *string              `json:"thoughtLevel,omitempty"`
 }
@@ -114,7 +114,7 @@ func (g GenUISettings) For(id string) GenUIBackend {
 	settings.Provider = strings.TrimSpace(stored.Provider)
 	settings.ThoughtLevel = stored.ThoughtLevel
 	settings.ModelOptions = slices.Clone(stored.ModelOptions)
-	if len(stored.Models) > 0 {
+	if stored.Models != nil {
 		settings.Models = cleanModels(stored.Models)
 	}
 	return settings
@@ -131,7 +131,10 @@ func (g GenUISettings) Active() (string, GenUIBackend) {
 }
 
 func cleanModels(models []string) []string {
-	var out []string
+	if models == nil {
+		return nil
+	}
+	out := make([]string, 0, len(models))
 	seen := make(map[string]bool, len(models))
 	for _, m := range models {
 		m = strings.TrimSpace(m)
@@ -390,11 +393,10 @@ func (st *settingsStore) writeLocked(s Settings) (func(Settings), error) {
 	return st.onChange, nil
 }
 
-// SetModels records the models an agent declared for one backend. An empty
-// answer changes nothing, so a failed refresh never empties the menu.
+// setModels records the models an agent declared. A nil list leaves the previous list intact.
 func (st *settingsStore) setModels(backendID string, models []string) error {
 	cleaned := cleanModels(models)
-	if st == nil || len(cleaned) == 0 {
+	if st == nil || models == nil {
 		return nil
 	}
 	st.mu.Lock()

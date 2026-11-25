@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/appversion"
@@ -20,6 +21,8 @@ import (
 )
 
 const helloTimeout = 5 * time.Second
+
+var socketFiles sync.Mutex
 
 // unknownClient is what the channel calls a request whose _meta named no
 // client: the legacy handshake may not, and Settings says so rather than
@@ -42,12 +45,14 @@ type ExternalServer struct {
 	server *Server
 	deps   Dependencies
 
-	mu    sync.Mutex
-	ln    net.Listener
-	path  string
-	last  ExternalCall
-	conns map[net.Conn]struct{}
-	wg    sync.WaitGroup
+	lifecycle  sync.Mutex
+	mu         sync.Mutex
+	ln         net.Listener
+	path       string
+	socketInfo fs.FileInfo
+	last       ExternalCall
+	conns      map[net.Conn]struct{}
+	wg         sync.WaitGroup
 }
 
 func NewExternalServer(deps Dependencies) *ExternalServer {
@@ -124,6 +129,8 @@ func clientName(meta map[string]json.RawMessage) string {
 
 // Start listens on the socket, cleaning up a socket a previous run left behind.
 func (e *ExternalServer) Start() error {
+	e.lifecycle.Lock()
+	defer e.lifecycle.Unlock()
 	e.mu.Lock()
 	if e.ln != nil {
 		e.mu.Unlock()
@@ -146,21 +153,30 @@ func (e *ExternalServer) Start() error {
 		return err
 	}
 	path := ipc.SocketPath(dir)
+	socketFiles.Lock()
+	defer socketFiles.Unlock()
 	if err := clearStaleSocket(path); err != nil {
 		return err
 	}
-	ln, err := net.Listen("unix", path)
+	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
 	if err != nil {
 		return err
 	}
-	if err := os.Chmod(path, 0o600); err != nil {
+	info, err := os.Lstat(path)
+	if err != nil {
 		ln.Close()
 		return err
+	}
+	ln.SetUnlinkOnClose(false)
+	if err := os.Chmod(path, 0o600); err != nil {
+		ln.Close()
+		return errors.Join(err, removeOwnedSocket(path, info))
 	}
 
 	e.mu.Lock()
 	e.ln = ln
 	e.path = path
+	e.socketInfo = info
 	e.mu.Unlock()
 
 	e.wg.Add(1)
@@ -178,12 +194,30 @@ func clearStaleSocket(path string) error {
 	if err != nil {
 		return err
 	}
-	if info.Mode()&fs.ModeSocket != 0 {
-		conn, dialErr := net.DialTimeout("unix", path, 250*time.Millisecond)
-		if dialErr == nil {
-			conn.Close()
-			return fmt.Errorf("another Mark Go Go instance is serving %s", path)
-		}
+	if info.Mode()&fs.ModeSocket == 0 {
+		return fmt.Errorf("the socket path %s is occupied by another file", path)
+	}
+	conn, dialErr := net.DialTimeout("unix", path, 250*time.Millisecond)
+	if dialErr == nil {
+		conn.Close()
+		return fmt.Errorf("another Mark Go Go instance is serving %s", path)
+	}
+	if !errors.Is(dialErr, syscall.ECONNREFUSED) {
+		return dialErr
+	}
+	return removeOwnedSocket(path, info)
+}
+
+func removeOwnedSocket(path string, owned fs.FileInfo) error {
+	current, err := os.Lstat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if current.Mode()&fs.ModeSocket == 0 || !os.SameFile(current, owned) {
+		return nil
 	}
 	return os.Remove(path)
 }
@@ -196,6 +230,11 @@ func (e *ExternalServer) accept(ln net.Listener) {
 			return
 		}
 		e.mu.Lock()
+		if e.ln != ln {
+			e.mu.Unlock()
+			conn.Close()
+			return
+		}
 		e.conns[conn] = struct{}{}
 		e.mu.Unlock()
 
@@ -310,28 +349,25 @@ func (e *ExternalServer) rootFor(cwd string) (string, *ipc.AppError) {
 
 // Close stops listening, closes the open connections, and removes the socket.
 func (e *ExternalServer) Close() error {
+	e.lifecycle.Lock()
+	defer e.lifecycle.Unlock()
+
 	e.mu.Lock()
 	ln := e.ln
-	path := e.path
-	e.ln = nil
-	conns := make([]net.Conn, 0, len(e.conns))
+	if ln == nil {
+		e.mu.Unlock()
+		return nil
+	}
+	path, info := e.path, e.socketInfo
+	e.ln, e.socketInfo = nil, nil
 	for conn := range e.conns {
-		conns = append(conns, conn)
+		conn.Close()
 	}
 	e.mu.Unlock()
 
-	for _, conn := range conns {
-		conn.Close()
-	}
-	var err error
-	if ln != nil {
-		err = ln.Close()
-	}
+	socketFiles.Lock()
+	err := errors.Join(ln.Close(), removeOwnedSocket(path, info))
+	socketFiles.Unlock()
 	e.wg.Wait()
-	if path != "" {
-		if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
-			err = errors.Join(err, removeErr)
-		}
-	}
 	return err
 }

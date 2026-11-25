@@ -783,19 +783,50 @@ func TestToolsDeclareStrictSchemasAndAnnotations(t *testing.T) {
 	}
 }
 
-func TestExternalChannelClearsAResidualFileAtItsSocketPath(t *testing.T) {
-	h, root := newSocketHarness(t)
+func TestExternalChannelPreservesAnOrdinaryFileAtItsSocketPath(t *testing.T) {
+	h, _ := newSocketHarness(t)
 	path := ipc.SocketPath(h.userData)
-	if err := os.WriteFile(path, []byte("left over from a crash"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv := NewExternalServer(Dependencies{Workspace: h})
+	defer srv.Close()
+	if err := srv.Start(); err == nil {
+		t.Fatal("started over an ordinary file")
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != "keep" {
+		t.Fatalf("ordinary file = %q, %v", got, err)
+	}
+}
+
+func TestExternalChannelCanReplaceAnAbandonedSocket(t *testing.T) {
+	h, root := newSocketHarness(t)
+	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: ipc.SocketPath(h.userData), Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln.SetUnlinkOnClose(false)
+	if err := ln.Close(); err != nil {
 		t.Fatal(err)
 	}
 	srv := startExternal(t, h)
-	client, reply := connectExternal(t, srv, root)
-	if !reply.OK {
+	if _, reply := connectExternal(t, srv, root); !reply.OK {
 		t.Fatalf("hello reply = %+v", reply)
 	}
-	if resp := client.call("tools/list", nil); resp.Error != nil {
-		t.Fatalf("tools/list: %+v", resp.Error)
+}
+
+func TestClosingTheOldExternalServerAgainPreservesItsSuccessor(t *testing.T) {
+	h, root := newSocketHarness(t)
+	first := startExternal(t, h)
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	second := startExternal(t, h)
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, reply := connectExternal(t, second, root); !reply.OK {
+		t.Fatalf("hello reply = %+v", reply)
 	}
 }
 

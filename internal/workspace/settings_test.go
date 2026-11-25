@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sync"
 	"testing"
 
@@ -308,5 +309,25 @@ func TestClearingABackendsArgumentsSticks(t *testing.T) {
 	}
 	if got := (&settingsStore{dir: dir}).get().GenUI.For(genui.BackendAntigravity).Args; len(got) != 0 {
 		t.Fatalf("args = %v, want the explicitly empty list to survive a reload", got)
+	}
+}
+
+func TestNewServiceDetectsTheFirstInstalledBackendOnAnEmptyProfile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses Unix executable fixtures")
+	}
+	t.Setenv("HOME", t.TempDir())
+	bin := t.TempDir()
+	t.Setenv("PATH", bin)
+	for _, command := range []string{"codex-acp", "agy", "pi"} {
+		if err := os.WriteFile(filepath.Join(bin, command), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := NewService()
+	svc.settings.dir = t.TempDir()
+	settings, err := svc.GetSettings()
+	if err != nil || settings.GenUI.Backend != genui.BackendCodex {
+		t.Fatalf("first backend = %q, %v, want Codex", settings.GenUI.Backend, err)
 	}
 }

@@ -23,7 +23,7 @@ Mark Go Go is a local Markdown editor for macOS written in Go with MyGo Native U
 
 ## Optional plugins
 
-Enable **Feynman** and **Git** independently from **Settings / Plugins** (`⌘,`) or the Command Bar (`⌘K`). Both start disabled.
+Enable **Feynman**, **GenUI**, and **Git** independently from **Settings / Plugins** (`⌘,`) or the Command Bar (`⌘K`). Feynman and Git start disabled; GenUI starts enabled, and turning it off returns documents to `Preview` without deleting saved views. An enabled plugin that owns a Settings page offers a `Configure →` deep link.
 
 ### Feynman
 

@@ -23,7 +23,7 @@ Mark Go Go 是基于 Go 与 MyGo Native UI 编写的 macOS 本地 Markdown 编�
 
 ## 可选插件
 
-在 **Settings / Plugins**（`⌘,`）或命令栏（`⌘K`）中独立启用 **Feynman** 和 **Git**。两项默认关闭。
+在 **Settings / Plugins**（`⌘,`）或命令栏（`⌘K`）中独立启用 **Feynman**、**GenUI** 和 **Git**。Feynman 与 Git 默认关闭；GenUI 默认开启，关闭后文档回到 `Preview`，已保存的视图不会删除。启用中的插件若拥有自己的设置页，Plugins 行提供 `Configure →` 深链。
 
 ### Feynman
 

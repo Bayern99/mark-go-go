@@ -511,3 +511,47 @@ func TestSourcePreviewReopensOnHoverAfterTheDismissedSourceLeavesTheView(t *test
 		t.Fatalf("hovering Other after the dismissed source left the view did not open its preview: %v", app.Texts())
 	}
 }
+
+func TestSourcePreviewStaysClosedWhenTheViewScrollsUnderAStillPointer(t *testing.T) {
+	var ids, cards []string
+	for i := 0; i < 12; i++ {
+		id, source := fmt.Sprintf("card%d", i), "other"
+		if i == 0 {
+			source = "overview"
+		}
+		ids = append(ids, fmt.Sprintf("%q", id))
+		cards = append(cards, fmt.Sprintf(`{"id":%q,"component":"KeyPoints","title":"Report","items":["A derived point"],"sources":[%q]}`, id, source))
+	}
+	view, err := Open(fmt.Sprintf(`{"version":2,"sources":{"overview":{"heading":"Overview"},"other":{"heading":"Other"}},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"v","catalogId":"markgogo.dev:genui/v1","components":[{"id":"root","component":"Column","children":[%s]},%s]}}]}`, strings.Join(ids, ","), strings.Join(cards, ",")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := &documentView{}
+	v.reading.Load(view)
+	v.index("# Overview\n\nText.\n\n# Other\n\nOther text.\n")
+	app := sourcePreviewTester(v)
+	app.Frame()
+	overview, _ := app.Access("Overview")
+	other, ok := app.Access("Other")
+	if !ok {
+		t.Fatal("the GenUI view has no Other source")
+	}
+	x, y := overview.Bounds.X+overview.Bounds.W/3, overview.Bounds.Y+overview.Bounds.H/2
+	app.Move(x, y)
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RolePopup, "Source preview: Overview"); !ok {
+		t.Fatal("hovering Overview did not open its preview")
+	}
+	app.Key(0, ui.KeyEscape)
+	app.Frame()
+
+	step := other.Bounds.Y - overview.Bounds.Y + 0.12345
+	for i := 0; i < 3; i++ {
+		app.Scroll(x, y, 0, step)
+		app.Frame()
+		app.Frame()
+		if popup, ok := app.AccessByRole(ui.RolePopup, ""); ok {
+			t.Fatalf("scroll %d under the still pointer reopened %q after Escape", i+1, popup.Name)
+		}
+	}
+}

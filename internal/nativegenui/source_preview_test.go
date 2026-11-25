@@ -555,3 +555,82 @@ func TestSourcePreviewStaysClosedWhenTheViewScrollsUnderAStillPointer(t *testing
 		}
 	}
 }
+
+func TestSourcePreviewReopensWhenThePointerCreepsOntoASourceAfterEscape(t *testing.T) {
+	v := newTwoSourcePreviewView(t, false)
+	app := sourcePreviewTester(v)
+	app.Frame()
+	other, ok := app.Access("Other")
+	if !ok {
+		t.Fatal("the GenUI view has no Other source")
+	}
+	x, y := other.Bounds.X-0.5, other.Bounds.Y+other.Bounds.H/2
+	app.Move(x, y)
+	app.Frame()
+	app.Key(0, ui.KeyTab)
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RolePopup, "Source preview: Overview"); !ok {
+		t.Fatalf("focusing Overview did not open its preview: %v", app.Texts())
+	}
+	app.Key(0, ui.KeyEscape)
+	app.Frame()
+
+	for _, dx := range []float32{0.5, 1, 2} {
+		app.Move(x+dx, y)
+		app.Frame()
+	}
+	if _, ok := app.AccessByRole(ui.RolePopup, "Source preview: Other"); !ok {
+		t.Fatalf("creeping onto Other half a point at a time did not open its preview: %v", app.Texts())
+	}
+}
+
+func TestSourcePreviewFocusAfterEscapeIsNotReplacedByAStillHover(t *testing.T) {
+	var ids, cards []string
+	for i := 0; i < 12; i++ {
+		id, source := fmt.Sprintf("card%d", i), "other"
+		if i == 0 {
+			source = "overview"
+		}
+		ids = append(ids, fmt.Sprintf("%q", id))
+		cards = append(cards, fmt.Sprintf(`{"id":%q,"component":"KeyPoints","title":"Report","items":["A derived point"],"sources":[%q]}`, id, source))
+	}
+	view, err := Open(fmt.Sprintf(`{"version":2,"sources":{"overview":{"heading":"Overview"},"other":{"heading":"Other"}},"a2ui":[{"version":"1.0","createSurface":{"surfaceId":"v","catalogId":"markgogo.dev:genui/v1","components":[{"id":"root","component":"Column","children":[%s]},%s]}}]}`, strings.Join(ids, ","), strings.Join(cards, ",")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := &documentView{}
+	v.reading.Load(view)
+	v.index("# Overview\n\nText.\n\n# Other\n\nOther text.\n")
+	app := sourcePreviewTester(v)
+	app.Frame()
+	overview, _ := app.Access("Overview")
+	other, _ := app.Access("Other")
+	x, y := overview.Bounds.X+overview.Bounds.W/3, overview.Bounds.Y+overview.Bounds.H/2
+	app.Move(x, y)
+	app.Frame()
+	app.Key(0, ui.KeyEscape)
+	app.Frame()
+	app.Scroll(x, y, 0, other.Bounds.Y-overview.Bounds.Y)
+	app.Frame()
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RolePopup, ""); ok {
+		t.Fatal("scrolling Other under the still pointer reopened a preview")
+	}
+
+	var name string
+	for i := 0; i < 12 && name == ""; i++ {
+		app.Key(0, ui.KeyTab)
+		app.Frame()
+		if popup, ok := app.AccessByRole(ui.RolePopup, ""); ok {
+			name = popup.Name
+		}
+	}
+	if name == "" {
+		t.Fatal("tabbing to a source did not open its preview")
+	}
+	app.Frame()
+	app.Frame()
+	if popup, ok := app.AccessByRole(ui.RolePopup, ""); !ok || popup.Name != name {
+		t.Fatalf("the still hover replaced the focused preview %q with %q", name, popup.Name)
+	}
+}

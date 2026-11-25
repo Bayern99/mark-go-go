@@ -623,10 +623,12 @@ func (v *documentView) drawSourcePreview(c *ui.Context, targets []sourcePreviewT
 	}
 	newHover := hoveredKey != "" && hoveredKey != state.hoveredKey
 	newFocus := focusedKey != "" && focusedKey != state.focusedKey
-	state.hoveredKey, state.focusedKey = hoveredKey, focusedKey
+	state.focusedKey = focusedKey
 	// Closing the popup can expose another source without a pointer move.
 	if state.dismissed && !state.pointerMoved {
 		newHover = false
+	} else {
+		state.hoveredKey = hoveredKey
 	}
 	if state.dismissed && !newHover && !newFocus {
 		state.open, state.overPreview = false, false
@@ -634,6 +636,7 @@ func (v *documentView) drawSourcePreview(c *ui.Context, targets []sourcePreviewT
 		return
 	}
 	state.dismissed = false
+	state.hoveredKey = hoveredKey
 
 	var target *sourcePreviewTarget
 	gracing := false

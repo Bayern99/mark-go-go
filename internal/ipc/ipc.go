@@ -265,12 +265,15 @@ func withModernMeta(params map[string]any, name, version string) map[string]any 
 		out[key] = value
 	}
 	meta, _ := out["_meta"].(map[string]any)
-	next := make(map[string]any, len(meta)+2)
+	next := make(map[string]any, len(meta)+3)
 	for key, value := range meta {
 		next[key] = value
 	}
 	if _, set := next[MetaProtocolVersion]; !set {
 		next[MetaProtocolVersion] = ModernProtocolVersion
+	}
+	if _, set := next[MetaClientCapabilities]; !set {
+		next[MetaClientCapabilities] = map[string]any{}
 	}
 	if _, set := next[MetaClientInfo]; !set && name != "" {
 		next[MetaClientInfo] = map[string]any{"name": name, "version": version}
@@ -281,9 +284,10 @@ func withModernMeta(params map[string]any, name, version string) map[string]any 
 
 // Keys of request _meta this channel reads and writes.
 const (
-	MetaProtocolVersion = "io.modelcontextprotocol/protocolVersion"
-	MetaClientInfo      = "io.modelcontextprotocol/clientInfo"
-	MetaServerInfo      = "io.modelcontextprotocol/serverInfo"
+	MetaProtocolVersion    = "io.modelcontextprotocol/protocolVersion"
+	MetaClientCapabilities = "io.modelcontextprotocol/clientCapabilities"
+	MetaClientInfo         = "io.modelcontextprotocol/clientInfo"
+	MetaServerInfo         = "io.modelcontextprotocol/serverInfo"
 )
 
 // NotRunning reports that nothing answered at the socket.

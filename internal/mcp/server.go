@@ -460,26 +460,31 @@ func (s *Server) handleMCPPost(w http.ResponseWriter, r *http.Request, binding *
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// modernVersionOf reports the protocol revision a request states in its _meta.
-func modernVersionOf(params json.RawMessage) (string, bool) {
-	if len(params) == 0 {
-		return "", false
-	}
-	var envelope struct {
+func (s *Server) modernRequest(req rpcRequest) (bool, *rpcError) {
+	var params struct {
 		Meta map[string]json.RawMessage `json:"_meta"`
 	}
-	if json.Unmarshal(params, &envelope) != nil || envelope.Meta == nil {
-		return "", false
+	err := json.Unmarshal(req.Params, &params)
+	version, versionSet := params.Meta[ipc.MetaProtocolVersion]
+	capabilities, capabilitiesSet := params.Meta[ipc.MetaClientCapabilities]
+	if req.Method != "server/discover" && !versionSet && !capabilitiesSet {
+		return false, nil
 	}
-	raw, ok := envelope.Meta[ipc.MetaProtocolVersion]
-	if !ok {
-		return "", false
+	invalid := func(key string) *rpcError {
+		return &rpcError{Code: errCodeInvalidParams, Message: "A modern request requires valid _meta." + key}
 	}
-	var version string
-	if json.Unmarshal(raw, &version) != nil || version == "" {
-		return "", false
+	var value string
+	if err != nil || json.Unmarshal(version, &value) != nil || value == "" {
+		return true, invalid(ipc.MetaProtocolVersion)
 	}
-	return version, true
+	if value != modernProtocolVersion {
+		return true, unsupportedVersionResponse(req.ID, value).Error
+	}
+	var caps map[string]json.RawMessage
+	if json.Unmarshal(capabilities, &caps) != nil || caps == nil {
+		return true, invalid(ipc.MetaClientCapabilities)
+	}
+	return true, nil
 }
 
 func (s *Server) capabilities() map[string]any {
@@ -562,7 +567,7 @@ func unsupportedVersionResponse(id json.RawMessage, requested string) rpcRespons
 	}
 }
 
-func (s *Server) dispatchMessage(ctx context.Context, binding *sessionBinding, raw []byte) (rpcResponse, string, bool) {
+func (s *Server) dispatchMessage(ctx context.Context, binding *sessionBinding, raw []byte) (response rpcResponse, session string, answered bool) {
 	var req rpcRequest
 	if err := json.Unmarshal(raw, &req); err != nil {
 		return rpcResponse{
@@ -588,8 +593,25 @@ func (s *Server) dispatchMessage(ctx context.Context, binding *sessionBinding, r
 	if req.Method == "initialize" {
 		return s.handleInitialize(binding, req)
 	}
-	if version, modern := modernVersionOf(req.Params); modern && version != modernProtocolVersion {
-		return unsupportedVersionResponse(req.ID, version), "", true
+	modern, rpcErr := s.modernRequest(req)
+	if rpcErr != nil {
+		return rpcResponse{JSONRPC: "2.0", ID: req.ID, Error: rpcErr}, "", true
+	}
+	if modern {
+		defer func() {
+			if response.Error != nil {
+				return
+			}
+			switch result := response.Result.(type) {
+			case map[string]any:
+				result["resultType"] = "complete"
+				result["_meta"] = map[string]any{ipc.MetaServerInfo: s.serverInfo()}
+			case mcpCallToolResult:
+				result.ResultType = "complete"
+				result.Meta = map[string]any{ipc.MetaServerInfo: s.serverInfo()}
+				response.Result = result
+			}
+		}()
 	}
 
 	switch req.Method {

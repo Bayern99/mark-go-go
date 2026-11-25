@@ -240,7 +240,7 @@ func modernParams(params map[string]any) map[string]any {
 	for key, value := range params {
 		out[key] = value
 	}
-	out["_meta"] = map[string]any{ipc.MetaProtocolVersion: modernProtocolVersion}
+	out["_meta"] = map[string]any{ipc.MetaProtocolVersion: modernProtocolVersion, ipc.MetaClientCapabilities: map[string]any{}}
 	return out
 }
 
@@ -953,8 +953,9 @@ func TestTheChannelRemembersTheLastExternalCall(t *testing.T) {
 		"params": map[string]any{
 			"name": toolGetWorkspace, "arguments": map[string]any{},
 			"_meta": map[string]any{
-				ipc.MetaProtocolVersion: modernProtocolVersion,
-				ipc.MetaClientInfo:      map[string]any{"name": "markgogo-mcp", "version": "0.6.0"},
+				ipc.MetaProtocolVersion:    modernProtocolVersion,
+				ipc.MetaClientCapabilities: map[string]any{},
+				ipc.MetaClientInfo:         map[string]any{"name": "markgogo-mcp", "version": "0.6.0"},
 			},
 		},
 	})

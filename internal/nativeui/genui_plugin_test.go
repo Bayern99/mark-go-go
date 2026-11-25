@@ -132,3 +132,37 @@ func TestPluginsPageTogglesGenUIAndOpensItsSettings(t *testing.T) {
 		t.Fatalf("Enable GenUI sent %v, want off then on", genui)
 	}
 }
+
+func TestCommandBarTogglesGenUIAndReachesItsSettings(t *testing.T) {
+	var shell nativeui.Shell
+	model := libraryModel()
+	model.Preferences = map[string]string{}
+	model.GenUI = true
+	var genui []bool
+	actions := nativeui.Actions{SetGenUI: func(on bool) { genui = append(genui, on); model.GenUI = on }}
+	app := ui.NewTester(func(c *ui.Context) { shell.Draw(c, model, actions, genuiSlots()) }, 1280, 820)
+	app.Frame()
+
+	command := func(query, title string) {
+		t.Helper()
+		app.Key(ui.Cmd, ui.KeyK)
+		app.Type(query)
+		app.Frame()
+		if err := app.Click(title); err != nil {
+			t.Fatal(err)
+		}
+		app.Frame()
+	}
+	command("genui", "Disable GenUI")
+	if !slices.Equal(genui, []bool{false}) || model.GenUI {
+		t.Fatalf("Disable GenUI sent %v", genui)
+	}
+	command("genui", "Enable GenUI")
+	if !slices.Equal(genui, []bool{false, true}) || !model.GenUI {
+		t.Fatalf("Enable GenUI sent %v", genui)
+	}
+	command("plugins", "Settings: Plugins")
+	if _, ok := app.AccessByRole(ui.RoleSwitch, "Enable GenUI"); !ok {
+		t.Fatal("Settings: Plugins did not open the Plugins page")
+	}
+}

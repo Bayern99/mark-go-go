@@ -121,6 +121,36 @@ func (w *Window) syncEditorMode() {
 	}
 }
 
+// pluginSetting is one row of Settings / Plugins. The switch writes the
+// plugin preference; Configure opens the plugin's own settings page.
+type pluginSetting struct {
+	name, title, description, keyword, configure string
+	on                                           bool
+	set                                          func(bool)
+}
+
+func pluginSettings(m Model, a Actions) []pluginSetting {
+	return []pluginSetting{
+		{"Feynman", "Feynman Research", "Side-by-side AI research assistant, models, and MCP tools.", "feynman plugin", "models", m.Feynman, a.SetFeynman},
+		{"GenUI", "GenUI", "Read-only reading views derived from the Markdown.", "genui generation view plugin", "genui", m.GenUI, a.SetGenUI},
+		{"Git", "Git Checkpoints", "Save, diff, and restore local document snapshots.", "git plugin checkpoints", "", m.Git, a.SetGit},
+	}
+}
+
+func (p pluginSetting) matches(q SettingsQuery) bool {
+	return q.Matches(p.title, p.description, p.keyword)
+}
+
+// settingsPageOpen reports whether a plugin page is registered and visible, so
+// Plugins never links to a destination the Settings Center would not show.
+func settingsPageOpen(pages []SettingsPage, id string) bool {
+	if id == "" || !settingsPageVisible(pages, id) {
+		return false
+	}
+	page := settingsPageByID(pages, id)
+	return page.Visible == nil || page.Visible()
+}
+
 func (w *Window) Preference(key string) string { return w.store().values[key] }
 
 func (w *Window) install(p Panels) {

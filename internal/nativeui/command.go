@@ -231,11 +231,7 @@ func (s *Shell) commandItems(m Model, a Actions, slots Slots, width float32) []c
 	if m.Feynman {
 		add(commandItem{icon: portrait.IconAtom, title: "Toggle Research Panel", detail: "Feynman", keys: shortcutKeys(ui.Cmd|ui.Alt, "0"), run: func() { s.toggleResearch(width); s.persistResearch(a) }})
 	}
-	for _, plugin := range []struct {
-		name string
-		on   bool
-		set  func(bool)
-	}{{"Feynman", m.Feynman, a.SetFeynman}, {"Git", m.Git, a.SetGit}} {
+	for _, plugin := range pluginSettings(m, a) {
 		if plugin.set == nil {
 			continue
 		}

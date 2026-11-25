@@ -53,8 +53,10 @@ type panel struct {
 	alphaScroll          ui.ScrollState
 	commandQuery         string
 	commandSelection     nativekit.CommandSelection
+	commandCaret         int
 	actionsDismissed     bool
 	actionsFromSlash     bool
+	actionsFocusFilter   bool
 	questionText         string
 	questionPick         string
 	questionFind         string

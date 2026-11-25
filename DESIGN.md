@@ -20,7 +20,7 @@ Mark Go Go 的原生桌面界面由 MyGo Native UI 绘制，[internal/portrait](
 
 ## 命令栏
 
-命令栏是居中偏上的玻璃浮层：一行输入，下面是结果。空白时先列其他打开的原文（按最近使用排序，当前原文排在最后），再列命令。输入后同时匹配打开的原文、当前原文的标题、工作区里的文件与标题，以及命令：新建原文、打开文件夹、切换视图、检查点、显示或收起侧栏、显示 Outline 或 Files、研究面板、启停插件、关闭原文、切换工作区、打开最近的工作区、更换 Space 和外观（`Toggle Dark Mode` 总在列表里，`Appearance: …` 与 `Space: …` 在输入后出现）。↑↓ 移动选中项，回车执行，Esc 关闭；选中项用当前 Space 的柔和强调色整行标记，文字保持墨色与辅助色的层级。命令栏借用工作区搜索，关闭时把侧栏自己的过滤词还回去。 [命令栏](internal/nativeui/command.go) · [命令栏用例](internal/nativeui/command_test.go)
+命令栏是居中偏上的玻璃浮层：一行输入，下面是结果。空白时先列其他打开的原文（按最近使用排序，当前原文排在最后），再列命令。输入后同时匹配打开的原文、当前原文的标题、工作区里的文件与标题，以及命令：新建原文、打开文件夹、切换视图、检查点、显示或收起侧栏、显示 Outline 或 Files、研究面板、启停插件、关闭原文、切换工作区、打开最近的工作区、更换 Space 和外观（`Toggle Dark Mode` 总在列表里，`Appearance: …` 与 `Space: …` 在输入后出现）。↑↓ 移动选中项，回车执行，Esc 关闭；选中项用当前 Space 的柔和强调色整行标记，文字保持墨色与辅助色的层级。命令栏借用工作区搜索，关闭时把侧栏自己的过滤词还回去。Feynman Actions 与命令栏的键盘契约及未知斜杠草稿处理见 [键盘契约](docs/command-keyboard-contract.md)。 [命令栏](internal/nativeui/command.go) · [命令栏用例](internal/nativeui/command_test.go)
 
 ## 设置中心
 

@@ -27,14 +27,66 @@ func openResearchActions(t *testing.T, app *ui.Tester, slash bool) {
 		if err := app.Click("Browse workflows, skills and extensions"); err != nil {
 			t.Fatal(err)
 		}
-		app.Frame()
-		if err := app.Click("Filter research actions"); err != nil {
-			t.Fatal(err)
-		}
 	}
 	app.Frame()
 	if _, ok := app.AccessByRole(ui.RolePopup, "Research actions"); !ok {
 		t.Fatal("research actions did not open")
+	}
+}
+
+func TestResearchActionsButtonSupportsImmediateKeyboardChoiceAndEscape(t *testing.T) {
+	p := fixtureReadyPanel()
+	p.state.draft = ""
+	p.state.commands = []feynman.ResearchCommand{{Name: "review"}, {Name: "summarize"}}
+	app := ui.NewTester(func(c *ui.Context) { p.composer(c) }, 640, 600)
+	app.Frame()
+	openResearchActions(t, app, false)
+
+	app.Key(0, ui.KeyDown)
+	app.Key(0, ui.KeyEnter)
+	app.Frame()
+	if p.state.draft != "/summarize " || p.state.actionsOpen {
+		t.Fatalf("immediate Down and Enter left draft %q and actions open = %v", p.state.draft, p.state.actionsOpen)
+	}
+
+	openResearchActions(t, app, false)
+	app.Key(0, ui.KeyEscape)
+	app.Frame()
+	if p.state.actionsOpen || !app.Focused("Browse workflows, skills and extensions") {
+		t.Fatalf("Escape left actions open=%v without focus on the Actions button", p.state.actionsOpen)
+	}
+}
+
+func TestSlashUnknownTypedDraftSendsVerbatimAfterEscape(t *testing.T) {
+	p := fixtureReadyPanel()
+	p.state.draft = ""
+	p.state.commands = []feynman.ResearchCommand{{Name: "review"}, {Name: "summarize"}}
+	sent := make(chan string, 1)
+	p.submitPrompt = func(_, prompt, _, _ string, _ []string) (string, error) {
+		sent <- prompt
+		return "", nil
+	}
+	app := ui.NewTester(func(c *ui.Context) { p.composer(c) }, 640, 600)
+	app.Frame()
+	if err := app.Click("Research prompt"); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range "/tmp" {
+		app.Type(string(r))
+	}
+	app.Frame()
+	if !p.state.actionsOpen || !app.HasText("No matching workflows, skills or extensions.") {
+		t.Fatal("typing an unknown slash draft did not leave Actions open with its empty state")
+	}
+	app.Key(0, ui.KeyEscape)
+	app.Frame()
+	if p.state.actionsOpen || p.state.draft != "/tmp" || !app.Focused("Research prompt") {
+		t.Fatalf("Escape left actions open=%v, draft=%q, or focus outside the prompt", p.state.actionsOpen, p.state.draft)
+	}
+	app.Key(0, ui.KeyEnter)
+	app.Frame()
+	if got := <-sent; got != "/tmp" {
+		t.Fatalf("Enter sent %q, want the verbatim unknown slash draft", got)
 	}
 }
 
@@ -118,6 +170,35 @@ func TestResearchActionsEscapeReturnsFocusToItsOrigin(t *testing.T) {
 			app.Frame()
 			if p.state.actionsOpen || !app.Focused(origin) {
 				t.Fatalf("Escape left actions open=%v without focus on %q", p.state.actionsOpen, origin)
+			}
+		})
+	}
+}
+
+func TestResearchActionsCompletionPlacesCaretAfterCommand(t *testing.T) {
+	for _, moveDown := range []bool{false, true} {
+		name := "first action"
+		want := "/review abc"
+		if moveDown {
+			name = "second action"
+			want = "/summarize abc"
+		}
+		t.Run(name, func(t *testing.T) {
+			p := fixtureReadyPanel()
+			p.state.draft = ""
+			p.state.commands = []feynman.ResearchCommand{{Name: "review"}, {Name: "summarize"}}
+			app := ui.NewTester(func(c *ui.Context) { p.composer(c) }, 640, 600)
+			app.Frame()
+			openResearchActions(t, app, true)
+			if moveDown {
+				app.Key(0, ui.KeyDown)
+			}
+			app.Key(0, ui.KeyEnter)
+			app.Frame()
+			app.Type("abc")
+			app.Frame()
+			if p.state.draft != want {
+				t.Fatalf("typing an argument after completion left draft %q, want %q", p.state.draft, want)
 			}
 		})
 	}

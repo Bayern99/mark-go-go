@@ -419,6 +419,10 @@ func (p *panel) composer(c *ui.Context) {
 					return true
 				})
 			})
+			if p.commandCaret > 0 {
+				draftEditor.SetTextSelection(p.commandCaret, p.commandCaret)
+				p.commandCaret = 0
+			}
 			if draftEditor.Changed() {
 				if !strings.HasPrefix(s.draft, "/") {
 					if p.actionsFromSlash {
@@ -456,14 +460,20 @@ func (p *panel) composer(c *ui.Context) {
 					p.commandSelection.Reset()
 					p.actionsDismissed = false
 					p.actionsFromSlash = false
+					p.actionsFocusFilter = s.actionsOpen
 				}
 				actionsPopover := portrait.PopoverWithSpec(c, actionsBtn, &s.actionsOpen, portrait.PopoverSpec{Width: portrait.Form.SelectMax, Title: "Research actions", Placement: ui.AnchorTopStart}, func() {
 					p.commandList(c)
 				})
 				actionsPopover.AttachTo(composer, ui.AnchorTopStart, ui.AnchorBottomStart).Label("Research actions")
-				if actionsPopover.Dismissed() && strings.HasPrefix(s.draft, "/") {
-					p.actionsDismissed = true
-					p.actionsFromSlash = false
+				if actionsPopover.Dismissed() {
+					p.actionsFocusFilter = false
+					if p.actionsFromSlash {
+						p.actionsDismissed = true
+						p.actionsFromSlash = false
+					} else {
+						actionsBtn.Focus()
+					}
 				}
 				if documentEligible {
 					includeDocumentButton(c, &s.includeDoc)
@@ -577,6 +587,10 @@ func (p *panel) commandList(c *ui.Context) {
 	filterInput(c, "research-actions-filter", "Filter research actions", &p.commandQuery, "Search workflows and skills…", func(editor ui.Element) {
 		filterInputEditor = editor
 	})
+	if p.actionsFocusFilter {
+		filterInputEditor.Focus()
+		p.actionsFocusFilter = false
+	}
 	if filterInputEditor.Changed() {
 		query = p.commandQuery
 		p.commandSelection.Reset()
@@ -630,6 +644,7 @@ func (p *panel) filteredCommands(query string) []feynman.ResearchCommand {
 
 func (p *panel) chooseResearchCommand(command feynman.ResearchCommand) {
 	p.state.draft = "/" + command.Name + " "
+	p.commandCaret = len([]rune(p.state.draft))
 	p.state.actionsOpen = false
 	p.commandQuery = ""
 	p.commandSelection.Reset()

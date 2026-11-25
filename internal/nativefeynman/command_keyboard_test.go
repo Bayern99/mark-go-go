@@ -87,6 +87,27 @@ func TestResearchActionsButtonOutsideClickKeepsTheClickedFocus(t *testing.T) {
 	}
 }
 
+func TestResearchActionsButtonEscapeAfterTabbingOutReturnsToTheButton(t *testing.T) {
+	p := fixtureReadyPanel()
+	p.state.draft = ""
+	p.state.commands = []feynman.ResearchCommand{{Name: "review"}, {Name: "summarize"}}
+	app := ui.NewTester(func(c *ui.Context) { p.composer(c) }, 640, 600)
+	app.Frame()
+	openResearchActions(t, app, false)
+	for i := 0; i < 20 && !app.Focused("Research prompt"); i++ {
+		app.Key(ui.Shift, ui.KeyTab)
+		app.Frame()
+	}
+	if !app.Focused("Research prompt") || !p.state.actionsOpen {
+		t.Fatalf("Shift+Tab did not reach the prompt with actions open (open=%v)", p.state.actionsOpen)
+	}
+	app.Key(0, ui.KeyEscape)
+	app.Frame()
+	if p.state.actionsOpen || !app.Focused("Browse workflows, skills and extensions") {
+		t.Fatalf("Escape after tabbing out left actions open=%v without focus on the Actions button", p.state.actionsOpen)
+	}
+}
+
 func TestSlashUnknownTypedDraftSendsVerbatimAfterEscape(t *testing.T) {
 	p := fixtureReadyPanel()
 	p.state.draft = ""

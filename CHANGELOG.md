@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+- **GenUI 多后端与编排层拆分（[ADR 0018](docs/adr/0018-genui-backends-and-orchestrator.md)）**：生成拆成协议无关的 Orchestrator 与 Runner，`Settings / GenUI` 提供 Codex、Antigravity、Custom ACP 的 2×2 后端卡片、状态点、`Test & Refresh` 与 Terminal 登录；命令与参数分开，Codex 以无参数的 `codex-acp` 启动，Antigravity 用 `agy acp`；模型与思考等级以 `configOptions` 为主路径、legacy 模型列表只在缺少 `model` 选项时兜底，选项以每次响应为准；`settings.json` 升到 `schemaVersion: 2`，v1 配置迁到 Antigravity；Finder 启动也能找到 fnm/nvm/volta/bun 安装的命令。 GenUI gains protocol-neutral orchestration with per-backend settings, Codex and Custom ACP backends, declared-option model/effort selection, `Probe`/`ListModels`, settings v2 migration, and Finder-safe executable discovery. Pi arrives in #194.
+
 - **GenUI 插件开关（#192）**：`Settings / Plugins` 新增 GenUI 开关，缺省开启，仅显式关闭时生效；偏好跨窗口同步并在重启后保留。关闭后工具栏不再提供 GenUI，快捷键、已保存视图模式与窗口恢复都无法进入，正在显示 GenUI 的文档回到 `Preview`，进行中的生成被取消且视图监听解除，已保存视图仍在重新开启后读取。启用中的插件若有自己的设置页，Plugins 行显示 `Configure →` 深链。 GenUI becomes an optional plugin switch in Settings / Plugins, on by default, falling back to Preview with generation cancelled and watching stopped while off.
 
 ## [0.6.0] - 2026-11-24

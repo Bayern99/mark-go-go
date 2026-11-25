@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -29,6 +30,7 @@ const (
 	fakeLogEnv        = "MARKGOGO_FAKE_LOG"
 	fakePipeHolderEnv = "MARKGOGO_FAKE_PIPE_HOLDER"
 	fakeFolderInTitle = "{folder}"
+	fakeNoVersionEnv  = "MARKGOGO_FAKE_NO_VERSION"
 )
 
 func TestMain(m *testing.M) {
@@ -62,8 +64,15 @@ type fakeSpec struct {
 	ToolCalls            []fakeToolCallSpec      `json:"toolCalls"`
 	Permissions          []fakePermissionSpec    `json:"permissions"`
 	Models               []string                `json:"models"`
+	LegacyModels         bool                    `json:"legacyModels"`
+	BothModelPaths       bool                    `json:"bothModelPaths"`
+	InitialModel         string                  `json:"initialModel"`
 	ThoughtValues        []string                `json:"thoughtValues"`
 	ThoughtCurrent       string                  `json:"thoughtCurrent"`
+	ThoughtModels        []string                `json:"thoughtModels"`
+	ThoughtID            string                  `json:"thoughtId"`
+	ThoughtStuck         bool                    `json:"thoughtStuck"`
+	ThoughtCategory      string                  `json:"thoughtCategory"`
 	ConfigUpdate         bool                    `json:"configUpdate"`
 	Out                  string                  `json:"out"`
 	OutChunks            []string                `json:"outChunks"`
@@ -83,6 +92,7 @@ type fakeSpec struct {
 	BareConfigResponse   bool                    `json:"bareConfigResponse"`
 	ConfigUpdateModel    string                  `json:"configUpdateModel"`
 	ForeignSessionEvents bool                    `json:"foreignSessionEvents"`
+	ProtocolVersion      int                     `json:"protocolVersion"`
 	Crash                string                  `json:"crash"`
 	Errors               map[string]fakeRPCError `json:"errors"`
 }
@@ -93,6 +103,16 @@ type fakeRPCError struct {
 }
 
 func runFakeAgent() {
+	for _, arg := range os.Args[1:] {
+		if arg == "--version" {
+			if os.Getenv(fakeNoVersionEnv) != "" {
+				fmt.Fprintln(os.Stderr, "fake agent: unknown option --version")
+				os.Exit(3)
+			}
+			fmt.Println("fake-agent 1.2.3")
+			return
+		}
+	}
 	var spec fakeSpec
 	if s := os.Getenv(fakeSpecEnv); s != "" {
 		if err := json.Unmarshal([]byte(s), &spec); err != nil {
@@ -127,6 +147,17 @@ func runFakeAgent() {
 		thoughtCurrent = thoughtValues[0]
 	}
 	currentModel := models[0]
+	if spec.InitialModel != "" {
+		currentModel = spec.InitialModel
+	}
+	thoughtID := spec.ThoughtID
+	if thoughtID == "" {
+		thoughtID = "thought_level"
+	}
+	thoughtCategory := spec.ThoughtCategory
+	if thoughtCategory == "" {
+		thoughtCategory = thoughtID
+	}
 	sessionID := "fake-session"
 	sessionSeq := 0
 	nextID := int64(100)
@@ -151,12 +182,38 @@ func runFakeAgent() {
 		return opts
 	}
 	optionSet := func(model, thought string) []map[string]any {
-		return []map[string]any{
-			{"id": "model", "type": "select", "currentValue": model, "options": modelOptions()},
-			{"id": "thought_level", "type": "select", "currentValue": thought, "options": thoughtOptions()},
+		opts := []map[string]any{
+			{"id": "model", "category": "model", "type": "select", "currentValue": model, "options": modelOptions()},
 		}
+		// An ACP agent only declares the reasoning effort for a model that has
+		// one; a model from outside the service list has none.
+		if len(spec.ThoughtModels) == 0 || slices.Contains(spec.ThoughtModels, model) {
+			opts = append(opts, map[string]any{
+				"id": thoughtID, "category": thoughtCategory, "type": "select", "currentValue": thought, "options": thoughtOptions(),
+			})
+		}
+		return opts
 	}
 	configOptions := func() []map[string]any { return optionSet(currentModel, thoughtCurrent) }
+	legacyModelList := func() map[string]any {
+		available := make([]map[string]any, len(models))
+		for i, m := range models {
+			available[i] = map[string]any{"modelId": m, "name": m}
+		}
+		return map[string]any{"availableModels": available, "currentModelId": currentModel}
+	}
+	setThought := func(configID, value string) bool {
+		if configID != thoughtID {
+			return false
+		}
+		if !slices.Contains(thoughtValues, value) {
+			return false
+		}
+		if !spec.ThoughtStuck {
+			thoughtCurrent = value
+		}
+		return true
+	}
 
 	in := bufio.NewScanner(os.Stdin)
 	in.Buffer(make([]byte, 0, 64<<10), 16<<20)
@@ -207,8 +264,12 @@ func runFakeAgent() {
 			if spec.SessionClose {
 				capabilities["sessionCapabilities"] = map[string]any{"close": map[string]any{}}
 			}
+			protocol := spec.ProtocolVersion
+			if protocol == 0 {
+				protocol = 1
+			}
 			send(map[string]any{"jsonrpc": "2.0", "id": *msg.ID, "result": map[string]any{
-				"protocolVersion":   1,
+				"protocolVersion":   protocol,
 				"agentCapabilities": capabilities,
 				"authMethods":       []any{},
 			}})
@@ -229,12 +290,18 @@ func runFakeAgent() {
 			if spec.EmptySessionID {
 				answeredSessionID = ""
 			}
-			send(map[string]any{"jsonrpc": "2.0", "id": *msg.ID, "result": map[string]any{
-				"sessionId":     answeredSessionID,
-				"modes":         []any{},
-				"models":        []any{},
-				"configOptions": configOptions(),
-			}})
+			opened := map[string]any{
+				"sessionId": answeredSessionID,
+				"modes":     []any{},
+				"models":    []any{},
+			}
+			if spec.LegacyModels || spec.BothModelPaths {
+				opened["models"] = legacyModelList()
+			}
+			if !spec.LegacyModels {
+				opened["configOptions"] = configOptions()
+			}
+			send(map[string]any{"jsonrpc": "2.0", "id": *msg.ID, "result": opened})
 			if spec.ForeignSessionEvents && spec.UniqueSessions && sessionSeq >= 2 && previousSessionID != "" {
 				fakeEmitForeignSession(previousSessionID, &nextID, pendingPermissions, send, logf)
 			}
@@ -252,25 +319,14 @@ func runFakeAgent() {
 			}
 			_ = json.Unmarshal(msg.Params, &params)
 			known := false
-			switch params.ConfigID {
-			case "model":
-				for _, m := range models {
-					if m == params.Value {
-						known = true
-					}
-				}
+			switch {
+			case params.ConfigID == "model":
+				known = slices.Contains(models, params.Value)
 				if known && !spec.ModelMismatch {
 					currentModel = params.Value
 				}
-			case "thought_level":
-				for _, v := range thoughtValues {
-					if v == params.Value {
-						known = true
-					}
-				}
-				if known {
-					thoughtCurrent = params.Value
-				}
+			default:
+				known = setThought(params.ConfigID, params.Value)
 			}
 			if known {
 				result := map[string]any{}
@@ -293,6 +349,17 @@ func runFakeAgent() {
 				}
 			} else {
 				send(map[string]any{"jsonrpc": "2.0", "id": *msg.ID, "error": map[string]any{"code": -32602, "message": "Unknown " + params.ConfigID + " value: " + params.Value}})
+			}
+		case msg.ID != nil && msg.Method == "session/set_model":
+			var params struct {
+				ModelID string `json:"modelId"`
+			}
+			_ = json.Unmarshal(msg.Params, &params)
+			if slices.Contains(models, params.ModelID) {
+				currentModel = params.ModelID
+				send(map[string]any{"jsonrpc": "2.0", "id": *msg.ID, "result": map[string]any{}})
+			} else {
+				send(map[string]any{"jsonrpc": "2.0", "id": *msg.ID, "error": map[string]any{"code": -32602, "message": "Unknown model ID: " + params.ModelID}})
 			}
 		case msg.ID != nil && msg.Method == "session/prompt":
 			if spec.Hang {
@@ -656,6 +723,7 @@ func driveGenerationContext(ctx context.Context, t *testing.T, spec fakeSpec, pr
 			Sections: sectionsOf(vectors),
 		},
 		AgentCommand: os.Args[0],
+		Args:         []string{"acp"},
 		Model:        "gemini-3.8-flash",
 		ViewPath:     filepath.Join(dir, ".notes.md.genui.json"),
 		Now:          func() time.Time { return fakeNow },
@@ -1694,10 +1762,12 @@ func TestReportFailure(t *testing.T) {
 }
 
 type fakeModelUpdater struct {
-	models []string
+	backend string
+	models  []string
 }
 
-func (f *fakeModelUpdater) SetModels(models []string) error {
+func (f *fakeModelUpdater) SetModels(backend string, models []string) error {
+	f.backend = backend
 	f.models = append([]string(nil), models...)
 	return nil
 }
@@ -1708,6 +1778,7 @@ func TestGenerateCachesModelsFromHandshake(t *testing.T) {
 		Models: []string{"model-alpha", "model-beta"},
 		Out:    happyOut,
 	}, nil, func(job *GenerationJob) {
+		job.Backend = "codex"
 		job.Model = "model-alpha"
 		job.Models = up
 	})
@@ -1716,6 +1787,9 @@ func TestGenerateCachesModelsFromHandshake(t *testing.T) {
 	}
 	if !reflect.DeepEqual(up.models, []string{"model-alpha", "model-beta"}) {
 		t.Errorf("cached models after handshake = %+v, want [model-alpha model-beta]", up.models)
+	}
+	if up.backend != "codex" {
+		t.Errorf("cached models for backend %q, want the job's backend", up.backend)
 	}
 }
 

@@ -24,50 +24,56 @@ import (
 var catalog string
 
 type documentView struct {
-	reading                                        Reading
-	preview                                        *Reading
-	stream                                         *statementStream
-	snapshot                                       genui.ViewEvent
-	loaded, settings, requestEdited, commandEdited bool
-	request, command, message, note, noteTarget    string
-	sourceText, imagesFor                          string
-	sections                                       map[headingKey]workspace.Section
-	notes                                          []workspace.Note
-	failure                                        *genui.GenerateFailure
-	lastIDs                                        []string
-	cancel                                         context.CancelFunc
+	reading                            Reading
+	preview                            *Reading
+	stream                             *statementStream
+	snapshot                           genui.ViewEvent
+	loaded, settings, requestEdited    bool
+	request, message, note, noteTarget string
+	sourceText, imagesFor              string
+	sections                           map[headingKey]workspace.Section
+	notes                              []workspace.Note
+	failure                            *genui.GenerateFailure
+	lastIDs                            []string
+	cancel                             context.CancelFunc
 }
 type headingKey struct {
 	name       string
 	occurrence int
 }
 type panel struct {
-	win                              *nativeui.Window
-	host                             *workspace.Service
-	watch, unwatch                   func(context.Context, string) error
-	views                            map[string]*documentView
-	closed                           bool
-	settings                         workspace.Settings
-	settingsCommand, settingsMessage string
-	settingsCommandEdited            bool
+	win             *nativeui.Window
+	host            *workspace.Service
+	watch, unwatch  func(context.Context, string) error
+	views           map[string]*documentView
+	closed          bool
+	settings        workspace.Settings
+	settingsMessage string
+
+	// Seams for the settings page: production points them at the workspace
+	// service, tests at fakes that never start an agent or a terminal.
+	save    func(workspace.SettingsPatch) (workspace.Settings, error)
+	probe   func(string) (genui.ProbeResult, error)
+	refresh func(string) (genui.ModelCatalog, error)
+	signIn  func(string) error
+	runOnUI func(func())
+
+	edits    map[string]*backendEdit
+	backends map[string]*backendStatus
 }
 
 func Install(host *workspace.Service) func(*nativeui.Window) nativeui.Panels {
 	return func(win *nativeui.Window) nativeui.Panels {
 		p := &panel{win: win, host: host, views: make(map[string]*documentView), watch: host.WatchView, unwatch: host.UnwatchView}
 		p.settings, _ = host.GetSettings()
-		p.settingsCommand = p.settings.AgentCommand
+		p.save = host.SetSettings
+		p.probe = host.ProbeGenUI
+		p.refresh = host.RefreshGenUIModels
+		p.signIn = host.OpenGenUILogin
 		workspace.SettingsChanged.Listen(win.Native(), func(next workspace.Settings) {
 			p.settings = next
-			if !p.settingsCommandEdited {
-				p.settingsCommand = next.AgentCommand
-			}
-			for _, v := range p.views {
-				if !v.commandEdited {
-					v.command = next.AgentCommand
-				}
-			}
 		})
+		win.Native().OnFocus(p.probeOnFocus)
 		genui.ViewChanged.Listen(win.Native(), p.updated)
 		return nativeui.Panels{GenUI: p.draw, Settings: []nativeui.SettingsPage{p.settingsPage()}, Changed: p.changed, Closed: p.close}
 	}
@@ -124,7 +130,7 @@ func (p *panel) viewFor(d workspace.DocumentInfo) *documentView {
 	if v != nil {
 		return v
 	}
-	v = &documentView{command: p.settings.AgentCommand}
+	v = &documentView{}
 	p.views[d.ID] = v
 	if err := p.watch(p.win.Context(), d.ID); err != nil {
 		v.loaded = true
@@ -190,17 +196,34 @@ func (p *panel) drawRequestToggle(c *ui.Context, v *documentView) {
 	if v.settings {
 		caret = portrait.IconCaretUp
 	}
-	ui.Row(c).Justify(ui.End).Gap(portrait.Form.Gap).Children(func() {
+	ui.Row(c).FillWidth().Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
+		portrait.Type.Meta.Apply(ui.Text(c, p.backendSummary())).TextColor(portrait.Colors.Ink3).
+			Grow(1).MinWidth(0).MaxLines(1).Ellipsis("…")
 		toggle := portrait.ButtonWith(c, "Request", "Generation request", portrait.ButtonSpec{
 			Look: portrait.Quiet, Selected: v.settings, Trailing: caret,
 		}).Checked(v.settings).Expanded(v.settings)
 		if toggle.Clicked() {
 			v.settings = !v.settings
 		}
-		if portrait.QuietIconButton(c, portrait.IconGear, "GenUI settings").Clicked() {
+		if portrait.QuietButton(c, "Configure…", "Configure GenUI").Clicked() {
 			p.win.OpenSettings("genui")
 		}
 	})
+}
+
+// backendSummary is the panel's read-only line: which backend makes the view
+// and which model it will ask for. The settings page is the only editor.
+func (p *panel) backendSummary() string {
+	id, backend := p.settings.GenUI.Active()
+	name := id
+	if b, ok := genui.BackendByID(id); ok {
+		name = b.Name
+	}
+	model := backend.UsableModel()
+	if model == "" {
+		model = "Agent default"
+	}
+	return name + " · " + model
 }
 
 // drawGenerationStatus reports the running or failed generation above the
@@ -397,68 +420,6 @@ func (v *documentView) changedIDs() []string {
 	return ids
 }
 
-func (p *panel) settingsPage() nativeui.SettingsPage {
-	return nativeui.SettingsPage{
-		ID: "genui", Section: "Workspace", Label: "GenUI", Icon: portrait.IconSparkle, Order: 210,
-		Keywords: []string{"genui generation model agent command save"},
-		Dirty: func() bool {
-			defaults := workspace.DefaultSettings()
-			return p.settings.Model != defaults.Model || p.settings.AgentCommand != defaults.AgentCommand
-		},
-		Reset: func() {
-			defaults := workspace.DefaultSettings()
-			_, err := p.host.SetSettings(workspace.SettingsPatch{Model: &defaults.Model, AgentCommand: &defaults.AgentCommand})
-			p.settingsMessage = message(err)
-			p.settingsCommand = defaults.AgentCommand
-			p.settingsCommandEdited = false
-		},
-		Draw: func(c *ui.Context, q nativeui.SettingsQuery) {
-			if q.Active() && !q.Matches("Model", "The model used to generate reading views.", "generation model") && !q.Matches("Agent command", "The command that runs the generation agent.", "agent command") {
-				return
-			}
-			if p.settingsMessage != "" {
-				portrait.Alert(c, portrait.Tones.Danger, "GenUI settings", p.settingsMessage)
-			}
-			portrait.SettingsGroup(c, "Generation", func(rows *portrait.Rows) {
-				if q.Match("Model", "The model used to generate reading views.", "generation model") {
-					rows.Row(portrait.RowSpec{Title: "Model", Description: "The model used to generate reading views."}, func() {
-						model := p.settings.Model
-						options := make([]portrait.Option, 0, len(p.settings.Models))
-						for _, value := range p.settings.Models {
-							options = append(options, portrait.Option{Value: value, Label: value})
-						}
-						before := model
-						portrait.Select(c, &model, options, portrait.SelectSpec{Label: "Model"})
-						if model != before {
-							_, err := p.host.SetSettings(workspace.SettingsPatch{Model: &model})
-							p.settingsMessage = message(err)
-						}
-					})
-				}
-				if q.Match("Agent command", "The command that runs the generation agent.", "agent command") {
-					rows.Row(portrait.RowSpec{Title: "Agent command", Description: "The command that runs the generation agent."}, func() {
-						ui.Row(c).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
-							field := portrait.TextField(c, &p.settingsCommand, portrait.FieldSpec{Label: "Agent command", Placeholder: "Agent command", Size: portrait.Form.FieldCompact})
-							field.Frame().Width(portrait.Form.SelectMax)
-							field.Input().OnChange(func() { p.settingsCommandEdited = true })
-							save := portrait.AccentButton(c, "Save", "Save agent command")
-							save.Disabled(!p.settingsCommandEdited || strings.TrimSpace(p.settingsCommand) == "")
-							if save.Clicked() {
-								command := strings.TrimSpace(p.settingsCommand)
-								_, err := p.host.SetSettings(workspace.SettingsPatch{AgentCommand: &command})
-								p.settingsMessage = message(err)
-								if err == nil {
-									p.settingsCommandEdited = false
-								}
-							}
-						})
-					})
-				}
-			})
-		},
-	}
-}
-
 func (p *panel) drawSettings(c *ui.Context, v *documentView, d workspace.DocumentInfo, busy bool) {
 	portrait.TextArea(c, &v.request, portrait.AreaSpec{Label: "Generation request", Placeholder: "Generation request", Rows: 2, Disabled: busy}).OnChange(func() { v.requestEdited = true })
 	if d.Path == "" {
@@ -626,6 +587,12 @@ func loading(c *ui.Context, title, detail string) {
 		})
 		viewSkeleton(c)
 	})
+}
+
+func activeDefaults(settings workspace.Settings) workspace.GenUIBackend {
+	defaults := workspace.DefaultSettings()
+	id, _ := settings.GenUI.Active()
+	return defaults.GenUI.For(id)
 }
 
 func message(err error) string {

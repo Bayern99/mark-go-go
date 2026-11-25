@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/Bayern99/mark-go-go/internal/desktop"
+	"strings"
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/acp"
@@ -130,8 +131,8 @@ func (s *Service) checkpointDocument(win *mygo.Window, documentID, path string) 
 	}, nil
 }
 
-func (st *settingsStore) SetModels(models []string) error {
-	return st.setModels(models)
+func (st *settingsStore) SetModels(backend string, models []string) error {
+	return st.setModels(backend, models)
 }
 
 func (s *docSession) viewFollower() *genui.ViewFollower {
@@ -265,10 +266,18 @@ func (h *Service) StartGeneration(ctx context.Context, documentID string, req ge
 	if h.settings != nil {
 		models = h.settings
 	}
+	backendID, backend := settings.GenUI.Active()
+	if b, ok := genui.BackendByID(backendID); ok && strings.TrimSpace(backend.Command) == "" {
+		return refuse(genui.NewFailure(genui.FailAgentNotFound, "The "+b.Name+" backend has no command yet.", b.InstallHint))
+	}
 	job := acp.GenerationJob{
 		Req:          req,
-		AgentCommand: settings.AgentCommand,
-		Model:        settings.Model,
+		Backend:      backendID,
+		AgentCommand: backend.Command,
+		Args:         backend.Args,
+		Model:        backend.UsableModel(),
+		ThoughtLevel: backend.ThoughtLevel,
+		Selection:    settingsSelection(h.settings),
 		ViewPath:     genui.ViewPath(docPath),
 		Now:          time.Now,
 		Models:       models,
@@ -289,6 +298,15 @@ func (h *Service) StartGeneration(ctx context.Context, documentID string, req ge
 		result <- err
 	}()
 	return result
+}
+
+// settingsSelection records what the agent confirmed, so the next run uses the
+// values that took effect rather than the ones asked for.
+func settingsSelection(st *settingsStore) acp.SelectionUpdater {
+	if st == nil {
+		return nil
+	}
+	return st
 }
 
 func (h *Service) commitGenerationWrite(s *docSession, slot *generationSlot) error {

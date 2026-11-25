@@ -1,21 +1,17 @@
 package acp
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
-	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf16"
 
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"github.com/Bayern99/mark-go-go/internal/genui"
@@ -32,7 +28,7 @@ var acpInitializeParams = map[string]any{
 	},
 }
 
-const defaultGenerationTimeout = 5 * time.Minute
+const defaultGenerationTimeout = genui.DefaultGenerationTimeout
 
 const acpPromptCancelAckTimeout = time.Second
 
@@ -40,18 +36,34 @@ const acpSessionCloseTimeout = time.Second
 
 const statementPreviewInterval = 25 * time.Millisecond
 
+// thoughtOptionIDs and thoughtOptionCategories are the names agents use for the
+// reasoning-effort option: agy spells it thought_level, Codex reasoning_effort.
+var thoughtOptionIDs = []string{traceThoughtID, "thoughtLevel", "reasoning_effort"}
+
+var thoughtOptionCategories = []string{traceThoughtID, "thoughtLevel", "reasoning_effort", "reasoning"}
+
 type ModelUpdater interface {
-	SetModels(models []string) error
+	SetModels(backend string, models []string) error
+}
+
+// SelectionUpdater records the model and thought level the agent confirmed.
+type SelectionUpdater interface {
+	SetSelection(backend, model, thoughtLevel string) error
 }
 
 type GenerationJob struct {
 	Req          genui.GenerateRequest
+	Backend      string
 	AgentCommand string
-	Model        string
-	ViewPath     string
-	Now          func() time.Time
-	Models       ModelUpdater
-	Timeout      time.Duration
+	// Args are the arguments that make the command speak ACP over stdio;
+	// they are empty for codex-acp and ["acp"] for agy.
+	Args      []string
+	Model     string
+	ViewPath  string
+	Now       func() time.Time
+	Models    ModelUpdater
+	Selection SelectionUpdater
+	Timeout   time.Duration
 
 	Env []string
 
@@ -83,157 +95,133 @@ func RunGeneration(ctx context.Context, job GenerationJob, progress func(genui.G
 	if trace != nil {
 		defer func() { trace.end(err) }()
 	}
-
-	var base *genui.BaseView
-	switch job.Req.Mode {
-	case "full":
-	case "update":
-		b, err := genui.ReadBaseView(job.ViewPath, job.Req.ReplaceIDs)
-		if err != nil {
-			return err
+	runner := &turnRunner{job: job, trace: trace}
+	defer func() {
+		if closeErr := runner.Close(); closeErr != nil && err == nil {
+			err = closeErr
 		}
-		base = b
-	default:
-		return genui.AgentErrorf("Unknown generation mode %q: only \"full\" and \"update\" are supported.", job.Req.Mode)
+	}()
+	orchestrator := &genui.Orchestrator{
+		Runner:       runner,
+		Req:          job.Req,
+		ViewPath:     job.ViewPath,
+		Model:        job.Model,
+		ThoughtLevel: job.ThoughtLevel,
+		Now:          job.Now,
+		Timeout:      job.Timeout,
+		Validate:     job.Validate,
+		BeforeWrite:  job.BeforeWrite,
+		Prompt:       job.Prepare,
+		OnDir:        func(dir string) { trace.runStart(&job, dir) },
+		Artifact:     trace.artifactOrView,
+		Observe:      trace.emit,
 	}
-	if job.Now == nil {
-		job.Now = time.Now
-	}
-	if job.Timeout <= 0 {
-		job.Timeout = defaultGenerationTimeout
-	}
-	ctx, stop := context.WithTimeoutCause(ctx, job.Timeout, genui.ErrTimedOut)
-	defer stop()
-	interrupted := func() error {
-		if context.Cause(ctx) == genui.ErrTimedOut {
-			return genui.TimedOut(job.Timeout)
-		}
-		return genui.NewFailure(genui.FailCancelled, "Generation was cancelled.", "")
-	}
-
-	dir, err := os.MkdirTemp("", "markgogo-genui-")
-	if err != nil {
-		return genui.AgentErrorf("Could not make the agent's folder: %v.", err)
-	}
-	defer os.RemoveAll(dir)
-	if dir, err = filepath.EvalSymlinks(dir); err != nil {
-		return genui.AgentErrorf("Could not make the agent's folder: %v.", err)
-	}
-
-	trace.runStart(&job, dir)
-	if err := os.WriteFile(filepath.Join(dir, "source.md"), []byte(job.Req.Text), 0o644); err != nil {
-		return genui.AgentErrorf("Could not write the agent's source file: %v.", err)
-	}
+	var sent func(genui.GenerateProgress) error = progress
 	if trace != nil {
-		trace.artifact("source.md", filepath.Join(dir, "source.md"), job.Req.Text)
+		sent = trace.phases(progress)
 	}
-	if base != nil {
-		if err := os.WriteFile(filepath.Join(dir, "view.json"), base.Raw(), 0o644); err != nil {
-			return genui.AgentErrorf("Could not write the agent's copy of the view: %v.", err)
-		}
-	}
+	return orchestrator.Run(ctx, sent)
+}
 
-	send := &progressSender{send: progress, trace: trace}
-	if err := send.step("starting", "Starting the agent"); err != nil {
-		return interrupted()
+// startAgent resolves and launches the backend's command with the arguments it
+// declared. It runs once per turn, inside the turn's folder.
+func (r *turnRunner) startAgent(dir string) error {
+	if r.agent != nil {
+		return nil
 	}
-
-	var promptText string
-	var assembleOutput func([]byte) ([]byte, error)
-	if job.Prepare != nil {
-		promptText, assembleOutput, err = job.Prepare(ctx, job.Req, dir)
-		if err != nil {
-			if ctx.Err() != nil {
-				return interrupted()
-			}
-			return genui.AgentErrorf("Could not prepare the controlled reading view: %v.", err)
-		}
-	}
-
-	resolved, err := ResolveAgentCommand(job.AgentCommand)
+	resolved, err := ResolveAgentCommand(r.job.AgentCommand)
 	if err != nil {
 		return err
 	}
-
-	run := &genRun{
-		job:            job,
-		dir:            dir,
-		send:           send,
-		base:           base,
-		trace:          trace,
-		promptText:     promptText,
-		assembleOutput: assembleOutput,
-		abortCh:        make(chan struct{}),
-		toolCalls:      make(map[string]toolCallState),
-	}
-	var agent *Agent
-	if job.AgentCache != nil {
-		lease, err := job.AgentCache.lease(resolved, job.Env)
+	r.resolved = resolved
+	if r.job.AgentCache != nil {
+		lease, err := r.job.AgentCache.lease(resolved, r.job.Args, r.job.Env)
 		if err != nil {
-			return genui.NewFailure(genui.FailAgentNotFound, fmt.Sprintf("Could not start the agent command %q: %v.", job.AgentCommand, err), genui.HintAgentNotFound)
+			return genui.NewFailure(genui.FailAgentNotFound, fmt.Sprintf("Could not start the agent command %q: %v.", r.job.AgentCommand, err), genui.HintAgentNotFound)
 		}
-		run.lease = lease
-		agent = lease.agent
+		r.lease = lease
+		r.agent = lease.agent
 		if lease.reused {
-			trace.agentReused(resolved, lease.args, agent.PID(), lease.cwd, lease.startedAt, lease.idleSince)
+			r.trace.agentReused(resolved, lease.args, r.agent.PID(), lease.cwd, lease.startedAt, lease.idleSince)
 		} else {
-			trace.agentStart(resolved, lease.args, agent.PID(), lease.cwd)
+			r.trace.agentStart(resolved, lease.args, r.agent.PID(), lease.cwd)
 		}
 	} else {
-		cmd := exec.Command(resolved, "acp")
+		cmd := exec.Command(resolved, r.job.Args...)
 		cmd.Dir = dir
-		cmd.Env = job.Env
-		agent, err = NewAgent(cmd, fsutil.NewLimitBuffer(4<<10))
+		cmd.Env = r.job.Env
+		r.agent, err = NewAgent(cmd, fsutil.NewLimitBuffer(4<<10))
 		if err != nil {
-			return genui.NewFailure(genui.FailAgentNotFound, fmt.Sprintf("Could not start the agent command %q: %v.", job.AgentCommand, err), genui.HintAgentNotFound)
+			return genui.NewFailure(genui.FailAgentNotFound, fmt.Sprintf("Could not start the agent command %q: %v.", r.job.AgentCommand, err), genui.HintAgentNotFound)
 		}
-		trace.agentStart(resolved, cmd.Args, agent.PID(), dir)
+		r.trace.agentStart(resolved, cmd.Args, r.agent.PID(), dir)
 	}
-	run.agent = agent
 	var observe func(direction string, line []byte)
-	if trace != nil {
+	if r.trace != nil {
 		observe = func(direction string, line []byte) {
-			if direction == Received && !trace.acceptsInbound(line) {
+			if direction == Received && !r.trace.acceptsInbound(line) {
 				return
 			}
 			event := TraceACPSent
 			if direction == Received {
 				event = TraceACPReceived
 			}
-			trace.emit(event, &traceACPPayload{Direction: direction, Line: json.RawMessage(line)})
+			r.trace.emit(event, &traceACPPayload{Direction: direction, Line: json.RawMessage(line)})
 		}
 	}
-	agent.SetHandlers(run.handleRequest, run.handleNotification, observe)
-	if run.lease == nil || !run.lease.reused {
-		agent.Start()
+	r.agent.SetHandlers(r.handleRequest, r.handleNotification, observe)
+	if r.lease == nil || !r.lease.reused {
+		r.agent.Start()
 	}
-	defer run.finishAgent()
-
-	err = run.execute(ctx)
-	if err == nil {
-		return nil
-	}
-	if errors.Is(err, genui.ErrCancelled) {
-		run.stopAfterCancel()
-		return interrupted()
-	}
-	return err
+	return nil
 }
 
-func (r *genRun) finishAgent() {
+// Close releases the turn's process: an idle one whose session was closed is
+// kept for reuse, anything else exits.
+func (r *turnRunner) Close() error {
+	if r == nil {
+		return nil
+	}
 	if r.agent != nil {
 		r.agent.SetHandlers(nil, nil, nil)
 	}
 	if r.lease != nil {
 		r.lease.release(r.sessionClosed)
-		return
+		r.lease = nil
+		return nil
 	}
 	if r.agent != nil {
 		r.agent.Kill()
 	}
+	return nil
 }
 
-func (r *genRun) execute(ctx context.Context) error {
+func (r *turnRunner) Probe(ctx context.Context) (genui.ProbeResult, error) {
+	return Probe(ctx, r.probeConfig())
+}
+
+func (r *turnRunner) ListModels(ctx context.Context) (genui.ModelCatalog, error) {
+	return ListModels(ctx, SessionConfig{ProbeConfig: r.probeConfig()})
+}
+
+func (r *turnRunner) probeConfig() ProbeConfig {
+	return ProbeConfig{
+		Backend: r.job.Backend,
+		Command: r.job.AgentCommand,
+		Args:    r.job.Args,
+		Env:     r.job.Env,
+	}
+}
+
+func (r *turnRunner) ExecuteTurn(ctx context.Context, turn genui.Turn) (genui.TurnResult, error) {
+	var none genui.TurnResult
+	r.turn = turn
+	r.dir = turn.Dir
+	r.abortCh = make(chan struct{})
+	r.toolCalls = make(map[string]toolCallState)
+	if err := r.startAgent(turn.Dir); err != nil {
+		return none, err
+	}
 	var initialized struct {
 		ProtocolVersion   int             `json:"protocolVersion"`
 		AgentInfo         json.RawMessage `json:"agentInfo"`
@@ -254,7 +242,7 @@ func (r *genRun) execute(ctx context.Context) error {
 			initRawPtr = &initRaw
 		}
 		if err := r.callAgent(ctx, "initialize", acpInitializeParams, &initialized, initRawPtr); err != nil {
-			return err
+			return none, err
 		}
 		r.trace.initialized(initRaw, acpClientInfo, ProtocolVersion, initialized.ProtocolVersion, initialized.AgentInfo, initialized.AgentCapabilities, initialized.AuthMethods)
 		if r.lease != nil {
@@ -262,12 +250,13 @@ func (r *genRun) execute(ctx context.Context) error {
 		}
 	}
 	if initialized.ProtocolVersion != ProtocolVersion {
-		return genui.AgentErrorf("The agent speaks ACP protocol version %d, but this app speaks version %d.", initialized.ProtocolVersion, ProtocolVersion)
+		return none, genui.AgentErrorf("The agent speaks ACP protocol version %d, but this app speaks version %d.", initialized.ProtocolVersion, ProtocolVersion)
 	}
 
 	var opened struct {
 		SessionID     string          `json:"sessionId"`
 		ConfigOptions json.RawMessage `json:"configOptions"`
+		Models        json.RawMessage `json:"models"`
 	}
 	var openedRaw json.RawMessage
 	var openedRawPtr *json.RawMessage
@@ -278,55 +267,40 @@ func (r *genRun) execute(ctx context.Context) error {
 		"cwd":        r.dir,
 		"mcpServers": []any{},
 	}, &opened, openedRawPtr); err != nil {
-		return err
+		return none, err
 	}
 	if r.lease != nil {
 		if err := r.lease.acceptSession(opened.SessionID); err != nil {
-			return err
+			return none, err
 		}
 	}
 	r.setSessionID(opened.SessionID)
 	r.trace.sessionNew(openedRaw, opened.SessionID)
+	r.noteOptions(opened.ConfigOptions)
+	r.legacyModels = legacyModelValues(opened.Models)
 	if models := configValues(opened.ConfigOptions, "model"); len(models) > 0 && r.job.Models != nil {
-		_ = r.job.Models.SetModels(models)
+		_ = r.job.Models.SetModels(r.job.Backend, models)
 	}
-	if err := r.send.step("starting", "Agent ready"); err != nil {
-		return err
-	}
-
-	if r.job.Model != "" {
-		var setRaw json.RawMessage
-		r.markModelRequested()
-		if err := r.callAgent(ctx, "session/set_config_option", map[string]any{
-			"sessionId": r.session(),
-			"configId":  traceModelOption,
-			"value":     r.job.Model,
-		}, nil, &setRaw); err != nil {
-			r.trace.configSetError(traceModelOption, r.job.Model, err)
-			var ge *genui.GenError
-			if models := configValues(opened.ConfigOptions, "model"); len(models) > 0 && errors.As(err, &ge) && ge.Kind == genui.FailAgentError {
-				invalid := genui.NewFailure(genui.FailModelInvalid, fmt.Sprintf("The agent does not know the model %q.", r.job.Model), genui.HintModelInvalid)
-				invalid.Models = models
-				return invalid
-			}
-			return err
-		}
-		r.trace.configSetResponse(traceModelOption, r.job.Model, setRaw)
-		r.noteModelOptions(configOptionsField(setRaw))
-		if err := r.modelProblem(); err != nil {
-			return err
-		}
+	if err := r.step("starting", "Agent ready"); err != nil {
+		return none, err
 	}
 
-	if err := r.applyThoughtLevel(ctx, opened.ConfigOptions); err != nil {
-		return err
+	requestedModel, effortFromID := genui.SplitModelID(turn.Model)
+	requestedThought := turn.ThoughtLevel
+	if requestedThought == "" {
+		requestedThought = effortFromID
+	}
+	if err := r.applyModel(ctx, requestedModel); err != nil {
+		return none, err
+	}
+	if err := r.applyThoughtLevel(ctx, requestedThought); err != nil {
+		return none, err
+	}
+	if err := r.confirmedSelection(); err != nil {
+		return none, err
 	}
 
-	promptText := r.promptText
-	if promptText == "" {
-		promptText = genui.GenerationPrompt(r.job.Req, r.base, r.dir)
-	}
-	r.trace.prompt(promptText)
+	r.trace.prompt(turn.Prompt)
 	var turned struct {
 		StopReason string `json:"stopReason"`
 	}
@@ -335,106 +309,188 @@ func (r *genRun) execute(ctx context.Context) error {
 	if r.trace != nil {
 		turnedRawPtr = &turnedRaw
 	}
-	r.startStatementPreview(ctx)
-	defer r.stopStatementPreview()
 	if err := r.callAgent(ctx, "session/prompt", map[string]any{
 		"sessionId": r.session(),
-		"prompt":    []map[string]any{{"type": "text", "text": promptText}},
+		"prompt":    []map[string]any{{"type": "text", "text": turn.Prompt}},
 	}, &turned, turnedRawPtr); err != nil {
 		if errors.Is(err, genui.ErrCancelled) && r.turnWasAcknowledged() {
 			r.settleSession()
 		}
-		return err
+		return none, err
 	}
 	r.trace.promptResult(turnedRaw)
 	switch turned.StopReason {
 	case "", "end_turn":
 	case "cancelled":
 		r.settleSession()
-		return genui.ErrCancelled
+		return none, genui.ErrCancelled
 	case "refusal":
 		r.settleSession()
 		refused := genui.NewFailure(genui.FailAgentMessage, "The agent declined to make the view.", genui.HintAgentMessage)
 		refused.Detail = genui.CutRunes(strings.TrimSpace(r.lastReply()), genui.MaxDetailRunes)
-		return refused
+		return none, refused
 	case "max_tokens", "max_turn_requests":
 		r.settleSession()
 		stopped := genui.NewFailure(genui.FailAgentMessage, "The agent stopped before finishing the view.", genui.HintAgentMessage)
 		stopped.Detail = genui.CutRunes(strings.TrimSpace(r.lastReply()), genui.MaxDetailRunes)
-		return stopped
+		return none, stopped
 	default:
 		r.settleSession()
 		stopped := genui.NewFailure(genui.FailAgentMessage, fmt.Sprintf("The agent stopped before finishing the view (%s).", turned.StopReason), genui.HintAgentMessage)
 		stopped.Detail = genui.CutRunes(strings.TrimSpace(r.lastReply()), genui.MaxDetailRunes)
-		return stopped
+		return none, stopped
 	}
 	if err := r.modelProblem(); err != nil {
 		r.settleSession()
-		return err
+		return none, err
 	}
-	r.stopStatementPreview()
-	if err := r.send.step("checking", "Checking the view"); err != nil {
-		r.settleSession()
-		return err
-	}
-
 	if r.lease == nil {
 		r.agent.Kill()
 	} else if !r.settleSession() {
 		r.agent.Kill()
 	}
-	return r.collect(ctx)
+	return genui.TurnResult{Model: r.modelStamp(), Reply: r.lastReply()}, nil
 }
 
-func (r *genRun) applyThoughtLevel(ctx context.Context, optionsRaw json.RawMessage) error {
-	requested := r.job.ThoughtLevel
+func (r *turnRunner) step(phase, text string) error {
+	if r.turn.Progress == nil {
+		return nil
+	}
+	return r.turn.Progress(genui.GenerateProgress{Phase: phase, Text: text})
+}
+
+// applyModel writes the requested model through the declared model option and
+// only falls back to the legacy model list when that option is missing. A
+// failed write on the main path is reported as is: it never becomes a legacy
+// write, because the agent already said which values it accepts.
+func (r *turnRunner) applyModel(ctx context.Context, requested string) error {
 	if requested == "" {
 		return nil
 	}
-	opt, ok := findConfigOption(optionsRaw, traceThoughtID, "thoughtLevel")
+	if opt, ok := findConfigOptionIn(r.currentOptions(), []string{traceModelOption}, []string{traceModelOption}); ok {
+		r.markModelRequested(requested)
+		var setRaw json.RawMessage
+		if err := r.callAgent(ctx, "session/set_config_option", map[string]any{
+			"sessionId": r.session(),
+			"configId":  opt.ID,
+			"value":     requested,
+		}, nil, &setRaw); err != nil {
+			r.trace.configSetError(opt.ID, requested, err)
+			offered := opt.values()
+			var ge *genui.GenError
+			if len(offered) > 0 && errors.As(err, &ge) && ge.Kind == genui.FailAgentError {
+				invalid := genui.NewFailure(genui.FailModelInvalid, fmt.Sprintf("The agent does not know the model %q.", requested), genui.HintModelInvalid)
+				invalid.Models = offered
+				return invalid
+			}
+			return err
+		}
+		r.trace.configSetResponse(opt.ID, requested, setRaw)
+		r.noteOptions(configOptionsField(setRaw))
+		r.noteModelOptions(configOptionsField(setRaw))
+		return r.modelProblem()
+	}
+	if len(r.legacyModels) == 0 {
+		r.trace.configSetSkipped(traceModelOption, requested, "the agent's session/new declared no model option and no legacy model list")
+		return nil
+	}
+	value := requested
+	if !slices.Contains(r.legacyModels, value) && slices.Contains(r.legacyModels, r.job.Model) {
+		// The legacy model list is the only place a compound id may be used.
+		value = r.job.Model
+	}
+	r.markModelRequested(value)
+	if err := r.callAgent(ctx, "session/set_model", map[string]any{
+		"sessionId": r.session(),
+		"modelId":   value,
+	}, nil, nil); err != nil {
+		r.trace.configSetError(traceModelOption, value, err)
+		var ge *genui.GenError
+		if !slices.Contains(r.legacyModels, value) && errors.As(err, &ge) && ge.Kind == genui.FailAgentError {
+			invalid := genui.NewFailure(genui.FailModelInvalid, fmt.Sprintf("The agent does not know the model %q.", value), genui.HintModelInvalid)
+			invalid.Models = r.legacyModels
+			return invalid
+		}
+		return err
+	}
+	r.trace.configSetSkipped(traceModelOption, value, "the agent declared no model option, so the model was set through the legacy session/set_model")
+	r.confirmModel(value)
+	return nil
+}
+
+// applyThoughtLevel writes the reasoning effort only when the current options
+// declare an option for it and offer the requested value. A backend that knows
+// neither is not a failure: the session simply runs at its own default.
+func (r *turnRunner) applyThoughtLevel(ctx context.Context, requested string) error {
+	if requested == "" {
+		return nil
+	}
+	opt, ok := findThoughtOption(r.currentOptions())
 	if !ok {
-		r.trace.configSetSkipped(traceThoughtID, requested, "the agent's session/new configOptions have no thought_level option")
+		r.trace.configSetSkipped(traceThoughtID, requested, "the agent's current configOptions have no thought_level option")
 		return nil
 	}
 	offered := opt.values()
-	supported := false
-	for _, v := range offered {
-		if v == requested {
-			supported = true
-			break
-		}
-	}
-	if !supported {
+	if !slices.Contains(offered, requested) {
 		r.trace.configSetSkipped(opt.ID, requested, fmt.Sprintf("the agent's %s option does not offer %q; it offers %s", opt.ID, requested, strings.Join(genui.QuoteAll(offered), ", ")))
 		return nil
 	}
 	var setRaw json.RawMessage
-	var setRawPtr *json.RawMessage
-	if r.trace != nil {
-		setRawPtr = &setRaw
-	}
 	if err := r.callAgent(ctx, "session/set_config_option", map[string]any{
 		"sessionId": r.session(),
 		"configId":  opt.ID,
 		"value":     requested,
-	}, nil, setRawPtr); err != nil {
+	}, nil, &setRaw); err != nil {
 		r.trace.configSetError(opt.ID, requested, err)
 		return err
 	}
 	r.trace.configSetResponse(opt.ID, requested, setRaw)
+	r.noteOptions(configOptionsField(setRaw))
 	return nil
 }
 
-type genRun struct {
+func findThoughtOption(raw json.RawMessage) (acpConfigOption, bool) {
+	return findConfigOptionIn(raw, thoughtOptionIDs, thoughtOptionCategories)
+}
+
+// confirmedSelection records what the agent reported, so the settings page and
+// the next run use the values that took effect rather than the ones asked for.
+func (r *turnRunner) confirmedSelection() error {
+	if r.job.Selection == nil {
+		return nil
+	}
+	r.modelMu.Lock()
+	model, confirmed := r.modelActual, r.modelConfirmed
+	mismatch := r.modelMismatch
+	r.modelMu.Unlock()
+	if mismatch != "" || !confirmed || model == "" {
+		return nil
+	}
+	// Only the effort the agent reports back is recorded; an effort it did not
+	// confirm leaves the saved one alone.
+	thought := ""
+	requested := strings.TrimSpace(r.turn.ThoughtLevel)
+	if requested != "" {
+		if actual, ok := r.thoughtActual(); ok && actual == requested {
+			thought = actual
+		}
+	}
+	_ = r.job.Selection.SetSelection(r.job.Backend, model, thought)
+	return nil
+}
+
+// turnRunner is the ACP adapter behind genui.Runner: it owns the process, the
+// session and the declared options, and the orchestrator owns everything a
+// generation needs regardless of protocol.
+var _ genui.Runner = (*turnRunner)(nil)
+
+type turnRunner struct {
 	job  GenerationJob
 	dir  string
-	send *progressSender
-	base *genui.BaseView
+	turn genui.Turn
 
-	trace *generationTrace
-
-	promptText     string
-	assembleOutput func([]byte) ([]byte, error)
+	trace    *generationTrace
+	resolved string
 
 	agent *Agent
 	lease *acpLease
@@ -448,9 +504,15 @@ type genRun struct {
 
 	modelMu        sync.Mutex
 	modelRequested bool
+	modelTarget    string
 	modelActual    string
 	modelConfirmed bool
 	modelMismatch  string
+
+	optionsMu sync.Mutex
+	options   json.RawMessage
+
+	legacyModels []string
 
 	toolCalls map[string]toolCallState
 
@@ -458,15 +520,11 @@ type genRun struct {
 	abortOnce   sync.Once
 	abortReason string
 
-	previewStop chan struct{}
-	previewDone chan struct{}
-	previewData []byte
-
 	replyMu sync.Mutex
 	reply   strings.Builder
 }
 
-func (r *genRun) callAgent(ctx context.Context, method string, params any, result any, raw *json.RawMessage) error {
+func (r *turnRunner) callAgent(ctx context.Context, method string, params any, result any, raw *json.RawMessage) error {
 	if ctx.Err() != nil {
 		return genui.ErrCancelled
 	}
@@ -483,20 +541,20 @@ func (r *genRun) callAgent(ctx context.Context, method string, params any, resul
 	}
 }
 
-func (r *genRun) agentCallResult(method string, err error) error {
+func (r *turnRunner) agentCallResult(method string, err error) error {
 	if err == nil {
 		return nil
 	}
 	var rpc *RPCError
 	if !errors.As(err, &rpc) {
 		if genui.IsAuthError(0, err.Error()) {
-			return genui.AuthRequired(r.job.AgentCommand, err.Error())
+			return r.authRequired(err.Error())
 		}
 		return genui.AgentError(err.Error())
 	}
 	switch {
 	case genui.IsAuthError(rpc.Code, rpc.Message):
-		return genui.AuthRequired(r.job.AgentCommand, rpc.Message)
+		return r.authRequired(rpc.Message)
 	case method == "session/prompt":
 		stopped := genui.NewFailure(genui.FailAgentMessage, "The agent stopped with an error.", genui.HintAgentMessage)
 		stopped.Detail = genui.CutRunes(rpc.Message, genui.MaxDetailRunes)
@@ -506,7 +564,17 @@ func (r *genRun) agentCallResult(method string, err error) error {
 	}
 }
 
-func (r *genRun) cancelPromptTurn(method string, done <-chan error) {
+// authRequired names the sign-in the backend actually has, not always agy's.
+func (r *turnRunner) authRequired(detail string) error {
+	if b, ok := genui.BackendByID(r.job.Backend); ok && b.LoginHint != "" {
+		e := genui.NewFailure(genui.FailAuthRequired, "The agent is not signed in.", b.LoginHint)
+		e.Detail = genui.CutRunes(detail, genui.MaxDetailRunes)
+		return e
+	}
+	return genui.AuthRequired(r.job.AgentCommand, detail)
+}
+
+func (r *turnRunner) cancelPromptTurn(method string, done <-chan error) {
 	sessionID := r.session()
 	if method != "session/prompt" || sessionID == "" || r.agent == nil {
 		return
@@ -524,19 +592,19 @@ func (r *genRun) cancelPromptTurn(method string, done <-chan error) {
 	}
 }
 
-func (r *genRun) markCancelAcknowledged() {
+func (r *turnRunner) markCancelAcknowledged() {
 	r.cancelMu.Lock()
 	r.cancelAcknowledged = true
 	r.cancelMu.Unlock()
 }
 
-func (r *genRun) turnWasAcknowledged() bool {
+func (r *turnRunner) turnWasAcknowledged() bool {
 	r.cancelMu.Lock()
 	defer r.cancelMu.Unlock()
 	return r.cancelAcknowledged
 }
 
-func (r *genRun) settleSession() bool {
+func (r *turnRunner) settleSession() bool {
 	if r.lease == nil {
 		return true
 	}
@@ -554,7 +622,7 @@ func (r *genRun) settleSession() bool {
 	return true
 }
 
-func (r *genRun) closeSessionBounded(sessionID string) bool {
+func (r *turnRunner) closeSessionBounded(sessionID string) bool {
 	done := make(chan error, 1)
 	go func() {
 		done <- r.agent.Call("session/close", map[string]any{"sessionId": sessionID}, nil)
@@ -569,7 +637,7 @@ func (r *genRun) closeSessionBounded(sessionID string) bool {
 	}
 }
 
-func (r *genRun) stopAfterCancel() {
+func (r *turnRunner) stopAfterCancel() {
 	if r.agent == nil {
 		return
 	}
@@ -582,7 +650,7 @@ func (r *genRun) stopAfterCancel() {
 	r.agent.Kill()
 }
 
-func (r *genRun) abort(msg string) {
+func (r *turnRunner) abort(msg string) {
 	r.abortOnce.Do(func() {
 		r.abortReason = msg
 		close(r.abortCh)
@@ -593,75 +661,49 @@ func (r *genRun) abort(msg string) {
 	})
 }
 
-func (r *genRun) startStatementPreview(ctx context.Context) {
-	if r.base != nil || r.job.Req.Language != genui.StatementLanguage || r.previewStop != nil {
-		return
-	}
-	r.previewStop = make(chan struct{})
-	r.previewDone = make(chan struct{})
-	stop, done := r.previewStop, r.previewDone
-	go func() {
-		defer close(done)
-		ticker := time.NewTicker(statementPreviewInterval)
-		defer ticker.Stop()
-		for {
-			if !r.readStatementPreview() {
-				return
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-stop:
-				return
-			case <-ticker.C:
-			}
-		}
-	}()
-}
-
-func (r *genRun) stopStatementPreview() {
-	if r.previewStop == nil {
-		return
-	}
-	close(r.previewStop)
-	<-r.previewDone
-	r.readStatementPreview()
-	r.previewStop, r.previewDone = nil, nil
-}
-
-func (r *genRun) readStatementPreview() bool {
-	path := filepath.Join(r.dir, "out.json")
-	info, err := os.Lstat(path)
-	if err != nil || !info.Mode().IsRegular() || info.Size() > genui.MaxViewBytes {
-		return true
-	}
-	data, err := os.ReadFile(path)
-	if err != nil || bytes.Equal(data, r.previewData) {
-		return true
-	}
-	r.previewData = append(r.previewData[:0], data...)
-	return r.send.preview(data) == nil
-}
-
-func (r *genRun) lastReply() string {
+func (r *turnRunner) lastReply() string {
 	r.replyMu.Lock()
 	defer r.replyMu.Unlock()
 	return r.reply.String()
 }
 
-func (r *genRun) setSessionID(id string) {
+func (r *turnRunner) setSessionID(id string) {
 	r.sessionMu.Lock()
 	r.sessionID = id
 	r.sessionMu.Unlock()
 }
 
-func (r *genRun) session() string {
+func (r *turnRunner) session() string {
 	r.sessionMu.RLock()
 	defer r.sessionMu.RUnlock()
 	return r.sessionID
 }
 
-func (r *genRun) noteModelOptions(options json.RawMessage) {
+func (r *turnRunner) noteOptions(options json.RawMessage) {
+	if len(options) == 0 {
+		return
+	}
+	r.optionsMu.Lock()
+	r.options = cloneRaw(options)
+	r.optionsMu.Unlock()
+}
+
+func (r *turnRunner) currentOptions() json.RawMessage {
+	r.optionsMu.Lock()
+	defer r.optionsMu.Unlock()
+	return cloneRaw(r.options)
+}
+
+func (r *turnRunner) confirmModel(model string) {
+	r.modelMu.Lock()
+	defer r.modelMu.Unlock()
+	if r.modelMismatch == "" {
+		r.modelActual = model
+		r.modelConfirmed = true
+	}
+}
+
+func (r *turnRunner) noteModelOptions(options json.RawMessage) {
 	if r.job.Model == "" || len(options) == 0 {
 		return
 	}
@@ -685,9 +727,13 @@ func (r *genRun) noteModelOptions(options json.RawMessage) {
 	}
 	r.modelMu.Lock()
 	defer r.modelMu.Unlock()
-	if actual != r.job.Model {
+	target := r.modelTarget
+	if target == "" {
+		target = r.job.Model
+	}
+	if actual != target {
 		if r.modelMismatch == "" {
-			r.modelMismatch = fmt.Sprintf("The agent reports the model %q, not the requested %q, so the view was not changed.", actual, r.job.Model)
+			r.modelMismatch = fmt.Sprintf("The agent reports the model %q, not the requested %q, so the view was not changed.", actual, target)
 		}
 		return
 	}
@@ -697,13 +743,28 @@ func (r *genRun) noteModelOptions(options json.RawMessage) {
 	}
 }
 
-func (r *genRun) markModelRequested() {
+func (r *turnRunner) markModelRequested(requested string) {
 	r.modelMu.Lock()
 	r.modelRequested = true
+	r.modelTarget = requested
 	r.modelMu.Unlock()
 }
 
-func (r *genRun) modelProblem() error {
+// thoughtActual reads the effort the agent currently reports, from the latest
+// options it sent or its update notification.
+func (r *turnRunner) thoughtActual() (string, bool) {
+	opt, ok := findThoughtOption(r.currentOptions())
+	if !ok {
+		return "", false
+	}
+	current, ok := opt.current()
+	if !ok {
+		return "", false
+	}
+	return configString(current)
+}
+
+func (r *turnRunner) modelProblem() error {
 	if r.job.Model == "" {
 		return nil
 	}
@@ -715,23 +776,16 @@ func (r *genRun) modelProblem() error {
 	return nil
 }
 
-func (r *genRun) modelStamp() string {
+func (r *turnRunner) modelStamp() string {
 	r.modelMu.Lock()
 	defer r.modelMu.Unlock()
-	if r.modelConfirmed && r.modelActual == r.job.Model {
+	if r.modelConfirmed && r.modelActual != "" {
 		return r.modelActual
 	}
 	return ""
 }
 
-func (r *genRun) viewModel() string {
-	if r.base != nil {
-		return r.base.Model()
-	}
-	return r.modelStamp()
-}
-
-func (r *genRun) notificationBelongsToSession(params json.RawMessage) bool {
+func (r *turnRunner) notificationBelongsToSession(params json.RawMessage) bool {
 	var p struct {
 		SessionID string `json:"sessionId"`
 	}
@@ -741,7 +795,7 @@ func (r *genRun) notificationBelongsToSession(params json.RawMessage) bool {
 	return p.SessionID == r.session()
 }
 
-func (r *genRun) handleNotification(method string, params json.RawMessage) {
+func (r *turnRunner) handleNotification(method string, params json.RawMessage) {
 	if !r.notificationBelongsToSession(params) {
 		return
 	}
@@ -761,6 +815,7 @@ func (r *genRun) handleNotification(method string, params json.RawMessage) {
 			opts = upd.Update.ConfigOptions
 		}
 		r.trace.configOptionUpdate(method, params, opts)
+		r.noteOptions(opts)
 		r.noteModelOptions(opts)
 		return
 	}
@@ -794,13 +849,14 @@ func (r *genRun) handleNotification(method string, params json.RawMessage) {
 			r.replyMu.Unlock()
 		}
 	case "agent_thought_chunk":
-		_ = r.send.step("thinking", "Thinking")
+		_ = r.step("thinking", "Thinking")
 	case "config_option_update":
 		opts := u.ConfigOptions
 		if len(opts) == 0 {
 			opts = configOptionsField(params)
 		}
 		r.trace.configOptionUpdate(method, params, opts)
+		r.noteOptions(opts)
 		r.noteModelOptions(opts)
 	case "tool_call", "tool_call_update":
 		r.handleToolCall(u.ToolCallID, u.Kind, u.Title, u.Name, u.Locations)
@@ -845,7 +901,7 @@ func notificationPathInside(dir, loc string) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-func (r *genRun) handleToolCall(id, kind, title, name string, locations []Location) {
+func (r *turnRunner) handleToolCall(id, kind, title, name string, locations []Location) {
 	prior := r.toolCalls[id]
 	effectiveKind := kind
 	if effectiveKind == "" {
@@ -879,13 +935,13 @@ func (r *genRun) handleToolCall(id, kind, title, name string, locations []Locati
 	}
 	switch effectiveKind {
 	case "read", "search":
-		_ = r.send.step("reading", "Reading its files")
+		_ = r.step("reading", "Reading its files")
 	case "edit":
-		_ = r.send.step("writing", "Writing the view")
+		_ = r.step("writing", "Writing the view")
 	}
 }
 
-func (r *genRun) handleRequest(method string, params json.RawMessage) (any, *RPCError) {
+func (r *turnRunner) handleRequest(method string, params json.RawMessage) (any, *RPCError) {
 	if method != "session/request_permission" {
 		return nil, &RPCError{Code: -32601, Message: "method not found"}
 	}
@@ -931,6 +987,31 @@ func choosePermissionOption(options []PermissionOption, allowed bool) string {
 	return fallback
 }
 
+// legacyModelValues reads the pre-configOptions model list an agent may still
+// declare. It is consulted only when session/new had no model option.
+func legacyModelValues(raw json.RawMessage) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var listed struct {
+		AvailableModels []struct {
+			ModelID string `json:"modelId"`
+			ID      string `json:"id"`
+		} `json:"availableModels"`
+	}
+	if json.Unmarshal(raw, &listed) != nil {
+		return nil
+	}
+	values := make([]string, 0, len(listed.AvailableModels))
+	for _, m := range listed.AvailableModels {
+		id := cmp.Or(strings.TrimSpace(m.ModelID), strings.TrimSpace(m.ID))
+		if id != "" {
+			values = append(values, id)
+		}
+	}
+	return values
+}
+
 func configValues(raw json.RawMessage, id string) []string {
 	if len(raw) == 0 {
 		return nil
@@ -961,286 +1042,12 @@ func configValues(raw json.RawMessage, id string) []string {
 	return nil
 }
 
-func (r *genRun) collect(ctx context.Context) error {
-	outPath := filepath.Join(r.dir, "out.json")
-	fi, err := os.Lstat(outPath)
-	if errors.Is(err, fs.ErrNotExist) {
-		if reply := strings.TrimSpace(r.lastReply()); reply != "" {
-			finished := genui.NewFailure(genui.FailAgentMessage, "The agent finished without writing a view.", genui.HintAgentMessage)
-			finished.Detail = genui.CutRunes(reply, genui.MaxDetailRunes)
-			return finished
-		}
-		return r.outputError("The agent did not write out.json.")
-	}
-	if err != nil {
-		return r.outputError("The agent's out.json could not be read.")
-	}
-	if fi.Mode()&os.ModeSymlink != 0 {
-		return r.outputError("The agent's out.json is a symbolic link, not a file.")
-	}
-	if !fi.Mode().IsRegular() {
-		return r.outputError("The agent's out.json is not a regular file.")
-	}
-	if fi.Size() > genui.MaxViewBytes {
-		return r.outputError(fmt.Sprintf("The agent's out.json is %d bytes, more than the %d bytes a view may have.", fi.Size(), genui.MaxViewBytes))
-	}
-	data, err := os.ReadFile(outPath)
-	if err != nil {
-		return r.outputError("The agent's out.json could not be read.")
-	}
-	if r.trace != nil {
-		r.trace.artifact("out.json", outPath, string(data))
-	}
-	if r.assembleOutput != nil {
-		data, err = r.assembleOutput(data)
-		if err != nil {
-			return r.outputError(fmt.Sprintf("The content slots could not be assembled: %v.", err))
-		}
-		if r.trace != nil {
-			r.trace.artifact("assembled.json", "", string(data))
-		}
-	}
-
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal(data, &top); err != nil || top == nil {
-		return r.outputError("The agent's out.json is not valid JSON.")
-	}
-	a2ui, ok := top["a2ui"]
-	if !ok {
-		return r.outputError(`The agent's out.json has no "a2ui".`)
-	}
-	var components []json.RawMessage
-	if err := json.Unmarshal(a2ui, &components); err != nil || len(components) == 0 {
-		return r.outputError(`The agent's out.json does not have a non-empty "a2ui" array.`)
-	}
-	sources, err := genui.ParseSources(top["sources"])
-	if err != nil {
-		return r.outputError(err.Error())
-	}
-	if r.base != nil {
-		merged, messages, err := r.base.Merge(a2ui, sources)
-		if err != nil {
-			return r.outputError(err.Error())
-		}
-		return r.writeView(ctx, merged, messages)
-	}
-	return r.writeView(ctx, sources, a2ui)
-}
-
-func (r *genRun) writeView(ctx context.Context, sources map[string]genui.AgentSource, a2ui json.RawMessage) error {
-	if err := r.modelProblem(); err != nil {
-		return err
-	}
-	kept := r.base.KeptHashes(a2ui)
-	content, _, err := genui.AssembleView(genui.ViewOptions{
-		A2UI:        a2ui,
-		Sources:     sources,
-		Model:       r.viewModel(),
-		Request:     r.job.Req.Request,
-		GeneratedAt: r.job.Now(),
-		Hash: func(key string, src genui.AgentSource) string {
-			if hash, keep := kept[key]; keep {
-				return hash
-			}
-			hash, _ := r.sectionHash(src)
-			return hash
-		},
-	})
-	if err != nil {
-		return r.outputError("The agent's out.json could not be turned into a view.")
-	}
-	if ctx.Err() != nil {
-		return genui.ErrCancelled
-	}
-	if r.trace != nil {
-		r.trace.artifact("candidate", "", string(content))
-		r.trace.emit("validation.start", nil)
-	}
-	var report genui.CandidateReport
-	var validationErr error
-	if r.job.Validate == nil {
-		report, validationErr = genui.CheckCandidate(ctx, content)
-	} else {
-		validationErr = r.job.Validate(ctx, content)
-	}
-	if ctx.Err() != nil {
-		return genui.ErrCancelled
-	}
-	if validationErr != nil {
-		if r.trace != nil {
-			r.trace.emit("validation.result", map[string]any{"ok": false, "error": validationErr.Error()})
-		}
-		var ge *genui.GenError
-		if errors.As(validationErr, &ge) {
-			return r.outputError(ge.Message)
-		}
-		return r.outputError(validationErr.Error())
-	}
-	if r.trace != nil {
-		accepted := map[string]any{"ok": true}
-		if len(report.Degraded) > 0 {
-			accepted["degraded"] = report.Degraded
-		}
-		r.trace.emit("validation.result", accepted)
-	}
-	if ctx.Err() != nil {
-		return genui.ErrCancelled
-	}
-	if err := r.modelProblem(); err != nil {
-		return err
-	}
-	var expect []byte
-	if r.base != nil {
-		expect = r.base.Raw()
-	}
-	if r.job.BeforeWrite != nil {
-		if err := r.job.BeforeWrite(); err != nil {
-			return err
-		}
-	}
-	if err := genui.ReplaceView(r.job.ViewPath, content, expect); err != nil {
-		return err
-	}
-	r.trace.viewWritten(r.job.ViewPath, content)
-	return nil
-}
-
-func (r *genRun) sectionHash(src genui.AgentSource) (hash string, ok bool) {
-	key := genui.NormalizeKey(src.Heading)
-	for _, sec := range r.job.Req.Sections {
-		if sec.Occurrence != src.Occurrence || genui.NormalizeKey(sec.Heading) != key {
-			continue
-		}
-		if h, valid := hashSection(r.job.Req.Text, sec); valid {
-			return h, true
-		}
-	}
-	return "", false
-}
-
 func hashSection(text string, sec genui.SectionRef) (string, bool) {
-	var hashed strings.Builder
-	at := sec.Start
-	for _, cut := range sec.Exclude {
-		if cut.Start < at || cut.End < cut.Start || cut.End > sec.End {
-			return "", false
-		}
-		part, ok := sliceUTF16(text, at, cut.Start)
-		if !ok {
-			return "", false
-		}
-		hashed.WriteString(part)
-		at = cut.End
-	}
-	part, ok := sliceUTF16(text, at, sec.End)
-	if !ok {
-		return "", false
-	}
-	hashed.WriteString(part)
-	return genui.SectionHash(hashed.String(), text, sec.End == utf16Len(text)), true
+	return genui.SectionHashOf(text, sec)
 }
 
-func utf16Len(s string) int {
-	n := 0
-	for _, r := range s {
-		l := utf16.RuneLen(r)
-		if l < 0 {
-			l = 1
-		}
-		n += l
-	}
-	return n
-}
+func utf16Len(s string) int { return genui.UTF16Len(s) }
 
 func hashUTF16Range(text string, start, end int) (string, bool) {
-	return hashSection(text, genui.SectionRef{Start: start, End: end})
-}
-
-func sliceUTF16(text string, start, end int) (string, bool) {
-	if start < 0 || end < start {
-		return "", false
-	}
-	byteStart, byteEnd := -1, -1
-	if start == 0 {
-		byteStart = 0
-	}
-	units := 0
-	for i, ch := range text {
-		if units == start {
-			byteStart = i
-		}
-		if units == end {
-			byteEnd = i
-			break
-		}
-		l := utf16.RuneLen(ch)
-		if l < 0 {
-			l = 1
-		}
-		units += l
-	}
-	if byteEnd < 0 {
-		if units != end {
-			return "", false
-		}
-		byteEnd = len(text)
-	}
-	if byteStart < 0 && units == start {
-		byteStart = len(text)
-	}
-	if byteStart < 0 || byteStart > byteEnd {
-		return "", false
-	}
-	return text[byteStart:byteEnd], true
-}
-
-func (r *genRun) outputError(what string) error {
-	e := genui.NewFailure(genui.FailInvalidOutput, what, genui.HintInvalidOutput)
-	e.Detail = genui.CutRunes(strings.TrimSpace(r.lastReply()), genui.MaxDetailRunes)
-	return e
-}
-
-type progressSender struct {
-	mu          sync.Mutex
-	send        func(genui.GenerateProgress) error
-	trace       *generationTrace
-	phase       string
-	text        string
-	lastPreview genui.StatementPreview
-	hasPreview  bool
-}
-
-func (ps *progressSender) preview(data []byte) error {
-	preview := genui.ReadStatementPreview(data)
-	if len(preview.Statements) == 0 {
-		return nil
-	}
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
-	if ps.hasPreview && reflect.DeepEqual(preview, ps.lastPreview) {
-		return nil
-	}
-	ps.lastPreview, ps.hasPreview = preview, true
-	if ps.phase != "writing" || ps.text != "Writing the view" {
-		ps.phase, ps.text = "writing", "Writing the view"
-		ps.trace.phase(ps.phase, ps.text)
-	}
-	if err := ps.send(genui.GenerateProgress{Phase: "writing", Text: "Writing the view", Preview: &preview}); err != nil {
-		return genui.ErrCancelled
-	}
-	return nil
-}
-
-func (ps *progressSender) step(phase, text string) error {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
-	if phase == ps.phase && text == ps.text {
-		return nil
-	}
-	ps.phase, ps.text = phase, text
-	ps.trace.phase(phase, text)
-	if err := ps.send(genui.GenerateProgress{Phase: phase, Text: text}); err != nil {
-		return genui.ErrCancelled
-	}
-	return nil
+	return genui.SectionHashOf(text, genui.SectionRef{Start: start, End: end})
 }

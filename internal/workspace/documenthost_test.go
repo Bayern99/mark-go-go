@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Bayern99/mark-go-go/internal/genui"
 	"github.com/egoist/mygo"
 )
 
@@ -66,13 +67,15 @@ func TestSettingsStoreDoesNotHoldLockDuringOnChange(t *testing.T) {
 			}
 		},
 	}
-	if _, err := st.apply(SettingsPatch{Model: &model}); err != nil {
+	if _, err := st.apply(SettingsPatch{GenUI: &GenUIPatch{Backends: map[string]GenUIBackendPatch{
+		genui.BackendAntigravity: {Model: &model},
+	}}}); err != nil {
 		t.Fatal(err)
 	}
 	select {
 	case got := <-readBack:
-		if got.Model != model {
-			t.Fatalf("got model %q, want %q", got.Model, model)
+		if _, settings := got.GenUI.Active(); settings.Model != model {
+			t.Fatalf("got model %q, want %q", settings.Model, model)
 		}
 	default:
 		t.Fatal("onChange did not complete read-back")

@@ -253,6 +253,8 @@ func configString(raw json.RawMessage) (string, bool) {
 
 type acpConfigOption struct {
 	ID           string          `json:"id"`
+	Name         string          `json:"name"`
+	Category     string          `json:"category"`
 	CurrentValue json.RawMessage `json:"currentValue"`
 	Options      []struct {
 		Value json.RawMessage `json:"value"`
@@ -300,6 +302,36 @@ func findConfigOption(raw json.RawMessage, ids ...string) (acpConfigOption, bool
 	for _, id := range ids {
 		for _, o := range opts {
 			if o.ID == id {
+				return o, true
+			}
+		}
+	}
+	return acpConfigOption{}, false
+}
+
+func configOptionList(raw json.RawMessage) []acpConfigOption {
+	if len(raw) == 0 {
+		return nil
+	}
+	var opts []acpConfigOption
+	if json.Unmarshal(raw, &opts) != nil {
+		return nil
+	}
+	return opts
+}
+
+func findConfigOptionIn(raw json.RawMessage, ids, categories []string) (acpConfigOption, bool) {
+	opts := configOptionList(raw)
+	for _, id := range ids {
+		for _, o := range opts {
+			if o.ID == id {
+				return o, true
+			}
+		}
+	}
+	for _, category := range categories {
+		for _, o := range opts {
+			if o.Category == category {
 				return o, true
 			}
 		}
@@ -637,6 +669,32 @@ func (t *generationTrace) phase(phase, text string) {
 		return
 	}
 	t.emit(TracePhase, &tracePhasePayload{Phase: phase, Text: text})
+}
+
+// artifactOrView sends an orchestrator artifact to the trace, routing the
+// committed view to the event that marks the run as having written one.
+func (t *generationTrace) artifactOrView(name, path, content string) {
+	if name == "view" {
+		t.viewWritten(path, []byte(content))
+		return
+	}
+	t.artifact(name, path, content)
+}
+
+// phases reports progress steps to the trace's phase event before handing them
+// to the reader, so the trace keeps one phase entry per change.
+func (t *generationTrace) phases(send func(genui.GenerateProgress) error) func(genui.GenerateProgress) error {
+	var mu sync.Mutex
+	phase, text := "", ""
+	return func(p genui.GenerateProgress) error {
+		mu.Lock()
+		if p.Phase != phase || p.Text != text {
+			phase, text = p.Phase, p.Text
+			t.phase(p.Phase, p.Text)
+		}
+		mu.Unlock()
+		return send(p)
+	}
 }
 
 func (t *generationTrace) artifact(name, path, content string) {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -76,7 +77,7 @@ func envFingerprint(env []string) string {
 	return strconv.FormatUint(h.Sum64(), 16)
 }
 
-func (c *ProcessCache) lease(executable string, env []string) (*acpLease, error) {
+func (c *ProcessCache) lease(executable string, args []string, env []string) (*acpLease, error) {
 	fingerprint := envFingerprint(env)
 
 	c.mu.Lock()
@@ -95,7 +96,7 @@ func (c *ProcessCache) lease(executable string, env []string) (*acpLease, error)
 	c.mu.Unlock()
 
 	if proc != nil {
-		if proc.executable == executable && proc.envFingerprint == fingerprint && !proc.agent.HasExited() {
+		if proc.executable == executable && slices.Equal(proc.args, args) && proc.envFingerprint == fingerprint && !proc.agent.HasExited() {
 			return &acpLease{
 				cache:              c,
 				cachedAgentProcess: proc,
@@ -105,15 +106,15 @@ func (c *ProcessCache) lease(executable string, env []string) (*acpLease, error)
 		}
 		proc.agent.Kill()
 	}
-	return c.startLease(executable, env, fingerprint)
+	return c.startLease(executable, args, env, fingerprint)
 }
 
-func (c *ProcessCache) startLease(executable string, env []string, fingerprint string) (*acpLease, error) {
+func (c *ProcessCache) startLease(executable string, args []string, env []string, fingerprint string) (*acpLease, error) {
 	dir, err := c.processDir()
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(executable, "acp")
+	cmd := exec.Command(executable, args...)
 	cmd.Dir = dir
 	cmd.Env = env
 	agent, err := NewAgent(cmd, fsutil.NewLimitBuffer(4<<10))
@@ -126,7 +127,7 @@ func (c *ProcessCache) startLease(executable string, env []string, fingerprint s
 		cachedAgentProcess: &cachedAgentProcess{
 			agent:          agent,
 			executable:     executable,
-			args:           cmd.Args,
+			args:           slices.Clone(args),
 			cwd:            dir,
 			startedAt:      time.Now(),
 			envFingerprint: fingerprint,

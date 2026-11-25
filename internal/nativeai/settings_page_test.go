@@ -114,6 +114,36 @@ func TestTheSocketSwitchSavesTheSettingTheAppStartsOn(t *testing.T) {
 	}
 }
 
+func TestASwitchThatCouldNotOpenTheSocketSaysSo(t *testing.T) {
+	p, _ := testPanel(t)
+	p.settings.ExternalIPC = true
+	p.channel.Listening = func() bool { return false }
+	app := pageTester(p, "")
+	if !app.HasText("Not answering") {
+		t.Fatalf("a switch with no socket behind it reads as listening or off: %q", app.Texts())
+	}
+	if !app.HasText("Another copy of Mark Go Go may already be listening") {
+		t.Fatalf("the page does not say why nothing answers: %q", app.Texts())
+	}
+}
+
+func TestResetTurnsTheSocketBackOff(t *testing.T) {
+	p, saved := testPanel(t)
+	p.settings.ExternalIPC = true
+	page := p.settingsPage()
+	if !page.Dirty() {
+		t.Fatal("a page with the channel on does not report a change from the default")
+	}
+	page.Reset()
+
+	if len(*saved) != 1 || (*saved)[0].ExternalIPC == nil || *(*saved)[0].ExternalIPC {
+		t.Fatalf("saved patches = %+v, want externalIPC off", *saved)
+	}
+	if p.settings.ExternalIPC || page.Dirty() {
+		t.Fatal("reset left the channel on")
+	}
+}
+
 func TestInstallingAndUninstallingTheCommandFromThePage(t *testing.T) {
 	p, _ := testPanel(t)
 	app := pageTester(p, "")

@@ -121,13 +121,19 @@ func (i Installer) Install() error {
 	if err := os.MkdirAll(i.Dir, 0o755); err != nil {
 		return err
 	}
+	// A link resolves against its own folder, so it has to name an absolute
+	// source.
+	source, err := filepath.Abs(i.Source)
+	if err != nil {
+		return err
+	}
 	// Link beside the destination and rename, so a reader never finds a
 	// half-written command on PATH.
 	temp := i.Path() + ".tmp"
 	if err := os.Remove(temp); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	if err := os.Symlink(i.Source, temp); err != nil {
+	if err := os.Symlink(source, temp); err != nil {
 		return err
 	}
 	if err := os.Rename(temp, i.Path()); err != nil {

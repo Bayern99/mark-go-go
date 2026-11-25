@@ -930,3 +930,21 @@ func TestTheChannelRemembersTheLastExternalCall(t *testing.T) {
 		t.Fatal("a closed channel still reports listening")
 	}
 }
+
+func TestANotificationOrResponseIsNotAnExternalCall(t *testing.T) {
+	srv := &ExternalServer{}
+	srv.note([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"_meta":{"io.modelcontextprotocol/clientInfo":{"name":"markgogo-mcp","version":"0.6.0"}}}}`))
+	// A client names itself in a request and then sends notifications and
+	// receives responses in the same shape; neither is a call.
+	srv.note([]byte(`{"jsonrpc":"2.0","method":"notifications/initialized","params":{"_meta":{"io.modelcontextprotocol/clientInfo":{"name":"someone else"}}}}`))
+	srv.note([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`))
+	srv.note([]byte(`not json`))
+
+	source, at, ok := srv.LastCall()
+	if !ok || source != "markgogo-mcp 0.6.0" || at.IsZero() {
+		t.Fatalf("last call = %q at %v (%t), want the named request", source, at, ok)
+	}
+	if _, _, ok := (&ExternalServer{}).LastCall(); ok {
+		t.Fatal("a server that saw nothing reports a call")
+	}
+}

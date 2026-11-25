@@ -36,7 +36,7 @@ Mark Go Go 是基于 Go 与 MyGo Native UI 编写的 macOS 本地 Markdown 编�
 
 按仓库内文件路径将快照保存为独立的本地 Git 引用；不在 Git 仓库中时，每篇文档保留最多 50 个本地快照，之后执行 `git init` 仍可读取。保存文档后，从纸页顶行 **Checkpoints** 创建快照、查看差异或恢复旧版。文档改名后从新路径开始记录。
 
-## 自带本机 Agent
+## 自带本机 Agent（Bring Your Own Local Agent）
 
 Mark Go Go 不内置模型，也不代管第三方凭证：它调用你本机已安装、未做修改的 Agent CLI，用你自己的账户登录，怎么用由各提供商条款约束。这一节有两件事，界面上也分在两处：**GenUI 后端**只生成本篇文档的阅读视图，**外部 Harness** 通过本机通道读写工作区。
 
@@ -57,7 +57,7 @@ Pi 后端随本版本提供；它的自动化覆盖使用 Fake Pi，真实 Pi �
 
 `Settings / AI Integration` 把一个窗口的工作区交给你自己在终端里跑的 Agent：
 
-- **`markgogo` 命令**：独立二进制，`Install` 把它链接到 `~/.local/bin`，`Uninstall` 只删除本应用做的那个链接。不写 `/usr/local/bin`、不需要 sudo、不改 shell 配置；路径上别人的文件一律不动。若这个构建没有随应用提供该二进制，页面会写明"未随应用提供"并给出 `go install github.com/Bayern99/mark-go-go/cmd/markgogo@latest` 或从源码构建的方法。
+- **`markgogo` 命令**：独立二进制，`Install` 把它链接到 `~/.local/bin`，`Uninstall` 只删除本应用做的那个链接。不写 `/usr/local/bin`、不需要 sudo、不改 shell 配置；路径上别人的文件一律不动。若这个构建没有随应用提供该二进制，页面会把状态标成 `Not in this build`，并给出 `go install github.com/Bayern99/mark-go-go/cmd/markgogo@latest` 或从源码构建的方法。
 - **本机通道**：默认关闭。打开后应用在用户数据目录的 `ipc.sock` 上按行收发 JSON-RPC（目录 `0700`、socket `0600`），只接受你本机、你自己的用户；页面显示是否正在监听，以及最近一次外部调用的来源和时间。关闭时停止监听并删除 socket。
 - **接法**：页面为 Claude Code、Codex、Pi 与其他 Agent 各给一份提示词（`Copy prompt`）与一份静态 `SKILL.md`（写进应用自己的目录，或复制到你的 Harness 读取技能的位置）。shell 型 Harness 直接运行 `markgogo`；只讲 MCP 的客户端可以在折叠的 `MCP (stdio)` 区取用 `{"command":"markgogo","args":["mcp"]}` 注册 stdio 垫片，它转发到同一个 socket，没有端口也没有 Token。沙箱型客户端（如 Codex）可能拒绝访问 Unix socket；这时请给客户端所需的权限，而不是关掉应用里的边界。
 - **CLI 命令**：`status`、`read`（章节、行范围、批注）、`propose`、`new`、`open`、`genui format`、`genui write`、`checkpoint`、`agent-prompt`、`mcp`。只有 `read`、`genui format` 与 `agent-prompt` 不依赖运行中的应用；写操作一律进入审阅队列，由你在编辑器里接受或拒绝。

@@ -21,8 +21,9 @@ const (
 	capabilitiesNote     = "An external agent reads and edits this window's Markdown through the command or the socket below. A GenUI backend is not one: it signs in in Settings / GenUI and only ever writes a document's reading view."
 	capabilitiesKeywords = "external agent capabilities overview"
 
-	agentTitle    = "Agent"
-	agentKeywords = "agent harness claude code claude-code codex pi other"
+	agentTitle       = "Agent"
+	agentDescription = "Pick the harness you are connecting. The prompt and the connection follow the card you choose."
+	agentKeywords    = "agent harness claude code claude-code codex pi other"
 
 	promptTitle     = "Prompt"
 	promptKeywords  = "prompt instructions copy"
@@ -34,10 +35,12 @@ const (
 	commandTitle    = "Command"
 	commandKeywords = "command cli markgogo install uninstall"
 	pathTitle       = "Install path"
+	pathDescription = "Where a harness finds the command. Mark Go Go writes nothing else: no sudo, no /usr/local/bin, no shell profile."
 	pathKeywords    = "path folder bin local"
 
-	externalTitle    = "Allow external agents"
-	externalKeywords = "external agents ipc socket enable listen"
+	externalTitle       = "Allow external agents"
+	externalDescription = "Listen on this app's own socket for the markgogo command and the agents you connect. Off until you turn it on."
+	externalKeywords    = "external agents ipc socket enable listen"
 
 	socketTitle    = "Socket"
 	socketKeywords = "socket listen status ipc"
@@ -46,6 +49,7 @@ const (
 	callsKeywords = "last call client source time agent"
 
 	mcpTitle    = "MCP (stdio)"
+	mcpNote     = "The shim forwards a client's standard input and output to the same socket, so a client that only speaks MCP over stdio needs this one line. It carries no port and no token."
 	mcpKeywords = "mcp stdio shim configuration server"
 )
 
@@ -170,18 +174,19 @@ type commandState struct {
 }
 
 func (p *panel) command() commandState {
+	state := p.install.State()
 	switch {
 	case !p.install.Shipped():
 		return commandState{
 			status: "Not in this build", tone: portrait.Tones.Warning,
 			description: "This build does not carry the markgogo command. Build it from the source with `go install github.com/Bayern99/mark-go-go/cmd/markgogo@latest` and keep ~/.local/bin on your PATH.",
 		}
-	case p.install.State() == agentcli.StateInstalled:
+	case state == agentcli.StateInstalled:
 		return commandState{
 			status: "Installed", tone: portrait.Tones.Success,
 			description: "Linked from this app into your own bin folder.",
 		}
-	case p.install.State() == agentcli.StateForeign:
+	case state == agentcli.StateForeign:
 		return commandState{
 			status: "In the way", tone: portrait.Tones.Warning,
 			description: "Another program's markgogo is at this path. Mark Go Go leaves it alone; remove it yourself to install this app's command.",
@@ -196,20 +201,21 @@ func (p *panel) command() commandState {
 
 func (p *panel) drawCommand(c *ui.Context, q nativeui.SettingsQuery) {
 	command := p.command()
+	installed := p.install.State() == agentcli.StateInstalled
 	socket := p.socket()
-	calls := p.calls()
 	showCommand := q.Match(commandTitle, command.description, commandKeywords)
-	showPath := q.Match(pathTitle, "", pathKeywords)
+	showPath := q.Match(pathTitle, pathDescription, pathKeywords)
 	showExternal := q.Match(externalTitle, externalDescription, externalKeywords)
 	showSocket := q.Match(socketTitle, socket.description, socketKeywords)
-	showCalls := q.Match(callsTitle, calls.description, callsKeywords)
+	calls := p.calls()
+	showCalls := q.Match(callsTitle, calls, callsKeywords)
 	if !showCommand && !showPath && !showExternal && !showSocket && !showCalls {
 		return
 	}
 	portrait.SettingsGroup(c, "Command Line Tool", func(rows *portrait.Rows) {
 		if showCommand {
 			rows.Row(portrait.RowSpec{Title: commandTitle, Description: command.description}, func() {
-				if p.install.State() == agentcli.StateInstalled {
+				if installed {
 					if portrait.Button(c, "Uninstall", "Uninstall the markgogo command").Clicked() {
 						p.removeCommand()
 					}
@@ -244,15 +250,10 @@ func (p *panel) drawCommand(c *ui.Context, q nativeui.SettingsQuery) {
 			})
 		}
 		if showCalls {
-			rows.Row(portrait.RowSpec{Title: callsTitle, Description: calls.description}, nil)
+			rows.Row(portrait.RowSpec{Title: callsTitle, Description: calls}, nil)
 		}
 	})
 }
-
-const (
-	pathDescription     = "Where a harness finds the command. Mark Go Go writes nothing else: no sudo, no /usr/local/bin and no shell profile."
-	externalDescription = "Listen on this app's own socket for the markgogo command and the agents you connect. Off until you turn it on."
-)
 
 // socket is what the page says about the local channel now.
 type socketState struct {
@@ -267,21 +268,28 @@ func (p *panel) socket() socketState {
 			description: "Answering below. The folder and the socket belong to your user alone.",
 		}
 	}
+	// A switch that is on while nothing answers means the app could not take
+	// the socket, usually because another copy of it is serving that path.
+	if p.settings.ExternalIPC {
+		return socketState{
+			status: "Not answering", tone: portrait.Tones.Warning,
+			description: "The switch is on, but nothing answers on the socket. Another copy of Mark Go Go may already be listening; quit it, then switch this off and on again.",
+		}
+	}
 	return socketState{
 		status: "Off", tone: portrait.Tones.Neutral,
 		description: "Not listening. The switch above opens it.",
 	}
 }
 
-type callState struct{ description string }
-
-func (p *panel) calls() callState {
+// calls describes the last external request, or says nobody has called yet.
+func (p *panel) calls() string {
 	if p.channel.LastCall != nil {
 		if source, at, ok := p.channel.LastCall(); ok {
-			return callState{description: source + " · " + at.UTC().Format("2006-01-02 15:04 UTC")}
+			return source + " · " + at.UTC().Format("2006-01-02 15:04 UTC")
 		}
 	}
-	return callState{description: "No external agent has used the socket since Mark Go Go started."}
+	return "No external agent has used the socket since Mark Go Go started."
 }
 
 func (p *panel) listening() bool {
@@ -290,6 +298,7 @@ func (p *panel) listening() bool {
 
 func (p *panel) drawConnect(c *ui.Context, q nativeui.SettingsQuery) {
 	harness := agentguide.HarnessByID(p.harness)
+	skill := p.skill()
 	showAgent := q.Match(agentTitle, agentDescription, agentKeywords)
 	showPrompt := q.Match(promptTitle, harness.Summary, promptKeywords)
 	showConnect := q.Match(connectTitle, harness.Connect, connectKeywords)
@@ -306,34 +315,32 @@ func (p *panel) drawConnect(c *ui.Context, q nativeui.SettingsQuery) {
 		if showPrompt {
 			rows.Row(portrait.RowSpec{Title: promptTitle, Description: harness.Summary}, func() {
 				if portrait.AccentButton(c, "Copy prompt", "Copy the prompt for "+harness.Name).Clicked() {
-					p.copy(c, "prompt", agentguide.Prompt(harness.ID, ipc.SocketPath(p.userData)))
+					p.copy(c, "Copied prompt", agentguide.Prompt(harness.ID, ipc.SocketPath(p.userData)))
 				}
 			})
 		}
 		if showConnect {
 			rows.Row(portrait.RowSpec{Title: connectTitle, Description: harness.Connect}, func() {
 				if portrait.ButtonWith(c, "Copy", "Copy what connects "+harness.Name, portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Regular, Leading: portrait.IconCopy}).Clicked() {
-					p.copy(c, "connect", harness.Connect)
+					p.copy(c, "Copied connection", harness.Connect)
 				}
 			})
 		}
 		if showSkill {
-			rows.Row(portrait.RowSpec{Title: skillTitle, Description: p.skill().description}, func() {
+			rows.Row(portrait.RowSpec{Title: skillTitle, Description: skill.description}, func() {
 				ui.Row(c).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
 					install := portrait.Button(c, "Install SKILL.md", "Install SKILL.md")
 					if install.Clicked() {
 						p.installSkill()
 					}
 					if portrait.ButtonWith(c, "Copy", "Copy SKILL.md", portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Regular, Leading: portrait.IconCopy}).Clicked() {
-						p.copy(c, "skill", agentguide.Skill())
+						p.copy(c, "Copied SKILL.md", agentguide.Skill())
 					}
 				})
 			})
 		}
 	})
 }
-
-const agentDescription = "Pick the harness you are connecting. The prompt and the connection follow the card you choose."
 
 func (p *panel) drawHarnessCards(c *ui.Context) {
 	grid := ui.Column(c).FillWidth().Gap(portrait.Form.PadX)
@@ -371,7 +378,6 @@ func (p *panel) harnessCard(c *ui.Context, harness agentguide.Harness) {
 
 // skill is what the page says about the SKILL.md in the app's own folder.
 type skillState struct {
-	installed           bool
 	status, description string
 	tone                portrait.Tone
 }
@@ -380,7 +386,7 @@ func (p *panel) skill() skillState {
 	path := agentguide.SkillPath(p.userData)
 	if info, err := os.Stat(path); err == nil && !info.IsDir() {
 		return skillState{
-			installed: true, status: "Installed", tone: portrait.Tones.Success,
+			status: "Installed", tone: portrait.Tones.Success,
 			description: "Written to " + shortPath(path) + ". Copy it into the place your harness reads skills from.",
 		}
 	}
@@ -408,8 +414,6 @@ func (p *panel) drawMCP(c *ui.Context, q nativeui.SettingsQuery) {
 		})
 	})
 }
-
-const mcpNote = "The shim forwards a client's standard input and output to the same socket, so a client that only speaks MCP over stdio needs this one line. It carries no port and no token."
 
 func (p *panel) addCommand() {
 	if err := p.install.Install(); err != nil {
@@ -448,12 +452,14 @@ func (p *panel) installSkill() {
 	p.message = ""
 }
 
-func (p *panel) copy(c *ui.Context, what, text string) {
+// copy puts text on the clipboard and says so; an empty harness line copies
+// nothing.
+func (p *panel) copy(c *ui.Context, title, text string) {
 	if strings.TrimSpace(text) == "" {
 		return
 	}
 	c.WriteClipboard(text)
-	portrait.Notify(c, portrait.ToastSpec{ID: "ai-integration-" + what, Tone: portrait.Tones.Success, Title: "Copied " + what})
+	portrait.Notify(c, portrait.ToastSpec{ID: "ai-integration-" + title, Tone: portrait.Tones.Success, Title: title})
 }
 
 // shortPath names a path under the home folder with a ~, so a long library

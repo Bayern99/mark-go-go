@@ -32,7 +32,6 @@ const unknownClient = "An unknown client"
 // talking to the app.
 type ExternalCall struct {
 	Source string
-	Method string
 	At     time.Time
 }
 
@@ -81,21 +80,25 @@ func (e *ExternalServer) LastCall() (source string, at time.Time, ok bool) {
 	return e.last.Source, e.last.At, e.last.Source != ""
 }
 
-// note records the request in line as the last thing the channel saw. It reads
+// note records the request in line as the last thing the channel saw. A
+// notification carries a method but no id, and a client that names itself in
+// one request rarely repeats the name in the next: only requests count, so the
+// page never reports "an unknown client" one frame after a named one. It reads
 // only what the page shows, so a malformed message stays the dispatcher's
 // business.
 func (e *ExternalServer) note(line []byte) {
 	var message struct {
-		Method string `json:"method"`
+		ID     json.RawMessage `json:"id"`
+		Method string          `json:"method"`
 		Params struct {
 			Meta map[string]json.RawMessage `json:"_meta"`
 		} `json:"params"`
 	}
-	if json.Unmarshal(line, &message) != nil || message.Method == "" {
+	if json.Unmarshal(line, &message) != nil || message.Method == "" || len(message.ID) == 0 || string(message.ID) == "null" {
 		return
 	}
 	e.mu.Lock()
-	e.last = ExternalCall{Source: clientName(message.Params.Meta), Method: message.Method, At: time.Now()}
+	e.last = ExternalCall{Source: clientName(message.Params.Meta), At: time.Now()}
 	e.mu.Unlock()
 }
 

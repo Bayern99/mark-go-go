@@ -181,7 +181,7 @@ func (p *panel) drawGeneration(c *ui.Context, q nativeui.SettingsQuery, id strin
 			rows.Row(portrait.RowSpec{Title: "Model", Description: modelDescription(state.catalog, backend)}, func() {
 				options := make([]portrait.Option, 0, len(backend.Models))
 				for _, value := range offeredModels(backend, state.catalog) {
-					options = append(options, portrait.Option{Value: value, Label: value})
+					options = append(options, portrait.Option{Value: value, Label: modelLabel(state.catalog, value)})
 				}
 				if len(options) == 0 {
 					portrait.Caption(c, "Test & Refresh to load the models the backend offers.")
@@ -236,6 +236,16 @@ func offeredModels(backend workspace.GenUIBackend, catalog genui.ModelCatalog) [
 		values = append(values, model.ID)
 	}
 	return values
+}
+
+// modelLabel shows the agent's own name for a model when it sent one.
+func modelLabel(catalog genui.ModelCatalog, id string) string {
+	for _, model := range catalog.Models {
+		if model.ID == id && strings.TrimSpace(model.Name) != "" {
+			return model.Name
+		}
+	}
+	return id
 }
 
 func modelDescription(catalog genui.ModelCatalog, backend workspace.GenUIBackend) string {

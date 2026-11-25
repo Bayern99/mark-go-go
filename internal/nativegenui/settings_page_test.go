@@ -110,7 +110,7 @@ func TestTestAndRefreshReportsTheBackendAndLoadsItsModels(t *testing.T) {
 	}
 	p.refresh = func(id string) (genui.ModelCatalog, error) {
 		return genui.ModelCatalog{
-			Models:        []genui.ModelOption{{ID: "gpt-6-sol"}, {ID: "gpt-6-luna"}},
+			Models:        []genui.ModelOption{{ID: "gpt-6-sol", Name: "6 Sol"}, {ID: "gpt-6-luna", Name: "6 Luna"}},
 			CurrentModel:  "gpt-6-sol",
 			ThoughtLevels: []genui.Choice{{Value: "low"}, {Value: "high"}},
 			ThoughtLevel:  "high",
@@ -145,7 +145,7 @@ func TestTestAndRefreshReportsTheBackendAndLoadsItsModels(t *testing.T) {
 	}
 	app.ClickAt(trigger.Bounds.X+trigger.Bounds.W/2, trigger.Bounds.Y+trigger.Bounds.H/2)
 	app.Frame()
-	if !app.HasText("gpt-6-sol") || !app.HasText("gpt-6-luna") {
+	if !app.HasText("6 Sol") || !app.HasText("6 Luna") {
 		t.Fatalf("the refreshed models are not on offer: %q", app.Texts())
 	}
 }

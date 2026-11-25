@@ -17,7 +17,8 @@ import (
 
 const (
 	DefaultGenerationTimeout = 5 * time.Minute
-	StatementPreviewInterval = 25 * time.Millisecond
+
+	statementPreviewInterval = 25 * time.Millisecond
 )
 
 // Orchestrator is the protocol-independent half of a generation. It gives every
@@ -183,7 +184,7 @@ func (o *Orchestrator) startPreview(ctx context.Context, dir string, base *BaseV
 	}
 	interval := o.PreviewInterval
 	if interval <= 0 {
-		interval = StatementPreviewInterval
+		interval = statementPreviewInterval
 	}
 	stop, done := make(chan struct{}), make(chan struct{})
 	var data []byte

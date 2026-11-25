@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
 	"github.com/Bayern99/mark-go-go/internal/genui"
+	"github.com/Bayern99/mark-go-go/internal/pirpc"
 )
 
 const probeTimeout = 20 * time.Second
@@ -63,6 +63,11 @@ func (c ProbeConfig) timeout() time.Duration {
 func Probe(ctx context.Context, cfg ProbeConfig) (genui.ProbeResult, error) {
 	backend, _ := cfg.backend()
 	result := genui.ProbeResult{Hint: backend.InstallHint}
+	ctx, cancel := context.WithTimeout(ctx, cfg.timeout())
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
 	resolved, err := resolveAgentCommand(cfg.Command, cfg.Env)
 	if err != nil {
 		result.Status = genui.AgentMissing
@@ -87,6 +92,9 @@ func Probe(ctx context.Context, cfg ProbeConfig) (genui.ProbeResult, error) {
 			return result, nil
 		}
 		version, err := runVersion(ctx, path, env)
+		if ctx.Err() != nil {
+			return result, ctx.Err()
+		}
 		if err != nil {
 			result.Status = genui.AgentFailed
 			result.Detail = "The codex CLI at " + path + " did not answer --version: " + err.Error()
@@ -99,6 +107,9 @@ func Probe(ctx context.Context, cfg ProbeConfig) (genui.ProbeResult, error) {
 	// A missing version answer is evidence, not proof the agent is unusable:
 	// the handshake below decides that.
 	version, versionErr := runVersion(ctx, resolved, env)
+	if ctx.Err() != nil {
+		return result, ctx.Err()
+	}
 	parts := make([]string, 0, 2)
 	if versionErr != nil {
 		parts = append(parts, "version unknown: "+versionErr.Error())
@@ -112,6 +123,9 @@ func Probe(ctx context.Context, cfg ProbeConfig) (genui.ProbeResult, error) {
 	result.Detail = strings.Join(parts, " · ")
 
 	initialized, err := initialize(ctx, cfg, resolved, env)
+	if ctx.Err() != nil {
+		return result, ctx.Err()
+	}
 	if err != nil {
 		classifyProbeFailure(&result, backend, err)
 		return result, nil
@@ -200,7 +214,7 @@ func initialize(ctx context.Context, cfg ProbeConfig, resolved string, env []str
 		return handshake, err
 	}
 	defer os.RemoveAll(dir)
-	cmd := exec.Command(resolved, cfg.Args...)
+	cmd := pirpc.CommandContext(ctx, resolved, cfg.Args...)
 	cmd.Dir = dir
 	cmd.Env = fsutil.WithUserBinPath(env)
 	agent, err := NewAgent(cmd, fsutil.NewLimitBuffer(4<<10))
@@ -209,8 +223,6 @@ func initialize(ctx context.Context, cfg ProbeConfig, resolved string, env []str
 	}
 	agent.Start()
 	defer agent.Kill()
-	ctx, cancel := context.WithTimeout(ctx, cfg.timeout())
-	defer cancel()
 	var answer struct {
 		ProtocolVersion   int             `json:"protocolVersion"`
 		AgentCapabilities json.RawMessage `json:"agentCapabilities"`
@@ -230,6 +242,11 @@ func initialize(ctx context.Context, cfg ProbeConfig, resolved string, env []str
 // ever sent and no generation runs.
 func ListModels(ctx context.Context, cfg SessionConfig) (genui.ModelCatalog, error) {
 	var catalog genui.ModelCatalog
+	ctx, cancel := context.WithTimeout(ctx, cfg.timeout())
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return catalog, err
+	}
 	resolved, err := resolveAgentCommand(cfg.Command, cfg.Env)
 	if err != nil {
 		return catalog, err
@@ -243,7 +260,7 @@ func ListModels(ctx context.Context, cfg SessionConfig) (genui.ModelCatalog, err
 		defer os.RemoveAll(dir)
 	}
 	env := cfg.Env
-	cmd := exec.Command(resolved, cfg.Args...)
+	cmd := pirpc.CommandContext(ctx, resolved, cfg.Args...)
 	cmd.Dir = dir
 	cmd.Env = fsutil.WithUserBinPath(env)
 	agent, err := NewAgent(cmd, fsutil.NewLimitBuffer(4<<10))
@@ -252,8 +269,6 @@ func ListModels(ctx context.Context, cfg SessionConfig) (genui.ModelCatalog, err
 	}
 	agent.Start()
 	defer agent.Kill()
-	ctx, cancel := context.WithTimeout(ctx, cfg.timeout())
-	defer cancel()
 
 	handshake, err := callBounded(ctx, func() (initializedHandshake, error) {
 		var answer struct {
@@ -299,6 +314,9 @@ func ListModels(ctx context.Context, cfg SessionConfig) (genui.ModelCatalog, err
 		_ = closeSession(ctx, agent, opened.SessionID)
 	}
 
+	if err := ctx.Err(); err != nil {
+		return catalog, err
+	}
 	catalog.Models, catalog.CurrentModel, catalog.ThoughtLevels, catalog.ThoughtLevel = readCatalog(options, opened.Models)
 	return catalog, nil
 }
@@ -444,7 +462,7 @@ func modelError(err error) error {
 func runVersion(ctx context.Context, resolved string, env []string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, versionTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, resolved, "--version")
+	cmd := pirpc.CommandContext(ctx, resolved, "--version")
 	cmd.Env = fsutil.WithUserBinPath(env)
 	out, err := cmd.CombinedOutput()
 	text := strings.TrimSpace(string(out))

@@ -34,6 +34,9 @@ type authCheck struct {
 func Probe(ctx context.Context, cfg Config) (genui.ProbeResult, error) {
 	backend, _ := genui.BackendByID(genui.BackendPi)
 	result := genui.ProbeResult{Hint: backend.InstallHint}
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
 	resolved, err := resolvePi(cfg.Command, cfg.Env)
 	if err != nil {
 		var ge *genui.GenError
@@ -54,6 +57,9 @@ func Probe(ctx context.Context, cfg Config) (genui.ProbeResult, error) {
 		return result, nil
 	}
 	check, err := runAuthCheck(ctx, cfg, resolved, provider)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return result, err
+	}
 	if err != nil {
 		result.Status = genui.AgentFailed
 		result.Detail = "`pi auth check` did not answer: " + err.Error()
@@ -86,16 +92,22 @@ func Probe(ctx context.Context, cfg Config) (genui.ProbeResult, error) {
 // code is the answer: 0 ready, 1 not_ready, 2 invalid. Credentials are never
 // requested or printed.
 func runAuthCheck(ctx context.Context, cfg Config, resolved, provider string) (authCheck, error) {
-	ctx, cancel := context.WithTimeout(ctx, authCheckTimeout)
+	timeout := authCheckTimeout
+	if cfg.Timeout > 0 {
+		timeout = min(timeout, cfg.Timeout)
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.Command(resolved, "auth", "check", "--provider", provider, "--json", "--no-refresh")
+	cmd := pirpc.CommandContext(ctx, resolved, "auth", "check", "--provider", provider, "--json", "--no-refresh")
 	cmd.Env = fsutil.WithUserBinPath(cfg.Env)
-	pirpc.Configure(cmd)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	var check authCheck
+	if ctx.Err() != nil {
+		return check, ctx.Err()
+	}
 	_ = json.Unmarshal([]byte(strings.TrimSpace(stdout.String())), &check)
 	if err == nil {
 		if check.Status == "" {

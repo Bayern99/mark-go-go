@@ -18,6 +18,14 @@ func ListModels(ctx context.Context, cfg Config) (genui.ModelCatalog, error) {
 
 func (r *Runner) listModels(ctx context.Context) (genui.ModelCatalog, error) {
 	var catalog genui.ModelCatalog
+	if r.cfg.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, r.cfg.Timeout)
+		defer cancel()
+	}
+	if err := ctx.Err(); err != nil {
+		return catalog, err
+	}
 	dir, err := os.MkdirTemp("", "markgogo-pi-models-")
 	if err != nil {
 		return catalog, genui.AgentErrorf("Could not make a folder for the model list: %v.", err)
@@ -82,6 +90,9 @@ func (r *Runner) listModels(ctx context.Context) (genui.ModelCatalog, error) {
 				catalog.ThoughtLevels = append(catalog.ThoughtLevels, genui.Choice{Value: level})
 			}
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return catalog, err
 	}
 	return catalog, nil
 }

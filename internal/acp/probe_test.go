@@ -3,6 +3,7 @@ package acp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 
 	"path/filepath"
@@ -285,5 +286,14 @@ fi
 	got, err := Probe(t.Context(), ProbeConfig{Command: "mgg-test-acp"})
 	if err != nil || got.Status != genui.AgentUnknown || got.Version != "fixture 1.0" {
 		t.Fatalf("probe = %+v, %v", got, err)
+	}
+}
+
+func TestProbeHonorsAnExpiredContextBeforeInitializing(t *testing.T) {
+	cfg := probeConfig(t, fakeSpec{}, nil)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := Probe(ctx, cfg); !errors.Is(err, context.Canceled) {
+		t.Fatalf("probe with cancelled context = %v", err)
 	}
 }

@@ -21,6 +21,10 @@ const settingsSchemaVersion = 2
 // launched.
 type GenUIBackend struct {
 	Command string `json:"command,omitempty"`
+	// Provider is the provider the saved model belongs to. Pi names a provider
+	// in its credential check, its model write and its Terminal login, so the
+	// app records it beside the model instead of guessing from the model id.
+	Provider string `json:"provider,omitempty"`
 	// Args has no omitempty: an explicitly empty list is how a backend's
 	// default arguments are removed, which nil still means "use the default".
 	Args         []string `json:"args"`
@@ -44,6 +48,7 @@ type Settings struct {
 
 type GenUIBackendPatch struct {
 	Command      *string   `json:"command,omitempty"`
+	Provider     *string   `json:"provider,omitempty"`
 	Args         *[]string `json:"args,omitempty"`
 	Model        *string   `json:"model,omitempty"`
 	Models       *[]string `json:"models,omitempty"`
@@ -104,6 +109,7 @@ func (g GenUISettings) For(id string) GenUIBackend {
 		settings.Args = slices.Clone(stored.Args)
 	}
 	settings.Model = stored.Model
+	settings.Provider = strings.TrimSpace(stored.Provider)
 	settings.ThoughtLevel = stored.ThoughtLevel
 	if len(stored.Models) > 0 {
 		settings.Models = cleanModels(stored.Models)
@@ -299,6 +305,9 @@ func applyGenUIPatch(g *GenUISettings, p GenUIPatch) error {
 		}
 		if patch.Model != nil {
 			backend.Model = strings.TrimSpace(*patch.Model)
+		}
+		if patch.Provider != nil {
+			backend.Provider = strings.TrimSpace(*patch.Provider)
 		}
 		if patch.Models != nil {
 			backend.Models = cleanModels(*patch.Models)

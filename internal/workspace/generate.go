@@ -292,7 +292,14 @@ func (h *Service) StartGeneration(ctx context.Context, documentID string, req ge
 	go func() {
 		defer h.runs.Done()
 		defer close(result)
-		err := acp.RunGeneration(runCtx, job, send)
+		var err error
+		if backendID == genui.BackendPi {
+			// Pi speaks its own RPC mode, so it runs on the same orchestrator
+			// with its own runner instead of an ACP session.
+			err = generateOnPi(runCtx, h.piConfig(backend), job, send)
+		} else {
+			err = acp.RunGeneration(runCtx, job, send)
+		}
 		cancel()
 		h.releaseGeneration(s, slot)
 		result <- err

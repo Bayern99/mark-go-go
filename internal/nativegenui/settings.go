@@ -127,7 +127,9 @@ func (p *panel) backendCard(c *ui.Context, backend genui.Backend, selected bool)
 func backendPrompt(backend genui.Backend) string {
 	switch {
 	case !backend.Ready:
-		return "Pi arrives in a later release."
+		return backend.InstallHint
+	case backend.ID == genui.BackendPi:
+		return "pi --mode rpc, with reads and writes kept in a temporary folder."
 	case backend.ID == genui.BackendCustom:
 		return "An agent of your own that speaks ACP over stdio."
 	case backend.Command == "":
@@ -198,7 +200,13 @@ func (p *panel) drawGeneration(c *ui.Context, q nativeui.SettingsQuery, id strin
 					// Effort levels belong to a model; a new model starts at
 					// the agent's own default until it declares its own.
 					empty := ""
-					p.saveBackend(id, workspace.GenUIBackendPatch{Model: &selected, ThoughtLevel: &empty})
+					patch := workspace.GenUIBackendPatch{Model: &selected, ThoughtLevel: &empty}
+					// A backend that names a provider beside its models needs it
+					// for its credential check, its model write and its login.
+					if provider := state.catalog.ProviderOf(selected); provider != "" {
+						patch.Provider = &provider
+					}
+					p.saveBackend(id, patch)
 				}
 			})
 		}

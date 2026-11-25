@@ -26,9 +26,13 @@ type ProbeResult struct {
 	Hint        string      `json:"hint,omitempty"`
 }
 
+// ModelOption is one model an agent offers. Provider is set by backends that
+// name a provider beside the model, such as Pi, whose credential checks, model
+// writes and Terminal login all take a provider rather than a model.
 type ModelOption struct {
-	ID   string `json:"id"`
-	Name string `json:"name,omitempty"`
+	ID       string `json:"id"`
+	Name     string `json:"name,omitempty"`
+	Provider string `json:"provider,omitempty"`
 }
 
 type Choice struct {
@@ -44,6 +48,18 @@ type ModelCatalog struct {
 	CurrentModel  string        `json:"currentModel,omitempty"`
 	ThoughtLevels []Choice      `json:"thoughtLevels,omitempty"`
 	ThoughtLevel  string        `json:"thoughtLevel,omitempty"`
+}
+
+// ProviderOf is the provider a model belongs to, as the catalog last reported
+// it. Backends that name a provider beside the model use it for their
+// credential check, their model write and their Terminal login.
+func (c ModelCatalog) ProviderOf(model string) string {
+	for _, option := range c.Models {
+		if option.ID == model {
+			return option.Provider
+		}
+	}
+	return ""
 }
 
 type Turn struct {

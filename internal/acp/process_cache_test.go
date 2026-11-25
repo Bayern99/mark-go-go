@@ -559,3 +559,35 @@ func TestHostGenerateIgnoresForeignLateSessionEvents(t *testing.T) {
 		}
 	}
 }
+
+// A backend that declares no session/close leaves no way to end a session, so
+// the cache must not keep its process for the next turn. This is the degraded
+// path a Custom ACP setup reaches when it runs an adapter such as pi-acp.
+func TestAgentCacheKeepsNothingWhenTheAgentCannotCloseASession(t *testing.T) {
+	c := newCacheHarness(t, fakeSpec{Out: minimalOut, SessionClose: false})
+
+	if err := c.generate(t, "one"); err != nil {
+		t.Fatalf("first generation: %v", err)
+	}
+	pids := logPids(t, c.logPath)
+	if len(pids) != 1 {
+		t.Fatalf("started %d processes, want one", len(pids))
+	}
+	// The turn's process ends with the turn, because no session/close means no
+	// safe handover to the next one.
+	waitForProcessExit(t, pids[0])
+	c.cache.mu.Lock()
+	idle := c.cache.idle
+	c.cache.mu.Unlock()
+	if idle != nil {
+		t.Fatalf("the cache kept a process it cannot end a session on")
+	}
+
+	if err := c.generate(t, "two"); err != nil {
+		t.Fatalf("second generation: %v", err)
+	}
+	pids = logPids(t, c.logPath)
+	if len(pids) != 2 || pids[1] == pids[0] {
+		t.Fatalf("processes = %v, want a fresh process for the second turn", pids)
+	}
+}

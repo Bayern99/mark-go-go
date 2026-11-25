@@ -237,7 +237,7 @@ func TestFirstRunPicksTheFirstInstalledBackendWithARunner(t *testing.T) {
 		{name: "codex", detect: func() string { return genui.BackendCodex }, want: genui.BackendCodex},
 		{name: "nothing installed", detect: func() string { return "" }, want: genui.BackendAntigravity},
 		{name: "no probe", detect: nil, want: genui.BackendAntigravity},
-		{name: "pi has no runner yet", detect: func() string { return genui.BackendPi }, want: genui.BackendAntigravity},
+		{name: "pi", detect: func() string { return genui.BackendPi }, want: genui.BackendPi},
 		{name: "legacy alias", detect: func() string { return "agy" }, want: genui.BackendAntigravity},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -288,8 +288,8 @@ func TestSettingsV2KeepsBackendsApart(t *testing.T) {
 	}
 	store := &settingsStore{dir: dir}
 	pi := genui.BackendPi
-	if _, err := store.apply(SettingsPatch{GenUI: &GenUIPatch{Backend: &pi}}); err == nil {
-		t.Fatal("selecting Pi succeeded before it has a runner")
+	if _, err := store.apply(SettingsPatch{GenUI: &GenUIPatch{Backend: &pi}}); err != nil {
+		t.Fatalf("selecting Pi: %v", err)
 	}
 	nonsense := "nonsense"
 	if _, err := store.apply(SettingsPatch{GenUI: &GenUIPatch{Backend: &nonsense}}); err == nil {

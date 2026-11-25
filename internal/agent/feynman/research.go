@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
+	"github.com/Bayern99/mark-go-go/internal/pirpc"
 	"github.com/Bayern99/mark-go-go/internal/review"
 	"github.com/egoist/mygo"
 )
@@ -298,7 +299,7 @@ func (h *ResearchManager) connect(w WorkspaceRef, emit func(ResearchUpdate)) err
 	if h.closed || startCancelled() {
 		h.mu.Unlock()
 		rpc.Start()
-		stopResearchProcess(cmd)
+		pirpc.Stop(cmd)
 		rpc.Kill()
 		abortErr := errors.New("Research disconnected.")
 		h.mu.Lock()
@@ -1048,7 +1049,7 @@ func (h *ResearchManager) stop(root string, s *researchSession, message string) 
 		offWindow()
 	}
 	if rpc != nil {
-		stopResearchProcess(rpc.Command())
+		pirpc.Stop(rpc.Command())
 		rpc.Kill()
 	}
 	<-s.ready

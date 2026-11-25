@@ -59,15 +59,18 @@ var Backends = []Backend{
 		Ready:       true,
 	},
 	{
-		ID:          BackendPi,
-		Name:        "Pi",
-		InstallHint: "Pi arrives in a later release.",
-		Ready:       false,
+		ID:           BackendPi,
+		Name:         "Pi",
+		Command:      "pi",
+		LoginCommand: "pi",
+		LoginArgs:    []string{"auth", "login"},
+		InstallHint:  "Install the Pi CLI so `pi` runs in Terminal, or set its full path in Agent settings.",
+		LoginHint:    "Choose a model so this app knows its provider, then run `pi auth login <provider>` in Terminal.",
+		Ready:        true,
 	},
 }
 
-// ProbeOrder is the order a first run looks for an installed backend, with
-// Pi in it even while it is not Ready, so #194 only flips Ready.
+// ProbeOrder is the order a first run looks for an installed backend.
 var ProbeOrder = []string{BackendCodex, BackendPi, BackendAntigravity}
 
 func BackendByID(id string) (Backend, bool) {

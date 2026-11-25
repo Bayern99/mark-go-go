@@ -146,10 +146,11 @@ func darkestCategoryPixel(t *testing.T, app *ui.Tester, label string) uint32 {
 	if !ok {
 		t.Fatalf("category %q is missing", label)
 	}
+	img := app.Image()
 	darkest := uint32(3 * 255)
 	for y := int(r.Y); y < int(r.Y+r.H); y++ {
 		for x := int(r.X); x < int(r.X+r.W); x++ {
-			r, g, b, _ := app.Image().At(x, y).RGBA()
+			r, g, b, _ := img.At(x, y).RGBA()
 			darkest = min(darkest, uint32(r>>8)+uint32(g>>8)+uint32(b>>8))
 		}
 	}

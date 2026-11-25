@@ -23,9 +23,10 @@ func stripes(c *ui.Context) {
 }
 
 func pixelRow(app *ui.Tester, x, y int) [][3]uint8 {
+	img := app.Image()
 	var row [][3]uint8
 	for i := range 20 {
-		c := color.NRGBAModel.Convert(app.Image().At(x+i, y)).(color.NRGBA)
+		c := color.NRGBAModel.Convert(img.At(x+i, y)).(color.NRGBA)
 		row = append(row, [3]uint8{c.R, c.G, c.B})
 	}
 	return row

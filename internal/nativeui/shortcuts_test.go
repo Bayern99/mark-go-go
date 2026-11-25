@@ -11,10 +11,12 @@ func TestShortcutFormatterUsesPlatformConventions(t *testing.T) {
 	original := shortcutPlatform
 	t.Cleanup(func() { shortcutPlatform = original })
 	shortcutPlatform = "darwin"
-	if got, want := shortcutKeys(ui.Cmd|ui.Shift, "O"), []string{"⇧", "⌘", "O"}; !slices.Equal(got, want) {
+	// ui.Cmd is fixed when the binary is built, so name Command as macOS
+	// resolves it rather than through the host's ui.Cmd.
+	if got, want := shortcutKeys(ui.Super|ui.Shift, "O"), []string{"⇧", "⌘", "O"}; !slices.Equal(got, want) {
 		t.Fatalf("macOS shortcut = %v, want %v", got, want)
 	}
-	if got := shortcutText(ui.Cmd|ui.Alt, "0"); got != "⌥⌘0" {
+	if got := shortcutText(ui.Super|ui.Alt, "0"); got != "⌥⌘0" {
 		t.Fatalf("macOS shortcut text = %q", got)
 	}
 	if got, want := shortcutKeys(ui.Ctrl, "Tab"), []string{"⌃", "Tab"}; !slices.Equal(got, want) {

@@ -2,7 +2,10 @@ name: CI
 
 on:
   pull_request:
-    # Keep this workflow optional for PRs: a path-filtered required check stays pending.
+    # Documentation-only pull requests start no runner. No job here is a
+    # required check: a path-filtered required check would stay pending and
+    # block the merge. Require a check only after moving this filter into the
+    # jobs, so a skipped job still reports success.
     paths:
       - '**'
       - '!README*.md'
@@ -14,6 +17,10 @@ on:
       - '!GLOSSARY.md'
       - '!docs/**/*.md'
       - 'docs/genui/view-format.md'
+      - '!.out-of-scope/**'
+      - '!.devin/**'
+  # Every commit on main runs the whole suite, documentation included, and is
+  # never cancelled by a newer one.
   push:
     branches: [main]
   workflow_dispatch:
@@ -47,13 +54,19 @@ jobs:
         run: GOOS=windows GOARCH=amd64 go build ./...
 
   race:
-    name: Race tests (${{ matrix.suite }})
+    name: Race tests (${{ matrix.suite }}${{ matrix.shards && format(' {0}/{1}', matrix.shard, matrix.shards) || '' }})
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        suite: [nativegenui, nativeui, portrait, remaining]
+        suite: [nativegenui, portrait, remaining]
+        # nativeui is the longest package by far; its tests split across
+        # machines round-robin, so each shard gets a share of the slow ones.
+        include:
+          - { suite: nativeui, shard: 1, shards: 3 }
+          - { suite: nativeui, shard: 2, shards: 3 }
+          - { suite: nativeui, shard: 3, shards: 3 }
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -64,6 +77,8 @@ jobs:
         shell: bash
         env:
           SUITE: ${{ matrix.suite }}
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ matrix.shards }}
         run: |
           if [[ "$SUITE" == remaining ]]; then
             module="$(go list -m)"
@@ -73,6 +88,12 @@ jobs:
               -e "$module/internal/portrait")"
             mapfile -t packages <<< "$selected"
             go test -race "${packages[@]}"
+          elif [[ -n "$SHARDS" ]]; then
+            # Listing with -race builds the same test binary the run reuses.
+            mine="$(go test -race -list '.*' "./internal/$SUITE" | grep -E '^(Test|Example|Fuzz)' |
+              awk -v n="$SHARDS" -v k="$SHARD" '(NR - 1) % n == k - 1' | paste -sd '|' -)"
+            echo "shard $SHARD/$SHARDS runs $(tr '|' '\n' <<< "$mine" | wc -l) tests"
+            go test -race -run "^($mine)\$" "./internal/$SUITE"
           else
             go test -race "./internal/$SUITE"
           fi

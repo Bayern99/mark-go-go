@@ -139,6 +139,60 @@ func TestSourcePreviewHasOneActiveSourceWhenFocusAndHoverDiffer(t *testing.T) {
 	}
 }
 
+func TestSourcePreviewKeepsHoveredSourceWhenPointerEntersPopup(t *testing.T) {
+	v := newTwoSourcePreviewView(t, false)
+	app := sourcePreviewTester(v)
+	app.Frame()
+
+	app.Key(0, ui.KeyTab)
+	app.Frame()
+	other, ok := app.Access("Other")
+	if !ok {
+		t.Fatal("the GenUI view has no Other source")
+	}
+	app.Move(other.Bounds.X+other.Bounds.W/2, other.Bounds.Y+other.Bounds.H/2)
+	app.Frame()
+	popup, ok := app.AccessByRole(ui.RolePopup, "Source preview: Other")
+	if !ok || !app.HasText("Another excerpt.") {
+		t.Fatalf("hovering Other with Overview focused did not show Other's excerpt: %v", app.Texts())
+	}
+
+	app.Move(popup.Bounds.X+popup.Bounds.W/2, popup.Bounds.Y+popup.Bounds.H/2)
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RolePopup, "Source preview: Other"); !ok || !app.HasText("Another excerpt.") || app.HasText("An overview.") {
+		t.Fatalf("entering Other's popup restored the focused Overview preview: %v", app.Texts())
+	}
+}
+
+func TestSourcePreviewLatestFocusReplacesStationaryHover(t *testing.T) {
+	v := newTwoSourcePreviewView(t, false)
+	app := sourcePreviewTester(v)
+	app.Frame()
+
+	app.Move(0, 0)
+	app.Frame()
+	overview, ok := app.Access("Overview")
+	if !ok {
+		t.Fatal("the GenUI view has no Overview source")
+	}
+	app.Move(overview.Bounds.X+overview.Bounds.W/2, overview.Bounds.Y+overview.Bounds.H/2)
+	app.Frame()
+	if _, ok := app.AccessByRole(ui.RolePopup, "Source preview: Overview"); !ok {
+		t.Fatalf("hovering Overview did not open its preview: %v", app.Texts())
+	}
+
+	app.Key(0, ui.KeyTab)
+	app.Frame()
+	app.Key(0, ui.KeyTab)
+	app.Frame()
+	if !app.Focused("Other") {
+		t.Fatal("two Tab presses did not focus Other")
+	}
+	if _, ok := app.AccessByRole(ui.RolePopup, "Source preview: Other"); !ok || !app.HasText("Another excerpt.") || app.HasText("An overview.") {
+		t.Fatalf("the newer Other focus did not replace the stationary Overview hover: %v", app.Texts())
+	}
+}
+
 func newTwoSourcePreviewView(t *testing.T, separateCards bool) *documentView {
 	t.Helper()
 	components := `[{"id":"root","component":"KeyPoints","title":"Report","items":["A derived point"],"sources":["overview","other"]}]`

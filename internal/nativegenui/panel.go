@@ -621,21 +621,20 @@ func (v *documentView) drawSourcePreview(c *ui.Context, targets []sourcePreviewT
 	}
 	state.dismissed = false
 
-	target := hovered
-	if target == nil {
+	var target *sourcePreviewTarget
+	gracing := false
+	switch {
+	case newFocus:
 		target = focused
-	}
-	if target != nil {
-		if state.key != target.key {
-			state.byPointer = target == hovered && target != focused
-		}
-		state.key, state.open = target.key, true
-		state.hideAt = time.Time{}
-	} else if state.open && state.overPreview {
+		state.byPointer = false
+	case newHover:
+		target = hovered
+		state.byPointer = true
+	case state.open && state.overPreview:
 		target = sourcePreviewTargetForKey(targets, state.key)
-		state.hideAt = time.Time{}
-	} else if state.open && state.byPointer {
+	case state.open && state.byPointer && hovered == nil:
 		target = sourcePreviewTargetForKey(targets, state.key)
+		gracing = true
 		if state.hideAt.IsZero() {
 			state.hideAt = c.Now().Add(300 * time.Millisecond)
 		}
@@ -643,6 +642,21 @@ func (v *documentView) drawSourcePreview(c *ui.Context, targets []sourcePreviewT
 			c.After(wait)
 		} else {
 			target = nil
+		}
+	case !state.byPointer && focused != nil:
+		target = focused
+	case hovered != nil:
+		target = hovered
+	default:
+		target = focused
+	}
+	if target != nil {
+		if state.key != target.key {
+			state.byPointer = target == hovered && target != focused
+		}
+		state.key, state.open = target.key, true
+		if !gracing {
+			state.hideAt = time.Time{}
 		}
 	}
 	if target == nil {

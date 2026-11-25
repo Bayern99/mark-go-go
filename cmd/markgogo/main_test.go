@@ -343,3 +343,121 @@ func TestMCPCommandPipesStdioThroughTheShim(t *testing.T) {
 		t.Fatalf("mcp stdout = %q", stdout.String())
 	}
 }
+
+func TestEveryErrorCodeHasItsOwnExitCode(t *testing.T) {
+	cases := map[string]int{
+		ipc.CodeInvalidArgs:      exitUsage,
+		ipc.CodeAppNotRunning:    exitAppNotRunning,
+		ipc.CodeWorkspaceNotOpen: exitWorkspaceNotOpen,
+		ipc.CodeVersionConflict:  exitVersionConflict,
+		ipc.CodeNotFound:         exitNotFound,
+		ipc.CodePathDenied:       exitPathDenied,
+	}
+	for code, want := range cases {
+		t.Run(code, func(t *testing.T) {
+			startFakeApp(t, func(method string, _ map[string]any) map[string]any {
+				return result(method, map[string]any{
+					"content":           []map[string]any{{"type": "text", "text": code}},
+					"structuredContent": map[string]any{"code": code, "message": code, "hint": "hint"},
+					"isError":           true,
+				})
+			})
+			if got, _, stderr := runCLI(t, nil, "open", "report.md"); got != want {
+				t.Fatalf("%s exited %d, want %d (stderr %s)", code, got, want, stderr)
+			}
+		})
+	}
+}
+
+func TestCreatingOpeningCheckpointingAndWritingAViewReachTheirTools(t *testing.T) {
+	type call struct {
+		tool string
+		args map[string]any
+	}
+	var calls []call
+	startFakeApp(t, func(method string, params map[string]any) map[string]any {
+		if method == "tools/call" {
+			name, _ := params["name"].(string)
+			args, _ := params["arguments"].(map[string]any)
+			calls = append(calls, call{name, args})
+			return result(method, map[string]any{
+				"content":           []map[string]any{{"type": "text", "text": "{}"}},
+				"structuredContent": map[string]any{"ok": true},
+			})
+		}
+		return result(method, map[string]any{})
+	})
+
+	if code, _, stderr := runCLI(t, nil, "new", "outputs/notes.md", "--content", "# Notes\n", "--open"); code != exitOK {
+		t.Fatalf("new exit = %d, stderr = %s", code, stderr)
+	}
+	if code, _, stderr := runCLI(t, nil, "open", "outputs/notes.md", "--heading", "Notes"); code != exitOK {
+		t.Fatalf("open exit = %d, stderr = %s", code, stderr)
+	}
+	if code, _, stderr := runCLI(t, nil, "checkpoint", "outputs/notes.md", "--label", "Before review"); code != exitOK {
+		t.Fatalf("checkpoint exit = %d, stderr = %s", code, stderr)
+	}
+	candidate := filepath.Join(t.TempDir(), "candidate.json")
+	if err := os.WriteFile(candidate, []byte(`{"a2ui":[{"version":"1.0"}],"request":"Summarize"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, stderr := runCLI(t, nil, "genui", "write", "outputs/notes.md", "--candidate", candidate); code != exitOK {
+		t.Fatalf("genui write exit = %d, stderr = %s", code, stderr)
+	}
+
+	wantTools := []string{"create_document", "open_document", "create_checkpoint", "write_genui_view"}
+	if len(calls) != len(wantTools) {
+		t.Fatalf("the app saw %+v", calls)
+	}
+	for i, want := range wantTools {
+		if calls[i].tool != want {
+			t.Fatalf("call %d = %q, want %q", i, calls[i].tool, want)
+		}
+	}
+	if calls[0].args["open"] != true || calls[0].args["path"] != "outputs/notes.md" {
+		t.Errorf("new arguments = %v", calls[0].args)
+	}
+	if calls[1].args["heading"] != "Notes" {
+		t.Errorf("open arguments = %v", calls[1].args)
+	}
+	if calls[2].args["label"] != "Before review" {
+		t.Errorf("checkpoint arguments = %v", calls[2].args)
+	}
+	if calls[3].args["request"] != "Summarize" || calls[3].args["a2ui"] == nil {
+		t.Errorf("genui write arguments = %v", calls[3].args)
+	}
+}
+
+func TestProposeAcceptsWholeTextFromStdin(t *testing.T) {
+	var got map[string]any
+	startFakeApp(t, func(method string, params map[string]any) map[string]any {
+		if method == "tools/call" {
+			got, _ = params["arguments"].(map[string]any)
+			return result(method, map[string]any{
+				"content":           []map[string]any{{"type": "text", "text": "{}"}},
+				"structuredContent": map[string]any{"proposalId": "p-2"},
+			})
+		}
+		return result(method, map[string]any{})
+	})
+	code, _, stderr := runCLI(t, strings.NewReader("# Whole\n"), "propose", "report.md", "--from", "-", "--summary", "Rewrite")
+	if code != exitOK {
+		t.Fatalf("propose exit = %d, stderr = %s", code, stderr)
+	}
+	if got["proposedText"] != "# Whole\n" || got["summary"] != "Rewrite" {
+		t.Fatalf("arguments = %v", got)
+	}
+}
+
+func TestAgentPromptMentionsTheChannelAndTheReviewFlow(t *testing.T) {
+	t.Setenv(ipc.UserDataEnv, t.TempDir())
+	code, stdout, stderr := runCLI(t, nil, "agent-prompt")
+	if code != exitOK {
+		t.Fatalf("exit = %d, stderr = %s", code, stderr)
+	}
+	for _, want := range []string{"ipc.sock", "propose_edit", "read_document", "VERSION_CONFLICT", "markgogo mcp"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("agent prompt lacks %q", want)
+		}
+	}
+}

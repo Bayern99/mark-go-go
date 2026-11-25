@@ -222,6 +222,7 @@ type shimPipe struct {
 	stdin  *io.PipeWriter
 	stdout *bufio.Reader
 	logs   *logSink
+	cwd    string
 	done   chan error
 }
 
@@ -264,7 +265,7 @@ func runShim(t *testing.T, socketPath, cwd string) *shimPipe {
 		_ = stdinR.CloseWithError(io.EOF)
 		stdoutW.Close()
 	}()
-	return &shimPipe{stdin: stdinW, stdout: bufio.NewReader(stdoutR), logs: logs, done: done}
+	return &shimPipe{stdin: stdinW, stdout: bufio.NewReader(stdoutR), logs: logs, cwd: cwd, done: done}
 }
 
 func (p *shimPipe) write(t *testing.T, line string) {
@@ -323,6 +324,10 @@ func TestShimPipesMessagesWithoutLeakingTheHandshake(t *testing.T) {
 	pipe.stdin.Close()
 	if err := <-pipe.done; err != nil {
 		t.Fatalf("RunShim: %v", err)
+	}
+	hellos, _, _ := app.recorded()
+	if len(hellos) != 1 || hellos[0].CWD != ipc.CanonicalPath(pipe.cwd) {
+		t.Fatalf("the shim announced %+v, want its own canonical working directory", hellos)
 	}
 }
 

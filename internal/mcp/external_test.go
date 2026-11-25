@@ -157,12 +157,19 @@ func newSocketHarness(t *testing.T) (*socketHarness, string) {
 
 func startExternal(t *testing.T, h *socketHarness) *ExternalServer {
 	t.Helper()
-	srv := NewExternalServer(Dependencies{Workspace: h, Review: review.NewService()})
+	srv, _ := startExternalWithReview(t, h)
+	return srv
+}
+
+func startExternalWithReview(t *testing.T, h *socketHarness) (*ExternalServer, *review.Service) {
+	t.Helper()
+	reviews := review.NewService()
+	srv := NewExternalServer(Dependencies{Workspace: h, Review: reviews})
 	t.Cleanup(func() { _ = srv.Close() })
 	if err := srv.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	return srv
+	return srv, reviews
 }
 
 type socketClient struct {
@@ -508,7 +515,7 @@ func TestExternalChannelReportsStableErrorCodes(t *testing.T) {
 
 func TestExternalChannelReturnsTheProposalSummaryInsteadOfTheDocument(t *testing.T) {
 	h, root := newSocketHarness(t)
-	srv := startExternal(t, h)
+	srv, reviews := startExternalWithReview(t, h)
 	client, reply := connectExternal(t, srv, root)
 	if !reply.OK {
 		t.Fatalf("hello reply = %+v", reply)
@@ -550,9 +557,50 @@ func TestExternalChannelReturnsTheProposalSummaryInsteadOfTheDocument(t *testing
 	if strings.Contains(string(raw), "Revised findings.") || strings.Contains(string(raw), "# Report") {
 		t.Fatalf("proposal result echoes document text: %s", raw)
 	}
-	proposals := h.docs
+	proposals := reviews.ListProposals(root)
 	if len(proposals) != 1 {
-		t.Fatalf("harness documents = %v", proposals)
+		t.Fatalf("queued proposals = %+v", proposals)
+	}
+	if proposals[0].Source != ipc.ChannelExternal {
+		t.Fatalf("proposal source = %q, want %q", proposals[0].Source, ipc.ChannelExternal)
+	}
+	if proposals[0].BaseText != h.docs["doc-report"].Text {
+		t.Fatalf("proposal was not based on the live buffer: %q", proposals[0].BaseText)
+	}
+}
+
+func TestExternalChannelCreatesDocumentsWithoutAResearchSession(t *testing.T) {
+	h, root := newSocketHarness(t)
+	srv := startExternal(t, h)
+	client, reply := connectExternal(t, srv, root)
+	if !reply.OK {
+		t.Fatalf("hello reply = %+v", reply)
+	}
+	workingDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result := client.tool(toolCreateDocument, map[string]any{
+		"path": "outputs/notes.md", "content": "# Notes\n\nFrom a CLI.\n",
+	})
+	if result.IsError {
+		t.Fatalf("create_document failed: %+v", result.Content)
+	}
+	created := structured[map[string]any](t, result)
+	if created["relPath"] != "outputs/notes.md" || created["bytes"] != float64(21) {
+		t.Fatalf("create_document result = %+v", created)
+	}
+	onDisk, err := os.ReadFile(filepath.Join(root, "outputs", "notes.md"))
+	if err != nil || string(onDisk) != "# Notes\n\nFrom a CLI.\n" {
+		t.Fatalf("created file = %q, %v", onDisk, err)
+	}
+	if _, err := os.Stat(filepath.Join(workingDir, "artifacts.json")); err == nil {
+		t.Fatal("create_document recorded its artifacts in the process working directory")
+	}
+	duplicate := client.tool(toolCreateDocument, map[string]any{"path": "outputs/notes.md", "content": "# Again\n"})
+	if code := structured[appError](t, duplicate).Code; code != ipc.CodeInvalidArgs {
+		t.Fatalf("duplicate create code = %q", code)
 	}
 }
 

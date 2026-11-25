@@ -456,7 +456,7 @@ func (a *app) runPropose(args []string) int {
 	}
 	switch {
 	case *from != "":
-		text, err := readText(*from)
+		text, err := a.readText(*from)
 		if err != nil {
 			a.fail(err)
 			return exitUsage
@@ -498,7 +498,7 @@ func (a *app) runNew(args []string) int {
 	}
 	text := *content
 	if *from != "" {
-		text, err = readText(*from)
+		text, err = a.readText(*from)
 		if err != nil {
 			a.fail(err)
 			return exitUsage
@@ -556,7 +556,7 @@ func (a *app) runGenUI(args []string) int {
 			a.fail(ipc.Errorf(ipc.CodeInvalidArgs, "genui write takes a document and --candidate."))
 			return exitUsage
 		}
-		raw, err := readText(*candidate)
+		raw, err := a.readText(*candidate)
 		if err != nil {
 			a.fail(err)
 			return exitUsage
@@ -687,9 +687,9 @@ func parseLines(raw string) (int, int, error) {
 	return first, last, nil
 }
 
-func readText(file string) (string, error) {
+func (a *app) readText(file string) (string, error) {
 	if file == "-" {
-		data, err := io.ReadAll(os.Stdin)
+		data, err := io.ReadAll(a.stdin)
 		if err != nil {
 			return "", err
 		}

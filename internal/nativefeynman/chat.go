@@ -386,16 +386,26 @@ func (p *panel) composer(c *ui.Context) {
 			bareArea(c, "research-draft", "Research prompt", &s.draft, promptPlaceholder(s.status), promptHeight, func(editor ui.Element) {
 				draftEditor = editor
 				editor.OnTextKey(func(key ui.TextKey) bool {
-					if key.Key != ui.KeyEnter || key.Mods != 0 {
+					if key.Mods != 0 {
 						return false
 					}
-					if s.actionsOpen && strings.HasPrefix(s.draft, "/") {
-						if command := p.matchingCommand(strings.TrimSpace(strings.TrimPrefix(s.draft, "/"))); command != nil {
-							s.draft = "/" + command.Name + " "
-							s.actionsOpen = false
-							key.SetText(s.draft)
+					if s.actionsOpen && p.actionsFromSlash {
+						commands := p.filteredCommands(p.commandQuery)
+						switch key.Key {
+						case ui.KeyDown, ui.KeyUp:
+							p.commandSelection.Move(key.Key, len(commands))
+							return true
+						case ui.KeyEnter:
+							if len(commands) > 0 {
+								p.commandSelection.Clamp(len(commands))
+								p.chooseResearchCommand(commands[p.commandSelection.Index])
+								key.SetText(s.draft)
+							}
 							return true
 						}
+					}
+					if key.Key != ui.KeyEnter {
+						return false
 					}
 					accepted := false
 					if s.status == statusWorking {
@@ -409,6 +419,14 @@ func (p *panel) composer(c *ui.Context) {
 					return true
 				})
 			})
+			if p.actionsFocusDraft {
+				draftEditor.Focus()
+				p.actionsFocusDraft = false
+			}
+			if p.commandCaret > 0 {
+				draftEditor.SetTextSelection(p.commandCaret, p.commandCaret)
+				p.commandCaret = 0
+			}
 			if draftEditor.Changed() {
 				if !strings.HasPrefix(s.draft, "/") {
 					if p.actionsFromSlash {
@@ -417,9 +435,15 @@ func (p *panel) composer(c *ui.Context) {
 					p.actionsDismissed = false
 					p.actionsFromSlash = false
 					s.actionsOpen = false
+				} else if p.actionsFromSlash && !strings.Contains(strings.TrimPrefix(s.draft, "/"), "/") {
+					p.commandQuery = strings.TrimSpace(strings.TrimPrefix(s.draft, "/"))
+					p.commandSelection.Reset()
+					s.actionsOpen = true
 				} else if !p.actionsDismissed && p.slashCommandMatches(s.draft) {
 					p.commandQuery = strings.TrimSpace(strings.TrimPrefix(s.draft, "/"))
+					p.commandSelection.Reset()
 					p.actionsFromSlash = true
+					p.actionsFromButton = false
 					s.actionsOpen = true
 				} else if p.actionsFromSlash || strings.Contains(strings.TrimPrefix(s.draft, "/"), "/") {
 					if p.actionsFromSlash {
@@ -438,16 +462,31 @@ func (p *panel) composer(c *ui.Context) {
 				actionsBtn := portrait.ButtonWith(c, "Actions", "Browse workflows, skills and extensions", actionsSpec).Expanded(s.actionsOpen)
 				if actionsBtn.Clicked() {
 					s.actionsOpen = !s.actionsOpen
+					p.commandSelection.Reset()
 					p.actionsDismissed = false
 					p.actionsFromSlash = false
+					p.actionsFromButton = s.actionsOpen
+					p.actionsFocusFilter = s.actionsOpen
 				}
 				actionsPopover := portrait.PopoverWithSpec(c, actionsBtn, &s.actionsOpen, portrait.PopoverSpec{Width: portrait.Form.SelectMax, Title: "Research actions", Placement: ui.AnchorTopStart}, func() {
 					p.commandList(c)
 				})
 				actionsPopover.AttachTo(composer, ui.AnchorTopStart, ui.AnchorBottomStart).Label("Research actions")
-				if actionsPopover.Dismissed() && strings.HasPrefix(s.draft, "/") {
-					p.actionsDismissed = true
-					p.actionsFromSlash = false
+				if actionsPopover.Dismissed() {
+					p.actionsFocusFilter = false
+					escaped := !actionsPopover.PressedInside() && !actionsPopover.PressedOutside()
+					if p.actionsFromButton {
+						p.actionsFromButton = false
+						if escaped {
+							actionsBtn.Focus()
+						}
+					} else {
+						p.actionsDismissed = true
+						p.actionsFromSlash = false
+						if escaped {
+							draftEditor.Focus()
+						}
+					}
 				}
 				if documentEligible {
 					includeDocumentButton(c, &s.includeDoc)
@@ -556,44 +595,76 @@ func without(items []string, target string) []string {
 }
 
 func (p *panel) commandList(c *ui.Context) {
-	s := p.state
 	query := p.commandQuery
-	var filterEditor ui.Element
+	var filterInputEditor ui.Element
 	filterInput(c, "research-actions-filter", "Filter research actions", &p.commandQuery, "Search workflows and skills…", func(editor ui.Element) {
-		filterEditor = editor
+		filterInputEditor = editor
 	})
-	if filterEditor.Changed() {
+	if p.actionsFocusFilter {
+		filterInputEditor.Focus()
+		p.actionsFocusFilter = false
+	}
+	if filterInputEditor.Changed() {
 		query = p.commandQuery
+		p.commandSelection.Reset()
 		p.actionsFromSlash = false
 	}
-	ui.Scroll(c.Key("research-actions-list")).MaxHeight(portrait.Form.ListMax).FillWidth().Label("Research actions").Children(func() {
-		count := 0
-		for _, command := range s.commands {
-			search := strings.ToLower(command.Name + " " + command.Description + " " + command.Source)
-			if query != "" && !strings.Contains(search, strings.ToLower(query)) {
-				continue
-			}
-			count++
+	commands := p.filteredCommands(query)
+	if p.commandSelection.Shortcuts(filterInputEditor, len(commands)) {
+		p.chooseResearchCommand(commands[p.commandSelection.Index])
+	}
+	ui.Scroll(c.Key("research-actions-list")).MaxHeight(portrait.Form.ListMax).FillWidth().Role(ui.RoleListBox).Label("Research actions").Children(func() {
+		for i, command := range commands {
+			selected := i == p.commandSelection.Index
 			// The name stays whole and the description takes its own line, so
 			// a short panel never cuts an action to an ellipsis.
 			spec := portrait.ListRowSpec{
-				Title: "/" + command.Name, Detail: command.Description, Label: "Choose research action " + command.Name,
+				Title: "/" + command.Name, Detail: command.Description, Label: "Choose research action " + command.Name, Selected: selected,
 			}
 			if command.Source != "" {
 				source := command.Source
 				spec.Trailing = func() { portrait.Caption(c, source).Shrink(0) }
 			}
-			if portrait.ListRow(c.Key("research-action-"+command.Name), spec).Clicked() {
-				s.draft = "/" + command.Name + " "
-				s.actionsOpen = false
-				p.actionsDismissed = false
-				p.commandQuery = ""
+			row := portrait.ListRow(c.Key("research-action-"+command.Name), spec).Role(ui.RoleOption).TabStop(false)
+			if selected {
+				row.Background(portrait.Colors.AccentSoft)
+				if p.commandSelection.Moved {
+					row.ScrollIntoView()
+				}
+			}
+			if row.Clicked() {
+				p.chooseResearchCommand(command)
 			}
 		}
-		if count == 0 {
+		p.commandSelection.Moved = false
+		if len(commands) == 0 {
 			mutedText(c, "No matching workflows, skills or extensions.")
 		}
 	})
+}
+
+func (p *panel) filteredCommands(query string) []feynman.ResearchCommand {
+	needle := strings.ToLower(strings.TrimSpace(query))
+	var commands []feynman.ResearchCommand
+	for _, command := range p.state.commands {
+		search := strings.ToLower(command.Name + " " + command.Description + " " + command.Source)
+		if needle == "" || strings.Contains(search, needle) {
+			commands = append(commands, command)
+		}
+	}
+	return commands
+}
+
+func (p *panel) chooseResearchCommand(command feynman.ResearchCommand) {
+	p.state.draft = "/" + command.Name + " "
+	p.commandCaret = len([]rune(p.state.draft))
+	p.actionsFocusDraft = true
+	p.state.actionsOpen = false
+	p.commandQuery = ""
+	p.commandSelection.Reset()
+	p.actionsDismissed = false
+	p.actionsFromSlash = false
+	p.actionsFromButton = false
 }
 
 func (p *panel) matchingCommand(query string) *feynman.ResearchCommand {

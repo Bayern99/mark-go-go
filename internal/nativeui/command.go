@@ -6,19 +6,20 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/Bayern99/mark-go-go/internal/nativekit"
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
 )
 
 type commandBar struct {
-	open, focus, moved bool
-	toggled, capture   bool
-	hasReturn          bool
-	query, sent        string
-	index              int
-	trigger            ui.Handle
-	returnFocus        ui.Handle
+	open, focus      bool
+	toggled, capture bool
+	hasReturn        bool
+	query, sent      string
+	selection        nativekit.CommandSelection
+	trigger          ui.Handle
+	returnFocus      ui.Handle
 }
 
 type commandItem struct {
@@ -291,7 +292,7 @@ func (s *Shell) commandBar(c *ui.Context, width, height float32, m Model, a Acti
 	var items []commandItem
 	if bar.open {
 		items = s.commandItems(m, a, slots, width)
-		bar.index = max(0, min(bar.index, len(items)-1))
+		bar.selection.Clamp(len(items))
 	}
 	var run func()
 	if bar.open {
@@ -311,23 +312,15 @@ func (s *Shell) commandBar(c *ui.Context, width, height float32, m Model, a Acti
 				bar.focus = false
 			}
 			if input.Changed() {
-				bar.index = 0
+				bar.selection.Reset()
 				if query := strings.TrimSpace(bar.query); a.Filter != nil && m.Workspace.Kind == "folder" && (query != "" || bar.sent != "") {
 					bar.sent = query
 					resultsScroll.Y = 0
 					a.Filter(query)
 				}
 			}
-			if n := len(items); n > 0 {
-				if input.Shortcut(0, ui.KeyDown) {
-					bar.index, bar.moved = (bar.index+1)%n, true
-				}
-				if input.Shortcut(0, ui.KeyUp) {
-					bar.index, bar.moved = (bar.index+n-1)%n, true
-				}
-				if input.Submitted() {
-					run = items[bar.index].run
-				}
+			if bar.selection.Shortcuts(input, len(items)) {
+				run = items[bar.selection.Index].run
 			}
 			if input.Shortcut(ui.Cmd, ui.KeyK) || input.Shortcut(ui.Cmd, ui.KeyT) {
 				s.toggleCommand(c, a)
@@ -342,7 +335,7 @@ func (s *Shell) commandBar(c *ui.Context, width, height float32, m Model, a Acti
 			Padding(6, 6, resultsBottom, 6).Gap(1).BorderWidth(1, 0, 0, 0).BorderColor(portrait.Colors.Line).Role(ui.RoleListBox).Label("Results").
 			TrackScroll(resultsScroll).MaskLinearGradient(scrollEdgeMask(180, resultsScroll)).Children(func() {
 			for i, item := range items {
-				selected := i == bar.index
+				selected := i == bar.selection.Index
 				row := ui.ButtonBase(c.Key(fmt.Sprintf("result:%d", i))).Role(ui.RoleOption).Label(item.title).Description(item.detail).AccessSelected(selected).TabStop(false).
 					FillWidth().Height(portrait.Shell.CommandRow).Padding(0, 10).Gap(10).Radius(portrait.Radii.M).AlignItems(ui.Center)
 				ink, muted := portrait.Colors.Ink, portrait.Colors.Ink3
@@ -353,7 +346,7 @@ func (s *Shell) commandBar(c *ui.Context, width, height float32, m Model, a Acti
 				case row.Hovered():
 					row.Background(portrait.Colors.Fill)
 				}
-				if selected && bar.moved {
+				if selected && bar.selection.Moved {
 					row.ScrollIntoView()
 				}
 				row.Children(func() {
@@ -370,7 +363,7 @@ func (s *Shell) commandBar(c *ui.Context, width, height float32, m Model, a Acti
 					run = item.run
 				}
 			}
-			bar.moved = false
+			bar.selection.Moved = false
 			if len(items) == 0 {
 				portrait.Type.UI.Apply(ui.Text(c, "No matching documents or commands")).TextColor(portrait.Colors.Ink3).Padding(10, 10)
 			}

@@ -6,6 +6,7 @@ import (
 
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
+	"github.com/Bayern99/mark-go-go/internal/nativekit"
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/review"
@@ -51,8 +52,13 @@ type panel struct {
 	filesScroll          ui.ScrollState
 	alphaScroll          ui.ScrollState
 	commandQuery         string
+	commandSelection     nativekit.CommandSelection
+	commandCaret         int
 	actionsDismissed     bool
 	actionsFromSlash     bool
+	actionsFromButton    bool
+	actionsFocusFilter   bool
+	actionsFocusDraft    bool
 	questionText         string
 	questionPick         string
 	questionFind         string

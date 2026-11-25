@@ -37,6 +37,15 @@ func TestThemeBridgesTheWebUIMyGoVariables(t *testing.T) {
 	}
 }
 
+func TestSpaceDotsMeetTargetPitch(t *testing.T) {
+	if portrait.Shell.SpaceDotButton != portrait.Sizes.Compact || portrait.Shell.SpaceDotButton+2 < 24 {
+		t.Fatalf("space dot button %v gives pitch %v, want at least 24", portrait.Shell.SpaceDotButton, portrait.Shell.SpaceDotButton+2)
+	}
+	if portrait.Shell.SpaceDotCircle != 10 {
+		t.Fatalf("space dot circle = %v, want 10", portrait.Shell.SpaceDotCircle)
+	}
+}
+
 func TestWorkspaceNameStyleMatchesTheWebUI(t *testing.T) {
 	s := portrait.Shell.WorkspaceName
 	if s.Size != 14 || s.Leading != 18 || !near(s.Tracking, -0.07) || s.Family != portrait.FontSans {

@@ -1,78 +1,24 @@
 package portrait_test
 
 var nativeLiteralAllowlist = map[string]map[string]int{
-	"../nativeeditor/navigation.go": {
-		"Height(1)": 1,
-		"Radius(5)": 1,
-	},
 	"../nativeeditor/preview.go": {
 		"Height(12)": 1,
 	},
-	"../nativeeditor/special.go": {
-		"Height(100)": 1,
-		"Radius(6)":   1,
-		"Radius(8)":   2,
-	},
-	"../nativeeditor/table.go": {
-		"Height(31)": 1,
-		"Height(36)": 1,
-	},
 	"../nativefeynman/alpha.go": {
 		"MinHeight(0)": 1,
-		"Radius(9)":    5,
 	},
 	"../nativefeynman/chat.go": {
-		"MaxHeight(130)": 1,
-		"MaxHeight(170)": 4,
-		"MaxHeight(220)": 1,
-		"MinHeight(0)":   1,
-		"Radius(12)":     2,
-		"Radius(6)":      1,
-		"Radius(7)":      1,
-		"Radius(8)":      1,
-		"Radius(9)":      1,
-		"Radius(999)":    1,
-	},
-	"../nativefeynman/config.go": {
-		"Height(24)": 1,
-		"MaxHeight(max(float32(120), height-16))":                   1,
-		"MaxHeight(min(float32(250), max(float32(80), height-64)))": 1,
-		"MinHeight(30)": 1,
-		"Radius(12)":    1,
-		"Radius(6)":     1,
-		"Radius(7)":     1,
-	},
-	"../nativefeynman/extension.go": {
-		"MinHeight(30)": 1,
-		"MinHeight(38)": 1,
-		"Radius(8)":     1,
+		"MinHeight(0)": 1,
 	},
 	"../nativefeynman/files.go": {
 		"MinHeight(0)": 1,
-		"Radius(9)":    1,
-	},
-	"../nativefeynman/settings.go": {
-		"MinHeight(0)": 1,
-		"Radius(9)":    6,
-	},
-	"../nativefeynman/style.go": {
-		"Height(20)":    1,
-		"Height(22)":    1,
-		"MinHeight(28)": 1,
-		"Radius(5)":     1,
-		"Radius(8)":     1,
 	},
 	"../nativegenui/controls.go": {
-		"Height(0)":                     1,
-		"Height(16)":                    1,
-		"Height(min(rows, 20)*22 + 18)": 1,
-		"MinHeight(160)":                1,
-		"MinHeight(28)":                 1,
-		"Radius(12)":                    1,
-		"Radius(14)":                    1,
-		"Radius(7)":                     2,
-		"Radius(9)":                     1,
-		"Radius(999)":                   2,
+		"Height(0)":      1,
+		"Height(16)":     1,
+		"MinHeight(160)": 1,
+		"Radius(12)":     1,
+		"Radius(999)":    1,
 	},
 	"../nativegenui/media.go": {
 		"Height(1)":     1,
@@ -82,12 +28,7 @@ var nativeLiteralAllowlist = map[string]map[string]int{
 		"Radius(2)":     2,
 	},
 	"../nativegenui/panel.go": {
-		"Height(52)":   2,
 		"MinHeight(0)": 1,
-		"Radius(3)":    1,
-		"Radius(4)":    1,
-		"Radius(6)":    1,
-		"Radius(999)":  1,
 	},
 	"../nativegenui/reading.go": {
 		"Height(14)":                       2,
@@ -113,39 +54,11 @@ var nativeLiteralAllowlist = map[string]map[string]int{
 		"Radius(5)":            1,
 		"Radius(999)":          1,
 	},
-	"../nativereview/checkpoints.go": {
-		"Height(108)": 1,
-	},
-	"../nativereview/diff.go": {
-		"Height(min(250, height-160))": 1,
-		"MinHeight(76)":                1,
-		"Radius(8)":                    1,
-	},
 	"../nativeui/document.go": {
-		"Height(22)":   1,
-		"Height(40)":   1,
 		"MinHeight(0)": 1,
-		"Radius(8)":    1,
-	},
-	"../nativeui/navigation.go": {
-		"MinHeight(26)": 1,
-		"Radius(10)":    1,
-		"Radius(6)":     1,
-		"Radius(8)":     1,
 	},
 	"../nativeui/shell.go": {
-		"Height(max(80, height-16))": 1,
-		"MinHeight(0)":               2,
-		"Radius(14)":                 1,
-	},
-	"../nativeui/tabs.go": {
-		"Height(26)":     1,
-		"Height(28)":     2,
-		"Height(32)":     1,
-		"Height(42)":     1,
-		"MaxHeight(300)": 1,
-		"Radius(6)":      1,
-		"Radius(7)":      1,
+		"MinHeight(0)": 2,
 	},
 	"../nativeui/window.go": {
 		"MinHeight(0)": 1,

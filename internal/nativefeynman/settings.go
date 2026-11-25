@@ -3,13 +3,13 @@ package nativefeynman
 import (
 	"strings"
 
-	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
+	"github.com/Bayern99/mark-go-go/internal/nativeui"
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 )
 
 func (p *panel) loadSettings(root string) {
-	if root == "" || p.state.cliBusy {
+	if root == "" || p.state.cliBusy || p.host == nil {
 		return
 	}
 	p.settingsRoot = root
@@ -42,6 +42,29 @@ func (p *panel) loadSettings(root string) {
 	}()
 }
 
+func (p *panel) runSettingsUpdate(run func() (func(), error)) {
+	if p.state.cliBusy {
+		return
+	}
+	root := p.state.root
+	p.state.cliBusy = true
+	p.state.cliError = ""
+	p.window.Native().Invalidate()
+	go func() {
+		apply, err := run()
+		p.update(root, func() {
+			p.state.cliBusy = false
+			if err != nil {
+				p.state.cliError = err.Error()
+				return
+			}
+			if apply != nil {
+				apply()
+			}
+		})
+	}()
+}
+
 func ptrIfOK[T any](value T, err error) *T {
 	if err != nil {
 		return nil
@@ -49,409 +72,138 @@ func ptrIfOK[T any](value T, err error) *T {
 	return &value
 }
 
-func (p *panel) settings(c *ui.Context) {
-	s := p.state
-	ui.Row(c.Key("feynman-settings-header")).Gap(4).AlignItems(ui.Center).Children(func() {
-		sectionTitle(c, "Feynman settings")
-		ui.Row(c).Grow(1)
-		if smallButton(c, "Refresh", "Refresh Feynman CLI settings").Disabled(s.cliBusy).Clicked() {
-			p.settingsRoot = ""
-			p.loadSettings(s.root)
+func (p *panel) settingsPages() []nativeui.SettingsPage {
+	visible := func() bool { return p.window != nil && (p.window.Native() == nil || p.window.PluginEnabled("feynman")) }
+	return []nativeui.SettingsPage{
+		{ID: "models", Section: "Research", Label: "Models & Providers", Icon: portrait.IconCube, Order: 100, Visible: visible,
+			Keywords: []string{"models providers authentication service tier default pin show picker sign in log out"},
+			Dirty: func() bool {
+				return p.window.Preference("feynman.models.pinned") != "" || p.window.Preference("feynman.models.hidden") != ""
+			},
+			Reset: func() {
+				p.window.SetPreference("feynman.models.pinned", "")
+				p.window.SetPreference("feynman.models.hidden", "")
+			},
+			Draw: func(c *ui.Context, q nativeui.SettingsQuery) { p.drawSettingsPage(c, "models", q) }},
+		{ID: "search", Section: "Research", Label: "Search & Papers", Icon: portrait.IconMagnifyingGlass, Order: 110, Visible: visible,
+			Keywords: []string{"web search provider api key exa brave tavily alphaxiv account papers"},
+			Dirty:    func() bool { return p.searchProvider != "" && p.searchProvider != "auto" }, Reset: p.resetSearchSettings,
+			Draw: func(c *ui.Context, q nativeui.SettingsQuery) { p.drawSettingsPage(c, "search", q) }},
+		{ID: "mcp", Section: "Research", Label: "MCP Servers", Icon: portrait.IconPlugs, Order: 120, Visible: visible,
+			Keywords: []string{"mcp servers transport http stdio headers bearer command arguments environment exposure project local add remove"},
+			Draw:     func(c *ui.Context, q nativeui.SettingsQuery) { p.drawSettingsPage(c, "mcp", q) }},
+		{ID: "packages", Section: "Research", Label: "Packages", Icon: portrait.IconSparkle, Order: 130, Visible: visible,
+			Keywords: []string{"packages workflows skills extensions install remove update target"},
+			Draw:     func(c *ui.Context, q nativeui.SettingsQuery) { p.drawSettingsPage(c, "packages", q) }},
+		{ID: "diagnostics", Section: "Footer", Label: "Diagnostics", Icon: portrait.IconWrench, Order: 900, Visible: visible,
+			Keywords: []string{"diagnostics feynman cli doctor setup preview status refresh"},
+			Draw:     func(c *ui.Context, q nativeui.SettingsQuery) { p.drawSettingsPage(c, "diagnostics", q) }},
+	}
+}
+
+func feynmanSettingsTabMatches(tab string, q nativeui.SettingsQuery) bool {
+	switch tab {
+	case "search":
+		return q.Matches("Web search", "Provider & API key routing and saved authentication.", "web search provider api key exa brave tavily") ||
+			q.Matches("alphaXiv", "Paper search and annotation account.", "alphaxiv account papers")
+	case "mcp":
+		return q.Matches("MCP Servers", "Configured servers and tool exposure.", "mcp servers transport http stdio headers bearer command arguments environment exposure project local add remove")
+	case "packages":
+		return q.Matches("Packages", "Workflows, skills, and extensions.", "packages workflows skills extensions install remove update target")
+	case "diagnostics":
+		return q.Matches("Diagnostics", "Feynman CLI doctor, setup, and preview status.", "diagnostics feynman cli doctor setup preview status refresh")
+	default:
+		return q.Matches("Models & Providers", "Authentication, service tier, default model, and picker visibility.", "models providers authentication service tier default pin show picker sign in log out")
+	}
+}
+
+func (p *panel) firstMatchingFeynmanSettingsTab(q nativeui.SettingsQuery) string {
+	for _, page := range p.settingsPages() {
+		if q.PageMatch(page) && feynmanSettingsTabMatches(page.ID, q) {
+			return page.ID
 		}
-	})
-	if s.cliError != "" {
-		text(c, portrait.Type.Meta, s.cliError).Role(ui.RoleAlert).TextColor(portrait.Colors.Danger).FillWidth().Wrap()
 	}
-	if s.cliResult != "" {
-		resultText(c, "Command result", s.cliResult, "")
+	return ""
+}
+
+func (p *panel) drawSettingsPage(c *ui.Context, tab string, q nativeui.SettingsQuery) {
+	p.syncConnection()
+	s := p.state
+	var drawWebSearch, drawAlpha, drawMCP, drawPackages, drawDiagnostics, drawModels bool
+	switch tab {
+	case "search":
+		drawWebSearch = q.Matches("Web search", "Provider & API key routing and saved authentication.", "web search provider api key exa brave tavily")
+		drawAlpha = q.Matches("alphaXiv", "Paper search and annotation account.", "alphaxiv account papers")
+	case "mcp":
+		drawMCP = q.Matches("MCP Servers", "Configured servers and tool exposure.", "mcp servers transport http stdio headers bearer command arguments environment exposure project local add remove")
+	case "packages":
+		drawPackages = q.Matches("Packages", "Workflows, skills, and extensions.", "packages workflows skills extensions install remove update target")
+	case "diagnostics":
+		drawDiagnostics = q.Matches("Diagnostics", "Feynman CLI doctor, setup, and preview status.", "diagnostics feynman cli doctor setup preview status refresh")
+	default:
+		drawModels = q.Matches("Models & Providers", "Authentication, service tier, default model, and picker visibility.", "models providers authentication service tier default pin show picker sign in log out")
 	}
-	ui.Scroll(c.Key("feynman-settings-scroll")).Grow(1).MinHeight(0).FillWidth().TrackScroll(&p.settingsScr).Label("Feynman settings and CLI controls").Children(func() {
-		p.statusSettings(c)
-		p.modelSettings(c)
-		p.alphaSettings(c)
+	if q.Active() && !(drawWebSearch || drawAlpha || drawMCP || drawPackages || drawDiagnostics || drawModels) {
+		return
+	}
+	if s.root == "" {
+		if q.Active() {
+			return
+		}
+		portrait.Empty(c, portrait.EmptySpec{Icon: portrait.IconFolderOpen, Title: "Open a workspace folder", Description: "Configure Feynman models, MCP servers, and diagnostics after opening a folder."})
+		return
+	}
+	if p.settingsRoot != s.root && !s.cliBusy {
+		p.loadSettings(s.root)
+	}
+	if s.cliError != "" && (!q.Active() || tab == p.firstMatchingFeynmanSettingsTab(q)) {
+		portrait.Alert(c, portrait.Tones.Danger, "Feynman CLI", s.cliError)
+	}
+	if s.cliResult != "" && !q.Active() {
+		portrait.OutputBlock(c, "Command result", s.cliResult)
+	}
+	if drawWebSearch && q.Match("Web search", "Provider & API key routing and saved authentication.", "web search provider api key exa brave tavily") {
 		p.searchSettings(c)
-		p.mcpSettings(c)
-		p.packageSettings(c)
-	})
-}
-
-func (p *panel) statusSettings(c *ui.Context) {
-	s := p.state
-	ui.Column(c.Key("feynman-status-settings")).Gap(4).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
-		sectionTitle(c, "Status and diagnostics")
-		ui.Row(c).Wrap().Gap(4).Children(func() {
-			if smallButton(c, "Run Doctor", "Run feynman doctor").Disabled(s.cliBusy).Clicked() {
-				p.runUpdate(func() (func(), error) {
-					result, err := p.host.CLIDoctor(p.window.Context(), s.root)
-					return func() { s.doctorResult = &result }, err
-				})
-			}
-			if smallButton(c, "Verify Preview", "Run feynman setup preview").Disabled(s.cliBusy).Clicked() {
-				p.runUpdate(func() (func(), error) {
-					result, err := p.host.CLISetupPreview(p.window.Context(), s.root)
-					return func() { s.setupPreview = &result }, err
-				})
-			}
-			if smallButton(c, "Run Setup in Terminal", "Launch the Feynman setup wizard in Terminal").Disabled(s.cliBusy).Clicked() {
-				p.launchWizard("setup", "")
-			}
-		})
-		if s.cliStatus == nil {
-			mutedText(c, "Feynman CLI status has not loaded.")
-		} else if s.cliStatus.Parsed {
-			for _, section := range s.cliStatus.Sections {
-				ui.Collapsible(c.Key("cli-status-"+section.Title), section.Title, p.collapsibleState("cli-status-"+section.Title), func() {
-					for _, entry := range section.Entries {
-						ui.Row(c).Gap(5).Children(func() {
-							text(c, portrait.Type.Meta, entry.Key).Grow(1).TextColor(portrait.Colors.Ink3)
-							text(c, portrait.Type.Meta, entry.Value).TextColor(portrait.Colors.Ink).FillWidth()
-						})
-					}
-				}).FillWidth()
-			}
-		} else {
-			resultText(c, s.cliStatus.Command, s.cliStatus.RawOutput, s.cliStatus.Error)
-		}
-		if s.doctorResult != nil {
-			if s.doctorResult.Parsed {
-				status := "Needs attention"
-				if s.doctorResult.Healthy {
-					status = "Healthy"
-				}
-				mutedText(c, "Doctor · "+status)
-				for _, issue := range s.doctorResult.Issues {
-					ui.Row(c).Gap(6).AlignItems(ui.Start).FillWidth().Children(func() {
-						portrait.Glyph(c, portrait.IconWarningCircle, 13, portrait.Colors.Warn).Margin(1, 0, 0, 0)
-						text(c, portrait.Type.Meta, issue).TextColor(portrait.Colors.Warn).Grow(1).MinWidth(0).Wrap()
-					})
-				}
-			} else {
-				resultText(c, s.doctorResult.Command, s.doctorResult.RawOutput, s.doctorResult.Error)
-			}
-		}
-		if s.setupPreview != nil {
-			resultText(c, s.setupPreview.Command, s.setupPreview.RawOutput, s.setupPreview.Error)
-		}
-	})
-}
-
-func (p *panel) modelSettings(c *ui.Context) {
-	s := p.state
-	ui.Column(c.Key("feynman-model-settings")).Gap(4).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
-		sectionTitle(c, "Models and service tier")
-		ui.Row(c).Wrap().Gap(4).AlignItems(ui.Center).Children(func() {
-			input(c, "feynman-provider-login", "Model provider", &p.loginProvider, "Optional provider, such as anthropic")
-			if smallButton(c, "Sign in in Terminal", "Sign in to a model provider in Terminal").Disabled(s.cliBusy).Clicked() {
-				p.launchWizard("model_login", strings.TrimSpace(p.loginProvider))
-			}
-		})
-		ui.Row(c).Wrap().Gap(4).AlignItems(ui.Center).Children(func() {
-			input(c, "feynman-service-tier", "Service tier", &p.tierValue, "Tier value")
-			if smallButton(c, "Apply tier", "Set the Feynman service tier").Disabled(s.cliBusy || strings.TrimSpace(p.tierValue) == "").Clicked() {
-				p.modelAction("tier", strings.TrimSpace(p.tierValue))
-			}
-		})
-		if s.cliModels == nil {
-			mutedText(c, "No authenticated models loaded.")
-		} else if !s.cliModels.Parsed {
-			resultText(c, s.cliModels.Command, s.cliModels.RawOutput, s.cliModels.Error)
-		} else if len(s.cliModels.Models) == 0 {
-			mutedText(c, "No authenticated models. Use Sign in in Terminal.")
-		} else {
-			for _, model := range s.cliModels.Models {
-				p.cliModelRow(c, model)
-			}
-		}
-		if s.session.Model != nil {
-			mutedText(c, "Active research model · "+s.session.Model.Provider+"/"+s.session.Model.ID)
-		}
-	})
-}
-
-func (p *panel) cliModelRow(c *ui.Context, model feynman.CLIModelEntry) {
-	label := model.Name
-	if label == "" {
-		label = model.ID
 	}
-	ui.Row(c.Key("feynman-model-"+model.ID)).Wrap().Gap(4).AlignItems(ui.Center).Padding(3, 0).Children(func() {
-		ui.Column(c).Grow(1).Children(func() {
-			text(c, portrait.Type.UI, label).FontWeight(600).TextColor(portrait.Colors.Ink)
-			meta := model.Provider
-			if model.Current {
-				meta += " · current"
-			}
-			if model.Recommended {
-				meta += " · recommended"
-			}
-			mutedText(c, meta)
-		})
-		if smallButton(c, "Set default", "Set "+label+" as the default model").Disabled(model.Current || p.state.cliBusy).Clicked() {
-			p.modelAction("set", model.Name)
-		}
-		if smallButton(c, "Log out", "Log out of "+model.Provider).Disabled(p.state.cliBusy).Clicked() {
-			p.modelAction("logout", model.Provider)
-		}
-	})
+	if drawAlpha && q.Match("alphaXiv", "Paper search and annotation account.", "alphaxiv account papers") {
+		p.alphaSettings(c)
+	}
+	if drawMCP && q.Match("MCP Servers", "Configured servers and tool exposure.", "mcp servers transport http stdio headers bearer command arguments environment exposure project local add remove") {
+		p.mcpSettings(c)
+	}
+	if drawPackages && q.Match("Packages", "Workflows, skills, and extensions.", "packages workflows skills extensions install remove update target") {
+		p.packageSettings(c)
+	}
+	if drawDiagnostics && q.Match("Diagnostics", "Feynman CLI doctor, setup, and preview status.", "diagnostics feynman cli doctor setup preview status refresh") {
+		p.statusSettings(c)
+	}
+	if drawModels && q.Match("Models & Providers", "Authentication, service tier, default model, and picker visibility.", "models providers authentication service tier default pin show picker sign in log out") {
+		p.modelSettings(c)
+	}
+	if !q.Active() || tab == p.firstMatchingFeynmanSettingsTab(q) {
+		p.drawConfirmation(c)
+	}
 }
 
-func (p *panel) modelAction(action, value string) {
-	root := p.state.root
-	p.runUpdate(func() (func(), error) {
-		result, err := p.host.CLIModelAction(p.window.Context(), root, action, value)
-		return func() {
-			p.state.cliResult = firstNonEmpty(result.Summary, result.RawOutput)
-			p.loadSettings(root)
-			if p.state.status == statusReady {
-				p.run(func() error { _, err := p.host.RefreshModels(p.window.Context(), root); return err })
-			}
-		}, err
-	})
-}
-
-func (p *panel) alphaSettings(c *ui.Context) {
+func (p *panel) resetSearchSettings() {
 	s := p.state
-	ui.Column(c.Key("feynman-alpha-settings")).Gap(4).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
-		sectionTitle(c, "alphaXiv account")
-		if s.alphaStatus == nil {
-			mutedText(c, "alphaXiv status has not loaded.")
-		} else if s.alphaStatus.Parsed {
-			label := s.alphaStatus.StatusText
-			if s.alphaStatus.LoggedIn {
-				label = "Signed in"
-				if s.alphaStatus.Account != "" {
-					label += " as " + s.alphaStatus.Account
-				}
-			}
-			mutedText(c, label)
-		} else {
-			resultText(c, s.alphaStatus.Command, s.alphaStatus.RawOutput, s.alphaStatus.Error)
-		}
-		ui.Row(c).Wrap().Gap(4).Children(func() {
-			if smallButton(c, "Sign in to alphaXiv in Terminal", "Sign in to alphaXiv using Terminal").Disabled(s.cliBusy).Clicked() {
-				p.launchWizard("alpha_login", "")
-			}
-			if s.alphaStatus != nil && s.alphaStatus.LoggedIn && smallButton(c, "Log out", "Log out from alphaXiv").Disabled(s.cliBusy).Clicked() {
-				p.runUpdate(func() (func(), error) {
-					result, err := p.host.CLIAlphaLogout(p.window.Context(), s.root)
-					return func() { s.cliResult = firstNonEmpty(result.Summary, result.RawOutput) }, err
-				})
-				p.loadSettings(s.root)
-			}
-		})
-		if smallButton(c, "Open alphaXiv research", "Open alphaXiv search and paper tools").Clicked() {
-			s.selectedTab = "alpha"
-		}
-	})
-}
-
-func (p *panel) searchSettings(c *ui.Context) {
-	s := p.state
-	ui.Column(c.Key("feynman-search-settings")).Gap(4).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
-		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-			sectionTitle(c, "Web search")
-			ui.Row(c).Grow(1)
-			if smallButton(c, "Reset to Auto", "Reset search routing to automatic").Disabled(s.cliBusy).Clicked() {
-				p.runUpdate(func() (func(), error) {
-					result, err := p.host.CLISearchAction(p.window.Context(), s.root, "clear", "", "")
-					status, statusErr := p.host.CLISearchStatus(p.window.Context(), s.root)
-					return func() {
-						s.cliResult = firstNonEmpty(result.Summary, result.RawOutput)
-						s.searchStatus = &status
-						if status.RequestRoute != "" {
-							p.searchProvider = status.RequestRoute
-						}
-					}, errorsJoin(err, statusErr)
-				})
-			}
-		})
-		if s.searchStatus != nil {
-			if s.searchStatus.Parsed {
-				for _, entry := range s.searchStatus.Entries {
-					ui.Row(c).Gap(5).Children(func() {
-						text(c, portrait.Type.Meta, entry.Key).Grow(1).TextColor(portrait.Colors.Ink3)
-						text(c, portrait.Type.Meta, entry.Value).TextColor(portrait.Colors.Ink)
-					})
-				}
-				for _, provider := range strings.Split(s.searchStatus.SavedAPIKeys, ",") {
-					provider = strings.TrimSpace(provider)
-					if provider == "" || provider == "none" {
-						continue
-					}
-					provider := provider
-					trigger := smallButton(c, "Clear "+provider+" API key", "Remove the saved "+provider+" API key").Disabled(s.cliBusy)
-					p.confirmOnClick("clear-search-key:"+provider, trigger, portrait.ConfirmSpec{
-						Title:        "Clear API key?",
-						Body:         "Remove the saved " + provider + " API key? This action cannot be undone.",
-						ConfirmLabel: "Clear API key",
-						OnConfirm:    func() { p.clearSearchKey(provider) },
-					})
-				}
-			} else {
-				resultText(c, s.searchStatus.Command, s.searchStatus.RawOutput, s.searchStatus.Error)
-			}
-		}
-		input(c, "feynman-search-provider", "Search provider", &p.searchProvider, "auto, exa, brave, tavily…")
-		input(c, "feynman-search-key", "Optional API key", &p.searchKey, "Leave blank to use existing authentication", func(entry ui.Element) {
-			entry.Password()
-		})
-		if smallButton(c, "Save search settings", "Set the selected web search provider and API key").Disabled(s.cliBusy || strings.TrimSpace(p.searchProvider) == "").Clicked() {
-			p.runUpdate(func() (func(), error) {
-				result, err := p.host.CLISearchAction(p.window.Context(), s.root, "set", strings.TrimSpace(p.searchProvider), strings.TrimSpace(p.searchKey))
-				status, statusErr := p.host.CLISearchStatus(p.window.Context(), s.root)
-				return func() {
-					s.cliResult = firstNonEmpty(result.Summary, result.RawOutput)
-					s.searchStatus = &status
-					p.searchKey = ""
-				}, errorsJoin(err, statusErr)
-			})
-		}
-	})
-}
-
-func (p *panel) mcpSettings(c *ui.Context) {
-	s := p.state
-	ui.Column(c.Key("feynman-mcp-settings")).Gap(4).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
-		sectionTitle(c, "MCP servers")
-		if s.mcpServers != nil {
-			if !s.mcpServers.Parsed {
-				resultText(c, s.mcpServers.Command, s.mcpServers.RawOutput, s.mcpServers.Error)
-			} else {
-				for _, server := range s.mcpServers.Servers {
-					ui.Row(c.Key("mcp-server-" + server.Name)).Wrap().Gap(4).AlignItems(ui.Center).Children(func() {
-						ui.Column(c).Grow(1).Children(func() {
-							text(c, portrait.Type.UI, server.Name).FontWeight(600).TextColor(portrait.Colors.Ink)
-							mutedText(c, strings.Join([]string{server.Scope, server.Transport, server.Status}, " · "))
-						})
-						trigger := smallButton(c, "Remove", "Remove MCP server "+server.Name).Disabled(s.cliBusy)
-						p.confirmOnClick("remove-mcp:"+server.Scope+":"+server.Name, trigger, portrait.ConfirmSpec{
-							Title:        "Remove MCP server?",
-							Body:         "Remove “" + server.Name + "” from Feynman? This action cannot be undone.",
-							ConfirmLabel: "Remove",
-							OnConfirm:    func() { p.removeMCPServer(server) },
-						})
-					})
-				}
-			}
-		}
-		input(c, "feynman-mcp-name", "Server name", &p.serverName, "Name")
-		ui.Row(c).Wrap().Gap(4).Children(func() {
-			for _, transport := range []string{"http", "stdio"} {
-				if choiceButton(c, "research-transport-"+transport, transport, "Use "+transport+" transport", p.serverTransport == transport, true).Clicked() {
-					p.serverTransport = transport
-				}
-			}
-		})
-		if p.serverTransport == "stdio" {
-			input(c, "feynman-mcp-command", "Command", &p.serverCommand, "Command path")
-			input(c, "feynman-mcp-args", "Arguments", &p.serverArgs, "Space separated arguments")
-			area(c, "feynman-mcp-env", "Environment variables", &p.serverEnv, "KEY=value, one per line", 55)
-			input(c, "feynman-mcp-cwd", "Working folder", &p.serverCwd, "Optional working directory")
-		} else {
-			input(c, "feynman-mcp-url", "HTTP URL", &p.serverURL, "https://…")
-			area(c, "feynman-mcp-headers", "Headers", &p.serverHeaders, "Header: value, one per line", 55)
-		}
-		ui.Row(c).Wrap().Gap(4).Children(func() {
-			input(c, "feynman-mcp-exposure", "Exposure", &p.serverExposure, "direct")
-			input(c, "feynman-mcp-description", "Description", &p.serverDescription, "Optional description")
-		})
-		if p.serverTransport == "http" {
-			input(c, "feynman-mcp-bearer-env", "Bearer token environment variable", &p.serverBearerEnv, "Optional environment variable name")
-		}
-		portrait.Checkbox(c.Key("feynman-mcp-local"), &p.serverLocal, "Project-local configuration")
-		if controlButton(c, "Add MCP server", "Add MCP server to Feynman").Disabled(s.cliBusy || strings.TrimSpace(p.serverName) == "").Clicked() {
-			p.addMCPServer()
-		}
-	})
-}
-
-func (p *panel) removeMCPServer(server feynman.CLIMCPServer) {
-	s := p.state
-	p.runUpdate(func() (func(), error) {
-		result, err := p.host.CLIMCPRemove(p.window.Context(), s.root, server.Name, server.Scope == "project")
-		rows, rowsErr := p.host.CLIMCPList(p.window.Context(), s.root)
+	if s.root == "" || s.cliBusy {
+		return
+	}
+	p.runSettingsUpdate(func() (func(), error) {
+		result, err := p.host.CLISearchAction(p.window.Context(), s.root, "clear", "", "")
+		status, statusErr := p.host.CLISearchStatus(p.window.Context(), s.root)
 		return func() {
 			s.cliResult = firstNonEmpty(result.Summary, result.RawOutput)
-			s.mcpServers = &rows
-		}, errorsJoin(err, rowsErr)
-	})
-}
-
-func (p *panel) addMCPServer() {
-	root := p.state.root
-	inputValue := feynman.CLIMCPAddInput{
-		Name:              strings.TrimSpace(p.serverName),
-		Transport:         p.serverTransport,
-		URL:               strings.TrimSpace(p.serverURL),
-		Headers:           splitLines(p.serverHeaders),
-		BearerTokenEnvVar: strings.TrimSpace(p.serverBearerEnv),
-		Command:           strings.TrimSpace(p.serverCommand),
-		Args:              strings.Fields(p.serverArgs),
-		Env:               splitLines(p.serverEnv),
-		Cwd:               strings.TrimSpace(p.serverCwd),
-		Exposure:          strings.TrimSpace(p.serverExposure),
-		Description:       strings.TrimSpace(p.serverDescription),
-		Local:             p.serverLocal,
-	}
-	p.runUpdate(func() (func(), error) {
-		result, err := p.host.CLIMCPAdd(p.window.Context(), root, inputValue)
-		rows, rowsErr := p.host.CLIMCPList(p.window.Context(), root)
-		return func() {
-			p.state.cliResult = firstNonEmpty(result.Summary, result.RawOutput)
-			p.state.mcpServers = &rows
-		}, errorsJoin(err, rowsErr)
-	})
-}
-
-func (p *panel) packageSettings(c *ui.Context) {
-	s := p.state
-	ui.Column(c.Key("feynman-package-settings")).Gap(4).Padding(7).Radius(9).Background(portrait.Colors.Fill).Children(func() {
-		sectionTitle(c, "Workflows, skills and extensions")
-		if s.packages != nil {
-			if !s.packages.Parsed {
-				resultText(c, s.packages.Command, s.packages.RawOutput, s.packages.Error)
-			} else {
-				for _, item := range s.packages.Packages {
-					ui.Row(c.Key("feynman-package-" + item.Name)).Wrap().Gap(4).AlignItems(ui.Center).Children(func() {
-						ui.Column(c).Grow(1).Children(func() {
-							text(c, portrait.Type.UI, item.Name).FontWeight(600).TextColor(portrait.Colors.Ink)
-							mutedText(c, item.Kind+" · "+item.Description)
-						})
-						action := "install"
-						label := "Install"
-						if item.Installed {
-							action, label = "remove", "Remove"
-						}
-						if smallButton(c, label, label+" "+item.Name).Disabled(s.cliBusy).Clicked() {
-							p.packageAction(action, item.Name)
-						}
-						if item.Installed && smallButton(c, "Update", "Update "+item.Name).Disabled(s.cliBusy).Clicked() {
-							p.packageAction("update", item.Name)
-						}
-					})
-				}
-			}
-		}
-		ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-			input(c, "feynman-package-name", "Package name", &p.packageTarget, "Optional target")
-			if smallButton(c, "Update all", "Update all installed Feynman packages").Disabled(s.cliBusy).Clicked() {
-				p.packageAction("update", strings.TrimSpace(p.packageTarget))
-			}
-		})
-	})
-}
-
-func (p *panel) packageAction(action, target string) {
-	root := p.state.root
-	p.runUpdate(func() (func(), error) {
-		result, err := p.host.CLIPackageAction(p.window.Context(), root, action, target)
-		rows, rowsErr := p.host.CLIPackagesList(p.window.Context(), root)
-		return func() { p.state.cliResult = firstNonEmpty(result.Summary, result.RawOutput); p.state.packages = &rows }, errorsJoin(err, rowsErr)
+			s.searchStatus = &status
+			p.searchProvider = status.RequestRoute
+		}, errorsJoin(err, statusErr)
 	})
 }
 
 func (p *panel) launchWizard(wizard, target string) {
 	root := p.state.root
-	p.runUpdate(func() (func(), error) {
+	p.runSettingsUpdate(func() (func(), error) {
 		result, err := p.host.LaunchTerminalWizard(p.window.Context(), root, wizard, target)
 		message := result.Command
 		if result.Launched {
@@ -463,7 +215,7 @@ func (p *panel) launchWizard(wizard, target string) {
 
 func (p *panel) clearSearchKey(provider string) {
 	root := p.state.root
-	p.runUpdate(func() (func(), error) {
+	p.runSettingsUpdate(func() (func(), error) {
 		result, err := p.host.CLISearchAction(p.window.Context(), root, "clear-key", provider, "")
 		status, statusErr := p.host.CLISearchStatus(p.window.Context(), root)
 		return func() {

@@ -55,10 +55,12 @@ func Toasts(c *ui.Context) ui.Element {
 func toast(c *ui.Context, t ui.Toast) ui.Element {
 	tone := toneFromType(t.Type)
 	parts := ui.ToastBase(c, t)
-	root := parts.Root.Row().Gap(10).Padding(10, 12).Radius(Radii.L).Border(0.5, tone.Border).
+	root := parts.Root.Row().Gap(10).Padding(10, 12).Radius(Radii.L).
 		MaxWidth(380).AlignItems(ui.Center).Label(t.Title)
-	Materials.Pop.Apply(root)
-	root.Background(tone.Wash)
+	pop := Materials.Pop
+	pop.Shadows = pop.Shadows[1:] // Toast owns its one crisp border.
+	pop.Apply(root)
+	root.Border(0.5, tone.Border).Background(Colors.Paper.Mix(tone.Solid, toneWashAlpha))
 	enter := ui.Motion{Y: 8, Opacity: 0}
 	root.Transition(Transition(c, c.KeyboardInput(), ui.ElementTransition{
 		Duration: Motion.Enter,
@@ -67,7 +69,7 @@ func toast(c *ui.Context, t ui.Toast) ui.Element {
 		Exit:     &enter,
 	}))
 	root.Children(func() {
-		Glyph(c, toneIcon(tone), 16, tone.Ink).Shrink(0)
+		Glyph(c, toneIcon(tone), IconSizes.M, tone.Ink).Shrink(0)
 		ui.Column(c).Grow(1).MinWidth(0).Children(func() {
 			Type.UI.Apply(ui.Text(c, t.Title)).FontWeight(600).TextColor(tone.Ink).MaxLines(2).Ellipsis("…")
 			if t.Description != "" {
@@ -81,16 +83,16 @@ func toast(c *ui.Context, t ui.Toast) ui.Element {
 		}
 		close := parts.CloseButton().Label("Close").Size(Sizes.Regular, Sizes.Regular).Radius(Radii.M).AlignItems(ui.Center).Justify(ui.Center).Shrink(0)
 		ink := Press(close, Quiet)
-		close.Children(func() { Glyph(c, IconX, 14, ink) })
+		close.Children(func() { Glyph(c, IconX, IconSizes.S, ink) })
 	})
 	return root
 }
 
 func toneType(tone Tone) string {
 	switch tone {
+	case Tones.Success:
+		return "success"
 	case Tones.Accent:
-		return "accent"
-	case Tones.Info:
 		return "info"
 	case Tones.Warning:
 		return "warning"
@@ -103,10 +105,10 @@ func toneType(tone Tone) string {
 
 func toneFromType(kind string) Tone {
 	switch kind {
-	case "accent", "success":
+	case "success":
+		return Tones.Success
+	case "accent", "info":
 		return Tones.Accent
-	case "info":
-		return Tones.Info
 	case "warning":
 		return Tones.Warning
 	case "danger", "error":

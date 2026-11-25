@@ -18,7 +18,15 @@ type Skeleton struct {
 type Shimmer = Skeleton
 
 // DefaultSkeleton is the shared loading-placeholder appearance.
-var DefaultSkeleton = Skeleton{Period: 1300 * time.Millisecond, Base: Colors.Fill, Glint: ui.RGBA(253, 253, 253, 0.828)}
+var DefaultSkeleton Skeleton
+
+func skeletonFor(p Palette, dark bool) Skeleton {
+	glint := ui.RGBA(253, 253, 253, 0.828)
+	if dark {
+		glint = white(0.07)
+	}
+	return Skeleton{Period: 1300 * time.Millisecond, Base: p.Fill, Glint: glint}
+}
 
 const (
 	shimmerTile          = 2.4

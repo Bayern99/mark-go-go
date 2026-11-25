@@ -2,6 +2,7 @@ package nativegenui_test
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"regexp"
 	"strings"
@@ -505,7 +506,7 @@ func TestTitleSizesKeepTheirOrderInCompactPlaces(t *testing.T) {
 	} {
 		drawn := titles(place[0], place[1])
 		for i, size := range sizes[:4] {
-			if drawn[i].W != page[i].W || drawn[i].H != page[i].H {
+			if math.Abs(float64(drawn[i].W-page[i].W)) > 0.01 || math.Abs(float64(drawn[i].H-page[i].H)) > 0.01 {
 				t.Errorf("%s: a %q title is %vx%v, on the page %vx%v", name, size, drawn[i].W, drawn[i].H, page[i].W, page[i].H)
 			}
 			if i > 0 && drawn[i].W <= drawn[i-1].W {

@@ -8,8 +8,8 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-func TestJumpFadeMatchesTheWebUIKeyframes(t *testing.T) {
-	accent := func(a float32) ui.Color { return ui.RGBA(47, 111, 98, a) }
+func TestJumpFadeTintsWithTheAccentOnItsKeyframes(t *testing.T) {
+	accent := func(a float32) ui.Color { return portrait.Colors.Accent.Alpha(a) }
 	want := []portrait.TintFrame{{At: 0, Color: accent(0.16), Opacity: 0.65}, {At: 0.35, Color: accent(0.12), Opacity: 1}, {At: 1, Color: ui.Transparent, Opacity: 1}}
 	got := portrait.Highlights.Jump
 	if got.Duration != 420*time.Millisecond || got.Ease != portrait.Motion.EaseOut || got.Radius != 6 || len(got.Frames) != len(want) {

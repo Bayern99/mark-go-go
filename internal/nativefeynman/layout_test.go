@@ -5,6 +5,7 @@ import (
 
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -70,7 +71,7 @@ func TestResearchDrawerAt480By360KeepsComposerVisibleAndFocusable(t *testing.T) 
 			t.Errorf("research prompt takes %v DIP, leaving too little room for the conversation", info.Bounds.H)
 		}
 	}
-	for _, name := range []string{"Model", "Thinking"} {
+	for _, name := range []string{"Model", "Thinking level"} {
 		if _, ok := app.AccessByRole(ui.RoleButton, name); !ok {
 			t.Fatalf("compact composer has no %s picker", name)
 		}
@@ -98,7 +99,7 @@ func TestResearchDrawerAt480By360KeepsComposerVisibleAndFocusable(t *testing.T) 
 		t.Fatalf("open compact model picker: %v", err)
 	}
 	app.Frame()
-	for _, name := range []string{"Use local model hold"} {
+	for _, name := range []string{"Show Local models", "Show OpenAI models"} {
 		info, ok := app.AccessByRole(ui.RoleButton, name)
 		if !ok {
 			t.Errorf("compact model popover has no accessible %q control", name)
@@ -106,8 +107,8 @@ func TestResearchDrawerAt480By360KeepsComposerVisibleAndFocusable(t *testing.T) 
 			t.Errorf("compact model control %q is outside the window: %+v offscreen=%t", name, info.Bounds, info.Offscreen)
 		}
 	}
-	if !app.HasText("1500 / 200000 tokens") {
-		t.Error("composer configuration row hid the fixture usage statistics")
+	if app.HasText("1500 / 200000 tokens") || app.HasText("$0.0125") {
+		t.Error("composer still prints token and cost statistics")
 	}
 	app.Key(0, ui.KeyEscape)
 	app.Frame()
@@ -158,12 +159,15 @@ func TestResearchHistoryPopoverFitsNarrowWindowWithoutDisplacingComposer(t *test
 	app := ui.NewTester(func(c *ui.Context) { drawFixturePane(c, p, 376, 272) }, 480, 360)
 	app.Frame()
 
-	close, ok := app.AccessByRole(ui.RoleButton, "Close conversation history")
+	actions, ok := app.AccessByRole(ui.RoleMenuButton, "Conversation actions")
 	if !ok {
-		t.Fatal("history popover has no reachable Close action")
+		t.Fatal("history popover has no reachable Conversation actions trigger")
 	}
-	if close.Offscreen || close.Bounds.X < 0 || close.Bounds.Y < 0 || close.Bounds.X+close.Bounds.W > 480 || close.Bounds.Y+close.Bounds.H > 360 {
-		t.Fatalf("history Close bounds %+v offscreen=%t, want inside the window", close.Bounds, close.Offscreen)
+	if actions.Offscreen || actions.Bounds.X < 0 || actions.Bounds.Y < 0 || actions.Bounds.X+actions.Bounds.W > 480 || actions.Bounds.Y+actions.Bounds.H > 360 {
+		t.Fatalf("history actions bounds %+v offscreen=%t, want inside the window", actions.Bounds, actions.Offscreen)
+	}
+	if _, ok := app.AccessByRole(ui.RoleButton, "Close conversation history"); ok {
+		t.Fatal("history popover should not render a redundant Close button")
 	}
 	if bounds, ok := app.Find("Feynman conversation"); !ok || bounds.H < 40 {
 		t.Fatalf("history removed the conversation scroll: bounds=%+v, present=%t", bounds, ok)
@@ -171,12 +175,12 @@ func TestResearchHistoryPopoverFitsNarrowWindowWithoutDisplacingComposer(t *test
 	if info, ok := app.AccessByRole(ui.RoleButton, "Send research prompt"); !ok || info.Offscreen || info.Bounds.Y+info.Bounds.H > 320 {
 		t.Fatalf("history obscured the composer Send action: info=%+v, present=%t", info, ok)
 	}
-	if err := app.Click("Close conversation history"); err != nil {
-		t.Fatalf("close History: %v", err)
+	if err := app.Click("Workspace conversation history"); err != nil {
+		t.Fatalf("toggle History closed: %v", err)
 	}
 	app.Frame()
-	if _, ok := app.AccessByRole(ui.RoleButton, "Close conversation history"); ok {
-		t.Fatal("History popover stayed open after Close")
+	if _, ok := app.AccessByRole(ui.RoleMenuButton, "Conversation actions"); ok {
+		t.Fatal("History popover stayed open after toggling history")
 	}
 }
 
@@ -190,20 +194,19 @@ func TestResearchComposerConfigRowWrapsWithoutShrinkingPrompt(t *testing.T) {
 	app.Frame()
 
 	model, modelOK := app.AccessByRole(ui.RoleButton, "Model")
-	thinking, thinkingOK := app.AccessByRole(ui.RoleButton, "Thinking")
+	thinking, thinkingOK := app.AccessByRole(ui.RoleButton, "Thinking level")
 	extra, extraOK := app.AccessByRole(ui.RoleButton, "Steering mode")
 	prompt, promptOK := app.AccessByRole(ui.RoleTextField, "Research prompt")
-	usage, usageOK := app.Access("1500 / 200000 tokens · $0.0125")
-	if !modelOK || !thinkingOK || !extraOK || !promptOK || !usageOK {
-		t.Fatalf("narrow composer lost a control: model=%t thinking=%t extra=%t prompt=%t usage=%t", modelOK, thinkingOK, extraOK, promptOK, usageOK)
+	if !modelOK || !thinkingOK || !extraOK || !promptOK {
+		t.Fatalf("narrow composer lost a control: model=%t thinking=%t extra=%t prompt=%t", modelOK, thinkingOK, extraOK, promptOK)
 	}
 	if thinking.Bounds.Y <= model.Bounds.Y && extra.Bounds.Y <= model.Bounds.Y {
 		t.Fatalf("configuration controls did not wrap at 220 DIP: model=%+v thinking=%+v extra=%+v", model.Bounds, thinking.Bounds, extra.Bounds)
 	}
-	if prompt.Bounds.H > 50 {
-		t.Errorf("wrapped configuration row squeezed the prompt to %v DIP", prompt.Bounds.H)
+	if prompt.Bounds.H != portrait.Form.AreaMin {
+		t.Errorf("wrapped configuration row changed the prompt to %v DIP, want %v", prompt.Bounds.H, portrait.Form.AreaMin)
 	}
-	for name, info := range map[string]ui.AccessInfo{"Model": model, "Thinking": thinking, "Steering mode": extra, "Research prompt": prompt, "Usage": usage} {
+	for name, info := range map[string]ui.AccessInfo{"Model": model, "Thinking level": thinking, "Steering mode": extra, "Research prompt": prompt} {
 		if info.Offscreen || info.Bounds.X < 96 || info.Bounds.X+info.Bounds.W > 316 || info.Bounds.Y+info.Bounds.H > 548 {
 			t.Errorf("%s is outside the narrow drawer: %+v offscreen=%t", name, info.Bounds, info.Offscreen)
 		}
@@ -217,7 +220,7 @@ func TestResearchLayoutUsesComposerPickersAtStandardWindow(t *testing.T) {
 	p := fixtureReadyPanel()
 	app := ui.NewTester(func(c *ui.Context) { drawFixturePane(c, p, 320, 772) }, 1280, 820)
 	app.Frame()
-	for _, name := range []string{"Model", "Thinking"} {
+	for _, name := range []string{"Model", "Thinking level"} {
 		if _, ok := app.AccessByRole(ui.RoleButton, name); !ok {
 			t.Errorf("standard composer lost compact picker %q", name)
 		}
@@ -229,12 +232,11 @@ func TestResearchLayoutUsesComposerPickersAtStandardWindow(t *testing.T) {
 	}
 	prompt, _ := app.AccessByRole(ui.RoleTextField, "Research prompt")
 	model, _ := app.AccessByRole(ui.RoleButton, "Model")
-	usage, _ := app.Access("1500 / 200000 tokens · $0.0125")
-	if model.Bounds.Y < prompt.Bounds.Y+prompt.Bounds.H || usage.Bounds.Y < prompt.Bounds.Y+prompt.Bounds.H {
-		t.Errorf("configuration controls are not below the prompt: prompt=%+v model=%+v usage=%+v", prompt.Bounds, model.Bounds, usage.Bounds)
+	if model.Bounds.Y < prompt.Bounds.Y+prompt.Bounds.H {
+		t.Errorf("configuration controls are not below the prompt: prompt=%+v model=%+v", prompt.Bounds, model.Bounds)
 	}
-	if err := app.Click("Thinking"); err != nil {
-		t.Fatalf("open Thinking picker: %v", err)
+	if err := app.Click("Thinking level"); err != nil {
+		t.Fatalf("open Thinking level picker: %v", err)
 	}
 	app.Frame()
 	if _, ok := app.AccessByRole(ui.RoleButton, "Set thinking level to medium"); !ok {

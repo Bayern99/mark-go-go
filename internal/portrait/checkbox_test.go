@@ -7,6 +7,30 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+func TestUncheckedCheckboxBoundaryMeetsNonTextContrast(t *testing.T) {
+	eachLook(t, func(t *testing.T, _ portrait.Space, _ bool) {
+		for _, highContrast := range []bool{false, true} {
+			checked := false
+			tt := ui.NewTesterWith(onChrome(func(c *ui.Context) {
+				portrait.Checkbox(c, &checked, "Select all")
+			}), 240, 120, ui.TesterOptions{Preferences: ui.Preferences{HighContrast: highContrast}})
+			tt.Frame()
+			info, _ := tt.AccessByRole(ui.RoleCheckBox, "Select all")
+			border := portrait.Colors.Ink3
+			if highContrast {
+				border = portrait.Colors.Ink2
+			}
+			px := tt.Image().RGBAAt(int(info.Bounds.X), int(info.Bounds.Y+info.Bounds.H/2))
+			if px.R != border.R || px.G != border.G || px.B != border.B {
+				t.Errorf("high contrast %v: border #%02x%02x%02x, want #%02x%02x%02x", highContrast, px.R, px.G, px.B, border.R, border.G, border.B)
+			}
+			if ratio := wcagContrast(wcagColor(border), wcagColor(portrait.Colors.Paper)); ratio < 3 {
+				t.Errorf("high contrast %v: boundary contrast %.3f, want >= 3", highContrast, ratio)
+			}
+		}
+	})
+}
+
 func TestCheckboxStateMatrix(t *testing.T) {
 	for _, initial := range []ui.CheckState{ui.CheckOff, ui.CheckOn, ui.CheckMixed} {
 		t.Run(map[ui.CheckState]string{ui.CheckOff: "unchecked", ui.CheckOn: "checked", ui.CheckMixed: "mixed"}[initial], func(t *testing.T) {
@@ -99,5 +123,38 @@ func TestCheckboxMarksAreVisuallyDistinct(t *testing.T) {
 	}
 	if differs(images[ui.CheckOn], images[ui.CheckMixed]) == 0 {
 		t.Fatal("checked and mixed checkboxes look identical")
+	}
+}
+
+func TestCompactCheckboxSetsItsLabelAtUIscale(t *testing.T) {
+	fullText := false
+	tt := ui.NewTester(onChrome(func(c *ui.Context) {
+		portrait.CompactCheckbox(c, &fullText, "Full text")
+	}), 240, 120)
+	tt.Frame()
+	info, ok := tt.AccessByRole(ui.RoleCheckBox, "Full text")
+	if !ok {
+		t.Fatal("compact checkbox missing from the accessibility tree")
+	}
+	if info.Bounds.H != portrait.Type.UI.Leading {
+		t.Fatalf("compact checkbox is %v tall, want the 13/18 UI line %v", info.Bounds.H, portrait.Type.UI.Leading)
+	}
+	if err := tt.Click("Full text"); err != nil {
+		t.Fatal(err)
+	}
+	if !fullText {
+		t.Fatal("compact checkbox does not toggle")
+	}
+}
+
+func TestCheckboxKeepsTheReaderSizeForDialogs(t *testing.T) {
+	checked := true
+	tt := ui.NewTester(onChrome(func(c *ui.Context) {
+		portrait.Checkbox(c, &checked, "Notes.md")
+	}), 240, 120)
+	tt.Frame()
+	info, ok := tt.AccessByRole(ui.RoleCheckBox, "Notes.md")
+	if !ok || info.Bounds.H != portrait.Type.Small.Leading {
+		t.Fatalf("checkbox = %+v, want the 14/22 reader line %v", info.Bounds, portrait.Type.Small.Leading)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Bayern99/mark-go-go/internal/nativeeditor"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -24,13 +25,13 @@ func TestSpecialBlocksCarryTheirPortraitSurfaces(t *testing.T) {
 		c := img.RGBAAt(int(info.Bounds.X+info.Bounds.W/2), int(info.Bounds.Y+4))
 		return int(c.R), int(c.G), int(c.B)
 	}
-	if r, g, b := sample("Note alert block"); !(g > r+4 && g < 255) || b == 255 {
-		t.Errorf("note alert fill %d,%d,%d, want the soft accent", r, g, b)
+	if r, g, b := sample("Note alert block"); !(b > r+4 && b > g+4 && r < 255) {
+		t.Errorf("note alert fill %d,%d,%d, want the soft accent blue", r, g, b)
 	}
 	if r, g, b := sample("Caution alert block"); !(r > g+4 && g < 255) {
 		t.Errorf("caution alert fill %d,%d,%d, want the soft caution red", r, g, b)
 	}
-	if r, g, b := sample("math block"); !(r == g && b > r && b < 255) {
+	if r, g, b := sample("math block"); [3]int{r, g, b} != [3]int{int(portrait.Colors.Code.R), int(portrait.Colors.Code.G), int(portrait.Colors.Code.B)} {
 		t.Errorf("math block fill %d,%d,%d, want the code surface", r, g, b)
 	}
 	if r, g, b := sample("a block"); !(r == g && g == b && r < 255) {
@@ -49,8 +50,8 @@ func TestFencedCodeSitsOnTheCodeSurface(t *testing.T) {
 		c := tt.Image().RGBAAt(int(r.X-6), int(r.Y+r.H/2))
 		return [3]uint8{c.R, c.G, c.B}
 	}
-	if got := at(code); got != [3]uint8{0xf6, 0xf6, 0xf8} {
-		t.Errorf("beside code %v, want the code surface #f6f6f8", got)
+	if got, want := at(code), [3]uint8{portrait.Colors.Code.R, portrait.Colors.Code.G, portrait.Colors.Code.B}; got != want {
+		t.Errorf("beside code %v, want the code surface %v", got, want)
 	}
 	if got := at(plain); got != [3]uint8{0xff, 0xff, 0xff} {
 		t.Errorf("beside prose %v, want paper", got)
@@ -77,7 +78,7 @@ func TestCodePanelInsetsTextAndStaysInsideReadingColumn(t *testing.T) {
 				c := tt.Image().RGBAAt(int(x), int(y))
 				return [3]uint8{c.R, c.G, c.B}
 			}
-			paper, surface := [3]uint8{0xff, 0xff, 0xff}, [3]uint8{0xf6, 0xf6, 0xf8}
+			paper, surface := [3]uint8{0xff, 0xff, 0xff}, [3]uint8{portrait.Colors.Code.R, portrait.Colors.Code.G, portrait.Colors.Code.B}
 			for name, at := range map[string]struct {
 				x, y float32
 			}{

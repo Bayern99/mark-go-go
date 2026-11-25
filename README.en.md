@@ -2,39 +2,54 @@
 
 [中文](README.md) · [Credits and licenses](ACKNOWLEDGMENTS.en.md)
 
-Mark Go Go is a local Markdown editor for macOS. Folder workspaces share a window and its document tabs. `Ctrl+Tab` switches between recent documents, and `⌘/` switches between the editable Preview and Markdown views. Select **GenUI** in the centre, then open **Generation settings** at the top right of the view to choose a model, generate a reading view or update it.
+Mark Go Go is a local Markdown editor for macOS written in Go with MyGo Native UI — no Electron, WebView, or Node.js runtime.
+
+## Core capabilities
+
+- **Byte-preserving in-place Markdown editing**: Editable **Preview** and raw **Markdown** share one text buffer and Undo/Redo history (`⌘E` toggles between them). Saving rewrites only modified blocks and preserves untouched Markdown bytes. Supports heading section folds, math, Mermaid diagrams, footnotes, in-place block editing, and resizable tables with wrapped rows.
+- **GenUI derived reading views**: Generates read-only views (cards, tables, charts, and local-state controls) stored beside the document as `.<name>.genui.json`, with source links back to the original headings. Version 3 keeps the **A2UI 1.0** message envelope and section hashes for partial updates (version 2 files remain readable) while expressing `components` as **OpenUI Lang 1.0** statements parsed, evaluated, and rendered natively in Go. Switch to **GenUI** in the centre, use **Request** at the top right to generate, update changed sections, or restore the previous view, and use the gear icon to pick a model in Settings.
+- **Multi-workspace window & navigation**: Folder workspaces share one window and vertical document tabs (`Ctrl+Tab` cycles recent documents). The sidebar provides **Files / Outline** switching, zero-indent directory drill-down, and top-aligned outline jumps. `⌘K` / `⌘T` opens the Command Bar for open documents, workspace files, headings, and commands; `⌘,` opens the unified Settings Center. Each workspace can choose Light/Dark appearance and a colour theme (from the Wu Xing traditional palette) to tell workspaces apart.
+
+## Shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `⌘K` / `⌘T` | Open Command Bar (documents, files, headings, commands) |
+| `⌘E` | Switch between Preview and Markdown source |
+| `⌘0` | Hide or show left sidebar (drawer in narrow windows) |
+| `⌥⌘0` | Hide or show right Feynman panel |
+| `⌘,` | Open Settings Center |
+| `Ctrl+Tab` | Switch between recent documents |
 
 ## Optional plugins
 
-Use **Workspace / Outline** in the left sidebar to switch between workspace files and headings in the active document. Use **Plugins** in the desktop tab bar to enable Feynman and Git independently. Both start disabled.
+Enable **Feynman** and **Git** independently from **Settings / Plugins** (`⌘,`) or the Command Bar (`⌘K`). Both start disabled.
 
-**Feynman** connects directly to your installed Feynman CLI in RPC mode. Install Feynman, enable the plugin, and use Feynman settings to sign in if needed. The English Portrait panel occupies the right sidebar. Switching documents in the same workspace preserves the conversation and unsent draft. Drag its left edge to resize it. Narrow windows use a drawer. [Feynman setup guide](https://feynman.is/docs/getting-started/setup)
+### Feynman
 
-Mark Go Go links existing files and directories in `~/.feynman`, including login, models, memory, MCP, skills, prompts, extensions, packages, and sessions, into its app profile. Session writes and Settings changes to a linked global MCP file are shared with the ordinary CLI. The app checks for additional links before launching Feynman, without overwriting anything already in the app profile. New state files and any name conflicts with existing private files can therefore stay separate. Feynman keeps access to user-level Pi resources, but the app's project trust file is private, denies by default, and only approves app-managed work directories. It does not change your global trust. Windows uses symbolic links, which require Developer Mode or permission to create symbolic links; it does not copy files when linking fails. Windows runtime behavior is not yet verified.
+[Feynman](https://feynman.is) is an open-source (MIT) AI research agent CLI developed by **Companion**, built on the **Pi** agent runtime and **alphaXiv**, with workflows for literature review, auditing, writing, and citation verification. Mark Go Go connects directly to your local `feynman --mode rpc` installation. In wide windows (`≥ 1180 pt`) it sits beside the document as a resizable panel; narrow windows use a drawer. Switching documents within a workspace preserves the conversation and unsent draft. [Feynman setup guide](https://feynman.is/docs/getting-started/setup)
 
-- **Chat**. Open **Actions** to choose a workflow, skill, extension or session action by name. **Browse research tools** lists tools from the running Feynman installation. Select one to inspect its parameters or add it to the current question. Choose an action, enter any instructions and send. Answer extension forms, choices and confirmations in the conversation. Typing `/` also opens the picker. Enter sends the message. Shift+Enter inserts a line break. Choose a model and thinking level, attach papers or images, inspect tool activity, follow citations, or use history to start and resume conversations in this workspace.
-- **Review**. Inspect proposed Markdown edits and apply them in the editor. One Undo restores the preceding text. Completed reports, plans and drafts appear under **Research files** and open in regular document tabs.
-- **Feynman settings**. Use the gear button to view status and manage models and MCP servers. Interactive setup and login open in the system Terminal.
+- **Chat / Files / alphaXiv**: Use **Actions** or `/` in Chat to run workflows, extensions, and session commands; select model and thinking level, attach papers or images, inspect tool calls, and follow citations (Enter sends, Shift+Enter inserts a newline, failed drafts are retained). Open generated reports and drafts from Files as regular tabs, review and apply proposed Markdown edits with single-step Undo, and manage paper context in alphaXiv. The gear icon jumps to Models & Providers, Search & Papers, MCP Servers, Packages, and Diagnostics in Settings; interactive login opens in the system Terminal.
+- **Profile linking**: Before launch, Mark Go Go links existing credentials, models, memory, MCP config, skills, prompts, extensions, packages, and sessions from `~/.feynman` into its app profile without overwriting private files; linked session and global MCP changes stay shared with the CLI. Project trust stays private, denies by default, and approves only app-managed work directories. Windows uses symlinks (requiring Developer Mode or symlink privileges) and never falls back to copying; Windows runtime behavior is not yet verified.
 
-**Git** checkpoints use local Git refs associated with the document’s repository path. Outside Git, the app keeps up to 50 local snapshots per document; those snapshots remain available if you later run `git init`. Save the document, then use **Checkpoints** in the document toolbar to create a snapshot or compare and restore an earlier version. A renamed document starts a new history.
+### Git checkpoints
 
-## Development
+Stores document snapshots as local Git refs keyed by repository path. Outside Git repositories, the app keeps up to 50 local snapshots per document, which stay accessible if you later run `git init`. Save a document, then use **Checkpoints** in the page bar to create, diff, or restore snapshots. Renamed documents start a new history.
 
-The native app uses the Go version in [go.mod](go.mod).
+## Development and verification
 
-```sh
-go tool mygo dev
-go tool mygo build
-```
-
-MyGo Native UI draws Preview, Markdown, GenUI and the workspace. Go regression tests load the 26 Markdown fixtures and shared section vectors directly. The format and protocol example live in the [GenUI format guide](docs/genui/view-format.md).
-
-## Verification
+Requires the Go version declared in [go.mod](go.mod); no Node.js required:
 
 ```sh
-scripts/verify.sh
+go tool mygo dev      # run locally
+go tool mygo build    # package for current OS
+scripts/verify.sh     # gofmt, mygo vet, full -race tests, Windows amd64 cross-build
 ```
 
-The script checks Go formatting, vet, MyGo vet, race tests and a Windows amd64 cross-build. Use the [native Automation and macOS checks](docs/agents/native-automation.md) for native windows, menus and session recovery. The [Portrait performance record](docs/agents/portrait-performance.md) preserves the WebKit baseline and the same-machine comparison method.
+## Documentation map
 
-[Architecture and code entry points](ARCHITECTURE.md) · [Interface design](DESIGN.md) · [Changelog](CHANGELOG.md) · [Acceptance evidence](docs/acceptance.md) · [MIT license](LICENSE)
+- [ARCHITECTURE.md](ARCHITECTURE.md): Read when locating packages or entry points (shell, editor, GenUI, Feynman, Portrait).
+- [DESIGN.md](DESIGN.md): Read before changing layout, colours, controls, motion, or accessibility (Portrait 2.0 rules and contracts).
+- [docs/genui/view-format.md](docs/genui/view-format.md): Read when authoring, debugging, or validating `.genui.json` views and OpenUI Lang v3 statements.
+- [docs/agents/native-automation.md](docs/agents/native-automation.md): Use when verifying macOS native windows, menus, or session recovery.
+- [CHANGELOG.md](CHANGELOG.md) · [docs/acceptance.md](docs/acceptance.md) · [LICENSE](LICENSE)

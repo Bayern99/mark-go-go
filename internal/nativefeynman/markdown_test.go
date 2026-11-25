@@ -10,7 +10,7 @@ import (
 )
 
 func TestFeynmanMarkdownSecondaryTextUsesPortraitMeta(t *testing.T) {
-	o := markdownOptions(&markdown.Options{})
+	o := markdownOptions(nil, &markdown.Options{})
 	body := portrait.Type.UI.Size
 	meta := portrait.Type.Meta.Size
 	for name, got := range map[string]float32{

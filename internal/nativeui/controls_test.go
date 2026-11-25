@@ -62,8 +62,13 @@ func TestShellIconsArePhosphorGlyphsWithNamesAndTooltips(t *testing.T) {
 			}
 		}
 	}
-	check("Show navigation", "Close Paper.md", "Plugins", "Toggle research")
+	check("Show navigation", "Toggle research")
 	if err := app.Click("Show navigation"); err != nil {
+		t.Fatal(err)
+	}
+	app.Advance(time.Second)
+	check("Close Navigation", "Close Paper.md", "Settings", "New document", "Filter files")
+	if err := app.Click("Filter files"); err != nil {
 		t.Fatal(err)
 	}
 	if err := app.Click("Filter files and headings"); err != nil {
@@ -71,7 +76,7 @@ func TestShellIconsArePhosphorGlyphsWithNamesAndTooltips(t *testing.T) {
 	}
 	app.Type("notes")
 	app.Advance(time.Second)
-	check("Close Navigation", "Clear filter")
+	check("Clear filter")
 	for _, text := range app.Texts() {
 		for _, glyph := range placeholderIcons {
 			if slices.Contains(strings.Fields(text), glyph) {
@@ -242,6 +247,22 @@ func TestViewModeCapsuleSlidesForThePointer(t *testing.T) {
 	}
 }
 
+func TestTabCloseStaysVisibleWithoutHoverCapability(t *testing.T) {
+	render := func(prefs ui.Preferences) (*ui.Tester, ui.Rect) {
+		var shell nativeui.Shell
+		m := nativeui.Model{Workspace: workspace.WorkspaceSnapshot{ActiveID: "a", Documents: []workspace.DocumentInfo{{ID: "a", Name: "One.md"}, {ID: "b", Name: "Two.md"}}}}
+		app := ui.NewTesterWith(func(c *ui.Context) { shell.Draw(c, m, nativeui.Actions{}, nativeui.Slots{}) }, 1280, 820, ui.TesterOptions{Preferences: prefs})
+		app.Frame()
+		return app, mustAccess(t, app, ui.RoleButton, "Close Two.md").Bounds
+	}
+	hoverApp, hidden := render(ui.Preferences{})
+	noHover, visible := render(ui.Preferences{NoHover: true})
+	// Compare the same close-button region on an otherwise identical frame.
+	if changed(pixels(hoverApp.Image(), hidden), pixels(noHover.Image(), visible)) == 0 {
+		t.Fatal("close button is still hidden on a device without hover")
+	}
+}
+
 func TestDocumentTabCapsuleLandsAtOnceForTheKeyboard(t *testing.T) {
 	var shell nativeui.Shell
 	m := nativeui.Model{Workspace: workspace.WorkspaceSnapshot{ActiveID: "a", Documents: []workspace.DocumentInfo{{ID: "a", Name: "One.md"}, {ID: "b", Name: "Two.md"}}}}
@@ -271,6 +292,8 @@ func TestDocumentTabCapsuleLandsAtOnceForTheKeyboard(t *testing.T) {
 	if m.Workspace.ActiveID != "b" {
 		t.Fatal("Right did not activate the next tab")
 	}
+	// The close action's eased reveal is independent of the keyboard capsule.
+	app.Advance(time.Second)
 	first := pixels(app.Image(), tabs.Bounds)
 	app.Advance(time.Second)
 	if n := changed(first, pixels(app.Image(), tabs.Bounds)); n != 0 {

@@ -73,7 +73,7 @@ func TestMenuUndoFollowsFocusedDraft(t *testing.T) {
 	tt := ui.NewTester(func(c *ui.Context) {
 		ui.Column(c).Fill().Children(func() {
 			d.View(c, false).Grow(1).FillWidth().AutoFocus()
-			ui.TextInput(c, &draft).Label("Note draft").Height(40)
+			ui.TextInputBase(c, &draft).Label("Note draft").Height(40)
 		})
 	}, 500, 280)
 	tt.Frame()

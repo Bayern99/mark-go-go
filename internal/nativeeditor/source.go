@@ -39,6 +39,8 @@ type Document struct {
 	folded           map[string]bool
 	returns          map[string]int
 	landing          jumpHighlight
+	revealScroll     revealScroll
+	lineNumbers      bool
 }
 
 func New(source string) *Document {
@@ -46,11 +48,13 @@ func New(source string) *Document {
 	language := *editor.LanguageNamed("Markdown")
 	language.Highlighter = newMarkdownHighlighter
 	buffer.SetLanguage(&language)
-	return &Document{mode: Preview, images: &inlineImages{}, state: editor.State{
+	return &Document{mode: Preview, images: &inlineImages{}, lineNumbers: true, state: editor.State{
 		Buffer: buffer, Label: "Markdown Preview", SoftWrap: true,
 		NoAutoClose: true, NoIndentGuides: true, NoScrollPastEnd: true,
 	}}
 }
+
+func (d *Document) SetLineNumbers(on bool) { d.lineNumbers = on }
 
 func (d *Document) sourceIndex() *sourceIndex {
 	snap := d.state.Buffer.Snapshot()
@@ -151,6 +155,7 @@ func (d *Document) SetMode(mode Mode) bool {
 }
 
 func (d *Document) Reload(source string) {
+	d.revealScroll = revealScroll{}
 	d.state.Buffer.Reset(source)
 	d.retryFailedInlineImages()
 }
@@ -170,6 +175,7 @@ func (d *Document) ScrollY() float32 {
 }
 
 func (d *Document) SetScrollY(y float32) {
+	d.revealScroll = revealScroll{}
 	if y < 0 {
 		y = 0
 	}
@@ -187,7 +193,7 @@ func (d *Document) SetScrollY(y float32) {
 
 func (d *Document) View(c *ui.Context, readOnly bool) ui.Element {
 	d.state.ReadOnly = readOnly
-	d.prepareView()
+	d.prepareView(c)
 	d.state.Theme = documentTheme(c.Theme(), d.mode)
 	if d.hasPendingScroll && d.state.ViewportHeight() > 0 {
 		d.hasPendingScroll = false
@@ -196,6 +202,10 @@ func (d *Document) View(c *ui.Context, readOnly bool) ui.Element {
 	d.state.Theme.Background = c.Theme().Background
 	d.decorate(c)
 	field := editor.View(c, &d.state)
+	d.applyRevealScroll(c)
+	if d.mode == Markdown {
+		field.FontFeatures("liga=0", "clig=0", "calt=0")
+	}
 	if d.hasPendingScroll {
 		c.Invalidate()
 	}

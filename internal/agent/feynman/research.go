@@ -887,13 +887,9 @@ func (h *ResearchManager) Steer(ctx context.Context, root, text string, sources 
 	approved := maps.Clone(s.sources)
 	imagePrompts := s.imagePrompts
 	h.mu.Unlock()
-	images, err := extractSourceImages(approved, sources, imagePrompts)
+	fields, err := researchSourceRPCFields(text, approved, sources, imagePrompts)
 	if err != nil {
 		return err
-	}
-	fields := map[string]any{"message": text}
-	if len(images) > 0 {
-		fields["images"] = images
 	}
 	if err := s.rpc.Call("steer", fields, nil); err != nil {
 		return err
@@ -915,36 +911,45 @@ func (h *ResearchManager) FollowUp(ctx context.Context, root, text string, sourc
 	approved := maps.Clone(s.sources)
 	imagePrompts := s.imagePrompts
 	h.mu.Unlock()
-	images, err := extractSourceImages(approved, sources, imagePrompts)
+	fields, err := researchSourceRPCFields(text, approved, sources, imagePrompts)
 	if err != nil {
 		return err
-	}
-	fields := map[string]any{"message": text}
-	if len(images) > 0 {
-		fields["images"] = images
 	}
 	return s.rpc.Call("follow_up", fields, nil)
 }
 
-func extractSourceImages(approved map[string]os.FileInfo, sources []string, imagePrompts bool) ([]map[string]string, error) {
+func researchSourceRPCFields(text string, approved map[string]os.FileInfo, sources []string, imagePrompts bool) (map[string]any, error) {
+	fields := map[string]any{"message": text}
 	if len(sources) == 0 {
-		return nil, nil
+		return fields, nil
 	}
 	blocks, _, err := researchSourceBlocks(approved, sources, imagePrompts)
 	if err != nil {
 		return nil, err
 	}
 	var images []map[string]string
+	var fileRefs []string
 	for _, block := range blocks {
-		if block["type"] == "image" {
+		switch block["type"] {
+		case "image":
 			images = append(images, map[string]string{
 				"type":     "image",
 				"mimeType": block["mimeType"],
 				"data":     block["data"],
 			})
+		case "resource_link":
+			if uri := block["uri"]; uri != "" {
+				fileRefs = append(fileRefs, uri)
+			}
 		}
 	}
-	return images, nil
+	if len(fileRefs) > 0 {
+		fields["message"] = text + "\n\nAttached source files:\n" + strings.Join(fileRefs, "\n")
+	}
+	if len(images) > 0 {
+		fields["images"] = images
+	}
+	return fields, nil
 }
 
 func (h *ResearchManager) ClearQueue(ctx context.Context, root string) (ResearchQueueState, error) {
@@ -1451,6 +1456,9 @@ func (h *ResearchManager) handleRPCEvent(s *researchSession, eventType string, r
 				return
 			}
 		case "thinking_delta":
+			// The RPC exposes thinking_delta/thinking_end without a public or
+			// summary marker, so there is no reliable raw-private payload to gate.
+			// Keep the established, user-disclosed reasoning stream unchanged.
 			if ame.Delta != "" {
 				s.streamedThink = true
 				s.streamMu.Unlock()

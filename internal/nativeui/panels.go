@@ -11,6 +11,7 @@ import (
 
 type Panels struct {
 	GenUI, Research, Checkpoints, Review func(*ui.Context)
+	Settings                             []SettingsPage
 	Changed, Closed                      func()
 }
 
@@ -64,8 +65,19 @@ func (w *Window) SetMode(mode string) {
 		w.setPreference("mgo.viewMode:"+path, mode)
 	}
 }
+
+// ToggleMode switches between reading and Markdown without exposing the
+// editor's Command-/ comment shortcut on the window's view command.
+func (w *Window) ToggleMode() {
+	mode := "preview"
+	if w.Active().ViewMode != "markdown" {
+		mode = "markdown"
+	}
+	w.SetMode(mode)
+}
+
 func (w *Window) PluginEnabled(name string) bool { return w.Preference("mgo.plugin."+name) == "on" }
-func (w *Window) Preference(key string) string   { return w.preferences.values[key] }
+func (w *Window) Preference(key string) string   { return w.store().values[key] }
 
 func (w *Window) install(p Panels) {
 	if p.GenUI != nil {
@@ -79,6 +91,9 @@ func (w *Window) install(p Panels) {
 	}
 	if p.Review != nil {
 		w.slots.Review = p.Review
+	}
+	if len(p.Settings) != 0 {
+		w.slots.Settings = append(w.slots.Settings, p.Settings...)
 	}
 	if p.Changed != nil {
 		w.changed = append(w.changed, p.Changed)

@@ -39,6 +39,8 @@ func defaultSettings() Settings {
 	}
 }
 
+func DefaultSettings() Settings { return defaultSettings() }
+
 func cleanModels(models []string) []string {
 	var out []string
 	seen := make(map[string]bool, len(models))

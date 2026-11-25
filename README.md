@@ -2,39 +2,54 @@
 
 [English](README.en.md) · [致谢与许可](ACKNOWLEDGMENTS.md)
 
-Mark Go Go 是 macOS 本地 Markdown 编辑器。多个文件夹工作区共享窗口和文档标签，`Ctrl+Tab` 在最近的文档间往返。按 `⌘/` 在可编辑的预览和 Markdown 间切换。切到中央的 **GenUI**，在视图右上角打开 **Generation settings**，即可选择模型、生成或更新阅读视图。
+Mark Go Go 是基于 Go 与 MyGo Native UI 编写的 macOS 本地 Markdown 编辑器，不依赖 Electron、WebView 或 Node.js。
+
+## 核心能力
+
+- **字节保真的原地 Markdown 编辑**：可编辑的 **Preview** 与 **Markdown** 源码共用同一文本缓冲和 Undo/Redo（`⌘E` 切换），保存时只改写编辑过的区块，保留其余原文的原始字节。支持标题章节折叠、数学公式、Mermaid 图表、脚注、就地块编辑，以及可拖拽调宽、按内容换行的表格。
+- **GenUI 衍生阅读视图**：将 Markdown 文档生成只读的卡片、表格、图表和交互控件视图，保存在文档同目录的 `.<文件名>.genui.json` 中，并支持点击来源跳回对应原文标题。v3 视图沿用 **A2UI 1.0** 消息信封与章节哈希（保留局部更新，并兼容 v2 视图），`components` 内使用 **OpenUI Lang 1.0** 语句，解析、求值与渲染均在 Go 原生完成。切到中央 **GenUI** 后，通过右上角 **Request** 生成、增量更新或回退视图，通过齿轮按钮进入设置页选择模型。
+- **多工作区与导航**：多个文件夹工作区共享同一窗口和侧栏竖排文档标签（`Ctrl+Tab` 在最近文档间往返）；侧栏提供 **Files / Outline** 切换、零缩进目录钻取与大纲顶部定位跳转；`⌘K` / `⌘T` 命令栏统一检索打开的文档、工作区文件、标题和命令；`⌘,` 打开统一设置中心。每个工作区可独立指定浅色或深色外观及配色主题（取自五行传统色表），用于区分不同目录。
+
+## 快捷键
+
+| 快捷键 | 操作 |
+|---|---|
+| `⌘K` / `⌘T` | 打开命令栏（文档、文件、标题与命令） |
+| `⌘E` | 切换 Preview 与 Markdown 源码 |
+| `⌘0` | 收起或显示左侧栏（窄窗切换抽屉） |
+| `⌥⌘0` | 收起或显示右侧 Feynman 面板 |
+| `⌘,` | 打开设置中心 |
+| `Ctrl+Tab` | 在最近文档间往返 |
 
 ## 可选插件
 
-左栏的 **Workspace / Outline** 可切换工作区文件和当前文档大纲。桌面端在文档标签栏的 **Plugins** 菜单中分别启用 Feynman 和 Git。两项初始均关闭。
+在 **Settings / Plugins**（`⌘,`）或命令栏（`⌘K`）中独立启用 **Feynman** 和 **Git**。两项默认关闭。
 
-**Feynman** 直接使用本机 Feynman CLI 的 RPC 模式。安装 Feynman 并启用插件，如需登录可在应用的 Feynman 设置中操作。右侧为英文 Portrait 面板，同一工作区切换文档时对话和输入草稿会保留。拖动分隔线可调整宽度，窄窗使用抽屉。[Feynman 设置指南](https://feynman.is/docs/getting-started/setup)
+### Feynman
 
-Mark Go Go 将 `~/.feynman` 中已有的登录凭据、模型、记忆、MCP 配置、技能、提示、扩展、包和会话等文件与目录链接到应用配置。写入已链接的会话或在设置中修改已链接的全局 MCP 配置，普通 CLI 也能看到。每次启动 Feynman 前都会补充缺失的链接，不覆盖应用配置中已有的内容。因此，新建的状态文件以及与已有私有文件同名的内容可能与全局分开。Feynman 仍可使用用户级 Pi 资源，但应用的项目信任文件独立、默认拒绝，只批准应用托管的工作目录，不修改全局信任。Windows 使用符号链接，需开启开发者模式或具备创建符号链接的权限；链接失败时不会改用复制。Windows 运行时尚未实测。
+[Feynman](https://feynman.is) 是 **Companion** 开发的开源（MIT）终端 AI 研究代理 CLI，基于 **Pi** 代理运行时和 **alphaXiv** 构建，提供文献检索、审阅、写作、核验等研究工作流。Mark Go Go 通过本机 `feynman --mode rpc` 直接连接已安装的 Feynman，不引入额外封装层；宽窗（≥ 1180 pt）在右侧以可调宽面板显示，窄窗以抽屉显示，同一工作区切换文档时保留对话与草稿。[Feynman 安装指南](https://feynman.is/docs/getting-started/setup)
 
-- **Chat**。点 **Actions** 按名称查找工作流、Skills、扩展和会话操作。**Browse research tools** 列出本机工具，选择后可以查看参数或把工具带入当前问题。扩展要求的选择、确认和文字输入直接在对话中完成。选择后填写主题或指令并发送，也支持输入 `/` 搜索。Enter 发送，Shift+Enter 换行。可以选择模型和思考级别、附上论文或图片、展开工具记录、打开引用链接，以及从历史菜单新建或恢复本工作区的对话。
-- **Review**。审阅提案差异后可将改动应用到 Markdown；这次修改可一次撤销。已完成的报告、计划和草稿可从 **Research files** 在普通文档标签中打开。
-- **Feynman settings**。从齿轮按钮查看状态并管理模型与 MCP 服务。交互式设置和登录在系统终端中打开。
+- **Chat / Files / alphaXiv**：在 Chat 中用 **Actions** 或 `/` 调用工作流、扩展与会话操作，选择模型与思考级别、附加论文或图片、查看工具调用与引用链接（Enter 发送，Shift+Enter 换行，发送失败保留草稿）；在 Files 中以普通标签打开生成的报告与草稿；通过 **Review** 对比并应用对 Markdown 的修改提案（支持一次撤销）；在 alphaXiv 栏管理论文上下文。齿轮按钮跳转至设置中心的 Models & Providers、Search & Papers、MCP Servers、Packages 与 Diagnostics；交互式登录在系统终端完成。
+- **配置链接规则**：启动前将 `~/.feynman` 中已有的凭据、模型、记忆、MCP 配置、技能、提示、扩展、包和会话链接到应用配置，不覆盖已有私有文件；已链接的会话和全局 MCP 修改与普通 CLI 互通。项目信任文件独立且默认拒绝，只批准应用托管的工作目录。Windows 使用符号链接（需开发者模式或符号链接权限），失败时不改用复制；Windows 运行时尚未实测。
 
-**Git** 检查点按仓库内的文件路径保存为独立的本地 Git 引用。不在 Git 仓库中时，应用为每篇文档保留最多 50 个本地快照；之后运行 `git init` 仍可访问这些快照。保存文档后，从文档工具栏的 **Checkpoints** 创建快照，或比较并恢复旧版本。改名后的文档从新路径开始记录。
+### Git 检查点
 
-## 开发
+按仓库内文件路径将快照保存为独立的本地 Git 引用；不在 Git 仓库中时，每篇文档保留最多 50 个本地快照，之后执行 `git init` 仍可读取。保存文档后，从纸页顶行 **Checkpoints** 创建快照、查看差异或恢复旧版。文档改名后从新路径开始记录。
 
-原生应用使用 [go.mod](go.mod) 指定的 Go 版本。
+## 开发与验证
 
-```sh
-go tool mygo dev
-go tool mygo build
-```
-
-预览、Markdown、GenUI 和工作区界面由 MyGo Native UI 绘制。26 份 Markdown 语料和共享章节向量由 Go 回归测试直接载入；格式与协议示例见 [GenUI 格式](docs/genui/view-format.md)。
-
-## 验证
+需要 [go.mod](go.mod) 指定的 Go 版本，无需 Node.js：
 
 ```sh
-scripts/verify.sh
+go tool mygo dev      # 本地运行
+go tool mygo build    # 构建当前平台安装包
+scripts/verify.sh     # gofmt、mygo vet、全包 -race 测试与 Windows amd64 交叉编译
 ```
 
-脚本运行 Go 格式、vet、MyGo vet、竞态测试及 Windows amd64 交叉编译。macOS 原生窗口、菜单和重启使用 [原生 Automation 与 macOS 验证流程](docs/agents/native-automation.md)。历史 WebKit 基线及同机对照方法见 [Portrait 性能记录](docs/agents/portrait-performance.md)。
+## 文档索引
 
-[架构与代码入口](ARCHITECTURE.md) · [界面设计](DESIGN.md) · [更新日志](CHANGELOG.md) · [验收记录](docs/acceptance.md) · [MIT 许可证](LICENSE)
+- [ARCHITECTURE.md](ARCHITECTURE.md)：排查代码位置或了解包边界时阅读（窗口外壳、编辑器、GenUI、Feynman、Portrait 入口）。
+- [DESIGN.md](DESIGN.md)：修改界面布局、配色、控件、动效或无障碍行为前阅读（Portrait 2.0 规范与测试契约）。
+- [docs/genui/view-format.md](docs/genui/view-format.md)：编写、调试或校验 `.genui.json` 视图与 OpenUI Lang v3 语句时阅读。
+- [docs/agents/native-automation.md](docs/agents/native-automation.md)：验证 macOS 原生窗口、菜单或会话恢复时使用。
+- [CHANGELOG.md](CHANGELOG.md) · [docs/acceptance.md](docs/acceptance.md) · [LICENSE](LICENSE)

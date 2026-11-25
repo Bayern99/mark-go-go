@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1931,6 +1932,77 @@ func TestEmitStatsUpdateConcurrentWithSetModelRace(t *testing.T) {
 		}
 	}()
 	wg.Wait()
+}
+
+func TestSteerAndFollowUpForwardNonImageSourceURIs(t *testing.T) {
+	home := t.TempDir()
+	root := t.TempDir()
+	data := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("FEYNMAN_HOME", home)
+
+	h := NewResearchManager(fakeWorkspaceLookup{dataDir: data})
+	defer h.Close()
+	h.command = fixtureCommand(home)
+	events := make(chan ResearchUpdate, 128)
+	if err := h.connect(WorkspaceRef{Root: root}, func(e ResearchUpdate) { events <- e }); err != nil {
+		t.Fatalf("connect failed: %v", err)
+	}
+	drainEvents(events)
+
+	paths := []string{filepath.Join(root, "notes.md"), filepath.Join(root, "paper.pdf")}
+	for i, path := range paths {
+		if err := os.WriteFile(path, []byte(fmt.Sprintf("source %d", i)), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	approved, err := selectedResearchFiles(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.mu.Lock()
+	h.sessions[fsutil.CanonicalPath(root)].sources = approved
+	h.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := h.Host().Prompt(ctx, root, "wait for steer and follow_up", "", "")
+		done <- err
+	}()
+	waitUpdate(t, events, "progress")
+	if err := h.Host().Steer(ctx, root, "Review these sources", paths); err != nil {
+		t.Fatalf("Steer failed: %v", err)
+	}
+	steered := waitUpdate(t, events, "queue").Queue
+	if steered == nil || len(steered.Steering) != 1 {
+		t.Fatalf("steering queue = %+v", steered)
+	}
+	if err := h.Host().FollowUp(ctx, root, "Read the same sources", paths); err != nil {
+		t.Fatalf("FollowUp failed: %v", err)
+	}
+	followed := waitUpdate(t, events, "queue").Queue
+	if followed == nil || len(followed.FollowUp) != 1 {
+		t.Fatalf("follow-up queue = %+v", followed)
+	}
+	for _, message := range []string{steered.Steering[0], followed.FollowUp[0]} {
+		if !strings.Contains(message, "Attached source files:\n") {
+			t.Errorf("RPC message has no attachment section: %q", message)
+		}
+		for _, path := range paths {
+			uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String()
+			if !strings.Contains(message, uri) {
+				t.Errorf("RPC message %q does not include %q", message, uri)
+			}
+		}
+	}
+	if err := h.Host().Steer(ctx, root, "release turn", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("Prompt failed: %v", err)
+	}
 }
 
 func TestPromptWithSourcesUsesMCPProposeEditInsteadOfStaging(t *testing.T) {

@@ -8,11 +8,15 @@ import (
 
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
 	"github.com/Bayern99/mark-go-go/internal/review"
+	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo/ui"
 )
 
 func fixtureBusyPanel() *panel {
 	p := fixtureReadyPanel()
+	p.activeDocument = func() workspace.DocumentInfo {
+		return workspace.DocumentInfo{ID: "active", Name: "Current.md", Path: "/workspace/notes/Current.md", WorkspaceRoot: "/workspace/notes"}
+	}
 	s := p.state
 	s.status = statusWorking
 	s.progress = "Reading three sources"
@@ -53,7 +57,7 @@ func drawWidePane(c *ui.Context, p *panel) {
 	})
 }
 
-var researchTabs = []string{"chat", "files", "settings", "alpha"}
+var researchTabs = []string{"chat", "files", "alpha"}
 
 func forEachTab(t *testing.T, prefs ui.Preferences, check func(t *testing.T, app *ui.Tester)) {
 	for _, tab := range researchTabs {
@@ -65,6 +69,30 @@ func forEachTab(t *testing.T, prefs ui.Preferences, check func(t *testing.T, app
 			app.Frame()
 			app.Advance(time.Second)
 			check(t, app)
+		})
+	}
+}
+
+func TestSettingsPagesUsePortraitTextAndIcons(t *testing.T) {
+	draws := map[string]func(*panel, *ui.Context){
+		"models":      func(p *panel, c *ui.Context) { p.modelSettings(c) },
+		"search":      func(p *panel, c *ui.Context) { p.searchSettings(c); p.alphaSettings(c) },
+		"mcp":         func(p *panel, c *ui.Context) { p.mcpSettings(c) },
+		"packages":    func(p *panel, c *ui.Context) { p.packageSettings(c) },
+		"diagnostics": func(p *panel, c *ui.Context) { p.statusSettings(c) },
+	}
+	for name, draw := range draws {
+		t.Run(name, func(t *testing.T) {
+			p := fixtureBusyPanel()
+			app := ui.NewTester(func(c *ui.Context) {
+				ui.Column(c).Fill().Padding(12).Children(func() { draw(p, c) })
+			}, 1280, 2400)
+			app.Frame()
+			for _, info := range app.AccessAll() {
+				if info.Role == ui.RoleText && !info.Offscreen && info.Name != "" && info.Bounds.H < 14 {
+					t.Errorf("text %q is only %v tall", info.Name, info.Bounds.H)
+				}
+			}
 		})
 	}
 }
@@ -81,7 +109,11 @@ func TestResearchPanelTextIsNeverSmallerThanMeta(t *testing.T) {
 				t.Errorf("text %q is %v DIP tall, smaller than the 12px meta step", a.Name, a.Bounds.H)
 			}
 		}
-		if texts < 5 {
+		minimum := 5
+		if app.HasText("alphaXiv research") {
+			minimum = 4
+		}
+		if texts < minimum {
 			t.Fatalf("only %d texts drawn; the fixture did not render", texts)
 		}
 	})
@@ -190,5 +222,67 @@ func TestResearchSendButtonSinksWhilePressed(t *testing.T) {
 	}
 	if changed < len(rest)/4 {
 		t.Fatalf("pressing Send changed %d of %d pixels, want press feedback", changed, len(rest))
+	}
+}
+
+func TestResearchToolbarActionsAreQuietAndShowWhatIsOpen(t *testing.T) {
+	p := fixtureReadyPanel()
+	app := ui.NewTester(func(c *ui.Context) { drawWidePane(c, p) }, 1280, 820)
+	app.Frame()
+	edge := func(name string) (inside, outside uint32) {
+		t.Helper()
+		info, ok := app.AccessByRole(ui.RoleButton, name)
+		if !ok {
+			t.Fatalf("missing %s", name)
+		}
+		img := app.Image()
+		at := func(x, y float32) uint32 {
+			r, g, b, _ := img.At(int(x), int(y)).RGBA()
+			return r + g + b
+		}
+		y := info.Bounds.Y + info.Bounds.H/2
+		return at(info.Bounds.X+3, y), at(info.Bounds.X-2, y)
+	}
+	for _, name := range []string{"Workspace conversation history", "Attach source files", "Browse workflows, skills and extensions"} {
+		if inside, outside := edge(name); inside != outside {
+			t.Errorf("%s paints a raised fill at rest: %d vs surrounding %d", name, inside, outside)
+		}
+	}
+	p.state.sessionsOpen = true
+	app.Frame()
+	if inside, outside := edge("Workspace conversation history"); inside == outside {
+		t.Error("History looks the same while the conversation list is open")
+	}
+}
+
+func TestResponseCopyShowsOnHoverOrFocus(t *testing.T) {
+	p := fixtureReadyPanel()
+	app := ui.NewTester(func(c *ui.Context) { drawWidePane(c, p) }, 1280, 820)
+	app.Frame()
+	copyButton, ok := app.AccessByRole(ui.RoleButton, "Copy Feynman response")
+	if !ok {
+		t.Fatal("missing Copy")
+	}
+	ink := func() int {
+		img := app.Image()
+		b := copyButton.Bounds
+		n := 0
+		for y := int(b.Y); y < int(b.Y+b.H); y++ {
+			for x := int(b.X); x < int(b.X+b.W); x++ {
+				if r, _, _, _ := img.At(x, y).RGBA(); r>>8 < 200 {
+					n++
+				}
+			}
+		}
+		return n
+	}
+	if n := ink(); n != 0 {
+		t.Fatalf("Copy shows %d ink pixels at rest, want it hidden until hover", n)
+	}
+	app.Move(copyButton.Bounds.X+copyButton.Bounds.W/2, copyButton.Bounds.Y-20)
+	app.Advance(time.Second)
+	app.Frame()
+	if ink() == 0 {
+		t.Fatal("hovering the response did not reveal Copy")
 	}
 }

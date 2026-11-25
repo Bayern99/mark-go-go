@@ -96,11 +96,11 @@ func TestPreviewSetsHanInIBMPlexSansSCBesideLatin(t *testing.T) {
 	}
 }
 
-func TestPreviewDisplayHeadingsAreSizeAdjusted(t *testing.T) {
+func TestPreviewDisplayHeadingsUseInterDisplayAtTheirOwnSize(t *testing.T) {
 	for _, tc := range []struct {
 		src  string
 		size float32
-	}{{"# HHHHHHHHHH\n", 28 * 1.05}, {"## HHHHHHHHHH\n", 20 * 1.05}} {
+	}{{"# HHHHHHHHHH\n", 28}, {"## HHHHHHHHHH\n", 20}} {
 		d := nativeeditor.New(tc.src)
 		tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 900, 300)
 		tt.Frame()
@@ -109,13 +109,13 @@ func TestPreviewDisplayHeadingsAreSizeAdjusted(t *testing.T) {
 		b, _ := d.RectUTF16(start + 10)
 		ref := ui.NewTester(func(c *ui.Context) {
 			ui.Row(c).Children(func() {
-				ui.Text(c, "HHHHHHHHHH").Font("Barlow Semi Condensed").FontSize(tc.size).FontWeight(600)
+				ui.Text(c, "HHHHHHHHHH").Font("Inter Display").FontSize(tc.size).FontWeight(600)
 			})
 		}, 900, 100)
 		ref.Frame()
 		r, _ := ref.Find("HHHHHHHHHH")
 		if got := b.X - a.X; got < r.W-0.5 || got > r.W+0.5 {
-			t.Errorf("%q advances %v, want %v (Barlow Semi Condensed at %v)", strings.TrimSpace(tc.src), got, r.W, tc.size)
+			t.Errorf("%q advances %v, want %v (Inter Display at %v)", strings.TrimSpace(tc.src), got, r.W, tc.size)
 		}
 	}
 }

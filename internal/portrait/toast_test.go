@@ -29,6 +29,35 @@ func (h *toastHarness) notify(spec portrait.ToastSpec) {
 	h.pending = append(h.pending, spec)
 }
 
+func TestToastHasOpaqueWashAndSingleCrispBorderAtOneX(t *testing.T) {
+	tone := portrait.Tones.Success
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Background(portrait.Colors.Chrome).Padding(40).AlignItems(ui.Start).Children(func() {
+			portrait.Toast(c, portrait.ToastSpec{ID: "saved", Tone: tone, Title: "Saved", Timeout: -1})
+		})
+	}, 480, 240)
+	tt.SetScale(1)
+	tt.Frame()
+	tt.Advance(portrait.Motion.Enter + 20*time.Millisecond)
+	info, ok := tt.AccessByRole(ui.RoleStatus, "Saved")
+	if !ok {
+		t.Fatal("toast status is missing")
+	}
+	x, y := int(info.Bounds.X), int(info.Bounds.Y+info.Bounds.H/2)
+	edge := tt.Image().RGBAAt(x, y)
+	inside := tt.Image().RGBAAt(x+1, y)
+	want := portrait.Colors.Paper.Mix(tone.Solid, 0.08)
+	if inside.R != want.R || inside.G != want.G || inside.B != want.B || inside.A != 255 {
+		t.Fatalf("toast wash = %v, want opaque Paper/Solid mix %v", inside, want)
+	}
+	if edge == inside || edge == tt.Image().RGBAAt(x-1, y) {
+		t.Fatalf("toast edge %v is not a distinct single border beside %v", edge, inside)
+	}
+	if next := tt.Image().RGBAAt(x+2, y); next != inside {
+		t.Fatalf("toast has a second inner edge: border=%v next=%v inside=%v", edge, next, inside)
+	}
+}
+
 func TestToastWithSameIDUpdatesInPlace(t *testing.T) {
 	tt, h := newToastTester()
 	h.notify(portrait.ToastSpec{ID: "generation:a", Tone: portrait.Tones.Info, Title: "Generating…", Timeout: -1})

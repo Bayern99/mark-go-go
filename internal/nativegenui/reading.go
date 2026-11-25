@@ -236,7 +236,7 @@ const (
 )
 
 func cardTitle(c *ui.Context, title string) {
-	portrait.Type.Meta.In(portrait.FontDisplay).Apply(ui.Text(c, strings.ToUpper(title))).
+	portrait.Type.Meta.Apply(ui.Text(c, strings.ToUpper(title))).
 		FontWeight(600).LetterSpacing(0.07 * portrait.Type.Meta.Size).TextColor(portrait.Colors.Ink3).Role(ui.RoleHeading).Label(title)
 }
 func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
@@ -281,7 +281,7 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 		}
 		state.tab = min(state.tab, len(names)-1)
 		layout(ui.Column(c).Gap(8), n).Children(func() {
-			ui.Tabs(c, &state.tab, names...).Label("Reading sections")
+			portrait.Segmented(c, &state.tab, names, "Reading sections")
 			r.node(c, n.Tabs[state.tab].Child, parents)
 		})
 	case "Card":
@@ -336,7 +336,7 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 					var s string
 					if json.Unmarshal(raw, &s) == nil {
 						ui.Row(c.Key(i)).Gap(8).AlignItems(ui.Start).Children(func() {
-							portrait.Type.Meta.In(portrait.FontDisplay).Apply(ui.Text(c, fmt.Sprintf("%02d", i+1))).FontWeight(600).FontFeatures("tnum").
+							portrait.Type.Meta.Apply(ui.Text(c, fmt.Sprintf("%02d", i+1))).FontWeight(600).FontFeatures("tnum").
 								TextColor(portrait.Colors.Ink3).Width(24).Shrink(0).Padding(4, 0, 0, 0).AccessHidden(true)
 							portrait.Type.Reading.Apply(ui.Text(c, s)).Grow(1).MinWidth(0).Selectable()
 						})
@@ -347,7 +347,8 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 					if state.expanded {
 						label = "Show fewer"
 					}
-					if ui.Button(c, label).Clicked() {
+					toggle := portrait.ButtonWith(c, label, label, portrait.ButtonSpec{Look: portrait.Quiet}).AlignSelf(ui.Start)
+					if toggle.Clicked() {
 						state.expanded = !state.expanded
 					}
 				}
@@ -371,7 +372,7 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 								change := portrait.Colors.Ink3
 								switch m.Trend {
 								case "up":
-									change = portrait.Colors.Accent
+									change = portrait.Colors.Success
 								case "down":
 									change = portrait.Colors.Danger
 								}
@@ -422,7 +423,7 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 						if item.Done {
 							ink = portrait.Colors.Ink3
 							box.Background(portrait.Colors.Accent).Border(1, portrait.Colors.Accent).Children(func() {
-								portrait.Glyph(c, portrait.IconCheck, 11, portrait.Colors.OnAccent)
+								portrait.Glyph(c, portrait.IconCheck, portrait.IconSizes.XS, portrait.Colors.OnAccent)
 							})
 						}
 						portrait.Type.Reading.Apply(ui.Text(c, item.Text)).TextColor(ink).Grow(1).MinWidth(0)
@@ -555,7 +556,7 @@ func comparison(c *ui.Context, n Node, st *componentState) {
 						}
 					}
 					ui.Column(c.Key(i)).Width(128).Shrink(0).Role(ui.RoleColumnHeader).Label(label).Sort(order).Children(func() {
-						if ui.Button(c, label+mark).Label("Sort by " + label).Clicked() {
+						if portrait.ButtonWith(c, label+mark, "Sort by "+label, portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Compact}).Clicked() {
 							if st.column != i {
 								st.order = 0
 							}

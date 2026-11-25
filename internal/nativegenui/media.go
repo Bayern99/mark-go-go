@@ -93,7 +93,7 @@ func (r *Reading) media(c *ui.Context, e *openuilang.Element, p props, path stri
 		if anchor.Clicked() {
 			state.open = !state.open
 		}
-		ui.Popover(c, anchor, &state.open, func() {
+		portrait.Popover(c, anchor, &state.open, func() {
 			ui.Column(c).Padding(14).MaxWidth(320).MinWidth(0).Children(func() {
 				r.stack(c, p.value("content"), path+"/content", depth, place{compact: true, nested: true}, groupGap, true)
 			})

@@ -11,6 +11,46 @@ import (
 // (rest, hover, press) in controls.go/button.go meet WCAG AA contrast against
 // their ink colors when composited over Paper.
 func TestLookSurfacesMeetWCAGAA(t *testing.T) {
+	t.Cleanup(func() { Use(DefaultSpace, false) })
+	for _, space := range Spaces {
+		for _, dark := range []bool{false, true} {
+			Use(space, dark)
+			t.Run(space.Name, func(t *testing.T) { lookSurfacesMeetWCAGAA(t) })
+		}
+	}
+}
+
+func TestSettingsControlsMeetWCAGAA(t *testing.T) {
+	t.Cleanup(func() { Use(DefaultSpace, false) })
+	for _, space := range Spaces {
+		for _, dark := range []bool{false, true} {
+			Use(space, dark)
+			t.Run(space.Name, func(t *testing.T) {
+				paper := lookRGBA(Colors.Paper)
+				card := lookOver(lookRGBA(Colors.Fill), paper)
+				for _, check := range []struct {
+					name string
+					fg   ui.Color
+					bg   [4]float64
+				}{
+					{"SettingsRow title", Colors.Ink, card},
+					{"SettingsRow description", Colors.Ink3, card},
+					{"Select text", Colors.Ink, lookOver(lookRGBA(Materials.Raised.From), paper)},
+					{"Menu item", Colors.Ink, lookOver(lookRGBA(Materials.GlassOverlay.Tint), paper)},
+					{"TextField text", Colors.Ink, paper},
+					{"Stepper value", Colors.Ink, paper},
+					{"AccentSoft pill", Colors.Accent, lookOver(lookRGBA(Colors.AccentSoft), paper)},
+				} {
+					if ratio := lookContrast(lookRGBA(check.fg), check.bg); ratio < 4.5 {
+						t.Errorf("%s contrast %.4f, want >= 4.5", check.name, ratio)
+					}
+				}
+			})
+		}
+	}
+}
+
+func lookSurfacesMeetWCAGAA(t *testing.T) {
 	paper := lookRGBA(Colors.Paper)
 	for _, tc := range []struct {
 		name string

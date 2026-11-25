@@ -7,7 +7,7 @@ const FrameInset float32 = 4
 var (
 	FrameInnerRadius = Radii.M
 	FrameOuterRadius = Radii.L
-	frameTray        = Colors.Fill.Alpha(0.72)
+	frameTray        ui.Color
 )
 
 // Card presents content on an opaque sheet with a hairline edge. It is safe

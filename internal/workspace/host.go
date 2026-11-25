@@ -59,10 +59,6 @@ func (h *Host) Load(ctx context.Context, documentID string) (Snapshot, error) {
 	return h.s.Load(ctx, documentID)
 }
 
-func (h *Host) MoveTo(ctx context.Context, documentID string) error {
-	return h.s.MoveTo(ctx, documentID)
-}
-
 func (h *Host) NavSnapshot(ctx context.Context) (NavSnapshot, error) {
 	return h.s.NavSnapshot(ctx)
 }
@@ -89,10 +85,6 @@ func (h *Host) PrepareQuit(ctx context.Context, attempt int, failure string) err
 
 func (h *Host) RecentWorkspaces(ctx context.Context) ([]RecentWorkspace, error) {
 	return h.s.RecentWorkspaces(ctx)
-}
-
-func (h *Host) Rename(ctx context.Context, documentID string) error {
-	return h.s.Rename(ctx, documentID)
 }
 
 func (h *Host) RevealPath(ctx context.Context, path string) error {

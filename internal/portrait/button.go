@@ -1,8 +1,14 @@
 package portrait
 
-import "github.com/egoist/mygo/ui"
+import (
+	"math"
 
-var (
+	"github.com/egoist/mygo/ui"
+)
+
+var dangerRest, dangerHover, dangerPress, dangerOutlineRest, dangerOutlineHover, dangerOutlinePress Surface
+
+func dangerSurfaces() {
 	dangerRest = Surface{Tones.Danger.Solid, Tones.Danger.Solid, Shadows{
 		in(0, 1, 0, 0, white(0.16)),
 		in(0, -1, 0, 0, black(0.12)),
@@ -26,7 +32,7 @@ var (
 	dangerOutlinePress = Surface{Tones.Danger.Soft, Tones.Danger.Soft, Shadows{
 		in(0, 0, 0, 1, Tones.Danger.Ring),
 	}}
-)
+}
 
 // ButtonSpec describes the independent axes of a button. Size is one of
 // Sizes.Compact, Sizes.Regular, or Sizes.Large; its zero value is Regular.
@@ -35,11 +41,15 @@ type ButtonSpec struct {
 	Size              float32
 	Leading, Trailing Icon
 	Loading, Selected bool
+	Disabled          bool
 }
 
 // ButtonWith builds a text or icon button from spec. A loading button exposes
 // its progress and is disabled, so it cannot trigger the action again.
 func ButtonWith(c *ui.Context, title, label string, spec ButtonSpec) ui.Element {
+	if (spec.Look == Danger || spec.Look == DangerOutline) && spec.Leading == IconNone && colorHueDistance(Colors.Accent, Colors.Danger) <= 35 {
+		spec.Leading = IconWarning
+	}
 	size, radius, padding, textStyle := buttonSize(spec.Size)
 	b := ui.ButtonBase(c.Key(label)).Label(label).Height(size).Radius(radius).Gap(6).AlignItems(ui.Center).Justify(ui.Center)
 	if title == "" {
@@ -50,7 +60,7 @@ func ButtonWith(c *ui.Context, title, label string, spec ButtonSpec) ui.Element 
 	if label != title {
 		Tooltip(c, b, label)
 	}
-	b.Selected(spec.Selected).Disabled(spec.Loading).Busy(spec.Loading)
+	b.Selected(spec.Selected).Disabled(spec.Disabled || spec.Loading).Busy(spec.Loading)
 	ink := Press(b, spec.Look)
 	if spec.Selected && !b.Pressed() {
 		ink = selectedButtonLook(b, spec.Look, ink)
@@ -59,7 +69,7 @@ func ButtonWith(c *ui.Context, title, label string, spec ButtonSpec) ui.Element 
 		if spec.Loading {
 			Spinner(c, "Loading "+label)
 		} else if spec.Leading.Glyph != "" {
-			Glyph(c, spec.Leading, Type.UI.Size, ink).Shrink(0)
+			Glyph(c, spec.Leading, IconSizes.S, ink).Shrink(0)
 		}
 		if title != "" {
 			text := textStyle.Apply(ui.Text(c, title)).FontWeight(500).TextColor(ink).MaxLines(1).Ellipsis("…")
@@ -68,7 +78,7 @@ func ButtonWith(c *ui.Context, title, label string, spec ButtonSpec) ui.Element 
 			}
 		}
 		if spec.Trailing.Glyph != "" {
-			Glyph(c, spec.Trailing, Type.UI.Size, ink).Shrink(0)
+			Glyph(c, spec.Trailing, IconSizes.S, ink).Shrink(0)
 		}
 	})
 	return b
@@ -83,6 +93,34 @@ func buttonSize(size float32) (height, radius, padding float32, text TypeStyle) 
 	default:
 		return Sizes.Regular, Radii.M, 11, Type.UI
 	}
+}
+
+func colorHueDistance(a, b ui.Color) float64 {
+	difference := math.Abs(colorHue(a) - colorHue(b))
+	return math.Min(difference, 360-difference)
+}
+
+func colorHue(c ui.Color) float64 {
+	r, g, b := float64(c.R)/255, float64(c.G)/255, float64(c.B)/255
+	maximum := math.Max(r, math.Max(g, b))
+	minimum := math.Min(r, math.Min(g, b))
+	delta := maximum - minimum
+	if delta == 0 {
+		return 0
+	}
+	var hue float64
+	switch maximum {
+	case r:
+		hue = math.Mod((g-b)/delta, 6)
+	case g:
+		hue = (b-r)/delta + 2
+	default:
+		hue = (r-g)/delta + 4
+	}
+	if hue < 0 {
+		hue += 6
+	}
+	return hue * 60
 }
 
 func selectedButtonLook(b ui.Element, look Look, ink ui.Color) ui.Color {

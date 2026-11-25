@@ -2,8 +2,10 @@ package nativeeditor
 
 import (
 	"image/color"
+	"strings"
 	"testing"
 
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -45,9 +47,63 @@ func TestPreviewTaskCheckboxKeyboardToggleAndFocusRing(t *testing.T) {
 	}
 }
 
+func TestPreviewAndPortraitCheckboxPixelsMatch(t *testing.T) {
+	previewChecked, portraitChecked := true, true
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Row(c).Gap(20).Children(func() {
+			previewTaskCheckbox(c.Key("preview"), &previewChecked).Label("Preview task")
+			portrait.Checkbox(c.Key("portrait"), &portraitChecked, "").Label("Portrait task")
+		})
+	}, 120, 60)
+	tt.Frame()
+	preview, previewOK := tt.Access("Preview task")
+	standard, standardOK := tt.Access("Portrait task")
+	if !previewOK || !standardOK || preview.Bounds.W != standard.Bounds.W || preview.Bounds.H != standard.Bounds.H {
+		t.Fatalf("checkbox bounds differ: preview=%+v portrait=%+v", preview.Bounds, standard.Bounds)
+	}
+	for y := 0; y < int(preview.Bounds.H); y++ {
+		for x := 0; x < int(preview.Bounds.W); x++ {
+			a := tt.Image().RGBAAt(int(preview.Bounds.X)+x, int(preview.Bounds.Y)+y)
+			b := tt.Image().RGBAAt(int(standard.Bounds.X)+x, int(standard.Bounds.Y)+y)
+			if a != b {
+				t.Fatalf("checkbox pixel (%d,%d) differs: preview=%v portrait=%v", x, y, a, b)
+			}
+		}
+	}
+}
+
 func abs(n int) int {
 	if n < 0 {
 		return -n
 	}
 	return n
+}
+
+// TestPreviewBulletAndTaskTextShareOneColumn pins the marker column: an
+// ordinary bullet and a task checkbox occupy the same 20 points, so the first
+// glyph of their text starts at the same x.
+func TestPreviewBulletAndTaskTextShareOneColumn(t *testing.T) {
+	const src = "- Alpha\n- [ ] Beta\n- [x] Gamma\n"
+	d := New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 480, 240)
+	tt.Frame()
+	x := func(source string) float32 {
+		t.Helper()
+		at := strings.Index(src, source)
+		if at < 0 {
+			t.Fatalf("%q is not in the fixture", source)
+		}
+		r, ok := d.RectUTF16(at)
+		if !ok {
+			t.Fatalf("no position for %q", source)
+		}
+		return r.X
+	}
+	bullet := x("Alpha")
+	if task := x("Beta"); task != bullet {
+		t.Fatalf("task text starts at x=%.2f, bullet text at x=%.2f: the marker columns differ", task, bullet)
+	}
+	if done := x("Gamma"); done != bullet {
+		t.Fatalf("completed task text starts at x=%.2f, bullet text at x=%.2f", done, bullet)
+	}
 }

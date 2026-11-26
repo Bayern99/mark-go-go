@@ -28,8 +28,8 @@ func TestReaderNoteShortcutsFollowNoteFocus(t *testing.T) {
 	p := &panel{win: &nativeui.Window{}}
 	app := ui.NewTester(func(c *ui.Context) {
 		ui.Column(c).Fill().Children(func() {
-			portrait.Button(c, "Elsewhere", "Elsewhere")
 			p.drawSources(c, v, workspace.DocumentInfo{Path: "doc.md"}, card, false)
+			portrait.Button(c, "Elsewhere", "Elsewhere").Absolute().Left(20).Bottom(20)
 		})
 	}, 620, 420)
 	app.Frame()
@@ -52,14 +52,14 @@ func TestReaderNoteShortcutsFollowNoteFocus(t *testing.T) {
 		t.Fatal(err)
 	}
 	app.Frame()
-	app.Key(ui.Cmd, ui.KeyEnter)
-	app.Frame()
-	app.Key(0, ui.KeyEscape)
-	app.Frame()
-	if v.noteTarget != card.ID || v.note != "Draft note" || v.message != "" {
-		t.Fatalf("shortcuts away from the note changed it: target=%q note=%q message=%q", v.noteTarget, v.note, v.message)
+	if v.noteTarget != "" || v.note != "" || !app.Focused("Elsewhere") {
+		t.Fatalf("outside dismissal did not preserve pointer focus: target=%q note=%q message=%q", v.noteTarget, v.note, v.message)
 	}
 
+	if err := app.Click("Add note"); err != nil {
+		t.Fatal(err)
+	}
+	app.Frame()
 	if err := app.Click("Reader note"); err != nil {
 		t.Fatal(err)
 	}
@@ -141,6 +141,28 @@ func TestReaderNoteShortcutsIgnoreActiveIMEComposition(t *testing.T) {
 	}
 }
 
+func TestGenerationRequestLinesClampExplicitAndWrappedText(t *testing.T) {
+	tests := []struct {
+		name, text string
+		width      float32
+		want       int
+	}{
+		{name: "empty", want: 1},
+		{name: "two explicit lines", text: "First\nSecond", want: 2},
+		{name: "explicit lines cap at three", text: "First\nSecond\nThird\nFourth", want: 3},
+		{name: "wrapped text grows", text: strings.Repeat("wrapped request words ", 12), width: 80, want: 3},
+		{name: "short wrapped text", text: "Short", width: 320, want: 1},
+	}
+	app := ui.NewTester(func(c *ui.Context) {
+		for _, test := range tests {
+			if got := generationRequestLines(c, test.text, test.width); got != test.want {
+				t.Errorf("%s: lines = %d, want %d", test.name, got, test.want)
+			}
+		}
+	}, 640, 400)
+	app.Frame()
+}
+
 func TestChangedIDsUsesStoredIDsForRepeatedInstances(t *testing.T) {
 	view := &documentView{
 		reading: Reading{surface: &Surface{
@@ -203,7 +225,7 @@ func TestChangedConditionalSourcesNameTheirStatementsEvenWhenHidden(t *testing.T
 	}
 
 	d := workspace.DocumentInfo{Path: "doc.md"}
-	settings := ui.NewTester(func(c *ui.Context) { p.drawSettings(c, v, d, false) }, 640, 400)
+	settings := ui.NewTester(func(c *ui.Context) { p.drawOptions(c, v, d, false) }, 640, 400)
 	settings.Frame()
 	if !settings.HasText("Regenerate changed (2)") {
 		t.Fatalf("the update action does not count both changed branches: %v", settings.Texts())

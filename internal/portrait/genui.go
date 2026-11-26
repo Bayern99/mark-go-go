@@ -48,6 +48,13 @@ type GenUITokens struct {
 	Card                             Surface
 	CardRadius, CardPadding          float32
 	CardGap, SkeletonRadius          float32
+	StatusDot, BackendCardHeight     float32
+	BackendCardBorder                float32
+	SelectionBorder                  float32
+	BackendCardSelectedInset         float32
+	CommandWidth, CommandMenuWidth   float32
+	ReadingBottom                    float32
+	NoteRule                         float32
 	Replacing                        ui.Color
 	Enter                            CardMotion
 	Shimmer                          Shimmer
@@ -62,14 +69,23 @@ var GenUI GenUITokens
 
 func genUIFor(p Palette) GenUITokens {
 	return GenUITokens{
-		Card:           Materials.Sheet,
-		CardRadius:     Radii.L,
-		CardPadding:    12,
-		CardGap:        14,
-		SkeletonRadius: 8,
-		Replacing:      p.Code,
-		Enter:          CardMotion{Duration: 220 * time.Millisecond, Stagger: 36 * time.Millisecond, MaxStagger: 6, Rise: 5, Blur: 2, Ease: Motion.EaseOut},
-		Shimmer:        DefaultSkeleton,
+		Card:                     Materials.Sheet,
+		CardRadius:               Radii.L,
+		CardPadding:              12,
+		CardGap:                  14,
+		SkeletonRadius:           8,
+		StatusDot:                6,
+		BackendCardHeight:        56,
+		BackendCardBorder:        Editor.Hairline,
+		SelectionBorder:          1.5,
+		BackendCardSelectedInset: 1.5 - Editor.Hairline,
+		CommandWidth:             540,
+		CommandMenuWidth:         240,
+		ReadingBottom:            96,
+		NoteRule:                 2,
+		Replacing:                p.Code,
+		Enter:                    CardMotion{Duration: 220 * time.Millisecond, Stagger: 36 * time.Millisecond, MaxStagger: 6, Rise: 5, Blur: 2, Ease: Motion.EaseOut},
+		Shimmer:                  DefaultSkeleton,
 		Halo: Halo{Duration: 950 * time.Millisecond, Ease: CubicBezier{0.16, 1, 0.3, 1}, From: 0.32, To: 2.15, Center: ui.Point{X: 0.86, Y: 0.24}, Inset: 24,
 			Fill: ui.RadialGradient{Center: ui.Point{X: 0.86, Y: 0.24}, Stops: []ui.GradientStop{
 				{Color: ui.Transparent, At: 0}, {Color: ui.Transparent, At: 0.24},

@@ -135,6 +135,7 @@ const (
 	innerGap            = 8
 	tightGap            = 4
 	readingWidth        = 760
+	readingPadding      = 24
 	subtitleSize        = 13
 	largestCompactTitle = "xl"
 	rowShare            = 220
@@ -146,6 +147,7 @@ type place struct {
 
 type treatment struct {
 	subtitle, fill bool
+	footer         func()
 }
 
 func (s *Surface) jumpTarget(id string) *openuilang.Element {
@@ -494,9 +496,11 @@ func (r *Reading) piece(c *ui.Context, value any, path string, depth int, at pla
 func (r *Reading) updating(c *ui.Context, at place) {
 	const statusHeight, bar = 18, 7
 	theme := c.Theme()
-	padding, radius := at.cardInset()
+	g := portrait.GenUI
+	padding := g.CardPadding
 	bars := 3
-	frame := ui.Column(c).MinWidth(0).Gap(innerGap).Radius(radius).Border(1, theme.Text.Alpha(0.08)).Clip().Busy(true)
+	frame := ui.Column(c).MinWidth(0).Gap(innerGap).Radius(g.CardRadius).Clip().Busy(true)
+	g.Card.Apply(frame)
 	was, inset := frame.LayoutBounds(), padding
 	if was.H > 0 {
 		inset = min(padding, max(0, (was.H-statusHeight)/2))
@@ -514,13 +518,6 @@ func (r *Reading) updating(c *ui.Context, at place) {
 		updatingStatus(c).Font(portrait.FontSans).FontSize(portrait.Reader.Label).FixedLineHeight(statusHeight).TextColor(theme.TextMuted)
 		skeleton(c, bars)
 	})
-}
-
-func (at place) cardInset() (padding, radius float32) {
-	if at.card || at.compact {
-		return 16, 12
-	}
-	return 20, 14
 }
 
 func (at place) bodySize() float32 {
@@ -804,24 +801,31 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 			}
 		})
 	case "Card":
-		padding, radius := at.cardInset()
+		g := portrait.GenUI
 		inner := place{compact: true, nested: true, card: true}
-		card := flex(ui.Column(c), p).Padding(p.space("padding", padding)).Radius(radius)
+		card := flex(ui.Column(c), p).Padding(p.space("padding", g.CardPadding)).Radius(g.CardRadius)
 		if at.row {
 			card.Grow(1).Basis(rowShare).AlignSelf(ui.Stretch)
 		}
 		if as.fill {
 			card.Grow(1)
 		}
-		base := theme.Background
+		base := g.Card.From
 		if p.text("variant") == "soft" {
-			base = theme.Text.Alpha(0.04)
-			card.Background(base)
+			base = portrait.Colors.Paper
+			card.Background(base).Border(portrait.Editor.Hairline, portrait.Colors.Line)
 		} else {
-			card.Background(base).Border(1, theme.Text.Alpha(0.08))
+			g.Card.Apply(card)
 		}
 		r.jump(c, card, base, r.jumpElement == e).Children(func() {
+			owner := r.cardOwner
+			r.cardOwner = card
 			r.stack(c, p.value("children"), path, depth, inner, p.space("gap", groupGap), !gapped)
+			if as.footer != nil {
+				ui.Column(c.Key("footer-space")).Grow(1).AccessHidden(true)
+				as.footer()
+			}
+			r.cardOwner = owner
 		})
 	case "Divider":
 		ui.Column(c).Height(1).Shrink(0).Background(theme.Text.Alpha(0.08)).Role(ui.RoleSeparator)
@@ -934,30 +938,60 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 			})
 		})
 	case "Source":
-		frame := r.jump(c, ui.Column(c).MinWidth(0), ui.Transparent, r.jumpElement == e)
+		items := flatten(p.value("children"), nil)
+		n := Node{ID: path, ComponentID: r.surface.owners[e]}
+		for _, id := range flatten(p.value("sources"), nil) {
+			if text, ok := id.(string); ok {
+				n.Sources = append(n.Sources, text)
+			}
+		}
+		hasFooter := r.Sources != nil && len(n.Sources) > 0
+		directCard := !at.card && len(items) == 1 && kind(items[0]) == "Card"
+		base := ui.Transparent
+		container := ui.Column(c).MinWidth(0)
+		if hasFooter && !at.card && !directCard {
+			g := portrait.GenUI
+			container.Padding(g.CardPadding).Radius(g.CardRadius)
+			g.Card.Apply(container)
+			base = g.Card.From
+		}
+		frame := r.jump(c, container, base, r.jumpElement == e)
 		fill := as.fill
 		if at.row && wide(p.value("children")) {
 			frame.Grow(1).Basis(rowShare).AlignSelf(ui.Stretch)
 			fill = true
 		}
 		frame.Children(func() {
+			footer := func() {
+				if !hasFooter {
+					return
+				}
+				ui.Column(c.Key("sources")).FillWidth().MinWidth(0).Children(func() {
+					owner := r.cardOwner
+					if !owner.Valid() {
+						r.cardOwner = frame
+					}
+					r.Sources(c, n)
+					r.cardOwner = owner
+				})
+			}
+			if directCard && hasFooter {
+				inner := at
+				inner.row = false
+				r.piece(c, items[0], path+"/0", depth, inner, treatment{fill: fill, footer: footer})
+				return
+			}
 			tier := float32(sectionGap)
 			if at.nested || at.compact {
 				tier = groupGap
 			}
 			inner := at
 			inner.row = false
-			items := flatten(p.value("children"), nil)
 			r.span(c, items, 0, len(items), path, depth, inner, tier, true, treatment{fill: fill})
-			n := Node{ID: path, ComponentID: r.surface.owners[e]}
-			for _, id := range flatten(p.value("sources"), nil) {
-				if text, ok := id.(string); ok {
-					n.Sources = append(n.Sources, text)
-				}
+			if hasFooter {
+				ui.Column(c.Key("footer-space")).Grow(1).AccessHidden(true)
 			}
-			if r.Sources != nil && len(n.Sources) > 0 {
-				ui.Column(c.Key("sources")).Padding(innerGap, 0, 0, 0).MinWidth(0).Children(func() { r.Sources(c, n) })
-			}
+			footer()
 		})
 	default:
 		if !r.media(c, e, p, path, depth, at) && !r.control(c, e, p, path, depth, at) {

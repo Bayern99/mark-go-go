@@ -170,6 +170,9 @@ func TestShellScenes(t *testing.T) {
 			if sc.name == "dense_sidebar_genui_failure_light" {
 				model = denseSidebarSceneModel()
 			}
+			if sc.mode == "genui" {
+				model.GenUI = true
+			}
 			if sc.space != "" {
 				model.Spaces = map[string]string{model.Workspace.Root: sc.space}
 			}
@@ -298,7 +301,7 @@ func TestShellScenes(t *testing.T) {
 			// scene cannot pass with a stand-in panel.
 			for _, want := range sceneWitnesses(sc) {
 				if _, ok := app.Find(want); !ok {
-					t.Fatalf("scene %s does not show its production control %q", sc.name, want)
+					t.Fatalf("scene %s does not show its production control %q: %q", sc.name, want, app.Texts())
 				}
 			}
 			path := filepath.Join(dir, prefix+sc.name+".png")
@@ -356,9 +359,9 @@ func sceneWitnesses(sc shellScene) []string {
 	case strings.HasPrefix(sc.name, "genui_controls_"):
 		return []string{"Reading width", "Choose…"}
 	case sc.name == "genui_request_light":
-		return []string{"Generate"}
+		return []string{"Generate", "GenUI options"}
 	case sc.name == "dense_sidebar_genui_failure_light":
-		return []string{"Retry", "Generation details", "Include doc"}
+		return []string{"Retry", "Generation details", "Generation failure details", "Include doc"}
 	case sc.name == "feynman_working_light":
 		return []string{"Steer", "Follow up", "Stop", "Include doc"}
 	case sc.name == "feynman_files_empty_light":
@@ -368,7 +371,7 @@ func sceneWitnesses(sc shellScene) []string {
 	case sc.name == "settings_search_dark":
 		return []string{"Search & Papers", "Web search"}
 	case strings.HasPrefix(sc.name, "settings_genui_"):
-		return []string{"Agent command"}
+		return []string{"Agent backend"}
 	}
 	return nil
 }

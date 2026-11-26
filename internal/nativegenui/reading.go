@@ -44,6 +44,7 @@ type Reading struct {
 	created                      []string
 	loads, cards                 uint64
 	inCard                       bool
+	cardOwner                    ui.Element
 	halo, haloShown              uint64
 	haloAt                       time.Time
 	jumpID                       string
@@ -122,7 +123,7 @@ func (r *Reading) View(c *ui.Context) {
 	r.jumpDrawn = 0
 	ui.Column(c).Grow(1).MinHeight(0).Clip().Children(func() {
 		ui.Scroll(c).TrackScroll(&r.scroll).Grow(1).MinHeight(0).Children(func() {
-			ui.Column(c).Padding(24).Gap(portrait.GenUI.CardGap).Children(func() {
+			ui.Column(c).Padding(readingPadding, readingPadding, portrait.GenUI.ReadingBottom, readingPadding).Gap(portrait.GenUI.CardGap).Children(func() {
 				if r.surface.Session != nil {
 					r.fields = map[string][]checkedField{}
 					r.jumpElement = r.surface.jumpTarget(r.jumpID)
@@ -292,10 +293,10 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 		}
 		g.Card.Apply(card)
 		r.jumpNode(c, card, n, true).Children(func() {
-			outer := r.inCard
-			r.inCard = true
+			outer, owner := r.inCard, r.cardOwner
+			r.inCard, r.cardOwner = true, card
 			r.node(c, n.Child, parents)
-			r.inCard = outer
+			r.inCard, r.cardOwner = outer, owner
 		})
 	case "Text":
 		layout(ui.Column(c), n).Children(func() {
@@ -312,6 +313,11 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 		}
 		frame := r.card(c, layout(ui.Column(c).Gap(8), n).Bind(&state.frame).Busy(busy), !r.inCard)
 		frame = r.jumpNode(c, frame, n, !r.inCard)
+		owner := r.cardOwner
+		if !r.inCard && !owner.Valid() {
+			r.cardOwner = frame
+			defer func() { r.cardOwner = owner }()
+		}
 		if busy {
 			frame.Background(portrait.GenUI.Replacing).MinHeight(max(64, state.height)).Children(func() {
 				if n.Title != "" {

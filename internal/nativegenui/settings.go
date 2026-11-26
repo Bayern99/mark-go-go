@@ -19,6 +19,8 @@ const (
 	refreshKeywords    = "test refresh models"
 	loginKeywords      = "sign in login terminal"
 	customLoginNote    = "The agent signs in with its own command."
+	piReadyNote        = "Pi is ready. `pi --mode rpc` keeps reads and writes in a temporary folder."
+	piConnectionNote   = "Pi runs `pi --mode rpc` with reads and writes kept in a temporary folder. "
 	modelKeywords      = "model"
 	effortKeywords     = "reasoning effort thought level"
 	commandKeywords    = "agent command arguments"
@@ -80,10 +82,10 @@ func (p *panel) drawBackendCards(c *ui.Context, q nativeui.SettingsQuery, active
 	}
 	portrait.SettingsGroup(c, "Backend", func(rows *portrait.Rows) {
 		rows.Row(portrait.RowSpec{Title: "Agent backend", Description: backendDescription, Stacked: true}, func() {
-			grid := ui.Column(c).FillWidth().Gap(portrait.Form.PadX)
+			grid := ui.Column(c).Role(ui.RoleRadioGroup).Label("Agent backend").FillWidth().Gap(portrait.Form.Gap)
 			grid.Children(func() {
 				for start := 0; start < len(genui.Backends); start += 2 {
-					ui.Row(c).FillWidth().Gap(portrait.Form.PadX).AlignItems(ui.Stretch).Children(func() {
+					ui.Row(c).FillWidth().Gap(portrait.Form.Gap).AlignItems(ui.Stretch).Children(func() {
 						for column := 0; column < 2 && start+column < len(genui.Backends); column++ {
 							backend := genui.Backends[start+column]
 							p.backendCard(c, backend, backend.ID == active)
@@ -96,27 +98,34 @@ func (p *panel) drawBackendCards(c *ui.Context, q nativeui.SettingsQuery, active
 }
 
 func (p *panel) backendCard(c *ui.Context, backend genui.Backend, selected bool) {
-	card := ui.ButtonBase(c.Key("backend-"+backend.ID)).Label(backend.Name+" backend").
-		Grow(1).MinWidth(0).AlignItems(ui.Start).Padding(portrait.Form.PadX).Radius(portrait.Radii.L).
-		Border(portrait.Editor.Hairline, portrait.Colors.Line).Background(portrait.Colors.Fill)
+	border := portrait.GenUI.BackendCardBorder
+	padding := portrait.Form.PadX
 	if selected {
-		card.Border(portrait.Editor.Hairline, portrait.Colors.Accent).Background(portrait.Colors.AccentSoft)
+		border = portrait.GenUI.SelectionBorder
+		padding -= portrait.GenUI.BackendCardSelectedInset
+	}
+	card := ui.ButtonBase(c.Key("backend-"+backend.ID)).Role(ui.RoleRadio).Label(backend.Name+" backend").
+		Description("Status: "+backendStatusLabel(p.status(backend.ID))).Checked(selected).AccessSelected(selected).
+		Grow(1).Basis(0).MinWidth(0).MinHeight(portrait.GenUI.BackendCardHeight).AlignItems(ui.Start).
+		Padding(padding).Radius(portrait.Radii.M).Border(border, portrait.Colors.Line).Background(portrait.Colors.Paper)
+	if selected {
+		card.BorderColor(portrait.Colors.Accent)
+	} else if card.Hovered() {
+		card.Background(portrait.Colors.Fill)
 	}
 	card.Disabled(!backend.Ready).DimDisabled(true)
 	card.Children(func() {
-		ui.Row(c).FillWidth().Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
-			portrait.Label(c, backend.Name).MaxLines(1).Ellipsis("…")
-			if !backend.Ready {
-				portrait.Badge(c, "Coming soon", portrait.Tones.Neutral)
-			}
-			spacer := ui.Row(c).Grow(1).MinWidth(0)
-			spacer.Children(func() {
-				if backend.Ready {
-					p.drawBackendStatus(c, backend.ID)
+		ui.Column(c).FillWidth().Gap(portrait.Form.Gap).Children(func() {
+			ui.Row(c).FillWidth().Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
+				portrait.Label(c, backend.Name).Grow(1).MinWidth(0).MaxLines(1).Ellipsis("…")
+				p.drawBackendStatus(c, backend.ID).Shrink(0)
+				if selected {
+					portrait.Glyph(c, portrait.IconCheckCircle, portrait.IconSizes.M, portrait.Colors.Accent).Shrink(0)
 				}
 			})
+			portrait.Type.CodeSmall.Apply(ui.Text(c, backendPrompt(backend))).TextColor(portrait.Colors.Ink2).
+				MinWidth(0).MaxLines(1).Ellipsis("…")
 		})
-		portrait.Caption(c, backendPrompt(backend))
 	})
 	if card.Clicked() && backend.Ready && !selected {
 		p.selectBackend(backend.ID)
@@ -125,17 +134,17 @@ func (p *panel) backendCard(c *ui.Context, backend genui.Backend, selected bool)
 
 // backendPrompt tells the reader what a card needs before it can generate.
 func backendPrompt(backend genui.Backend) string {
-	switch {
-	case !backend.Ready:
-		return backend.InstallHint
-	case backend.ID == genui.BackendPi:
-		return "pi --mode rpc, with reads and writes kept in a temporary folder."
-	case backend.ID == genui.BackendCustom:
-		return "An agent of your own that speaks ACP over stdio."
-	case backend.Command == "":
-		return backend.InstallHint
+	switch backend.ID {
+	case genui.BackendCodex:
+		return "codex-acp"
+	case genui.BackendAntigravity:
+		return "agy acp"
+	case genui.BackendPi:
+		return "pi --mode rpc"
+	case genui.BackendCustom:
+		return "Your own ACP agent over stdio"
 	default:
-		return backend.Command + " " + strings.Join(backend.Args, " ")
+		return strings.TrimSpace(backend.Command + " " + strings.Join(backend.Args, " "))
 	}
 }
 
@@ -158,18 +167,33 @@ func statusLook(status genui.ProbeResult) (string, portrait.Tone) {
 	}
 }
 
-func (p *panel) drawBackendStatus(c *ui.Context, id string) {
-	state := p.status(id)
+func backendStatusLabel(state *backendStatus) string {
 	if state.busy {
-		portrait.Type.Meta.Apply(ui.Text(c, "Testing…")).TextColor(portrait.Colors.Ink3)
-		return
+		return "Testing…"
 	}
+	label, _ := statusLook(state.probe)
+	return label
+}
+
+func (p *panel) drawBackendStatus(c *ui.Context, id string) ui.Element {
+	state := p.status(id)
 	label, tone := statusLook(state.probe)
-	ui.Row(c).Gap(portrait.Form.HelpGap).AlignItems(ui.Center).Children(func() {
-		ui.Box(c).Size(portrait.Shell.SpaceDotCircle, portrait.Shell.SpaceDotCircle).
-			Radius(portrait.Radii.Pill).Background(tone.Solid)
-		portrait.Type.Meta.Apply(ui.Text(c, label)).TextColor(portrait.Colors.Ink3).MaxLines(1)
+	ink := portrait.Colors.Ink3
+	if !state.busy {
+		switch state.probe.Status {
+		case genui.AgentReady, genui.AgentLoginRequired, genui.AgentOutdated, genui.AgentMissing, genui.AgentFailed:
+			ink = tone.Ink
+		}
+	}
+	if state.busy {
+		label, tone = "Testing…", portrait.Tones.Neutral
+	}
+	row := ui.Row(c).Gap(portrait.Form.HelpGap).AlignItems(ui.Center).Role(ui.RoleStatus).Label(label).Busy(state.busy)
+	row.Children(func() {
+		ui.Box(c).Size(portrait.GenUI.StatusDot, portrait.GenUI.StatusDot).Radius(portrait.Radii.Pill).Background(tone.Solid).AccessHidden(true)
+		portrait.Type.Meta.Apply(ui.Text(c, label)).TextColor(ink).MaxLines(1)
 	})
+	return row
 }
 
 func (p *panel) drawGeneration(c *ui.Context, q nativeui.SettingsQuery, id string, backend workspace.GenUIBackend) {
@@ -295,7 +319,7 @@ func (p *panel) drawConnection(c *ui.Context, q nativeui.SettingsQuery, id strin
 	}
 	portrait.SettingsGroup(c, "Connection", func(rows *portrait.Rows) {
 		if q.Match("Test & Refresh", refreshNote, refreshKeywords) {
-			rows.Row(portrait.RowSpec{Title: "Test & Refresh", Description: connectionDescription(state)}, func() {
+			rows.Row(portrait.RowSpec{Title: "Test & Refresh", Description: connectionDescription(state, backend)}, func() {
 				button := portrait.AccentButton(c, "Test & Refresh", "Test & Refresh")
 				button.Disabled(state.busy)
 				if button.Clicked() {
@@ -323,7 +347,7 @@ func loginHint(backend genui.Backend) string {
 }
 
 // connectionDescription is what the last test learned, or what the test does.
-func connectionDescription(state *backendStatus) string {
+func connectionDescription(state *backendStatus, backend genui.Backend) string {
 	if state.busy {
 		return "Testing the command and asking the agent for its models…"
 	}
@@ -332,6 +356,15 @@ func connectionDescription(state *backendStatus) string {
 	}
 	if state.probe.Hint != "" {
 		return state.probe.Hint
+	}
+	if backend.ID == genui.BackendPi {
+		if state.probe.Status == genui.AgentReady {
+			return piReadyNote
+		}
+		return piConnectionNote + backend.InstallHint
+	}
+	if !backend.Ready {
+		return backend.InstallHint
 	}
 	return refreshNote
 }

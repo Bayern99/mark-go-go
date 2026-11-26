@@ -111,6 +111,59 @@ func TestGenUISettingsOffersFourChoosableBackends(t *testing.T) {
 	}
 }
 
+func TestBackendCardsExposeSelectionAndStatusAndShareGeometry(t *testing.T) {
+	p, _ := settingsPanel(t, workspace.DefaultSettings())
+	p.status(genui.BackendAntigravity).probe.Status = genui.AgentReady
+	p.status(genui.BackendPi).probe.Status = genui.AgentLoginRequired
+	app := pageTester(p, "")
+
+	active, ok := app.Access("Antigravity backend")
+	if !ok || !active.Checked || active.Description != "Status: Ready" {
+		t.Fatalf("active backend = %+v, present %t; want pressed/selected with Ready status", active, ok)
+	}
+	pi, ok := app.Access("Pi backend")
+	if !ok || pi.Checked || pi.Description != "Status: Sign in" {
+		t.Fatalf("Pi backend = %+v, present %t; want unselected with Sign in status", pi, ok)
+	}
+	p.status(genui.BackendPi).busy = true
+	app.Frame()
+	pi, _ = app.Access("Pi backend")
+	if pi.Description != "Status: Testing…" {
+		t.Errorf("busy Pi description = %q, want Testing…", pi.Description)
+	}
+
+	names := []string{"Codex backend", "Antigravity backend", "Custom ACP backend", "Pi backend"}
+	cards := make([]ui.AccessInfo, len(names))
+	for i, name := range names {
+		cards[i], ok = app.Access(name)
+		if !ok {
+			t.Fatalf("missing backend card %q", name)
+		}
+		if cards[i].Bounds.H != cards[0].Bounds.H {
+			t.Errorf("%s height %v, want the shared height %v", name, cards[i].Bounds.H, cards[0].Bounds.H)
+		}
+		if cards[i].Bounds.W != cards[0].Bounds.W {
+			t.Errorf("%s width %v, want the equal column width %v", name, cards[i].Bounds.W, cards[0].Bounds.W)
+		}
+	}
+	if cards[0].Bounds.X != cards[2].Bounds.X || cards[1].Bounds.X != cards[3].Bounds.X {
+		t.Errorf("the selected card shifted a column: top %+v %+v, bottom %+v %+v", cards[0].Bounds, cards[1].Bounds, cards[2].Bounds, cards[3].Bounds)
+	}
+}
+
+func TestPiReadyConnectionExplainsTheSandboxWithoutInstallCopy(t *testing.T) {
+	backend, _ := genui.BackendByID(genui.BackendPi)
+	state := &backendStatus{probe: genui.ProbeResult{Status: genui.AgentReady}}
+	got := connectionDescription(state, backend)
+	if got != piReadyNote || strings.Contains(got, "Install") || strings.Contains(got, backend.InstallHint) {
+		t.Fatalf("ready Pi connection copy = %q, want ready and temporary-folder guidance only", got)
+	}
+	state.probe.Status = genui.AgentMissing
+	if got := connectionDescription(state, backend); !strings.Contains(got, backend.InstallHint) {
+		t.Fatalf("missing Pi connection copy = %q, want install guidance", got)
+	}
+}
+
 func TestTestAndRefreshReportsTheBackendAndLoadsItsModels(t *testing.T) {
 	p, _ := settingsPanel(t, workspace.DefaultSettings())
 	started, release := make(chan struct{}), make(chan struct{})
@@ -275,11 +328,11 @@ func TestTheRefreshFailureKeepsThePreviousModels(t *testing.T) {
 	}
 }
 
-func TestThePanelShowsAReadOnlyBackendSummaryBesideConfigure(t *testing.T) {
+func TestThePanelOptionsShowTheReadOnlyBackendSummaryAndConfigure(t *testing.T) {
 	settings := workspace.DefaultSettings()
 	p, _ := settingsPanel(t, settings)
-	v := &documentView{}
-	app := ui.NewTester(func(c *ui.Context) { p.drawRequestToggle(c, v) }, 520, 120)
+	v := &documentView{options: true}
+	app := ui.NewTester(func(c *ui.Context) { p.drawCommandDock(c, v, workspace.DocumentInfo{}, false) }, 520, 120)
 	app.Frame()
 	if !app.HasText("Antigravity · gemini-4-hydrogen") {
 		t.Fatalf("the panel does not summarise the backend and model: %q", app.Texts())
@@ -290,7 +343,8 @@ func TestThePanelShowsAReadOnlyBackendSummaryBesideConfigure(t *testing.T) {
 
 	settings.GenUI.Backends[genui.BackendAntigravity] = workspace.GenUIBackend{Command: "agy", Args: []string{"acp"}}
 	p, _ = settingsPanel(t, settings)
-	app = ui.NewTester(func(c *ui.Context) { p.drawRequestToggle(c, v) }, 520, 120)
+	v = &documentView{options: true}
+	app = ui.NewTester(func(c *ui.Context) { p.drawCommandDock(c, v, workspace.DocumentInfo{}, false) }, 520, 120)
 	app.Frame()
 	if !app.HasText("Antigravity · Agent default") {
 		t.Fatalf("an empty model is not reported as the agent's own: %q", app.Texts())

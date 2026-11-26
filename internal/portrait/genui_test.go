@@ -23,6 +23,15 @@ func TestGenUICardIsASheetOnTheCardRadius(t *testing.T) {
 	if g.SkeletonRadius != 8 {
 		t.Fatalf("skeleton radius %v, want 8", g.SkeletonRadius)
 	}
+	if g.StatusDot != 6 || g.BackendCardHeight != 56 {
+		t.Fatalf("status dot %v backend card height %v, want 6 and 56", g.StatusDot, g.BackendCardHeight)
+	}
+	if g.BackendCardBorder != portrait.Editor.Hairline || g.SelectionBorder != 1.5 || g.BackendCardSelectedInset != g.SelectionBorder-g.BackendCardBorder {
+		t.Fatalf("backend borders %v/%v with selected inset %v do not preserve card geometry", g.BackendCardBorder, g.SelectionBorder, g.BackendCardSelectedInset)
+	}
+	if g.CommandWidth != 540 || g.CommandMenuWidth != 240 || g.ReadingBottom != 96 || g.NoteRule != 2 {
+		t.Fatalf("command width %v menu width %v reading bottom %v note rule %v, want 540, 240, 96 and 2", g.CommandWidth, g.CommandMenuWidth, g.ReadingBottom, g.NoteRule)
+	}
 }
 
 func TestGenUICardsEnterStaggeredUpToTheSeventh(t *testing.T) {
@@ -42,8 +51,38 @@ func TestGenUIHaloAndRimFollowTheirKeyframes(t *testing.T) {
 	if h.Duration != 950*time.Millisecond || h.Ease != (portrait.CubicBezier{0.16, 1, 0.3, 1}) || h.From != 0.32 || h.To != 2.15 || h.Center != (ui.Point{X: 0.86, Y: 0.24}) || h.Inset != 24 {
 		t.Fatalf("halo %+v", h)
 	}
+	wantHaloStops := []ui.GradientStop{
+		{Color: ui.Transparent, At: 0},
+		{Color: ui.Transparent, At: 0.24},
+		{Color: portrait.Colors.Accent.Alpha(0.11), At: 0.38},
+		{Color: portrait.Colors.Accent.Mix(portrait.Colors.Paper, 0.45).Alpha(0.19), At: 0.50},
+		{Color: ui.Transparent, At: 0.68},
+	}
+	if h.Fill.Center != h.Center || len(h.Fill.Stops) != len(wantHaloStops) {
+		t.Fatalf("halo fill %+v", h.Fill)
+	}
+	for i, st := range h.Fill.Stops {
+		if st != wantHaloStops[i] {
+			t.Fatalf("halo stop %d = %+v, want %+v", i, st, wantHaloStops[i])
+		}
+	}
 	if r.Duration != 900*time.Millisecond || r.Ease != (portrait.CubicBezier{0.22, 1, 0.36, 1}) || r.From != -60 || r.To != 300 || r.Width != 1.5 {
 		t.Fatalf("rim %+v", r)
+	}
+	wantRimStops := []ui.GradientStop{
+		{Color: ui.Transparent, At: 0},
+		{Color: ui.Transparent, At: 250.0 / 360.0},
+		{Color: portrait.Colors.Accent.Mix(portrait.Colors.Paper, 0.35), At: 312.0 / 360.0},
+		{Color: ui.RGB(255, 255, 255).Alpha(0.96), At: 338.0 / 360.0},
+		{Color: ui.Transparent, At: 1},
+	}
+	if len(r.Stops) != len(wantRimStops) {
+		t.Fatalf("rim stops %+v", r.Stops)
+	}
+	for i, st := range r.Stops {
+		if st.Color != wantRimStops[i].Color || !near(st.At, wantRimStops[i].At) {
+			t.Fatalf("rim stop %d = %+v, want %+v", i, st, wantRimStops[i])
+		}
 	}
 	for _, tc := range []struct {
 		name   string

@@ -40,6 +40,7 @@ type ButtonSpec struct {
 	Look              Look
 	Size              float32
 	Leading, Trailing Icon
+	Ink               ui.Color
 	Loading, Selected bool
 	Disabled          bool
 }
@@ -62,6 +63,9 @@ func ButtonWith(c *ui.Context, title, label string, spec ButtonSpec) ui.Element 
 	}
 	b.Selected(spec.Selected).Disabled(spec.Disabled || spec.Loading).Busy(spec.Loading)
 	ink := Press(b, spec.Look)
+	if spec.Ink.A > 0 && !b.Hovered() && !b.Pressed() && !b.FocusVisible() {
+		ink = spec.Ink
+	}
 	if spec.Selected && !b.Pressed() {
 		ink = selectedButtonLook(b, spec.Look, ink)
 	}

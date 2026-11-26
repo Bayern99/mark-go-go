@@ -5,16 +5,16 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
-	"github.com/Bayern99/mark-go-go/internal/genuikit"
+	"math"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
-	"time"
 	"unicode/utf16"
 
 	"github.com/Bayern99/mark-go-go/internal/genui"
+	"github.com/Bayern99/mark-go-go/internal/genuikit"
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
@@ -25,53 +25,32 @@ import (
 var catalog string
 
 type documentView struct {
-	reading                            Reading
-	preview                            *Reading
-	stream                             *statementStream
-	snapshot                           genui.ViewEvent
-	loaded, settings, requestEdited    bool
-	request, message, note, noteTarget string
-	sourceText, imagesFor              string
-	excerptSource                      func(string, workspace.Section) string
-	excerpts                           map[sourceExcerptKey]string
-	sections                           map[headingKey]workspace.Section
-	notes                              []workspace.Note
-	failure                            *genui.GenerateFailure
-	lastIDs                            []string
-	cancel                             context.CancelFunc
-	previewSource                      sourcePreviewState
-	previewTargets                     []sourcePreviewTarget
-	previewAnchors                     map[string]*ui.Handle
+	reading                                                        Reading
+	preview                                                        *Reading
+	stream                                                         *statementStream
+	snapshot                                                       genui.ViewEvent
+	loaded, requestEdited                                          bool
+	options, failureOpen                                           bool
+	focusCancel, focusRequest                                      bool
+	request, message, note, noteTarget, noteError, focusNoteTarget string
+	pane, requestInput                                             ui.Handle
+	sourceText, imagesFor                                          string
+	excerptSource                                                  func(string, workspace.Section) string
+	openSource                                                     func(workspace.Section)
+	excerpts                                                       map[sourceExcerptKey]string
+	sections                                                       map[headingKey]workspace.Section
+	notes                                                          []workspace.Note
+	failure                                                        *genui.GenerateFailure
+	lastIDs                                                        []string
+	cancel                                                         context.CancelFunc
+	previewSource                                                  sourcePreviewState
+	previewTargets                                                 []sourcePreviewTarget
+	previewAnchors                                                 map[string]*ui.Handle
 }
 type headingKey struct {
 	name       string
 	occurrence int
 }
-
-type sourcePreviewState struct {
-	key                    string
-	hoveredKey, focusedKey string
-	open, dismissed        bool
-	byPointer, overPreview bool
-	pointerMoved           bool
-	dismissedPointer       [2]float32
-	hideAt                 time.Time
-}
-
-type sourceExcerptKey struct {
-	source     string
-	start, end int
-}
-
-type sourcePreviewTarget struct {
-	anchor     *ui.Handle
-	key, label string
-	ref        Reference
-	section    workspace.Section
-	found      bool
-}
-
-const sourceExcerptLimit = 600
 
 type panel struct {
 	win             *nativeui.Window
@@ -211,38 +190,205 @@ func (p *panel) draw(c *ui.Context) {
 	raw := p.win.Source().Source()
 	v.index(raw)
 	busy := v.cancel != nil || d.Generating
-	// The left edge matches the page bar's breadcrumb, so the request form
-	// lines up with the document it belongs to.
-	ui.Column(c).Fill().MinHeight(0).Gap(8).Padding(8, 12, 12, 12).Children(func() {
-		p.drawRequestToggle(c, v)
-		if v.settings {
-			p.drawSettings(c, v, d, busy)
-		}
-		p.drawGenerationStatus(c, v, d, busy)
+	p.drawReader(c, v, d, raw, busy)
+}
+
+func (p *panel) drawReader(c *ui.Context, v *documentView, d workspace.DocumentInfo, raw string, busy bool) {
+	ui.Column(c).Fill().MinHeight(0).Bind(&v.pane).Children(func() {
 		p.drawView(c, v, d, raw, busy)
+		p.drawCommandDock(c, v, d, busy)
 	})
 }
 
-// drawRequestToggle is the panel's one control row. The caret and the
-// selected look say that the button opens the request form.
-func (p *panel) drawRequestToggle(c *ui.Context, v *documentView) {
-	caret := portrait.IconCaretDown
-	if v.settings {
-		caret = portrait.IconCaretUp
-	}
-	ui.Row(c).FillWidth().Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
-		portrait.Type.Meta.Apply(ui.Text(c, p.backendSummary())).TextColor(portrait.Colors.Ink3).
-			Grow(1).MinWidth(0).MaxLines(1).Ellipsis("…")
-		toggle := portrait.ButtonWith(c, "Request", "Generation request", portrait.ButtonSpec{
-			Look: portrait.Quiet, Selected: v.settings, Trailing: caret,
-		}).Checked(v.settings).Expanded(v.settings)
-		if toggle.Clicked() {
-			v.settings = !v.settings
-		}
-		if portrait.QuietButton(c, "Configure…", "Configure GenUI").Clicked() {
-			p.win.OpenSettings("genui")
-		}
+func (p *panel) drawCommandDock(c *ui.Context, v *documentView, d workspace.DocumentInfo, busy bool) {
+	ui.Row(c).Absolute().Left(portrait.Shell.PageInset).Right(portrait.Shell.PageInset).Bottom(portrait.Shell.PageInset).
+		Justify(ui.Center).MinWidth(0).Children(func() {
+		pill := ui.Row(c).FillWidth().MaxWidth(portrait.GenUI.CommandWidth).MinWidth(0).Gap(portrait.Form.Gap).
+			Padding(portrait.Form.PopoverPad, portrait.Form.PadX).Radius(portrait.Radii.Pill).AlignItems(ui.End)
+		portrait.Materials.Pop.Apply(pill)
+		pill.Children(func() {
+			switch {
+			case busy || v.cancel != nil:
+				p.drawBusyPill(c, v, busy)
+			case v.failure != nil:
+				p.drawFailurePill(c, v, d, pill)
+			default:
+				p.drawComposePill(c, v, d)
+				p.drawCommandOptions(c, v, d, pill, false)
+			}
+		})
 	})
+}
+
+func (p *panel) drawComposePill(c *ui.Context, v *documentView, d workspace.DocumentInfo) {
+	width := v.requestInput.Bounds(c).W
+	lines := generationRequestLines(c, v.request, width)
+	height := float32(lines) * portrait.Type.UI.Leading
+	generateShortcut := false
+	ui.Row(c).Grow(1).Basis(0).MinWidth(0).Height(max(portrait.Sizes.Compact, height)).AlignItems(ui.Center).Children(func() {
+		request := portrait.Type.UI.Apply(ui.TextAreaBase(c.Key("request"), &v.request)).
+			FocusRing(false).Grow(1).Basis(0).MinWidth(0).Height(height).Bind(&v.requestInput).
+			TextColor(portrait.Colors.Ink).Label("Generation request").Placeholder("Ask or reshape this view…")
+		request.OnChange(func() { v.requestEdited = true })
+		if v.focusRequest {
+			request.Focus()
+			v.focusRequest = false
+		}
+		generateShortcut = request.Shortcut(ui.Cmd, ui.KeyEnter) && !request.Composing()
+	})
+	canGenerate := d.Path != ""
+	generate := portrait.ButtonWith(c, "Generate", "Generate", portrait.ButtonSpec{Look: portrait.Accent, Size: portrait.Sizes.Compact}).Disabled(!canGenerate)
+	portrait.Tooltip(c, generate, "Generate", "⌘↩")
+	if (generate.Clicked() || generateShortcut) && canGenerate {
+		v.focusCancel = true
+		p.generate(v, nil)
+	}
+}
+
+func generationRequestLines(c *ui.Context, request string, width float32) int {
+	lines := strings.Count(request, "\n") + 1
+	if width > 0 {
+		_, measured := c.MeasureText(width, ui.Span{
+			Text: request, Font: portrait.Type.UI.Family, Size: portrait.Type.UI.RenderedSize(),
+		})
+		lines = max(lines, int(math.Round(float64(measured/portrait.Type.UI.Leading))))
+	}
+	return min(3, max(1, lines))
+}
+
+func (p *panel) drawBusyPill(c *ui.Context, v *documentView, busy bool) {
+	message := v.message
+	if message == "" {
+		message = "Generating…"
+	}
+	ui.Row(c).Grow(1).Basis(0).MinWidth(0).Gap(portrait.Form.Gap).AlignItems(ui.Center).Role(ui.RoleStatus).Label(message).Busy(true).Children(func() {
+		portrait.Spinner(c, message).Shrink(0)
+		portrait.Type.Small.Apply(ui.Text(c, message)).TextColor(portrait.Colors.Ink2).Grow(1).MinWidth(0).MaxLines(1).Ellipsis("…")
+	})
+	cancel := portrait.ButtonWith(c, "Cancel", "Cancel generation", portrait.ButtonSpec{
+		Look: portrait.Quiet, Size: portrait.Sizes.Compact, Disabled: busy && v.cancel == nil,
+	})
+	if cancel.Clicked() && v.cancel != nil {
+		v.cancel()
+	}
+	if v.focusCancel {
+		cancel.Focus()
+		v.focusCancel = false
+	}
+}
+
+func (p *panel) drawFailurePill(c *ui.Context, v *documentView, d workspace.DocumentInfo, pill ui.Element) {
+	status := "Generation failed"
+	if message := strings.TrimSpace(v.failure.Message); message != "" {
+		status += " · " + message
+	}
+	ui.Row(c).Grow(1).Basis(0).MinWidth(0).Gap(portrait.Form.Gap).AlignItems(ui.Center).Role(ui.RoleStatus).Label(status).Children(func() {
+		portrait.Tooltip(c, ui.Box(c).Size(portrait.GenUI.StatusDot, portrait.GenUI.StatusDot).Radius(portrait.Radii.Pill).
+			Background(portrait.Tones.Danger.Solid).AccessHidden(true), status)
+		portrait.Type.Small.Apply(ui.Text(c, "Generation failed")).TextColor(portrait.Tones.Danger.Ink).Grow(1).MinWidth(0).MaxLines(1).Ellipsis("…")
+	})
+	details := portrait.ButtonWith(c, "Details", "Generation failure details", portrait.ButtonSpec{
+		Look: portrait.Link, Size: portrait.Sizes.Compact, Ink: portrait.Tones.Danger.Ink,
+	}).Expanded(v.failureOpen)
+	if details.Clicked() {
+		v.failureOpen = !v.failureOpen
+		v.options = false
+	}
+	width, maxHeight := upwardPopoverRoom(v.paneBounds(c), pill)
+	panel := portrait.PopoverWithSpec(c, details, &v.failureOpen, portrait.PopoverSpec{
+		Width: width, MaxHeight: maxHeight, Title: "Generation failure details", Opaque: true, Placement: ui.AnchorTopStart,
+	}, func() {
+		p.drawGenerationStatus(c, v, d, false)
+	})
+	placePopoverAbove(panel, details, v.paneBounds(c), width, maxHeight)
+	if panel.Dismissed() && c.KeyboardInput() {
+		details.Focus()
+	}
+	if d.Path != "" && portrait.ButtonWith(c, "Retry", "Retry", portrait.ButtonSpec{Look: portrait.Accent, Size: portrait.Sizes.Compact}).Clicked() {
+		p.generate(v, v.lastIDs)
+	}
+	p.drawCommandOptions(c, v, d, pill, false)
+}
+
+func (p *panel) drawCommandOptions(c *ui.Context, v *documentView, d workspace.DocumentInfo, pill ui.Element, busy bool) {
+	options := portrait.ButtonWith(c, "", "GenUI options", portrait.ButtonSpec{
+		Look: portrait.Quiet, Size: portrait.Sizes.Compact, Leading: portrait.IconDotsThree,
+	}).Expanded(v.options)
+	if options.Clicked() {
+		v.options = !v.options
+		v.failureOpen = false
+	}
+	pane := v.paneBounds(c)
+	_, maxHeight := upwardPopoverRoom(pane, pill)
+	width := min(portrait.GenUI.CommandMenuWidth, max(0, pane.W-2*portrait.Shell.PageInset))
+	panel := portrait.PopoverWithSpec(c, options, &v.options, portrait.PopoverSpec{
+		Width: width, MaxHeight: maxHeight, Placement: ui.AnchorTopStart,
+	}, func() {
+		p.drawOptions(c, v, d, busy)
+	})
+	portrait.Materials.GlassOverlay.Apply(panel)
+	panel.Radius(portrait.Radii.L)
+	placePopoverAbove(panel, pill, pane, width, maxHeight)
+	panel.Bottom(portrait.Form.Gap)
+	if panel.Dismissed() && c.KeyboardInput() {
+		options.Focus()
+	}
+}
+
+func (v *documentView) paneBounds(c *ui.Context) ui.Rect {
+	if bounds := v.pane.Bounds(c); bounds.W > 0 && bounds.H > 0 {
+		return bounds
+	}
+	width, height := c.Size()
+	return ui.Rect{W: width, H: height}
+}
+
+func upwardPopoverRoom(pane ui.Rect, anchor ui.Element) (width, maxHeight float32) {
+	available := max(0, pane.W-2*portrait.Shell.PageInset)
+	if bounds := anchor.Bounds(); bounds.W > 0 {
+		available = min(available, bounds.W)
+	}
+	width = min(portrait.Form.PopoverWide, available)
+	if bounds := anchor.Bounds(); bounds.H > 0 {
+		maxHeight = max(0, bounds.Y-pane.Y-portrait.Shell.PageInset-portrait.Form.PopoverPad)
+	}
+	return width, maxHeight
+}
+
+func placePopoverAbove(panel, anchor ui.Element, pane ui.Rect, width, maxHeight float32) {
+	panel.AttachTo(anchor, ui.AnchorTopEnd, ui.AnchorBottomEnd).AttachEdgeMargin(portrait.Shell.PageInset).MaxHeight(maxHeight)
+	placePopoverHorizontal(panel, anchor, pane, width)
+}
+
+func placePopoverBelow(panel, anchor ui.Element, pane ui.Rect, width, maxHeight float32) {
+	panel.AttachTo(anchor, ui.AnchorBottomEnd, ui.AnchorTopEnd).AttachEdgeMargin(portrait.Shell.PageInset).MaxHeight(maxHeight)
+	placePopoverHorizontal(panel, anchor, pane, width)
+}
+
+func placePopoverHorizontal(panel, anchor ui.Element, pane ui.Rect, width float32) {
+	bounds := anchor.Bounds()
+	offset := min(0, pane.X+pane.W-portrait.Shell.PageInset-(bounds.X+bounds.W))
+	left := bounds.X + bounds.W - width + offset
+	// MyGo clamps an overflowing attachment to the window before applying
+	// Left. Correct only a base position that survives that clamp, or the
+	// same left inset would be applied twice on narrow screens.
+	if left < pane.X+portrait.Shell.PageInset && left >= portrait.Shell.PageInset {
+		offset += pane.X + portrait.Shell.PageInset - left
+	}
+	panel.Left(offset)
+}
+
+func notePopoverRoom(pane ui.Rect, anchor ui.Element) (above bool, maxHeight float32) {
+	bounds := anchor.Bounds()
+	if bounds.H <= 0 {
+		return false, max(0, pane.H-2*portrait.Shell.PageInset)
+	}
+	roomAbove := max(0, bounds.Y-pane.Y-portrait.Shell.PageInset-portrait.Form.PopoverPad)
+	roomBelow := max(0, pane.Y+pane.H-(bounds.Y+bounds.H)-portrait.Shell.PageInset-portrait.Form.PopoverPad)
+	if roomAbove >= 180 || roomAbove >= roomBelow {
+		return true, roomAbove
+	}
+	return false, roomBelow
 }
 
 // backendSummary is the panel's read-only line: which backend makes the view
@@ -260,27 +406,17 @@ func (p *panel) backendSummary() string {
 	return name + " · " + model
 }
 
-// drawGenerationStatus reports the running or failed generation above the
-// view, so the reader never has to look for what happened.
 func (p *panel) drawGenerationStatus(c *ui.Context, v *documentView, d workspace.DocumentInfo, busy bool) {
-	if v.failure != nil {
-		var retry []portrait.AlertAction
-		if !busy && d.Path != "" {
-			retry = append(retry, portrait.AlertAction{Label: "Retry", OnAction: func() { p.generate(v, v.lastIDs) }})
-		}
-		portrait.Alert(c, portrait.Tones.Danger, "Generation failed", strings.TrimSpace(v.failure.Message+" "+v.failure.Hint), retry...)
-		if v.failure.Detail != "" {
-			portrait.OutputBlock(c, "Generation details", v.failure.Detail)
-		}
+	if v.failure == nil {
+		return
 	}
-	if v.message != "" {
-		portrait.Type.UI.Apply(ui.Text(c, v.message)).TextColor(portrait.Colors.Ink2).Role(ui.RoleStatus)
+	var retry []portrait.AlertAction
+	if !busy && d.Path != "" {
+		retry = append(retry, portrait.AlertAction{Label: "Retry", OnAction: func() { p.generate(v, v.lastIDs) }})
 	}
-	if v.cancel != nil {
-		cancel := portrait.Button(c, "Cancel generation", "Cancel generation").AlignSelf(ui.Start)
-		if cancel.Clicked() {
-			v.cancel()
-		}
+	portrait.Alert(c, portrait.Tones.Danger, "Generation failed", strings.TrimSpace(v.failure.Message+" "+v.failure.Hint), retry...)
+	if v.failure.Detail != "" {
+		portrait.OutputBlock(c, "Generation details", v.failure.Detail)
 	}
 }
 
@@ -288,6 +424,13 @@ func (p *panel) drawGenerationStatus(c *ui.Context, v *documentView, d workspace
 // failure is already drawn above, so it never shares the page with the empty
 // state, whose next step would contradict it.
 func (p *panel) drawView(c *ui.Context, v *documentView, d workspace.DocumentInfo, raw string, busy bool) {
+	v.openSource = func(section workspace.Section) {
+		p.win.SetMode("markdown")
+		p.win.Reveal(section.Start)
+		if source := p.win.Source(); source != nil {
+			_ = source.SelectUTF16(section.Start, section.End)
+		}
+	}
 	switch {
 	case !v.loaded:
 		loading(c, "Loading the GenUI view", "Reading the view file for this document.")
@@ -296,7 +439,7 @@ func (p *panel) drawView(c *ui.Context, v *documentView, d workspace.DocumentInf
 	case v.cancel != nil && v.reader().surface == nil:
 		loading(c, "Generating view…", "Your agent is laying out this document.")
 	case v.failure != nil && v.reader().surface == nil:
-		return
+		p.drawGenerationStatus(c, v, d, busy)
 	case v.reader().surface == nil:
 		ui.Column(c).FillWidth().Grow(1).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
 			spec := portrait.EmptySpec{
@@ -304,14 +447,12 @@ func (p *panel) drawView(c *ui.Context, v *documentView, d workspace.DocumentInf
 				Title:       "No view yet",
 				Description: "Generate a reading view from this document. The Markdown stays the source.",
 			}
-			if !v.settings {
-				spec.Action = func(c *ui.Context) ui.Element {
-					b := portrait.AccentButton(c, "Write a request", "Write a request").Margin(6, 0, 0, 0)
-					if b.Clicked() {
-						v.settings = true
-					}
-					return b
+			spec.Action = func(c *ui.Context) ui.Element {
+				b := portrait.AccentButton(c, "Write a request", "Write a request").Margin(6, 0, 0, 0)
+				if b.Clicked() {
+					v.focusRequest = true
 				}
+				return b
 			}
 			portrait.Empty(c, spec).MaxWidth(portrait.Shell.SidebarWidth + portrait.Shell.Documents/4)
 		})
@@ -455,25 +596,55 @@ func (v *documentView) changedIDs() []string {
 	return ids
 }
 
-func (p *panel) drawSettings(c *ui.Context, v *documentView, d workspace.DocumentInfo, busy bool) {
-	portrait.TextArea(c, &v.request, portrait.AreaSpec{Label: "Generation request", Placeholder: "Generation request", Rows: 2, Disabled: busy}).OnChange(func() { v.requestEdited = true })
-	if d.Path == "" {
-		portrait.Caption(c, "Save the document first to generate a view.")
-	}
-	ui.Row(c).Gap(portrait.Form.Gap).Wrap().Children(func() {
-		if portrait.AccentButton(c, "Generate", "Generate").Disabled(busy || d.Path == "").Clicked() {
-			p.generate(v, nil)
+func (p *panel) drawOptions(c *ui.Context, v *documentView, d workspace.DocumentInfo, busy bool) {
+	inset := portrait.Form.PadX - 2
+	ui.Column(c).FillWidth().Padding(portrait.Form.MenuPad).Gap(portrait.Form.PopoverGap).Children(func() {
+		ui.Row(c).FillWidth().Padding(portrait.Form.MenuPad, inset).AlignItems(ui.Center).Children(func() {
+			portrait.Type.Meta.Apply(ui.Text(c, p.backendSummary())).TextColor(portrait.Colors.Ink3).
+				Grow(1).MinWidth(0).MaxLines(1).Ellipsis("…")
+		})
+		ui.Box(c).FillWidth().Height(portrait.Editor.Hairline).Margin(portrait.Form.PopoverGap, inset).Background(portrait.Colors.Line).AccessHidden(true)
+		canGenerate := !busy && d.Path != ""
+		if ids := v.changedIDs(); len(ids) > 0 {
+			label := fmt.Sprintf("Regenerate changed (%d)", len(ids))
+			if optionMenuRow(c, label, label, portrait.IconSparkle, !canGenerate).Clicked() {
+				v.options = false
+				p.generate(v, ids)
+			}
 		}
-		if ids := v.changedIDs(); len(ids) > 0 && portrait.Button(c, fmt.Sprintf("Regenerate changed (%d)", len(ids)), fmt.Sprintf("Regenerate changed (%d)", len(ids))).Disabled(busy || d.Path == "").Clicked() {
-			p.generate(v, ids)
-		}
-		if v.snapshot.CanUndo && portrait.QuietButton(c, "Restore previous view", "Restore previous view").Disabled(busy).Clicked() {
+		if v.snapshot.CanUndo && optionMenuRow(c, "Restore previous view", "Restore previous view", portrait.IconClockCounterClockwise, busy).Clicked() {
+			v.options = false
 			v.message = message(p.host.UndoView(p.win.Context(), d.ID))
 			if v.message == "" {
 				v.requestEdited = false
 			}
 		}
+		if optionMenuRow(c, "Configure…", "Configure GenUI", portrait.IconSlidersHorizontal, false).Clicked() {
+			v.options = false
+			p.win.OpenSettings("genui")
+		}
 	})
+}
+
+func optionMenuRow(c *ui.Context, title, label string, icon portrait.Icon, disabled bool) ui.Element {
+	inset := portrait.Form.PadX - 2
+	row := ui.ButtonBase(c.Key(label)).Label(label).FillWidth().Height(portrait.Form.MenuRow).
+		Padding(0, inset).Gap(portrait.Form.Gap).Radius(portrait.Form.MenuRadius).
+		AlignItems(ui.Center).Justify(ui.Start).Disabled(disabled)
+	if row.Hovered() && !disabled {
+		row.Background(portrait.Colors.Fill)
+	}
+	ink := portrait.Colors.Ink
+	iconInk := portrait.Colors.Ink2
+	if disabled {
+		ink = portrait.Colors.Ink3
+		iconInk = portrait.Colors.Ink3
+	}
+	row.Children(func() {
+		portrait.Glyph(c, icon, portrait.IconSizes.M, iconInk).Shrink(0)
+		portrait.Type.UI.Apply(ui.Text(c, title)).TextColor(ink).Grow(1).MinWidth(0).MaxLines(1).Ellipsis("…")
+	})
+	return row
 }
 
 func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.DocumentInfo, n Node, busy bool) {
@@ -484,18 +655,48 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 			notes = append(notes, note.Text)
 		}
 	}
+	owner := v.reader().cardOwner
+	if v.noteTarget == n.ID && owner.Valid() {
+		owner.InsetShadow(portrait.GenUI.SelectionBorder, 0, 0, 0, portrait.Colors.Accent)
+	}
 	if len(notes) > 0 {
-		ui.Column(c).Gap(6).Margin(2, 0, 0, 0).Role(ui.RoleList).Label("Notes").Children(func() {
+		ui.Column(c).Gap(portrait.Form.Gap).Margin(portrait.Form.HelpGap/2, 0, 0, 0).Role(ui.RoleList).Label("Notes").Children(func() {
 			for i, note := range notes {
-				portrait.Type.Meta.Apply(ui.Text(c.Key(i), note)).Padding(4, 8).Radius(portrait.Radii.S).Background(portrait.Colors.WarningSoft).
-					Border(0.5, portrait.Colors.Line).Selectable()
+				ui.Row(c.Key(i)).AlignItems(ui.Stretch).Children(func() {
+					ui.Column(c).Width(portrait.GenUI.NoteRule).Shrink(0).Background(portrait.Tones.Warning.Border).AccessHidden(true)
+					portrait.Type.Meta.Apply(ui.Text(c, note)).TextColor(portrait.Colors.Ink2).Padding(0, 0, 0, portrait.Form.PadX).Selectable()
+				})
 			}
 		})
 	}
+
+	corner := ui.Row(c.Key("source-corner-" + n.ID)).Gap(portrait.Form.PopoverGap).AlignItems(ui.Center)
+	var cornerMaxWidth float32
+	if owner.Valid() {
+		corner.AttachTo(owner, ui.AnchorTopRight, ui.AnchorTopRight).Top(-14).Right(innerGap).ZIndex(1)
+		if w := owner.Bounds().W; w > 0 {
+			cornerMaxWidth = max(0, w-innerGap)
+			corner.MaxWidth(cornerMaxWidth)
+		}
+	} else {
+		corner.AlignSelf(ui.End)
+	}
+	var addNote ui.Element
 	status, missing := "", false
-	ui.Row(c).Wrap().GapX(10).GapY(6).AlignItems(ui.Center).Margin(2, 0, 0, 0).Padding(8, 0, 0, 0).Shadow(0, -0.5, 0, 0, portrait.Colors.LineStrong).Children(func() {
-		ui.Row(c).Wrap().Gap(4).AlignItems(ui.Center).Grow(1).MinWidth(0).Children(func() {
-			portrait.Type.Meta.Apply(ui.Text(c, "From")).TextColor(portrait.Colors.Ink3)
+	corner.Children(func() {
+		actions := ui.Row(c).Gap(0).AlignItems(ui.Center).MinWidth(0).Padding(portrait.Form.PopoverGap).Radius(portrait.Radii.Pill)
+		if cornerMaxWidth > 0 {
+			actions.MaxWidth(cornerMaxWidth)
+		}
+		portrait.Materials.Pop.Apply(actions)
+		reveal := !owner.Valid() || owner.Hovered() || owner.FocusWithin() || corner.Hovered() || corner.FocusWithin() ||
+			v.noteTarget == n.ID || v.previewSource.open && v.previewSource.cardID == n.ID
+		opacity := flag(reveal)
+		if portrait.Animates(c, c.KeyboardInput()) {
+			opacity = actions.AnimateTo(sourceActionsReveal{}, opacity, ui.Animation{Duration: portrait.Motion.Press, Ease: portrait.Motion.EaseOut.Easing(), NonMotion: true})
+		}
+		actions.Opacity(opacity)
+		actions.Children(func() {
 			for i, id := range n.Sources {
 				ref, s, ok := v.source(id)
 				label := ref.Heading
@@ -506,8 +707,8 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 					label = fmt.Sprintf("%s (%d)", label, ref.Occurrence)
 				}
 				var heading ui.Element
-				anchor := ui.Box(c.Key(i)).Children(func() {
-					heading = sourceHeading(c, label, !ok)
+				anchor := ui.Box(c.Key(i)).MinWidth(0).Shrink(1).Children(func() {
+					heading = sourceHeading(c, label, !ok).MinWidth(0)
 				})
 				if !ok {
 					anchor.Focusable().Role(ui.RoleStatus).Label(label + ", source missing").Radius(portrait.Radii.S)
@@ -521,15 +722,17 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 					handle = new(ui.Handle)
 					v.previewAnchors[key] = handle
 				}
-				anchor.Bind(handle)
+				if ok {
+					heading.Bind(handle)
+				} else {
+					anchor.Bind(handle)
+				}
 				v.previewTargets = append(v.previewTargets, sourcePreviewTarget{
-					anchor: handle, key: key, label: label,
-					ref: ref, section: s, found: ok,
+					anchor: handle, key: key, label: label, cardID: n.ID,
+					ref: ref, section: s, node: n, found: ok,
 				})
 				if heading.Clicked() {
-					highlightCard(v.reader(), n)
-					p.win.Reveal(s.Start)
-					_ = p.win.Source().SelectUTF16(s.Start, s.End)
+					v.toggleSourcePreview(key, n.ID)
 				}
 				if !ok {
 					status, missing = "Source missing", true
@@ -537,43 +740,105 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 					status = "Source changed"
 				}
 			}
+			addNote = sourceButton(c, "Add note", d.ReadOnly || len(ss) == 0).Shrink(0)
+			if addNote.Clicked() {
+				v.noteTarget = n.ID
+				v.note = ""
+				v.noteError = ""
+			}
+			if v.focusNoteTarget == n.ID {
+				addNote.Focus()
+				v.focusNoteTarget = ""
+			}
+			update := sourceButton(c, "Update card", busy || d.Path == "" || n.ComponentID == "" && v.reader().surface.Session != nil).Shrink(0)
+			if update.Clicked() {
+				componentID := n.ComponentID
+				if componentID == "" {
+					componentID = n.ID
+				}
+				p.generate(v, []string{componentID})
+			}
 		})
 		if status != "" {
-			sourceStatus(c, status, missing)
-		}
-		if sourceButton(c, "Add note", d.ReadOnly || len(ss) == 0).Clicked() {
-			v.noteTarget = n.ID
-			v.note = ""
-		}
-		if sourceButton(c, "Update card", busy || d.Path == "" || n.ComponentID == "" && v.reader().surface.Session != nil).Clicked() {
-			componentID := n.ComponentID
-			if componentID == "" {
-				componentID = n.ID
+			tone := portrait.Tones.Warning
+			if missing {
+				tone = portrait.Tones.Danger
 			}
-			p.generate(v, []string{componentID})
+			dot := ui.Box(c).Size(portrait.GenUI.StatusDot, portrait.GenUI.StatusDot).Radius(portrait.Radii.Pill).
+				Background(tone.Solid).Role(ui.RoleStatus).Label(status).Shrink(0)
+			portrait.Tooltip(c, dot, status)
 		}
 	})
 	if v.noteTarget != n.ID {
 		return
 	}
-	note := portrait.TextArea(c, &v.note, portrait.AreaSpec{Label: "Reader note", Placeholder: "Reader note", Rows: 2}).AutoFocus()
-	composing := note.Composing()
-	saveShortcut := note.Shortcut(ui.Cmd, ui.KeyEnter) && !composing
-	cancelShortcut := note.Shortcut(0, ui.KeyEscape) && !composing
-	enabled := len(ss) > 0 && !d.ReadOnly && strings.TrimSpace(v.note) != ""
-	ui.Row(c).FillWidth().Justify(ui.End).Gap(portrait.Form.Gap).Children(func() {
-		if portrait.QuietButton(c, "Cancel note", "Cancel note").Clicked() || cancelShortcut {
-			v.noteTarget = ""
-			v.note = ""
+	closeNote := func(restoreFocus bool) {
+		v.noteTarget = ""
+		v.note = ""
+		v.noteError = ""
+		if restoreFocus {
+			addNote.Focus()
+			v.focusNoteTarget = n.ID
 		}
-		if (portrait.AccentButton(c, "Save note", "Save note").Disabled(!enabled).Clicked() || saveShortcut) && enabled {
-			v.message = message(p.addNote(ss[0], v.note))
-			if v.message == "" {
-				v.noteTarget = ""
-				v.note = ""
-			}
-		}
+	}
+	noteOpen := true
+	pane := v.paneBounds(c)
+	width := min(portrait.Form.PopoverWide, max(0, pane.W-2*portrait.Shell.PageInset))
+	above, maxHeight := notePopoverRoom(pane, addNote)
+	placement := ui.AnchorBottomStart
+	if above {
+		placement = ui.AnchorTopStart
+	}
+	panel := portrait.PopoverWithSpec(c, addNote, &noteOpen, portrait.PopoverSpec{
+		Width: width, MaxHeight: maxHeight, Opaque: true, Placement: placement,
+	}, func() {
+		portrait.Frame(c, func() {
+			ui.Column(c).FillWidth().Gap(portrait.Form.Gap).Padding(portrait.Form.PadX).Children(func() {
+				portrait.Type.Meta.Apply(ui.Text(c, "Reader note")).FontWeight(500).TextColor(portrait.Colors.Ink2).AccessHidden(true).IgnoreInput(true)
+				note := portrait.TextArea(c, &v.note, portrait.AreaSpec{Label: "Reader note", Placeholder: "Reader note", Rows: 3, Bare: true}).AutoFocus()
+				note.OnChange(func() { v.noteError = "" })
+				if v.noteError != "" {
+					portrait.Type.Meta.Apply(ui.Text(c, v.noteError)).TextColor(portrait.Tones.Danger.Ink).Role(ui.RoleAlert).Wrap()
+				}
+				composing := note.Composing()
+				saveShortcut := note.Shortcut(ui.Cmd, ui.KeyEnter) && !composing
+				cancelShortcut := note.Shortcut(0, ui.KeyEscape) && !composing
+				enabled := len(ss) > 0 && !d.ReadOnly && strings.TrimSpace(v.note) != ""
+				ui.Row(c).FillWidth().Justify(ui.End).Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
+					portrait.Type.Meta.Apply(ui.Text(c, "⌘↩")).TextColor(portrait.Colors.Ink3).Grow(1).MinWidth(0)
+					cancel := portrait.ButtonWith(c, "Cancel note", "Cancel note", portrait.ButtonSpec{Look: portrait.Quiet, Size: portrait.Sizes.Compact})
+					if cancel.Clicked() || cancelShortcut {
+						closeNote(true)
+					}
+					save := portrait.ButtonWith(c, "Save note", "Save note", portrait.ButtonSpec{Look: portrait.Accent, Size: portrait.Sizes.Compact}).Disabled(!enabled)
+					if (save.Clicked() || saveShortcut) && enabled {
+						v.noteError = message(p.addNote(ss[0], v.note))
+						v.message = v.noteError
+						if v.noteError == "" {
+							closeNote(true)
+						}
+					}
+				})
+			})
+		})
 	})
+	if above {
+		placePopoverAbove(panel, addNote, pane, width, maxHeight)
+	} else {
+		placePopoverBelow(panel, addNote, pane, width, maxHeight)
+	}
+	if panel.Dismissed() {
+		closeNote(!panel.PressedOutside())
+	}
+}
+
+type sourceActionsReveal struct{}
+
+func flag(on bool) float32 {
+	if on {
+		return 1
+	}
+	return 0
 }
 
 func highlightCard(reader *Reading, n Node) {
@@ -590,227 +855,20 @@ func (v *documentView) drawReading(c *ui.Context) {
 	v.drawSourcePreview(c, v.previewTargets)
 }
 
-func (v *documentView) drawSourcePreview(c *ui.Context, targets []sourcePreviewTarget) {
-	state := &v.previewSource
-	var hovered, focused *sourcePreviewTarget
-	for i := range targets {
-		target := &targets[i]
-		anchor := c.Resolve(*target.anchor)
-		if !anchor.Valid() {
-			continue
-		}
-		if hovered == nil && anchor.Hovered() && c.Preferences().Hover() {
-			hovered = target
-		}
-		if focused == nil && anchor.FocusWithin() {
-			focused = target
-		}
-	}
-	hoveredKey, focusedKey := "", ""
-	if hovered != nil {
-		hoveredKey = hovered.key
-	}
-	if focused != nil {
-		focusedKey = focused.key
-	}
-	if state.dismissed && !state.pointerMoved {
-		for _, target := range targets {
-			if anchor := c.Resolve(*target.anchor); anchor.Valid() {
-				state.pointerMoved = pointerTravelled(windowPointer(anchor), state.dismissedPointer)
-				break
-			}
-		}
-	}
-	newHover := hoveredKey != "" && hoveredKey != state.hoveredKey
-	newFocus := focusedKey != "" && focusedKey != state.focusedKey
-	state.focusedKey = focusedKey
-	// Closing the popup can expose another source without a pointer move.
-	if state.dismissed && !state.pointerMoved {
-		newHover = false
-	} else {
-		state.hoveredKey = hoveredKey
-	}
-	if state.dismissed && !newHover && !newFocus {
-		state.open, state.overPreview = false, false
-		state.hideAt = time.Time{}
-		return
-	}
-	state.dismissed = false
-	state.hoveredKey = hoveredKey
-
-	var target *sourcePreviewTarget
-	gracing := false
-	switch {
-	case newFocus:
-		target = focused
-		state.byPointer = false
-	case newHover:
-		target = hovered
-		state.byPointer = true
-	case state.open && state.overPreview:
-		target = sourcePreviewTargetForKey(targets, state.key)
-	case state.open && state.byPointer && hovered == nil:
-		target = sourcePreviewTargetForKey(targets, state.key)
-		gracing = true
-		if state.hideAt.IsZero() {
-			state.hideAt = c.Now().Add(300 * time.Millisecond)
-		}
-		if wait := state.hideAt.Sub(c.Now()); wait > 0 {
-			c.After(wait)
-		} else {
-			target = nil
-		}
-	case !state.byPointer && focused != nil:
-		target = focused
-	case hovered != nil:
-		target = hovered
-	default:
-		target = focused
-	}
-	if target != nil {
-		if state.key != target.key {
-			state.byPointer = target == hovered && target != focused
-		}
-		state.key, state.open = target.key, true
-		if !gracing {
-			state.hideAt = time.Time{}
-		}
-	}
-	if target == nil {
-		state.key, state.open, state.overPreview = "", false, false
-		state.hideAt = time.Time{}
-		return
-	}
-
-	windowWidth, windowHeight := c.Size()
-	anchor := c.Resolve(*target.anchor)
-	panel := portrait.PopoverWithSpec(c, anchor, &state.open, portrait.PopoverSpec{
-		Width:     min(portrait.Form.PopoverWide, max(0, windowWidth-2*portrait.Shell.PageInset)),
-		MaxHeight: max(0, windowHeight-2*portrait.Shell.PageInset),
-		Title:     "Source preview: " + target.label,
-	}, func() {
-		switch {
-		case !target.found:
-			portrait.Alert(c, portrait.Tones.Danger, "Source missing", "This section is no longer in the document.")
-		case target.ref.Hash != "" && !target.section.UnchangedSince(target.ref.Hash):
-			portrait.Alert(c, portrait.Tones.Warning, "Source changed", "This section changed after the view was generated. Open the source to read its current text.")
-		default:
-			if target.ref.Hash == "" {
-				portrait.Type.Meta.Apply(ui.Text(c, "Source version at generation time cannot be verified.")).TextColor(portrait.Colors.Ink3)
-			}
-			portrait.Type.Small.Apply(ui.Text(c, v.excerpt(target.key, target.section))).TextColor(portrait.Colors.Ink2).Selectable()
-		}
-	})
-	state.overPreview = panel.Hovered()
-	panel.KeepFocus().Label("Source preview: " + target.label)
-	if !state.open {
-		state.dismissed = true
-		state.overPreview = false
-		state.pointerMoved = false
-		state.dismissedPointer = windowPointer(anchor)
-	}
-}
-
-func windowPointer(anchor ui.Element) [2]float32 {
-	x, y, _ := anchor.PointerPosition()
-	b := anchor.Bounds()
-	return [2]float32{b.X + x, b.Y + y}
-}
-
-func pointerTravelled(now, then [2]float32) bool {
-	const slop = 0.5
-	dx, dy := now[0]-then[0], now[1]-then[1]
-	return dx > slop || dx < -slop || dy > slop || dy < -slop
-}
-
-func sourcePreviewTargetForKey(targets []sourcePreviewTarget, key string) *sourcePreviewTarget {
-	for i := range targets {
-		if targets[i].key == key {
-			return &targets[i]
-		}
-	}
-	return nil
-}
-
-func (v *documentView) excerpt(source string, section workspace.Section) string {
-	key := sourceExcerptKey{source: source, start: section.Start, end: section.End}
-	if excerpt, ok := v.excerpts[key]; ok {
-		return excerpt
-	}
-	excerpt := ""
-	if v.excerptSource != nil {
-		excerpt = v.excerptSource(v.sourceText, section)
-	} else {
-		excerpt = sourceExcerpt(v.sourceText, section)
-	}
-	if v.excerpts == nil {
-		v.excerpts = map[sourceExcerptKey]string{}
-	}
-	v.excerpts[key] = excerpt
-	return excerpt
-}
-
-func sourceExcerpt(raw string, section workspace.Section) string {
-	excerpt := strings.TrimSpace(raw[byteAt(raw, section.Start):byteAt(raw, section.End)])
-	runes := 0
-	for i := range excerpt {
-		if runes == sourceExcerptLimit {
-			return strings.TrimSpace(excerpt[:i]) + "…"
-		}
-		runes++
-	}
-	return excerpt
-}
-
 func sourceHeading(c *ui.Context, label string, disabled bool) ui.Element {
-	b := ui.ButtonBase(c.Key(label)).Label(label).Disabled(disabled).DimDisabled(false).Radius(portrait.Radii.S)
-	ink, line := portrait.Colors.Accent, portrait.Colors.LineStrong
-	if disabled {
-		ink = portrait.Colors.Ink3
-	} else if b.Hovered() {
-		b.Background(portrait.Colors.AccentSoft)
-		line = portrait.Colors.Accent
-	}
-	b.Children(func() {
-		portrait.Type.Meta.Apply(ui.Text(c, label)).TextColor(ink).Underline().UnderlineOffset(2).DecorationColor(line)
-	})
-	return b
-}
-
-func sourceStatus(c *ui.Context, text string, missing bool) {
-	tone := portrait.Tones.Warning
-	if missing {
-		tone = portrait.Tones.Danger
-	}
-	portrait.Badge(c, text, tone).Role(ui.RoleStatus)
-}
-
-type sourceHover struct{}
-type sourcePress struct{}
-
-func sourceButton(c *ui.Context, label string, disabled bool) ui.Element {
-	g := portrait.GenUI
-	b := ui.ButtonBase(c.Key(label)).Label(label).Disabled(disabled).DimDisabled(false).Padding(2, 8).Radius(portrait.Radii.M).AlignItems(ui.Center)
-	ease := portrait.Motion.EaseOut.Easing()
-	hovered, pressed := b.Hovered() && !disabled, b.Pressed() && !disabled
-	h := b.AnimateTo(sourceHover{}, flag(hovered && !pressed), ui.Animation{Duration: portrait.Motion.Press, Ease: ease, NonMotion: true})
-	pr := b.AnimateTo(sourcePress{}, flag(pressed), ui.Animation{Duration: portrait.Motion.Press, Ease: ease})
-	g.Source.Mix(g.SourceHover, h).Mix(g.SourcePress, pr).Apply(b)
-	scale := 1 - 0.03*pr
-	b.TransformOrigin(0.5, 0.5).Translate(0, 0.5*pr).Scale(scale, scale)
 	ink := portrait.Colors.Accent
 	if disabled {
 		ink = portrait.Colors.Ink3
 	}
-	b.Children(func() { portrait.Type.Meta.Apply(ui.Text(c, label)).TextColor(ink) })
-	return b
+	return portrait.ButtonWith(c, "§ "+label, label, portrait.ButtonSpec{
+		Look: portrait.Link, Size: portrait.Sizes.Compact, Ink: ink, Disabled: disabled,
+	})
 }
 
-func flag(b bool) float32 {
-	if b {
-		return 1
-	}
-	return 0
+func sourceButton(c *ui.Context, label string, disabled bool) ui.Element {
+	return portrait.ButtonWith(c, label, label, portrait.ButtonSpec{
+		Look: portrait.Link, Size: portrait.Sizes.Compact, Ink: portrait.Colors.Ink3, Disabled: disabled,
+	})
 }
 
 func loading(c *ui.Context, title, detail string) {
@@ -893,6 +951,8 @@ func (p *panel) generate(v *documentView, ids []string) {
 	ctx, cancel := context.WithCancel(p.win.Context())
 	v.cancel = cancel
 	v.failure = nil
+	v.options = false
+	v.failureOpen = false
 	v.lastIDs = slices.Clone(ids)
 	v.discardPreview()
 	v.reading.Replacing = v.lastIDs
@@ -927,23 +987,29 @@ func generationOutcomeToast(docID string, err error) portrait.ToastSpec {
 	switch {
 	case err == nil:
 		return portrait.ToastSpec{ID: id, Tone: portrait.Tones.Success, Title: "Generated"}
-	case errors.Is(err, context.Canceled) || genui.FailureOf(err).Kind == genui.FailCancelled:
+	case generationCancelled(err):
 		return portrait.ToastSpec{ID: id, Tone: portrait.Tones.Neutral, Title: "Generation canceled"}
 	default:
 		return portrait.ToastSpec{ID: id, Tone: portrait.Tones.Danger, Title: "Generation failed"}
 	}
 }
+func generationCancelled(err error) bool {
+	return err != nil && (errors.Is(err, context.Canceled) || genui.FailureOf(err).Kind == genui.FailCancelled)
+}
+
 func (v *documentView) finished(err error) {
 	v.cancel = nil
 	v.reading.Replacing = nil
 	v.message = ""
 	if err != nil {
 		v.discardPreview()
+		if generationCancelled(err) {
+			return
+		}
 		f := genui.FailureOf(err)
 		v.failure = &f
 		return
 	}
 	v.requestEdited = false
-	v.message = "View generated."
 	v.reader().Halo()
 }

@@ -55,6 +55,24 @@ var tokenProvenance = func() map[string]string {
 	register(sourceDerived, "Settings", "Width", "Height", "Margin", "Radius", "Rail", "Header", "Column", "ColumnPadX", "ColumnPadTop", "ColumnPadBottom", "GroupGap", "HeadingGap", "NavRow", "NavSectionGap", "Collapse", "Row", "RowCompact", "RowPadX", "RowPadY", "RowGap", "DescriptionMax", "SpacePreview")
 	register(sourceDerived, "Editor", "Body", "Code", "Column", "GutterLeft", "GutterRight", "BlockRadius", "BlockPadX", "BlockPadY", "TableCellPadX", "TableCellPadY", "Hairline")
 	register(sourceDerived, "IconSizes", "XS", "S", "M", "L")
+	register(sourceDerived, "GenUI",
+		"Card.From", "Card.To", "Card.Shadows",
+		"CardRadius", "CardPadding", "CardGap", "SkeletonRadius",
+		"StatusDot", "BackendCardHeight", "BackendCardBorder", "SelectionBorder", "BackendCardSelectedInset",
+		"CommandWidth", "CommandMenuWidth", "ReadingBottom", "NoteRule",
+		"Replacing",
+		"Enter.Duration", "Enter.Stagger", "Enter.MaxStagger", "Enter.Rise", "Enter.Blur",
+		"Enter.Ease.X1", "Enter.Ease.Y1", "Enter.Ease.X2", "Enter.Ease.Y2",
+		"Shimmer.Period", "Shimmer.Base", "Shimmer.Glint",
+		"Halo.Duration", "Halo.Ease.X1", "Halo.Ease.Y1", "Halo.Ease.X2", "Halo.Ease.Y2",
+		"Halo.From", "Halo.To", "Halo.Center.X", "Halo.Center.Y", "Halo.Inset",
+		"Halo.Fill.Stops", "Halo.Fill.Center.X", "Halo.Fill.Center.Y", "Halo.Fill.Radius", "Halo.Fill.Oklab",
+		"Rim.Duration", "Rim.Ease.X1", "Rim.Ease.Y1", "Rim.Ease.X2", "Rim.Ease.Y2",
+		"Rim.From", "Rim.To", "Rim.Width", "Rim.Stops",
+		"Source.From", "Source.To", "Source.Shadows",
+		"SourceHover.From", "SourceHover.To", "SourceHover.Shadows",
+		"SourcePress.From", "SourcePress.To", "SourcePress.Shadows",
+	)
 	return provenance
 }()
 
@@ -77,6 +95,7 @@ func TestEveryTokenDeclaresProvenance(t *testing.T) {
 		{"Settings", portrait.Settings},
 		{"Editor", portrait.Editor},
 		{"IconSizes", portrait.IconSizes},
+		{"GenUI", portrait.GenUI},
 	} {
 		collectTokenPaths(root.name, reflect.ValueOf(root.value), actual)
 	}
@@ -157,6 +176,8 @@ func TestTokensMatchTheirSource(t *testing.T) {
 		"Colors.ModalScrim", "Colors.Code", "Type.Heading", "Type.Display", "Type.Title", "Type.Reading",
 		"Sizes.Compact", "Sizes.Regular", "Sizes.Large",
 		"DefaultSkeleton.Period", "DefaultSkeleton.Base", "DefaultSkeleton.Glint",
+		"GenUI.StatusDot", "GenUI.BackendCardHeight", "GenUI.BackendCardBorder", "GenUI.SelectionBorder", "GenUI.BackendCardSelectedInset",
+		"GenUI.CommandWidth", "GenUI.CommandMenuWidth", "GenUI.ReadingBottom", "GenUI.NoteRule",
 		"Radii.XS", "Radii.S", "Radii.M", "Radii.L", "Radii.XL", "Radii.Pill", "Radii.Track", "Radii.Segment",
 	)
 }

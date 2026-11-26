@@ -31,6 +31,7 @@ func TestNewIconsExistInBundledPhosphor(t *testing.T) {
 		{"caret-up", IconCaretUp, '\ue13c'},
 		{"folder-minus", IconFolderMinus, '\ue254'},
 		{"pencil", IconPencil, '\ue3ae'},
+		{"export", IconExport, '\ueaf0'},
 	}
 	for _, tc := range icons {
 		runes := []rune(tc.icon.Glyph)

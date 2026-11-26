@@ -32,6 +32,17 @@ func listed(raw json.RawMessage) []described {
 	return out
 }
 
+var ComponentNames = sync.OnceValue(func() []string {
+	var top struct{ Components json.RawMessage }
+	_ = json.Unmarshal(catalog, &top)
+	entries := listed(top.Components)
+	names := make([]string, len(entries))
+	for i, entry := range entries {
+		names[i] = entry.name
+	}
+	return names
+})
+
 var Format = sync.OnceValue(func() string {
 	var top struct{ Components, Functions json.RawMessage }
 	_ = json.Unmarshal(catalog, &top)

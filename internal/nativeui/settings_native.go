@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Bayern99/mark-go-go/internal/export/pdf"
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 )
@@ -184,6 +185,62 @@ func (s *Shell) nativeSettingsPages(m Model, a Actions, slots Slots) []SettingsP
 						})
 					}
 				})
+			},
+		},
+		{
+			ID: "export", Section: "Workspace", Label: "Export", Icon: portrait.IconExport, Order: 220,
+			Keywords: []string{"export pdf paper size a4 us letter print pandoc path docx pptx epub rtf latex"},
+			Dirty:    dirtyKeys(PaperSizePreference, PandocPathPreference), Reset: func() { resetPreferences(a, PaperSizePreference, PandocPathPreference) },
+			Draw: func(c *ui.Context, q SettingsQuery) {
+				pdfMatch := q.Matches("Paper size", "Choose the paper size used for PDF export.", "export pdf a4 us letter print")
+				pandocMatch := q.Matches("Pandoc path", "Optional absolute path to the Pandoc executable.", "export pandoc path docx pptx epub rtf latex") || q.Matches("Pandoc status", "Test the configured Pandoc installation.", "pandoc test refresh status")
+				if q.Active() && !pdfMatch && !pandocMatch {
+					return
+				}
+				if pdfMatch {
+					portrait.SettingsGroup(c, "PDF", func(rows *portrait.Rows) {
+						if !q.Match("Paper size", "Choose the paper size used for PDF export.", "export pdf a4 us letter print") {
+							return
+						}
+						rows.Row(portrait.RowSpec{Title: "Paper size", Description: "Choose the paper size used for PDF export."}, func() {
+							selected := 0
+							if PaperSize(m.Preferences[PaperSizePreference]) == pdf.PaperLetter {
+								selected = 1
+							}
+							before := selected
+							portrait.Segmented(c, &selected, []string{"A4", "US Letter"}, "Paper size")
+							if selected != before {
+								setPreference(a, PaperSizePreference, []string{"a4", "letter"}[selected])
+							}
+						})
+					})
+				}
+				if pandocMatch {
+					portrait.SettingsGroup(c, "Pandoc", func(rows *portrait.Rows) {
+						if q.Match("Pandoc path", "Optional absolute path to the Pandoc executable.", "export pandoc path docx pptx epub rtf latex") {
+							rows.Row(portrait.RowSpec{Title: "Pandoc path", Description: "Optional absolute path to the Pandoc executable.", Stacked: true}, func() {
+								value := m.Preferences[PandocPathPreference]
+								field := portrait.TextField(c.Key("settings-pandoc-path"), &value, portrait.FieldSpec{Label: "Pandoc path", Placeholder: "/opt/homebrew/bin/pandoc"})
+								input := field.Input()
+								field.Frame().FillWidth()
+								if input.Changed() {
+									setPreference(a, PandocPathPreference, value)
+								}
+							})
+						}
+						if q.Match("Pandoc status", "Test the configured Pandoc installation.", "pandoc test refresh status") {
+							status := m.PandocStatus
+							if status == "" {
+								status = "Not found"
+							}
+							rows.Row(portrait.RowSpec{Title: "Pandoc status", Description: status}, func() {
+								if portrait.QuietButton(c, "Test & Refresh", "Test and refresh Pandoc status").Clicked() && a.RefreshPandoc != nil {
+									a.RefreshPandoc()
+								}
+							})
+						}
+					})
+				}
 			},
 		},
 		{

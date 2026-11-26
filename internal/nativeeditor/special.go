@@ -1,18 +1,14 @@
 package nativeeditor
 
 import (
-	"fmt"
-	"regexp"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/Bayern99/mark-go-go/internal/markdown/svgfigure"
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 	"github.com/egoist/mygo/ui/markdown/parser"
-	mathtex "github.com/go-tex/math"
-	mermaid "github.com/zkrebbekx/go-mermaid"
 )
 
 type blockImage struct {
@@ -28,11 +24,6 @@ type blockDraft struct {
 	prefix, suffix       string
 }
 
-var typesetter = sync.OnceValues(func() (*mathtex.Renderer, error) { return mathtex.New(mathtex.DefaultFont()) })
-var mermaidDirective = regexp.MustCompile("(?s)%%\\{.*?\\}%%")
-var diagramHeader = regexp.MustCompile("(?s)^\\s*---\\n.*?\\n---\\s*\\n")
-var externalDiagram = regexp.MustCompile(`(?i)<img\b|!\[[^\]]*\]\(|@\{[^}]*\b(?:img|icon)\s*:|\b(?:href|src)\s*=|url\(\s*['"]?[^#'"]`)
-
 func (d *Document) renderImage(kind, body string) blockImage {
 	key := kind + "\x00" + body
 	if img, ok := d.artwork[key]; ok {
@@ -42,26 +33,15 @@ func (d *Document) renderImage(kind, body string) blockImage {
 	var err error
 	switch kind {
 	case "Mermaid":
-		input := strings.TrimSpace(diagramHeader.ReplaceAllString(mermaidDirective.ReplaceAllString(body, ""), ""))
-		switch {
-		case externalDiagram.MatchString(input):
-			err = fmt.Errorf("diagram references an external resource")
-		case input == "":
-			err = fmt.Errorf("empty diagram")
-		default:
-			svg, err = mermaid.Render(input)
-		}
+		svg, err = svgfigure.RenderMermaidSVG(body)
 	default:
-		var r *mathtex.Renderer
-		if r, err = typesetter(); err == nil {
-			var output string
-			if kind == "inline math" {
-				output, _, err = r.RenderSVGMetrics(body, 16)
-			} else {
-				output, _, err = r.RenderDisplaySVGMetrics(body, 22)
-			}
-			svg = []byte(output)
+		var output string
+		display, size := false, 16
+		if kind != "inline math" {
+			display, size = true, 22
 		}
+		output, err = svgfigure.RenderMathSVG(body, display, size)
+		svg = []byte(output)
 	}
 	img := blockImage{}
 	if err == nil {

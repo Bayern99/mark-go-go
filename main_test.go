@@ -143,6 +143,61 @@ func TestBuildMenuUsesSettingsCenterDeepLinks(t *testing.T) {
 	}
 }
 
+func TestFileMenuIncludesPDFExportAndPreferences(t *testing.T) {
+	menu := buildMenu(nil, false)
+	var exportMenu *mygo.MenuItem
+	var walk func([]*mygo.MenuItem)
+	walk = func(items []*mygo.MenuItem) {
+		for _, item := range items {
+			if item.Label == "Export" {
+				exportMenu = item
+			}
+			walk(item.Submenu)
+		}
+	}
+	walk(menu.Items())
+	if exportMenu == nil || len(exportMenu.Submenu) != 11 {
+		t.Fatalf("Export submenu = %+v", exportMenu)
+	}
+	if exportMenu.Submenu[0].Label != "HTML…" || exportMenu.Submenu[0].Click == nil {
+		t.Fatalf("HTML export item = %+v", exportMenu.Submenu[0])
+	}
+	if exportMenu.Submenu[1].Label != "PDF…" || exportMenu.Submenu[1].Click == nil {
+		t.Fatalf("PDF export item = %+v", exportMenu.Submenu[1])
+	}
+	for i, tc := range []struct{ id, label string }{
+		{"export.markdown-docx", "Word (.docx)…"},
+		{"export.markdown-pptx", "PowerPoint (.pptx)…"},
+		{"export.markdown-epub", "EPUB…"},
+		{"export.markdown-rtf", "RTF…"},
+		{"export.markdown-latex", "LaTeX…"},
+	} {
+		item := exportMenu.Submenu[i+3]
+		if item.ID != tc.id || item.Label != tc.label || item.Subtitle != "Requires Pandoc" || item.Click == nil || item.Disabled {
+			t.Errorf("Pandoc export item %d = %+v", i, item)
+		}
+	}
+	notes := exportMenu.Submenu[9]
+	if notes.Label != "Include Reader Notes" || notes.Type != mygo.MenuItemCheckbox || notes.Click == nil || notes.Checked {
+		t.Fatalf("Reader Notes item = %+v", notes)
+	}
+	keepDark := exportMenu.Submenu[10]
+	if keepDark.ID != "export.keepDarkPDF" || keepDark.Label != "Keep Dark Theme for PDF" || keepDark.Type != mygo.MenuItemCheckbox || keepDark.Click == nil || keepDark.Checked || keepDark.Disabled {
+		t.Fatalf("Keep Dark item = %+v", keepDark)
+	}
+}
+
+func TestKeepDarkPDFMenuItemRequiresMacOS13Dot3(t *testing.T) {
+	previous := supportsPDFBackground
+	supportsPDFBackground = func() bool { return false }
+	t.Cleanup(func() { supportsPDFBackground = previous })
+	menu := buildMenu(nil, false)
+	item := menu.ItemByID("export.keepDarkPDF")
+	if item == nil || !item.Disabled || item.ToolTip != "Requires macOS 13.3 or later" {
+		t.Fatalf("Keep Dark item = %+v", item)
+	}
+}
+
 func TestViewMenuGenUIItemTracksThePluginPreference(t *testing.T) {
 	menu := buildMenu(nil, false)
 	item := menu.ItemByID("view.genui")

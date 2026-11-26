@@ -26,6 +26,7 @@ type Model struct {
 	Appearance        portrait.Appearance
 	Preferences       map[string]string
 	PreferenceFile    string
+	PandocStatus      string
 }
 
 type Actions struct {
@@ -37,6 +38,8 @@ type Actions struct {
 	Reveal                                                     func(int)
 	NewDocument, OpenFolder                                    func()
 	Save, SaveAs, Rename, Move, Revert                         func(string)
+	ExportMarkdown                                             func(formatID string)
+	RefreshPandoc                                              func()
 	OpenFiles, Find, Undo                                      func()
 	CommandFocus                                               func() *ui.Handle
 	SetFeynman, SetGit, SetGenUI                               func(bool)

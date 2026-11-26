@@ -619,6 +619,25 @@ func (p *panel) drawOptions(c *ui.Context, v *documentView, d workspace.Document
 				v.requestEdited = false
 			}
 		}
+		ui.Box(c).FillWidth().Height(portrait.Editor.Hairline).Margin(portrait.Form.PopoverGap, inset).Background(portrait.Colors.Line).AccessHidden(true)
+		if optionMenuRow(c, "Export HTML…", "Export HTML", portrait.IconExport, false).Clicked() {
+			v.options = false
+			p.exportHTML(v, d)
+		}
+		if optionMenuRow(c, "Export PDF…", "Export PDF", portrait.IconExport, false).Clicked() {
+			v.options = false
+			p.exportPDF(v, d)
+		}
+		includeNotes := p.win.IncludeReaderNotes()
+		ui.Row(c).FillWidth().Padding(0, inset).MinHeight(portrait.Form.MenuRow).AlignItems(ui.Center).Children(func() {
+			if portrait.CompactCheckbox(c, &includeNotes, "Include reader notes").Clicked() {
+				value := "off"
+				if includeNotes {
+					value = "on"
+				}
+				p.win.SetPreference(nativeui.ReaderNotesPreference, value)
+			}
+		})
 		if optionMenuRow(c, "Configure…", "Configure GenUI", portrait.IconSlidersHorizontal, false).Clicked() {
 			v.options = false
 			p.win.OpenSettings("genui")

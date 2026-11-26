@@ -67,9 +67,9 @@ func turn(deg float32) float32 { return deg / 360 }
 
 var GenUI GenUITokens
 
-func genUIFor(p Palette) GenUITokens {
+func genUIFor(p Palette, materials MaterialSet, shimmer Skeleton) GenUITokens {
 	return GenUITokens{
-		Card:                     Materials.Sheet,
+		Card:                     materials.Sheet,
 		CardRadius:               Radii.L,
 		CardPadding:              12,
 		CardGap:                  14,
@@ -85,7 +85,7 @@ func genUIFor(p Palette) GenUITokens {
 		NoteRule:                 2,
 		Replacing:                p.Code,
 		Enter:                    CardMotion{Duration: 220 * time.Millisecond, Stagger: 36 * time.Millisecond, MaxStagger: 6, Rise: 5, Blur: 2, Ease: Motion.EaseOut},
-		Shimmer:                  DefaultSkeleton,
+		Shimmer:                  shimmer,
 		Halo: Halo{Duration: 950 * time.Millisecond, Ease: CubicBezier{0.16, 1, 0.3, 1}, From: 0.32, To: 2.15, Center: ui.Point{X: 0.86, Y: 0.24}, Inset: 24,
 			Fill: ui.RadialGradient{Center: ui.Point{X: 0.86, Y: 0.24}, Stops: []ui.GradientStop{
 				{Color: ui.Transparent, At: 0}, {Color: ui.Transparent, At: 0.24},
@@ -100,6 +100,6 @@ func genUIFor(p Palette) GenUITokens {
 				{Color: ui.Transparent, At: 1}}},
 		Source:      Surface{p.Paper, p.Paper, Shadows{out(0, 0, 0, 0.5, p.LineStrong)}},
 		SourceHover: Surface{p.Code, p.Code, Shadows{out(0, 0, 0, 0.5, p.LineStrong)}},
-		SourcePress: Surface{Materials.RaisedPress.From, Materials.RaisedPress.To, Shadows{out(0, 0, 0, 0.5, p.LineStrong)}},
+		SourcePress: Surface{materials.RaisedPress.From, materials.RaisedPress.To, Shadows{out(0, 0, 0, 0.5, p.LineStrong)}},
 	}
 }

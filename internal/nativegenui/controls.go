@@ -212,6 +212,9 @@ func choices(value any) []choice {
 	for _, item := range flatten(value, nil) {
 		switch v := item.(type) {
 		case *openuilang.Object:
+			if v == nil {
+				continue
+			}
 			text := v.Values["label"]
 			if text == nil {
 				text = v.Values["value"]
@@ -641,7 +644,7 @@ func (r *Reading) marks(c *ui.Context, listed any, lo, hi float64, thumbInset fl
 	var marks []sliderMark
 	for _, item := range flatten(listed, nil) {
 		object, ok := item.(*openuilang.Object)
-		if !ok {
+		if !ok || object == nil {
 			continue
 		}
 		value, ok := object.Values["value"].(float64)

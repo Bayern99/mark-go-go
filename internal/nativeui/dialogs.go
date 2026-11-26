@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/Bayern99/mark-go-go/internal/export/pandoc"
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo"
@@ -527,10 +528,31 @@ func (w *Window) drawDialog(c *ui.Context) {
 		}})
 	case "move":
 		w.drawMove(c, d)
+	case "pandoc":
+		panel := portrait.DialogShell(c, "pandoc required", &d.open, portrait.DialogSpec{Label: d.title, Width: portrait.Form.DialogWidth, Role: ui.RoleAlertDialog, Glass: true}, func() {
+			portrait.Type.Title.Apply(ui.Text(c, d.title)).FontWeight(600).TextColor(portrait.Colors.Ink).Wrap()
+			portrait.Type.Small.Apply(ui.Text(c, d.body)).TextColor(portrait.Colors.Ink2).Wrap().Pretty()
+			portrait.Type.Code.Apply(ui.Text(c, pandoc.InstallCommand)).TextColor(portrait.Colors.Ink).Wrap()
+			ui.Row(c).Justify(ui.End).AlignItems(ui.Center).Gap(portrait.Form.DialogGap).Wrap().Children(func() {
+				if portrait.QuietButton(c, "Copy command", "Copy Pandoc install command").Clicked() {
+					c.WriteClipboard(pandoc.InstallCommand)
+				}
+				if portrait.QuietButton(c, "Open Settings", "Open Export settings").Clicked() {
+					d.open = false
+					w.OpenSettings("export")
+				}
+				if portrait.AccentButton(c, "Close", "Close Pandoc guidance").Clicked() {
+					d.open = false
+				}
+			})
+		}).Padding(portrait.Form.DialogPad).Gap(portrait.Form.DialogGap)
+		portrait.Materials.Sheet.Apply(panel)
 	case "alert":
 		alert := portrait.DialogShell(c, "portrait alert", &d.open, portrait.DialogSpec{Label: d.title, Width: portrait.Form.DialogWidth, Role: ui.RoleAlertDialog, Glass: true}, func() {
 			portrait.Type.Title.Apply(ui.Text(c, d.title)).FontWeight(600).TextColor(portrait.Colors.Ink).Wrap()
-			portrait.Type.Small.Apply(ui.Text(c, d.body)).TextColor(portrait.Colors.Ink2).Wrap()
+			ui.Scroll(c).MaxHeight(portrait.Form.ListMax).FillWidth().Children(func() {
+				portrait.Type.Small.Apply(ui.Text(c, d.body)).TextColor(portrait.Colors.Ink2).Wrap()
+			})
 			ui.Row(c).Justify(ui.End).Children(func() {
 				if portrait.AccentButton(c, "OK", "Dismiss alert").AutoFocus().Clicked() {
 					d.open = false

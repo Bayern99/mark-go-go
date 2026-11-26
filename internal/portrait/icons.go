@@ -33,6 +33,7 @@ var (
 	IconCheckCircle       = Icon{Glyph: "\ue184"}
 	IconCircle            = Icon{Glyph: "\ue18a"}
 	IconWarningCircle     = Icon{Glyph: "\ue4e2"}
+	IconExport            = Icon{Glyph: "\ueaf0"}
 )
 
 func Glyph(c *ui.Context, icon Icon, size float32, color ui.Color) ui.Element {

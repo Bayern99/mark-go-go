@@ -174,6 +174,20 @@ func (s *Shell) commandItems(m Model, a Actions, slots Slots, width float32) []c
 		if a.SaveAs != nil {
 			add(commandItem{icon: portrait.IconFileText, title: "Save As…", detail: labels[doc.ID], keywords: "save as document copy", run: func() { a.SaveAs(doc.ID) }})
 		}
+		if a.ExportMarkdown != nil {
+			add(commandItem{icon: portrait.IconExport, title: "Export as HTML…", detail: labels[doc.ID], keywords: "export html markdown", run: func() { a.ExportMarkdown("markdown-html") }})
+			add(commandItem{icon: portrait.IconExport, title: "Export as PDF…", detail: labels[doc.ID], keywords: "export pdf print", run: func() { a.ExportMarkdown("markdown-pdf") }})
+			for _, format := range []struct{ id, title, keywords string }{
+				{"markdown-docx", "Export as DOCX…", "export docx word pandoc"},
+				{"markdown-pptx", "Export as PPTX…", "export pptx powerpoint pandoc"},
+				{"markdown-epub", "Export as EPUB…", "export epub ebook pandoc"},
+				{"markdown-rtf", "Export as RTF…", "export rtf rich text pandoc"},
+				{"markdown-latex", "Export as LaTeX…", "export latex tex pandoc"},
+			} {
+				format := format
+				add(commandItem{icon: portrait.IconExport, title: format.title, detail: labels[doc.ID], keywords: format.keywords, run: func() { a.ExportMarkdown(format.id) }})
+			}
+		}
 		if a.Rename != nil {
 			add(commandItem{icon: portrait.IconPencil, title: "Rename…", detail: labels[doc.ID], keywords: "rename title filename", run: func() { a.Rename(doc.ID) }})
 		}

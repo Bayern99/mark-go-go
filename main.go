@@ -15,6 +15,7 @@ import (
 	"github.com/Bayern99/mark-go-go/internal/agent/feynman"
 	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"github.com/Bayern99/mark-go-go/internal/ipc"
+	"github.com/Bayern99/mark-go-go/internal/macos"
 	"github.com/Bayern99/mark-go-go/internal/mcp"
 	"github.com/Bayern99/mark-go-go/internal/nativeai"
 	"github.com/Bayern99/mark-go-go/internal/nativefeynman"
@@ -27,6 +28,7 @@ import (
 )
 
 var documentAutosave = mygo.AutosaveInPlace
+var supportsPDFBackground = macos.SupportsPDFBackground
 
 type workspaceAdapter struct{ svc *workspace.Service }
 
@@ -94,6 +96,7 @@ func main() {
 	research.SetAfterStop(mcpServer.AfterResearchStop)
 	nativeui.AfterWorkspaceChange = func() { refreshMenu(host) }
 	nativeui.AfterGenUIPluginChange = func(enabled bool) { updateGenUIMenu(mygo.App.Menu(), enabled) }
+	nativeui.AfterExportPreferenceChange = func() { rebuildExportMenu(host) }
 
 	applyExternalIPC := func(s workspace.Settings) {
 		if !s.ExternalIPC {
@@ -144,16 +147,21 @@ func refreshMenu(host *workspace.Service) {
 	if host == nil || !mygo.App.IsReady() {
 		return
 	}
-	paths := mygo.App.RecentDocuments()
-	menuRecents.Lock()
-	same := menuRecents.built && slices.Equal(paths, menuRecents.paths)
-	menuRecents.paths, menuRecents.built = slices.Clone(paths), true
-	menuRecents.Unlock()
-	if same {
-		return
-	}
-	mygo.App.SetMenu(buildMenu(host, nativeui.ProfilePluginEnabled(host.UserDataDir(), "genui")))
-	nativeui.ResetAllMenuStates()
+	mygo.RunOnMain(func() {
+		if !mygo.App.IsReady() {
+			return
+		}
+		paths := mygo.App.RecentDocuments()
+		menuRecents.Lock()
+		same := menuRecents.built && slices.Equal(paths, menuRecents.paths)
+		menuRecents.paths, menuRecents.built = slices.Clone(paths), true
+		menuRecents.Unlock()
+		if same {
+			return
+		}
+		mygo.App.SetMenu(buildMenu(host, nativeui.ProfilePluginEnabled(host.UserDataDir(), "genui")))
+		nativeui.ResetAllMenuStates()
+	})
 }
 
 // recentItems lists the recent documents, keeping duplicate file names apart
@@ -186,7 +194,7 @@ func recentItems(host *workspace.Service) []*mygo.MenuItem {
 		if err := mygo.App.ClearRecentDocuments(); err != nil {
 			log.Printf("markgogo: clear recent documents: %v", err)
 		}
-		go refreshMenu(host)
+		refreshMenu(host)
 	}})
 }
 
@@ -252,11 +260,34 @@ func portraitWindow(win *mygo.Window) *nativeui.Window {
 const genUIMenuID = "view.genui"
 
 func updateGenUIMenu(menu *mygo.Menu, enabled bool) {
-	if menu != nil {
-		if item := menu.ItemByID(genUIMenuID); item != nil && item.IsEnabled() != enabled {
-			item.SetEnabled(enabled)
+	if !mygo.App.IsReady() {
+		if menu != nil {
+			if item := menu.ItemByID(genUIMenuID); item != nil && item.IsEnabled() != enabled {
+				item.SetEnabled(enabled)
+			}
 		}
+		return
 	}
+	mygo.RunOnMain(func() {
+		if menu != nil {
+			if item := menu.ItemByID(genUIMenuID); item != nil && item.IsEnabled() != enabled {
+				item.SetEnabled(enabled)
+			}
+		}
+	})
+}
+
+func rebuildExportMenu(host *workspace.Service) {
+	if host == nil || !mygo.App.IsReady() {
+		return
+	}
+	mygo.RunOnMain(func() {
+		if !mygo.App.IsReady() {
+			return
+		}
+		mygo.App.SetMenu(buildMenu(host, nativeui.ProfilePluginEnabled(host.UserDataDir(), "genui")))
+		nativeui.ResetAllMenuStates()
+	})
 }
 
 func buildMenu(host *workspace.Service, genuiEnabled bool) *mygo.Menu {
@@ -268,6 +299,49 @@ func buildMenu(host *workspace.Service, genuiEnabled bool) *mygo.Menu {
 		}
 	}
 	recent := recentItems(host)
+	keepDarkSupported := supportsPDFBackground()
+	keepDarkTooltip := ""
+	if !keepDarkSupported {
+		keepDarkTooltip = "Requires macOS 13.3 or later"
+	}
+	pandocSubtitle := ""
+	if host == nil || !nativeui.ProfilePandocStatus(host.UserDataDir()).Available {
+		pandocSubtitle = "Requires Pandoc"
+	}
+	pandocItems := []*mygo.MenuItem{
+		{ID: "export.markdown-docx", Label: "Word (.docx)…"},
+		{ID: "export.markdown-pptx", Label: "PowerPoint (.pptx)…"},
+		{ID: "export.markdown-epub", Label: "EPUB…"},
+		{ID: "export.markdown-rtf", Label: "RTF…"},
+		{ID: "export.markdown-latex", Label: "LaTeX…"},
+	}
+	for _, item := range pandocItems {
+		formatID := strings.TrimPrefix(item.ID, "export.")
+		item.Subtitle = pandocSubtitle
+		item.Click = withWindow(func(w *nativeui.Window) { w.ExportMarkdown(formatID) })
+	}
+	exportItems := []*mygo.MenuItem{
+		{Label: "HTML…", Click: withWindow(func(w *nativeui.Window) { w.ExportMarkdown("markdown-html") })},
+		{Label: "PDF…", Click: withWindow(func(w *nativeui.Window) { w.ExportMarkdown("markdown-pdf") })},
+		mygo.Separator(),
+	}
+	exportItems = append(exportItems, pandocItems...)
+	exportItems = append(exportItems, mygo.Separator(),
+		&mygo.MenuItem{ID: "export.readerNotes", Label: "Include Reader Notes", Type: mygo.MenuItemCheckbox, Checked: host != nil && nativeui.ProfileReaderNotesEnabled(host.UserDataDir()), Click: withWindow(func(w *nativeui.Window) {
+			value := "on"
+			if w.IncludeReaderNotes() {
+				value = "off"
+			}
+			w.SetPreference(nativeui.ReaderNotesPreference, value)
+		})},
+		&mygo.MenuItem{ID: "export.keepDarkPDF", Label: "Keep Dark Theme for PDF", Type: mygo.MenuItemCheckbox, Checked: host != nil && nativeui.ProfileKeepDarkPDFEnabled(host.UserDataDir()), Disabled: !keepDarkSupported, ToolTip: keepDarkTooltip, Click: withWindow(func(w *nativeui.Window) {
+			value := "on"
+			if w.KeepDarkPDFEnabled() {
+				value = "off"
+			}
+			w.SetPreference(nativeui.KeepDarkPDFPreference, value)
+		})},
+	)
 	return mygo.NewMenu([]*mygo.MenuItem{
 		{Role: mygo.RoleAppMenu, Submenu: []*mygo.MenuItem{
 			{Role: mygo.RoleAbout}, mygo.Separator(),
@@ -290,6 +364,7 @@ func buildMenu(host *workspace.Service, genuiEnabled bool) *mygo.Menu {
 				go func() { _, _ = host.PickFolder(desktop.WithWindow(context.Background(), win)) }()
 			}},
 			{Label: "Open Recent", Submenu: recent}, mygo.Separator(), {Role: mygo.RoleClose}, {Role: mygo.RoleSave}, {Role: mygo.RoleSaveAs}, {Role: mygo.RoleDuplicate}, {Role: mygo.RoleRename}, {Role: mygo.RoleMoveTo}, {Role: mygo.RoleRevert},
+			mygo.Separator(), {Label: "Export", Submenu: exportItems},
 		}},
 		{Role: mygo.RoleEditMenu},
 		{Role: mygo.RoleViewMenu, Submenu: []*mygo.MenuItem{

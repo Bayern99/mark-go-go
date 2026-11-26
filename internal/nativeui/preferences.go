@@ -117,6 +117,15 @@ func (w *Window) resetPreferences(match func(string) bool) {
 	if previous[genUIPluginPreference] != p.values[genUIPluginPreference] && AfterGenUIPluginChange != nil {
 		AfterGenUIPluginChange(w.PluginEnabled("genui"))
 	}
+	if previous[ReaderNotesPreference] != p.values[ReaderNotesPreference] && AfterReaderNotesChange != nil {
+		AfterReaderNotesChange(w.IncludeReaderNotes())
+	}
+	if (previous[ReaderNotesPreference] != p.values[ReaderNotesPreference] || previous[KeepDarkPDFPreference] != p.values[KeepDarkPDFPreference] || previous[PandocPathPreference] != p.values[PandocPathPreference]) && AfterExportPreferenceChange != nil {
+		AfterExportPreferenceChange()
+	}
+	if previous[PandocPathPreference] != p.values[PandocPathPreference] {
+		w.RefreshPandoc()
+	}
 	for window := range p.windows {
 		if window.win != nil {
 			window.win.Invalidate()
@@ -154,6 +163,15 @@ func (w *Window) setPreference(key, value string) {
 	w.failure = ""
 	if key == genUIPluginPreference && AfterGenUIPluginChange != nil {
 		AfterGenUIPluginChange(w.PluginEnabled("genui"))
+	}
+	if key == ReaderNotesPreference && AfterReaderNotesChange != nil {
+		AfterReaderNotesChange(w.IncludeReaderNotes())
+	}
+	if (key == ReaderNotesPreference || key == KeepDarkPDFPreference || key == PandocPathPreference) && AfterExportPreferenceChange != nil {
+		AfterExportPreferenceChange()
+	}
+	if key == PandocPathPreference {
+		w.RefreshPandoc()
 	}
 	for window := range p.windows {
 		if window.win != nil {

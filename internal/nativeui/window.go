@@ -37,6 +37,7 @@ type Window struct {
 	host                          *workspace.Service
 	win                           *mygo.Window
 	ctx                           context.Context
+	cancel                        context.CancelFunc
 	snapshot                      workspace.WorkspaceSnapshot
 	documents                     map[string]*openDocument
 	focusSource                   bool
@@ -205,7 +206,7 @@ func NewWindow(host *workspace.Service, opts mygo.WindowOptions, extensions ...f
 			w.failure = w.preferences.loadError.Error()
 		}
 		w.win = mygo.NewWindow(opts)
-		w.ctx = desktop.WithWindow(context.Background(), w.win)
+		w.ctx, w.cancel = context.WithCancel(desktop.WithWindow(context.Background(), w.win))
 		workspace.WorkspaceChanged.Listen(w.win, func(_ workspace.WorkspaceSnapshot) {
 			w.refresh()
 			if AfterWorkspaceChange != nil {
@@ -241,6 +242,9 @@ func NewWindow(host *workspace.Service, opts mygo.WindowOptions, extensions ...f
 		windowRegistry[w.win] = w
 		windowOrder = append(windowOrder, w.win)
 		w.win.OnClosed(func() {
+			if w.cancel != nil {
+				w.cancel()
+			}
 			delete(w.preferences.windows, w)
 			delete(windowRegistry, w.win)
 			windowOrder = slices.DeleteFunc(windowOrder, func(native *mygo.Window) bool { return native == w.win })
@@ -252,6 +256,7 @@ func NewWindow(host *workspace.Service, opts mygo.WindowOptions, extensions ...f
 		// than handing nil to callers that expect a window.
 		w.win = mygo.NewWindow(opts)
 	}
+	w.RefreshPandoc()
 	return w.win
 }
 
@@ -505,7 +510,7 @@ func (w *Window) View(c *ui.Context) {
 	if d != nil {
 		d.source.SetLineNumbers(w.Preference(lineNumbersPreference) != "off")
 	}
-	model := Model{Workspace: w.snapshot, Navigation: w.navigation, Recents: w.recents, Search: w.search, Message: w.failure, Feynman: w.PluginEnabled("feynman"), Git: w.PluginEnabled("git"), GenUI: w.PluginEnabled("genui"), Spaces: map[string]string{}, Appearance: portrait.AppearanceNamed(w.Preference(appearancePreference)), Preferences: w.store().values, PreferenceFile: w.store().path()}
+	model := Model{Workspace: w.snapshot, Navigation: w.navigation, Recents: w.recents, Search: w.search, Message: w.failure, Feynman: w.PluginEnabled("feynman"), Git: w.PluginEnabled("git"), GenUI: w.PluginEnabled("genui"), Spaces: map[string]string{}, Appearance: portrait.AppearanceNamed(w.Preference(appearancePreference)), Preferences: w.store().values, PreferenceFile: w.store().path(), PandocStatus: PandocStatusText(ProfilePandocStatus(w.store().dir), ProfilePandocChecking(w.store().dir))}
 	if d != nil {
 		model.DocumentScrollY = d.source.ScrollY()
 	}
@@ -564,18 +569,20 @@ func (w *Window) View(c *ui.Context) {
 		CloseDocument:     func(id string) { w.command(workspace.NativeCommand{Command: "close", ID: id}) },
 		CloseWorkspace:    func(id string) { w.requestClose("closeRoot", id, nil) },
 		OpenPath:          w.openPath, Reveal: w.Reveal, SetMode: w.SetMode,
-		OpenFolder:   func() { go w.action(func() error { _, err := w.host.PickFolder(w.ctx); return err }) },
-		NewDocument:  func() { go w.action(func() error { _, err := w.host.New(w.ctx); return err }) },
-		OpenFiles:    w.OpenFiles,
-		Find:         func() { w.win.EditContent("find") },
-		Undo:         func() { w.command(workspace.NativeCommand{Command: "undo", ID: w.snapshot.ActiveID}) },
-		Save:         func(id string) { w.command(workspace.NativeCommand{Command: "save", ID: id}) },
-		SaveAs:       func(id string) { w.command(workspace.NativeCommand{Command: "saveAs", ID: id}) },
-		Rename:       func(id string) { w.command(workspace.NativeCommand{Command: "rename", ID: id}) },
-		Move:         func(id string) { w.command(workspace.NativeCommand{Command: "moveTo", ID: id}) },
-		Revert:       func(id string) { w.command(workspace.NativeCommand{Command: "revert", ID: id}) },
-		CommandFocus: func() *ui.Handle { return &w.focusReturn },
-		OpenRecent:   func(path string) { go w.action(func() error { return w.host.OpenWorkspace(w.ctx, path) }) },
+		OpenFolder:     func() { go w.action(func() error { _, err := w.host.PickFolder(w.ctx); return err }) },
+		NewDocument:    func() { go w.action(func() error { _, err := w.host.New(w.ctx); return err }) },
+		OpenFiles:      w.OpenFiles,
+		Find:           func() { w.win.EditContent("find") },
+		Undo:           func() { w.command(workspace.NativeCommand{Command: "undo", ID: w.snapshot.ActiveID}) },
+		Save:           func(id string) { w.command(workspace.NativeCommand{Command: "save", ID: id}) },
+		SaveAs:         func(id string) { w.command(workspace.NativeCommand{Command: "saveAs", ID: id}) },
+		Rename:         func(id string) { w.command(workspace.NativeCommand{Command: "rename", ID: id}) },
+		Move:           func(id string) { w.command(workspace.NativeCommand{Command: "moveTo", ID: id}) },
+		Revert:         func(id string) { w.command(workspace.NativeCommand{Command: "revert", ID: id}) },
+		ExportMarkdown: w.ExportMarkdown,
+		RefreshPandoc:  w.RefreshPandoc,
+		CommandFocus:   func() *ui.Handle { return &w.focusReturn },
+		OpenRecent:     func(path string) { go w.action(func() error { return w.host.OpenWorkspace(w.ctx, path) }) },
 		ToggleFolder: func(rel string) {
 			if err := w.host.ToggleFolder(w.ctx, rel); err != nil {
 				w.failure = err.Error()

@@ -1,26 +1,17 @@
 package nativeeditor
 
 import (
-	"github.com/egoist/mygo/ui/editor"
 	"regexp"
 	"strings"
+
+	"github.com/Bayern99/mark-go-go/internal/markdown"
+	"github.com/egoist/mygo/ui/editor"
 )
 
-var noteHead = regexp.MustCompile(`^[ \t]*<!--[ \t]*note(?:\s+[A-Za-z_][\w-]*="[^"]*")*\s*:`)
 var escapeNoteEnd = regexp.MustCompile(`--(\\*)(!?)>`)
-var unescapeNoteEnd = regexp.MustCompile(`--\\(\\*)(!?)>`)
 
 func readNote(raw string) (head, text string, ok bool) {
-	trimmed := strings.TrimRight(raw, " \t\r\n")
-	inner, ok := strings.CutSuffix(trimmed, "-->")
-	if !ok || strings.Contains(inner, "-->") {
-		return "", "", false
-	}
-	loc := noteHead.FindStringIndex(inner)
-	if loc == nil {
-		return "", "", false
-	}
-	return inner[:loc[1]], unescapeNoteEnd.ReplaceAllString(strings.TrimSpace(inner[loc[1]:]), `--${1}${2}>`), true
+	return markdown.ReadNote(raw)
 }
 func (d *Document) deleteNote(snap editor.Snapshot, start, end int) {
 	a := start

@@ -177,6 +177,21 @@ func TestBlankAtTheEndOfTheDocumentLeavesSavedSectionHashesAlone(t *testing.T) {
 	}
 }
 
+func TestExtractNotesImmediatelyAfterPre(t *testing.T) {
+	for name, source := range map[string]string{
+		"attributes": "# Guide\n\n<pre>code</pre>\n<!-- note kind=\"reader\": attributed secret -->\n",
+		"multiline":  "# Guide\n\n<pre>code</pre>\n<!-- note:\nmultiline secret\n-->\n",
+		"crlf":       "# Guide\r\n\r\n<pre>code</pre>\r\n<!-- note:\r\ncrlf secret\r\n-->\r\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			notes := ExtractNotes(source)
+			if len(notes) != 1 || notes[0].SectionHeading != "Guide" || !strings.Contains(notes[0].Text, "secret") {
+				t.Fatalf("notes = %+v", notes)
+			}
+		})
+	}
+}
+
 func TestBlankAtTheEndOfACRLFDocumentLeavesSavedSectionHashesAlone(t *testing.T) {
 	const body = "# One\r\n\r\nFirst.\r\n\r\n## Two\r\n\r\nSecond."
 	saved := []string{"fnv1a32:dc8415af", "fnv1a32:b38d3fde"}

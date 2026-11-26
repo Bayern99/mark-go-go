@@ -102,6 +102,67 @@ func TestCommandBarRunsTheResultChosenWithTheArrows(t *testing.T) {
 	}
 }
 
+func TestCommandBarExportsMarkdownAsHTML(t *testing.T) {
+	var shell nativeui.Shell
+	model := libraryModel()
+	var formats []string
+	app := ui.NewTester(func(c *ui.Context) {
+		shell.Draw(c, model, nativeui.Actions{ExportMarkdown: func(format string) { formats = append(formats, format) }}, nativeui.Slots{})
+	}, 1280, 820)
+	app.Key(ui.Cmd, ui.KeyK)
+	app.Type("export html markdown")
+	if err := app.Click("Export as HTML…"); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(formats, []string{"markdown-html"}) {
+		t.Fatalf("export formats = %v", formats)
+	}
+}
+
+func TestCommandBarExportsMarkdownAsPDF(t *testing.T) {
+	var shell nativeui.Shell
+	model := libraryModel()
+	var formats []string
+	app := ui.NewTester(func(c *ui.Context) {
+		shell.Draw(c, model, nativeui.Actions{ExportMarkdown: func(format string) { formats = append(formats, format) }}, nativeui.Slots{})
+	}, 1280, 820)
+	app.Key(ui.Cmd, ui.KeyK)
+	app.Type("export pdf print")
+	if err := app.Click("Export as PDF…"); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(formats, []string{"markdown-pdf"}) {
+		t.Fatalf("export formats = %v", formats)
+	}
+}
+
+func TestCommandBarExportsPandocFormats(t *testing.T) {
+	for _, tc := range []struct{ query, title, format string }{
+		{"export docx word", "Export as DOCX…", "markdown-docx"},
+		{"export pptx powerpoint", "Export as PPTX…", "markdown-pptx"},
+		{"export epub ebook", "Export as EPUB…", "markdown-epub"},
+		{"export rtf rich", "Export as RTF…", "markdown-rtf"},
+		{"export latex tex", "Export as LaTeX…", "markdown-latex"},
+	} {
+		t.Run(tc.format, func(t *testing.T) {
+			var shell nativeui.Shell
+			model := libraryModel()
+			var formats []string
+			app := ui.NewTester(func(c *ui.Context) {
+				shell.Draw(c, model, nativeui.Actions{ExportMarkdown: func(format string) { formats = append(formats, format) }}, nativeui.Slots{})
+			}, 1280, 820)
+			app.Key(ui.Cmd, ui.KeyK)
+			app.Type(tc.query)
+			if err := app.Click(tc.title); err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(formats, []string{tc.format}) {
+				t.Fatalf("export formats = %v", formats)
+			}
+		})
+	}
+}
+
 func TestCommandBarFilterIsCaseInsensitiveAndIgnoresOuterSpace(t *testing.T) {
 	var shell nativeui.Shell
 	model := libraryModel()

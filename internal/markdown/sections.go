@@ -17,6 +17,7 @@ type Section struct {
 	Hash       string `json:"hash"`
 
 	hashAsWritten string
+	byteStart     int
 }
 
 func (s Section) UnchangedSince(savedHash string) bool {
@@ -60,25 +61,41 @@ func NormalizeHeadingText(text string) string {
 	return strings.ToLower(strings.Join(strings.Fields(text), " "))
 }
 
+func leadingIndentCols(line string) int {
+	cols := 0
+	for i := 0; i < len(line); i++ {
+		switch line[i] {
+		case ' ':
+			cols++
+		case '\t':
+			cols += 4 - cols%4
+		default:
+			return cols
+		}
+	}
+	return cols
+}
+
 func unescapeNoteText(text string) string {
 	return noteUnescRe.ReplaceAllString(text, `--$1$2>`)
 }
 
-func parseNoteBlock(raw string) (string, bool) {
-	trimmed := strings.TrimRight(raw, "\r\n")
-	trimmedRight := strings.TrimRight(trimmed, " \t")
-	if !strings.HasSuffix(trimmedRight, "-->") {
-		return "", false
-	}
-	inner := strings.TrimSuffix(trimmedRight, "-->")
-	if strings.Contains(inner, "-->") {
-		return "", false
+func ReadNote(raw string) (head, text string, ok bool) {
+	trimmed := strings.TrimRight(raw, " \t\r\n")
+	inner, ok := strings.CutSuffix(trimmed, "-->")
+	if !ok || strings.Contains(inner, "-->") {
+		return "", "", false
 	}
 	loc := noteHeadRe.FindStringIndex(inner)
 	if loc == nil {
-		return "", false
+		return "", "", false
 	}
-	return unescapeNoteText(strings.TrimSpace(inner[loc[1]:])), true
+	return inner[:loc[1]], unescapeNoteText(strings.TrimSpace(inner[loc[1]:])), true
+}
+
+func parseNoteBlock(raw string) (string, bool) {
+	_, text, ok := ReadNote(raw)
+	return text, ok
 }
 
 func stripInlineMarkdown(s string) string {
@@ -241,17 +258,12 @@ func parseMarkdownBlocks(markdown string) ([]parsedHeading, []Note, []int, int) 
 			}
 			continue
 		}
-		if inHTMLTagBlock {
-			if trimmed == "" {
-				inHTMLTagBlock = false
-			} else {
-				hasPrevBlock = true
-				prevBlockEndUTF16 = sp.bodyUTF16
-				prevBlockEndByte = sp.bodyEnd
-			}
+		if !hasPrevPara && leadingIndentCols(sp.body) >= 4 && trimmed != "" {
+			hasPrevBlock = true
+			prevBlockEndUTF16 = sp.bodyUTF16
+			prevBlockEndByte = sp.bodyEnd
 			continue
 		}
-
 		if strings.HasPrefix(trimmed, "<!--") {
 			commentStart := i
 			commentEnd := i
@@ -298,6 +310,17 @@ func parseMarkdownBlocks(markdown string) ([]parsedHeading, []Note, []int, int) 
 			}
 			inHTMLComment = true
 			hasPrevPara = false
+			continue
+		}
+
+		if inHTMLTagBlock {
+			if trimmed == "" {
+				inHTMLTagBlock = false
+			} else {
+				hasPrevBlock = true
+				prevBlockEndUTF16 = sp.bodyUTF16
+				prevBlockEndByte = sp.bodyEnd
+			}
 			continue
 		}
 
@@ -437,6 +460,7 @@ func ExtractSections(markdown string) []Section {
 			Hash:       hash,
 
 			hashAsWritten: SectionHashAsWritten(hashed.String()),
+			byteStart:     h.byteOffset,
 		}
 	}
 	return out
@@ -445,6 +469,10 @@ func ExtractSections(markdown string) []Section {
 // ContentStart is the offset just past a note's opening marker, where its
 // text begins.
 func (n Note) ContentStart() int { return n.cutStart }
+
+func (n Note) ByteRange() (start, end int) { return n.startByte, n.endByte }
+func (n Note) CutStartByte() int           { return n.cutStartByte }
+func (s Section) ByteStart() int           { return s.byteStart }
 
 func ExtractNotes(markdown string) []Note {
 	_, notes, _, _ := parseMarkdownBlocks(markdown)

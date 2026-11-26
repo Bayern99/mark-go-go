@@ -79,7 +79,7 @@ func Use(space Space, dark bool) {
 	Highlights = highlightsFor(Colors)
 	Diff = diffFor(Colors, dark)
 	DefaultSkeleton = skeletonFor(Colors, dark)
-	GenUI = genUIFor(Colors)
+	GenUI = genUIFor(Colors, Materials, DefaultSkeleton)
 	Reader = readerFor(Colors, dark)
 	frameTray = Colors.Fill.Alpha(0.72)
 	dangerSurfaces()

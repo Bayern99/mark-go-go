@@ -2,7 +2,6 @@ package nativegenui
 
 import (
 	"cmp"
-	_ "embed"
 	"errors"
 	"fmt"
 	"math"
@@ -13,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Bayern99/mark-go-go/internal/genuikit"
 	"github.com/Bayern99/mark-go-go/internal/openuilang"
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui"
@@ -23,25 +23,11 @@ import (
 	"golang.org/x/text/language"
 )
 
-//go:embed icons.tsv
-var iconTable string
-
-var icons = sync.OnceValue(func() map[string]string {
-	table := map[string]string{}
-	for _, line := range strings.Split(iconTable, "\n") {
-		name, code, ok := strings.Cut(line, "\t")
-		if point, err := strconv.ParseUint(code, 16, 32); ok && err == nil {
-			table[name] = string(rune(point))
-		}
-	}
-	return table
-})
-
 var iconSizes = map[string]float32{"sm": 16, "md": 20, "lg": 24, "xl": 32}
 
 func (r *Reading) glyph(c *ui.Context, name string, size float32, color ui.Color) {
 	name = strings.ToLower(strings.TrimSpace(name))
-	if glyph, ok := icons()[name]; ok {
+	if glyph, ok := genuikit.IconGlyph(name); ok {
 		ui.Text(c.Key("icon:"+name), glyph).Font(portrait.FontIcons).FontSize(size).FixedLineHeight(size).TextColor(color).Shrink(0).AccessHidden(true)
 	}
 }

@@ -104,6 +104,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	p.blocks = append(p.blocks[:0], pageMargin(0, true, 44), pageMargin(snap.LineCount()-1, false, 120))
 	p.frontEnd = p.frontmatter(snap)
 	frontEnd := p.frontEnd
+	p.verticalRhythm(snap, frontEnd)
 	for i := 1; i < p.document.Len(); i++ {
 		b := p.document.Block(i)
 		if b.Start < frontEnd || b.Start < p.foldUntil {
@@ -211,7 +212,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 				if src[n] == '>' {
 					quoteDepth++
 					p.readable[n] = ""
-					p.replacements = append(p.replacements, editor.Replacement{Start: n, End: n + 1, Width: quoteBarWidth, Content: quoteBar})
+					p.replacements = append(p.replacements, editor.Replacement{Start: n, End: n + 1, Width: portrait.Editor.QuoteBarWidth, Content: quoteBar})
 				}
 			}
 			if quoteDepth > 0 {
@@ -326,10 +327,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	p.indexDisplay(src)
 }
 
-const (
-	quoteBarWidth = 2
-	quoteBarInset = 14
-)
+const quoteBarInset = 14
 
 // inlineFloor is the offset a break's line ending and indentation may be
 // hidden back to: the end of the inline before it, or the block's start.
@@ -416,13 +414,14 @@ func (p *previewLayout) addIndent(line int, left, right float32) {
 
 func quoteBar(c *ui.Context, e ui.Element, _ editor.Replacement) {
 	e.Children(func() {
-		ui.Box(c).Absolute().Left(0).Top(0).Bottom(0).Width(3).Background(portrait.Colors.Accent)
+		ui.Box(c).Absolute().Left(0).Top(0).Bottom(0).Width(portrait.Editor.QuoteBarWidth).Background(portrait.Colors.Accent)
 	})
 }
 
 func (p *previewLayout) thematicBreak(snap editor.Snapshot, start, end int) {
-	block := editor.Block{Line: snap.LineOf(start), Height: portrait.Type.Reading.Leading, Width: portrait.Editor.Column, Label: "Thematic break", Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
-		e.Height(portrait.Type.Reading.Leading).Justify(ui.Center).Children(func() {
+	height := portrait.Editor.ThematicBreakHeight
+	block := editor.Block{Line: snap.LineOf(start), Height: height, Width: portrait.Editor.Column, Label: "Thematic break", Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
+		e.Height(height).Justify(ui.Center).Children(func() {
 			ui.Box(c).FillWidth().Height(portrait.Editor.Hairline).Background(portrait.Colors.Line).AccessHidden(true)
 		})
 	}}
@@ -565,6 +564,103 @@ func headingStyle(line, level int) editor.LineStyle {
 	}[level-1]
 	style.Leading = max(style.Leading, portrait.Editor.Body.Leading)
 	return editor.LineStyle{Line: line, Font: style.Font(600), LineHeight: style.LineHeight()}
+}
+
+// verticalRhythm keeps Markdown's blank lines editable. The first structural
+// blank between blocks supplies their gap through its row height; only a
+// boundary with no blank needs an Above block on the next visible line.
+func (p *previewLayout) verticalRhythm(snap editor.Snapshot, frontEnd int) {
+	var walk func(int)
+	walk = func(parent int) {
+		previous := -1
+		for current := range p.document.Children(parent) {
+			b := p.document.Block(current)
+			if b.Start < frontEnd {
+				continue
+			}
+			if previous >= 0 {
+				prev := p.document.Block(previous)
+				gap := semanticBlockGap(prev, b)
+				switch p.document.Block(parent).Kind {
+				case parser.List:
+					gap = portrait.Editor.ParagraphGap
+					if p.document.Block(parent).Tight {
+						gap = portrait.Editor.ListGap
+					}
+				case parser.Item:
+					if b.Kind == parser.List {
+						gap = portrait.Editor.NestedListGap
+					}
+				}
+				p.applyBlockGap(snap, prev, b, gap)
+			}
+			switch b.Kind {
+			case parser.Quote:
+				if b.Alert == parser.NoAlert {
+					walk(current)
+				}
+			case parser.List, parser.Item:
+				walk(current)
+			}
+			previous = current
+		}
+	}
+	walk(0)
+}
+
+func semanticBlockGap(previous, current *parser.Block) float32 {
+	before, after := float32(0), portrait.Editor.ParagraphGap
+	if previous.Kind == parser.Heading {
+		after = portrait.Editor.HeadingAfter[previous.Level-1]
+	}
+	if current.Kind == parser.Heading {
+		before = portrait.Editor.HeadingBefore[current.Level-1]
+		if previous.Kind == parser.Heading {
+			before /= 2
+		}
+	}
+	return max(after, before)
+}
+
+func (p *previewLayout) applyBlockGap(snap editor.Snapshot, previous, current *parser.Block, gap float32) {
+	if gap <= 0 {
+		return
+	}
+	first, last := snap.LineOf(previous.End), snap.LineOf(current.Start)
+	for line := first + 1; line < last; line++ {
+		if !structuralBlank(snap.Line(line)) {
+			continue
+		}
+		p.styles = append(p.styles, editor.LineStyle{Line: line, LineHeight: gap / portrait.Editor.Body.Size})
+		return
+	}
+	line := snap.LineOf(current.Start)
+	if current.Kind == parser.CodeBlock && current.Fenced && ordinaryCodeLines(current) {
+		lastCodeFence := snap.LineOf(max(current.End-1, current.Start))
+		if line < lastCodeFence {
+			line++
+		}
+	}
+	p.blocks = append(p.blocks, verticalSpace(line, gap, true))
+}
+
+func structuralBlank(line string) bool {
+	line = strings.TrimSpace(line)
+	for strings.HasPrefix(line, ">") {
+		line = strings.TrimSpace(strings.TrimPrefix(line, ">"))
+	}
+	return line == ""
+}
+
+func ordinaryCodeLines(b *parser.Block) bool {
+	meta := strings.TrimSpace(strings.TrimPrefix(b.Info(), b.Language()))
+	return !strings.EqualFold(b.Language(), "mermaid") && meta == ""
+}
+
+func verticalSpace(line int, height float32, above bool) editor.Block {
+	return editor.Block{Line: line, Above: above, Height: height, Content: func(_ *ui.Context, e ui.Element, _ editor.Block) {
+		e.Height(height)
+	}}
 }
 
 func (p *previewLayout) literal(src string, in parser.Inline) {

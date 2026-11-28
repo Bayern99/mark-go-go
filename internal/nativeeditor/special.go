@@ -78,9 +78,7 @@ func (p *previewLayout) special(snap editor.Snapshot, i int) bool {
 		kind = "math"
 		body = strings.TrimSuffix(p.document.Lines(i), "\n")
 	case parser.CodeBlock:
-		info := b.Info()
-		meta := strings.TrimSpace(strings.TrimPrefix(info, b.Language()))
-		if !strings.EqualFold(b.Language(), "mermaid") && meta == "" {
+		if ordinaryCodeLines(b) {
 			return false
 		}
 		kind = "code"
@@ -162,13 +160,17 @@ func (p *previewLayout) codeBlock(snap editor.Snapshot, i int) {
 	}
 	if n := p.document.LineCount(i); n > 0 {
 		_, last := p.document.Line(i, n-1)
+		lastCodeLine := snap.LineOf(last)
 		p.backgrounds = append(p.backgrounds, editor.LineBackground{
-			First: headerLine, Last: snap.LineOf(last),
+			First: headerLine, Last: lastCodeLine,
 			Color: portrait.Colors.Code, Radius: portrait.Radii.M,
 			Stroke: 0.5, StrokeColor: portrait.Colors.Line,
 			ReadingColumn: true,
-			PaddingTop:    codeHeaderHeight, PaddingBottom: 12,
+			PaddingTop:    codeHeaderHeight, PaddingBottom: portrait.Editor.CodeBlockBottom,
 		})
+		// LineBackground's bottom padding paints the footer. A real block
+		// reserves the same height so that paint cannot consume the next gap.
+		p.blocks = append(p.blocks, verticalSpace(lastCodeLine, portrait.Editor.CodeBlockBottom, false))
 	}
 	p.blocks = append(p.blocks, editor.Block{
 		Line:        headerLine,

@@ -9,6 +9,10 @@ type EditorTokens struct {
 	Column, GutterLeft, GutterRight      float32
 	BlockRadius, BlockPadX, BlockPadY    float32
 	TableCellPadX, TableCellPadY         float32
+	TableRadius, TableColumnMin          float32
+	TableColumnMax, TableColumnResizeMin float32
+	TableRowMin                          float32
+	TableEdgeFade                        float32
 	ListGap, NestedListGap, ParagraphGap float32
 	HeadingBefore, HeadingAfter          [6]float32
 	CodeBlockBottom, ThematicBreakHeight float32
@@ -30,6 +34,7 @@ func EditorFor(readingSize, codeSize, width float32) EditorTokens {
 		width = 624
 	}
 	body := TypeStyle{Family: FontSans, Size: readingSize, Leading: float32(math.Round(float64(readingSize * 1.75)))}
+	tablePadX, tablePadY := float32(8), float32(4)
 	scale := func(points float32) float32 {
 		return float32(math.Round(float64(points * readingSize / 16)))
 	}
@@ -38,7 +43,9 @@ func EditorFor(readingSize, codeSize, width float32) EditorTokens {
 		Code:   TypeStyle{Family: FontMono, Size: codeSize, Leading: codeSize + 9},
 		Column: width, GutterLeft: 56, GutterRight: 40,
 		BlockRadius: Radii.M, BlockPadX: 14, BlockPadY: 10,
-		TableCellPadX: 4, TableCellPadY: 2,
+		TableCellPadX: tablePadX, TableCellPadY: tablePadY,
+		TableRadius: Radii.M, TableColumnMin: 112, TableColumnMax: 340,
+		TableColumnResizeMin: 72, TableRowMin: Type.Small.Leading + 2*tablePadY, TableEdgeFade: 24,
 		ListGap: scale(6), NestedListGap: scale(5), ParagraphGap: readingSize,
 		HeadingBefore:   [6]float32{scale(38), scale(30), scale(24), scale(22), scale(20), scale(20)},
 		HeadingAfter:    [6]float32{scale(14), scale(10), scale(10), scale(6), scale(5), scale(4)},

@@ -7,6 +7,29 @@ import (
 	"github.com/Bayern99/mark-go-go/internal/portrait"
 )
 
+func TestEditorTableTokens(t *testing.T) {
+	tokens := portrait.EditorFor(16, 13, 624)
+	if tokens.TableCellPadX != 8 || tokens.TableCellPadY != 4 {
+		t.Errorf("table cell padding = %v / %v, want 8 / 4", tokens.TableCellPadX, tokens.TableCellPadY)
+	}
+	if tokens.TableRadius != portrait.Radii.M {
+		t.Errorf("table radius = %v, want %v", tokens.TableRadius, portrait.Radii.M)
+	}
+	if tokens.TableColumnMin != 112 || tokens.TableColumnMax != 340 || tokens.TableColumnResizeMin != 72 {
+		t.Errorf("table column bounds = %v / %v, resize minimum %v; want 112 / 340 and 72", tokens.TableColumnMin, tokens.TableColumnMax, tokens.TableColumnResizeMin)
+	}
+	if want := portrait.Type.Small.Leading + 2*tokens.TableCellPadY; tokens.TableRowMin != want {
+		t.Errorf("table row minimum = %v, want one 14/22 line plus vertical padding = %v", tokens.TableRowMin, want)
+	}
+	if tokens.TableEdgeFade != 24 {
+		t.Errorf("table edge fade = %v, want 24", tokens.TableEdgeFade)
+	}
+	assertTokenSources(t, sourceDerived,
+		"Editor.TableCellPadX", "Editor.TableCellPadY", "Editor.TableRadius",
+		"Editor.TableColumnMin", "Editor.TableColumnMax", "Editor.TableColumnResizeMin", "Editor.TableRowMin", "Editor.TableEdgeFade",
+	)
+}
+
 func TestEditorVerticalRhythmTokens(t *testing.T) {
 	tests := []struct {
 		size                         float32

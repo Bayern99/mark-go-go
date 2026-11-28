@@ -714,8 +714,9 @@ func TestLegacyReadingPreferencesRestoreByContent(t *testing.T) {
 	}
 	a, _ := tt.Find("Table row 1 column 1")
 	b, _ := tt.Find("Table row 1 column 2")
-	if a.W != 400 || b.W != 204 {
-		t.Errorf("legacy column widths %v %v", a, b)
+	padding := 2 * portrait.Editor.TableCellPadX
+	if a.W+padding != 410 || b.W+padding != 214 {
+		t.Errorf("legacy outer column widths %v %v, want 410 and 214", a.W+padding, b.W+padding)
 	}
 	if err := tt.Click("Expand Read"); err != nil {
 		t.Fatal(err)

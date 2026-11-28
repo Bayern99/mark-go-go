@@ -54,7 +54,9 @@ func (ed *editor) layout(w, h, scale float32) {
 		ed.textX = left + max(0, (available-column.Width)/2)
 	}
 	wrap := ed.o.wrap != ed.toggledWrap
-	v.setWrap(wrap, ed.textWidth())
+	width := ed.textWidth()
+	v.setWrap(wrap, width)
+	v.setTextAlign(ed.o.textAlign, width)
 	if wrap {
 		// Wrapped lines fit: nothing is sideways.
 		ed.scrollX = 0
@@ -307,6 +309,7 @@ func (ed *editor) paintLines(p *ui.Painter, r ui.Rect, f *frame) {
 		y := r.Y + float32(-ed.scrollY)
 		l := v.shaped.get(ed.o.placeholder, v.style)
 		row := rowLayout{pieces: []rowPiece{{to: len(ed.o.placeholder), l: l, ascii: isASCII(ed.o.placeholder), width: l.Width}}, to: len(ed.o.placeholder)}
+		row.align = v.alignOffset(row.width)
 		cl := &lineLayout{disp: ed.o.placeholder}
 		var cc runColors
 		muted := ed.theme.LineNumber
@@ -498,7 +501,7 @@ func (ed *editor) paintLine(p *ui.Painter, r ui.Rect, f *frame, line int, g line
 			ed.fillRange(p, f, l, row, ox, y, da, db, selColor, 0)
 			// Past the end of the line, the newline.
 			if s.end() > l.start+len(l.text) && ri == len(l.rows)-1 {
-				x := ox + row.indent + row.width
+				x := ox + row.startX() + row.width
 				p.Fill(ui.Rect{X: x, Y: y, W: v.charWidth * 0.6, H: lh}, selColor, 0)
 			}
 		}
@@ -545,14 +548,14 @@ func (ed *editor) paintLine(p *ui.Painter, r ui.Rect, f *frame, line int, g line
 			a, b := max(d.Start-l.start, 0), min(max(d.End, d.Start+1)-l.start, len(l.text))
 			f.rects = v.rangeRects(l, row, l.toDisp(a, false), l.toDisp(max(b, a), false), f.rects[:0])
 			if a == b && len(l.text) == 0 {
-				f.rects = append(f.rects, ui.Rect{X: row.indent, W: v.charWidth})
+				f.rects = append(f.rects, ui.Rect{X: row.startX(), W: v.charWidth})
 			}
 			for _, rc := range f.rects {
 				squiggle(p, ox+rc.X, y+lh-2.5, rc.W, ct.SeverityColor(d.Severity))
 			}
 		}
 		if ri == len(l.rows)-1 && ed.isFolded(line) {
-			x := ox + row.indent + row.width + 4
+			x := ox + row.startX() + row.width + 4
 			w := v.charWidth*3 + 8
 			p.Fill(ui.Rect{X: x, Y: y + 3, W: w, H: lh - 6}, ct.Occurrence, 4)
 			ph := v.shaped.get("⋯", v.style)

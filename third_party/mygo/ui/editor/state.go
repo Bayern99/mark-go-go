@@ -37,6 +37,9 @@ type State struct {
 	WrapColumn int
 	// ReadingColumn centers wrapped prose within the horizontal margins.
 	ReadingColumn ReadingColumn
+	// textAlign is how each row of the lines is placed in the width of
+	// the text (SetTextAlign, TextAlign): at its start when zero.
+	textAlign TextAlign
 	// LineNumbers shows the numbers of lines in the gutter, absolute by
 	// default.
 	LineNumbers LineNumbers
@@ -273,7 +276,7 @@ func (st *State) options() options {
 	}
 	return options{
 		readOnly: st.ReadOnly, font: st.Font, lineHeight: st.LineHeight, tabSize: st.TabSize, indent: st.Indent,
-		wrap: st.SoftWrap, wrapColumn: st.WrapColumn, readingColumn: st.ReadingColumn, lineNumbers: st.LineNumbers, whitespace: st.Whitespace,
+		wrap: st.SoftWrap, wrapColumn: st.WrapColumn, readingColumn: st.ReadingColumn, textAlign: st.textAlign, lineNumbers: st.LineNumbers, whitespace: st.Whitespace,
 		wrapGuides: st.WrapGuides, indentGuides: !st.NoIndentGuides,
 		scrollPastEnd: !st.NoScrollPastEnd && !st.FitContent, scrollMargin: scrollMargin,
 		keepScrollbars: st.KeepScrollbars, hideScrollbars: st.NoScrollbars, scrollbar: st.Scrollbar,
@@ -413,6 +416,26 @@ func (st *State) Rect(off int) (ui.Rect, bool) {
 	r.Y -= float32(st.ed.scrollY)
 	return r, true
 }
+
+// SetTextAlign sets how the editor places the rows of its lines in the
+// width of its text: at the start of it, AlignLeft and what an editor
+// without a call does; centered, AlignCenter; or at its end, AlignRight.
+// Each visual row of a wrapped line is placed on its own, and a row wider
+// than the text stays at its start, rather than past its left edge. What
+// is drawn, the carets, the selections, the pointer's hits and the anchor
+// of an input method's candidates all follow it.
+func (st *State) SetTextAlign(align TextAlign) {
+	st.textAlign = align
+	st.ensure()
+	st.ed.o.textAlign = align
+	// The lines laid out are placed as the editor laid them out last,
+	// which the next frame lays out at the width of its text again.
+	st.ed.view.setTextAlign(align, st.ed.view.alignWidth)
+}
+
+// TextAlign returns how the editor places the rows of its lines in the
+// width of its text: AlignLeft, unless SetTextAlign set another.
+func (st *State) TextAlign() TextAlign { return st.textAlign }
 
 // Find opens the find bar with query, and selects its first match after
 // the caret.

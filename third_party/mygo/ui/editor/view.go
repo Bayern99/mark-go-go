@@ -37,6 +37,11 @@ type view struct {
 	tabSize    int
 	wrap       bool
 	wrapWidth  float32
+	// align is how the rows of the lines are placed in alignWidth, the
+	// width of the text, as setTextAlign sets them; alignOffset tells
+	// what the rows of a line drawn here get.
+	align      TextAlign
+	alignWidth float32
 	// leftInset and rightInset are a styled line's horizontal insets.
 	// leftInset is part of every row's indent; both reduce wrapWidth.
 	leftInset, rightInset float32
@@ -178,8 +183,11 @@ const (
 type rowLayout struct {
 	from, to int
 	indent   float32
-	pieces   []rowPiece
-	width    float32
+	// align is how far past the indent the row is drawn, which
+	// TextAlign gives it in the width of the text (alignOffset).
+	align  float32
+	pieces []rowPiece
+	width  float32
 }
 
 type rowPiece struct {
@@ -1191,6 +1199,7 @@ func (v *view) layoutRows(l *lineLayout) {
 		// The rows of a wrapped line are shaped as they show, not all
 		// of a long line's at once, but those wrapBreaks shaped to fit.
 		v.shapeRow(l, &row, len(breaks) > 0, fit)
+		row.align = v.alignOffset(row.indent + row.width)
 		l.rows = append(l.rows, row)
 		l.width = max(l.width, row.indent+row.width)
 		from = to
@@ -1568,16 +1577,16 @@ func (v *view) xOf(l *lineLayout, r *rowLayout, d int) float32 {
 				idx = utf8.RuneCountInString(l.disp[p.from:d])
 			}
 			x, _, _ := lay.Caret(idx)
-			return r.indent + p.x + x
+			return r.startX() + p.x + x
 		}
 	}
-	return r.indent
+	return r.startX()
 }
 
 // dispAt returns the displayed byte in row r nearest to x, from the row's
 // start.
 func (v *view) dispAt(l *lineLayout, r *rowLayout, x float32) int {
-	x -= r.indent
+	x -= r.startX()
 	d := r.from
 	for i := range r.pieces {
 		p := &r.pieces[i]
@@ -1711,7 +1720,7 @@ func (v *view) paintRow(p *ui.Painter, l *lineLayout, r *rowLayout, x, y float32
 	def := v.theme.Text
 	for pi := range r.pieces {
 		pc := &r.pieces[pi]
-		px := x + r.indent + pc.x
+		px := x + r.startX() + pc.x
 		if px+pc.width < clip.X-64 || px > clip.X+clip.W+64 {
 			continue
 		}
@@ -1766,7 +1775,7 @@ func (v *view) rangeRects(l *lineLayout, r *rowLayout, a, b int, out []ui.Rect) 
 			rb = ra + utf8.RuneCountInString(l.disp[pa:pb])
 		}
 		for _, rc := range lay.SelectionVisual(ra, rb, false) {
-			out = append(out, ui.Rect{X: r.indent + pc.x + rc.X, Y: 0, W: rc.W, H: l.rowHeight})
+			out = append(out, ui.Rect{X: r.startX() + pc.x + rc.X, Y: 0, W: rc.W, H: l.rowHeight})
 		}
 	}
 	return out

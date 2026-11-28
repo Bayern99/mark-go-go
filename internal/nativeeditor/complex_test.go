@@ -167,10 +167,12 @@ func TestTableBoundaryClicksAndCanceledDragKeepAutomaticWidths(t *testing.T) {
 	tt.Release(x, y)
 
 	tt.RightClickAt(before.X+1, y)
-	if len(tt.Menu()) == 0 || !tt.Focused(cell) {
-		t.Fatalf("right click near the column boundary missed the cell: %v", tt.Menu())
+	tt.Frame()
+	if _, ok := tt.Find("Insert Row Below"); !ok || !tt.Focused(cell) {
+		t.Fatalf("right click near the column boundary missed the cell: menu %v, texts %v", tt.Menu(), tt.Texts())
 	}
-	tt.CloseMenu()
+	tt.Key(0, ui.KeyEscape)
+	tt.Frame()
 
 	tt.Press(x, y)
 	tt.Move(x+32, y)

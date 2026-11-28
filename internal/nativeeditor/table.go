@@ -23,6 +23,14 @@ type readingTable struct {
 	widths                       []float32
 	minimum                      []float32
 	manual                       bool
+	aligns                       []parser.Align
+	rawStart, rawEnd             int
+	target                       cellPosition
+	hasTarget                    bool
+	menuOpen, menuWas            bool
+	menuCell                     cellPosition
+	pendingEdit                  *tableEdit
+	resave                       bool
 	bounds                       map[cellPosition]ui.Rect
 	kind                         tableSelectionKind
 	anchor, head                 cellPosition
@@ -63,6 +71,9 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 		doc.tables = map[int]*readingTable{}
 	}
 	b := p.document.Block(idx)
+	if pending := doc.tables[b.Start]; pending != nil {
+		pending.settle(doc)
+	}
 	ncols := len(b.Align)
 	if ncols == 0 {
 		return
@@ -122,6 +133,12 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 	}
 	model.signature = sig
 	model.preferenceKey = preferenceKey
+	model.aligns = append(model.aligns[:0], b.Align...)
+	model.rawStart, model.rawEnd = b.Start, snap.LineEnd(snap.LineOf(b.End))
+	if model.resave {
+		model.resave = false
+		doc.saveTables()
+	}
 	model.seen, model.version = p.version, p.version
 	if !model.shaped(len(rows), ncols) {
 		model.resize(doc, len(rows), ncols)
@@ -146,26 +163,36 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 			model.cells[r][k] = nil
 		}
 	}
-	width := float32(0)
+	gutter := portrait.Editor.TableGutter
+	width := gutter
 	for _, w := range model.widths {
 		width += w
 	}
 	version := p.version
-	p.standIn(snap, b.Start, snap.LineEnd(snap.LineOf(b.End)), strings.Join(visible, "\n"), editor.Block{Label: "Markdown table", Width: width, Height: model.height(labels), Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
-		if !model.manual && model.dragCol < 0 && e.LayoutBounds().W > 0 {
-			model.fit(e.LayoutBounds().W)
+	p.standIn(snap, b.Start, snap.LineEnd(snap.LineOf(b.End)), strings.Join(visible, "\n"), editor.Block{Label: "Markdown table", Width: width, Height: model.height(labels) + gutter, Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
+		if !model.manual && model.dragCol < 0 && e.LayoutBounds().W > gutter {
+			model.fit(e.LayoutBounds().W - gutter)
 		}
-		gridWidth := float32(0)
+		gridWidth := gutter
 		for _, w := range model.widths {
 			gridWidth += w
 		}
+		model.menuClosed(c)
+		handles := model.showingHandles(c, e.Hovered())
 		e.Children(func() {
 			viewport := ui.Column(c).FillWidth().MaxWidth(gridWidth).ClipInset(0, 0, 0, 0, portrait.Editor.TableRadius)
 			viewport.Children(func() {
 				ui.ScrollHorizontal(c).FillWidth().TrackScroll(&model.scroll).Children(func() {
 					ui.Column(c).Width(gridWidth).Shrink(0).Role(ui.RoleTable).Children(func() {
+						ui.Row(c.Key("column handles")).Height(gutter).AlignItems(ui.Stretch).Children(func() {
+							ui.Box(c.Key("corner")).Width(gutter).Shrink(0).Sticky().Left(0)
+							for k := range model.widths {
+								model.columnSlot(c, doc, k, handles)
+							}
+						})
 						for r, cells := range rows {
 							ui.Row(c.Key(r)).MinHeight(portrait.Editor.TableRowMin).AlignItems(ui.Stretch).Role(ui.RoleRow).Children(func() {
+								model.rowSlot(c, doc, r, handles)
 								for k, cell := range cells {
 									if k >= ncols {
 										break
@@ -173,6 +200,10 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 									child := model.cells[r][k]
 									pos := cellPosition{r, k}
 									box := ui.Column(c.Key(k)).Width(model.widths[k]).Shrink(0).Padding(portrait.Editor.TableCellPadY, portrait.Editor.TableCellPadX).Justify(ui.Center)
+									if pos == model.menuCell {
+										// One cell holds the table's context menu at a time.
+										model.tableMenu(c, doc, box, pos)
+									}
 									line := portrait.Colors.Line
 									if r == 0 {
 										box.Background(portrait.Colors.FillStrong).Role(ui.RoleColumnHeader)
@@ -223,6 +254,10 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 												model.anchor, model.head, model.dragging, model.selected = pos, pos, true, false
 											}
 										})
+										if model.hasTarget && model.target == pos {
+											model.hasTarget = false
+											model.focus = child
+										}
 										if model.focus == child {
 											field.Focus()
 											model.focus = nil
@@ -254,7 +289,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 											delete(model.composing, child)
 											if pending := model.pending; pending != nil && pending.child == child {
 												model.pending = nil
-												model.move(pending.from, pending.step)
+												model.move(doc, pending.from, pending.step)
 												c.Invalidate()
 											}
 										}
@@ -271,7 +306,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 							})
 						}
 						model.hoverCol = -1
-						boundary := float32(0)
+						boundary := gutter
 						for k := 0; k+1 < len(model.widths); k++ {
 							boundary += model.widths[k]
 							model.resizeHandle(c, k, boundary, doc)
@@ -399,6 +434,24 @@ func (m *readingTable) cellInput(child *Document, pos cellPosition, doc *Documen
 				m.dragging = false
 			}
 			return m.selected
+		case ui.InputPointerDown:
+			// The secondary button opens the table's own menu where the
+			// editor would open its text menu.
+			if ev.Button != 0 {
+				if len(m.composing) != 0 || child.state.Composing() {
+					// A composition keeps its keys and its menu.
+					return false
+				}
+				if m.chosen(pos) {
+					m.focus = child
+				} else {
+					m.focusCell(pos)
+				}
+				m.menuCell = pos
+				m.menuOpen = true
+				return true
+			}
+			return false
 		case ui.InputCommand:
 			switch ev.Text {
 			case "copy":
@@ -428,7 +481,7 @@ func (m *readingTable) cellInput(child *Document, pos cellPosition, doc *Documen
 					m.pending = &pendingCellMove{child: child, from: pos, step: step}
 					return true
 				}
-				return m.navigate(child, pos, step)
+				return m.navigate(doc, child, pos, step)
 			}
 			if ev.Mods == 0 && m.selected && (ev.Key == ui.KeyBackspace || ev.Key == ui.KeyDelete) {
 				return m.clearCells(doc)
@@ -458,7 +511,7 @@ func (m *readingTable) guide() (float32, bool) {
 	if col < 0 || col+1 >= len(m.widths) {
 		return 0, false
 	}
-	at := float32(0)
+	at := portrait.Editor.TableGutter
 	for k := 0; k <= col; k++ {
 		at += m.widths[k]
 	}
@@ -466,7 +519,7 @@ func (m *readingTable) guide() (float32, bool) {
 }
 
 func (m *readingTable) resizeHandle(c *ui.Context, col int, boundary float32, doc *Document) {
-	h := ui.Box(c.Key("resize " + fmt.Sprint(col))).Absolute().Left(boundary - 4).Top(0).Bottom(0).Width(8).
+	h := ui.Box(c.Key("resize " + fmt.Sprint(col))).Absolute().Left(boundary - 4).Top(portrait.Editor.TableGutter).Bottom(0).Width(8).
 		Cursor(ui.CursorResizeColumn).KeepFocus().Label(fmt.Sprintf("Resize table column %d", col+1))
 	if h.Hovered() && !m.dragging && m.dragCol < 0 {
 		m.hoverCol = col

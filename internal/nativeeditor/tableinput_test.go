@@ -93,22 +93,27 @@ func TestTableCellKeepsLiteralBlocksOnTypedLines(t *testing.T) {
 
 func TestTableCellContextMenuLeavesDocumentNotesOut(t *testing.T) {
 	d := New("| A | B |\n| --- | --- |\n| x | y |\n\nafter\n")
-	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 760, 320)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 760, 420)
 	tt.Frame()
 	cell, ok := tt.Find("Table row 2 column 1")
 	if !ok {
 		t.Fatal("missing the body cell")
 	}
 	tt.RightClickAt(cell.X+cell.W/2, cell.Y+cell.H/2)
-	if menu := tt.Menu(); len(menu) == 0 {
-		t.Fatal("the cell has no context menu")
+	tt.Frame()
+	if _, ok := tt.Find("Insert Row Below"); !ok {
+		t.Fatalf("the cell has no table menu: %v", tt.Texts())
 	}
-	for _, item := range tt.Menu() {
-		if item == "Add note" {
-			t.Fatalf("cell menu offers the document's note action: %v", tt.Menu())
+	if menu := tt.Menu(); len(menu) != 0 {
+		t.Fatalf("the cell opened the editor's text menu instead: %v", menu)
+	}
+	for _, item := range []string{"Add note", "Cut", "Paste"} {
+		if _, ok := tt.Find(item); ok {
+			t.Fatalf("cell menu offers %q", item)
 		}
 	}
-	tt.CloseMenu()
+	tt.Key(0, ui.KeyEscape)
+	tt.Frame()
 	r, ok := d.RectUTF16(strings.Index(d.Source(), "after"))
 	if !ok {
 		t.Fatal("missing the body caret")
@@ -141,13 +146,18 @@ func TestTableTabWalksCellsInReadingOrder(t *testing.T) {
 	}
 	tt.Key(0, ui.KeyTab)
 	tt.Frame()
-	if !tt.Focused("Table row 2 column 2") {
-		t.Fatal("Tab left the last cell")
+	tt.Frame()
+	if !tt.Focused("Table row 3 column 1") {
+		t.Fatal("Tab in the last cell did not add a row to the table's end")
 	}
-	if d.Source() != src {
-		t.Fatalf("Tab typed into the table: %q", d.Source())
+	if want := src + "|  |  |\n"; d.Source() != want {
+		t.Fatalf("Tab in the last cell = %q, want a row added in %q", d.Source(), want)
 	}
-	for _, want := range []string{"Table row 2 column 1", "Table row 1 column 2", "Table row 1 column 1"} {
+	if !d.Undo() || d.Source() != src {
+		t.Fatalf("one undo did not take the added row back: %q", d.Source())
+	}
+	tt.Frame()
+	for _, want := range []string{"Table row 2 column 2", "Table row 2 column 1", "Table row 1 column 2"} {
 		tt.Key(ui.Shift, ui.KeyTab)
 		tt.Frame()
 		if !tt.Focused(want) {
@@ -159,6 +169,7 @@ func TestTableTabWalksCellsInReadingOrder(t *testing.T) {
 	if !tt.Focused("Table row 1 column 1") {
 		t.Fatal("Shift+Tab left the first cell")
 	}
+	tt.Frame()
 	if d.Source() != src {
 		t.Fatalf("Shift+Tab typed into the table: %q", d.Source())
 	}

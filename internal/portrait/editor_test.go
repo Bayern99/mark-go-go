@@ -24,9 +24,19 @@ func TestEditorTableTokens(t *testing.T) {
 	if tokens.TableEdgeFade != 24 {
 		t.Errorf("table edge fade = %v, want 24", tokens.TableEdgeFade)
 	}
+	if tokens.TableGutter != 16 || tokens.TableHandle != 10 || tokens.TablePin != 14 {
+		t.Errorf("table gutter / handle / pin = %v / %v / %v, want 16 / 10 / 14", tokens.TableGutter, tokens.TableHandle, tokens.TablePin)
+	}
+	if tokens.TableInsertZone != 12 || tokens.TableIndicator != 2 {
+		t.Errorf("table insert zone / indicator = %v / %v, want 12 / 2", tokens.TableInsertZone, tokens.TableIndicator)
+	}
+	if tokens.TablePin > tokens.TableGutter || tokens.TableHandle > tokens.TableGutter {
+		t.Errorf("table pin %v and handle %v outgrow the %v gutter", tokens.TablePin, tokens.TableHandle, tokens.TableGutter)
+	}
 	assertTokenSources(t, sourceDerived,
 		"Editor.TableCellPadX", "Editor.TableCellPadY", "Editor.TableRadius",
 		"Editor.TableColumnMin", "Editor.TableColumnMax", "Editor.TableColumnResizeMin", "Editor.TableRowMin", "Editor.TableEdgeFade",
+		"Editor.TableGutter", "Editor.TableHandle", "Editor.TablePin", "Editor.TableInsertZone", "Editor.TableIndicator",
 	)
 }
 

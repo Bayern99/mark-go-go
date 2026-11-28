@@ -239,26 +239,41 @@ func tableRowCellTexts(body string) []string {
 	return out
 }
 
-func tableRowParsesInGFM(cand string, wantCols int, isHeader bool) bool {
+func tableRowParsesInGFM(cand string, want []string, isHeader bool) bool {
+	wantCols := len(want)
 	if wantCols <= 0 {
 		return true
 	}
 	p := parser.New(parser.Default | parser.ExtDollarMath)
 	delim := "|" + strings.Repeat(" --- |", wantCols)
+	rowIdx := 0
 	if isHeader {
 		p.Set(cand + "\n" + delim + "\n")
-		return p.Len() > 1 && p.Block(1).Kind == parser.Table && len(p.Block(1).Align) == wantCols
+	} else {
+		header := "|" + strings.Repeat(" h |", wantCols)
+		p.Set(header + "\n" + delim + "\n" + cand + "\n")
+		rowIdx = 1
 	}
-	header := "|" + strings.Repeat(" h |", wantCols)
-	p.Set(header + "\n" + delim + "\n" + cand + "\n")
 	if p.Len() <= 1 || p.Block(1).Kind != parser.Table || len(p.Block(1).Align) != wantCols {
 		return false
 	}
-	rows := 0
-	for range p.Children(1) {
-		rows++
+	r := 0
+	for row := range p.Children(1) {
+		if r == rowIdx {
+			var got []string
+			for cell := range p.Children(row) {
+				raw := ""
+				if p.LineCount(cell) > 0 {
+					content, _ := p.Line(cell, 0)
+					raw = content
+				}
+				got = append(got, raw)
+			}
+			return slices.Equal(got, want)
+		}
+		r++
 	}
-	return rows == 2
+	return false
 }
 
 func ensureTableRowCells(body string, want []string, isHeader bool) string {
@@ -270,7 +285,7 @@ func ensureTableRowCells(body string, want []string, isHeader bool) string {
 		if wantCols == 1 && strings.IndexByte(cand, '|') < 0 {
 			return false
 		}
-		return slices.Equal(tableRowCellTexts(cand), want) && tableRowParsesInGFM(cand, wantCols, isHeader)
+		return tableRowParsesInGFM(cand, want, isHeader)
 	}
 	if matches(body) {
 		return body

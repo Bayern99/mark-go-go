@@ -1460,8 +1460,10 @@ func TestTableOpsCodexRoundTwoEdgeCases(t *testing.T) {
 			t.Fatalf("table disappeared after clearing 4-space padded col 1: %q", document.Source())
 		}
 		got := firstTable(t, document)
-		if got.columns() != 2 || got.cells[0][0].Source() != "" || got.cells[0][1].Source() != "B" {
-			t.Fatalf("unexpected header cells after clear: [%q %q] in %q", got.cells[0][0].Source(), got.cells[0][1].Source(), document.Source())
+		if got.columns() != 2 || got.cells[0][0].Source() != "" || got.cells[0][1].Source() != "B" || got.cells[1][0].Source() != "" || got.cells[1][1].Source() != "y" {
+			t.Fatalf("unexpected cells after clear: [%q %q] / [%q %q] in %q",
+				got.cells[0][0].Source(), got.cells[0][1].Source(),
+				got.cells[1][0].Source(), got.cells[1][1].Source(), document.Source())
 		}
 	})
 

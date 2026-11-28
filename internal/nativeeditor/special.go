@@ -64,8 +64,8 @@ func (p *previewLayout) inlineMath(in parser.Inline) {
 	}
 	w, h := img.svg.Size()
 	width := min(w, 280) * min(float32(1), 25/max(1, h))
-	p.readable[in.Start] = in.Text
-	p.replacements = append(p.replacements, editor.Replacement{Start: in.Start, End: in.End, Width: width, Label: in.Text, Content: func(c *ui.Context, e ui.Element, _ editor.Replacement) {
+	p.reading(in.Start, in.Text)
+	p.replacements = append(p.replacements, editor.Replacement{Start: p.at(in.Start), End: p.at(in.End), Width: width, Label: in.Text, Content: func(c *ui.Context, e ui.Element, _ editor.Replacement) {
 		e.Children(func() { ui.Image(c, img.svg).Size(width, min(25, h)).Label(in.Text) })
 	}})
 }

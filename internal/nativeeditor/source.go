@@ -41,6 +41,7 @@ type Document struct {
 	landing          jumpHighlight
 	revealScroll     revealScroll
 	lineNumbers      bool
+	inlineOnly       bool
 }
 
 func New(source string) *Document {

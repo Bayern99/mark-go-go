@@ -135,7 +135,7 @@ func TestEverySpaceMeetsWCAGAA(t *testing.T) {
 			{"Accent on Paper", wcagColor(c.Accent), paper, 4.5},
 			{"Accent on Code", wcagColor(c.Accent), code, 4.5},
 			{"Accent on Fill", wcagColor(c.Accent), wcagOver(wcagColor(c.Fill), paper), 4.5},
-			{"Ink on Table header", wcagColor(c.Ink), wcagOver(wcagColor(c.FillStrong), paper), 4.5},
+			{"Ink on Table header", wcagColor(c.Ink), wcagOver(wcagColor(c.AccentSoft), paper), 4.5},
 			{"Accent on Scenery", wcagColor(c.Accent), wcagColor(space.In(dark).From.Mix(space.In(dark).To, 0.64)), 4.5},
 			{"Accent on Settings selected row", wcagColor(c.Accent), wcagOver(wcagColor(portrait.Materials.Raised.From), paper), 4.5},
 			{"Accent on AccentSoft", wcagColor(c.Accent), wcagOver(wcagColor(c.AccentSoft), paper), 4.5},

@@ -168,23 +168,28 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 		}
 	}
 	gutter := portrait.Editor.TableGutter
-	width := gutter
+	width := float32(0)
 	for _, w := range model.widths {
 		width += w
 	}
 	version := p.version
 	p.standIn(snap, b.Start, snap.LineEnd(snap.LineOf(b.End)), strings.Join(visible, "\n"), editor.Block{Label: "Markdown table", Width: width, Height: model.height(labels) + gutter, Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
-		if !model.manual && model.dragCol < 0 && e.LayoutBounds().W > gutter {
-			model.fit(e.LayoutBounds().W - gutter)
+		avail := e.LayoutBounds().W
+		if !model.manual && model.dragCol < 0 && avail > 0 {
+			model.fit(avail)
 		}
 		gridWidth := gutter
 		for _, w := range model.widths {
 			gridWidth += w
 		}
 		model.menuClosed(c)
-		handles := model.showingHandles(c, e.Hovered())
+		viewWidth := gridWidth
+		if avail > 0 && avail+gutter < viewWidth {
+			viewWidth = avail + gutter
+		}
 		e.Children(func() {
-			viewport := ui.Column(c).FillWidth().MaxWidth(gridWidth).ClipInset(0, 0, 0, 0, portrait.Editor.TableRadius)
+			viewport := ui.Column(c).Width(viewWidth).Margin(0, 0, 0, -gutter)
+			handles := model.showingHandles(c, e.Hovered() || viewport.Hovered())
 			viewport.Children(func() {
 				ui.ScrollHorizontal(c).FillWidth().TrackScroll(&model.scroll).Children(func() {
 					ui.Column(c).Width(gridWidth).Shrink(0).Role(ui.RoleTable).Children(func() {
@@ -194,6 +199,8 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 								model.columnSlot(c, doc, k, handles)
 							}
 						})
+						lastRow := len(rows) - 1
+						rad := portrait.Editor.TableRadius
 						for r, cells := range rows {
 							ui.Row(c.Key(r)).MinHeight(portrait.Editor.TableRowMin).AlignItems(ui.Stretch).Role(ui.RoleRow).Children(func() {
 								model.rowSlot(c, doc, r, handles)
@@ -204,13 +211,30 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 									child := model.cells[r][k]
 									pos := cellPosition{r, k}
 									box := ui.Column(c.Key(k)).Width(model.widths[k]).Shrink(0).Padding(portrait.Editor.TableCellPadY, portrait.Editor.TableCellPadX).Justify(ui.Center)
+									var tl, tr, br, bl float32
+									if r == 0 && k == 0 {
+										tl = rad
+									}
+									if r == 0 && k == ncols-1 {
+										tr = rad
+									}
+									if r == lastRow && k == ncols-1 {
+										br = rad
+									}
+									if r == lastRow && k == 0 {
+										bl = rad
+									}
+									if tl != 0 || tr != 0 || br != 0 || bl != 0 {
+										box.Radius(tl, tr, br, bl).Clip()
+									}
 									if pos == model.menuCell {
 										model.tableMenu(c, doc, box, pos)
 									}
 									line := portrait.Colors.Line
+									bottomLine := line
 									if r == 0 {
-										box.Background(portrait.Colors.FillStrong).Role(ui.RoleColumnHeader)
-										line = portrait.Colors.LineStrong
+										box.Background(portrait.Colors.AccentSoft).Role(ui.RoleColumnHeader)
+										bottomLine = portrait.Colors.Focus
 									} else {
 										box.Role(ui.RoleCell)
 									}
@@ -223,7 +247,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 										box.InsetShadow(-hairline, 0, 0, 0, line)
 									}
 									if bottom {
-										box.InsetShadow(0, -hairline, 0, 0, line)
+										box.InsetShadow(0, -hairline, 0, 0, bottomLine)
 									}
 									if left {
 										box.InsetShadow(hairline, 0, 0, 0, line)
@@ -330,9 +354,9 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 					if left {
 						name = "left scroll fade"
 					}
-					edge := ui.Box(c.Key(name)).Absolute().Top(0).Bottom(0).Width(portrait.Editor.TableEdgeFade)
+					edge := ui.Box(c.Key(name)).Absolute().Top(gutter).Bottom(0).Width(portrait.Editor.TableEdgeFade)
 					if left {
-						edge.Left(0)
+						edge.Left(gutter)
 					} else {
 						edge.Right(0)
 					}

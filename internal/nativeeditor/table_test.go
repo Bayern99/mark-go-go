@@ -54,6 +54,8 @@ func TestTableHeaderAndOuterCornersPaintPortraitTokens(t *testing.T) {
 	for _, table := range d.tables {
 		field := table.bounds[cellPosition{0, 0}]
 		x, y := field.X-portrait.Editor.TableCellPadX, field.Y-portrait.Editor.TableCellPadY
+		topRight := table.bounds[cellPosition{0, 1}]
+		rightEdge := topRight.X + topRight.W + portrait.Editor.TableCellPadX - 1
 		img := tt.Image()
 		assert := func(name string, x, y float32, want ui.Color) {
 			t.Helper()
@@ -67,8 +69,9 @@ func TestTableHeaderAndOuterCornersPaintPortraitTokens(t *testing.T) {
 				}
 			}
 		}
-		assert("rounded outer corner", x-portrait.Editor.TableGutter, y, portrait.Colors.Paper)
-		fill, paper := portrait.Colors.FillStrong, portrait.Colors.Paper
+		assert("rounded top-left corner", x, y, portrait.Colors.Paper)
+		assert("rounded top-right corner", rightEdge, y, portrait.Colors.Paper)
+		fill, paper := portrait.Colors.AccentSoft, portrait.Colors.Paper
 		alpha := float32(fill.A) / 255
 		header := ui.RGBA(
 			uint8(float32(fill.R)*alpha+float32(paper.R)*(1-alpha)+0.5),
@@ -76,7 +79,7 @@ func TestTableHeaderAndOuterCornersPaintPortraitTokens(t *testing.T) {
 			uint8(float32(fill.B)*alpha+float32(paper.B)*(1-alpha)+0.5),
 			1,
 		)
-		assert("table header", x+3, field.Y+field.H/2, header)
+		assert("table header", x+portrait.Editor.TableRadius+2, field.Y+field.H/2, header)
 		return
 	}
 	t.Fatal("no table was laid out")

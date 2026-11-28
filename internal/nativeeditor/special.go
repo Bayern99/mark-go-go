@@ -168,8 +168,6 @@ func (p *previewLayout) codeBlock(snap editor.Snapshot, i int) {
 			ReadingColumn: true,
 			PaddingTop:    codeHeaderHeight, PaddingBottom: portrait.Editor.CodeBlockBottom,
 		})
-		// LineBackground's bottom padding paints the footer. A real block
-		// reserves the same height so that paint cannot consume the next gap.
 		p.blocks = append(p.blocks, verticalSpace(lastCodeLine, portrait.Editor.CodeBlockBottom, false))
 	}
 	p.blocks = append(p.blocks, editor.Block{

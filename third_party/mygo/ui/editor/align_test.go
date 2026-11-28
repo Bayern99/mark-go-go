@@ -8,12 +8,8 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// alignTestWidth is the width of the text of alignTestState: its reading
-// column, within which the alignment of the rows happens.
 const alignTestWidth = 160
 
-// alignTestSource is text of mixed ASCII and CJK whose lines wrap into
-// several rows of different widths: what an alignment has to place.
 const alignTestSource = "ab\nThe quick brown fox 中文跳过了 the lazy dog 然后继续奔跑 over the fields 一直到尽头。\nlast"
 
 func alignTestState(source string) *State {
@@ -31,8 +27,6 @@ func alignTestState(source string) *State {
 	}
 }
 
-// alignTestEditor is an editor of source, aligned as align, in its first
-// frame, its text checked to be the reading column.
 func alignTestEditor(t *testing.T, source string, align TextAlign, wrap bool) (*State, *ui.Tester) {
 	t.Helper()
 	st := alignTestState(source)
@@ -49,8 +43,6 @@ func alignTestEditor(t *testing.T, source string, align TextAlign, wrap bool) (*
 	return st, tt
 }
 
-// wantAlignOffset is the offset of a row used DIPs wide in a width of
-// avail, a row wider than that staying at the start.
 func wantAlignOffset(align TextAlign, avail, used float32) float32 {
 	slack := avail - used
 	if slack <= 0 {
@@ -65,8 +57,6 @@ func wantAlignOffset(align TextAlign, avail, used float32) float32 {
 	return 0
 }
 
-// alignRows lays out line and returns its rows, with where each starts
-// and ends in the source.
 func alignRows(v *view, line int) (l *lineLayout, starts, ends []int) {
 	l = v.line(line)
 	for _, row := range l.rows {
@@ -76,23 +66,17 @@ func alignRows(v *view, line int) (l *lineLayout, starts, ends []int) {
 	return l, starts, ends
 }
 
-// rowMidY returns the y in the editor's box of the middle of the row of
-// line numbered ri, as the last frame laid it out.
 func rowMidY(st *State, line, ri int) float32 {
 	v := &st.ed.view
 	y := st.LineTop(line) - st.ScrollY() + float64(ri)*float64(v.rowHeight(line))
 	return float32(y) + v.rowHeight(line)/2
 }
 
-// selected reports whether c is a pixel of selected text: blue, darkened
-// where the glyphs paint over it.
 func selected(c image.Image, x, y int) bool {
 	r, g, b, _ := c.At(x, y).RGBA()
 	return b > r && b > g && b > 0x8000
 }
 
-// paintedExtent returns the leftmost and rightmost columns of the
-// selected text in row y of img, -1 for none.
 func paintedExtent(img *image.RGBA, y int) (lo, hi int) {
 	lo, hi = -1, -1
 	b := img.Bounds()
@@ -107,9 +91,6 @@ func paintedExtent(img *image.RGBA, y int) (lo, hi int) {
 	return lo, hi
 }
 
-// TestTextAlignDefaultsToLeft keeps the geometry of editors that have not
-// asked for alignment exactly as it was: every row at the start of the
-// text.
 func TestTextAlignDefaultsToLeft(t *testing.T) {
 	st := alignTestState(alignTestSource)
 	if got := st.TextAlign(); got != AlignLeft {
@@ -136,7 +117,6 @@ func TestTextAlignDefaultsToLeft(t *testing.T) {
 				t.Errorf("line %d row %d starts at %v, want its indent %v", line, ri, got, row.indent)
 			}
 		}
-		// The caret at the line's first byte is where the text starts.
 		r, ok := st.Rect(starts[0])
 		if !ok {
 			t.Fatalf("line %d has no caret", line)
@@ -147,10 +127,6 @@ func TestTextAlignDefaultsToLeft(t *testing.T) {
 	}
 }
 
-// TestTextAlignCentersEachWrappedRow checks that every row of a wrapped
-// line is centered on its own width, that the rows differ where their
-// widths do, and that the selection of a row shows where the row is
-// aligned.
 func TestTextAlignCentersEachWrappedRow(t *testing.T) {
 	st, tt := alignTestEditor(t, alignTestSource, AlignCenter, true)
 	v := &st.ed.view
@@ -171,10 +147,6 @@ func TestTextAlignCentersEachWrappedRow(t *testing.T) {
 			t.Errorf("row %d is not centered: offset %v", ri, want)
 		}
 		offsets[row.startX()] = true
-		// The blank the row leaves at either side of the text is the
-		// same, where the selection of it shows. Backwards, so that the
-		// caret is at the start of the row and the end of it shows to the
-		// edge.
 		st.SetSelections(Selection{Anchor: ends[ri], Head: starts[ri]})
 		tt.Frame()
 		lo, hi := paintedExtent(tt.Image(), int(rowMidY(st, 1, ri)))
@@ -195,8 +167,6 @@ func TestTextAlignCentersEachWrappedRow(t *testing.T) {
 	}
 }
 
-// TestTextAlignRightEndsRowsAtTheRightEdge keeps every row's end at the
-// right edge of the text, its carets and selections with it.
 func TestTextAlignRightEndsRowsAtTheRightEdge(t *testing.T) {
 	st, tt := alignTestEditor(t, alignTestSource, AlignRight, true)
 	v := &st.ed.view
@@ -214,8 +184,6 @@ func TestTextAlignRightEndsRowsAtTheRightEdge(t *testing.T) {
 		if end := row.startX() + row.width; math.Abs(float64(end-alignTestWidth)) > 1 {
 			t.Errorf("row %d ends at %v, want the right edge %v", ri, end, alignTestWidth)
 		}
-		// Backwards, so that the caret is at the start of the row and the
-		// end of it shows to the edge.
 		st.SetSelections(Selection{Anchor: ends[ri], Head: starts[ri]})
 		tt.Frame()
 		lo, hi := paintedExtent(tt.Image(), int(rowMidY(st, 1, ri)))
@@ -231,9 +199,6 @@ func TestTextAlignRightEndsRowsAtTheRightEdge(t *testing.T) {
 	}
 }
 
-// TestTextAlignTranslatesWhatItPaints checks that the text and the
-// selections of a row move by the offset of the row, rather than staying
-// where they are drawn at the left.
 func TestTextAlignTranslatesWhatItPaints(t *testing.T) {
 	left, leftTester := alignTestEditor(t, alignTestSource, AlignLeft, true)
 	center, centerTester := alignTestEditor(t, alignTestSource, AlignCenter, true)
@@ -263,9 +228,6 @@ func TestTextAlignTranslatesWhatItPaints(t *testing.T) {
 	}
 }
 
-// TestTextAlignEmptyLineCaret keeps an empty line's caret in view: at the
-// start of the text at the left, its middle centered, its end aligned
-// right, and never past it.
 func TestTextAlignEmptyLineCaret(t *testing.T) {
 	const source = "\n\nab"
 	for _, tc := range []struct {
@@ -306,10 +268,6 @@ func TestTextAlignEmptyLineCaret(t *testing.T) {
 	}
 }
 
-// TestTextAlignClicksMatchRowGeometry checks that a click in a row hits
-// the text where the row draws it: on a glyph, its exact byte; in the
-// blank left of the text, the start of the row; in the blank right of it,
-// its end.
 func TestTextAlignClicksMatchRowGeometry(t *testing.T) {
 	for _, align := range []TextAlign{AlignCenter, AlignRight} {
 		st, tt := alignTestEditor(t, alignTestSource, align, true)
@@ -329,14 +287,10 @@ func TestTextAlignClicksMatchRowGeometry(t *testing.T) {
 					t.Errorf("%v: click on byte %d of row %d put the caret at %d", align, off, ri, got)
 				}
 			}
-			// Left of the text: the start of the row.
 			tt.ClickAt(textX+0.5, y)
 			if got := st.Selection().Head; got != starts[ri] {
 				t.Errorf("%v: click in the left blank of row %d put the caret at %d, want %d", align, ri, got, starts[ri])
 			}
-			// Right of the text: the end of the row, which shows at the
-			// start of the row after it, the row clipped before its last
-			// character, as the editor's carets have always been.
 			tt.ClickAt(textX+alignTestWidth-0.5, y)
 			want := ends[ri]
 			if ri < len(l.rows)-1 {
@@ -349,8 +303,6 @@ func TestTextAlignClicksMatchRowGeometry(t *testing.T) {
 	}
 }
 
-// runeStartBefore returns the byte of the rune of s that ends at end,
-// from end.
 func runeStartBefore(s string, end int) int {
 	for end > 0 && end < len(s) && !isRuneStart(s, end) {
 		end--
@@ -362,9 +314,6 @@ func runeStartBefore(s string, end int) int {
 	return max(end, 0)
 }
 
-// TestTextAlignRowGeometryIsShared checks that what shows under the text,
-// its selections and rules, starts and ends where its carets do: one
-// geometry for every align.
 func TestTextAlignRowGeometryIsShared(t *testing.T) {
 	for _, align := range []TextAlign{AlignLeft, AlignCenter, AlignRight} {
 		st, _ := alignTestEditor(t, alignTestSource, align, true)
@@ -401,14 +350,10 @@ func TestTextAlignRowGeometryIsShared(t *testing.T) {
 	}
 }
 
-// isRuneStart reports whether byte i of s starts a rune.
 func isRuneStart(s string, i int) bool {
 	return i >= 0 && i < len(s) && (s[i]&0xC0) != 0x80
 }
 
-// TestTextAlignKeepsRowsWithinTheText keeps every row, and its caret, in
-// the text it is drawn in: a row wider than the text stays at its start,
-// rather than past its left edge.
 func TestTextAlignKeepsRowsWithinTheText(t *testing.T) {
 	const source = "one two three four five six seven eight nine ten eleven twelve thirteen"
 	for _, align := range []TextAlign{AlignCenter, AlignRight} {
@@ -434,9 +379,6 @@ func TestTextAlignKeepsRowsWithinTheText(t *testing.T) {
 	}
 }
 
-// TestTextAlignIMEAnchorSharesCaret checks that the rectangle an input
-// method puts its candidates at is the one the caret is drawn at, in every
-// align.
 func TestTextAlignIMEAnchorSharesCaret(t *testing.T) {
 	for _, align := range []TextAlign{AlignLeft, AlignCenter, AlignRight} {
 		st, _ := alignTestEditor(t, alignTestSource, align, true)
@@ -475,8 +417,6 @@ func TestTextAlignIMEAnchorSharesCaret(t *testing.T) {
 	}
 }
 
-// TestTextAlignKeepsSourceAndSelections keeps alignment a matter of
-// geometry: the bytes, the selections and the bytes they select stand.
 func TestTextAlignKeepsSourceAndSelections(t *testing.T) {
 	st, _ := alignTestEditor(t, alignTestSource, AlignLeft, true)
 	st.Select(4, 9)
@@ -496,9 +436,6 @@ func TestTextAlignKeepsSourceAndSelections(t *testing.T) {
 	}
 }
 
-// TestTextAlignLaysOutWithoutAFrame keeps what asks after SetTextAlign
-// before the next frame in the new place: the rows, their carets and the
-// selections of them.
 func TestTextAlignLaysOutWithoutAFrame(t *testing.T) {
 	st, _ := alignTestEditor(t, alignTestSource, AlignLeft, true)
 	textX := st.ed.textX - st.ed.scrollX
@@ -518,10 +455,6 @@ func TestTextAlignLaysOutWithoutAFrame(t *testing.T) {
 	}
 }
 
-// TestTextAlignDragSelectsAlignedRows checks that dragging from the blank
-// left of a row to a glyph after it selects what the rows show: from the
-// start of the row through the glyph's byte, its highlight where the
-// carets of those offsets are.
 func TestTextAlignDragSelectsAlignedRows(t *testing.T) {
 	for _, align := range []TextAlign{AlignCenter, AlignRight} {
 		st, tt := alignTestEditor(t, alignTestSource, align, true)
@@ -531,7 +464,6 @@ func TestTextAlignDragSelectsAlignedRows(t *testing.T) {
 		if len(l.rows) < 2 {
 			t.Fatalf("%v: the test line wrapped into %d rows, want more", align, len(l.rows))
 		}
-		// From the left of the first row to the second word of the next.
 		target := starts[1] + len("fox ")
 		wantFrom, wantTo := starts[0], target
 		tt.Press(textX+0.5, rowMidY(st, 1, 0))
@@ -557,5 +489,26 @@ func TestTextAlignDragSelectsAlignedRows(t *testing.T) {
 				t.Errorf("%v: the selection of the second row ends at %v, before the glyph at %v", align, hi, x)
 			}
 		}
+	}
+}
+
+func TestTextAlignRightInsetDoesNotDoubleSubtractLeft(t *testing.T) {
+	st0, tt0 := alignTestEditor(t, "abc", AlignRight, true)
+	st0.SetLineStyles([]LineStyle{{Line: 0, Left: 0, Right: 10}})
+	tt0.Frame()
+	r0, ok0 := st0.Rect(len("abc"))
+	if !ok0 {
+		t.Fatal("missing caret for left=0")
+	}
+
+	st20, tt20 := alignTestEditor(t, "abc", AlignRight, true)
+	st20.SetLineStyles([]LineStyle{{Line: 0, Left: 20, Right: 10}})
+	tt20.Frame()
+	r20, ok20 := st20.Rect(len("abc"))
+	if !ok20 {
+		t.Fatal("missing caret for left=20")
+	}
+	if math.Abs(float64(r20.X-r0.X)) > 0.5 {
+		t.Fatalf("right-aligned caret moved with left inset: left=0 X=%v, left=20 X=%v", r0.X, r20.X)
 	}
 }

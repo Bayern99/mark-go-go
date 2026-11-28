@@ -37,9 +37,6 @@ type view struct {
 	tabSize    int
 	wrap       bool
 	wrapWidth  float32
-	// align is how the rows of the lines are placed in alignWidth, the
-	// width of the text, as setTextAlign sets them; alignOffset tells
-	// what the rows of a line drawn here get.
 	align      TextAlign
 	alignWidth float32
 	// leftInset and rightInset are a styled line's horizontal insets.
@@ -183,11 +180,9 @@ const (
 type rowLayout struct {
 	from, to int
 	indent   float32
-	// align is how far past the indent the row is drawn, which
-	// TextAlign gives it in the width of the text (alignOffset).
-	align  float32
-	pieces []rowPiece
-	width  float32
+	align    float32
+	pieces   []rowPiece
+	width    float32
 }
 
 type rowPiece struct {
@@ -1199,7 +1194,7 @@ func (v *view) layoutRows(l *lineLayout) {
 		// The rows of a wrapped line are shaped as they show, not all
 		// of a long line's at once, but those wrapBreaks shaped to fit.
 		v.shapeRow(l, &row, len(breaks) > 0, fit)
-		row.align = v.alignOffset(row.indent + row.width)
+		row.align = v.alignOffset((row.indent - v.leftInset) + row.width)
 		l.rows = append(l.rows, row)
 		l.width = max(l.width, row.indent+row.width)
 		from = to

@@ -157,7 +157,7 @@ func firstTableRow(rows [][]string) []string {
 
 func (p *previewLayout) tableOrdinal(idx int) int {
 	ordinal := 0
-	for block := range p.document.Children(0) {
+	for block := 1; block < p.document.Len(); block++ {
 		if block == idx {
 			break
 		}
@@ -168,8 +168,6 @@ func (p *previewLayout) tableOrdinal(idx int) int {
 	return ordinal
 }
 
-// tablePreferenceKey follows a table's place and header, not its editable
-// body. The legacy content signature remains available as a unique fallback.
 func tablePreferenceKey(ordinal, columns int, header []string) string {
 	return "v2:" + strconv.Itoa(ordinal) + ":" + tableSignature(columns, [][]string{header})
 }
@@ -186,8 +184,6 @@ func (p *readingPreferences) restoreTable(m *readingTable) {
 	if saved, ok := p.widths[m.preferenceKey]; ok && m.restoreWidths(saved) {
 		return
 	} else if !ok {
-		// A header edit changes the feature but not the table's place. Restore
-		// through the place only when the saved records have one candidate.
 		prefix := tablePlacePrefix(m.preferenceKey)
 		var candidate []float32
 		matches := 0
@@ -228,6 +224,24 @@ func (m *readingTable) restoreWidths(saved []float32) bool {
 	m.manual = true
 	return true
 }
+func (d *Document) rememberTableWidths(key string, widths []float32) {
+	if key == "" || len(widths) == 0 {
+		return
+	}
+	if d.tableWidths == nil {
+		d.tableWidths = map[string][]float32{}
+	}
+	d.tableWidths[key] = append([]float32(nil), widths...)
+}
+
+func (d *Document) restoreTableHistory(m *readingTable) bool {
+	if saved, ok := d.tableWidths[m.preferenceKey]; ok && m.restoreWidths(saved) {
+		m.resave = true
+		return true
+	}
+	return false
+}
+
 func (d *Document) saveTables() {
 	if d.preferences.save == nil {
 		return
@@ -240,6 +254,7 @@ func (d *Document) saveTables() {
 				key = strconv.Itoa(at) + ":" + t.signature
 			}
 			widths[key] = t.widths
+			d.rememberTableWidths(key, t.widths)
 		}
 	}
 	data, _ := json.Marshal(widths)

@@ -114,6 +114,14 @@ func TestPreviewHeadingRhythmAndFoldAlignment(t *testing.T) {
 	}
 	assertPreviewGap(t, d, src, "First", "Body", portrait.Editor.HeadingAfter[0])
 	assertPreviewGapNear(t, d, src, "Body", "Second", portrait.Editor.HeadingBefore[1])
+	blankAt := strings.Index(src, "\n\n## Second") + 1
+	blankRect, ok := d.RectUTF16(blankAt)
+	if !ok {
+		t.Fatal("missing caret rect on structural blank line before heading")
+	}
+	if math.Abs(float64(blankRect.H-portrait.Editor.ParagraphGap)) > 0.5 {
+		t.Errorf("blank line before heading caret height = %v, want ParagraphGap %v", blankRect.H, portrait.Editor.ParagraphGap)
+	}
 	wantAdjacent := max(portrait.Editor.HeadingAfter[1], portrait.Editor.HeadingBefore[2]/2)
 	assertPreviewGap(t, d, src, "Second", "Third", wantAdjacent)
 

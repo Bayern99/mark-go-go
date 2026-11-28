@@ -43,8 +43,6 @@ type tableCell struct {
 	raw        string
 }
 
-// tableCellEdges gives every shared edge to exactly one cell. The first row
-// and column close the outer grid; every cell owns its right and bottom edge.
 func tableCellEdges(row, col int) (top, right, bottom, left bool) {
 	return row == 0, true, true, col == 0
 }
@@ -116,6 +114,9 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 		}
 	}
 	if model == nil || len(model.widths) != ncols {
+		if model != nil && model.manual && model.preferenceKey != "" {
+			doc.rememberTableWidths(model.preferenceKey, model.widths)
+		}
 		model = &readingTable{bounds: map[cellPosition]ui.Rect{}, widths: make([]float32, ncols), minimum: make([]float32, ncols), dragCol: -1, hoverCol: -1}
 		for i := range model.widths {
 			model.minimum[i] = portrait.Editor.TableColumnMin
@@ -128,7 +129,9 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 		model.signature = sig
 		model.preferenceKey = preferenceKey
 		model.fit(portrait.Editor.Column)
-		doc.preferences.restoreTable(model)
+		if !doc.restoreTableHistory(model) {
+			doc.preferences.restoreTable(model)
+		}
 		doc.tables[b.Start] = model
 	}
 	model.signature = sig
@@ -138,6 +141,9 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 	if model.resave {
 		model.resave = false
 		doc.saveTables()
+	}
+	if model.manual {
+		doc.rememberTableWidths(preferenceKey, model.widths)
 	}
 	model.seen, model.version = p.version, p.version
 	if !model.shaped(len(rows), ncols) {
@@ -157,7 +163,6 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 				child.Reload(cell.raw)
 			}
 		}
-		// A short row leaves no cell for the columns it lacks.
 		for k := len(cells); k < ncols; k++ {
 			model.retire(doc, model.cells[r][k])
 			model.cells[r][k] = nil
@@ -201,7 +206,6 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 									pos := cellPosition{r, k}
 									box := ui.Column(c.Key(k)).Width(model.widths[k]).Shrink(0).Padding(portrait.Editor.TableCellPadY, portrait.Editor.TableCellPadX).Justify(ui.Center)
 									if pos == model.menuCell {
-										// One cell holds the table's context menu at a time.
 										model.tableMenu(c, doc, box, pos)
 									}
 									line := portrait.Colors.Line
@@ -247,7 +251,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 										field := editor.View(c, &child.state).Width(tableContentWidth(model.widths[k]))
 										model.bounds[pos] = field.Bounds()
 										field.ObserveInput(func(ev ui.InputEvent) {
-											if ev.Kind == ui.InputPointerDown {
+											if ev.Kind == ui.InputPointerDown && ev.Button == 0 {
 												model.focus = child
 												model.kind = tableRange
 												model.pending = nil
@@ -435,11 +439,8 @@ func (m *readingTable) cellInput(child *Document, pos cellPosition, doc *Documen
 			}
 			return m.selected
 		case ui.InputPointerDown:
-			// The secondary button opens the table's own menu where the
-			// editor would open its text menu.
 			if ev.Button != 0 {
 				if len(m.composing) != 0 || child.state.Composing() {
-					// A composition keeps its keys and its menu.
 					return false
 				}
 				if m.chosen(pos) {
@@ -459,15 +460,6 @@ func (m *readingTable) cellInput(child *Document, pos cellPosition, doc *Documen
 					services.WriteClipboard(m.copyCells())
 					return true
 				}
-			case "cut":
-				if m.selected {
-					services.WriteClipboard(m.copyCells())
-					return m.clearCells(doc)
-				}
-			case "delete":
-				if m.selected {
-					return m.clearCells(doc)
-				}
 			case "undo":
 				doc.Undo()
 				return true
@@ -483,7 +475,7 @@ func (m *readingTable) cellInput(child *Document, pos cellPosition, doc *Documen
 				}
 				return m.navigate(doc, child, pos, step)
 			}
-			if ev.Mods == 0 && m.selected && (ev.Key == ui.KeyBackspace || ev.Key == ui.KeyDelete) {
+			if ev.Mods == 0 && m.selected && ev.Key == ui.KeyBackspace {
 				return m.clearCells(doc)
 			}
 			if ev.Mods == ui.Cmd {

@@ -41,6 +41,7 @@ type documentView struct {
 	sections                                                       map[headingKey]workspace.Section
 	notes                                                          []workspace.Note
 	failure                                                        *genui.GenerateFailure
+	failureBackend                                                 string
 	lastIDs                                                        []string
 	cancel                                                         context.CancelFunc
 	previewSource                                                  sourcePreviewState
@@ -298,9 +299,6 @@ func (p *panel) drawFailurePill(c *ui.Context, v *documentView, d workspace.Docu
 	p.drawCommandOptions(c, v, d, pill, false)
 }
 
-// drawFailureDetails opens diagnostics without another recovery action. Its
-// trigger lives with the first failure on the canvas, or with a regeneration
-// failure in the command pill while the old view remains visible.
 func (p *panel) drawFailureDetails(c *ui.Context, v *documentView, roomAnchor *ui.Element, above bool) {
 	details := portrait.ButtonWith(c, "Details", "Generation failure details", portrait.ButtonSpec{
 		Look: portrait.Link, Size: portrait.Sizes.Compact, Ink: portrait.Tones.Danger.Ink,
@@ -355,7 +353,10 @@ func (p *panel) failureRecovery(v *documentView, d workspace.DocumentInfo, busy 
 		return "Choose model", p.openGenUISettings
 	case genui.FailAuthRequired:
 		return "Sign in in Terminal", func() {
-			id, _ := p.settings.GenUI.Active()
+			id := v.failureBackend
+			if id == "" {
+				id, _ = p.settings.GenUI.Active()
+			}
 			p.signInInTerminal(id)
 		}
 	default:
@@ -489,8 +490,6 @@ func (p *panel) drawGenerationStatus(c *ui.Context, v *documentView) {
 }
 
 // drawView draws the reader, or what stands in for it before one exists. A
-// failure replaces only the empty state; an existing reader stays visible
-// beneath the command pill's recovery.
 func (p *panel) drawView(c *ui.Context, v *documentView, d workspace.DocumentInfo, raw string, busy bool) {
 	v.openSource = func(section workspace.Section) {
 		p.win.SetMode("markdown")
@@ -1044,6 +1043,7 @@ func (p *panel) generate(v *documentView, ids []string) {
 	ctx, cancel := context.WithCancel(p.win.Context())
 	v.cancel = cancel
 	v.failure = nil
+	v.failureBackend, _ = p.settings.GenUI.Active()
 	v.options = false
 	v.failureOpen = false
 	v.lastIDs = slices.Clone(ids)

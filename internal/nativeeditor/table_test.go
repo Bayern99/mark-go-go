@@ -67,8 +67,6 @@ func TestTableHeaderAndOuterCornersPaintPortraitTokens(t *testing.T) {
 				}
 			}
 		}
-		// The handle gutter sits outside the grid, so the table's rounded
-		// corner is the one at the gutter's own start.
 		assert("rounded outer corner", x-portrait.Editor.TableGutter, y, portrait.Colors.Paper)
 		fill, paper := portrait.Colors.FillStrong, portrait.Colors.Paper
 		alpha := float32(fill.A) / 255
@@ -230,6 +228,52 @@ func TestLegacyTableWidthFallbackRequiresAUniqueContentSignature(t *testing.T) {
 	preferences.restoreTable(&model)
 	if model.manual || model.widths[0] != 112 || model.widths[1] != 112 {
 		t.Fatalf("ambiguous duplicate legacy tables restored widths %v", model.widths)
+	}
+}
+
+func TestNestedTablesWithSameHeaderGetDistinctPreferenceKeys(t *testing.T) {
+	const src = "> | Name | Value |\n> | --- | --- |\n> | first | 1 |\n\n> | Name | Value |\n> | --- | --- |\n> | second | 2 |\n"
+	d := New(src)
+	var saved string
+	d.SetReadingPreferences("", "", func(key, value string) {
+		if key == "table-widths" {
+			saved = value
+		}
+	})
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 760, 480)
+	tt.Frame()
+	if len(d.tables) != 2 {
+		t.Fatalf("laid out %d tables, want 2", len(d.tables))
+	}
+	keys := map[string]bool{}
+	firstStart, secondStart := -1, -1
+	for at := range d.tables {
+		if firstStart < 0 || at < firstStart {
+			secondStart = firstStart
+			firstStart = at
+		} else {
+			secondStart = at
+		}
+	}
+	for _, table := range d.tables {
+		keys[table.preferenceKey] = true
+	}
+	if len(keys) != 2 {
+		t.Fatalf("nested tables collided on preference keys: %v", keys)
+	}
+	d.tables[firstStart].widths[0], d.tables[firstStart].widths[1], d.tables[firstStart].manual = 260, 180, true
+	d.tables[secondStart].widths[0], d.tables[secondStart].widths[1], d.tables[secondStart].manual = 190, 250, true
+	d.saveTables()
+
+	reopened := New(src)
+	reopened.SetReadingPreferences("", saved, nil)
+	reopenedTester := ui.NewTester(func(c *ui.Context) { reopened.View(c, false).Fill() }, 760, 480)
+	reopenedTester.Frame()
+	if got := reopened.tables[firstStart].widths; got[0] != 260 || got[1] != 180 {
+		t.Fatalf("first nested table widths = %v, want [260 180]", got)
+	}
+	if got := reopened.tables[secondStart].widths; got[0] != 190 || got[1] != 250 {
+		t.Fatalf("second nested table widths = %v, want [190 250]", got)
 	}
 }
 

@@ -41,11 +41,8 @@ type displaySegment struct {
 	from, to, shownFrom, shownTo int
 }
 
-// at returns an offset of the text as parsed to the offset the document shows
-// it at: a table cell parses its lines behind the guard that opens each one.
 func (p *previewLayout) at(off int) int { return off + p.shift }
 
-// reading records what a projection shows in place of a replaced run.
 func (p *previewLayout) reading(off int, text string) { p.readable[p.at(off)] = text }
 
 func (p *previewLayout) replace(start, end int, text string) {
@@ -265,9 +262,6 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 
 const quoteBarInset = 14
 
-// inlineContent presents a block's inline content: its emphasis, code and link
-// marks hidden, its images drawn. The offsets are the text's, as parsed, which
-// a table cell parses behind the guard p.shift holds the place of.
 func (p *previewLayout) inlineContent(src string, b *parser.Block, inlines []parser.Inline) {
 	for j, in := range inlines {
 		switch in.Kind {
@@ -582,9 +576,6 @@ func headingStyle(line, level int) editor.LineStyle {
 	return editor.LineStyle{Line: line, Font: style.Font(600), LineHeight: style.LineHeight()}
 }
 
-// verticalRhythm keeps Markdown's blank lines editable. The first structural
-// blank between blocks supplies their gap through its row height; only a
-// boundary with no blank needs an Above block on the next visible line.
 func (p *previewLayout) verticalRhythm(snap editor.Snapshot, frontEnd int) {
 	var walk func(int)
 	walk = func(parent int) {
@@ -643,11 +634,17 @@ func (p *previewLayout) applyBlockGap(snap editor.Snapshot, previous, current *p
 		return
 	}
 	first, last := snap.LineOf(previous.End), snap.LineOf(current.Start)
+	remaining := gap
 	for line := first + 1; line < last; line++ {
 		if !structuralBlank(snap.Line(line)) {
 			continue
 		}
-		p.styles = append(p.styles, editor.LineStyle{Line: line, LineHeight: gap / portrait.Editor.Body.Size})
+		blankGap := min(gap, portrait.Editor.ParagraphGap)
+		p.styles = append(p.styles, editor.LineStyle{Line: line, LineHeight: blankGap / portrait.Editor.Body.Size})
+		remaining = gap - blankGap
+		break
+	}
+	if remaining <= 0 {
 		return
 	}
 	line := snap.LineOf(current.Start)
@@ -657,7 +654,7 @@ func (p *previewLayout) applyBlockGap(snap editor.Snapshot, previous, current *p
 			line++
 		}
 	}
-	p.blocks = append(p.blocks, verticalSpace(line, gap, true))
+	p.blocks = append(p.blocks, verticalSpace(line, remaining, true))
 }
 
 func structuralBlank(line string) bool {
@@ -818,8 +815,6 @@ func (d *Document) prepareView(c *ui.Context) {
 	st.LineNumbers = editor.LineNumbersOff
 	st.ReadingColumn = editor.ReadingColumn{Width: portrait.Editor.Column, Left: portrait.Editor.GutterLeft, Right: portrait.Editor.GutterRight}
 	if d.inlineOnly {
-		// A table cell reads as GFM has it: inline Markdown alone, under
-		// no block of the document around it.
 		st.ContextMenu, st.OnInput, st.OnHover = nil, nil, nil
 		st.Label = "Table cell"
 		st.Font = portrait.Type.Small.Font(400)
@@ -852,8 +847,6 @@ func (d *Document) prepareView(c *ui.Context) {
 	d.project(p)
 }
 
-// buildPreview lays out what the document shows: a table cell's inline
-// content, or the document's blocks.
 func (d *Document) buildPreview(buffer *editor.Buffer) {
 	if d.inlineOnly {
 		d.preview.buildInline(buffer)
@@ -862,8 +855,6 @@ func (d *Document) buildPreview(buffer *editor.Buffer) {
 	d.preview.build(buffer)
 }
 
-// project gives the editor the text it presents, as assistive technology and
-// the clipboard read it.
 func (d *Document) project(p *previewLayout) {
 	d.state.Projection = &editor.TextProjection{
 		Text:         func(a, z int) string { d.refreshProjection(); return p.display[p.displayOffset(a):p.displayOffset(z)] },

@@ -11,7 +11,6 @@ import (
 	"github.com/egoist/mygo/ui/markdown/parser"
 )
 
-// tableWith applies one structural edit to a table's own bytes.
 func tableWith(t *testing.T, raw string, op tableOp) (string, cellPosition, bool) {
 	t.Helper()
 	source, ok := readTableSource(raw)
@@ -45,9 +44,6 @@ func TestTableSourceReadsItsBytesBack(t *testing.T) {
 	}
 }
 
-// TestTableRowCellsMatchTheParser pins the splitter to the Markdown parser's
-// own: the escapes, the code spans whose pipes still split, and the ragged
-// rows.
 func TestTableRowCellsMatchTheParser(t *testing.T) {
 	for _, row := range []string{
 		"| a | b |",
@@ -276,9 +272,6 @@ func TestTableSourceAlignsColumns(t *testing.T) {
 	}
 }
 
-// TestTableSourceKeepsPipesItDoesNotSplit covers the rows whose bytes the
-// parser reads differently from the eye: an escaped pipe, a pipe inside a
-// code span, ragged rows and rows without outer pipes.
 func TestTableSourceKeepsPipesItDoesNotSplit(t *testing.T) {
 	cases := []struct {
 		name string
@@ -306,9 +299,9 @@ func TestTableSourceKeepsPipesItDoesNotSplit(t *testing.T) {
 		},
 		{
 			name: "a short row gains the columns it lacks",
-			raw:  "| A | B | C |\n| --- | --- | --- |\n| only |\n",
+			raw:  "| A | B | C |\n| --- | --- | --- |\n| only  |\n",
 			op:   tableOp{kind: tableInsertColumnRight, row: 0, col: 2},
-			want: "| A | B | C | |\n| --- | --- | --- | --- |\n| only |  |  |  |\n",
+			want: "| A | B | C | |\n| --- | --- | --- | --- |\n| only  |  |  | |\n",
 		},
 		{
 			name: "a long row keeps its extra cells",
@@ -367,10 +360,8 @@ func TestTableSourceKeepsEachLinesOwnEnding(t *testing.T) {
 	}
 }
 
-// savedWidths is the last table widths a document saved.
 var savedWidths string
 
-// saveWidths records the table widths a document saves.
 func saveWidths(into *string) func(string, string) {
 	return func(key, value string) {
 		if key == "table-widths" {
@@ -388,15 +379,11 @@ func mustTableWith(t *testing.T, raw string, op tableOp) string {
 	return got
 }
 
-// laidOutTable returns a table of a new document, laid out once, with its
-// tester.
 func laidOutTable(t *testing.T, src string, width, height int) (*Document, *ui.Tester, *readingTable) {
 	t.Helper()
 	return laidOutTableWith(t, src, width, height, func(*Document) {})
 }
 
-// laidOutTableWith returns a table of a new document set up by prepare before
-// it is laid out, with its tester.
 func laidOutTableWith(t *testing.T, src string, width, height int, prepare func(*Document)) (*Document, *ui.Tester, *readingTable) {
 	t.Helper()
 	document := New(src)
@@ -652,8 +639,6 @@ func TestTableStructureEditsFocusTheCellTheyMake(t *testing.T) {
 	}
 }
 
-// stale reports whether a table kept the focus, selection or drag a
-// structural edit retired.
 func (m *readingTable) stale() bool {
 	return m.selected || m.dragging || m.focus != nil || m.hasTarget || m.hoverCol != -1 || m.dragCol != -1
 }
@@ -1010,5 +995,236 @@ func TestTableTabInTheLastCellLeavesReadOnlyTablesAlone(t *testing.T) {
 	tester.Frame()
 	if document.Source() != src {
 		t.Fatalf("a read-only table added a row: %q", document.Source())
+	}
+}
+
+func TestTableOpsOuterPipeLessTablesStayValidTables(t *testing.T) {
+	const src = "A | B\n--- | ---\nx | y\n"
+	cases := []struct {
+		name string
+		op   tableOp
+		cols int
+	}{
+		{name: "insert column left at col 0", op: tableOp{kind: tableInsertColumnLeft, row: 0, col: 0}, cols: 3},
+		{name: "delete first column", op: tableOp{kind: tableDeleteColumn, row: 0, col: 0}, cols: 1},
+		{name: "delete last column", op: tableOp{kind: tableDeleteColumn, row: 0, col: 1}, cols: 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			document, tester, table := laidOutTable(t, src, 760, 420)
+			if !table.editTable(document, tc.op) {
+				t.Fatalf("editTable(%+v) returned false", tc.op)
+			}
+			tester.Frame()
+			if len(document.tables) == 0 {
+				t.Fatalf("table disappeared after %s: %q", tc.name, document.Source())
+			}
+			got := firstTable(t, document)
+			if got.columns() != tc.cols {
+				t.Fatalf("columns = %d, want %d; source = %q", got.columns(), tc.cols, document.Source())
+			}
+		})
+	}
+}
+
+func TestTableOpsIndentedBlockquoteAndShortRowDelete(t *testing.T) {
+	t.Run("indented table insert row and delete col", func(t *testing.T) {
+		const src = "  | A | B |\n  | --- | --- |\n  | x | y |\n"
+		document, tester, table := laidOutTable(t, src, 760, 420)
+		if !table.editTable(document, tableOp{kind: tableInsertRowBelow, row: 1, col: 0}) {
+			t.Fatal("indented table Insert Row Below failed")
+		}
+		tester.Frame()
+		if got, want := document.Source(), "  | A | B |\n  | --- | --- |\n  | x | y |\n  |  |  |\n"; got != want {
+			t.Fatalf("indented insert row = %q, want %q", got, want)
+		}
+		table = firstTable(t, document)
+		if !table.editTable(document, tableOp{kind: tableDeleteColumn, row: 0, col: 0}) {
+			t.Fatal("indented table Delete Column failed")
+		}
+		tester.Frame()
+		if strings.Contains(document.Source(), "x") {
+			t.Fatalf("deleted column value leaked into surviving column: %q", document.Source())
+		}
+	})
+	t.Run("blockquote table insert row", func(t *testing.T) {
+		const src = "> | A | B |\n> | --- | --- |\n> | x | y |\n"
+		document, tester, table := laidOutTable(t, src, 760, 420)
+		if !table.editTable(document, tableOp{kind: tableInsertRowBelow, row: 1, col: 0}) {
+			t.Fatal("blockquote table Insert Row Below failed")
+		}
+		tester.Frame()
+		if got, want := document.Source(), "> | A | B |\n> | --- | --- |\n> | x | y |\n> |  |  |\n"; got != want {
+			t.Fatalf("blockquote insert row = %q, want %q", got, want)
+		}
+	})
+	t.Run("short single cell data row deletes cleanly", func(t *testing.T) {
+		const src = "| A | B |\n| --- | --- |\nx\n"
+		document, tester, table := laidOutTable(t, src, 760, 420)
+		if !table.editTable(document, tableOp{kind: tableDeleteColumn, row: 0, col: 0}) {
+			t.Fatal("delete col 0 failed on short row")
+		}
+		tester.Frame()
+		if strings.Contains(document.Source(), "x") {
+			t.Fatalf("deleted col 0 short row leaked x: %q", document.Source())
+		}
+	})
+}
+
+func TestTableOpsCJKSharedUTF8LeadByteEditsSucceed(t *testing.T) {
+	t.Run("delete col with shared utf8 lead byte", func(t *testing.T) {
+		const src = "| 你 | 他 |\n| --- | --- |\n| 你 | 他 |\n"
+		document, tester, table := laidOutTable(t, src, 760, 420)
+		if !table.editTable(document, tableOp{kind: tableDeleteColumn, row: 0, col: 0}) {
+			t.Fatal("delete col 0 failed on CJK table")
+		}
+		tester.Frame()
+		if got, want := document.Source(), "| 他 |\n| --- |\n| 他 |\n"; got != want {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+	})
+	t.Run("delete row with shared utf8 lead byte", func(t *testing.T) {
+		const src = "| A |\n| --- |\n| 好 |\n| 如 |\n"
+		document, tester, table := laidOutTable(t, src, 760, 420)
+		if !table.editTable(document, tableOp{kind: tableDeleteRow, row: 1, col: 0}) {
+			t.Fatal("delete row 1 failed on CJK table")
+		}
+		tester.Frame()
+		if got, want := document.Source(), "| A |\n| --- |\n| 如 |\n"; got != want {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+	})
+}
+
+func TestTableUndoInsertColumnRestoresManualWidths(t *testing.T) {
+	const src = "| A | B |\n| --- | --- |\n| x | y |\n"
+	document := New(src)
+	var saved string
+	document.SetReadingPreferences("", "", func(key, value string) {
+		if key == "table-widths" {
+			saved = value
+		}
+	})
+	tester := ui.NewTester(func(c *ui.Context) { document.View(c, false).Fill() }, 760, 420)
+	tester.Frame()
+	table := firstTable(t, document)
+	table.widths[0], table.widths[1], table.manual = 260, 180, true
+	document.saveTables()
+
+	if !table.editTable(document, tableOp{kind: tableInsertColumnRight, row: 0, col: 1}) {
+		t.Fatal("insert column failed")
+	}
+	tester.Frame()
+	if !document.Undo() {
+		t.Fatal("undo failed")
+	}
+	tester.Frame()
+	restored := firstTable(t, document)
+	if !restored.manual || restored.widths[0] != 260 || restored.widths[1] != 180 {
+		t.Fatalf("after Undo widths = %v (manual %v), want [260 180] (true)", restored.widths, restored.manual)
+	}
+	if !strings.Contains(saved, "260") || !strings.Contains(saved, "180") {
+		t.Fatalf("saved preferences after Undo = %q, want [260,180]", saved)
+	}
+}
+
+func TestTableHandleAccessibilityReverseShiftClearAndMenus(t *testing.T) {
+	const src = "| A | B |\n| --- | --- |\n| x | y |\n| p | q |\n"
+	document, tester, table := laidOutTable(t, src, 760, 560)
+	cell, ok := tester.Find("Table row 2 column 1")
+	if !ok {
+		t.Fatal("missing cell")
+	}
+	tester.Move(cell.X+cell.W/2, cell.Y+cell.H/2)
+	tester.Frame()
+
+	if _, ok := tester.Access("Select table row 2"); !ok {
+		t.Fatal("row handle missing from accessibility tree")
+	}
+	if _, ok := tester.Access("Insert table row below row 2"); !ok {
+		t.Fatal("row insert pin missing from accessibility tree")
+	}
+
+	if err := tester.Click("Select table row 2"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Frame()
+	tester.RightClickAt(cell.X+cell.W/2, cell.Y+cell.H/2)
+	tester.Frame()
+	if !table.selected {
+		t.Fatal("right-clicking selected row cleared selection")
+	}
+	if err := tester.Click("Clear Cells"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Frame()
+	if got, want := document.Source(), "| A | B |\n| --- | --- |\n|  |  |\n| p | q |\n"; got != want {
+		t.Fatalf("Clear Cells after right-clicking selected row = %q, want %q", got, want)
+	}
+	if !document.Undo() {
+		t.Fatal("undo failed")
+	}
+	tester.Frame()
+
+	fresh, freshTester, _ := laidOutTable(t, src, 760, 560)
+	freshCell, _ := freshTester.Find("Table row 2 column 1")
+	freshTester.Move(freshCell.X+freshCell.W/2, freshCell.Y+freshCell.H/2)
+	freshTester.Frame()
+	if err := freshTester.Click("Select table row 2"); err != nil {
+		t.Fatal(err)
+	}
+	freshTester.Frame()
+	freshTester.Key(0, ui.KeyBackspace)
+	freshTester.Frame()
+	if got, want := fresh.Source(), "| A | B |\n| --- | --- |\n|  |  |\n| p | q |\n"; got != want {
+		t.Fatalf("Backspace after direct row handle click = %q, want %q", got, want)
+	}
+
+	_, shiftTester, shiftTable := laidOutTable(t, src, 760, 560)
+	shiftCell, _ := shiftTester.Find("Table row 3 column 1")
+	shiftTester.Move(shiftCell.X+shiftCell.W/2, shiftCell.Y+shiftCell.H/2)
+	shiftTester.Frame()
+	if err := shiftTester.Click("Select table row 3"); err != nil {
+		t.Fatal(err)
+	}
+	shiftTester.Frame()
+	if err := shiftTester.ClickWith(ui.Shift, "Select table row 1"); err != nil {
+		t.Fatal(err)
+	}
+	shiftTester.Frame()
+	if err := shiftTester.ClickWith(ui.Shift, "Select table row 2"); err != nil {
+		t.Fatal(err)
+	}
+	shiftTester.Frame()
+	top, bottom, _, _, ok := shiftTable.selectedBounds()
+	if !ok || top != 1 || bottom != 2 {
+		t.Fatalf("reverse Shift row selection bounds = (%d..%d, %v), want (1..2, true)", top, bottom, ok)
+	}
+
+	pin, ok := shiftTester.Find("Insert table row below row 2")
+	if !ok {
+		t.Fatal("missing row 2 insert pin")
+	}
+	shiftTester.RightClickAt(pin.X+pin.W/2, pin.Y+pin.H/2)
+	shiftTester.Frame()
+	if _, ok := shiftTester.Find("Insert Column Left"); !ok {
+		t.Fatal("right-clicking insert pin did not open shared table menu")
+	}
+
+	_, imeTester, _ := laidOutTable(t, src, 760, 560)
+	if err := imeTester.Click("Table row 2 column 1"); err != nil {
+		t.Fatal(err)
+	}
+	imeTester.Frame()
+	imeTester.Compose("ni", 2)
+	imeTester.Frame()
+	grip, ok := imeTester.Find("Select table row 2")
+	if !ok {
+		t.Fatal("missing row grip during composition")
+	}
+	imeTester.RightClickAt(grip.X+grip.W/2, grip.Y+grip.H/2)
+	imeTester.Frame()
+	if _, ok := imeTester.Find("Insert Row Below"); ok {
+		t.Fatal("right-clicking row grip opened structural menu during IME composition")
 	}
 }

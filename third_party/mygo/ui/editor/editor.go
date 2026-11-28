@@ -33,8 +33,6 @@ type options struct {
 	wrap          bool
 	wrapColumn    int
 	readingColumn ReadingColumn
-	// textAlign is how the rows of the lines are placed in the width of
-	// the text: at its start when zero (TextAlign).
 	textAlign     TextAlign
 	lineNumbers   LineNumbers
 	whitespace    Whitespace

@@ -361,6 +361,28 @@ func TestFailureRecoveryDispatchesByKind(t *testing.T) {
 	}
 }
 
+func TestGenUIAuthFailureTargetsFailedBackendAfterActiveSwitch(t *testing.T) {
+	p, v, d := polishPanel()
+	v.failure = &genui.GenerateFailure{Kind: genui.FailAuthRequired, Message: "Session expired"}
+	v.failureBackend = "codex"
+	p.settings.GenUI.Backend = "antigravity"
+	signed := make(chan string, 1)
+	p.signIn = func(id string) error { signed <- id; return nil }
+	app := polishTester(func(c *ui.Context) { drawPolishedPanel(c, p, v, d, false) }, polishSize, 480)
+	app.Frame()
+	if err := app.Click("Sign in in Terminal"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case id := <-signed:
+		if id != "codex" {
+			t.Fatalf("signed in backend %q, want failed backend %q", id, "codex")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("authentication recovery did not sign in failed backend")
+	}
+}
+
 func accessButtonCount(app *ui.Tester, name string) int {
 	count := 0
 	for _, info := range app.AccessAll() {

@@ -2,9 +2,6 @@ package portrait
 
 import "github.com/egoist/mygo/ui"
 
-// ScrollEdgeMaskX returns the paper fade that covers content scrolling under
-// one horizontal edge, and whether that edge has more content to reveal. The
-// caller paints it above the viewport with input and accessibility disabled.
 func ScrollEdgeMaskX(scroll *ui.ScrollState, left bool) (ui.LinearGradient, bool) {
 	if scroll == nil {
 		return ui.LinearGradient{}, false

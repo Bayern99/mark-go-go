@@ -355,17 +355,17 @@ func TestTableSelectionsClearCellsInOneStep(t *testing.T) {
 			out:    []cellPosition{{0, 0}, {2, 0}},
 		},
 		{
-			name:   "column delete",
+			name:   "column backspace",
 			choose: func(m *readingTable) { m.selectColumns(1, 1) },
-			key:    ui.KeyDelete,
+			key:    ui.KeyBackspace,
 			want:   "| A |  | C |\n| --- | --- | --- |\n| x |  | z |\n| p |  | r |\n",
 			inside: []cellPosition{{0, 1}, {1, 1}, {2, 1}},
 			out:    []cellPosition{{0, 0}, {1, 2}},
 		},
 		{
-			name:   "rectangle delete",
+			name:   "rectangle backspace",
 			choose: func(m *readingTable) { m.selectCells(cellPosition{1, 0}, cellPosition{2, 1}) },
-			key:    ui.KeyDelete,
+			key:    ui.KeyBackspace,
 			want:   "| A | B | C |\n| --- | --- | --- |\n|  |  | z |\n|  |  | r |\n",
 			inside: []cellPosition{{1, 0}, {1, 1}, {2, 0}, {2, 1}},
 			out:    []cellPosition{{0, 1}, {1, 2}},
@@ -497,5 +497,52 @@ func TestTableRetiresRemovedCellEditors(t *testing.T) {
 	}
 	if len(table.composing) != 0 {
 		t.Errorf("the removed row kept %d composing cells", len(table.composing))
+	}
+}
+
+func TestTableCellHeadingSyntaxKeepsBodyWeight(t *testing.T) {
+	d := New("| A | B |\n| --- | --- |\n| # WWWWWW | WWWWWW |\n")
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 760, 320)
+	tt.Frame()
+	table := firstTable(t, d)
+	left := table.cells[1][0]
+	right := table.cells[1][1]
+	aStart, ok1 := left.state.Rect(len("# "))
+	aEnd, ok2 := left.state.Rect(len("# WWWWWW"))
+	bStart, ok3 := right.state.Rect(0)
+	bEnd, ok4 := right.state.Rect(len("WWWWWW"))
+	if !ok1 || !ok2 || !ok3 || !ok4 {
+		t.Fatal("missing cell character rects")
+	}
+	wA := aEnd.X - aStart.X
+	wB := bEnd.X - bStart.X
+	if wA-wB > 0.5 || wB-wA > 0.5 {
+		t.Fatalf("heading-prefixed cell text width = %v, plain cell width = %v; want equal body weight", wA, wB)
+	}
+}
+
+func TestTableCompositionSurvivesAppendedRowWithoutLockingTable(t *testing.T) {
+	const src = "| A | B |\n| --- | --- |\n| x | y |\n"
+	d := New(src)
+	tt := ui.NewTester(func(c *ui.Context) { d.View(c, false).Fill() }, 760, 420)
+	tt.Frame()
+	if err := tt.Click("Table row 2 column 1"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	tt.Compose("ni", 2)
+	tt.Frame()
+	if err := d.Apply(d.Version(), len(d.Source()), len(d.Source()), "", "| p | q |\n"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	tt.Type("你")
+	tt.Frame()
+	table := firstTable(t, d)
+	if len(table.composing) != 0 {
+		t.Fatalf("table remained stuck in composing state: %d entries", len(table.composing))
+	}
+	if !table.editTable(d, tableOp{kind: tableInsertRowBelow, row: 2, col: 0}) {
+		t.Fatal("structural edit failed after composition committed across row growth")
 	}
 }

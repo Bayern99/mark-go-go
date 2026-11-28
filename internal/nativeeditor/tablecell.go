@@ -7,23 +7,33 @@ import (
 	"github.com/egoist/mygo/ui/markdown/parser"
 )
 
-// cellGuard begins the text a table cell's content is parsed in. GFM reads a
-// cell's content as inline Markdown alone, while the block parser reads a
-// leading '#' or '-' as a heading, a list or a quote a cell never carries: a
-// no-break space starts no block and joins no delimiter run, and takes no
-// room in the cell, which shows the offsets after it as its own.
 const cellGuard = "\u00a0"
 
-// newTableCell returns the document a table cell edits its content in.
+func newInlineMarkdownHighlighter(text editor.Snapshot, _ func()) editor.Highlighter {
+	base := editor.LanguageNamed("Markdown").Tokenizer
+	guarded := editor.TokenizerFunc(func(line string, state uint64, tokens []editor.Token) ([]editor.Token, uint64) {
+		raw, next := base.Tokenize(cellGuard+line, state, nil)
+		shift := len(cellGuard)
+		for _, tok := range raw {
+			if tok.End <= shift {
+				continue
+			}
+			tokens = append(tokens, editor.Token{End: tok.End - shift, Kind: tok.Kind})
+		}
+		return tokens, next
+	})
+	return editor.NewTokenHighlighter(guarded, text)
+}
+
 func newTableCell(text string) *Document {
 	d := New(text)
 	d.inlineOnly = true
+	language := *editor.LanguageNamed("Markdown")
+	language.Highlighter = newInlineMarkdownHighlighter
+	d.state.Buffer.SetLanguage(&language)
 	return d
 }
 
-// buildInline presents a table cell's content as inline Markdown only: its
-// marks hidden, its blocks never built, so that '# x' and '- x' read as
-// written rather than as a heading or a list.
 func (p *previewLayout) buildInline(buffer *editor.Buffer) {
 	if p.document == nil {
 		p.document = parser.New(parser.Default | parser.ExtDollarMath)

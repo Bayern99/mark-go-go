@@ -169,9 +169,9 @@ func (p *previewLayout) footnote(in parser.Inline) {
 	p.refs[in.Text] = append(p.refs[in.Text], in.Start)
 	label := fmt.Sprintf("Read footnote %s, reference %d", in.Text, r+1)
 	shown := "[" + in.Text + "]"
-	p.readable[in.Start] = shown
+	p.reading(in.Start, shown)
 	target := p.document.Block(at).Start
-	p.replacements = append(p.replacements, editor.Replacement{Start: in.Start, End: in.End, Width: max(18, float32(len(shown))*7), Interactive: true, Label: label, Content: func(c *ui.Context, e ui.Element, _ editor.Replacement) {
+	p.replacements = append(p.replacements, editor.Replacement{Start: p.at(in.Start), End: p.at(in.End), Width: max(18, float32(len(shown))*7), Interactive: true, Label: label, Content: func(c *ui.Context, e ui.Element, _ editor.Replacement) {
 		e.Children(func() {
 			ref := ui.ButtonBase(c).Label(label).KeepFocus().Padding(0, 2).AlignItems(ui.Center)
 			ref.Children(func() {

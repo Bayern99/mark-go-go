@@ -27,6 +27,7 @@ type previewLayout struct {
 	space         string
 	dark          bool
 	applied       bool
+	shift         int
 	replacements  []editor.Replacement
 	readable      map[int]string
 	styles        []editor.LineStyle
@@ -40,9 +41,16 @@ type displaySegment struct {
 	from, to, shownFrom, shownTo int
 }
 
+// at returns an offset of the text as parsed to the offset the document shows
+// it at: a table cell parses its lines behind the guard that opens each one.
+func (p *previewLayout) at(off int) int { return off + p.shift }
+
+// reading records what a projection shows in place of a replaced run.
+func (p *previewLayout) reading(off int, text string) { p.readable[p.at(off)] = text }
+
 func (p *previewLayout) replace(start, end int, text string) {
 	if end > start {
-		p.replacements = append(p.replacements, editor.Replacement{Start: start, End: end, Text: text})
+		p.replacements = append(p.replacements, editor.Replacement{Start: p.at(start), End: p.at(end), Text: text})
 	}
 }
 
@@ -84,6 +92,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	if p.document == nil {
 		p.document = parser.New(parser.Default | parser.ExtDollarMath)
 	}
+	p.shift = 0
 	p.version = buffer.Version()
 	p.dirty = false
 	p.draftAnchored = false
@@ -225,80 +234,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 			p.standaloneImages(snap, i, inlines)
 			continue
 		}
-		for j, in := range inlines {
-			switch in.Kind {
-			case parser.SoftBreak, parser.LineBreak:
-				p.reflowBreak(src, inlines, j, inlineFloor(b, inlines, j))
-			case parser.Strong, parser.Emphasis, parser.Strikethrough:
-				if in.Next > j+1 {
-					p.replace(in.Start, inlines[j+1].Start, "")
-					p.replace(inlines[in.Next-1].End, in.End, "")
-				}
-			case parser.Link:
-				if in.Next > j+1 {
-					prefixEnd := inlines[j+1].Start
-					if ui.SafeToOpen(in.Dest) {
-						p.replacements = append(p.replacements, editor.Replacement{
-							Start:       in.Start,
-							End:         prefixEnd,
-							Width:       16,
-							Interactive: true,
-							Label:       "Open " + in.Dest,
-							Content:     linkMarker(in.Dest),
-						})
-					} else {
-						p.replace(in.Start, prefixEnd, "")
-					}
-					p.replace(inlines[in.Next-1].End, in.End, "")
-				}
-			case parser.Image:
-				alt := parser.PlainText(inlines[j+1 : in.Next])
-				label := alt
-				if label == "" {
-					label = "Image"
-				}
-				p.readable[in.Start] = label
-				p.replacements = append(p.replacements, editor.Replacement{
-					Start: in.Start,
-					End:   in.End,
-					Width: min(240, max(72, float32(utf8.RuneCountInString(label))*7)),
-					Label: label,
-					Content: func(c *ui.Context, e ui.Element, _ editor.Replacement) {
-						e.Children(func() {
-							img := p.owner.loadInlineImage(c, in.Dest)
-							if img == nil {
-								portrait.Type.Meta.Apply(ui.Text(c, label)).TextColor(c.Theme().TextMuted).SingleLine().Ellipsis("…")
-								return
-							}
-							w, h := ui.ImageSize(img)
-							scale := min(float32(1), 68/max(1, w), 24/max(1, h))
-							view := ui.Image(c, img).Size(max(1, w*scale), max(1, h*scale)).Label(label)
-							if in.Title != "" {
-								view.Tooltip(in.Title)
-							}
-						})
-					},
-				})
-			case parser.Code:
-				raw := src[in.Start:in.End]
-				n := len(raw) - len(strings.TrimLeft(raw, "`"))
-				if n > 0 && len(raw) >= 2*n {
-					a, z := in.Start+n, in.End-n
-					if z-a >= 2 && src[a] == ' ' && src[z-1] == ' ' && strings.TrimSpace(src[a:z]) != "" {
-						a++
-						z--
-					}
-					p.replace(in.Start, a, "")
-					p.replace(z, in.End, "")
-				}
-			case parser.FootnoteRef:
-				p.footnote(in)
-			case parser.Math:
-				p.inlineMath(in)
-			case parser.Text:
-				p.literal(src, in)
-			}
-		}
+		p.inlineContent(src, b, inlines)
 	}
 	for offset, t := range p.owner.tables {
 		if t.seen == p.version {
@@ -329,6 +265,86 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 
 const quoteBarInset = 14
 
+// inlineContent presents a block's inline content: its emphasis, code and link
+// marks hidden, its images drawn. The offsets are the text's, as parsed, which
+// a table cell parses behind the guard p.shift holds the place of.
+func (p *previewLayout) inlineContent(src string, b *parser.Block, inlines []parser.Inline) {
+	for j, in := range inlines {
+		switch in.Kind {
+		case parser.SoftBreak, parser.LineBreak:
+			p.reflowBreak(src, inlines, j, inlineFloor(b, inlines, j))
+		case parser.Strong, parser.Emphasis, parser.Strikethrough:
+			if in.Next > j+1 {
+				p.replace(in.Start, inlines[j+1].Start, "")
+				p.replace(inlines[in.Next-1].End, in.End, "")
+			}
+		case parser.Link:
+			if in.Next > j+1 {
+				prefixEnd := inlines[j+1].Start
+				if ui.SafeToOpen(in.Dest) {
+					p.replacements = append(p.replacements, editor.Replacement{
+						Start:       p.at(in.Start),
+						End:         p.at(prefixEnd),
+						Width:       16,
+						Interactive: true,
+						Label:       "Open " + in.Dest,
+						Content:     linkMarker(in.Dest),
+					})
+				} else {
+					p.replace(in.Start, prefixEnd, "")
+				}
+				p.replace(inlines[in.Next-1].End, in.End, "")
+			}
+		case parser.Image:
+			alt := parser.PlainText(inlines[j+1 : in.Next])
+			label := alt
+			if label == "" {
+				label = "Image"
+			}
+			p.reading(in.Start, label)
+			p.replacements = append(p.replacements, editor.Replacement{
+				Start: p.at(in.Start),
+				End:   p.at(in.End),
+				Width: min(240, max(72, float32(utf8.RuneCountInString(label))*7)),
+				Label: label,
+				Content: func(c *ui.Context, e ui.Element, _ editor.Replacement) {
+					e.Children(func() {
+						img := p.owner.loadInlineImage(c, in.Dest)
+						if img == nil {
+							portrait.Type.Meta.Apply(ui.Text(c, label)).TextColor(c.Theme().TextMuted).SingleLine().Ellipsis("…")
+							return
+						}
+						w, h := ui.ImageSize(img)
+						scale := min(float32(1), 68/max(1, w), 24/max(1, h))
+						view := ui.Image(c, img).Size(max(1, w*scale), max(1, h*scale)).Label(label)
+						if in.Title != "" {
+							view.Tooltip(in.Title)
+						}
+					})
+				},
+			})
+		case parser.Code:
+			raw := src[in.Start:in.End]
+			n := len(raw) - len(strings.TrimLeft(raw, "`"))
+			if n > 0 && len(raw) >= 2*n {
+				a, z := in.Start+n, in.End-n
+				if z-a >= 2 && src[a] == ' ' && src[z-1] == ' ' && strings.TrimSpace(src[a:z]) != "" {
+					a++
+					z--
+				}
+				p.replace(in.Start, a, "")
+				p.replace(z, in.End, "")
+			}
+		case parser.FootnoteRef:
+			p.footnote(in)
+		case parser.Math:
+			p.inlineMath(in)
+		case parser.Text:
+			p.literal(src, in)
+		}
+	}
+}
+
 // inlineFloor is the offset a break's line ending and indentation may be
 // hidden back to: the end of the inline before it, or the block's start.
 func inlineFloor(block *parser.Block, inlines []parser.Inline, i int) int {
@@ -358,7 +374,7 @@ func (p *previewLayout) reflowBreak(src string, inlines []parser.Inline, index, 
 			sep = ""
 		}
 	}
-	p.readable[start] = sep
+	p.reading(start, sep)
 	p.replace(start, end, sep)
 }
 
@@ -801,6 +817,24 @@ func (d *Document) prepareView(c *ui.Context) {
 	st.LineHeight = portrait.Editor.Body.LineHeight()
 	st.LineNumbers = editor.LineNumbersOff
 	st.ReadingColumn = editor.ReadingColumn{Width: portrait.Editor.Column, Left: portrait.Editor.GutterLeft, Right: portrait.Editor.GutterRight}
+	if d.inlineOnly {
+		// A table cell reads as GFM has it: inline Markdown alone, under
+		// no block of the document around it.
+		st.ContextMenu, st.OnInput, st.OnHover = nil, nil, nil
+		st.Label = "Table cell"
+		st.Font = portrait.Type.Small.Font(400)
+		st.LineHeight = portrait.Type.Small.LineHeight()
+		st.ReadingColumn = editor.ReadingColumn{}
+		if !p.applied || p.dirty || p.version != d.Version() {
+			d.buildPreview(st.Buffer)
+		}
+		st.SetBlocks(nil)
+		st.SetReplacements(p.replacements)
+		st.SetLineStyles(nil)
+		p.applied = true
+		d.project(p)
+		return
+	}
 	space, dark := portrait.ActiveSpace()
 	if p.applied && !p.dirty && p.version == d.Version() && p.space == space.Name && p.dark == dark {
 		return
@@ -809,13 +843,29 @@ func (d *Document) prepareView(c *ui.Context) {
 		// Quote, code, table and callout backgrounds come from the Space's
 		// tokens, so a content, Space or appearance change rebuilds once.
 		p.space, p.dark = space.Name, dark
-		p.build(st.Buffer)
+		d.buildPreview(st.Buffer)
 	}
 	st.SetBlocks(p.blocks)
 	st.SetReplacements(p.replacements)
 	st.SetLineStyles(p.styles)
 	p.applied = true
-	st.Projection = &editor.TextProjection{
+	d.project(p)
+}
+
+// buildPreview lays out what the document shows: a table cell's inline
+// content, or the document's blocks.
+func (d *Document) buildPreview(buffer *editor.Buffer) {
+	if d.inlineOnly {
+		d.preview.buildInline(buffer)
+		return
+	}
+	d.preview.build(buffer)
+}
+
+// project gives the editor the text it presents, as assistive technology and
+// the clipboard read it.
+func (d *Document) project(p *previewLayout) {
+	d.state.Projection = &editor.TextProjection{
 		Text:         func(a, z int) string { d.refreshProjection(); return p.display[p.displayOffset(a):p.displayOffset(z)] },
 		SourceOffset: func(n int) int { d.refreshProjection(); return p.sourceOffset(n) },
 		Markdown:     func(a, z int) string { idx := d.sourceIndex(); return idx.raw[idx.rawAtEditor(a):idx.rawAtEditor(z)] },
@@ -824,7 +874,7 @@ func (d *Document) prepareView(c *ui.Context) {
 
 func (d *Document) refreshProjection() {
 	if d.preview.version != d.Version() {
-		d.preview.build(d.state.Buffer)
+		d.buildPreview(d.state.Buffer)
 		d.preview.applied = false
 	}
 }

@@ -13,15 +13,18 @@ import (
 
 type readingTable struct {
 	signature, preferenceKey     string
-	seen                         uint64
+	seen, version                uint64
 	scroll                       ui.ScrollState
 	focus                        *Document
 	cells                        [][]*Document
+	spans                        [][]tableCell
 	composing                    map[*Document]tableCell
+	pending                      *pendingCellMove
 	widths                       []float32
 	minimum                      []float32
 	manual                       bool
 	bounds                       map[cellPosition]ui.Rect
+	kind                         tableSelectionKind
 	anchor, head                 cellPosition
 	dragging, selected           bool
 	dragX, leftWidth, rightWidth float32
@@ -119,10 +122,11 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 	}
 	model.signature = sig
 	model.preferenceKey = preferenceKey
-	model.seen = p.version
-	for len(model.cells) < len(rows) {
-		model.cells = append(model.cells, make([]*Document, ncols))
+	model.seen, model.version = p.version, p.version
+	if !model.shaped(len(rows), ncols) {
+		model.resize(doc, len(rows), ncols)
 	}
+	model.spans = rows
 	for r, cells := range rows {
 		for k, cell := range cells {
 			if k >= ncols {
@@ -130,11 +134,16 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 			}
 			child := model.cells[r][k]
 			if child == nil {
-				child = New(cell.raw)
+				child = newTableCell(cell.raw)
 				model.cells[r][k] = child
 			} else if !cellMatches(child.Source(), cell.raw) {
 				child.Reload(cell.raw)
 			}
+		}
+		// A short row leaves no cell for the columns it lacks.
+		for k := len(cells); k < ncols; k++ {
+			model.retire(doc, model.cells[r][k])
+			model.cells[r][k] = nil
 		}
 	}
 	width := float32(0)
@@ -203,12 +212,14 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 										child.state.Theme.Background = portrait.Clear
 										child.state.FitContent = true
 										child.state.SetTextAlign(tableTextAlign(b.Align[k]))
-										child.state.OnInput = model.cellInput(pos, doc, c.Services())
+										child.state.OnInput = model.cellInput(child, pos, doc, c.Services())
 										field := editor.View(c, &child.state).Width(tableContentWidth(model.widths[k]))
 										model.bounds[pos] = field.Bounds()
 										field.ObserveInput(func(ev ui.InputEvent) {
 											if ev.Kind == ui.InputPointerDown {
 												model.focus = child
+												model.kind = tableRange
+												model.pending = nil
 												model.anchor, model.head, model.dragging, model.selected = pos, pos, true, false
 											}
 										})
@@ -241,6 +252,11 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 										if wasComposing && !composing {
 											doc.state.Buffer.EndComposition(owner)
 											delete(model.composing, child)
+											if pending := model.pending; pending != nil && pending.child == child {
+												model.pending = nil
+												model.move(pending.from, pending.step)
+												c.Invalidate()
+											}
 										}
 										if field.Focused() && (!model.selected) {
 											sel := child.state.Selection()
@@ -339,15 +355,15 @@ func cellRawOffset(source string, off int) int {
 
 type cellPosition struct{ row, col int }
 
-func (m *readingTable) chosen(pos cellPosition) bool {
-	return m.selected && pos.row >= min(m.anchor.row, m.head.row) && pos.row <= max(m.anchor.row, m.head.row) && pos.col >= min(m.anchor.col, m.head.col) && pos.col <= max(m.anchor.col, m.head.col)
-}
-
 func (m *readingTable) copyCells() string {
+	top, bottom, left, right, ok := m.selectedBounds()
+	if !ok {
+		return ""
+	}
 	lines := make([]string, 0)
-	for r := min(m.anchor.row, m.head.row); r <= max(m.anchor.row, m.head.row); r++ {
+	for r := top; r <= bottom; r++ {
 		var cells []string
-		for k := min(m.anchor.col, m.head.col); k <= max(m.anchor.col, m.head.col); k++ {
+		for k := left; k <= right; k++ {
 			content := ""
 			if r < len(m.cells) && k < len(m.cells[r]) && m.cells[r][k] != nil {
 				content = m.cells[r][k].preview.display
@@ -359,7 +375,7 @@ func (m *readingTable) copyCells() string {
 	return strings.Join(lines, "\n")
 }
 
-func (m *readingTable) cellInput(pos cellPosition, doc *Document, services ui.Services) func(ui.InputEvent) bool {
+func (m *readingTable) cellInput(child *Document, pos cellPosition, doc *Document, services ui.Services) func(ui.InputEvent) bool {
 	return func(ev ui.InputEvent) bool {
 		if ev.Kind == ui.InputKeyDown && ev.Mods == (ui.Cmd|ui.Shift) && ev.Key == ui.KeyZ {
 			doc.Redo()
@@ -374,7 +390,7 @@ func (m *readingTable) cellInput(pos cellPosition, doc *Document, services ui.Se
 			x, y := rect.X+ev.X, rect.Y+ev.Y
 			for target, b := range m.bounds {
 				if x >= b.X && x < b.X+b.W && y >= b.Y && y < b.Y+b.H {
-					m.head = target
+					m.kind, m.head = tableRange, target
 					m.selected = target != m.anchor
 					break
 				}
@@ -390,6 +406,15 @@ func (m *readingTable) cellInput(pos cellPosition, doc *Document, services ui.Se
 					services.WriteClipboard(m.copyCells())
 					return true
 				}
+			case "cut":
+				if m.selected {
+					services.WriteClipboard(m.copyCells())
+					return m.clearCells(doc)
+				}
+			case "delete":
+				if m.selected {
+					return m.clearCells(doc)
+				}
 			case "undo":
 				doc.Undo()
 				return true
@@ -398,6 +423,16 @@ func (m *readingTable) cellInput(pos cellPosition, doc *Document, services ui.Se
 				return true
 			}
 		case ui.InputKeyDown:
+			if step, ok := cellStepForKey(ev); ok {
+				if child.state.Composing() {
+					m.pending = &pendingCellMove{child: child, from: pos, step: step}
+					return true
+				}
+				return m.navigate(child, pos, step)
+			}
+			if ev.Mods == 0 && m.selected && (ev.Key == ui.KeyBackspace || ev.Key == ui.KeyDelete) {
+				return m.clearCells(doc)
+			}
 			if ev.Mods == ui.Cmd {
 				switch ev.Key {
 				case ui.KeyC:

@@ -279,7 +279,7 @@ func TestTextAlignClicksMatchRowGeometry(t *testing.T) {
 			y := rowMidY(st, 1, ri)
 			for off := starts[ri]; off < ends[ri]; off++ {
 				if !isRuneStart(l.text, off-l.start) {
-					continue // inside a rune, not a place to hit
+					continue
 				}
 				x := textX + v.xOf(l, row, l.toDisp(off-l.start, false))
 				tt.ClickAt(x+0.5, y)

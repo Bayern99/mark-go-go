@@ -1228,3 +1228,117 @@ func TestTableHandleAccessibilityReverseShiftClearAndMenus(t *testing.T) {
 		t.Fatal("right-clicking row grip opened structural menu during IME composition")
 	}
 }
+
+func TestTableOpsCodexRoundTwoEdgeCases(t *testing.T) {
+	t.Run("delete col next to empty header cell without outer pipes", func(t *testing.T) {
+		for _, col := range []int{0, 2} {
+			const src = "A | | C\n--- | --- | ---\nx | y | z\n"
+			document, tester, table := laidOutTable(t, src, 760, 420)
+			if !table.editTable(document, tableOp{kind: tableDeleteColumn, row: 0, col: col}) {
+				t.Fatalf("delete col %d failed", col)
+			}
+			tester.Frame()
+			if len(document.tables) != 1 || firstTable(t, document).columns() != 2 {
+				t.Fatalf("delete col %d broke table: %q", col, document.Source())
+			}
+		}
+	})
+
+	t.Run("delete col preserves NBSP in surviving cell", func(t *testing.T) {
+		const src = "A | B\n--- | ---\nx |\u00a0y\u00a0\n"
+		document, tester, table := laidOutTable(t, src, 760, 420)
+		if !table.editTable(document, tableOp{kind: tableDeleteColumn, row: 0, col: 0}) {
+			t.Fatal("delete col 0 failed")
+		}
+		tester.Frame()
+		if !strings.Contains(document.Source(), "\u00a0y\u00a0") {
+			t.Fatalf("NBSP stripped from surviving cell: %q", document.Source())
+		}
+	})
+
+	t.Run("delete last row preserves previous line CRLF in mixed endings", func(t *testing.T) {
+		const src = "| A |\r\n| --- |\r\n| x |\n"
+		document, tester, table := laidOutTable(t, src, 760, 420)
+		if !table.editTable(document, tableOp{kind: tableDeleteRow, row: 1, col: 0}) {
+			t.Fatal("delete row 1 failed")
+		}
+		tester.Frame()
+		if got, want := document.Source(), "| A |\r\n| --- |\r\n"; got != want {
+			t.Fatalf("mixed EOL delete last row = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("clear first column and header row on outer-pipe-less table", func(t *testing.T) {
+		const src = "A | B\n--- | ---\nx | y\n"
+		for _, grip := range []string{"Select table column 1", "Select table row 1"} {
+			document, tester, _ := laidOutTable(t, src, 760, 420)
+			cell, _ := tester.Find("Table row 2 column 1")
+			tester.Move(cell.X+cell.W/2, cell.Y+cell.H/2)
+			tester.Frame()
+			if err := tester.Click(grip); err != nil {
+				t.Fatal(err)
+			}
+			tester.Frame()
+			tester.Key(0, ui.KeyBackspace)
+			tester.Frame()
+			if len(document.tables) != 1 || firstTable(t, document).columns() != 2 {
+				t.Fatalf("%s + Backspace broke table: %q", grip, document.Source())
+			}
+			if !document.Undo() || document.Source() != src {
+				t.Fatalf("%s + Backspace did not undo cleanly: %q", grip, document.Source())
+			}
+		}
+	})
+
+	t.Run("clicking handle during IME composition does not steal focus", func(t *testing.T) {
+		const src = "| A | B |\n| --- | --- |\n| x | y |\n"
+		document, tester, _ := laidOutTable(t, src, 760, 420)
+		if err := tester.Click("Table row 2 column 2"); err != nil {
+			t.Fatal(err)
+		}
+		tester.Frame()
+		tester.Compose("ni", 2)
+		tester.Frame()
+		if err := tester.Click("Select table row 1"); err != nil {
+			t.Fatal(err)
+		}
+		tester.Frame()
+		tester.Type("你")
+		tester.Frame()
+		if strings.Contains(document.Source(), "你A") || strings.Contains(document.Source(), "A你") {
+			t.Fatalf("IME commit leaked into header cell: %q", document.Source())
+		}
+		if !strings.Contains(document.Source(), "你") {
+			t.Fatalf("IME commit lost: %q", document.Source())
+		}
+	})
+
+	t.Run("multi-step undo restores initial widths even with identical re-inserted header", func(t *testing.T) {
+		const src = "| A |  |\n| --- | --- |\n| x | y |\n"
+		document, tester, table := laidOutTable(t, src, 760, 420)
+		table.widths[0], table.widths[1], table.manual = 260, 180, true
+		document.saveTables()
+
+		if !table.editTable(document, tableOp{kind: tableDeleteColumn, row: 0, col: 1}) {
+			t.Fatal("delete col 1 failed")
+		}
+		tester.Frame()
+		table = firstTable(t, document)
+		if !table.editTable(document, tableOp{kind: tableInsertColumnRight, row: 0, col: 0}) {
+			t.Fatal("re-insert col failed")
+		}
+		tester.Frame()
+		if !document.Undo() {
+			t.Fatal("first undo failed")
+		}
+		tester.Frame()
+		if !document.Undo() {
+			t.Fatal("second undo failed")
+		}
+		tester.Frame()
+		restored := firstTable(t, document)
+		if !restored.manual || restored.widths[0] != 260 || restored.widths[1] != 180 {
+			t.Fatalf("after 2x Undo widths = %v (manual %v), want [260 180] (true)", restored.widths, restored.manual)
+		}
+	})
+}

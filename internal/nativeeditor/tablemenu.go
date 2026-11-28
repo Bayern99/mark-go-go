@@ -106,7 +106,9 @@ func (m *readingTable) tableGrip(c *ui.Context, doc *Document, spec tableGripSpe
 		} else {
 			spec.onSelect()
 		}
-		m.focusSelectionAnchor(spec.focusPos)
+		if len(m.composing) == 0 {
+			m.focusSelectionAnchor(spec.focusPos)
+		}
 		c.Invalidate()
 		return true
 	})

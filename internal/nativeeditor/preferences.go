@@ -224,18 +224,48 @@ func (m *readingTable) restoreWidths(saved []float32) bool {
 	m.manual = true
 	return true
 }
-func (d *Document) rememberTableWidths(key string, widths []float32) {
+
+type tableWidthSnapshot struct {
+	depth  int
+	key    string
+	widths []float32
+}
+
+func (d *Document) recordTableWidths(depth int, key string, widths []float32, truncateFuture bool) {
 	if key == "" || len(widths) == 0 {
 		return
 	}
-	if d.tableWidths == nil {
-		d.tableWidths = map[string][]float32{}
+	if truncateFuture {
+		kept := d.tableHistory[:0]
+		for _, entry := range d.tableHistory {
+			if entry.depth <= depth {
+				kept = append(kept, entry)
+			}
+		}
+		d.tableHistory = kept
 	}
-	d.tableWidths[key] = append([]float32(nil), widths...)
+	copied := append([]float32(nil), widths...)
+	for i := len(d.tableHistory) - 1; i >= 0; i-- {
+		if d.tableHistory[i].depth == depth && d.tableHistory[i].key == key {
+			d.tableHistory[i].widths = copied
+			return
+		}
+	}
+	d.tableHistory = append(d.tableHistory, tableWidthSnapshot{depth: depth, key: key, widths: copied})
 }
 
-func (d *Document) restoreTableHistory(m *readingTable) bool {
-	if saved, ok := d.tableWidths[m.preferenceKey]; ok && m.restoreWidths(saved) {
+func (d *Document) restoreTableHistory(depth int, m *readingTable) bool {
+	bestIdx := -1
+	bestDepth := -1
+	for i, entry := range d.tableHistory {
+		if entry.depth <= depth && entry.key == m.preferenceKey && len(entry.widths) == len(m.widths) {
+			if entry.depth >= bestDepth {
+				bestDepth = entry.depth
+				bestIdx = i
+			}
+		}
+	}
+	if bestIdx >= 0 && m.restoreWidths(d.tableHistory[bestIdx].widths) {
 		m.resave = true
 		return true
 	}
@@ -247,6 +277,7 @@ func (d *Document) saveTables() {
 		return
 	}
 	widths := map[string][]float32{}
+	depth := d.state.Buffer.UndoDepth()
 	for at, t := range d.tables {
 		if t.manual {
 			key := t.preferenceKey
@@ -254,7 +285,7 @@ func (d *Document) saveTables() {
 				key = strconv.Itoa(at) + ":" + t.signature
 			}
 			widths[key] = t.widths
-			d.rememberTableWidths(key, t.widths)
+			d.recordTableWidths(depth, key, t.widths, false)
 		}
 	}
 	data, _ := json.Marshal(widths)

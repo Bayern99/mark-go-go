@@ -489,7 +489,6 @@ func (p *panel) drawGenerationStatus(c *ui.Context, v *documentView) {
 	}
 }
 
-// drawView draws the reader, or what stands in for it before one exists. A
 func (p *panel) drawView(c *ui.Context, v *documentView, d workspace.DocumentInfo, raw string, busy bool) {
 	v.openSource = func(section workspace.Section) {
 		p.win.SetMode("markdown")

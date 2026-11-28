@@ -204,8 +204,8 @@ func (t *tableSource) removeLine(at int) {
 	if at < 0 || at >= len(t.lines) {
 		return
 	}
-	if at == len(t.lines)-1 && at > 0 {
-		t.lines[at-1].eol = t.lines[at].eol
+	if at == len(t.lines)-1 && at > 0 && t.lines[at].eol == "" {
+		t.lines[at-1].eol = ""
 	}
 	t.lines = slices.Delete(t.lines, at, at+1)
 }
@@ -230,21 +230,64 @@ func (t *tableSource) insertColumn(at int) {
 	}
 }
 
+func ensureTableRowColumns(body string, wantCols int) string {
+	if wantCols <= 0 {
+		return body
+	}
+	if wantCols == 1 {
+		if strings.IndexByte(body, '|') >= 0 && len(splitTableRow(body)) >= 1 {
+			return body
+		}
+		trimmed := strings.Trim(body, " \t")
+		if trimmed == "" {
+			return tableEmptyRow(1)
+		}
+		return "| " + trimmed + " |"
+	}
+	if len(splitTableRow(body)) >= wantCols {
+		return body
+	}
+	trimmedLeft := strings.TrimLeft(body, " \t")
+	trimmedRight := strings.TrimRight(body, " \t")
+	if strings.HasPrefix(trimmedLeft, "|") {
+		candidate := "| " + body
+		if len(splitTableRow(candidate)) >= wantCols {
+			return candidate
+		}
+	}
+	if strings.HasSuffix(trimmedRight, "|") {
+		candidate := body + " |"
+		if len(splitTableRow(candidate)) >= wantCols {
+			return candidate
+		}
+	}
+	if strings.HasPrefix(trimmedLeft, "|") && strings.HasSuffix(trimmedRight, "|") {
+		candidate := "|" + body + "|"
+		if len(splitTableRow(candidate)) >= wantCols {
+			return candidate
+		}
+	}
+	out := body
+	if !strings.HasPrefix(strings.TrimLeft(out, " \t"), "|") {
+		out = "| " + out
+	}
+	if !strings.HasSuffix(strings.TrimRight(out, " \t"), "|") {
+		out += " |"
+	}
+	for len(splitTableRow(out)) < wantCols {
+		out += "  |"
+	}
+	return out
+}
+
 func (t *tableSource) removeColumn(col int) {
 	columns := max(1, t.columns()-1)
 	for i := range t.lines {
 		prefix, body := splitTableLinePrefix(t.lines[i].text)
 		next, ok := removeTableCellBody(body, col, columns)
 		if ok {
-			if columns == 1 && strings.IndexByte(next, '|') < 0 {
-				trimmed := strings.TrimSpace(next)
-				if trimmed == "" {
-					next = tableEmptyRow(1)
-				} else {
-					next = "| " + trimmed + " |"
-				}
-			} else if len(splitTableRow(next)) == 0 {
-				next = tableEmptyRow(columns)
+			if i == 0 || i == 1 || columns == 1 || len(splitTableRow(next)) == 0 {
+				next = ensureTableRowColumns(next, columns)
 			}
 			t.lines[i].text = prefix + next
 		}
@@ -532,6 +575,10 @@ func (m *readingTable) editTable(doc *Document, op tableOp) bool {
 	if idx.insideCRLF(z) {
 		z++
 	}
+	beforeDepth := doc.state.Buffer.UndoDepth()
+	if m.manual && m.preferenceKey != "" {
+		doc.recordTableWidths(beforeDepth, m.preferenceKey, m.widths, true)
+	}
 	if err := doc.apply(doc.Version(), a, z, idx.raw[a:z], next[a-start:len(next)-(end-z)], nil); err != nil {
 		return false
 	}
@@ -550,9 +597,6 @@ func (m *readingTable) settle(doc *Document) {
 		return
 	}
 	m.pendingEdit = nil
-	if m.manual && m.preferenceKey != "" {
-		doc.rememberTableWidths(m.preferenceKey, m.widths)
-	}
 	op, focus := edit.op, edit.focus
 	switch op.kind {
 	case tableInsertColumnLeft, tableInsertColumnRight:

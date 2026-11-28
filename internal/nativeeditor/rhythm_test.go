@@ -112,7 +112,7 @@ func TestPreviewHeadingRhythmAndFoldAlignment(t *testing.T) {
 	if first.Y != 45 {
 		t.Errorf("document's first heading starts at y %v, want the page margin at 45 without heading-before", first.Y)
 	}
-	assertPreviewGap(t, d, src, "First", "Body", portrait.Editor.HeadingAfter[0])
+	assertPreviewGap(t, d, src, "First", "Body", portrait.Editor.ParagraphGap)
 	assertPreviewGapNear(t, d, src, "Body", "Second", portrait.Editor.HeadingBefore[1])
 	blankAt := strings.Index(src, "\n\n## Second") + 1
 	blankRect, ok := d.RectUTF16(blankAt)
@@ -124,6 +124,17 @@ func TestPreviewHeadingRhythmAndFoldAlignment(t *testing.T) {
 	}
 	wantAdjacent := max(portrait.Editor.HeadingAfter[1], portrait.Editor.HeadingBefore[2]/2)
 	assertPreviewGap(t, d, src, "Second", "Third", wantAdjacent)
+
+	const spacedHeadings = "##### Five\n\n###### Six\n"
+	sd, _ := previewRhythmDocument(t, spacedHeadings)
+	shBlank := strings.Index(spacedHeadings, "\n\n###### Six") + 1
+	shRect, ok := sd.RectUTF16(shBlank)
+	if !ok {
+		t.Fatal("missing caret rect on blank line between headings")
+	}
+	if math.Abs(float64(shRect.H-portrait.Editor.ParagraphGap)) > 0.5 {
+		t.Errorf("blank line between headings caret height = %v, want ParagraphGap %v", shRect.H, portrait.Editor.ParagraphGap)
+	}
 
 	const unspaced = "Body\n# Heading\n\nText\n"
 	d, tt := previewRhythmDocument(t, unspaced)

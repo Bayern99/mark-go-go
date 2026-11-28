@@ -29,7 +29,7 @@ type Document struct {
 	mode             Mode
 	index            *sourceIndex
 	tables           map[int]*readingTable
-	tableWidths      map[string][]float32
+	tableHistory     []tableWidthSnapshot
 	draft            *blockDraft
 	artwork          map[string]blockImage
 	imageDir         string

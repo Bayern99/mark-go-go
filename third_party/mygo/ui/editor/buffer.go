@@ -410,6 +410,12 @@ func (b *Buffer) CanRedo() bool {
 	return len(b.redo) > 0
 }
 
+func (b *Buffer) UndoDepth() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.undo)
+}
+
 // Undo takes back the last step of edits, and reports whether there was
 // one.
 func (b *Buffer) Undo() bool {

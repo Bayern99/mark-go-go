@@ -639,7 +639,7 @@ func (p *previewLayout) applyBlockGap(snap editor.Snapshot, previous, current *p
 		if !structuralBlank(snap.Line(line)) {
 			continue
 		}
-		blankGap := min(gap, portrait.Editor.ParagraphGap)
+		blankGap := portrait.Editor.ParagraphGap
 		p.styles = append(p.styles, editor.LineStyle{Line: line, LineHeight: blankGap / portrait.Editor.Body.Size})
 		remaining = gap - blankGap
 		break

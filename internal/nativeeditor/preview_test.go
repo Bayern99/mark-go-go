@@ -80,7 +80,7 @@ func TestPreviewReadingColumnAdaptsWhenTheWindowResizes(t *testing.T) {
 		tt.Frame()
 		title, hasTitle := d.RectUTF16(2)
 		firstLine, hasFirstLine := d.RectUTF16(strings.Index(source, "The first line"))
-		wantFirstY := title.Y + title.H + portrait.Editor.HeadingAfter[0]
+		wantFirstY := title.Y + title.H + portrait.Editor.ParagraphGap
 		if !hasTitle || !hasFirstLine || title.X != tc.left || title.Y != tc.top || firstLine.X != tc.left || firstLine.Y != wantFirstY {
 			t.Errorf("%d × %d places title at %v and first paragraph at %v; want x %.0f and y %.0f, %.0f", tc.width, tc.height, title, firstLine, tc.left, tc.top, wantFirstY)
 		}

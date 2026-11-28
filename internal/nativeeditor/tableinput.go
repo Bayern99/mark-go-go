@@ -2,6 +2,7 @@ package nativeeditor
 
 import (
 	"math"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -220,28 +221,74 @@ func (m *readingTable) clearCells(doc *Document) bool {
 	if !ok {
 		return false
 	}
+	snap := doc.state.Buffer.Snapshot()
 	idx := doc.sourceIndex()
-	chosen := make([]tableCell, 0, (bottom-top+1)*(right-left+1))
+	type rowReplacement struct {
+		start, end int
+		old, next  string
+	}
+	var edits []rowReplacement
 	for row := max(top, 0); row <= bottom && row < len(m.spans); row++ {
-		for col := max(left, 0); col <= right && col < len(m.spans[row]); col++ {
+		if len(m.spans[row]) == 0 {
+			continue
+		}
+		lineNum := snap.LineOf(m.spans[row][0].start)
+		lineStart := idx.rawAtEditor(snap.LineStart(lineNum))
+		lineEnd := idx.rawAtEditor(snap.LineEnd(lineNum))
+		if lineEnd < lineStart || lineEnd > len(idx.raw) {
+			continue
+		}
+		rawLine := idx.raw[lineStart:lineEnd]
+		updated := rawLine
+		changed := false
+		for col := min(right, len(m.spans[row])-1); col >= max(left, 0); col-- {
 			cell := m.spans[row][col]
 			if cell.end <= cell.start {
 				continue
 			}
-			a, z := idx.rawAtEditor(cell.start), idx.rawAtEditor(cell.end)
-			if z <= a || !validByteBoundary(idx.raw, a) || !validByteBoundary(idx.raw, z) {
+			a, z := idx.rawAtEditor(cell.start)-lineStart, idx.rawAtEditor(cell.end)-lineStart
+			if a < 0 || z > len(updated) || z <= a || !validByteBoundary(updated, a) || !validByteBoundary(updated, z) {
 				continue
 			}
-			chosen = append(chosen, tableCell{start: a, end: z, raw: idx.raw[a:z]})
+			updated = updated[:a] + updated[z:]
+			changed = true
 		}
+		if !changed {
+			continue
+		}
+		_, origBody := splitTableLinePrefix(rawLine)
+		wantCols := len(splitTableRow(origBody))
+		if row == 0 {
+			wantCols = m.columns()
+		}
+		prefix, body := splitTableLinePrefix(updated)
+		updated = prefix + ensureTableRowColumns(body, wantCols)
+		if updated == rawLine {
+			continue
+		}
+		prefixLen := tableCommonPrefix(rawLine, updated)
+		for prefixLen > 0 && ((prefixLen < len(rawLine) && !utf8.RuneStart(rawLine[prefixLen])) || (prefixLen < len(updated) && !utf8.RuneStart(updated[prefixLen]))) {
+			prefixLen--
+		}
+		suffixLen := tableCommonSuffix(rawLine[prefixLen:], updated[prefixLen:])
+		for suffixLen > 0 && (!utf8.RuneStart(rawLine[len(rawLine)-suffixLen]) || !utf8.RuneStart(updated[len(updated)-suffixLen])) {
+			suffixLen--
+		}
+		a, z := lineStart+prefixLen, lineEnd-suffixLen
+		edits = append(edits, rowReplacement{
+			start: a,
+			end:   z,
+			old:   idx.raw[a:z],
+			next:  updated[prefixLen : len(updated)-suffixLen],
+		})
 	}
-	if len(chosen) == 0 {
+	if len(edits) == 0 {
 		return true
 	}
 	doc.state.Buffer.Transact(func() {
-		for i := len(chosen) - 1; i >= 0; i-- {
-			cell := chosen[i]
-			_ = doc.Apply(doc.Version(), cell.start, cell.end, cell.raw, "")
+		for i := len(edits) - 1; i >= 0; i-- {
+			e := edits[i]
+			_ = doc.Apply(doc.Version(), e.start, e.end, e.old, e.next)
 		}
 	})
 	return true

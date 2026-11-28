@@ -114,9 +114,6 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 		}
 	}
 	if model == nil || len(model.widths) != ncols {
-		if model != nil && model.manual && model.preferenceKey != "" {
-			doc.rememberTableWidths(model.preferenceKey, model.widths)
-		}
 		model = &readingTable{bounds: map[cellPosition]ui.Rect{}, widths: make([]float32, ncols), minimum: make([]float32, ncols), dragCol: -1, hoverCol: -1}
 		for i := range model.widths {
 			model.minimum[i] = portrait.Editor.TableColumnMin
@@ -129,7 +126,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 		model.signature = sig
 		model.preferenceKey = preferenceKey
 		model.fit(portrait.Editor.Column)
-		if !doc.restoreTableHistory(model) {
+		if !doc.restoreTableHistory(doc.state.Buffer.UndoDepth(), model) {
 			doc.preferences.restoreTable(model)
 		}
 		doc.tables[b.Start] = model
@@ -143,7 +140,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 		doc.saveTables()
 	}
 	if model.manual {
-		doc.rememberTableWidths(preferenceKey, model.widths)
+		doc.recordTableWidths(doc.state.Buffer.UndoDepth(), preferenceKey, model.widths, false)
 	}
 	model.seen, model.version = p.version, p.version
 	if !model.shaped(len(rows), ncols) {

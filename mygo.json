@@ -2,7 +2,7 @@
   "name": "Mark Go Go",
   "slug": "mark-go-go",
   "identifier": "dev.markgogo.editor",
-  "version": "0.6.0",
+  "version": "0.6.5-rc.1",
   "icon": "resources/icon.png",
   "buildCommand": "go run ./scripts/bundle-cli",
   "resources": ["third_party/mygo/LICENSE"],

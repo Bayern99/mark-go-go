@@ -9,6 +9,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.6.5-rc.1] - 2026-11-27
+
+### 界面与编辑 · Interface and editing
+
+- **Preview 语义垂直节奏与纸面精修（#212，[ADR 0020](docs/adr/0020-preview-vertical-rhythm-and-native-tables.md)）**：块间距离改由语义决定——段内折行为 `0`，紧凑列表相邻项 `6`，段落、松散列表项、代码块与表格外沿取阅读字号派生的 `ParagraphGap`（16 pt 下为 16），标题恢复“前大后小”的章节归属感；四个节奏档位与标题前后距全部随 15–18 阅读字号派生并登记在 `portrait.EditorTokens`。第 1 个结构空行保持普通可编辑空行（只压行高），第 2 个及以后仍为完整行高；源码无空行的紧凑列表与嵌套列表首项、标题前距差额改挂显式 `Above` Block，且排在标题折叠 Block 之前以免折叠三角上移；代码块底部 12 点由真实 `Below` Block 占位，上下纸色留白对称；分隔线高度随字号档位缩放，引用竖线声明宽与绘制宽统一为 3 点。 Preview gains a semantic vertical rhythm — zero within-paragraph wraps, 6 between tight list items, a size-derived paragraph gap elsewhere, front-heavy heading spacing — on the source blank lines themselves, with real blocks for the gaps no source line holds.
+- **原生 Markdown 表格 P0–P2（#214、#215、#217、#218，[ADR 0020](docs/adr/0020-preview-vertical-rhythm-and-native-tables.md)）**：表格四角圆角、发丝网格在左缘与正文对齐（左侧 16 点手柄槽探入页边距）、随当前五行 Space 染色的柔和表头与表头底分隔线（16 套浅深配色全部通过 WCAG AA 验算）、横向 8 / 纵向 4 内边距与统一净宽估高，横向溢出以渐隐遮罩收边；`third_party/mygo/ui/editor` 补上受控的行内左/中/右对齐补丁，GFM 列对齐（`b.Align`）首次真正渲染，绘制、光标、点击命中、选区与 IME 候选锚点共用同一行起点；列宽按文档内表格序号、列数与表头特征匹配恢复，改字重开不再丢列宽，结构编辑时显式迁移列宽数组；单元格改为 inline-only 视图以遵守 GFM 纯行内规范（`# x` / `- x` 不再被误解析为块级），支持格间 `Tab` / `⇧Tab` / 方向键导航与整行整列选区，`Backspace` 单步清空、复制输出 TSV；插行、插列、删行、删列、列对齐与末格 `Tab` 增行均以单区间最小字节替换改写原文，逐行保留原 CRLF/LF 并保证单步 Undo/Redo，配固定行/列手柄槽、悬停 `+` 插入钉与 Portrait 右键菜单。合并单元格、单元格底色、垂直对齐、多表头行与 sticky 表头明确不做。 Native Markdown tables reach P0–P2: hairline grid with four rounded corners aligned to the reading column, Wu Xing Space-tinted headers with a Space-accented bottom divider across all 16 WCAG AA palettes, real GFM column alignment through a vendored MyGo editor alignment patch, AST-order width persistence, inline-only cell fidelity with Tab/arrow navigation and selection, and minimal-byte GFM structural edits with an end-cell Tab append, handles, pins, and a context menu.
+- **可折叠顶级标题的静默折叠三角（#216）**：展开态不再常驻标记，只在悬停或按下页边距命中区、`FocusVisible`、无 hover 设备或光标落在该标题行时绘制；按钮、热区、快捷键、Tab 顺序与标题布局均不变。 The fold chevron of a top-level collapsible heading now appears only when it is wanted.
+
+### 导出与 GenUI · Export and GenUI
+
+- **统一导出架构（[ADR 0019](docs/adr/0019-export-architecture.md)）**：Markdown 与 GenUI 共用一套纯 Go 格式注册表（`internal/export`）。Markdown 可从 `File → Export ▸` 与命令栏导出 Standalone HTML、PDF，以及可选的 Pandoc DOCX、PPTX、EPUB、RTF、LaTeX；GenUI 从底部悬浮胶囊 `⋯` 导出当前视图的 HTML 与 PDF。Preferences 两个高频选项 `Include Reader Notes`、`Keep Dark Theme for PDF` 放在导出菜单底部，纸张大小与 `pandocPath` 放在 Settings / Export；缺少 Pandoc 或视图为 v1/v2 遗留时在打开保存框前即拦截。导出复用本地公式、Mermaid、代码高亮与当前五行 Space 主题，图片严格限定在文档目录内内联，不在导出进程发起外网抓取。 Markdown and GenUI export share one registry: HTML, PDF, and Pandoc DOCX/PPTX/EPUB/RTF/LaTeX, with Reader Notes and Keep Dark Theme for PDF options and a zero-dialog save path.
+- **GenUI 界面状态收口（#213）**：设置卡片、底部悬浮命令胶囊与连续阅读卡片重做排版与状态；失败恢复只保留一个主入口——无旧视图时归内容区局部强调态，有旧视图时归命令胶囊，Details 弹层只展示诊断信息；按 `Failure.Kind` 分派缺 Agent、模型无效、认证失败与临时错误的恢复路径，空 `Kind` 安全回退。 GenUI settings cards, floating command pill, and continuous reading cards are polished, and a failure offers a single primary recovery action dispatched by failure kind.
+
+### 测试与可靠性 · Tests and reliability
+
+- **CI 与可靠性修复**：GenUI 卡片来源改为 handle 持有的所有者（`mygo vet` 通过），导出 Toast 队列移回绘制线程以消除数据竞争，PDF 菜单测试改为跨平台断言。 GenUI card owners are handle-backed for `mygo vet`, export toasts are queued on the draw thread, and the PDF menu test is cross-platform.
+
 ## [0.6.0] - 2026-11-25
 
 ### 界面与编辑 · Interface and editing

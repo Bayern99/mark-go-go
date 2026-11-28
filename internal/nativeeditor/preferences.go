@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf16"
 
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/egoist/mygo/ui/markdown/parser"
 )
 
@@ -147,7 +148,55 @@ func tableSignature(n int, rows [][]string) string {
 	}
 	return strconv.Itoa(n) + ":" + strconv.FormatUint(uint64(hash), 36)
 }
+func firstTableRow(rows [][]string) []string {
+	if len(rows) == 0 {
+		return nil
+	}
+	return rows[0]
+}
+
+func (p *previewLayout) tableOrdinal(idx int) int {
+	ordinal := 0
+	for block := 1; block < p.document.Len(); block++ {
+		if block == idx {
+			break
+		}
+		if p.document.Block(block).Kind == parser.Table {
+			ordinal++
+		}
+	}
+	return ordinal
+}
+
+func tablePreferenceKey(ordinal, columns int, header []string) string {
+	return "v2:" + strconv.Itoa(ordinal) + ":" + tableSignature(columns, [][]string{header})
+}
+
+func tablePlacePrefix(key string) string {
+	parts := strings.Split(key, ":")
+	if len(parts) != 4 || parts[0] != "v2" {
+		return ""
+	}
+	return strings.Join(parts[:3], ":") + ":"
+}
+
 func (p *readingPreferences) restoreTable(m *readingTable) {
+	if saved, ok := p.widths[m.preferenceKey]; ok && m.restoreWidths(saved) {
+		return
+	} else if !ok {
+		prefix := tablePlacePrefix(m.preferenceKey)
+		var candidate []float32
+		matches := 0
+		for key, widths := range p.widths {
+			if prefix != "" && strings.HasPrefix(key, prefix) {
+				candidate = widths
+				matches++
+			}
+		}
+		if matches == 1 && m.restoreWidths(candidate) {
+			return
+		}
+	}
 	var saved []float32
 	count := 0
 	for key, w := range p.widths {
@@ -157,16 +206,79 @@ func (p *readingPreferences) restoreTable(m *readingTable) {
 			count++
 		}
 	}
-	if count != 1 || len(saved) != len(m.widths) {
-		return
-	}
-	for i, w := range saved {
-		if w >= 72 {
-			m.widths[i] = w
-			m.manual = true
-		}
+	if count == 1 {
+		m.restoreWidths(saved)
 	}
 }
+
+func (m *readingTable) restoreWidths(saved []float32) bool {
+	if len(saved) != len(m.widths) {
+		return false
+	}
+	for _, w := range saved {
+		if w < portrait.Editor.TableColumnResizeMin {
+			return false
+		}
+	}
+	copy(m.widths, saved)
+	m.manual = true
+	return true
+}
+
+type tableWidthSnapshot struct {
+	stateID uint64
+	key     string
+	widths  []float32
+}
+
+func (d *Document) recordTableWidths(stateID uint64, key string, widths []float32) {
+	if key == "" || len(widths) == 0 {
+		return
+	}
+	copied := append([]float32(nil), widths...)
+	for i := len(d.tableHistory) - 1; i >= 0; i-- {
+		if d.tableHistory[i].stateID == stateID && d.tableHistory[i].key == key {
+			d.tableHistory[i].widths = copied
+			return
+		}
+	}
+	d.tableHistory = append(d.tableHistory, tableWidthSnapshot{stateID: stateID, key: key, widths: copied})
+}
+
+func (d *Document) restoreTableHistoryExact(stateID uint64, m *readingTable) bool {
+	for i := len(d.tableHistory) - 1; i >= 0; i-- {
+		entry := d.tableHistory[i]
+		if entry.stateID == stateID && entry.key == m.preferenceKey && len(entry.widths) == len(m.widths) {
+			if m.restoreWidths(entry.widths) {
+				m.resave = true
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (d *Document) restoreTableHistory(stateID uint64, m *readingTable) bool {
+	if d.restoreTableHistoryExact(stateID, m) {
+		return true
+	}
+	bestIdx := -1
+	var bestID uint64
+	for i, entry := range d.tableHistory {
+		if entry.stateID <= stateID && entry.key == m.preferenceKey && len(entry.widths) == len(m.widths) {
+			if bestIdx < 0 || entry.stateID >= bestID {
+				bestID = entry.stateID
+				bestIdx = i
+			}
+		}
+	}
+	if bestIdx >= 0 && m.restoreWidths(d.tableHistory[bestIdx].widths) {
+		m.resave = true
+		return true
+	}
+	return false
+}
+
 func (d *Document) saveTables() {
 	if d.preferences.save == nil {
 		return
@@ -174,7 +286,11 @@ func (d *Document) saveTables() {
 	widths := map[string][]float32{}
 	for at, t := range d.tables {
 		if t.manual {
-			widths[strconv.Itoa(at)+":"+t.signature] = t.widths
+			key := t.preferenceKey
+			if key == "" {
+				key = strconv.Itoa(at) + ":" + t.signature
+			}
+			widths[key] = t.widths
 		}
 	}
 	data, _ := json.Marshal(widths)

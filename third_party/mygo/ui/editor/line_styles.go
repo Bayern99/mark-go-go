@@ -146,6 +146,7 @@ func (v *view) styledView(s LineStyle) *view {
 	child.setTheme(v.theme)
 	child.leftInset, child.rightInset = left, right
 	child.setWrap(v.wrap, max(0, v.wrapWidth-left-right))
+	child.setTextAlign(v.align, max(0, v.alignWidth-left-right))
 	return child
 }
 

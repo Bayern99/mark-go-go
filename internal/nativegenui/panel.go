@@ -41,6 +41,7 @@ type documentView struct {
 	sections                                                       map[headingKey]workspace.Section
 	notes                                                          []workspace.Note
 	failure                                                        *genui.GenerateFailure
+	failureBackend                                                 string
 	lastIDs                                                        []string
 	cancel                                                         context.CancelFunc
 	previewSource                                                  sourcePreviewState
@@ -69,6 +70,8 @@ type panel struct {
 	confirmSelection func(string, workspace.GenUIBackendPatch) (genui.ModelCatalog, workspace.Settings, error)
 	signIn           func(string) error
 	runOnUI          func(func())
+	openSettings     func(string)
+	startGeneration  func(*documentView, []string)
 
 	edits    map[string]*backendEdit
 	backends map[string]*backendStatus
@@ -83,6 +86,8 @@ func Install(host *workspace.Service) func(*nativeui.Window) nativeui.Panels {
 		p.refresh = host.RefreshGenUIModels
 		p.confirmSelection = host.ConfirmGenUISelection
 		p.signIn = host.OpenGenUILogin
+		p.openSettings = win.OpenSettings
+		p.startGeneration = p.generate
 		workspace.SettingsChanged.Listen(win.Native(), func(next workspace.Settings) {
 			p.settings = next
 		})
@@ -287,6 +292,14 @@ func (p *panel) drawFailurePill(c *ui.Context, v *documentView, d workspace.Docu
 			Background(portrait.Tones.Danger.Solid).AccessHidden(true), status)
 		portrait.Type.Small.Apply(ui.Text(c, "Generation failed")).TextColor(portrait.Tones.Danger.Ink).Grow(1).MinWidth(0).MaxLines(1).Ellipsis("…")
 	})
+	if v.reader().surface != nil {
+		p.drawFailureDetails(c, v, &pill, true)
+		p.drawFailureRecovery(c, v, d, false)
+	}
+	p.drawCommandOptions(c, v, d, pill, false)
+}
+
+func (p *panel) drawFailureDetails(c *ui.Context, v *documentView, roomAnchor *ui.Element, above bool) {
 	details := portrait.ButtonWith(c, "Details", "Generation failure details", portrait.ButtonSpec{
 		Look: portrait.Link, Size: portrait.Sizes.Compact, Ink: portrait.Tones.Danger.Ink,
 	}).Expanded(v.failureOpen)
@@ -294,20 +307,80 @@ func (p *panel) drawFailurePill(c *ui.Context, v *documentView, d workspace.Docu
 		v.failureOpen = !v.failureOpen
 		v.options = false
 	}
-	width, maxHeight := upwardPopoverRoom(v.paneBounds(c), pill)
+	pane := v.paneBounds(c)
+	width := min(portrait.Form.PopoverWide, max(0, pane.W-2*portrait.Shell.PageInset))
+	maxHeight := max(0, pane.H-2*portrait.Shell.PageInset)
+	placement := ui.AnchorBottomStart
+	if above {
+		width, maxHeight = upwardPopoverRoom(pane, *roomAnchor)
+		placement = ui.AnchorTopStart
+	} else if bounds := details.Bounds(); bounds.H > 0 {
+		maxHeight = max(0, pane.Y+pane.H-(bounds.Y+bounds.H)-portrait.Shell.PageInset-portrait.Form.PopoverPad)
+	}
 	panel := portrait.PopoverWithSpec(c, details, &v.failureOpen, portrait.PopoverSpec{
-		Width: width, MaxHeight: maxHeight, Title: "Generation failure details", Opaque: true, Placement: ui.AnchorTopStart,
+		Width: width, MaxHeight: maxHeight, Title: "Generation failure details", Opaque: true, Placement: placement,
 	}, func() {
-		p.drawGenerationStatus(c, v, d, false)
+		p.drawGenerationStatus(c, v)
 	})
-	placePopoverAbove(panel, details, v.paneBounds(c), width, maxHeight)
+	if above {
+		placePopoverAbove(panel, details, pane, width, maxHeight)
+	} else {
+		placePopoverBelow(panel, details, pane, width, maxHeight)
+	}
 	if panel.Dismissed() && c.KeyboardInput() {
 		details.Focus()
 	}
-	if d.Path != "" && portrait.ButtonWith(c, "Retry", "Retry", portrait.ButtonSpec{Look: portrait.Accent, Size: portrait.Sizes.Compact}).Clicked() {
-		p.generate(v, v.lastIDs)
+}
+
+func (p *panel) drawFailureRecovery(c *ui.Context, v *documentView, d workspace.DocumentInfo, busy bool) {
+	label, action := p.failureRecovery(v, d, busy)
+	if action == nil {
+		return
 	}
-	p.drawCommandOptions(c, v, d, pill, false)
+	if portrait.ButtonWith(c, label, label, portrait.ButtonSpec{Look: portrait.Accent, Size: portrait.Sizes.Compact}).Clicked() {
+		action()
+	}
+}
+
+func (p *panel) failureRecovery(v *documentView, d workspace.DocumentInfo, busy bool) (string, func()) {
+	if v.failure == nil {
+		return "", nil
+	}
+	switch v.failure.Kind {
+	case genui.FailAgentNotFound:
+		return "Configure agent", p.openGenUISettings
+	case genui.FailModelInvalid:
+		return "Choose model", p.openGenUISettings
+	case genui.FailAuthRequired:
+		return "Sign in in Terminal", func() {
+			id := v.failureBackend
+			if id == "" {
+				id, _ = p.settings.GenUI.Active()
+			}
+			p.signInInTerminal(id)
+		}
+	default:
+		if busy || d.Path == "" {
+			return "", nil
+		}
+		return "Retry", func() { p.retryGeneration(v) }
+	}
+}
+
+func (p *panel) openGenUISettings() {
+	if p.openSettings != nil {
+		p.openSettings("genui")
+		return
+	}
+	p.win.OpenSettings("genui")
+}
+
+func (p *panel) retryGeneration(v *documentView) {
+	if p.startGeneration != nil {
+		p.startGeneration(v, v.lastIDs)
+		return
+	}
+	p.generate(v, v.lastIDs)
 }
 
 func (p *panel) drawCommandOptions(c *ui.Context, v *documentView, d workspace.DocumentInfo, pill ui.Element, busy bool) {
@@ -406,23 +479,16 @@ func (p *panel) backendSummary() string {
 	return name + " · " + model
 }
 
-func (p *panel) drawGenerationStatus(c *ui.Context, v *documentView, d workspace.DocumentInfo, busy bool) {
+func (p *panel) drawGenerationStatus(c *ui.Context, v *documentView) {
 	if v.failure == nil {
 		return
 	}
-	var retry []portrait.AlertAction
-	if !busy && d.Path != "" {
-		retry = append(retry, portrait.AlertAction{Label: "Retry", OnAction: func() { p.generate(v, v.lastIDs) }})
-	}
-	portrait.Alert(c, portrait.Tones.Danger, "Generation failed", strings.TrimSpace(v.failure.Message+" "+v.failure.Hint), retry...)
+	portrait.Alert(c, portrait.Tones.Danger, "Generation failed", strings.TrimSpace(v.failure.Message+" "+v.failure.Hint))
 	if v.failure.Detail != "" {
 		portrait.OutputBlock(c, "Generation details", v.failure.Detail)
 	}
 }
 
-// drawView draws the reader, or what stands in for it before one exists. A
-// failure is already drawn above, so it never shares the page with the empty
-// state, whose next step would contradict it.
 func (p *panel) drawView(c *ui.Context, v *documentView, d workspace.DocumentInfo, raw string, busy bool) {
 	v.openSource = func(section workspace.Section) {
 		p.win.SetMode("markdown")
@@ -439,7 +505,13 @@ func (p *panel) drawView(c *ui.Context, v *documentView, d workspace.DocumentInf
 	case v.cancel != nil && v.reader().surface == nil:
 		loading(c, "Generating view…", "Your agent is laying out this document.")
 	case v.failure != nil && v.reader().surface == nil:
-		p.drawGenerationStatus(c, v, d, busy)
+		ui.Column(c).FillWidth().Gap(portrait.Form.Gap).Children(func() {
+			p.drawGenerationStatus(c, v)
+			ui.Row(c).FillWidth().Gap(portrait.Form.Gap).AlignItems(ui.Center).Children(func() {
+				p.drawFailureRecovery(c, v, d, busy)
+				p.drawFailureDetails(c, v, nil, false)
+			})
+		})
 	case v.reader().surface == nil:
 		ui.Column(c).FillWidth().Grow(1).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
 			spec := portrait.EmptySpec{
@@ -640,7 +712,7 @@ func (p *panel) drawOptions(c *ui.Context, v *documentView, d workspace.Document
 		})
 		if optionMenuRow(c, "Configure…", "Configure GenUI", portrait.IconSlidersHorizontal, false).Clicked() {
 			v.options = false
-			p.win.OpenSettings("genui")
+			p.openGenUISettings()
 		}
 	})
 }
@@ -674,7 +746,7 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 			notes = append(notes, note.Text)
 		}
 	}
-	owner := v.reader().cardOwner
+	owner := v.reader().owners.owner(c)
 	if v.noteTarget == n.ID && owner.Valid() {
 		owner.InsetShadow(portrait.GenUI.SelectionBorder, 0, 0, 0, portrait.Colors.Accent)
 	}
@@ -970,6 +1042,7 @@ func (p *panel) generate(v *documentView, ids []string) {
 	ctx, cancel := context.WithCancel(p.win.Context())
 	v.cancel = cancel
 	v.failure = nil
+	v.failureBackend, _ = p.settings.GenUI.Active()
 	v.options = false
 	v.failureOpen = false
 	v.lastIDs = slices.Clone(ids)

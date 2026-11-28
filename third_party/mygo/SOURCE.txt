@@ -4,8 +4,8 @@ The native UI, editor, rich text, Markdown and chart packages and their renderer
 dependencies are copied from this commit. Tests and examples remain upstream.
 The ui/editor package includes upstream changes through f098a223fcbccfb2ce772f8d12f171f1b79c5c7a
 for native block layout and caret geometry. Local changes preserve original source bytes,
-project editable Markdown, refresh measured block heights and direct edit commands
-to focused native controls.
+project editable Markdown, refresh measured block heights, support per-row horizontal
+text alignment (TextAlign) and direct edit commands to focused native controls.
 The Linux text engine includes upstream commit 7ba76ed9458d24fc2aa56ea7f8d2d9132f20522d
 to register each app font file once per Fontconfig configuration.
 Other local changes support document groups, workspace lifecycle and loading WebKit

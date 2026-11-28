@@ -27,6 +27,7 @@ type previewLayout struct {
 	space         string
 	dark          bool
 	applied       bool
+	shift         int
 	replacements  []editor.Replacement
 	readable      map[int]string
 	styles        []editor.LineStyle
@@ -40,9 +41,13 @@ type displaySegment struct {
 	from, to, shownFrom, shownTo int
 }
 
+func (p *previewLayout) at(off int) int { return off + p.shift }
+
+func (p *previewLayout) reading(off int, text string) { p.readable[p.at(off)] = text }
+
 func (p *previewLayout) replace(start, end int, text string) {
 	if end > start {
-		p.replacements = append(p.replacements, editor.Replacement{Start: start, End: end, Text: text})
+		p.replacements = append(p.replacements, editor.Replacement{Start: p.at(start), End: p.at(end), Text: text})
 	}
 }
 
@@ -84,6 +89,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	if p.document == nil {
 		p.document = parser.New(parser.Default | parser.ExtDollarMath)
 	}
+	p.shift = 0
 	p.version = buffer.Version()
 	p.dirty = false
 	p.draftAnchored = false
@@ -104,6 +110,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	p.blocks = append(p.blocks[:0], pageMargin(0, true, 44), pageMargin(snap.LineCount()-1, false, 120))
 	p.frontEnd = p.frontmatter(snap)
 	frontEnd := p.frontEnd
+	p.verticalRhythm(snap, frontEnd)
 	for i := 1; i < p.document.Len(); i++ {
 		b := p.document.Block(i)
 		if b.Start < frontEnd || b.Start < p.foldUntil {
@@ -211,7 +218,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 				if src[n] == '>' {
 					quoteDepth++
 					p.readable[n] = ""
-					p.replacements = append(p.replacements, editor.Replacement{Start: n, End: n + 1, Width: quoteBarWidth, Content: quoteBar})
+					p.replacements = append(p.replacements, editor.Replacement{Start: n, End: n + 1, Width: portrait.Editor.QuoteBarWidth, Content: quoteBar})
 				}
 			}
 			if quoteDepth > 0 {
@@ -224,80 +231,7 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 			p.standaloneImages(snap, i, inlines)
 			continue
 		}
-		for j, in := range inlines {
-			switch in.Kind {
-			case parser.SoftBreak, parser.LineBreak:
-				p.reflowBreak(src, inlines, j, inlineFloor(b, inlines, j))
-			case parser.Strong, parser.Emphasis, parser.Strikethrough:
-				if in.Next > j+1 {
-					p.replace(in.Start, inlines[j+1].Start, "")
-					p.replace(inlines[in.Next-1].End, in.End, "")
-				}
-			case parser.Link:
-				if in.Next > j+1 {
-					prefixEnd := inlines[j+1].Start
-					if ui.SafeToOpen(in.Dest) {
-						p.replacements = append(p.replacements, editor.Replacement{
-							Start:       in.Start,
-							End:         prefixEnd,
-							Width:       16,
-							Interactive: true,
-							Label:       "Open " + in.Dest,
-							Content:     linkMarker(in.Dest),
-						})
-					} else {
-						p.replace(in.Start, prefixEnd, "")
-					}
-					p.replace(inlines[in.Next-1].End, in.End, "")
-				}
-			case parser.Image:
-				alt := parser.PlainText(inlines[j+1 : in.Next])
-				label := alt
-				if label == "" {
-					label = "Image"
-				}
-				p.readable[in.Start] = label
-				p.replacements = append(p.replacements, editor.Replacement{
-					Start: in.Start,
-					End:   in.End,
-					Width: min(240, max(72, float32(utf8.RuneCountInString(label))*7)),
-					Label: label,
-					Content: func(c *ui.Context, e ui.Element, _ editor.Replacement) {
-						e.Children(func() {
-							img := p.owner.loadInlineImage(c, in.Dest)
-							if img == nil {
-								portrait.Type.Meta.Apply(ui.Text(c, label)).TextColor(c.Theme().TextMuted).SingleLine().Ellipsis("…")
-								return
-							}
-							w, h := ui.ImageSize(img)
-							scale := min(float32(1), 68/max(1, w), 24/max(1, h))
-							view := ui.Image(c, img).Size(max(1, w*scale), max(1, h*scale)).Label(label)
-							if in.Title != "" {
-								view.Tooltip(in.Title)
-							}
-						})
-					},
-				})
-			case parser.Code:
-				raw := src[in.Start:in.End]
-				n := len(raw) - len(strings.TrimLeft(raw, "`"))
-				if n > 0 && len(raw) >= 2*n {
-					a, z := in.Start+n, in.End-n
-					if z-a >= 2 && src[a] == ' ' && src[z-1] == ' ' && strings.TrimSpace(src[a:z]) != "" {
-						a++
-						z--
-					}
-					p.replace(in.Start, a, "")
-					p.replace(z, in.End, "")
-				}
-			case parser.FootnoteRef:
-				p.footnote(in)
-			case parser.Math:
-				p.inlineMath(in)
-			case parser.Text:
-				p.literal(src, in)
-			}
-		}
+		p.inlineContent(src, b, inlines)
 	}
 	for offset, t := range p.owner.tables {
 		if t.seen == p.version {
@@ -314,6 +248,16 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 			delete(p.owner.tables, offset)
 		}
 	}
+	resaveTables := false
+	for _, t := range p.owner.tables {
+		if t.resave {
+			t.resave = false
+			resaveTables = true
+		}
+	}
+	if resaveTables {
+		p.owner.saveTables()
+	}
 	p.referenceDefinitions(snap, frontEnd)
 	if draft := p.owner.draft; draft != nil && (draft.kind == "new note" || !p.draftAnchored) {
 		p.blocks = append(p.blocks, editor.Block{Line: snap.LineOf(min(snap.Len(), draft.anchor)), Height: 140, Interactive: true, Label: draftLabel(draft), Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
@@ -326,10 +270,84 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 	p.indexDisplay(src)
 }
 
-const (
-	quoteBarWidth = 2
-	quoteBarInset = 14
-)
+const quoteBarInset = 14
+
+func (p *previewLayout) inlineContent(src string, b *parser.Block, inlines []parser.Inline) {
+	for j, in := range inlines {
+		switch in.Kind {
+		case parser.SoftBreak, parser.LineBreak:
+			p.reflowBreak(src, inlines, j, inlineFloor(b, inlines, j))
+		case parser.Strong, parser.Emphasis, parser.Strikethrough:
+			if in.Next > j+1 {
+				p.replace(in.Start, inlines[j+1].Start, "")
+				p.replace(inlines[in.Next-1].End, in.End, "")
+			}
+		case parser.Link:
+			if in.Next > j+1 {
+				prefixEnd := inlines[j+1].Start
+				if ui.SafeToOpen(in.Dest) {
+					p.replacements = append(p.replacements, editor.Replacement{
+						Start:       p.at(in.Start),
+						End:         p.at(prefixEnd),
+						Width:       16,
+						Interactive: true,
+						Label:       "Open " + in.Dest,
+						Content:     linkMarker(in.Dest),
+					})
+				} else {
+					p.replace(in.Start, prefixEnd, "")
+				}
+				p.replace(inlines[in.Next-1].End, in.End, "")
+			}
+		case parser.Image:
+			alt := parser.PlainText(inlines[j+1 : in.Next])
+			label := alt
+			if label == "" {
+				label = "Image"
+			}
+			p.reading(in.Start, label)
+			p.replacements = append(p.replacements, editor.Replacement{
+				Start: p.at(in.Start),
+				End:   p.at(in.End),
+				Width: min(240, max(72, float32(utf8.RuneCountInString(label))*7)),
+				Label: label,
+				Content: func(c *ui.Context, e ui.Element, _ editor.Replacement) {
+					e.Children(func() {
+						img := p.owner.loadInlineImage(c, in.Dest)
+						if img == nil {
+							portrait.Type.Meta.Apply(ui.Text(c, label)).TextColor(c.Theme().TextMuted).SingleLine().Ellipsis("…")
+							return
+						}
+						w, h := ui.ImageSize(img)
+						scale := min(float32(1), 68/max(1, w), 24/max(1, h))
+						view := ui.Image(c, img).Size(max(1, w*scale), max(1, h*scale)).Label(label)
+						if in.Title != "" {
+							view.Tooltip(in.Title)
+						}
+					})
+				},
+			})
+		case parser.Code:
+			raw := src[in.Start:in.End]
+			n := len(raw) - len(strings.TrimLeft(raw, "`"))
+			if n > 0 && len(raw) >= 2*n {
+				a, z := in.Start+n, in.End-n
+				if z-a >= 2 && src[a] == ' ' && src[z-1] == ' ' && strings.TrimSpace(src[a:z]) != "" {
+					a++
+					z--
+				}
+				p.replace(in.Start, a, "")
+				p.replace(z, in.End, "")
+			}
+		case parser.FootnoteRef:
+			p.footnote(in)
+		case parser.Math:
+			p.inlineMath(in)
+		case parser.Text:
+			p.literal(src, in)
+		}
+	}
+}
 
 // inlineFloor is the offset a break's line ending and indentation may be
 // hidden back to: the end of the inline before it, or the block's start.
@@ -360,7 +378,7 @@ func (p *previewLayout) reflowBreak(src string, inlines []parser.Inline, index, 
 			sep = ""
 		}
 	}
-	p.readable[start] = sep
+	p.reading(start, sep)
 	p.replace(start, end, sep)
 }
 
@@ -416,13 +434,14 @@ func (p *previewLayout) addIndent(line int, left, right float32) {
 
 func quoteBar(c *ui.Context, e ui.Element, _ editor.Replacement) {
 	e.Children(func() {
-		ui.Box(c).Absolute().Left(0).Top(0).Bottom(0).Width(3).Background(portrait.Colors.Accent)
+		ui.Box(c).Absolute().Left(0).Top(0).Bottom(0).Width(portrait.Editor.QuoteBarWidth).Background(portrait.Colors.Accent)
 	})
 }
 
 func (p *previewLayout) thematicBreak(snap editor.Snapshot, start, end int) {
-	block := editor.Block{Line: snap.LineOf(start), Height: portrait.Type.Reading.Leading, Width: portrait.Editor.Column, Label: "Thematic break", Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
-		e.Height(portrait.Type.Reading.Leading).Justify(ui.Center).Children(func() {
+	height := portrait.Editor.ThematicBreakHeight
+	block := editor.Block{Line: snap.LineOf(start), Height: height, Width: portrait.Editor.Column, Label: "Thematic break", Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
+		e.Height(height).Justify(ui.Center).Children(func() {
 			ui.Box(c).FillWidth().Height(portrait.Editor.Hairline).Background(portrait.Colors.Line).AccessHidden(true)
 		})
 	}}
@@ -567,6 +586,106 @@ func headingStyle(line, level int) editor.LineStyle {
 	return editor.LineStyle{Line: line, Font: style.Font(600), LineHeight: style.LineHeight()}
 }
 
+func (p *previewLayout) verticalRhythm(snap editor.Snapshot, frontEnd int) {
+	var walk func(int)
+	walk = func(parent int) {
+		previous := -1
+		for current := range p.document.Children(parent) {
+			b := p.document.Block(current)
+			if b.Start < frontEnd {
+				continue
+			}
+			if previous >= 0 {
+				prev := p.document.Block(previous)
+				gap := semanticBlockGap(prev, b)
+				switch p.document.Block(parent).Kind {
+				case parser.List:
+					gap = portrait.Editor.ParagraphGap
+					if p.document.Block(parent).Tight {
+						gap = portrait.Editor.ListGap
+					}
+				case parser.Item:
+					if b.Kind == parser.List {
+						gap = portrait.Editor.NestedListGap
+					}
+				}
+				p.applyBlockGap(snap, prev, b, gap)
+			}
+			switch b.Kind {
+			case parser.Quote:
+				if b.Alert == parser.NoAlert {
+					walk(current)
+				}
+			case parser.List, parser.Item:
+				walk(current)
+			}
+			previous = current
+		}
+	}
+	walk(0)
+}
+
+func semanticBlockGap(previous, current *parser.Block) float32 {
+	before, after := float32(0), portrait.Editor.ParagraphGap
+	if previous.Kind == parser.Heading {
+		after = portrait.Editor.HeadingAfter[previous.Level-1]
+	}
+	if current.Kind == parser.Heading {
+		before = portrait.Editor.HeadingBefore[current.Level-1]
+		if previous.Kind == parser.Heading {
+			before /= 2
+		}
+	}
+	return max(after, before)
+}
+
+func (p *previewLayout) applyBlockGap(snap editor.Snapshot, previous, current *parser.Block, gap float32) {
+	if gap <= 0 {
+		return
+	}
+	first, last := snap.LineOf(previous.End), snap.LineOf(current.Start)
+	remaining := gap
+	for line := first + 1; line < last; line++ {
+		if !structuralBlank(snap.Line(line)) {
+			continue
+		}
+		blankGap := portrait.Editor.ParagraphGap
+		p.styles = append(p.styles, editor.LineStyle{Line: line, LineHeight: blankGap / portrait.Editor.Body.Size})
+		remaining = gap - blankGap
+		break
+	}
+	if remaining <= 0 {
+		return
+	}
+	line := snap.LineOf(current.Start)
+	if current.Kind == parser.CodeBlock && current.Fenced && ordinaryCodeLines(current) {
+		lastCodeFence := snap.LineOf(max(current.End-1, current.Start))
+		if line < lastCodeFence {
+			line++
+		}
+	}
+	p.blocks = append(p.blocks, verticalSpace(line, remaining, true))
+}
+
+func structuralBlank(line string) bool {
+	line = strings.TrimSpace(line)
+	for strings.HasPrefix(line, ">") {
+		line = strings.TrimSpace(strings.TrimPrefix(line, ">"))
+	}
+	return line == ""
+}
+
+func ordinaryCodeLines(b *parser.Block) bool {
+	meta := strings.TrimSpace(strings.TrimPrefix(b.Info(), b.Language()))
+	return !strings.EqualFold(b.Language(), "mermaid") && meta == ""
+}
+
+func verticalSpace(line int, height float32, above bool) editor.Block {
+	return editor.Block{Line: line, Above: above, Height: height, Content: func(_ *ui.Context, e ui.Element, _ editor.Block) {
+		e.Height(height)
+	}}
+}
+
 func (p *previewLayout) literal(src string, in parser.Inline) {
 	if src[in.Start:in.End] == in.Text {
 		return
@@ -705,6 +824,22 @@ func (d *Document) prepareView(c *ui.Context) {
 	st.LineHeight = portrait.Editor.Body.LineHeight()
 	st.LineNumbers = editor.LineNumbersOff
 	st.ReadingColumn = editor.ReadingColumn{Width: portrait.Editor.Column, Left: portrait.Editor.GutterLeft, Right: portrait.Editor.GutterRight}
+	if d.inlineOnly {
+		st.ContextMenu, st.OnInput, st.OnHover = nil, nil, nil
+		st.Label = "Table cell"
+		st.Font = portrait.Type.Small.Font(400)
+		st.LineHeight = portrait.Type.Small.LineHeight()
+		st.ReadingColumn = editor.ReadingColumn{}
+		if !p.applied || p.dirty || p.version != d.Version() {
+			d.buildPreview(st.Buffer)
+		}
+		st.SetBlocks(nil)
+		st.SetReplacements(p.replacements)
+		st.SetLineStyles(nil)
+		p.applied = true
+		d.project(p)
+		return
+	}
 	space, dark := portrait.ActiveSpace()
 	if p.applied && !p.dirty && p.version == d.Version() && p.space == space.Name && p.dark == dark {
 		return
@@ -713,13 +848,25 @@ func (d *Document) prepareView(c *ui.Context) {
 		// Quote, code, table and callout backgrounds come from the Space's
 		// tokens, so a content, Space or appearance change rebuilds once.
 		p.space, p.dark = space.Name, dark
-		p.build(st.Buffer)
+		d.buildPreview(st.Buffer)
 	}
 	st.SetBlocks(p.blocks)
 	st.SetReplacements(p.replacements)
 	st.SetLineStyles(p.styles)
 	p.applied = true
-	st.Projection = &editor.TextProjection{
+	d.project(p)
+}
+
+func (d *Document) buildPreview(buffer *editor.Buffer) {
+	if d.inlineOnly {
+		d.preview.buildInline(buffer)
+		return
+	}
+	d.preview.build(buffer)
+}
+
+func (d *Document) project(p *previewLayout) {
+	d.state.Projection = &editor.TextProjection{
 		Text:         func(a, z int) string { d.refreshProjection(); return p.display[p.displayOffset(a):p.displayOffset(z)] },
 		SourceOffset: func(n int) int { d.refreshProjection(); return p.sourceOffset(n) },
 		Markdown:     func(a, z int) string { idx := d.sourceIndex(); return idx.raw[idx.rawAtEditor(a):idx.rawAtEditor(z)] },
@@ -728,7 +875,7 @@ func (d *Document) prepareView(c *ui.Context) {
 
 func (d *Document) refreshProjection() {
 	if d.preview.version != d.Version() {
-		d.preview.build(d.state.Buffer)
+		d.buildPreview(d.state.Buffer)
 		d.preview.applied = false
 	}
 }

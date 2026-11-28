@@ -29,6 +29,7 @@ type Document struct {
 	mode             Mode
 	index            *sourceIndex
 	tables           map[int]*readingTable
+	tableHistory     []tableWidthSnapshot
 	draft            *blockDraft
 	artwork          map[string]blockImage
 	imageDir         string
@@ -41,6 +42,7 @@ type Document struct {
 	landing          jumpHighlight
 	revealScroll     revealScroll
 	lineNumbers      bool
+	inlineOnly       bool
 }
 
 func New(source string) *Document {
@@ -156,6 +158,7 @@ func (d *Document) SetMode(mode Mode) bool {
 
 func (d *Document) Reload(source string) {
 	d.revealScroll = revealScroll{}
+	d.tableHistory = nil
 	d.state.Buffer.Reset(source)
 	d.retryFailedInlineImages()
 }

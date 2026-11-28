@@ -80,8 +80,9 @@ func TestPreviewReadingColumnAdaptsWhenTheWindowResizes(t *testing.T) {
 		tt.Frame()
 		title, hasTitle := d.RectUTF16(2)
 		firstLine, hasFirstLine := d.RectUTF16(strings.Index(source, "The first line"))
-		if !hasTitle || !hasFirstLine || title.X != tc.left || title.Y != tc.top || firstLine.X != tc.left || firstLine.Y != tc.top+64 {
-			t.Errorf("%d × %d places title at %v and first paragraph at %v; want x %.0f and y %.0f, %.0f", tc.width, tc.height, title, firstLine, tc.left, tc.top, tc.top+64)
+		wantFirstY := title.Y + title.H + portrait.Editor.ParagraphGap
+		if !hasTitle || !hasFirstLine || title.X != tc.left || title.Y != tc.top || firstLine.X != tc.left || firstLine.Y != wantFirstY {
+			t.Errorf("%d × %d places title at %v and first paragraph at %v; want x %.0f and y %.0f, %.0f", tc.width, tc.height, title, firstLine, tc.left, tc.top, wantFirstY)
 		}
 	}
 	if d.Source() != source || d.Modified() || d.CanUndo() {
@@ -941,8 +942,8 @@ func TestStandaloneImageTakesTheRoomOfItsOwnLines(t *testing.T) {
 	if !ok {
 		t.Fatal("missing the paragraph after the image")
 	}
-	if gap := after.Y - (figure.Y + figure.H); math.Abs(float64(gap-portrait.Type.Reading.Leading)) > 1 {
-		t.Errorf("the image leaves %v below it; want one empty line, %v", gap, portrait.Type.Reading.Leading)
+	if gap := after.Y - (figure.Y + figure.H); math.Abs(float64(gap-portrait.Editor.ParagraphGap)) > 1 {
+		t.Errorf("the image leaves %v below it; want the paragraph gap, %v", gap, portrait.Editor.ParagraphGap)
 	}
 }
 

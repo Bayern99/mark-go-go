@@ -564,7 +564,7 @@ func (w *Window) saveExport(defaultPath string, result export.Result, ext string
 }
 
 func (w *Window) exportDone(result export.Result, target string, err error) {
-	notify := func() {
+	w.notifyLater(func() (portrait.ToastSpec, bool) {
 		switch {
 		case err == nil && target != "":
 			toast := portrait.ToastSpec{ID: "export", Tone: portrait.Tones.Success, Title: "Exported " + filepath.Base(target)}
@@ -574,15 +574,11 @@ func (w *Window) exportDone(result export.Result, target string, err error) {
 				toast.Action = "Details"
 				toast.OnAction = func() { w.ShowAlert("Export warnings", formatExportWarnings(result.Warnings)) }
 			}
-			w.Notify(toast)
+			return toast, true
 		case errors.Is(err, mygo.ErrCanceled), err == nil:
+			return portrait.ToastSpec{}, false
 		default:
-			w.Notify(portrait.ToastSpec{ID: "export", Tone: portrait.Tones.Danger, Title: "Export failed: " + err.Error()})
+			return portrait.ToastSpec{ID: "export", Tone: portrait.Tones.Danger, Title: "Export failed: " + err.Error()}, true
 		}
-	}
-	if w.Native() != nil {
-		w.Native().Update(notify)
-		return
-	}
-	notify()
+	})
 }

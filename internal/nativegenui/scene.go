@@ -22,9 +22,6 @@ func SceneRequest(c *ui.Context, request string) {
 	p.drawReader(c, v, d, "", false)
 }
 
-// SceneFailure draws the reader's real production failure state (request form,
-// failure alert with inline Retry action, details block, and suppressed empty
-// state) for acceptance scenes.
 func SceneFailure(c *ui.Context, message, hint, detail string) {
 	v := &documentView{
 		loaded:  true,

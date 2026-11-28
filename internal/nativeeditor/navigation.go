@@ -55,6 +55,7 @@ func (p *previewLayout) heading(snap editor.Snapshot, i, firstText int) {
 	}
 	p.replace(b.Start, firstText, "")
 	style := headingStyle(0, b.Level)
+	headingLine := snap.LineOf(b.Start)
 	leading := style.LineHeight * style.Font.Size
 	mark := foldMarkSize(style.Font.Size)
 	p.blocks = append(p.blocks, editor.Block{Line: snap.LineOf(b.Start), Above: true, Height: portrait.Editor.Hairline, Interactive: true, Content: func(c *ui.Context, e ui.Element, _ editor.Block) {
@@ -65,9 +66,14 @@ func (p *previewLayout) heading(snap editor.Snapshot, i, firstText int) {
 			if !btn.Hovered() && !btn.Pressed() {
 				ink = portrait.Colors.Ink3
 			}
+			selection := p.owner.state.Selection()
+			selectionOnHeading := selection.Start() <= snap.LineEnd(headingLine) && selection.End() >= snap.LineStart(headingLine)
+			showMark := folded || btn.Hovered() || btn.Pressed() || btn.FocusVisible() || !c.Preferences().Hover() || selectionOnHeading
 			btn.Children(func() {
 				ui.Box(c).Size(mark, mark).Shrink(0).AccessHidden(true).Draw(func(p *ui.Painter, r ui.Rect) {
-					drawFoldMark(p, r, folded, ink)
+					if showMark {
+						drawFoldMark(p, r, folded, ink)
+					}
 				})
 			})
 			if btn.Clicked() {
@@ -163,9 +169,9 @@ func (p *previewLayout) footnote(in parser.Inline) {
 	p.refs[in.Text] = append(p.refs[in.Text], in.Start)
 	label := fmt.Sprintf("Read footnote %s, reference %d", in.Text, r+1)
 	shown := "[" + in.Text + "]"
-	p.readable[in.Start] = shown
+	p.reading(in.Start, shown)
 	target := p.document.Block(at).Start
-	p.replacements = append(p.replacements, editor.Replacement{Start: in.Start, End: in.End, Width: max(18, float32(len(shown))*7), Interactive: true, Label: label, Content: func(c *ui.Context, e ui.Element, _ editor.Replacement) {
+	p.replacements = append(p.replacements, editor.Replacement{Start: p.at(in.Start), End: p.at(in.End), Width: max(18, float32(len(shown))*7), Interactive: true, Label: label, Content: func(c *ui.Context, e ui.Element, _ editor.Replacement) {
 		e.Children(func() {
 			ref := ui.ButtonBase(c).Label(label).KeepFocus().Padding(0, 2).AlignItems(ui.Center)
 			ref.Children(func() {

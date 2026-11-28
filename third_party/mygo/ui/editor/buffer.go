@@ -47,6 +47,8 @@ type Buffer struct {
 	saved    rope.Text
 	undo     []transaction
 	redo     []transaction
+	nextTxID uint64
+	baseTxID uint64
 	// open counts the Transact calls running, which group edits into
 	// openTx.
 	open     int
@@ -117,6 +119,7 @@ type transaction struct {
 	selBefore any
 	selAfter  any
 	kind      editKind
+	id        uint64
 }
 
 // editKind groups edits into undo steps: typing in a row is one step,
@@ -357,6 +360,7 @@ func (b *Buffer) Reset(text string) {
 	b.text, b.ends = rope.New(t), ends
 	b.saved, b.savedEnds = b.text, b.ends
 	b.undo, b.redo, b.openTx = nil, nil, nil
+	b.baseTxID = 0
 	b.record([]change{wholeChange(old, b.text)})
 }
 
@@ -408,6 +412,15 @@ func (b *Buffer) CanRedo() bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return len(b.redo) > 0
+}
+
+func (b *Buffer) UndoStateID() uint64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.undo) == 0 {
+		return b.baseTxID
+	}
+	return b.undo[len(b.undo)-1].id
 }
 
 // Undo takes back the last step of edits, and reports whether there was
@@ -574,9 +587,12 @@ func (b *Buffer) editEnds(edits []Edit, codes []string, kind editKind, owner, se
 		tx.edits = append(tx.edits, back)
 		tx.ends = append(tx.ends, backEnds)
 	default:
-		b.undo = append(b.undo, transaction{edits: [][]Edit{back}, ends: [][]string{backEnds}, owner: owner, selBefore: selBefore, kind: kind})
+		b.nextTxID++
+		b.undo = append(b.undo, transaction{edits: [][]Edit{back}, ends: [][]string{backEnds}, owner: owner, selBefore: selBefore, kind: kind, id: b.nextTxID})
 		if len(b.undo) > undoMax {
-			b.undo = slices.Delete(b.undo, 0, len(b.undo)-undoMax)
+			drop := len(b.undo) - undoMax
+			b.baseTxID = b.undo[drop-1].id
+			b.undo = slices.Delete(b.undo, 0, drop)
 		}
 		if b.open > 0 {
 			b.openTx = &b.undo[len(b.undo)-1]

@@ -13,10 +13,28 @@ import (
 	"github.com/Bayern99/mark-go-go/internal/export/pandoc"
 	"github.com/Bayern99/mark-go-go/internal/export/pdf"
 	"github.com/Bayern99/mark-go-go/internal/nativeeditor"
+	"github.com/Bayern99/mark-go-go/internal/portrait"
 	"github.com/Bayern99/mark-go-go/internal/workspace"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
+
+func awaitExportToast(t *testing.T, w *Window) portrait.ToastSpec {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		w.showNotices()
+		if len(w.toasts) > 0 {
+			toast := w.toasts[0]
+			w.toasts = w.toasts[1:]
+			return toast
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("export did not report its result")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
 
 func TestReaderNotesPreferenceDefaultsOffAndSynchronizes(t *testing.T) {
 	dir := t.TempDir()
@@ -179,6 +197,9 @@ func TestMarkdownPDFExportRendersPrintsAndWritesPDF(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("Markdown PDF export did not finish")
+	}
+	if toast := awaitExportToast(t, w); toast.ID != "export" || !strings.Contains(toast.Title, "Chosen.pdf") {
+		t.Fatalf("export toast = %+v", toast)
 	}
 	if !strings.Contains(printedHTML, "<html") || !strings.Contains(printedHTML, "Hello PDF.") || strings.Contains(printedHTML, "requestAnimationFrame") {
 		t.Fatalf("printed HTML = %s", printedHTML)
@@ -383,6 +404,9 @@ func TestPandocExportRendersAfterSaveChoice(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Pandoc export did not finish")
 	}
+	if toast := awaitExportToast(t, w); toast.ID != "export" || !strings.Contains(toast.Title, "chosen.docx") {
+		t.Fatalf("export toast = %+v", toast)
+	}
 }
 
 func TestWriteExportWritesLaTeXAttachments(t *testing.T) {
@@ -475,9 +499,22 @@ func TestCanceledPandocProbeClearsCheckingAndPreservesStatus(t *testing.T) {
 	}
 }
 
+func TestExportNoticeWaitsForTheDrawThread(t *testing.T) {
+	w := &Window{}
+	w.exportDone(export.Result{Warnings: []string{"Mermaid diagram 1 failed"}}, filepath.Join(t.TempDir(), "Guide.docx"), nil)
+	if len(w.toasts) != 0 {
+		t.Fatalf("export built its toast off the draw thread: %+v", w.toasts)
+	}
+	w.showNotices()
+	if len(w.toasts) != 1 || w.toasts[0].Action != "Details" || !strings.Contains(w.toasts[0].Title, "1 warnings") {
+		t.Fatalf("toasts = %+v", w.toasts)
+	}
+}
+
 func TestExportWarningsDetailsOpensPortraitAlert(t *testing.T) {
 	w := &Window{}
 	w.exportDone(export.Result{Warnings: []string{"Mermaid diagram 1 failed", "Remote image omitted"}}, filepath.Join(t.TempDir(), "Guide.docx"), nil)
+	w.showNotices()
 	if len(w.toasts) != 1 || w.toasts[0].Action != "Details" || w.toasts[0].OnAction == nil || !strings.Contains(w.toasts[0].Title, "2 warnings") {
 		t.Fatalf("warning toast = %+v", w.toasts)
 	}

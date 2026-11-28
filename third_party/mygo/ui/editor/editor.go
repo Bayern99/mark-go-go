@@ -33,6 +33,7 @@ type options struct {
 	wrap          bool
 	wrapColumn    int
 	readingColumn ReadingColumn
+	textAlign     TextAlign
 	lineNumbers   LineNumbers
 	whitespace    Whitespace
 	wrapGuides    []int

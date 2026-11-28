@@ -37,6 +37,7 @@ type State struct {
 	WrapColumn int
 	// ReadingColumn centers wrapped prose within the horizontal margins.
 	ReadingColumn ReadingColumn
+	textAlign     TextAlign
 	// LineNumbers shows the numbers of lines in the gutter, absolute by
 	// default.
 	LineNumbers LineNumbers
@@ -273,7 +274,7 @@ func (st *State) options() options {
 	}
 	return options{
 		readOnly: st.ReadOnly, font: st.Font, lineHeight: st.LineHeight, tabSize: st.TabSize, indent: st.Indent,
-		wrap: st.SoftWrap, wrapColumn: st.WrapColumn, readingColumn: st.ReadingColumn, lineNumbers: st.LineNumbers, whitespace: st.Whitespace,
+		wrap: st.SoftWrap, wrapColumn: st.WrapColumn, readingColumn: st.ReadingColumn, textAlign: st.textAlign, lineNumbers: st.LineNumbers, whitespace: st.Whitespace,
 		wrapGuides: st.WrapGuides, indentGuides: !st.NoIndentGuides,
 		scrollPastEnd: !st.NoScrollPastEnd && !st.FitContent, scrollMargin: scrollMargin,
 		keepScrollbars: st.KeepScrollbars, hideScrollbars: st.NoScrollbars, scrollbar: st.Scrollbar,
@@ -413,6 +414,15 @@ func (st *State) Rect(off int) (ui.Rect, bool) {
 	r.Y -= float32(st.ed.scrollY)
 	return r, true
 }
+
+func (st *State) SetTextAlign(align TextAlign) {
+	st.textAlign = align
+	st.ensure()
+	st.ed.o.textAlign = align
+	st.ed.view.setTextAlign(align, st.ed.view.alignWidth)
+}
+
+func (st *State) TextAlign() TextAlign { return st.textAlign }
 
 // Find opens the find bar with query, and selects its first match after
 // the caret.

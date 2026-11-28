@@ -53,7 +53,7 @@ var tokenProvenance = func() map[string]string {
 	register(sourceDerived, "Frame", "Inset", "InnerRadius", "OuterRadius")
 	register(sourceDerived, "Form", "Field", "FieldCompact", "Radius", "PadX", "Gap", "AreaMin", "AreaCompact", "AreaPadY", "LabelGap", "HelpGap", "SelectMin", "SelectMax", "MenuRow", "MenuRadius", "MenuPad", "MenuMin", "MenuMax", "PopoverPad", "PopoverGap", "PopoverHeader", "PopoverWide", "DialogWidth", "DialogPad", "DialogGap", "ListMax", "BubbleRatio", "BubbleMax")
 	register(sourceDerived, "Settings", "Width", "Height", "Margin", "Radius", "Rail", "Header", "Column", "ColumnPadX", "ColumnPadTop", "ColumnPadBottom", "GroupGap", "HeadingGap", "NavRow", "NavSectionGap", "Collapse", "Row", "RowCompact", "RowPadX", "RowPadY", "RowGap", "DescriptionMax", "SpacePreview")
-	register(sourceDerived, "Editor", "Body", "Code", "Column", "GutterLeft", "GutterRight", "BlockRadius", "BlockPadX", "BlockPadY", "TableCellPadX", "TableCellPadY", "Hairline")
+	register(sourceDerived, "Editor", "Body", "Code", "Column", "GutterLeft", "GutterRight", "BlockRadius", "BlockPadX", "BlockPadY", "TableCellPadX", "TableCellPadY", "TableRadius", "TableColumnMin", "TableColumnMax", "TableColumnResizeMin", "TableRowMin", "TableEdgeFade", "TableGutter", "TableHandle", "TablePin", "TableInsertZone", "TableIndicator", "ListGap", "NestedListGap", "ParagraphGap", "HeadingBefore", "HeadingAfter", "CodeBlockBottom", "ThematicBreakHeight", "QuoteBarWidth", "Hairline")
 	register(sourceDerived, "IconSizes", "XS", "S", "M", "L")
 	register(sourceDerived, "GenUI",
 		"Card.From", "Card.To", "Card.Shadows",

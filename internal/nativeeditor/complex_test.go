@@ -167,10 +167,12 @@ func TestTableBoundaryClicksAndCanceledDragKeepAutomaticWidths(t *testing.T) {
 	tt.Release(x, y)
 
 	tt.RightClickAt(before.X+1, y)
-	if len(tt.Menu()) == 0 || !tt.Focused(cell) {
-		t.Fatalf("right click near the column boundary missed the cell: %v", tt.Menu())
+	tt.Frame()
+	if _, ok := tt.Find("Insert Row Below"); !ok || !tt.Focused(cell) {
+		t.Fatalf("right click near the column boundary missed the cell: menu %v, texts %v", tt.Menu(), tt.Texts())
 	}
-	tt.CloseMenu()
+	tt.Key(0, ui.KeyEscape)
+	tt.Frame()
 
 	tt.Press(x, y)
 	tt.Move(x+32, y)
@@ -714,8 +716,9 @@ func TestLegacyReadingPreferencesRestoreByContent(t *testing.T) {
 	}
 	a, _ := tt.Find("Table row 1 column 1")
 	b, _ := tt.Find("Table row 1 column 2")
-	if a.W != 400 || b.W != 204 {
-		t.Errorf("legacy column widths %v %v", a, b)
+	padding := 2 * portrait.Editor.TableCellPadX
+	if a.W+padding != 410 || b.W+padding != 214 {
+		t.Errorf("legacy outer column widths %v %v, want 410 and 214", a.W+padding, b.W+padding)
 	}
 	if err := tt.Click("Expand Read"); err != nil {
 		t.Fatal(err)

@@ -44,13 +44,41 @@ type Reading struct {
 	created                      []string
 	loads, cards                 uint64
 	inCard                       bool
-	cardOwner                    ui.Element
+	owners                       cardOwners
 	halo, haloShown              uint64
 	haloAt                       time.Time
 	jumpID                       string
 	jumpRun, jumpDrawn, jumpDone uint64
 	jumpAt                       time.Time
 	jumpElement                  *openuilang.Element
+}
+
+type cardOwners struct {
+	handles []ui.Handle
+	levels  []int
+	next    int
+}
+
+func (o *cardOwners) reset() {
+	o.levels, o.next = o.levels[:0], 0
+}
+
+func (o *cardOwners) enter(card ui.Element) {
+	if o.next == len(o.handles) {
+		o.handles = append(o.handles, ui.Handle{})
+	}
+	card.Bind(&o.handles[o.next])
+	o.levels = append(o.levels, o.next)
+	o.next++
+}
+
+func (o *cardOwners) leave() { o.levels = o.levels[:len(o.levels)-1] }
+
+func (o *cardOwners) owner(c *ui.Context) ui.Element {
+	if len(o.levels) == 0 {
+		return ui.Element{}
+	}
+	return c.Resolve(o.handles[o.levels[len(o.levels)-1]])
 }
 
 type cardIn struct{ load uint64 }
@@ -120,6 +148,7 @@ func (r *Reading) View(c *ui.Context) {
 	}
 	r.remaining = max(4096, len(r.surface.Nodes)*2)
 	r.cards = 0
+	r.owners.reset()
 	r.jumpDrawn = 0
 	ui.Column(c).Grow(1).MinHeight(0).Clip().Children(func() {
 		ui.Scroll(c).TrackScroll(&r.scroll).Grow(1).MinHeight(0).Children(func() {
@@ -293,10 +322,12 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 		}
 		g.Card.Apply(card)
 		r.jumpNode(c, card, n, true).Children(func() {
-			outer, owner := r.inCard, r.cardOwner
-			r.inCard, r.cardOwner = true, card
+			outer := r.inCard
+			r.inCard = true
+			r.owners.enter(card)
 			r.node(c, n.Child, parents)
-			r.inCard, r.cardOwner = outer, owner
+			r.owners.leave()
+			r.inCard = outer
 		})
 	case "Text":
 		layout(ui.Column(c), n).Children(func() {
@@ -313,10 +344,9 @@ func (r *Reading) node(c *ui.Context, id string, parents map[string]bool) {
 		}
 		frame := r.card(c, layout(ui.Column(c).Gap(8), n).Bind(&state.frame).Busy(busy), !r.inCard)
 		frame = r.jumpNode(c, frame, n, !r.inCard)
-		owner := r.cardOwner
-		if !r.inCard && !owner.Valid() {
-			r.cardOwner = frame
-			defer func() { r.cardOwner = owner }()
+		if !r.inCard && !r.owners.owner(c).Valid() {
+			r.owners.enter(frame)
+			defer r.owners.leave()
 		}
 		if busy {
 			frame.Background(portrait.GenUI.Replacing).MinHeight(max(64, state.height)).Children(func() {

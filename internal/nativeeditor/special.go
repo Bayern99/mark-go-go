@@ -64,8 +64,8 @@ func (p *previewLayout) inlineMath(in parser.Inline) {
 	}
 	w, h := img.svg.Size()
 	width := min(w, 280) * min(float32(1), 25/max(1, h))
-	p.readable[in.Start] = in.Text
-	p.replacements = append(p.replacements, editor.Replacement{Start: in.Start, End: in.End, Width: width, Label: in.Text, Content: func(c *ui.Context, e ui.Element, _ editor.Replacement) {
+	p.reading(in.Start, in.Text)
+	p.replacements = append(p.replacements, editor.Replacement{Start: p.at(in.Start), End: p.at(in.End), Width: width, Label: in.Text, Content: func(c *ui.Context, e ui.Element, _ editor.Replacement) {
 		e.Children(func() { ui.Image(c, img.svg).Size(width, min(25, h)).Label(in.Text) })
 	}})
 }
@@ -78,9 +78,7 @@ func (p *previewLayout) special(snap editor.Snapshot, i int) bool {
 		kind = "math"
 		body = strings.TrimSuffix(p.document.Lines(i), "\n")
 	case parser.CodeBlock:
-		info := b.Info()
-		meta := strings.TrimSpace(strings.TrimPrefix(info, b.Language()))
-		if !strings.EqualFold(b.Language(), "mermaid") && meta == "" {
+		if ordinaryCodeLines(b) {
 			return false
 		}
 		kind = "code"
@@ -162,13 +160,15 @@ func (p *previewLayout) codeBlock(snap editor.Snapshot, i int) {
 	}
 	if n := p.document.LineCount(i); n > 0 {
 		_, last := p.document.Line(i, n-1)
+		lastCodeLine := snap.LineOf(last)
 		p.backgrounds = append(p.backgrounds, editor.LineBackground{
-			First: headerLine, Last: snap.LineOf(last),
+			First: headerLine, Last: lastCodeLine,
 			Color: portrait.Colors.Code, Radius: portrait.Radii.M,
 			Stroke: 0.5, StrokeColor: portrait.Colors.Line,
 			ReadingColumn: true,
-			PaddingTop:    codeHeaderHeight, PaddingBottom: 12,
+			PaddingTop:    codeHeaderHeight, PaddingBottom: portrait.Editor.CodeBlockBottom,
 		})
+		p.blocks = append(p.blocks, verticalSpace(lastCodeLine, portrait.Editor.CodeBlockBottom, false))
 	}
 	p.blocks = append(p.blocks, editor.Block{
 		Line:        headerLine,

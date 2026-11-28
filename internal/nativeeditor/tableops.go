@@ -239,7 +239,29 @@ func tableRowCellTexts(body string) []string {
 	return out
 }
 
-func ensureTableRowCells(body string, want []string) string {
+func tableRowParsesInGFM(cand string, wantCols int, isHeader bool) bool {
+	if wantCols <= 0 {
+		return true
+	}
+	p := parser.New(parser.Default | parser.ExtDollarMath)
+	delim := "|" + strings.Repeat(" --- |", wantCols)
+	if isHeader {
+		p.Set(cand + "\n" + delim + "\n")
+		return p.Len() > 1 && p.Block(1).Kind == parser.Table && len(p.Block(1).Align) == wantCols
+	}
+	header := "|" + strings.Repeat(" h |", wantCols)
+	p.Set(header + "\n" + delim + "\n" + cand + "\n")
+	if p.Len() <= 1 || p.Block(1).Kind != parser.Table || len(p.Block(1).Align) != wantCols {
+		return false
+	}
+	rows := 0
+	for range p.Children(1) {
+		rows++
+	}
+	return rows == 2
+}
+
+func ensureTableRowCells(body string, want []string, isHeader bool) string {
 	wantCols := len(want)
 	if wantCols == 0 {
 		return body
@@ -248,7 +270,7 @@ func ensureTableRowCells(body string, want []string) string {
 		if wantCols == 1 && strings.IndexByte(cand, '|') < 0 {
 			return false
 		}
-		return slices.Equal(tableRowCellTexts(cand), want)
+		return slices.Equal(tableRowCellTexts(cand), want) && tableRowParsesInGFM(cand, wantCols, isHeader)
 	}
 	if matches(body) {
 		return body
@@ -260,11 +282,15 @@ func ensureTableRowCells(body string, want []string) string {
 		}
 		return "| " + trimmed + " |"
 	}
+	trimmed := strings.TrimLeft(body, " \t")
 	for _, cand := range []string{
 		body + " |",
 		"| " + body,
+		"| " + trimmed,
 		"| " + body + " |",
+		"| " + trimmed + " |",
 		"|" + body + "|",
+		"|" + trimmed + "|",
 	} {
 		if matches(cand) {
 			return cand
@@ -299,7 +325,7 @@ func (t *tableSource) removeColumn(col int) {
 				want = make([]string, columns)
 			}
 			if len(want) > 0 {
-				next = ensureTableRowCells(next, want)
+				next = ensureTableRowCells(next, want, i == 0)
 			} else if len(splitTableRow(next)) == 0 {
 				next = tableEmptyRow(columns)
 			}

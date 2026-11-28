@@ -48,6 +48,7 @@ type Buffer struct {
 	undo     []transaction
 	redo     []transaction
 	nextTxID uint64
+	baseTxID uint64
 	// open counts the Transact calls running, which group edits into
 	// openTx.
 	open     int
@@ -359,6 +360,7 @@ func (b *Buffer) Reset(text string) {
 	b.text, b.ends = rope.New(t), ends
 	b.saved, b.savedEnds = b.text, b.ends
 	b.undo, b.redo, b.openTx = nil, nil, nil
+	b.baseTxID = 0
 	b.record([]change{wholeChange(old, b.text)})
 }
 
@@ -416,7 +418,7 @@ func (b *Buffer) UndoStateID() uint64 {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if len(b.undo) == 0 {
-		return 0
+		return b.baseTxID
 	}
 	return b.undo[len(b.undo)-1].id
 }
@@ -588,7 +590,9 @@ func (b *Buffer) editEnds(edits []Edit, codes []string, kind editKind, owner, se
 		b.nextTxID++
 		b.undo = append(b.undo, transaction{edits: [][]Edit{back}, ends: [][]string{backEnds}, owner: owner, selBefore: selBefore, kind: kind, id: b.nextTxID})
 		if len(b.undo) > undoMax {
-			b.undo = slices.Delete(b.undo, 0, len(b.undo)-undoMax)
+			drop := len(b.undo) - undoMax
+			b.baseTxID = b.undo[drop-1].id
+			b.undo = slices.Delete(b.undo, 0, drop)
 		}
 		if b.open > 0 {
 			b.openTx = &b.undo[len(b.undo)-1]

@@ -284,7 +284,6 @@ func (d *Document) saveTables() {
 		return
 	}
 	widths := map[string][]float32{}
-	stateID := d.state.Buffer.UndoStateID()
 	for at, t := range d.tables {
 		if t.manual {
 			key := t.preferenceKey
@@ -292,7 +291,6 @@ func (d *Document) saveTables() {
 				key = strconv.Itoa(at) + ":" + t.signature
 			}
 			widths[key] = t.widths
-			d.recordTableWidths(stateID, key, t.widths)
 		}
 	}
 	data, _ := json.Marshal(widths)

@@ -158,6 +158,7 @@ func (d *Document) SetMode(mode Mode) bool {
 
 func (d *Document) Reload(source string) {
 	d.revealScroll = revealScroll{}
+	d.tableHistory = nil
 	d.state.Buffer.Reset(source)
 	d.retryFailedInlineImages()
 }

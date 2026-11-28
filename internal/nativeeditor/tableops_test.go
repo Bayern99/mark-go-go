@@ -1443,4 +1443,152 @@ func TestTableOpsCodexRoundTwoEdgeCases(t *testing.T) {
 			t.Fatalf("at 10k undo cap after 2x Undo widths = %v (manual %v), want [260 180] (true)", restored.widths, restored.manual)
 		}
 	})
+
+	t.Run("clear col 1 with 4-space cell padding does not turn header into code block", func(t *testing.T) {
+		const src = "A    | B\n--- | ---\nx | y\n"
+		document, tester, _ := laidOutTable(t, src, 760, 420)
+		cell, _ := tester.Find("Table row 2 column 1")
+		tester.Move(cell.X+cell.W/2, cell.Y+cell.H/2)
+		tester.Frame()
+		if err := tester.Click("Select table column 1"); err != nil {
+			t.Fatal(err)
+		}
+		tester.Frame()
+		tester.Key(0, ui.KeyBackspace)
+		tester.Frame()
+		if len(document.tables) != 1 {
+			t.Fatalf("table disappeared after clearing 4-space padded col 1: %q", document.Source())
+		}
+		got := firstTable(t, document)
+		if got.columns() != 2 || got.cells[0][0].Source() != "" || got.cells[0][1].Source() != "B" {
+			t.Fatalf("unexpected header cells after clear: [%q %q] in %q", got.cells[0][0].Source(), got.cells[0][1].Source(), document.Source())
+		}
+	})
+
+	t.Run("delete col 0 before hash-prefixed header cell keeps valid GFM table", func(t *testing.T) {
+		const src = "A | # B | C\n--- | --- | ---\nx | y | z\n"
+		document, tester, table := laidOutTable(t, src, 760, 420)
+		if !table.editTable(document, tableOp{kind: tableDeleteColumn, row: 0, col: 0}) {
+			t.Fatal("delete col 0 failed")
+		}
+		tester.Frame()
+		if len(document.tables) != 1 {
+			t.Fatalf("table became heading after delete col 0: %q", document.Source())
+		}
+		got := firstTable(t, document)
+		if got.columns() != 2 || got.cells[0][0].Source() != "# B" || got.cells[0][1].Source() != "C" {
+			t.Fatalf("unexpected header cells: [%q %q] in %q", got.cells[0][0].Source(), got.cells[0][1].Source(), document.Source())
+		}
+	})
+
+	t.Run("multi-table Markdown undo restores both tables without cross-clobbering history", func(t *testing.T) {
+		const src = "| A |  |\n| --- | --- |\n| x | y |\n\n| A |  |\n| --- | --- |\n| p | q |\n"
+		document := New(src)
+		var saved string
+		document.SetReadingPreferences("", "", func(key, value string) {
+			if key == "table-widths" {
+				saved = value
+			}
+		})
+		tester := ui.NewTester(func(c *ui.Context) { document.View(c, false).Fill() }, 760, 620)
+		tester.Frame()
+		if len(document.tables) != 2 {
+			t.Fatalf("expected 2 tables, got %d", len(document.tables))
+		}
+		ordered := func() []*readingTable {
+			var keys []int
+			for at := range document.tables {
+				keys = append(keys, at)
+			}
+			if len(keys) == 2 && keys[0] > keys[1] {
+				keys[0], keys[1] = keys[1], keys[0]
+			}
+			out := make([]*readingTable, len(keys))
+			for i, k := range keys {
+				out[i] = document.tables[k]
+			}
+			return out
+		}
+		tables := ordered()
+		t1, t2 := tables[0], tables[1]
+		t1.widths[0], t1.widths[1], t1.manual = 250, 170, true
+		t2.widths[0], t2.widths[1], t2.manual = 210, 230, true
+		document.recordTableWidths(document.state.Buffer.UndoStateID(), t1.preferenceKey, t1.widths)
+		document.recordTableWidths(document.state.Buffer.UndoStateID(), t2.preferenceKey, t2.widths)
+		document.saveTables()
+
+		if !t1.editTable(document, tableOp{kind: tableDeleteColumn, row: 0, col: 1}) {
+			t.Fatal("t1 delete col failed")
+		}
+		tester.Frame()
+		t1 = ordered()[0]
+		if !t1.editTable(document, tableOp{kind: tableInsertColumnRight, row: 0, col: 0}) {
+			t.Fatal("t1 re-insert col failed")
+		}
+		tester.Frame()
+		t2 = ordered()[1]
+		if !t2.editTable(document, tableOp{kind: tableDeleteColumn, row: 0, col: 1}) {
+			t.Fatal("t2 delete col failed")
+		}
+		tester.Frame()
+		t2 = ordered()[1]
+		if !t2.editTable(document, tableOp{kind: tableInsertColumnRight, row: 0, col: 0}) {
+			t.Fatal("t2 re-insert col failed")
+		}
+		tester.Frame()
+
+		document.SetMode(Markdown)
+		tester.Frame()
+		for range 4 {
+			if !document.Undo() {
+				t.Fatal("undo in Markdown failed")
+			}
+		}
+		document.SetMode(Preview)
+		tester.Frame()
+		tables = ordered()
+		if got := tables[0].widths; got[0] != 250 || got[1] != 170 {
+			t.Fatalf("first table widths = %v, want [250 170]", got)
+		}
+		if got := tables[1].widths; got[0] != 210 || got[1] != 230 {
+			t.Fatalf("second table widths = %v, want [210 230]", got)
+		}
+		if !strings.Contains(saved, "250") || !strings.Contains(saved, "230") {
+			t.Fatalf("saved preferences missed restored widths: %q", saved)
+		}
+	})
+
+	t.Run("undoing all 10000 steps after eviction does not collide with initial state 0", func(t *testing.T) {
+		const src = "p\n\n| A |  |\n| --- | --- |\n| x | y |\n"
+		document, tester, table := laidOutTable(t, src, 760, 420)
+		table.widths[0], table.widths[1], table.manual = 260, 180, true
+		document.recordTableWidths(document.state.Buffer.UndoStateID(), table.preferenceKey, table.widths)
+
+		if !table.editTable(document, tableOp{kind: tableDeleteColumn, row: 0, col: 1}) {
+			t.Fatal("delete col failed")
+		}
+		tester.Frame()
+		table = firstTable(t, document)
+		if !table.editTable(document, tableOp{kind: tableInsertColumnRight, row: 0, col: 0}) {
+			t.Fatal("re-insert col failed")
+		}
+		tester.Frame()
+		wantWidth1 := firstTable(t, document).widths[1]
+
+		for i := range 10000 {
+			ch := "a"
+			if i%2 == 1 {
+				ch = "b"
+			}
+			_ = document.Apply(document.Version(), 0, 1, document.Source()[:1], ch)
+		}
+		for document.CanUndo() {
+			document.Undo()
+		}
+		tester.Frame()
+		got := firstTable(t, document)
+		if got.widths[1] != wantWidth1 {
+			t.Fatalf("after undoing to evicted stack floor widths = %v, want second col %v (not initial 180)", got.widths, wantWidth1)
+		}
+	})
 }

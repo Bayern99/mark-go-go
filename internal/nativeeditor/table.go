@@ -141,10 +141,6 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 	model.widthStateID = curStateID
 	model.aligns = append(model.aligns[:0], b.Align...)
 	model.rawStart, model.rawEnd = b.Start, snap.LineEnd(snap.LineOf(b.End))
-	if model.resave {
-		model.resave = false
-		doc.saveTables()
-	}
 	if model.manual {
 		doc.recordTableWidths(curStateID, preferenceKey, model.widths)
 	}
@@ -543,6 +539,8 @@ func (m *readingTable) resizeHandle(c *ui.Context, col int, boundary float32, do
 				m.dragCol = -1
 				if dx != 0 {
 					m.manual = true
+					m.widthStateID = doc.state.Buffer.UndoStateID()
+					doc.recordTableWidths(m.widthStateID, m.preferenceKey, m.widths)
 					doc.saveTables()
 				}
 			}

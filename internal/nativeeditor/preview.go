@@ -248,6 +248,16 @@ func (p *previewLayout) build(buffer *editor.Buffer) {
 			delete(p.owner.tables, offset)
 		}
 	}
+	resaveTables := false
+	for _, t := range p.owner.tables {
+		if t.resave {
+			t.resave = false
+			resaveTables = true
+		}
+	}
+	if resaveTables {
+		p.owner.saveTables()
+	}
 	p.referenceDefinitions(snap, frontEnd)
 	if draft := p.owner.draft; draft != nil && (draft.kind == "new note" || !p.draftAnchored) {
 		p.blocks = append(p.blocks, editor.Block{Line: snap.LineOf(min(snap.Len(), draft.anchor)), Height: 140, Interactive: true, Label: draftLabel(draft), Content: func(c *ui.Context, e ui.Element, _ editor.Block) {

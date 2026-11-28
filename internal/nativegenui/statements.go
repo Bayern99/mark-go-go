@@ -818,14 +818,13 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 			g.Card.Apply(card)
 		}
 		r.jump(c, card, base, r.jumpElement == e).Children(func() {
-			owner := r.cardOwner
-			r.cardOwner = card
+			r.owners.enter(card)
 			r.stack(c, p.value("children"), path, depth, inner, p.space("gap", groupGap), !gapped)
 			if as.footer != nil {
 				ui.Column(c.Key("footer-space")).Grow(1).AccessHidden(true)
 				as.footer()
 			}
-			r.cardOwner = owner
+			r.owners.leave()
 		})
 	case "Divider":
 		ui.Column(c).Height(1).Shrink(0).Background(theme.Text.Alpha(0.08)).Role(ui.RoleSeparator)
@@ -967,12 +966,11 @@ func (r *Reading) element(c *ui.Context, e *openuilang.Element, path string, dep
 					return
 				}
 				ui.Column(c.Key("sources")).FillWidth().MinWidth(0).Children(func() {
-					owner := r.cardOwner
-					if !owner.Valid() {
-						r.cardOwner = frame
+					if !r.owners.owner(c).Valid() {
+						r.owners.enter(frame)
+						defer r.owners.leave()
 					}
 					r.Sources(c, n)
-					r.cardOwner = owner
 				})
 			}
 			if directCard && hasFooter {

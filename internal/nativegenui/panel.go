@@ -746,7 +746,7 @@ func (p *panel) drawSources(c *ui.Context, v *documentView, d workspace.Document
 			notes = append(notes, note.Text)
 		}
 	}
-	owner := v.reader().cardOwner
+	owner := v.reader().owners.owner(c)
 	if v.noteTarget == n.ID && owner.Valid() {
 		owner.InsetShadow(portrait.GenUI.SelectionBorder, 0, 0, 0, portrait.Colors.Accent)
 	}

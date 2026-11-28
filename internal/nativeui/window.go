@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/Bayern99/mark-go-go/internal/desktop"
 	"github.com/Bayern99/mark-go-go/internal/fsutil"
@@ -43,6 +44,8 @@ type Window struct {
 	focusSource                   bool
 	failure                       string
 	toasts                        []portrait.ToastSpec
+	notices                       []toastNotice
+	noticeMu                      sync.Mutex
 	shell                         Shell
 	slots                         Slots
 	navigation                    workspace.NavSnapshot
@@ -442,6 +445,37 @@ func (w *Window) Notify(spec portrait.ToastSpec) {
 	w.toasts = append(w.toasts, spec)
 }
 
+type toastNotice func() (portrait.ToastSpec, bool)
+
+func (w *Window) notifyLater(notice toastNotice) {
+	if w == nil {
+		return
+	}
+	if native := w.Native(); native != nil {
+		native.Update(func() { w.showNotice(notice) })
+		return
+	}
+	w.noticeMu.Lock()
+	w.notices = append(w.notices, notice)
+	w.noticeMu.Unlock()
+}
+
+func (w *Window) showNotice(notice toastNotice) {
+	if spec, ok := notice(); ok {
+		w.Notify(spec)
+	}
+}
+
+func (w *Window) showNotices() {
+	w.noticeMu.Lock()
+	notices := w.notices
+	w.notices = nil
+	w.noticeMu.Unlock()
+	for _, notice := range notices {
+		w.showNotice(notice)
+	}
+}
+
 func (w *Window) actionToast(run func() error, success portrait.ToastSpec) {
 	err := run()
 	w.win.Update(func() {
@@ -622,6 +656,7 @@ func (w *Window) View(c *ui.Context) {
 		readingWidth = float64(portrait.Editor.Column)
 	}
 	portrait.UseEditor(float32(readingSize), float32(codeSize), float32(readingWidth))
+	w.showNotices()
 	for _, spec := range w.toasts {
 		portrait.Notify(c, spec)
 	}

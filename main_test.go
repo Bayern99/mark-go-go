@@ -144,6 +144,9 @@ func TestBuildMenuUsesSettingsCenterDeepLinks(t *testing.T) {
 }
 
 func TestFileMenuIncludesPDFExportAndPreferences(t *testing.T) {
+	previous := supportsPDFBackground
+	supportsPDFBackground = func() bool { return true }
+	t.Cleanup(func() { supportsPDFBackground = previous })
 	menu := buildMenu(nil, false)
 	var exportMenu *mygo.MenuItem
 	var walk func([]*mygo.MenuItem)

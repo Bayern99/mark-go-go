@@ -1,8 +1,10 @@
 package nativegenui
 
 import (
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Bayern99/mark-go-go/internal/genui"
 	"github.com/Bayern99/mark-go-go/internal/nativeui"
@@ -214,17 +216,29 @@ func TestComposerGrowsFromOneToThreeLinesWithoutClipping(t *testing.T) {
 	}
 }
 
-func TestFirstGenerationFailureKeepsCanvasRecoveryAndPillDetails(t *testing.T) {
+func TestFirstGenerationFailureKeepsOneCanvasRecoveryAndNoPillRetry(t *testing.T) {
 	p, v, d := polishPanel()
 	v.failure = &genui.GenerateFailure{Message: "The agent exited", Hint: "Check the agent command.", Detail: "stderr: unknown flag"}
 	app := polishTester(func(c *ui.Context) { drawPolishedPanel(c, p, v, d, false) }, polishSize, 480)
 	app.Frame()
 
-	if _, ok := app.AccessByRole(ui.RoleStatus, "Generation failed · The agent exited"); !ok {
+	status, ok := app.AccessByRole(ui.RoleStatus, "Generation failed · The agent exited")
+	if !ok {
 		t.Fatalf("the failure has no calm status in the pill: %v", app.Texts())
 	}
-	if _, ok := app.Access("Retry"); !ok || !app.HasText("Generation failed") || !app.HasText("Generation details") {
+	retry, ok := app.AccessByRole(ui.RoleButton, "Retry")
+	if !ok || !app.HasText("Generation failed") || !app.HasText("Generation details") {
 		t.Fatalf("the first-generation failure left no canvas recovery: %v", app.Texts())
+	}
+	if got := accessButtonCount(app, "Retry"); got != 1 {
+		t.Fatalf("Retry button count = %d, want one canvas action and no pill duplicate: %+v", got, app.AccessAll())
+	}
+	if retry.Bounds.Y >= status.Bounds.Y {
+		t.Errorf("Retry bounds %+v are not in the content above the command status %+v", retry.Bounds, status.Bounds)
+	}
+	details, ok := app.AccessByRole(ui.RoleButton, "Generation failure details")
+	if !ok || details.Bounds.Y >= status.Bounds.Y {
+		t.Errorf("Details bounds %+v, present %t; want the secondary action in the content", details.Bounds, ok)
 	}
 	if app.HasText("No view yet") {
 		t.Error("the failure recovery is contradicted by the empty state")
@@ -236,11 +250,125 @@ func TestFirstGenerationFailureKeepsCanvasRecoveryAndPillDetails(t *testing.T) {
 	if !v.failureOpen || !app.HasText("stderr: unknown flag") {
 		t.Fatal("Details did not open the full failure in a popover")
 	}
+	if got := accessButtonCount(app, "Retry"); got != 1 {
+		t.Errorf("Details added a duplicate Retry; button count = %d", got)
+	}
 	app.Key(0, ui.KeyEscape)
 	app.Frame()
 	if v.failureOpen || !app.Focused("Generation failure details") {
 		t.Error("Escape did not close failure details and return focus to Details")
 	}
+}
+
+func TestRegenerationFailureKeepsOldViewAndOnePillRecovery(t *testing.T) {
+	p, v, d := polishPanel()
+	polishStatements(t, p, v,
+		`root = Col([first])`,
+		`first = Source(["overview"], [Card([Title("First card", "md"), Text("Alpha")])])`,
+	)
+	v.failure = &genui.GenerateFailure{Kind: genui.FailTimeout, Message: "Timed out", Detail: "deadline exceeded"}
+	app := polishTester(func(c *ui.Context) { drawPolishedPanel(c, p, v, d, false) }, polishSize, 480)
+	app.Frame()
+
+	title, ok := app.Find("First card")
+	if !ok {
+		t.Fatalf("the old view disappeared after regeneration failed: %v", app.Texts())
+	}
+	if _, ok := app.AccessByRole(ui.RoleAlert, "Generation failed"); ok {
+		t.Error("a regeneration failure drew a second recovery alert over the old view")
+	}
+	retry, ok := app.AccessByRole(ui.RoleButton, "Retry")
+	if !ok || retry.Bounds.Y <= title.Y {
+		t.Fatalf("the old view has no command-pill recovery: %+v, present %t", retry.Bounds, ok)
+	}
+	if got := accessButtonCount(app, "Retry"); got != 1 {
+		t.Fatalf("Retry button count = %d, want the single command-pill action", got)
+	}
+	if err := app.Click("Generation failure details"); err != nil {
+		t.Fatal(err)
+	}
+	app.Frame()
+	if !v.failureOpen || !app.HasText("deadline exceeded") {
+		t.Fatal("the command-pill Details action did not show diagnostics")
+	}
+	if got := accessButtonCount(app, "Retry"); got != 1 {
+		t.Errorf("Details added a duplicate Retry; button count = %d", got)
+	}
+	app.Key(0, ui.KeyEscape)
+	app.Frame()
+	if v.failureOpen || !app.Focused("Generation failure details") {
+		t.Error("Escape did not return from diagnostics to the pill Details action")
+	}
+}
+
+func TestFailureRecoveryDispatchesByKind(t *testing.T) {
+	tests := []struct {
+		name, kind, action string
+		settings           string
+		signIn, retry      bool
+	}{
+		{name: "missing agent", kind: genui.FailAgentNotFound, action: "Configure agent", settings: "genui"},
+		{name: "invalid model", kind: genui.FailModelInvalid, action: "Choose model", settings: "genui"},
+		{name: "authentication", kind: genui.FailAuthRequired, action: "Sign in in Terminal", signIn: true},
+		{name: "temporary", kind: genui.FailTimeout, action: "Retry", retry: true},
+		{name: "empty kind fallback", action: "Retry", retry: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			p, v, d := polishPanel()
+			v.failure = &genui.GenerateFailure{Kind: test.kind, Message: "Generation did not finish"}
+			v.lastIDs = []string{"risks", "summary"}
+			var openedSettings string
+			p.openSettings = func(tab string) { openedSettings = tab }
+			signed := make(chan string, 1)
+			p.signIn = func(id string) error { signed <- id; return nil }
+			var retried []string
+			p.startGeneration = func(_ *documentView, ids []string) { retried = slices.Clone(ids) }
+			app := polishTester(func(c *ui.Context) { drawPolishedPanel(c, p, v, d, false) }, polishSize, 480)
+			app.Frame()
+
+			if got := accessButtonCount(app, test.action); got != 1 {
+				t.Fatalf("%q button count = %d, want one kind-specific primary action: %+v", test.action, got, app.AccessAll())
+			}
+			if test.action != "Retry" {
+				if got := accessButtonCount(app, "Retry"); got != 0 {
+					t.Fatalf("%s incorrectly fell back to Retry", test.kind)
+				}
+			}
+			if err := app.Click(test.action); err != nil {
+				t.Fatal(err)
+			}
+			if openedSettings != test.settings {
+				t.Errorf("opened settings = %q, want %q", openedSettings, test.settings)
+			}
+			if test.signIn {
+				select {
+				case id := <-signed:
+					if want, _ := p.settings.GenUI.Active(); id != want {
+						t.Errorf("signed in backend %q, want active backend %q", id, want)
+					}
+				case <-time.After(time.Second):
+					t.Fatal("the authentication action did not open the active backend's login")
+				}
+			}
+			if test.retry && !slices.Equal(retried, v.lastIDs) {
+				t.Errorf("Retry IDs = %v, want the last generation IDs %v", retried, v.lastIDs)
+			}
+			if !test.retry && retried != nil {
+				t.Errorf("%s unexpectedly retried with IDs %v", test.kind, retried)
+			}
+		})
+	}
+}
+
+func accessButtonCount(app *ui.Tester, name string) int {
+	count := 0
+	for _, info := range app.AccessAll() {
+		if info.Role == ui.RoleButton && info.Name == name {
+			count++
+		}
+	}
+	return count
 }
 
 func TestUpwardPopoverPointerDismissalDoesNotStealFocus(t *testing.T) {

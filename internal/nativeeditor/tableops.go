@@ -230,64 +230,78 @@ func (t *tableSource) insertColumn(at int) {
 	}
 }
 
-func ensureTableRowColumns(body string, wantCols int) string {
-	if wantCols <= 0 {
+func tableRowCellTexts(body string) []string {
+	cells := splitTableRow(body)
+	out := make([]string, len(cells))
+	for i, c := range cells {
+		out[i] = body[c[0]:c[1]]
+	}
+	return out
+}
+
+func ensureTableRowCells(body string, want []string) string {
+	wantCols := len(want)
+	if wantCols == 0 {
 		return body
 	}
-	if wantCols == 1 {
-		if strings.IndexByte(body, '|') >= 0 && len(splitTableRow(body)) >= 1 {
-			return body
+	matches := func(cand string) bool {
+		if wantCols == 1 && strings.IndexByte(cand, '|') < 0 {
+			return false
 		}
+		return slices.Equal(tableRowCellTexts(cand), want)
+	}
+	if matches(body) {
+		return body
+	}
+	if wantCols == 1 && strings.IndexByte(body, '|') < 0 {
 		trimmed := strings.Trim(body, " \t")
 		if trimmed == "" {
 			return tableEmptyRow(1)
 		}
 		return "| " + trimmed + " |"
 	}
-	if len(splitTableRow(body)) >= wantCols {
-		return body
-	}
-	trimmedLeft := strings.TrimLeft(body, " \t")
-	trimmedRight := strings.TrimRight(body, " \t")
-	if strings.HasPrefix(trimmedLeft, "|") {
-		candidate := "| " + body
-		if len(splitTableRow(candidate)) >= wantCols {
-			return candidate
+	for _, cand := range []string{
+		body + " |",
+		"| " + body,
+		"| " + body + " |",
+		"|" + body + "|",
+	} {
+		if matches(cand) {
+			return cand
 		}
 	}
-	if strings.HasSuffix(trimmedRight, "|") {
-		candidate := body + " |"
-		if len(splitTableRow(candidate)) >= wantCols {
-			return candidate
+	var out strings.Builder
+	out.WriteByte('|')
+	for _, cell := range want {
+		if cell == "" {
+			out.WriteString("  |")
+		} else {
+			out.WriteByte(' ')
+			out.WriteString(cell)
+			out.WriteString(" |")
 		}
 	}
-	if strings.HasPrefix(trimmedLeft, "|") && strings.HasSuffix(trimmedRight, "|") {
-		candidate := "|" + body + "|"
-		if len(splitTableRow(candidate)) >= wantCols {
-			return candidate
-		}
-	}
-	out := body
-	if !strings.HasPrefix(strings.TrimLeft(out, " \t"), "|") {
-		out = "| " + out
-	}
-	if !strings.HasSuffix(strings.TrimRight(out, " \t"), "|") {
-		out += " |"
-	}
-	for len(splitTableRow(out)) < wantCols {
-		out += "  |"
-	}
-	return out
+	return out.String()
 }
 
 func (t *tableSource) removeColumn(col int) {
 	columns := max(1, t.columns()-1)
 	for i := range t.lines {
 		prefix, body := splitTableLinePrefix(t.lines[i].text)
+		orig := tableRowCellTexts(body)
 		next, ok := removeTableCellBody(body, col, columns)
 		if ok {
-			if i == 0 || i == 1 || columns == 1 || len(splitTableRow(next)) == 0 {
-				next = ensureTableRowColumns(next, columns)
+			var want []string
+			if col >= 0 && col < len(orig) {
+				want = append(append([]string(nil), orig[:col]...), orig[col+1:]...)
+			}
+			if len(want) == 0 && (i == 0 || i == 1 || columns == 1) {
+				want = make([]string, columns)
+			}
+			if len(want) > 0 {
+				next = ensureTableRowCells(next, want)
+			} else if len(splitTableRow(next)) == 0 {
+				next = tableEmptyRow(columns)
 			}
 			t.lines[i].text = prefix + next
 		}
@@ -575,9 +589,9 @@ func (m *readingTable) editTable(doc *Document, op tableOp) bool {
 	if idx.insideCRLF(z) {
 		z++
 	}
-	beforeDepth := doc.state.Buffer.UndoDepth()
+	beforeStateID := doc.state.Buffer.UndoStateID()
 	if m.manual && m.preferenceKey != "" {
-		doc.recordTableWidths(beforeDepth, m.preferenceKey, m.widths, true)
+		doc.recordTableWidths(beforeStateID, m.preferenceKey, m.widths)
 	}
 	if err := doc.apply(doc.Version(), a, z, idx.raw[a:z], next[a-start:len(next)-(end-z)], nil); err != nil {
 		return false

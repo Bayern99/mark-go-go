@@ -13,7 +13,7 @@ import (
 
 type readingTable struct {
 	signature, preferenceKey     string
-	seen, version                uint64
+	seen, version, widthStateID  uint64
 	scroll                       ui.ScrollState
 	focus                        *Document
 	cells                        [][]*Document
@@ -113,6 +113,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 			}
 		}
 	}
+	curStateID := doc.state.Buffer.UndoStateID()
 	if model == nil || len(model.widths) != ncols {
 		model = &readingTable{bounds: map[cellPosition]ui.Rect{}, widths: make([]float32, ncols), minimum: make([]float32, ncols), dragCol: -1, hoverCol: -1}
 		for i := range model.widths {
@@ -126,13 +127,18 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 		model.signature = sig
 		model.preferenceKey = preferenceKey
 		model.fit(portrait.Editor.Column)
-		if !doc.restoreTableHistory(doc.state.Buffer.UndoDepth(), model) {
+		if !doc.restoreTableHistory(curStateID, model) {
 			doc.preferences.restoreTable(model)
 		}
 		doc.tables[b.Start] = model
+	} else if curStateID != model.widthStateID && !model.resave {
+		model.signature = sig
+		model.preferenceKey = preferenceKey
+		doc.restoreTableHistoryExact(curStateID, model)
 	}
 	model.signature = sig
 	model.preferenceKey = preferenceKey
+	model.widthStateID = curStateID
 	model.aligns = append(model.aligns[:0], b.Align...)
 	model.rawStart, model.rawEnd = b.Start, snap.LineEnd(snap.LineOf(b.End))
 	if model.resave {
@@ -140,7 +146,7 @@ func (p *previewLayout) table(snap editor.Snapshot, idx int) {
 		doc.saveTables()
 	}
 	if model.manual {
-		doc.recordTableWidths(doc.state.Buffer.UndoDepth(), preferenceKey, model.widths, false)
+		doc.recordTableWidths(curStateID, preferenceKey, model.widths)
 	}
 	model.seen, model.version = p.version, p.version
 	if !model.shaped(len(rows), ncols) {

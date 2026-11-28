@@ -239,6 +239,8 @@ func (m *readingTable) clearCells(doc *Document) bool {
 			continue
 		}
 		rawLine := idx.raw[lineStart:lineEnd]
+		_, origBody := splitTableLinePrefix(rawLine)
+		want := tableRowCellTexts(origBody)
 		updated := rawLine
 		changed := false
 		for col := min(right, len(m.spans[row])-1); col >= max(left, 0); col-- {
@@ -251,18 +253,21 @@ func (m *readingTable) clearCells(doc *Document) bool {
 				continue
 			}
 			updated = updated[:a] + updated[z:]
+			if col < len(want) {
+				want[col] = ""
+			}
 			changed = true
 		}
 		if !changed {
 			continue
 		}
-		_, origBody := splitTableLinePrefix(rawLine)
-		wantCols := len(splitTableRow(origBody))
 		if row == 0 {
-			wantCols = m.columns()
+			for len(want) < m.columns() {
+				want = append(want, "")
+			}
 		}
 		prefix, body := splitTableLinePrefix(updated)
-		updated = prefix + ensureTableRowColumns(body, wantCols)
+		updated = prefix + ensureTableRowCells(body, want)
 		if updated == rawLine {
 			continue
 		}

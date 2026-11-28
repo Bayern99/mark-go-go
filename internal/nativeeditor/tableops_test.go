@@ -1341,4 +1341,106 @@ func TestTableOpsCodexRoundTwoEdgeCases(t *testing.T) {
 			t.Fatalf("after 2x Undo widths = %v (manual %v), want [260 180] (true)", restored.widths, restored.manual)
 		}
 	})
+
+	t.Run("clear second column of leading-pipe-only table keeps col 1 in place", func(t *testing.T) {
+		const src = "| A | B\n| --- | ---\n| x | y\n"
+		document, tester, _ := laidOutTable(t, src, 760, 420)
+		cell, _ := tester.Find("Table row 2 column 1")
+		tester.Move(cell.X+cell.W/2, cell.Y+cell.H/2)
+		tester.Frame()
+		if err := tester.Click("Select table column 2"); err != nil {
+			t.Fatal(err)
+		}
+		tester.Frame()
+		tester.Key(0, ui.KeyBackspace)
+		tester.Frame()
+		table := firstTable(t, document)
+		if table.cells[0][0].Source() != "A" || table.cells[0][1].Source() != "" || table.cells[1][0].Source() != "x" || table.cells[1][1].Source() != "" {
+			t.Fatalf("cells shifted after clearing col 2: [%q %q] / [%q %q] in %q",
+				table.cells[0][0].Source(), table.cells[0][1].Source(),
+				table.cells[1][0].Source(), table.cells[1][1].Source(), document.Source())
+		}
+	})
+
+	t.Run("delete col 0 keeps data row cell aligned under column C when col 1 was empty", func(t *testing.T) {
+		const src = "A | B | C\n--- | --- | ---\nx | | z\n"
+		document, tester, table := laidOutTable(t, src, 760, 420)
+		if !table.editTable(document, tableOp{kind: tableDeleteColumn, row: 0, col: 0}) {
+			t.Fatal("delete col 0 failed")
+		}
+		tester.Frame()
+		got := firstTable(t, document)
+		if got.columns() != 2 || got.cells[0][0].Source() != "B" || got.cells[0][1].Source() != "C" || got.cells[1][0].Source() != "" || got.cells[1][1].Source() != "z" {
+			t.Fatalf("data shifted after delete col 0: [%q %q] / [%q %q] in %q",
+				got.cells[0][0].Source(), got.cells[0][1].Source(),
+				got.cells[1][0].Source(), got.cells[1][1].Source(), document.Source())
+		}
+	})
+
+	t.Run("multi-step undo in Markdown mode restores initial widths on return to Preview", func(t *testing.T) {
+		const src = "| A |  |\n| --- | --- |\n| x | y |\n"
+		document, tester, table := laidOutTable(t, src, 760, 420)
+		table.widths[0], table.widths[1], table.manual = 260, 180, true
+		document.saveTables()
+
+		if !table.editTable(document, tableOp{kind: tableDeleteColumn, row: 0, col: 1}) {
+			t.Fatal("delete col 1 failed")
+		}
+		tester.Frame()
+		table = firstTable(t, document)
+		if !table.editTable(document, tableOp{kind: tableInsertColumnRight, row: 0, col: 0}) {
+			t.Fatal("re-insert col failed")
+		}
+		tester.Frame()
+
+		document.SetMode(Markdown)
+		tester.Frame()
+		if !document.Undo() || !document.Undo() {
+			t.Fatal("2x Undo in Markdown failed")
+		}
+		document.SetMode(Preview)
+		tester.Frame()
+		restored := firstTable(t, document)
+		if !restored.manual || restored.widths[0] != 260 || restored.widths[1] != 180 {
+			t.Fatalf("after Markdown 2x Undo widths = %v (manual %v), want [260 180] (true)", restored.widths, restored.manual)
+		}
+	})
+
+	t.Run("multi-step undo restores initial widths even when undo stack is at 10000 cap", func(t *testing.T) {
+		const src = "p\n\n| A |  |\n| --- | --- |\n| x | y |\n"
+		document, tester, _ := laidOutTable(t, src, 760, 420)
+		for i := range 10000 {
+			ch := "a"
+			if i%2 == 1 {
+				ch = "b"
+			}
+			_ = document.Apply(document.Version(), 0, 1, document.Source()[:1], ch)
+		}
+		tester.Frame()
+		table := firstTable(t, document)
+		table.widths[0], table.widths[1], table.manual = 260, 180, true
+		document.saveTables()
+
+		if !table.editTable(document, tableOp{kind: tableDeleteColumn, row: 0, col: 1}) {
+			t.Fatal("delete col 1 failed at undo cap")
+		}
+		tester.Frame()
+		table = firstTable(t, document)
+		if !table.editTable(document, tableOp{kind: tableInsertColumnRight, row: 0, col: 0}) {
+			t.Fatal("re-insert col failed at undo cap")
+		}
+		tester.Frame()
+		if !document.Undo() {
+			t.Fatal("first undo failed")
+		}
+		tester.Frame()
+		if !document.Undo() {
+			t.Fatal("second undo failed")
+		}
+		tester.Frame()
+		restored := firstTable(t, document)
+		if !restored.manual || restored.widths[0] != 260 || restored.widths[1] != 180 {
+			t.Fatalf("at 10k undo cap after 2x Undo widths = %v (manual %v), want [260 180] (true)", restored.widths, restored.manual)
+		}
+	})
 }

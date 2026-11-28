@@ -2,6 +2,8 @@
 
 Status: accepted
 
+> 五行 Space 数量与对比度矩阵的后续扩充见 [ADR 0021](0021-wuxing-16-spaces-and-threshold-plates.md)（拟由 8 境 16 套扩至 16 境 32 套，全部 32 套已按生产公式复算通过表格表头 `Ink/TableHeader` WCAG AA 对比度）。
+
 ## Context
 
 Mark Go Go 采用 Portrait 2.0 界面设计语言（[ADR 0012](0012-portrait-2-coss-reference-and-contracts.md)、[ADR 0013](0013-arc-experiment-scenery-page-command-bar.md)、[ADR 0014](0014-wuxing-spaces-per-space-accent-and-dark-mode.md)）与「Preview ⇄ Markdown 共用同一原始缓冲、字节保真、共享 Undo/Redo、完整中文 IME 组字」的编辑架构。

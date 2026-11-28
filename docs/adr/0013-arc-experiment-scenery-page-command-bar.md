@@ -2,7 +2,7 @@
 
 Status: experimental (branch `t3/arc-inspired-editor-redesign`; amends ADR 0004, ADR 0010 and ADR 0012 only on this branch, pending evaluation)
 
-> 布景、固定的蓝色强调色与"只有浅色外观"已由 [ADR 0014](0014-wuxing-spaces-per-space-accent-and-dark-mode.md) 改为八个五行 Space、每个 Space 自有的强调色与完整的深色外观。
+> 布景、固定的蓝色强调色与"只有浅色外观"已由 [ADR 0014](0014-wuxing-spaces-per-space-accent-and-dark-mode.md) 改为八个五行 Space、每个 Space 自有的强调色与完整的深色外观；进一步扩充为五行十六境与门槛摄影图版边界见 [ADR 0021](0021-wuxing-16-spaces-and-threshold-plates.md)。
 
 把 Mark Go Go 当作 Arc 浏览器设计团队从头设计的原生 Markdown 编辑器，重做窗口构成、导航、材质和字体，用来直接体验和评估。产品原则不变：Markdown 是主要产物，本地优先，一切皆插件，MyGo 原生界面，简单、快、读写体验好，已有功能全部保留。[internal/portrait](../../internal/portrait/) 仍是设计变量的唯一来源，[ADR 0012](0012-portrait-2-coss-reference-and-contracts.md) 的五类契约照旧生效，只是锁定的取值换了。界面说明见 [DESIGN.md](../../DESIGN.md)。
 

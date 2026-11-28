@@ -2,6 +2,8 @@
 
 Status: experimental (branch on top of `t3/arc-inspired-editor-redesign`; amends ADR 0013 on this branch, pending evaluation)
 
+> 五行 Space 已由 [ADR 0021](0021-wuxing-16-spaces-and-threshold-plates.md) 修订并扩充为**五行十六境（32 套浅深外观）**：含太和、十天干与五相生环、冻结旧 8 槽自动分配池与 5 个只读阳干别名、清洗后的 742 传统色表、明确浅色纸页固定 `#FFFFFF` 以及门槛摄影图版边界。
+
 ADR 0013 的布景只是一条渐变，强调色固定为 Arc 的蓝 `#3139fb`，并且只有浅色外观。本次把布景换成八个五行（Wu Xing）Space：每个 Space 在浅色与深色两种外观下各有一套布景、纸页、代码面、强调色、标记色和元素色（Success、Warn、Danger），像 Arc 的 Space 一样，窗口取它所显示的工作区的颜色。外观（Appearance）可选 System、Light、Dark，跟随系统或固定，记在偏好文件里。界面说明见 [DESIGN.md](../../DESIGN.md)，取值见 [space.go](../../internal/portrait/space.go)。
 
 ## 参考来源

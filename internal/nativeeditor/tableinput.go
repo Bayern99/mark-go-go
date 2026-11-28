@@ -118,20 +118,21 @@ func (m *readingTable) chosen(pos cellPosition) bool {
 
 // navigate takes a navigation key for the cell at pos: a move within the
 // cell stays the editor's, a move to another cell becomes the table's.
-func (m *readingTable) navigate(child *Document, from cellPosition, step cellStep) bool {
+func (m *readingTable) navigate(doc *Document, child *Document, from cellPosition, step cellStep) bool {
 	if step == stepUp || step == stepDown {
 		row, rows, ok := cellVisualRow(child)
 		if !ok || step == stepUp && row > 0 || step == stepDown && row < rows-1 {
 			return false
 		}
 	}
-	return m.move(from, step)
+	return m.move(doc, from, step)
 }
 
 // move focuses the cell a step reaches, keeping the column on a vertical
 // move. It reports whether it took the key: the edges of the table take the
-// key without moving, so that no keystroke edits the cell instead.
-func (m *readingTable) move(from cellPosition, step cellStep) bool {
+// key without moving, so that no keystroke edits the cell instead. Tab in
+// the last cell adds a row and goes to its first cell.
+func (m *readingTable) move(doc *Document, from cellPosition, step cellStep) bool {
 	if step.row != 0 {
 		if target, ok := m.vertical(from, step.row); ok {
 			m.focusCell(target)
@@ -140,8 +141,20 @@ func (m *readingTable) move(from cellPosition, step cellStep) bool {
 	}
 	if target, ok := m.neighbour(from, step.col > 0); ok {
 		m.focusCell(target)
+	} else if step.col > 0 && from.row+1 >= len(m.cells) {
+		m.appendRow(doc)
 	}
 	return true
+}
+
+// appendRow adds a row below the table's last one and gives it the caret, as
+// Tab in the last cell does.
+func (m *readingTable) appendRow(doc *Document) bool {
+	rows := len(m.cells)
+	if rows == 0 {
+		return false
+	}
+	return m.editTable(doc, tableOp{kind: tableInsertRowBelow, row: rows - 1, col: m.anchor.col})
 }
 
 // vertical returns the nearest cell of the rows a vertical step reaches in

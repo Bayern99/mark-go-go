@@ -67,7 +67,9 @@ func TestTableHeaderAndOuterCornersPaintPortraitTokens(t *testing.T) {
 				}
 			}
 		}
-		assert("rounded outer corner", x, y, portrait.Colors.Paper)
+		// The handle gutter sits outside the grid, so the table's rounded
+		// corner is the one at the gutter's own start.
+		assert("rounded outer corner", x-portrait.Editor.TableGutter, y, portrait.Colors.Paper)
 		fill, paper := portrait.Colors.FillStrong, portrait.Colors.Paper
 		alpha := float32(fill.A) / 255
 		header := ui.RGBA(

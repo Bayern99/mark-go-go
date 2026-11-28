@@ -13,6 +13,8 @@ type EditorTokens struct {
 	TableColumnMax, TableColumnResizeMin float32
 	TableRowMin                          float32
 	TableEdgeFade                        float32
+	TableGutter, TableHandle, TablePin   float32
+	TableInsertZone, TableIndicator      float32
 	ListGap, NestedListGap, ParagraphGap float32
 	HeadingBefore, HeadingAfter          [6]float32
 	CodeBlockBottom, ThematicBreakHeight float32
@@ -46,6 +48,7 @@ func EditorFor(readingSize, codeSize, width float32) EditorTokens {
 		TableCellPadX: tablePadX, TableCellPadY: tablePadY,
 		TableRadius: Radii.M, TableColumnMin: 112, TableColumnMax: 340,
 		TableColumnResizeMin: 72, TableRowMin: Type.Small.Leading + 2*tablePadY, TableEdgeFade: 24,
+		TableGutter: 16, TableHandle: 10, TablePin: 14, TableInsertZone: 12, TableIndicator: 2,
 		ListGap: scale(6), NestedListGap: scale(5), ParagraphGap: readingSize,
 		HeadingBefore:   [6]float32{scale(38), scale(30), scale(24), scale(22), scale(20), scale(20)},
 		HeadingAfter:    [6]float32{scale(14), scale(10), scale(10), scale(6), scale(5), scale(4)},
